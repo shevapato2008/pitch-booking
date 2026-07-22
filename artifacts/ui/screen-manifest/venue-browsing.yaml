@@ -1,0 +1,17 @@
+screens:
+  - id: venue-home
+    route: pages/venue/index
+    components: [venue-card, state-panel]
+    states: [loading, ready, first-load-error, image-fallback, map-error, phone-error]
+    fixtures: [venue-ready]
+    scenarios: [venue-first-load-error, venue-image-failure, venue-map-error, venue-phone-error]
+    goldens: [devtools-375-ready, devtools-390-ready, ios-ready, android-ready]
+    acceptance: [VENUE-01, VENUE-02, VENUE-03]
+  - id: availability
+    route: pages/availability/index
+    components: [date-strip, pitch-filter, slot-grid, state-panel]
+    states: [loading, ready, selected, empty, first-load-error, refreshing, stale-error]
+    fixtures: [slots-ready, slots-empty]
+    scenarios: [slots-first-load-error, slots-refresh-error, slots-selected, slots-late-response]
+    goldens: [devtools-375-ready, devtools-390-empty, ios-ready, android-ready]
+    acceptance: [SLOT-01]

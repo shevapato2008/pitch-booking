@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pitch-booking.local/schemas/golden-metadata.schema.json",
+  "title": "Venue browsing golden metadata",
+  "type": "object",
+  "required": [
+    "sha256",
+    "route",
+    "scenario",
+    "logical_width",
+    "device_pixel_ratio",
+    "operating_system",
+    "wechat_version",
+    "base_library_version",
+    "developer_tools_version",
+    "commit"
+  ],
+  "properties": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "route": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenario": {
+      "type": "string",
+      "minLength": 1
+    },
+    "logical_width": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "device_pixel_ratio": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "operating_system": {
+      "type": "string",
+      "minLength": 1
+    },
+    "wechat_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_library_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "developer_tools_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    }
+  },
+  "additionalProperties": false
+}
