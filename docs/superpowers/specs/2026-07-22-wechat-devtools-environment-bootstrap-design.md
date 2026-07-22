@@ -1,7 +1,7 @@
 # WeChat Developer Tools Environment Bootstrap Design
 
 **Date:** 2026-07-22  
-**Status:** Approved in conversation; pending written-spec review  
+**Status:** Written-spec review approved; pending user review
 **Scope:** Developer-environment documentation and the existing venue-browsing implementation plan
 
 ## Problem
