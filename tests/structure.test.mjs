@@ -13,6 +13,11 @@ test("WeChat DevTools compiles TypeScript", () => {
   assert.deepEqual(project.setting.useCompilerPlugins, ["typescript"]);
 });
 
+test("package declares the Node versions supported by the installed tooling", () => {
+  const packageManifest = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.equal(packageManifest.engines?.node, "^20.19.0 || ^22.13.0 || >=24");
+});
+
 test("required roots exist", () => {
   for (const path of ["artifacts/ui", "contracts", "miniprogram", "backend", "deploy"])
     assert.equal(existsSync(path), true, `missing ${path}`);

@@ -12,6 +12,8 @@ const target = path.resolve(targetArgument);
 const forbiddenPathPatterns = [/(^|[/\\])dev([/\\]|$)/i, /\.dev-generated/i, /fixture/i];
 const forbiddenContentPatterns = [
   /FIXTURE_MODE/,
+  /\b(?:fixture[A-Z]|Fixture[A-Z])[A-Za-z0-9_$]*\b/,
+  /\bfixtures:generate\b/,
   /\bScenario[A-Z][A-Za-z0-9_$]*\b/,
   /["']dev\//,
 ];
@@ -39,10 +41,12 @@ if (JSON.stringify(manifest.pages) !== JSON.stringify(productionRoutes)) {
 
 for (const route of productionRoutes) {
   for (const extension of ["js", "json", "wxml", "wxss"]) {
+    const artifact = `${route}.${extension}`;
     try {
-      await stat(path.join(target, `${route}.${extension}`));
+      const artifactStat = await stat(path.join(target, artifact));
+      if (!artifactStat.isFile()) forbidden.push(`not a regular file: ${artifact}`);
     } catch {
-      forbidden.push(`missing: ${route}.${extension}`);
+      forbidden.push(`missing: ${artifact}`);
     }
   }
   try {

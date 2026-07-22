@@ -9,18 +9,74 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const auditScript = path.resolve("scripts/audit-production-package.mjs");
 
-for (const token of ["ScenarioClock", "ScenarioTransport", "ScenarioClockStub"]) {
+for (const token of [
+  "fixtureVenue",
+  "FixtureRepository",
+  "fixtures:generate",
+  "FIXTURE_MODE",
+  "ScenarioClock",
+  "ScenarioTransport",
+  "ScenarioClockStub",
+]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
     t.after(() => rm(packageRoot, { recursive: true, force: true }));
-    await writeFile(path.join(packageRoot, "app.js"), `class ${token} {}\n`);
+    await writeFile(path.join(packageRoot, "app.js"), `const marker = "${token}";\n`);
 
-    await assert.rejects(
-      execFileAsync(process.execPath, [auditScript, packageRoot]),
-      (error) => error.code !== 0 && error.stderr.includes(token),
-    );
+    await assertAuditRejects(packageRoot, token);
   });
 }
+
+test("production audit rejects a dev path", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await mkdir(path.join(packageRoot, "dev"));
+  await writeFile(path.join(packageRoot, "dev/bootstrap.js"), "\n");
+
+  await assertAuditRejects(packageRoot, "dev/bootstrap.js");
+});
+
+test("production audit rejects a .dev-generated path", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(path.join(packageRoot, ".dev-generated.js"), "\n");
+
+  await assertAuditRejects(packageRoot, ".dev-generated.js");
+});
+
+test("production audit rejects a development route", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(path.join(packageRoot, "app.js"), 'const route = "dev/tools/index";\n');
+
+  await assertAuditRejects(packageRoot, "dev/");
+});
+
+test("production audit rejects a missing required artifact", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await rm(path.join(packageRoot, "pages/venue/index.js"));
+
+  await assertAuditRejects(packageRoot, "missing: pages/venue/index.js");
+});
+
+test("production audit rejects a TypeScript route artifact", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(path.join(packageRoot, "pages/venue/index.ts"), "\n");
+
+  await assertAuditRejects(packageRoot, "TypeScript source: pages/venue/index.ts");
+});
+
+test("production audit requires compiled artifacts to be regular files", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  const compiledArtifact = path.join(packageRoot, "pages/venue/index.js");
+  await rm(compiledArtifact);
+  await mkdir(compiledArtifact);
+
+  await assertAuditRejects(packageRoot, "not a regular file: pages/venue/index.js");
+});
 
 test("production audit accepts ordinary production code", async (t) => {
   const packageRoot = await createProductionPackage();
@@ -47,4 +103,11 @@ async function createProductionPackage() {
   }
 
   return packageRoot;
+}
+
+async function assertAuditRejects(packageRoot, expectedDiagnostic) {
+  await assert.rejects(
+    execFileAsync(process.execPath, [auditScript, packageRoot]),
+    (error) => error.code !== 0 && error.stderr.includes(expectedDiagnostic),
+  );
 }

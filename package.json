@@ -2,6 +2,9 @@
   "name": "pitch-booking",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
   "scripts": {
     "lint": "eslint .",
     "test:structure": "node --test tests/structure.test.mjs",
@@ -13,6 +16,9 @@
     "build:miniprogram:production": "node scripts/build-miniprogram.mjs production",
     "build:miniprogram:development": "node scripts/build-miniprogram.mjs development",
     "audit:miniprogram-package": "node scripts/audit-production-package.mjs dist/miniprogram-production"
+  },
+  "overrides": {
+    "js-yaml": "4.3.0"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",

@@ -1,25 +1,31 @@
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const MODES = new Set(["production", "development"]);
-const mode = process.argv[2];
+const OUTPUT_NAMES = Object.freeze({
+  production: "miniprogram-production",
+  development: "miniprogram-development",
+});
+const ALLOWED_OUTPUT_BASENAMES = new Set(Object.values(OUTPUT_NAMES));
+const scriptPath = fileURLToPath(import.meta.url);
 
-if (!MODES.has(mode)) {
-  console.error("Usage: node scripts/build-miniprogram.mjs <production|development>");
-  process.exitCode = 1;
-} else {
-  await build(mode);
+if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
+  const mode = process.argv[2];
+  if (!Object.hasOwn(OUTPUT_NAMES, mode)) {
+    console.error("Usage: node scripts/build-miniprogram.mjs <production|development>");
+    process.exitCode = 1;
+  } else {
+    await build(mode);
+  }
 }
 
 async function build(selectedMode) {
   const sourceRoot = path.resolve("miniprogram");
-  const outputRoot = path.resolve(`dist/miniprogram-${selectedMode}`);
-  const expectedOutput = path.resolve("dist", `miniprogram-${selectedMode}`);
+  const outputRoot = resolveOutputRoot(selectedMode, process.cwd());
 
-  if (outputRoot !== expectedOutput) throw new Error("Refusing to rebuild an unexpected path");
-
+  await validateTypeScript(sourceRoot, selectedMode === "development");
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
@@ -34,6 +40,53 @@ async function build(selectedMode) {
   );
 
   console.log(`Built ${selectedMode} mini program at ${path.relative(process.cwd(), outputRoot)}`);
+}
+
+export function resolveOutputRoot(selectedMode, projectRoot) {
+  const outputName = OUTPUT_NAMES[selectedMode];
+  if (!outputName) throw new Error(`Unsupported build mode: ${selectedMode}`);
+
+  const distRoot = path.resolve(projectRoot, "dist");
+  const outputRoot = path.resolve(distRoot, outputName);
+  const resolvedParent = path.dirname(outputRoot);
+  const resolvedBasename = path.basename(outputRoot);
+
+  if (resolvedParent !== distRoot) throw new Error("Refusing output outside the dist root");
+  if (!ALLOWED_OUTPUT_BASENAMES.has(resolvedBasename)) {
+    throw new Error("Refusing an output directory that is not allow-listed");
+  }
+  return outputRoot;
+}
+
+async function validateTypeScript(sourceRoot, includeDevelopment) {
+  const sourceFiles = await collectTypeScriptFiles(sourceRoot, includeDevelopment);
+  const typings = path.resolve(path.dirname(scriptPath), "../node_modules/miniprogram-api-typings/index.d.ts");
+  const program = ts.createProgram([...sourceFiles, typings], {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2020,
+    strict: true,
+    skipLibCheck: true,
+  });
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+  if (diagnostics.length > 0) {
+    const host = {
+      getCanonicalFileName: (fileName) => fileName,
+      getCurrentDirectory: () => process.cwd(),
+      getNewLine: () => "\n",
+    };
+    throw new Error(`TypeScript compilation failed:\n${ts.formatDiagnostics(diagnostics, host)}`);
+  }
+}
+
+async function collectTypeScriptFiles(directory, includeDevelopment, sourceRoot = directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!includeDevelopment && directory === sourceRoot && entry.name === "dev") continue;
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await collectTypeScriptFiles(entryPath, includeDevelopment, sourceRoot)));
+    else if (entry.name.endsWith(".ts")) files.push(entryPath);
+  }
+  return files;
 }
 
 async function copyTree(source, destination, includeDevelopment) {
