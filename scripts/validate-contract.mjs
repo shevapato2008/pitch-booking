@@ -238,6 +238,7 @@ function collectSchemaObjects(contract) {
       return;
     }
     for (const [key, child] of Object.entries(value)) {
+      if (key.startsWith('x-')) continue;
       if (key === 'example' || key === 'examples' || key === 'externalValue') continue;
       const childLocation = location ? `${location}.${key}` : key;
       if (key === 'schemas' && location === 'components') continue;

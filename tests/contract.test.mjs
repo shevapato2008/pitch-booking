@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -288,6 +288,22 @@ test('contract validator rejects unknown keywords in inline parameter schemas', 
   }, /unknown_parameter_keyword|strict mode/i);
 });
 
+test('contract validator ignores schema-like metadata inside legal extension subtrees', async () => {
+  const { copiedContractPath, temporaryDirectory } = await withMutatedContract((contract) => {
+    const availability = contract.paths['/api/v1/venues/{venue_id}/availability'].get;
+    availability.parameters.find(({ name }) => name === 'date')['x-schema-metadata'] = {
+      schema: { unknown_extension_keyword: true },
+    };
+  });
+  try {
+    await execFileAsync(process.execPath, ['scripts/validate-contract.mjs', copiedContractPath], {
+      cwd: repositoryDirectory,
+    });
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test('contract validator validates inline HealthOk against its response schema', async () => {
   await assertMutatedContractRejected((contract) => {
     contract.components.schemas.Health.properties.status.const = 'healthy';
@@ -479,6 +495,85 @@ test('fixture publication rolls back every file after a deterministic second-pub
       assert.deepEqual(await readFile(path.join(fixturesDirectory, filename)), before.get(filename));
     }
     assert.deepEqual((await readdir(fixturesDirectory)).sort(), fixtureNames.sort());
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('backup cleanup failure preserves the committed new fixture set and recovery backup', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const fixturesDirectory = path.join(temporaryDirectory, 'artifacts/ui/fixtures');
+  try {
+    const oldVenue = await readFile(path.join(fixturesDirectory, 'venue-ready.json'));
+    const venuePath = path.join(temporaryDirectory, 'contracts/examples/venue-primary.json');
+    const venue = JSON.parse(await readFile(venuePath, 'utf8'));
+    venue.description = 'committed transaction candidate';
+    await writeFile(venuePath, JSON.stringify(venue), 'utf8');
+    let cleanupCalls = 0;
+    await assert.rejects(
+      generateFixtures({
+        repositoryDirectory: temporaryDirectory,
+        removeBackupFile: async (filename) => {
+          cleanupCalls += 1;
+          if (cleanupCalls === 1) throw new Error('injected backup cleanup failure');
+          await unlink(filename);
+        },
+      }),
+      /committed.*backup cleanup.*injected backup cleanup failure/i,
+    );
+    assert.deepEqual(
+      await readFile(path.join(fixturesDirectory, 'venue-ready.json')),
+      Buffer.from(`${JSON.stringify(venue, null, 2)}\n`),
+    );
+    const backups = (await readdir(fixturesDirectory)).filter((entry) => entry.includes('.fixture-backup-'));
+    assert.equal(backups.length, 1);
+    assert.deepEqual(await readFile(path.join(fixturesDirectory, backups[0])), oldVenue);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('rollback failure preserves the unrestored original in a recovery backup', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const fixturesDirectory = path.join(temporaryDirectory, 'artifacts/ui/fixtures');
+  try {
+    const originalVenue = await readFile(path.join(fixturesDirectory, 'venue-ready.json'));
+    let publishCount = 0;
+    await assert.rejects(
+      generateFixtures({
+        repositoryDirectory: temporaryDirectory,
+        publishFile: async (source, destination) => {
+          publishCount += 1;
+          if (publishCount === 2) throw new Error('injected primary publish failure');
+          await rename(source, destination);
+        },
+        restoreBackupFile: async (source, destination) => {
+          if (destination.endsWith('venue-ready.json')) throw new Error('injected rollback restore failure');
+          await rename(source, destination);
+        },
+      }),
+      /injected primary publish failure.*rollback failed.*injected rollback restore failure/i,
+    );
+    const venueBackup = (await readdir(fixturesDirectory))
+      .find((entry) => entry.includes('.fixture-backup-') && entry.endsWith('venue-ready.json'));
+    assert.ok(venueBackup);
+    assert.deepEqual(await readFile(path.join(fixturesDirectory, venueBackup)), originalVenue);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('primary transaction errors retain cleanup diagnostics', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  try {
+    await assert.rejects(
+      generateFixtures({
+        repositoryDirectory: temporaryDirectory,
+        publishFile: async () => { throw new Error('injected primary failure'); },
+        removeTemporaryFile: async () => { throw new Error('injected cleanup failure'); },
+      }),
+      /injected primary failure.*cleanup failed.*injected cleanup failure/i,
+    );
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

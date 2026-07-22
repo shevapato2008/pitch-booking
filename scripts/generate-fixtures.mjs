@@ -44,6 +44,8 @@ async function inspect(filename, context) {
 }
 
 async function ensureSafeDirectoryTree(repositoryDirectory, relativeDirectory) {
+  // This local build tool blocks static symlink escapes. Concurrent hostile path mutation
+  // is outside its threat model; callers must not run it against an actively hostile tree.
   const repositoryStat = await inspect(repositoryDirectory, 'cannot inspect repository root');
   if (!repositoryStat?.isDirectory() || repositoryStat.isSymbolicLink()) {
     throw new Error(`repository root must be a real directory, not a symlink: ${repositoryDirectory}`);
@@ -99,6 +101,9 @@ export async function generateFixtures({
   repositoryDirectory = defaultRepositoryDirectory,
   argument,
   publishFile = rename,
+  removeBackupFile = unlink,
+  restoreBackupFile = rename,
+  removeTemporaryFile = unlink,
 } = {}) {
   repositoryDirectory = path.resolve(repositoryDirectory);
   const examplesDirectory = path.join(repositoryDirectory, 'contracts/examples');
@@ -119,7 +124,6 @@ export async function generateFixtures({
   const fixturesDirectory = await ensureSafeDirectoryTree(repositoryDirectory, 'artifacts/ui/fixtures');
   await verifyDestinations(fixturesDirectory);
   const stagedPaths = [];
-  let transactionError;
   try {
     for (const fixture of prepared) {
       const stagedPath = path.join(
@@ -139,34 +143,44 @@ export async function generateFixtures({
         published: false,
       });
     }
+  } catch (error) {
+    const cleanupErrors = [];
     for (const item of stagedPaths) {
-      const { destinationPath, backupPath } = item;
-      const destinationStat = await inspect(destinationPath, 'cannot inspect fixture destination before rename');
+      try {
+        await removeTemporaryFile(item.stagedPath);
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') cleanupErrors.push(`${item.stagedPath}: ${cleanupError.message}`);
+      }
+    }
+    const suffix = cleanupErrors.length > 0 ? `; cleanup failed: ${cleanupErrors.join('; ')}` : '';
+    throw new Error(`${error.message}${suffix}`);
+  }
+
+  let primaryError;
+  try {
+    for (const item of stagedPaths) {
+      const destinationStat = await inspect(item.destinationPath, 'cannot inspect fixture destination before rename');
       if (destinationStat && (!destinationStat.isFile() || destinationStat.isSymbolicLink())) {
-        throw new Error(`fixture destination must be a regular file, not a symlink: ${destinationPath}`);
+        throw new Error(`fixture destination must be a regular file, not a symlink: ${item.destinationPath}`);
       }
       if (destinationStat) {
-        await rename(destinationPath, backupPath);
+        await rename(item.destinationPath, item.backupPath);
         item.backedUp = true;
       }
     }
     for (const [index, item] of stagedPaths.entries()) {
-      const { stagedPath, destinationPath } = item;
       try {
-        await publishFile(stagedPath, destinationPath, index);
+        await publishFile(item.stagedPath, item.destinationPath, index);
         item.published = true;
       } catch (error) {
-        throw new Error(`cannot publish fixture ${stagedPath} -> ${destinationPath}: ${error.message}`);
-      }
-    }
-    for (const item of stagedPaths) {
-      if (item.backedUp) {
-        await unlink(item.backupPath);
-        item.backedUp = false;
+        throw new Error(`cannot publish fixture ${item.stagedPath} -> ${item.destinationPath}: ${error.message}`);
       }
     }
   } catch (error) {
-    transactionError = error;
+    primaryError = error;
+  }
+
+  if (primaryError) {
     const rollbackErrors = [];
     for (const item of [...stagedPaths].reverse()) {
       try {
@@ -175,32 +189,56 @@ export async function generateFixtures({
           item.published = false;
         }
         if (item.backedUp) {
-          await rename(item.backupPath, item.destinationPath);
+          await restoreBackupFile(item.backupPath, item.destinationPath);
           item.backedUp = false;
         }
       } catch (rollbackError) {
         rollbackErrors.push(`${item.destinationPath}: ${rollbackError.message}`);
       }
     }
-    if (rollbackErrors.length > 0) {
-      throw new Error(`${error.message}; rollback failed: ${rollbackErrors.join('; ')}`);
-    }
-    throw error;
-  } finally {
     const cleanupErrors = [];
     for (const item of stagedPaths) {
-      const cleanupPaths = item.backedUp ? [item.stagedPath] : [item.stagedPath, item.backupPath];
-      for (const temporaryPath of cleanupPaths) {
-        try {
-          await unlink(temporaryPath);
-        } catch (error) {
-          if (error.code !== 'ENOENT') cleanupErrors.push(`${temporaryPath}: ${error.message}`);
+      try {
+        await removeTemporaryFile(item.stagedPath);
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') cleanupErrors.push(`${item.stagedPath}: ${cleanupError.message}`);
+      }
+    }
+    const rollbackSuffix = rollbackErrors.length > 0 ? `; rollback failed: ${rollbackErrors.join('; ')}` : '';
+    const cleanupSuffix = cleanupErrors.length > 0 ? `; cleanup failed: ${cleanupErrors.join('; ')}` : '';
+    throw new Error(`${primaryError.message}${rollbackSuffix}${cleanupSuffix}`);
+  }
+
+  // Commit point: every destination now contains the new complete set. From here onward,
+  // failures are post-commit cleanup errors and must never roll destinations back.
+  const backupCleanupErrors = [];
+  for (const item of stagedPaths) {
+    if (item.backedUp) {
+      try {
+        await removeBackupFile(item.backupPath);
+        item.backedUp = false;
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') {
+          backupCleanupErrors.push(`${item.backupPath}: ${cleanupError.message}`);
         }
       }
     }
-    if (cleanupErrors.length > 0 && !transactionError) {
-      throw new Error(`fixture transaction cleanup failed: ${cleanupErrors.join('; ')}`);
+  }
+  const temporaryCleanupErrors = [];
+  for (const item of stagedPaths) {
+    try {
+      await removeTemporaryFile(item.stagedPath);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') {
+        temporaryCleanupErrors.push(`${item.stagedPath}: ${cleanupError.message}`);
+      }
     }
+  }
+  if (backupCleanupErrors.length > 0 || temporaryCleanupErrors.length > 0) {
+    const diagnostics = [];
+    if (backupCleanupErrors.length > 0) diagnostics.push(`backup cleanup failed: ${backupCleanupErrors.join('; ')}`);
+    if (temporaryCleanupErrors.length > 0) diagnostics.push(`temporary cleanup failed: ${temporaryCleanupErrors.join('; ')}`);
+    throw new Error(`fixture transaction committed; ${diagnostics.join('; ')}`);
   }
   return selected.length;
 }
