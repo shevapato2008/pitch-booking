@@ -97,7 +97,14 @@ test('success runs the full safe trace with one selected port and emits only saf
     [f.cli, ['open', '--project', f.root, '--port', PORT_SENTINEL]],
     [f.cli, ['auto', '--project', f.root, '--port', PORT_SENTINEL, '--trust-project']]
   ]);
-  assert.equal(trace.every((call) => call.options.cwd === f.root), true);
+  assert.deepEqual(trace.map(({ options }) => options), [
+    { cwd: f.root, timeoutMs: 30_000, maxBufferBytes: 1_048_576 },
+    { cwd: f.root, timeoutMs: 30_000, maxBufferBytes: 1_048_576 },
+    { cwd: f.root, timeoutMs: 120_000, maxBufferBytes: 1_048_576 },
+    { cwd: f.root, timeoutMs: 30_000, maxBufferBytes: 1_048_576 },
+    { cwd: f.root, timeoutMs: 30_000, maxBufferBytes: 1_048_576 },
+    { cwd: f.root, timeoutMs: 30_000, maxBufferBytes: 1_048_576 }
+  ]);
   assert.deepEqual(events.map(({ step, status }) => [step, status]), [['appid', 'passed'], ['version', 'passed'], ['validate', 'passed'], ['build', 'passed'], ['login', 'passed'], ['open', 'passed'], ['automation', 'passed']]);
   const rendered = JSON.stringify({ report, events });
   for (const secret of [APPID, REPO, CLI, PORT_SENTINEL, SESSION]) assert.doesNotMatch(rendered, new RegExp(secret));
@@ -144,10 +151,11 @@ test('mismatch parser rejects wrong requested/current ports and arbitrary prose'
   }
 });
 
-test('maps generic runner throws, malformed results, timeout, signal, overflow and nonzero to each active CLI phase', async (t) => {
+test('maps generic runner throws, malformed results, timeout, signal, oversized output and nonzero to each active CLI phase', async (t) => {
   const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
   const expectations = { build: 'WECHAT_BUILD_FAILED', login: 'WECHAT_LOGIN_REQUIRED', open: 'WECHAT_OPEN_FAILED', automation: 'WECHAT_AUTOMATION_FAILED' };
-  for (const [phase, code] of Object.entries(expectations)) for (const outcome of [undefined, null, {}, result({ timedOut: true }), result({ signal: 'SIGTERM' }), result({ exitCode: 1, stderr: SESSION })]) {
+  const oversizedOutput = result({ stdout: 'x'.repeat(1_048_577) });
+  for (const [phase, code] of Object.entries(expectations)) for (const outcome of [undefined, null, {}, result({ timedOut: true }), result({ signal: 'SIGTERM' }), oversizedOutput, result({ exitCode: 1, stderr: SESSION })]) {
     const trace = [];
     const options = outcome === undefined ? { throwPhase: phase } : { byPhase: { [phase]: outcome } };
     await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, ...options }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), code);

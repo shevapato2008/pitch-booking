@@ -40,8 +40,13 @@ function isRunnerResult(value) {
     && (value.signal === null || typeof value.signal === 'string');
 }
 
-function commandFailed(result) {
-  return !isRunnerResult(result) || result.exitCode !== 0 || result.timedOut || result.signal !== null;
+function commandFailed(result, maxBufferBytes) {
+  return !isRunnerResult(result)
+    || result.exitCode !== 0
+    || result.timedOut
+    || result.signal !== null
+    || Buffer.byteLength(result.stdout) > maxBufferBytes
+    || Buffer.byteLength(result.stderr) > maxBufferBytes;
 }
 
 function appBundleFor(cliPath) {
@@ -93,7 +98,7 @@ async function invoke(runner, command, args, options, code, output, step, port) 
     emit(output, { step, status: 'failed', code: 'WECHAT_PORT_MISMATCH' }, 'WECHAT_PORT_MISMATCH');
     fail('WECHAT_PORT_MISMATCH');
   }
-  if (commandFailed(value)) {
+  if (commandFailed(value, options.maxBufferBytes)) {
     emit(output, { step, status: 'failed', code }, code);
     fail(code);
   }
