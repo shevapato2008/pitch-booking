@@ -1,5 +1,6 @@
 import {
-  existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
@@ -19,10 +20,38 @@ const screenKeys = [
 ];
 const approvedAcceptanceIds = ["SLOT-01", "VENUE-01", "VENUE-02", "VENUE-03"];
 const approvedSelectedSlotId = "00000000-0000-4000-8000-000000000201";
+const repositoryRoot = resolve(".");
 
-const assertSafeArtifactPath = (root, id, extension) => {
+const assertSafeArtifactPath = (root, id, extension, { trustedRoot, expectedRelativeRoot }) => {
   assert.match(id, safeIdPattern, `unsafe artifact id: ${id}`);
-  const absoluteRoot = resolve(root);
+  const absoluteTrustedRoot = resolve(trustedRoot);
+  const trustedRootStat = lstatSync(absoluteTrustedRoot);
+  assert.equal(
+    trustedRootStat.isDirectory() && !trustedRootStat.isSymbolicLink(),
+    true,
+    `trusted artifact repository must be a real directory, not a symlink: ${absoluteTrustedRoot}`,
+  );
+  const absoluteRoot = resolve(absoluteTrustedRoot, root);
+  const expectedRoot = resolve(absoluteTrustedRoot, expectedRelativeRoot);
+  assert.equal(absoluteRoot, expectedRoot, `artifact root differs from expected lexical root: ${root}`);
+  const rootFromTrusted = relative(absoluteTrustedRoot, expectedRoot);
+  assert.equal(
+    rootFromTrusted !== ".." && !rootFromTrusted.startsWith(`..${sep}`),
+    true,
+    `artifact root escapes trusted repository: ${root}`,
+  );
+
+  let currentDirectory = absoluteTrustedRoot;
+  for (const segment of rootFromTrusted.split(sep).filter(Boolean)) {
+    currentDirectory = join(currentDirectory, segment);
+    const directoryStat = lstatSync(currentDirectory);
+    assert.equal(
+      directoryStat.isDirectory() && !directoryStat.isSymbolicLink(),
+      true,
+      `artifact root must be a real directory, not a symlink: ${currentDirectory}`,
+    );
+  }
+
   const candidate = resolve(absoluteRoot, `${id}${extension}`);
   const pathFromRoot = relative(absoluteRoot, candidate);
   assert.equal(
@@ -44,6 +73,15 @@ const assertSafeArtifactPath = (root, id, extension) => {
   }
   return candidate;
 };
+
+const assertFixturePath = (id) => assertSafeArtifactPath(fixtureRoot, id, ".json", {
+  trustedRoot: repositoryRoot,
+  expectedRelativeRoot: "artifacts/ui/fixtures",
+});
+const assertScenarioPath = (id) => assertSafeArtifactPath(scenarioRoot, id, ".yaml", {
+  trustedRoot: repositoryRoot,
+  expectedRelativeRoot: "artifacts/ui/scenarios",
+});
 
 const parseManifest = (source) => {
   const document = parseDocument(source, { uniqueKeys: true });
@@ -84,11 +122,11 @@ const validateManifest = (source) => {
       assert.match(id, safeIdPattern);
     }
     for (const id of screen.fixtures) {
-      const path = assertSafeArtifactPath(fixtureRoot, id, ".json");
+      const path = assertFixturePath(id);
       assertFile(path);
     }
     for (const id of screen.scenarios) {
-      const path = assertSafeArtifactPath(scenarioRoot, id, ".yaml");
+      const path = assertScenarioPath(id);
       assertFile(path);
     }
     for (const id of screen.acceptance) {
@@ -192,7 +230,57 @@ test("artifact path validation rejects symlinked files", (t) => {
   writeFileSync(externalFile, "{}\n");
   t.after(() => rmSync(externalFile, { force: true }));
   symlinkSync(externalFile, join(temporaryRoot, "linked.json"));
-  assert.throws(() => assertSafeArtifactPath(temporaryRoot, "linked", ".json"), /regular file/);
+  assert.throws(
+    () => assertSafeArtifactPath(temporaryRoot, "linked", ".json", {
+      trustedRoot: temporaryRoot,
+      expectedRelativeRoot: ".",
+    }),
+    /regular file/,
+  );
+});
+
+test("artifact path validation rejects symlinked fixture and scenario roots before child resolution", (t) => {
+  const temporaryRepository = mkdtempSync(join(tmpdir(), "pitch-booking-artifact-roots-"));
+  const externalRoot = mkdtempSync(join(tmpdir(), "pitch-booking-artifact-external-"));
+  t.after(() => rmSync(temporaryRepository, { recursive: true, force: true }));
+  t.after(() => rmSync(externalRoot, { recursive: true, force: true }));
+
+  for (const [rootName, extension] of [["fixtures", ".json"], ["scenarios", ".yaml"]]) {
+    const externalDirectory = join(externalRoot, rootName);
+    mkdirSync(externalDirectory);
+    writeFileSync(join(externalDirectory, `sentinel${extension}`), "must not be read\n");
+    const lexicalRoot = join(temporaryRepository, rootName);
+    symlinkSync(externalDirectory, lexicalRoot);
+    assert.throws(
+      () => assertSafeArtifactPath(lexicalRoot, "sentinel", extension, {
+        trustedRoot: temporaryRepository,
+        expectedRelativeRoot: rootName,
+      }),
+      /artifact root must be a real directory, not a symlink/,
+    );
+  }
+});
+
+test("artifact path validation rejects symlinked in-repository root ancestors", (t) => {
+  const temporaryRepository = mkdtempSync(join(tmpdir(), "pitch-booking-artifact-ancestor-"));
+  const externalRoot = mkdtempSync(join(tmpdir(), "pitch-booking-artifact-ancestor-external-"));
+  t.after(() => rmSync(temporaryRepository, { recursive: true, force: true }));
+  t.after(() => rmSync(externalRoot, { recursive: true, force: true }));
+  mkdirSync(join(temporaryRepository, "artifacts"));
+  mkdirSync(join(externalRoot, "ui"));
+  mkdirSync(join(externalRoot, "ui", "fixtures"));
+  writeFileSync(join(externalRoot, "ui", "fixtures", "sentinel.json"), "must not be read\n");
+  symlinkSync(join(externalRoot, "ui"), join(temporaryRepository, "artifacts", "ui"));
+
+  assert.throws(
+    () => assertSafeArtifactPath(
+      join(temporaryRepository, "artifacts", "ui", "fixtures"),
+      "sentinel",
+      ".json",
+      { trustedRoot: temporaryRepository, expectedRelativeRoot: "artifacts/ui/fixtures" },
+    ),
+    /artifact root must be a real directory, not a symlink/,
+  );
 });
 
 test("the approved fixture and scenario inventories are closed and internally resolvable", () => {
@@ -220,8 +308,8 @@ test("the approved fixture and scenario inventories are closed and internally re
     "venue-ready"
   ]);
 
-  for (const id of fixtureIds) assertFile(assertSafeArtifactPath(fixtureRoot, id, ".json"));
-  for (const id of scenarioIds) assertFile(assertSafeArtifactPath(scenarioRoot, id, ".yaml"));
+  for (const id of fixtureIds) assertFile(assertFixturePath(id));
+  for (const id of scenarioIds) assertFile(assertScenarioPath(id));
 
   const fixtureReferences = new Set();
   for (const id of scenarioIds) {
@@ -242,7 +330,7 @@ test("every slot tap resolves to an AVAILABLE slot in its scenario fixture", () 
     const fixtureIds = [...collectFixtureReferences(scenario)];
     assert.ok(fixtureIds.length > 0, `${scenario.id} slot tap needs a fixture`);
     const slots = fixtureIds.flatMap((id) => {
-      const fixture = JSON.parse(readFileSync(assertSafeArtifactPath(fixtureRoot, id, ".json"), "utf8"));
+      const fixture = JSON.parse(readFileSync(assertFixturePath(id), "utf8"));
       return (fixture.pitches ?? []).flatMap((pitch) => pitch.slots ?? []);
     });
     for (const action of slotTaps) {
@@ -365,8 +453,17 @@ test("golden capture matrix covers every unique screen-qualified identity", () =
 
   const protocol = readFileSync("artifacts/ui/golden/README.md", "utf8");
   assert.match(protocol, /canonical identity is `<screen-id>\/<golden-id>`/);
-  assert.match(protocol, /artifacts\/ui\/golden\/<screen-id>\/<golden-id>\.png/);
-  assert.match(protocol, /artifacts\/ui\/golden\/<screen-id>\/<golden-id>\.metadata\.json/);
+  assert.match(protocol, /artifacts\/ui\/golden\/candidates\/<commit>\/<screen-id>\/<golden-id>\.png/);
+  assert.match(protocol, /artifacts\/ui\/golden\/candidates\/<commit>\/<screen-id>\/<golden-id>\.metadata\.json/);
+  assert.match(protocol, /artifacts\/ui\/golden\/canonical\/<screen-id>\/<golden-id>\.png/);
+  assert.match(protocol, /artifacts\/ui\/golden\/canonical\/<screen-id>\/<golden-id>\.metadata\.json/);
+  assert.match(protocol, /capture writes only to the candidate namespace/i);
+  assert.match(protocol, /capture never writes to or overwrites the canonical namespace/i);
+  assert.match(protocol, /explicit acceptance/i);
+  assert.match(protocol, /metadata\.schema\.json/i);
+  assert.match(protocol, /PNG SHA-256.*metadata `sha256`/i);
+  assert.match(protocol, /clean and reviewed generating commit and visual diff/i);
+  assert.match(protocol, /same-filesystem temporary sibling.*atomic rename/i);
 
   const matrixSection = protocol.split("## Closed capture matrix\n")[1].split("\n## Capture")[0];
   const tableLines = matrixSection.split("\n").filter((line) => line.startsWith("|"));
