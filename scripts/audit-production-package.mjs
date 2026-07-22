@@ -23,6 +23,7 @@ const forbiddenContentPatterns = [
   /["']dev\//,
   /\bjest\s*\./,
   /\bexpect\s*\(/,
+  /contracts[/\\]examples[/\\]/,
 ];
 const forbidden = [];
 

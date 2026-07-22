@@ -92,6 +92,17 @@ for (const [source, diagnostic] of [
   });
 }
 
+test("production audit rejects contract-example references", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    'const example = require("../../contracts/examples/venue-primary.json");\n',
+  );
+
+  await assertAuditRejects(packageRoot, "contracts/examples/");
+});
+
 test("production audit requires compiled artifacts to be regular files", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
