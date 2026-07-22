@@ -100,6 +100,8 @@ test.each([
   ["missing nested field", withSlot(withoutKey(firstSlot, "id"))],
   ["bad pitch type", { ...ready, pitch_type: "ELEVEN_A_SIDE" }],
   ["bad date", { ...ready, date: "2026-7-22" }],
+  ["timestamp without zone", { ...ready, generated_at: "2026-07-22T09:30:00" }],
+  ["timestamp with invalid offset", { ...ready, generated_at: "2026-07-22T09:30:00+24:00" }],
 ])("rejects corrupt availability: %s", (_name, value) => {
   expect(() => decodeAvailability(value)).toThrow("INVALID_API_RESPONSE");
 });
@@ -109,6 +111,10 @@ test.each([
   ["missing cover", { ...venue, images: venue.images.filter((image) => image.role !== "COVER") }],
   ["duplicate cover", { ...venue, images: [...venue.images, venue.images[0]] }],
   ["non-HTTPS image", { ...venue, images: [{ ...venue.images[0], url: "http://unsafe.test/a.jpg" }] }],
+  ["relative image", { ...venue, images: [{ ...venue.images[0], url: "/cover.jpg" }] }],
+  ["image credentials", { ...venue, images: [{ ...venue.images[0], url: "https://user:pass@example.test/a.jpg" }] }],
+  ["malformed image host", { ...venue, images: [{ ...venue.images[0], url: "https://[bad]/a.jpg" }] }],
+  ["whitespace in image URL", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/a b.jpg" }] }],
   ["bad image role", { ...venue, images: [{ ...venue.images[0], role: "THUMBNAIL" }] }],
   ["fractional sort order", { ...venue, facilities: [{ ...venue.facilities[0], sort_order: 0.5 }] }],
   ["empty required text", { ...venue, name: "" }],
@@ -144,4 +150,13 @@ test("reports the precise corrupt response path and stable code", () => {
       path: "$.pitches[0].slots[0].price_cents",
     });
   }
+});
+
+test("accepts RFC3339's case-insensitive t and z grammar", () => {
+  const decoded = decodeAvailability({
+    ...ready,
+    generated_at: "2026-07-22t01:30:00z",
+  });
+
+  expect(decoded.generatedAt).toBe("2026-07-22t01:30:00z");
 });

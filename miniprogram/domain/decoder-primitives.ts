@@ -4,9 +4,8 @@ export type ApiObject = Record<string, unknown>;
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const RFC3339_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})$/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const HTTPS_URL_PATTERN = /^https:\/\/[^/?#\s@]+(?:[/?#][^\s]*)?$/;
 
 export function invalid(path: string): never {
   throw new ApiResponseError(path);
@@ -76,8 +75,9 @@ export function uuidAt(value: unknown, path: string): string {
 export function httpsUrlAt(value: unknown, path: string): string {
   const decoded = stringAt(value, path);
   try {
-    if (!HTTPS_URL_PATTERN.test(decoded)) invalid(path);
-    decodeURI(decoded);
+    if (/\s/.test(decoded)) invalid(path);
+    const url = new URL(decoded);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password) invalid(path);
   } catch {
     invalid(path);
   }
