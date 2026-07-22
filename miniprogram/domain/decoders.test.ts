@@ -111,6 +111,7 @@ test.each([
   ["missing cover", { ...venue, images: venue.images.filter((image) => image.role !== "COVER") }],
   ["duplicate cover", { ...venue, images: [...venue.images, venue.images[0]] }],
   ["non-HTTPS image", { ...venue, images: [{ ...venue.images[0], url: "http://unsafe.test/a.jpg" }] }],
+  ["uppercase HTTPS scheme", { ...venue, images: [{ ...venue.images[0], url: "HTTPS://example.test/a.jpg" }] }],
   ["relative image", { ...venue, images: [{ ...venue.images[0], url: "/cover.jpg" }] }],
   ["image credentials", { ...venue, images: [{ ...venue.images[0], url: "https://user:pass@example.test/a.jpg" }] }],
   ["malformed image host", { ...venue, images: [{ ...venue.images[0], url: "https://[bad]/a.jpg" }] }],
@@ -159,4 +160,14 @@ test("accepts RFC3339's case-insensitive t and z grammar", () => {
   });
 
   expect(decoded.generatedAt).toBe("2026-07-22t01:30:00z");
+});
+
+test("rejects a raw image URL containing backslashes", () => {
+  const backslashUrl = String.raw`https:\\example.com\a.jpg`;
+  expect(backslashUrl).toContain("\\");
+
+  expect(() => decodeVenue({
+    ...venue,
+    images: [{ ...venue.images[0], url: backslashUrl }],
+  })).toThrow("INVALID_API_RESPONSE");
 });

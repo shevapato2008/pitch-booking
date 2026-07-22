@@ -75,7 +75,7 @@ export function uuidAt(value: unknown, path: string): string {
 export function httpsUrlAt(value: unknown, path: string): string {
   const decoded = stringAt(value, path);
   try {
-    if (/\s/.test(decoded)) invalid(path);
+    if (!decoded.startsWith("https://") || decoded.includes("\\") || /\s/.test(decoded)) invalid(path);
     const url = new URL(decoded);
     if (url.protocol !== "https:" || !url.hostname || url.username || url.password) invalid(path);
   } catch {
