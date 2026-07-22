@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { expect, jest, test } from "@jest/globals";
+import { afterEach, expect, jest, test } from "@jest/globals";
 import { parse as parseYaml } from "yaml";
 import type { FixtureLoader, FixtureName } from "../dev/fixture-transport";
 import {
@@ -15,6 +15,10 @@ const fixtureLoader: FixtureLoader = {
   },
 };
 const scenarioRuntime = (input: unknown) => createScenarioRuntime(input, fixtureLoader);
+
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 function loadScenarioForTest(path: string): ScenarioDefinition {
   return parseScenario(parseYaml(readFileSync(path, "utf8")));
@@ -40,6 +44,25 @@ const venuePhoneError = { ...base, http: [{ match: {}, ...fixture("venue-ready")
 test("uses the fixed Asia/Shanghai instant", () => {
   const runtime = scenarioRuntime(slotsReady);
   expect(runtime.clock.now().toISOString()).toBe("2026-07-22T02:30:00.000Z");
+});
+
+test.each([
+  ["rollover date", "2026-02-30T10:30:00+08:00"],
+  ["timezone-less", "2026-07-22T10:30:00"],
+  ["date-only", "2026-07-22"],
+  ["numeric-ish", "123456"],
+  ["numeric", 123456],
+  ["missing", undefined],
+])("rejects non-canonical Scenario clock: %s", (_label, clock) => {
+  expect(() => parseScenario({ id: "bad-clock", clock })).toThrow("INVALID_CLOCK");
+});
+
+test.each([
+  ["2026-07-22T02:30:00Z", "2026-07-22T02:30:00.000Z"],
+  ["2026-07-22t02:30:00z", "2026-07-22T02:30:00.000Z"],
+  ["2026-07-22T10:30:00+08:00", "2026-07-22T02:30:00.000Z"],
+])("accepts explicit RFC3339 Scenario clock %s", (clock, expected) => {
+  expect(scenarioRuntime({ id: "clock", clock }).clock.now().toISOString()).toBe(expected);
 });
 
 test("late responses preserve configured completion order", async () => {
@@ -129,6 +152,13 @@ test("requires exactly one HTTP outcome and a non-empty sequence", () => {
     .toThrow("SEQUENCE_MUST_NOT_BE_EMPTY");
 });
 
+test("rejects unknown and empty HTTP match fields", () => {
+  expect(() => parseScenario({ ...base, http: [{ match: { dtae: "2026-07-22" }, fixture: "slots-ready" }] }))
+    .toThrow("UNKNOWN_SCENARIO_KEY");
+  expect(() => parseScenario({ ...base, http: [{ match: { date: "" }, fixture: "slots-ready" }] }))
+    .toThrow("INVALID_MATCH_VALUE");
+});
+
 test("consumes each sequence outcome once for matching requests", async () => {
   const runtime = scenarioRuntime({
     ...base,
@@ -149,6 +179,35 @@ test("rewrites only configured image roles", () => {
   const media = scenarioRuntime(venueImageFailure).media;
   expect(media.resolve("GALLERY", "https://example.test/gallery.jpg"))
     .toBe("https://example.test/gallery.jpg");
+});
+
+test("behavior signatures expose effective delays inside sequences", () => {
+  const parsed = parseScenario({
+    ...base,
+    http: [{
+      match: {},
+      delay_ms: 20,
+      sequence: [
+        { fixture: "slots-ready", delay_ms: 5 },
+        { error: "SERVICE_UNAVAILABLE" },
+      ],
+    }],
+  });
+  expect(scenarioBehaviorSignature(parsed)).toEqual([
+    "sequence:fixture:slots-ready:delay:5>error:SERVICE_UNAVAILABLE:delay:20",
+  ]);
+});
+
+test("rejects when a delayed Fixture loader throws", async () => {
+  jest.useFakeTimers();
+  const runtime = createScenarioRuntime(
+    { ...base, http: [{ match: {}, fixture: "slots-ready", delay_ms: 10 }] },
+    { load: () => { throw new Error("FIXTURE_LOAD_FAILED"); } },
+  );
+  const request = runtime.transport.get("/availability");
+  const rejection = expect(request).rejects.toThrow("FIXTURE_LOAD_FAILED");
+  await jest.advanceTimersByTimeAsync(10);
+  await rejection;
 });
 
 test("every checked-in Scenario parses and references allow-listed Fixtures", () => {

@@ -18,6 +18,9 @@ const OUTCOME_KEYS = new Set(["fixture", "error", "timeout_ms", "delay_ms"]);
 const NATIVE_KEYS = new Set(["open_location", "make_phone_call"]);
 const MEDIA_KEYS = new Set(["fail_image_roles"]);
 const ACTION_KEYS = new Set(["type", "target", "id"]);
+const MATCH_KEYS = new Set(["path", "date", "case"]);
+const RFC3339_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(z|([+-])(\d{2}):(\d{2}))$/i;
 
 type NativeResult = "success" | "failure";
 type MediaRole = "COVER" | "GALLERY";
@@ -56,10 +59,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
   const httpInput = root.http === undefined ? [] : asArray(root.http, "HTTP_MUST_BE_ARRAY");
   const http = httpInput.map(parseRule);
 
-  const clock = root.clock === undefined
-    ? "1970-01-01T00:00:00.000Z"
-    : requiredString(root.clock, "CLOCK_REQUIRED");
-  if (Number.isNaN(new Date(clock).getTime())) throw new Error("INVALID_CLOCK");
+  const clock = parseClock(root.clock);
 
   const nativeInput = root.native === undefined ? {} : asRecord(root.native, "NATIVE_MUST_BE_OBJECT");
   assertKnownKeys(nativeInput, NATIVE_KEYS);
@@ -86,10 +86,10 @@ export function parseScenario(input: unknown): ScenarioDefinition {
 
 export function scenarioRuntime(input: unknown, fixtureLoader: FixtureLoader = packagedFixtureLoader) {
   const scenario = parseScenario(input);
-  const instant = new Date(scenario.clock);
+  const instantMilliseconds = clockMilliseconds(scenario.clock);
   const sequenceIndexes = new Map<HttpRule, number>();
 
-  const clock: Clock = { now: () => new Date(instant.getTime()) };
+  const clock: Clock = { now: () => new Date(instantMilliseconds) };
   const transport: Transport = {
     get<T>(path: string): Promise<T> {
       const rule = scenario.http.find((candidate) => matches(candidate.match, path));
@@ -129,10 +129,11 @@ export function scenarioRuntime(input: unknown, fixtureLoader: FixtureLoader = p
 export function scenarioBehaviorSignature(scenario: ScenarioDefinition): string[] {
   const signature = scenario.http.map((rule) => {
     if ("sequence" in rule.outcome) {
-      return `sequence:${rule.outcome.sequence.map(outcomeSignature).join(">")}`;
+      const outcomes = rule.outcome.sequence.map((outcome) =>
+        outcomeSignature(outcome, outcome.delay_ms ?? rule.delay_ms));
+      return `sequence:${outcomes.join(">")}`;
     }
-    const base = outcomeSignature(rule.outcome);
-    return rule.delay_ms === undefined ? base : `${base}:delay:${rule.delay_ms}`;
+    return outcomeSignature(rule.outcome, rule.outcome.delay_ms ?? rule.delay_ms);
   });
   for (const role of scenario.media.fail_image_roles) signature.push(`media-failure:${role}`);
   if (scenario.native.open_location === "failure") signature.push("native-failure:open_location");
@@ -145,6 +146,7 @@ function parseRule(value: unknown): HttpRule {
   const rule = asRecord(value, "HTTP_RULE_MUST_BE_OBJECT");
   assertKnownKeys(rule, RULE_KEYS);
   const matchInput = rule.match === undefined ? {} : asRecord(rule.match, "MATCH_MUST_BE_OBJECT");
+  assertKnownKeys(matchInput, MATCH_KEYS);
   const match: Record<string, string> = {};
   for (const [key, item] of Object.entries(matchInput)) match[key] = requiredString(item, "INVALID_MATCH_VALUE");
 
@@ -237,16 +239,22 @@ function settleOutcome<T>(outcome: HttpOutcome, inheritedDelay: number, fixtureL
   }
   return new Promise((resolve, reject) => {
     setTimeout(() => {
-      if ("error" in outcome) reject(runtimeError(outcome.error));
-      else resolve(fixtureLoader.load(outcome.fixture) as T);
+      try {
+        if ("error" in outcome) reject(runtimeError(outcome.error));
+        else resolve(fixtureLoader.load(outcome.fixture) as T);
+      } catch (error) {
+        reject(error);
+      }
     }, delay);
   });
 }
 
-function outcomeSignature(outcome: HttpOutcome): string {
-  if ("fixture" in outcome) return `fixture:${outcome.fixture}`;
-  if ("error" in outcome) return `error:${outcome.error}`;
-  return `timeout:${outcome.timeout_ms}`;
+function outcomeSignature(outcome: HttpOutcome, effectiveDelay?: number): string {
+  let signature: string;
+  if ("fixture" in outcome) signature = `fixture:${outcome.fixture}`;
+  else if ("error" in outcome) signature = `error:${outcome.error}`;
+  else signature = `timeout:${outcome.timeout_ms}`;
+  return effectiveDelay === undefined ? signature : `${signature}:delay:${effectiveDelay}`;
 }
 
 function runtimeError(code: string): { code: string } {
@@ -266,6 +274,49 @@ function asArray(value: unknown, error: string): unknown[] {
 function requiredString(value: unknown, error: string): string {
   if (typeof value !== "string" || value.length === 0) throw new Error(error);
   return value;
+}
+
+function parseClock(value: unknown): string {
+  if (typeof value !== "string") throw new Error("INVALID_CLOCK");
+  clockMilliseconds(value);
+  return value;
+}
+
+function clockMilliseconds(value: string): number {
+  const match = RFC3339_PATTERN.exec(value);
+  if (!match) throw new Error("INVALID_CLOCK");
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const offsetHour = match[10] === undefined ? 0 : Number(match[10]);
+  const offsetMinute = match[11] === undefined ? 0 : Number(match[11]);
+  if (!isCalendarDate(year, month, day)
+    || hour > 23 || minute > 59 || second > 59
+    || offsetHour > 23 || offsetMinute > 59) {
+    throw new Error("INVALID_CLOCK");
+  }
+  const offsetDirection = match[9] === "-" ? -1 : 1;
+  const offsetMilliseconds = offsetDirection * (offsetHour * 60 + offsetMinute) * 60_000;
+  const fractionMilliseconds = Number((match[7] ?? "").padEnd(3, "0").slice(0, 3));
+  const daysSinceEpoch = daysFromCivil(year, month, day) - 719_468;
+  return daysSinceEpoch * 86_400_000
+    + hour * 3_600_000 + minute * 60_000 + second * 1_000
+    + fractionMilliseconds - offsetMilliseconds;
+}
+
+function isCalendarDate(year: number, month: number, day: number): boolean {
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthLengths = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= monthLengths[month - 1];
+}
+
+function daysFromCivil(year: number, month: number, day: number): number {
+  const adjustedYear = year - (month <= 2 ? 1 : 0);
+  const era = Math.floor(adjustedYear / 400);
+  const yearOfEra = adjustedYear - era * 400;
+  const adjustedMonth = month + (month > 2 ? -3 : 9);
+  const dayOfYear = Math.floor((153 * adjustedMonth + 2) / 5) + day - 1;
+  const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4)
+    - Math.floor(yearOfEra / 100) + dayOfYear;
+  return era * 146_097 + dayOfEra;
 }
 
 function nonNegativeInteger(value: unknown, error: string): number {

@@ -1,8 +1,11 @@
 import { cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+
+import { validateContract } from "./validate-contract.mjs";
 
 const OUTPUT_NAMES = Object.freeze({
   production: "miniprogram-production",
@@ -27,12 +30,15 @@ async function build(selectedMode) {
   const outputRoot = resolveOutputRoot(selectedMode, projectRoot);
 
   await ensureSafeOutputBoundary(projectRoot, outputRoot);
+  const developmentFixtureData = selectedMode === "development"
+    ? await prepareDevelopmentFixtureData(projectRoot)
+    : undefined;
   await validateTypeScript(sourceRoot, selectedMode === "development");
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
-  if (selectedMode === "development") {
-    await writeDevelopmentFixtureData(projectRoot, outputRoot);
+  if (developmentFixtureData) {
+    await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
   }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
@@ -155,8 +161,12 @@ function shouldInclude(name, directory, sourceRoot, includeDevelopment) {
   return !(path.relative(sourceRoot, directory) === "runtime" && name === "scenario.ts");
 }
 
-async function writeDevelopmentFixtureData(projectRoot, outputRoot) {
+async function prepareDevelopmentFixtureData(projectRoot) {
+  const contractsDirectory = path.join(projectRoot, "contracts");
   const fixtureDirectory = path.join(projectRoot, "artifacts/ui/fixtures");
+  await verifyInputTree(projectRoot, contractsDirectory);
+  await verifyInputTree(projectRoot, fixtureDirectory);
+
   const expectedNames = ["slots-empty", "slots-ready", "venue-ready"];
   const expectedFiles = expectedNames.map((name) => `${name}.json`);
   const actualFiles = (await readdir(fixtureDirectory)).sort();
@@ -164,23 +174,82 @@ async function writeDevelopmentFixtureData(projectRoot, outputRoot) {
     throw new Error(`Development Fixture inventory mismatch: ${JSON.stringify(actualFiles)}`);
   }
 
+  await validateContract(path.join(contractsDirectory, "openapi.yaml"));
+
+  const canonicalNames = {
+    "slots-empty": "availability-empty.json",
+    "slots-ready": "availability-ready.json",
+    "venue-ready": "venue-primary.json",
+  };
   const data = {};
   for (const name of expectedNames) {
     const fixturePath = path.join(fixtureDirectory, `${name}.json`);
-    const fixtureStat = await lstat(fixturePath);
-    if (!fixtureStat.isFile() || fixtureStat.isSymbolicLink()) {
-      throw new Error(`Development Fixture must be a regular file: ${fixturePath}`);
+    const canonicalPath = path.join(contractsDirectory, "examples", canonicalNames[name]);
+    const canonicalValue = JSON.parse(await readFile(canonicalPath, "utf8"));
+    const fixtureText = await readFile(fixturePath, "utf8");
+    let fixtureValue;
+    try {
+      fixtureValue = JSON.parse(fixtureText);
+    } catch (error) {
+      throw new Error(`Development Fixture ${fixturePath}: ${error.message}`);
     }
-    data[name] = JSON.parse(await readFile(fixturePath, "utf8"));
+    if (!isDeepStrictEqual(fixtureValue, canonicalValue)) {
+      throw new Error(`Fixture differs from canonical example: ${name}`);
+    }
+    const normalized = `${JSON.stringify(canonicalValue, null, 2)}\n`;
+    if (fixtureText !== normalized) throw new Error(`Fixture is not normalized: ${name}`);
+    data[name] = fixtureValue;
   }
+  return data;
+}
 
+async function writeDevelopmentFixtureData(data, outputRoot) {
   const output = [
     '"use strict";',
     'Object.defineProperty(exports, "__esModule", { value: true });',
-    `exports.FIXTURE_DATA = Object.freeze(${JSON.stringify(data, null, 2)});`,
+    "function deepFreeze(value) {",
+    "  if (value !== null && typeof value === \"object\" && !Object.isFrozen(value)) {",
+    "    for (const child of Object.values(value)) deepFreeze(child);",
+    "    Object.freeze(value);",
+    "  }",
+    "  return value;",
+    "}",
+    `exports.FIXTURE_DATA = deepFreeze(${JSON.stringify(data, null, 2)});`,
     "",
   ].join("\n");
   await writeFile(path.join(outputRoot, "dev/fixture-data.js"), output);
+}
+
+async function verifyInputTree(projectRoot, inputRoot) {
+  const relative = path.relative(projectRoot, inputRoot);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Development input escapes project root: ${inputRoot}`);
+  }
+  let current = projectRoot;
+  for (const segment of relative.split(path.sep)) {
+    current = path.join(current, segment);
+    const stat = await lstat(current);
+    if (stat.isSymbolicLink()) throw new Error(`Development input component must not be a symlink: ${current}`);
+    if (!stat.isDirectory()) throw new Error(`Development input component must be a directory: ${current}`);
+    if (!(await realpath(current)).startsWith(`${projectRoot}${path.sep}`)) {
+      throw new Error(`Development input escapes project root: ${current}`);
+    }
+  }
+  await visit(inputRoot);
+
+  async function visit(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      const stat = await lstat(entryPath);
+      if (stat.isSymbolicLink()) throw new Error(`Development input must not be a symlink: ${entryPath}`);
+      const canonical = await realpath(entryPath);
+      if (!canonical.startsWith(`${projectRoot}${path.sep}`)) {
+        throw new Error(`Development input escapes project root: ${entryPath}`);
+      }
+      if (entry.isDirectory()) await visit(entryPath);
+      else if (!entry.isFile()) throw new Error(`Development input must be a regular file: ${entryPath}`);
+    }
+  }
 }
 
 function isTestArtifact(filename) {

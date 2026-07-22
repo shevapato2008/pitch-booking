@@ -132,10 +132,6 @@ test("built development Scenario runtime is self-contained without URL", async (
   if (existsSync("miniprogram/dev/fixture-data.ts")) {
     await cp("miniprogram/dev/fixture-data.ts", path.join(projectRoot, "miniprogram/dev/fixture-data.ts"));
   }
-  await mkdir(path.join(projectRoot, "artifacts/ui"), { recursive: true });
-  await cp("artifacts/ui/fixtures", path.join(projectRoot, "artifacts/ui/fixtures"), { recursive: true });
-  await symlink(path.resolve("node_modules"), path.join(projectRoot, "node_modules"));
-
   await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
   const outputRoot = path.join(projectRoot, "dist/miniprogram-development");
   for (const file of await collectFiles(outputRoot)) {
@@ -152,6 +148,12 @@ test("built development Scenario runtime is self-contained without URL", async (
       const names = ["venue-ready", "slots-ready", "slots-empty"];
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"]), true);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].images), true);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].images[0]), true);
+      const originalCover = FIXTURE_DATA["venue-ready"].images[0].url;
+      FIXTURE_DATA["venue-ready"].images[0].url = "https://mutated.invalid/cover.jpg";
+      assert.equal(FIXTURE_DATA["venue-ready"].images[0].url, originalCover);
       for (const name of names) {
         const runtime = scenarioRuntime({
           id: name,
@@ -176,20 +178,78 @@ test("built development Scenario runtime is self-contained without URL", async (
   await execFileAsync(process.execPath, ["--input-type=commonjs", "--eval", verification], { cwd: outputRoot });
 });
 
+test("development build rejects Fixture drift from canonical examples", async (t) => {
+  const projectRoot = await createRealDevelopmentBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  const fixturePath = path.join(projectRoot, "artifacts/ui/fixtures/slots-ready.json");
+  const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  fixture.pitches = [];
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+    /Fixture differs from canonical example/,
+  );
+});
+
+test("development build rejects non-normalized Fixture bytes", async (t) => {
+  const projectRoot = await createRealDevelopmentBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  const fixturePath = path.join(projectRoot, "artifacts/ui/fixtures/slots-empty.json");
+  await writeFile(fixturePath, `${await readFile(fixturePath, "utf8")} `);
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+    /Fixture is not normalized/,
+  );
+});
+
+test("development build runs full contract validation before generating Fixture data", async (t) => {
+  const projectRoot = await createRealDevelopmentBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await writeFile(path.join(projectRoot, "contracts/openapi.yaml"), "openapi: 3.1.0\ninfo: {}\npaths: {}\n");
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+    /Contract validation failed|operation matrix|must have required property/,
+  );
+  assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-data.js")), false);
+});
+
+for (const symlinkedComponent of ["artifacts", "artifacts/ui", "artifacts/ui/fixtures"]) {
+  test(`development build rejects symlinked input component ${symlinkedComponent}`, async (t) => {
+    const projectRoot = await createRealDevelopmentBuildProject();
+    t.after(() => rm(projectRoot, { recursive: true, force: true }));
+    const externalRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-fixture-external-"));
+    t.after(() => rm(externalRoot, { recursive: true, force: true }));
+    const componentPath = path.join(projectRoot, symlinkedComponent);
+    await cp(componentPath, externalRoot, { recursive: true });
+    await rm(componentPath, { recursive: true });
+    await symlink(externalRoot, componentPath);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+      /symlink/,
+    );
+  });
+}
+
 async function createBuildProject(source) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-"));
   return createBuildProjectIn(projectRoot, source);
+}
+
+async function createRealDevelopmentBuildProject() {
+  return createBuildProject("");
 }
 
 async function createBuildProjectIn(projectRoot, source) {
   const sourceRoot = path.join(projectRoot, "miniprogram");
   await mkdir(sourceRoot, { recursive: true });
   await mkdir(path.join(sourceRoot, "dev"));
-  const fixtureRoot = path.join(projectRoot, "artifacts/ui/fixtures");
-  await mkdir(fixtureRoot, { recursive: true });
-  for (const name of ["slots-empty", "slots-ready", "venue-ready"]) {
-    await writeFile(path.join(fixtureRoot, `${name}.json`), `${JSON.stringify({ id: name })}\n`);
-  }
+  await cp("contracts", path.join(projectRoot, "contracts"), { recursive: true });
+  await mkdir(path.join(projectRoot, "artifacts/ui"), { recursive: true });
+  await cp("artifacts/ui/fixtures", path.join(projectRoot, "artifacts/ui/fixtures"), { recursive: true });
   await writeFile(path.join(sourceRoot, "app.json"), '{"pages":[]}\n');
   await writeFile(path.join(sourceRoot, "app.ts"), source);
   return projectRoot;
