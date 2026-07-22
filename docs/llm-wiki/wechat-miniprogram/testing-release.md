@@ -8,6 +8,8 @@ updated: 2026-07-22
 
 ## WX-TEST-001：Mac 开发循环
 
+先完成[environment-setup.md](environment-setup.md)中的安装、人工登录、CLI 与端口前置条件。
+
 1. 使用 AppID 在微信开发者工具中导入原生小程序项目。
 2. 编译，在模拟器检查页面结构、样式、数据和网络请求。
 3. 使用 WXML、Console、Network、AppData、Storage 面板定位问题。

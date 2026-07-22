@@ -22,6 +22,8 @@ updated: 2026-07-22
 
 ## 设计、调试与质量
 
+- [微信开发者工具下载](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)
+- [微信开发者工具 CLI](https://developers.weixin.qq.com/miniprogram/dev/devtools/cli.html)
 - [微信小程序设计指南](https://developers.weixin.qq.com/miniprogram/design/)
 - [开发者工具调试](https://developers.weixin.qq.com/miniprogram/dev/devtools/debug.html)
 - [工具与客户端差异](https://developers.weixin.qq.com/miniprogram/dev/devtools/different.html)
