@@ -16,7 +16,7 @@ updated: 2026-07-22
 
 首次启动后由人本人扫描二维码并完成登录；CLI 的登录检查和打开能力以[微信 CLI 文档](https://developers.weixin.qq.com/miniprogram/dev/devtools/cli.html)为准。二维码登录是人工操作，绝不自动化或保存二维码、凭据、会话数据、AppID、端口、观察到的绝对路径或机器本地设置到 Git。
 
-完成首次启动和人工登录后，必须把脱敏的运行记录放进已忽略的 `.superpowers/run-evidence`，并在记录中明确确认没有 WXML、WXSS 或 Console 错误；它不能替代官方文档或项目配置。
+完成首次启动和人工登录后，必须把脱敏的运行记录放进已忽略的 `.superpowers/run-evidence`。记录必须确认现有 scaffold 页面成功编译并渲染，并明确确认没有 WXML、WXSS 或 Console 错误；它不能替代官方文档或项目配置。
 
 ## WX-ENV-003：定位并配置 CLI
 
@@ -49,6 +49,25 @@ configure_wechat_cli
 ```
 
 若有多个候选项，`select` 会显示编号并要求交互选择；随后才运行 `realpath` 和常规可执行文件校验。不要猜测或提交路径。`export WECHAT_DEVTOOLS_CLI` 仅作用于当前 shell；持久化时只能写入已忽略的机器本地环境文件。
+
+如果 CLI 安装在这两个目录之外，显式选择自己的本地路径并运行以下命令；把 `<local-cli-path>` 替换为该机器上的实际可执行文件路径。该命令不假定或宣称通用安装路径，`export` 也只作用于当前机器的当前 shell：
+
+```zsh
+configure_wechat_cli_from_path() {
+  local selected_cli="$1"
+  [[ -n "$selected_cli" && "$selected_cli" != '<local-cli-path>' ]] || {
+    print -u2 'Replace <local-cli-path> with this machine\'s CLI path'
+    return 1
+  }
+  WECHAT_DEVTOOLS_CLI="$(realpath "$selected_cli")" || return 1
+  [[ -f "$WECHAT_DEVTOOLS_CLI" && -x "$WECHAT_DEVTOOLS_CLI" ]] || {
+    print -u2 'Selected CLI is not a regular executable'
+    return 1
+  }
+  export WECHAT_DEVTOOLS_CLI
+}
+configure_wechat_cli_from_path '<local-cli-path>'
+```
 
 CLI 冒烟命令是 `"$WECHAT_DEVTOOLS_CLI" --help`，参数支持以[微信 CLI 文档](https://developers.weixin.qq.com/miniprogram/dev/devtools/cli.html)为准。应用版本从已解析 CLI 所在 `.app` 的 `Info.plist` 读取，`--version` **不是**应用版本来源：
 

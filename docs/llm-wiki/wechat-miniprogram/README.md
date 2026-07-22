@@ -15,7 +15,7 @@ scope: pitch-booking 原生微信小程序
 | --- | --- | --- |
 | 小程序与网页有什么不同 | [development-model.md](development-model.md) | `WX-RUNTIME`、渲染层、逻辑层 |
 | 设计 artifact 如何与真机一致 | [design-fidelity.md](design-fidelity.md) | `WX-FIDELITY`、golden、rpx |
-| 如何安装开发者工具并配置 CLI | [environment-setup.md](environment-setup.md) | `WX-ENV`、安装、CLI、端口 |
+| Mac 从零安装、登录和配置 CLI | [environment-setup.md](environment-setup.md) | `WX-ENV`、安装、登录、CLI、端口 |
 | Mac 如何开发和真机调试 | [testing-release.md](testing-release.md) | `WX-TEST`、预览、真机调试 |
 | 域名、HTTPS、本地 API 怎么处理 | [network-auth-payment.md](network-auth-payment.md) | `WX-NET`、合法域名、localhost |
 | 微信登录与支付如何接入 | [network-auth-payment.md](network-auth-payment.md) | `WX-AUTH`、`WX-PAY`、notify_url |

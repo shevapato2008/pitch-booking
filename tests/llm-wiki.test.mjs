@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { relative, resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
@@ -34,11 +34,55 @@ function localDestinations(markdown) {
   return [...inline, ...definitions];
 }
 
+function validateLocalDestination(rawDestination, source) {
+  if (!rawDestination || rawDestination.startsWith('#')) return;
+  assert.equal(/^file:/i.test(rawDestination), false, `file URI is not allowed: ${source}`);
+  if (/^[a-z][a-z0-9+.-]*:/i.test(rawDestination)) return;
+
+  const withoutSuffix = rawDestination.split(/[?#]/, 1)[0];
+  let target;
+  try {
+    target = decodeURIComponent(withoutSuffix);
+  } catch {
+    assert.fail(`malformed percent encoding: ${rawDestination} in ${source}`);
+  }
+  assert.equal(isAbsolute(target), false, `absolute local target: ${rawDestination} in ${source}`);
+  const resolved = resolve(source, '..', target);
+  const fromRoot = relative(repositoryRoot, resolved);
+  assert.equal(fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || fromRoot === '', false, `outside repository: ${rawDestination} in ${source}`);
+  assert.equal(existsSync(resolved) && statSync(resolved).isFile(), true, `missing local target: ${rawDestination} in ${source}`);
+}
+
 test('inline Markdown destinations exclude optional titles', () => {
   assert.deepEqual(
     localDestinations('[plain](README.md "Read me") ![angle](<assets/icon.svg> \'Icon\')'),
     ['README.md', 'assets/icon.svg'],
   );
+});
+
+test('reference Markdown destinations participate in local link validation', () => {
+  const destinations = localDestinations('[environment]: environment-setup.md#WX-ENV-003');
+  assert.deepEqual(destinations, ['environment-setup.md#WX-ENV-003']);
+  assert.doesNotThrow(() => validateLocalDestination(destinations[0], environmentGuide));
+});
+
+test('local link validation strips query and fragment suffixes before percent-decoding paths', () => {
+  assert.doesNotThrow(() => validateLocalDestination('README%2Emd?source=wiki#route', environmentGuide));
+});
+
+test('local link validation rejects file URIs before skipping general URI schemes', () => {
+  assert.throws(() => validateLocalDestination('FiLe:README.md', environmentGuide), /file URI is not allowed/);
+});
+
+test('local link validation rejects malformed encoding, absolute, outside, and missing local targets', () => {
+  for (const [destination, expected] of [
+    ['README%ZZ.md', /malformed percent encoding/],
+    ['%2Fetc%2Fhosts', /absolute local target/],
+    ['../../../../../../outside.md', /outside repository/],
+    ['does-not-exist.md', /missing local target/],
+  ]) {
+    assert.throws(() => validateLocalDestination(destination, environmentGuide), expected);
+  }
 });
 
 test('WX-ENV guide has one required section per stable environment knowledge ID', () => {
@@ -56,10 +100,15 @@ test('WX-ENV guide requires native evidence and makes CLI selection and output b
 
   assert.doesNotMatch(login, /若需要留存机器证据/);
   assert.match(login, /必须.*\.superpowers\/run-evidence/);
+  assert.match(login, /现有 scaffold 页面.*成功编译并渲染/s);
   assert.match(login, /确认没有 WXML、WXSS 或 Console 错误/);
   assert.match(cli, /select/);
   assert.match(cli, /realpath/);
   assert.match(cli, /-f.*-x/);
+  assert.match(cli, /<local-cli-path>/);
+  assert.match(cli, /configure_wechat_cli_from_path/);
+  assert.match(cli, /configure_wechat_cli_from_path '<local-cli-path>'/);
+  assert.match(cli, /realpath "\$selected_cli"/);
   assert.match(build, /dist\/miniprogram-development\//);
   assert.match(build, /dist\/miniprogram-production\//);
   assert.match(build, /dist\/miniprogram-development\/.*preview.*Fixture.*Scenario/s);
@@ -67,9 +116,9 @@ test('WX-ENV guide requires native evidence and makes CLI selection and output b
   assert.match(build, /两者.*不是.*项目.*导入根/s);
 });
 
-test('installation plus CLI questions route to the environment guide', () => {
+test('Mac zero-to-CLI installation, login, and configuration route to the environment guide', () => {
   const readme = read('README.md');
-  assert.match(readme, /安装.*CLI|CLI.*安装/);
+  assert.match(readme, /Mac 从零安装、登录和配置 CLI/);
   assert.match(readme, /\[environment-setup\.md\]\(environment-setup\.md\)/);
 });
 
@@ -98,22 +147,7 @@ test('sources index contains the exact official environment URLs', () => {
 test('all wiki-local Markdown link and image targets exist and remain inside the repository', () => {
   for (const source of markdownFiles(wikiRoot)) {
     for (const rawDestination of localDestinations(readFileSync(source, 'utf8'))) {
-      if (!rawDestination || rawDestination.startsWith('#')) continue;
-      assert.equal(/^file:/i.test(rawDestination), false, `file URI is not allowed: ${source}`);
-      if (/^[a-z][a-z0-9+.-]*:/i.test(rawDestination)) continue;
-
-      const withoutSuffix = rawDestination.split(/[?#]/, 1)[0];
-      let target;
-      try {
-        target = decodeURIComponent(withoutSuffix);
-      } catch {
-        assert.fail(`malformed percent encoding: ${rawDestination} in ${source}`);
-      }
-      assert.equal(target.startsWith('/'), false, `absolute local target: ${rawDestination} in ${source}`);
-      const resolved = resolve(source, '..', target);
-      const fromRoot = relative(repositoryRoot, resolved);
-      assert.equal(fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || fromRoot === '', false, `outside repository: ${rawDestination} in ${source}`);
-      assert.equal(existsSync(resolved) && statSync(resolved).isFile(), true, `missing local target: ${rawDestination} in ${source}`);
+      validateLocalDestination(rawDestination, source);
     }
   }
 });
