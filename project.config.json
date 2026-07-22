@@ -7,6 +7,7 @@
     "postcss": true,
     "minified": true,
     "enhance": true,
-    "compileWorklet": false
+    "compileWorklet": false,
+    "useCompilerPlugins": ["typescript"]
   }
 }

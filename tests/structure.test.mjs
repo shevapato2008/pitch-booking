@@ -8,6 +8,11 @@ test("production app registers no development pages", () => {
   assert.equal(app.pages.some((page) => page.startsWith("dev/")), false);
 });
 
+test("WeChat DevTools compiles TypeScript", () => {
+  const project = JSON.parse(readFileSync("project.config.json", "utf8"));
+  assert.deepEqual(project.setting.useCompilerPlugins, ["typescript"]);
+});
+
 test("required roots exist", () => {
   for (const path of ["artifacts/ui", "contracts", "miniprogram", "backend", "deploy"])
     assert.equal(existsSync(path), true, `missing ${path}`);

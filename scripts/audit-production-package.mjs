@@ -12,7 +12,7 @@ const target = path.resolve(targetArgument);
 const forbiddenPathPatterns = [/(^|[/\\])dev([/\\]|$)/i, /\.dev-generated/i, /fixture/i];
 const forbiddenContentPatterns = [
   /FIXTURE_MODE/,
-  /\bScenario(?:Stub|Factory|Registry|Provider|Service|Repository|Client|Adapter)\b/,
+  /\bScenario[A-Z][A-Za-z0-9_$]*\b/,
   /["']dev\//,
 ];
 const forbidden = [];
@@ -26,7 +26,8 @@ for (const file of await collectFiles(target)) {
   }
   const contents = await readFile(file, "utf8");
   for (const pattern of forbiddenContentPatterns) {
-    if (pattern.test(contents)) forbidden.push(`token ${pattern} in ${relativePath}`);
+    const match = contents.match(pattern);
+    if (match) forbidden.push(`token ${match[0]} in ${relativePath}`);
   }
 }
 
