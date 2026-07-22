@@ -56,7 +56,7 @@ configure_wechat_cli
 configure_wechat_cli_from_path() {
   local selected_cli="$1"
   [[ -n "$selected_cli" && "$selected_cli" != '<local-cli-path>' ]] || {
-    print -u2 'Replace <local-cli-path> with this machine\'s CLI path'
+    print -u2 "Replace <local-cli-path> with this machine's CLI path"
     return 1
   }
   WECHAT_DEVTOOLS_CLI="$(realpath "$selected_cli")" || return 1

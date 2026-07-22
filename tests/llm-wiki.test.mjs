@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
@@ -16,6 +17,11 @@ function section(markdown, heading) {
   const match = markdown.match(pattern);
   assert.ok(match, `missing section: ${heading}`);
   return match[1];
+}
+
+function fencedCodeBlocks(markdown, language) {
+  return [...markdown.matchAll(new RegExp(`^\`\`\`${language}\\s*$([\\s\\S]*?)^\`\`\``, 'gm'))]
+    .map((match) => match[1]);
 }
 
 function markdownFiles(directory) {
@@ -114,6 +120,17 @@ test('WX-ENV guide requires native evidence and makes CLI selection and output b
   assert.match(build, /dist\/miniprogram-development\/.*preview.*Fixture.*Scenario/s);
   assert.match(build, /dist\/miniprogram-production\/.*排除.*preview.*Fixture.*Scenario/s);
   assert.match(build, /两者.*不是.*项目.*导入根/s);
+});
+
+test('WX-ENV-003 zsh snippets are syntactically valid', () => {
+  const cli = section(readFileSync(environmentGuide, 'utf8'), 'WX-ENV-003：定位并配置 CLI');
+  const snippets = fencedCodeBlocks(cli, 'zsh');
+
+  assert.ok(snippets.length > 0, 'WX-ENV-003 must contain zsh snippets');
+  for (const snippet of snippets) {
+    const result = spawnSync('zsh', ['-n'], { input: snippet, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr || 'zsh rejected a WX-ENV-003 snippet');
+  }
 });
 
 test('Mac zero-to-CLI installation, login, and configuration route to the environment guide', () => {
