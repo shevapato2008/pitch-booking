@@ -1,0 +1,501 @@
+openapi: 3.1.0
+info:
+  title: Pitch Booking Venue Browsing API
+  version: 1.0.0
+  description: Wire contract for browsing the primary venue and its availability.
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              examples:
+                HealthOk:
+                  value:
+                    status: ok
+        '503':
+          description: Service is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  value:
+                    $ref: './examples/error-service-unavailable.json'
+  /api/v1/venues/primary:
+    get:
+      operationId: getPrimaryVenue
+      responses:
+        '200':
+          description: Primary venue details.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
+              examples:
+                PrimaryVenue:
+                  value:
+                    $ref: './examples/venue-primary.json'
+        '500':
+          description: Primary venue configuration or internal failure.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum: [PRIMARY_VENUE_MISCONFIGURED, INTERNAL_ERROR]
+              examples:
+                PrimaryVenueMisconfigured:
+                  value:
+                    $ref: './examples/error-primary-venue-misconfigured.json'
+                InternalError:
+                  value:
+                    $ref: './examples/error-internal.json'
+        '503':
+          description: Service is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  value:
+                    $ref: './examples/error-service-unavailable.json'
+  /api/v1/venues/{venue_id}/availability:
+    get:
+      operationId: getVenueAvailability
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: pitch_type
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/PitchTypeCode'
+      responses:
+        '200':
+          description: Availability for a venue, date, and pitch type.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Availability'
+              examples:
+                AvailabilityReady:
+                  value:
+                    $ref: './examples/availability-ready.json'
+                AvailabilityEmpty:
+                  value:
+                    $ref: './examples/availability-empty.json'
+        '404':
+          description: Venue does not exist.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            const: VENUE_NOT_FOUND
+              examples:
+                VenueNotFound:
+                  value:
+                    $ref: './examples/error-venue-not-found.json'
+        '422':
+          description: Request parameters are invalid or outside supported bounds.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            enum: [INVALID_ARGUMENT, PITCH_TYPE_NOT_SUPPORTED, DATE_OUT_OF_RANGE]
+              examples:
+                InvalidArgument:
+                  value:
+                    $ref: './examples/error-invalid-argument.json'
+                PitchTypeNotSupported:
+                  value:
+                    $ref: './examples/error-pitch-type-not-supported.json'
+                DateOutOfRange:
+                  value:
+                    $ref: './examples/error-date-out-of-range.json'
+        '500':
+          description: Internal service failure.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            const: INTERNAL_ERROR
+              examples:
+                InternalError:
+                  value:
+                    $ref: './examples/error-internal.json'
+        '503':
+          description: Service is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - properties:
+                      error:
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  value:
+                    $ref: './examples/error-service-unavailable.json'
+components:
+  headers:
+    RequestId:
+      description: Identifier used to trace the request.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    PitchTypeCode:
+      type: string
+      enum: [FIVE_A_SIDE, SEVEN_A_SIDE]
+    AvailabilityWindow:
+      type: object
+      additionalProperties: false
+      required: [start_date, end_date]
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+    VenueImage:
+      type: object
+      additionalProperties: false
+      required: [url, alt, role, sort_order]
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: '^https://'
+        alt:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          enum: [COVER, GALLERY]
+        sort_order:
+          type: integer
+          minimum: 0
+    Facility:
+      type: object
+      additionalProperties: false
+      required: [code, name, sort_order]
+      properties:
+        code:
+          type: string
+          enum: [LIGHTING, CHANGING_ROOM, DRINKING_WATER, PARKING]
+        name:
+          type: string
+          minLength: 1
+        sort_order:
+          type: integer
+          minimum: 0
+    PitchType:
+      type: object
+      additionalProperties: false
+      required: [code, name, sort_order]
+      properties:
+        code:
+          $ref: '#/components/schemas/PitchTypeCode'
+        name:
+          type: string
+          minLength: 1
+        sort_order:
+          type: integer
+          minimum: 0
+    Venue:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - description
+        - price_advantage_text
+        - timezone
+        - business_hours_text
+        - address
+        - latitude
+        - longitude
+        - parking_text
+        - phone
+        - refund_policy_summary
+        - images
+        - facilities
+        - pitch_types
+        - availability_window
+        - generated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        price_advantage_text:
+          type: string
+          minLength: 1
+        timezone:
+          type: string
+          const: Asia/Shanghai
+        business_hours_text:
+          type: string
+          minLength: 1
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        parking_text:
+          type: string
+          minLength: 1
+        phone:
+          type: string
+          minLength: 1
+        refund_policy_summary:
+          type: string
+          minLength: 1
+        images:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/VenueImage'
+        facilities:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Facility'
+        pitch_types:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PitchType'
+        availability_window:
+          $ref: '#/components/schemas/AvailabilityWindow'
+        generated_at:
+          type: string
+          format: date-time
+    Slot:
+      type: object
+      additionalProperties: false
+      required: [id, starts_at, ends_at, price_cents, status, unavailable_reason]
+      properties:
+        id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        price_cents:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [AVAILABLE, TEMPORARILY_LOCKED, BOOKED, CLOSED, EXPIRED]
+        unavailable_reason:
+          type: [string, 'null']
+          enum: [HELD_FOR_PAYMENT, ALREADY_BOOKED, VENUE_CLOSED, TIME_PASSED, null]
+      oneOf:
+        - properties:
+            status:
+              const: AVAILABLE
+            unavailable_reason:
+              const: null
+        - properties:
+            status:
+              const: TEMPORARILY_LOCKED
+            unavailable_reason:
+              const: HELD_FOR_PAYMENT
+        - properties:
+            status:
+              const: BOOKED
+            unavailable_reason:
+              const: ALREADY_BOOKED
+        - properties:
+            status:
+              const: CLOSED
+            unavailable_reason:
+              const: VENUE_CLOSED
+        - properties:
+            status:
+              const: EXPIRED
+            unavailable_reason:
+              const: TIME_PASSED
+    PitchAvailability:
+      type: object
+      additionalProperties: false
+      required: [id, name, pitch_type, sort_order, slots]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        pitch_type:
+          $ref: '#/components/schemas/PitchTypeCode'
+        sort_order:
+          type: integer
+          minimum: 0
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/Slot'
+    Availability:
+      type: object
+      additionalProperties: false
+      required:
+        - venue_id
+        - timezone
+        - date
+        - pitch_type
+        - availability_window
+        - pitches
+        - generated_at
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+        timezone:
+          type: string
+          const: Asia/Shanghai
+        date:
+          type: string
+          format: date
+        pitch_type:
+          $ref: '#/components/schemas/PitchTypeCode'
+        availability_window:
+          $ref: '#/components/schemas/AvailabilityWindow'
+        pitches:
+          type: array
+          items:
+            $ref: '#/components/schemas/PitchAvailability'
+        generated_at:
+          type: string
+          format: date-time
+    ErrorDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+          minLength: 1
+        pitch_type:
+          type: string
+          minLength: 1
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, request_id, details]
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_ARGUMENT
+            - PITCH_TYPE_NOT_SUPPORTED
+            - DATE_OUT_OF_RANGE
+            - VENUE_NOT_FOUND
+            - SERVICE_UNAVAILABLE
+            - INTERNAL_ERROR
+            - PRIMARY_VENUE_MISCONFIGURED
+        message:
+          type: string
+          minLength: 1
+        request_id:
+          type: string
+          minLength: 1
+        details:
+          $ref: '#/components/schemas/ErrorDetails'
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'

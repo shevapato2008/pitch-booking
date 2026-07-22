@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VENUE_NOT_FOUND",
+    "message": "未找到指定场馆。",
+    "request_id": "req_contract_venue_not_found_001",
+    "details": {}
+  }
+}

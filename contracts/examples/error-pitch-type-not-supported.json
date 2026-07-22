@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "PITCH_TYPE_NOT_SUPPORTED",
+    "message": "该场馆暂不支持所选场地类型。",
+    "request_id": "req_contract_pitch_type_001",
+    "details": { "pitch_type": "ELEVEN_A_SIDE" }
+  }
+}

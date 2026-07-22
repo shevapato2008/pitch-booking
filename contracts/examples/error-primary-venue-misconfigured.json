@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "PRIMARY_VENUE_MISCONFIGURED",
+    "message": "主场馆配置暂不可用，请联系场馆工作人员。",
+    "request_id": "req_contract_primary_misconfigured_001",
+    "details": {}
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "venue_id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+  "timezone": "Asia/Shanghai",
+  "date": "2026-07-22",
+  "pitch_type": "FIVE_A_SIDE",
+  "availability_window": {
+    "start_date": "2026-07-22",
+    "end_date": "2026-08-04"
+  },
+  "pitches": [
+    {
+      "id": "59c91a73-b893-4c91-9084-4f43ab16d00a",
+      "name": "五人制 A 场",
+      "pitch_type": "FIVE_A_SIDE",
+      "sort_order": 0,
+      "slots": [
+        {
+          "id": "0174ac35-c2ef-4c0a-97f3-eb5edec603e1",
+          "starts_at": "2026-07-22T09:00:00+08:00",
+          "ends_at": "2026-07-22T10:00:00+08:00",
+          "price_cents": 36000,
+          "status": "EXPIRED",
+          "unavailable_reason": "TIME_PASSED"
+        },
+        {
+          "id": "e175792f-2d74-456a-8448-4838226cc445",
+          "starts_at": "2026-07-22T10:00:00+08:00",
+          "ends_at": "2026-07-22T11:00:00+08:00",
+          "price_cents": 36000,
+          "status": "AVAILABLE",
+          "unavailable_reason": null
+        },
+        {
+          "id": "717689f2-67a7-4c60-b665-731b7c9d963e",
+          "starts_at": "2026-07-22T11:00:00+08:00",
+          "ends_at": "2026-07-22T12:00:00+08:00",
+          "price_cents": 36000,
+          "status": "TEMPORARILY_LOCKED",
+          "unavailable_reason": "HELD_FOR_PAYMENT"
+        },
+        {
+          "id": "9df7714a-4a8a-4382-9500-cda9d47967ba",
+          "starts_at": "2026-07-22T12:00:00+08:00",
+          "ends_at": "2026-07-22T13:00:00+08:00",
+          "price_cents": 42000,
+          "status": "BOOKED",
+          "unavailable_reason": "ALREADY_BOOKED"
+        },
+        {
+          "id": "a2c28f0e-7a99-4655-bac4-b2d779104146",
+          "starts_at": "2026-07-22T13:00:00+08:00",
+          "ends_at": "2026-07-22T14:00:00+08:00",
+          "price_cents": 42000,
+          "status": "CLOSED",
+          "unavailable_reason": "VENUE_CLOSED"
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-07-22T09:30:00+08:00"
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "服务处理请求时出现异常，请稍后重试。",
+    "request_id": "req_contract_internal_001",
+    "details": {}
+  }
+}

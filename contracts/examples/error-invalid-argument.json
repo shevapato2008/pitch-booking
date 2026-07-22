@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "请求参数格式不正确，请检查后重试。",
+    "request_id": "req_contract_invalid_argument_001",
+    "details": { "field": "date" }
+  }
+}

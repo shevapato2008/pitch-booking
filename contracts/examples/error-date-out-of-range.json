@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "DATE_OUT_OF_RANGE",
+    "message": "所选日期不在当前可预订范围内。",
+    "request_id": "req_contract_date_range_001",
+    "details": {
+      "start_date": "2026-07-22",
+      "end_date": "2026-08-04"
+    }
+  }
+}
