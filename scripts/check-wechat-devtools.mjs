@@ -99,6 +99,11 @@ function loginIsAffirmative(stdout, stderr) {
   return [stdout, stderr].some((channel) => channel.split(/\r?\n/).some((line) => line === '{"login":true}'));
 }
 
+function shortVersion(stdout, stderr) {
+  const match = stderr === '' && stdout.match(/^(\d+\.\d+\.\d+)\r?\n$/);
+  return match?.[1] ?? null;
+}
+
 function isPortMismatch(stdout, stderr, requestedPort) {
   const requested = String(requestedPort).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const current = '(?:[1-9][0-9]*)';
@@ -210,8 +215,8 @@ export async function checkWechatDevTools({ runner = createDefaultRunner(), env 
   emit(output, { step: 'appid', status: 'passed', code: 'APPID_CONFIGURED' }, 'WECHAT_APPID_REQUIRED');
 
   const versionResult = await invoke(runner, '/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', `${bundle}/Contents/Info.plist`], cliOptions, 'WECHAT_VERSION_UNAVAILABLE', output, 'version');
-  const version = versionResult.stdout.trim();
-  if (version === '') fail('WECHAT_VERSION_UNAVAILABLE');
+  const version = shortVersion(versionResult.stdout, versionResult.stderr);
+  if (version === null) fail('WECHAT_VERSION_UNAVAILABLE');
   emit(output, { step: 'version', status: 'passed', version }, 'WECHAT_VERSION_UNAVAILABLE');
 
   let projectConfig;

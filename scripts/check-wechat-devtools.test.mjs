@@ -16,6 +16,7 @@ const SESSION = 'SESSION_RAW_SENTINEL_91e16f';
 const RUNNER_RESULT = 'RUNNER_RESULT_RAW_SENTINEL_91e16f';
 const ENV_GETTER = 'ENV_GETTER_RAW_SENTINEL_91e16f';
 const PRIVATE = 'PRIVATE_SENTINEL_91e16f';
+const VERSION_OUTPUT = '2.01.2510290';
 const PORT = Number(PORT_SENTINEL);
 const messages = Object.freeze({
   WECHAT_CLI_INVALID: 'WeChat DevTools CLI must be an absolute executable file',
@@ -83,7 +84,7 @@ function runner({ trace = [], byPhase = {}, throwPhase } = {}) {
     const phase = phaseFor(command, args);
     if (throwPhase === phase) throw new Error(SESSION);
     if (Object.hasOwn(byPhase, phase)) return byPhase[phase];
-    if (phase === 'version') return result({ stdout: 'release-candidate + 7\n' });
+    if (phase === 'version') return result({ stdout: `${VERSION_OUTPUT}\n` });
     if (phase === 'login') return result({ stdout: 'prose\n{"login":true}\nmore prose' });
     return result();
   };
@@ -144,7 +145,7 @@ test('main writes success only to stdout and exits zero', async (t) => {
   let stdout = ''; let stderr = '';
   const code = await main({ argv: ['--port', PORT_SENTINEL], env: { WECHAT_DEVTOOLS_CLI: f.cli }, cwd: f.root, runner: runner(), writeOut: (text) => { stdout += text; }, writeErr: (text) => { stderr += text; } });
   assert.equal(code, 0); assert.equal(stderr, '');
-  assert.deepEqual(JSON.parse(stdout), { ok: true, version: 'release-candidate + 7', checks: ['APPID_CONFIGURED', 'PROJECT_CONFIGURED', 'BUILD_COMPLETED', 'LOGIN_CONFIRMED', 'PROJECT_OPENED', 'AUTOMATION_ENABLED'] });
+  assert.deepEqual(JSON.parse(stdout), { ok: true, version: VERSION_OUTPUT, checks: ['APPID_CONFIGURED', 'PROJECT_CONFIGURED', 'BUILD_COMPLETED', 'LOGIN_CONFIRMED', 'PROJECT_OPENED', 'AUTOMATION_ENABLED'] });
   for (const secret of [APPID, REPO, CLI, PORT_SENTINEL, SESSION]) assert.doesNotMatch(`${stdout}${stderr}`, new RegExp(secret));
 });
 
@@ -233,6 +234,26 @@ test('validates CLI AppID project and version boundaries exhaustively before lat
   const malformedProject = await fixture(); t.after(() => rm(malformedProject.root, { recursive: true, force: true }));
   await writeFile(join(malformedProject.root, 'project.config.json'), '{');
   await expectFailure(() => checkWechatDevTools({ runner: runner(), env: { WECHAT_DEVTOOLS_CLI: malformedProject.cli }, repoRoot: malformedProject.root, port: PORT, platform: 'darwin' }), 'WECHAT_BUILD_FAILED');
+});
+
+test('rejects ambiguous PlistBuddy version output without exposing it or running later commands', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  for (const version of [
+    result({ stdout: `${VERSION_OUTPUT}\n${SESSION}\n` }),
+    result({ stdout: `${VERSION_OUTPUT}\n`, stderr: SESSION }),
+    result({ stdout: `${VERSION_OUTPUT}+${SESSION}\n` })
+  ]) {
+    const trace = []; const events = [];
+    await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, byPhase: { version } }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin', output: (event) => events.push(event) }), 'WECHAT_VERSION_UNAVAILABLE', [SESSION]);
+    assertStopsAfter(trace, 'version');
+    assert.doesNotMatch(JSON.stringify(events), new RegExp(SESSION));
+
+    let stdout = ''; let stderr = '';
+    assert.equal(await main({ argv: ['--port', PORT_SENTINEL], env: { WECHAT_DEVTOOLS_CLI: f.cli }, cwd: f.root, runner: runner({ byPhase: { version } }), writeOut: (text) => { stdout += text; }, writeErr: (text) => { stderr += text; } }), 1);
+    assert.equal(stdout, '');
+    assert.deepEqual(JSON.parse(stderr), { ok: false, code: 'WECHAT_VERSION_UNAVAILABLE', message: messages.WECHAT_VERSION_UNAVAILABLE });
+    assert.doesNotMatch(`${stdout}${stderr}`, new RegExp(SESSION));
+  }
 });
 
 test('contains injected environment getter throws within their active phase', async (t) => {
