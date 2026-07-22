@@ -183,17 +183,19 @@ test.each([
   "0099-02-29T00:00:00Z",
   "1900-02-29T00:00:00Z",
   "2026-04-31T00:00:00Z",
+  "2026-01-01T22:59:60Z",
+  "2026-01-01T23:58:60Z",
   "2026-01-01T00:00:61Z",
 ])("rejects invalid RFC3339 calendar/time %s", (generatedAt) => {
   expect(() => decodeAvailability({ ...ready, generated_at: generatedAt }))
     .toThrow("INVALID_API_RESPONSE");
 });
 
-test("orders a leap second before the following minute", () => {
+test("orders a valid 23:59 leap second before the following instant", () => {
   expect(() => decodeAvailability(withSlot({
     ...firstSlot,
-    starts_at: "2026-07-22T01:59:60Z",
-    ends_at: "2026-07-22T02:00:00Z",
+    starts_at: "2026-07-22T23:59:60+08:00",
+    ends_at: "2026-07-22T16:00:00Z",
   }))).not.toThrow();
 });
 
@@ -208,6 +210,46 @@ test("orders slot instants across mixed offsets", () => {
     starts_at: "2026-07-22T10:00:00+08:00",
     ends_at: "2026-07-22T03:00:00+02:00",
   }))).toThrow("INVALID_API_RESPONSE");
+});
+
+test("accepts chronologically ordered mixed-offset slot collections", () => {
+  const slots = [
+    {
+      ...ready.pitches[0].slots[0],
+      starts_at: "2026-07-22T10:00:00+08:00",
+      ends_at: "2026-07-22T10:30:00+08:00",
+    },
+    {
+      ...ready.pitches[0].slots[1],
+      starts_at: "2026-07-22T03:00:00Z",
+      ends_at: "2026-07-22T03:30:00Z",
+    },
+  ];
+
+  expect(() => decodeAvailability({
+    ...ready,
+    pitches: [{ ...ready.pitches[0], slots }],
+  })).not.toThrow();
+});
+
+test("rejects reverse chronological mixed-offset slots at the later item path", () => {
+  const slots = [
+    {
+      ...ready.pitches[0].slots[0],
+      starts_at: "2026-07-22T03:00:00Z",
+      ends_at: "2026-07-22T03:30:00Z",
+    },
+    {
+      ...ready.pitches[0].slots[1],
+      starts_at: "2026-07-22T10:00:00+08:00",
+      ends_at: "2026-07-22T10:30:00+08:00",
+    },
+  ];
+
+  expectApiPath(
+    () => decodeAvailability({ ...ready, pitches: [{ ...ready.pitches[0], slots }] }),
+    "$.pitches[0].slots[1].starts_at",
+  );
 });
 
 test("rejects a raw image URL containing backslashes", () => {
@@ -359,5 +401,16 @@ test.each([
     pitches: [{ ...ready.pitches[0], pitch_type: "SEVEN_A_SIDE" }],
   }), "$.pitches[0].pitch_type"],
 ])("reports exact ApiResponseError path for %s failures", (_name, decode, path) => {
+  expectApiPath(decode, path);
+});
+
+test.each([
+  ["unknown top-level field", () => decodeVenue({ ...venue, unexpected: true }), "$.unexpected"],
+  ["missing top-level field", () => decodeVenue(withoutKey(venue, "generated_at")), "$.generated_at"],
+  ["invalid cover count", () => decodeVenue({
+    ...venue,
+    images: venue.images.filter((image) => image.role !== "COVER"),
+  }), "$.images"],
+])("reports exact path for %s", (_name, decode, path) => {
   expectApiPath(decode, path);
 });

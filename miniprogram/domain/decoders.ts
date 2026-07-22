@@ -181,7 +181,11 @@ export function decodeAvailability(value: unknown): Availability {
   decoded.pitchGroups.forEach((pitch, pitchIndex) => {
     const pitchPath = `$.pitches[${pitchIndex}]`;
     if (pitch.pitchType !== decoded.pitchType) invalid(`${pitchPath}.pitch_type`);
-    assertSorted(pitch.slots, (slot) => slot.startsAt, `${pitchPath}.slots`, "starts_at");
+    for (let slotIndex = 1; slotIndex < pitch.slots.length; slotIndex += 1) {
+      if (rfc3339Before(pitch.slots[slotIndex].startsAt, pitch.slots[slotIndex - 1].startsAt)) {
+        invalid(`${pitchPath}.slots[${slotIndex}].starts_at`);
+      }
+    }
     pitch.slots.forEach((slot, slotIndex) => {
       const slotPath = `${pitchPath}.slots[${slotIndex}]`;
       if (slot.startsAt.slice(0, 10) !== decoded.date) invalid(`${slotPath}.starts_at`);

@@ -103,6 +103,21 @@ test("production audit rejects contract-example references", async (t) => {
   await assertAuditRejects(packageRoot, "contracts/examples/");
 });
 
+for (const [description, source, diagnostic] of [
+  ["Jest ESM import", 'import { expect } from "@jest/globals";\n', "@jest/globals"],
+  ["compiled Jest require", 'const globals = require("@jest/globals");\n', "@jest/globals"],
+  ["Node test require", 'const test = require("node:test");\n', "node:test"],
+  ["Vitest import", 'import { describe } from "vitest";\n', "vitest"],
+]) {
+  test(`production audit rejects ${description}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await writeFile(path.join(packageRoot, "ordinary-production-name.js"), source);
+
+    await assertAuditRejects(packageRoot, diagnostic);
+  });
+}
+
 test("production audit requires compiled artifacts to be regular files", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));

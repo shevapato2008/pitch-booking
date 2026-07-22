@@ -24,6 +24,7 @@ const forbiddenContentPatterns = [
   /\bjest\s*\./,
   /\bexpect\s*\(/,
   /contracts[/\\]examples[/\\]/,
+  /["'](?:@jest\/globals|node:test|vitest|mocha)["']/,
 ];
 const forbidden = [];
 

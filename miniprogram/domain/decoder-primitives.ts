@@ -116,6 +116,7 @@ function parseRfc3339(value: string, path: string): ComparableInstant {
   const offsetMinute = match[11] === undefined ? 0 : Number(match[11]);
   if (!isCalendarDate(year, month, day)
     || hour > 23 || minute > 59 || second > 60
+    || (second === 60 && (hour !== 23 || minute !== 59))
     || offsetHour > 23 || offsetMinute > 59) {
     invalid(path);
   }
