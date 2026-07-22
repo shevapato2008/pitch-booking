@@ -170,6 +170,46 @@ test("accepts RFC3339's case-insensitive t and z grammar", () => {
   expect(decoded.generatedAt).toBe("2026-07-22t01:30:00z");
 });
 
+test.each([
+  "0000-02-29T23:59:60Z",
+  "0099-03-01T00:00:00Z",
+  "2000-02-29T00:00:00+08:00",
+])("accepts RFC3339 calendar edge %s", (generatedAt) => {
+  expect(decodeAvailability({ ...ready, generated_at: generatedAt }).generatedAt)
+    .toBe(generatedAt);
+});
+
+test.each([
+  "0099-02-29T00:00:00Z",
+  "1900-02-29T00:00:00Z",
+  "2026-04-31T00:00:00Z",
+  "2026-01-01T00:00:61Z",
+])("rejects invalid RFC3339 calendar/time %s", (generatedAt) => {
+  expect(() => decodeAvailability({ ...ready, generated_at: generatedAt }))
+    .toThrow("INVALID_API_RESPONSE");
+});
+
+test("orders a leap second before the following minute", () => {
+  expect(() => decodeAvailability(withSlot({
+    ...firstSlot,
+    starts_at: "2026-07-22T01:59:60Z",
+    ends_at: "2026-07-22T02:00:00Z",
+  }))).not.toThrow();
+});
+
+test("orders slot instants across mixed offsets", () => {
+  expect(() => decodeAvailability(withSlot({
+    ...firstSlot,
+    starts_at: "2026-07-22T09:00:00+08:00",
+    ends_at: "2026-07-22T02:00:00Z",
+  }))).not.toThrow();
+  expect(() => decodeAvailability(withSlot({
+    ...firstSlot,
+    starts_at: "2026-07-22T10:00:00+08:00",
+    ends_at: "2026-07-22T03:00:00+02:00",
+  }))).toThrow("INVALID_API_RESPONSE");
+});
+
 test("rejects a raw image URL containing backslashes", () => {
   const backslashUrl = String.raw`https:\\example.com\a.jpg`;
   expect(backslashUrl).toContain("\\");

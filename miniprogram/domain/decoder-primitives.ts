@@ -4,7 +4,7 @@ export type ApiObject = Record<string, unknown>;
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const RFC3339_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})$/i;
+  /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(z|([+-])(\d{2}):(\d{2}))$/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Deliberately narrow CDN grammar: lowercase HTTPS, dotted ASCII DNS name,
 // no port/userinfo, and ASCII URI characters with complete percent escapes.
@@ -81,11 +81,13 @@ export function httpsUrlAt(value: unknown, path: string): string {
   return decoded;
 }
 
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
 function isCalendarDate(year: number, month: number, day: number): boolean {
-  const instant = new Date(Date.UTC(year, month - 1, day));
-  return instant.getUTCFullYear() === year
-    && instant.getUTCMonth() === month - 1
-    && instant.getUTCDate() === day;
+  const monthLengths = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= monthLengths[month - 1];
 }
 
 export function dateAt(value: unknown, path: string): string {
@@ -97,14 +99,51 @@ export function dateAt(value: unknown, path: string): string {
 
 export function rfc3339At(value: unknown, path: string): string {
   const decoded = stringAt(value, path);
-  const match = RFC3339_PATTERN.exec(decoded);
-  if (!match
-    || !isCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))
-    || Number(match[4]) > 23
-    || Number(match[5]) > 59
-    || Number(match[6]) > 59
-    || !Number.isFinite(Date.parse(decoded))) {
+  parseRfc3339(decoded, path);
+  return decoded;
+}
+
+interface ComparableInstant {
+  unit: number;
+  fraction: string;
+}
+
+function parseRfc3339(value: string, path: string): ComparableInstant {
+  const match = RFC3339_PATTERN.exec(value);
+  if (!match) invalid(path);
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const offsetHour = match[10] === undefined ? 0 : Number(match[10]);
+  const offsetMinute = match[11] === undefined ? 0 : Number(match[11]);
+  if (!isCalendarDate(year, month, day)
+    || hour > 23 || minute > 59 || second > 60
+    || offsetHour > 23 || offsetMinute > 59) {
     invalid(path);
   }
-  return decoded;
+  const offsetDirection = match[9] === "-" ? -1 : 1;
+  const offsetSeconds = offsetDirection * (offsetHour * 60 + offsetMinute) * 60;
+  const wholeSeconds = daysFromCivil(year, month, day) * 86_400
+    + hour * 3_600 + minute * 60 + Math.min(second, 59) - offsetSeconds;
+  return {
+    unit: wholeSeconds * 2 + (second === 60 ? 1 : 0),
+    fraction: match[7] ?? "",
+  };
+}
+
+function daysFromCivil(year: number, month: number, day: number): number {
+  const adjustedYear = year - (month <= 2 ? 1 : 0);
+  const era = Math.floor(adjustedYear / 400);
+  const yearOfEra = adjustedYear - era * 400;
+  const adjustedMonth = month + (month > 2 ? -3 : 9);
+  const dayOfYear = Math.floor((153 * adjustedMonth + 2) / 5) + day - 1;
+  const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4)
+    - Math.floor(yearOfEra / 100) + dayOfYear;
+  return era * 146_097 + dayOfEra;
+}
+
+export function rfc3339Before(left: string, right: string): boolean {
+  const leftInstant = parseRfc3339(left, "$left");
+  const rightInstant = parseRfc3339(right, "$right");
+  if (leftInstant.unit !== rightInstant.unit) return leftInstant.unit < rightInstant.unit;
+  const width = Math.max(leftInstant.fraction.length, rightInstant.fraction.length);
+  return leftInstant.fraction.padEnd(width, "0") < rightInstant.fraction.padEnd(width, "0");
 }

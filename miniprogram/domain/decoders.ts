@@ -23,6 +23,7 @@ import {
   invalid,
   numberAt,
   rfc3339At,
+  rfc3339Before,
   stringAt,
   uuidAt,
 } from "./decoder-primitives";
@@ -117,7 +118,7 @@ function decodeSlot(value: unknown, path: string): Slot {
   );
   const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
   const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
-  if (Date.parse(startsAt) >= Date.parse(endsAt)) invalid(`${path}.ends_at`);
+  if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
   const status = enumAt<SlotStatus>(object.status, SLOT_STATUSES, `${path}.status`);
   const expectedReason = STATUS_REASONS[status];
   if (object.unavailable_reason !== expectedReason) invalid(`${path}.unavailable_reason`);
