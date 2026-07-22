@@ -14,6 +14,7 @@ const CLI = 'CLI_PATH_SENTINEL_91e16f';
 const PORT_SENTINEL = '98761';
 const SESSION = 'SESSION_RAW_SENTINEL_91e16f';
 const RUNNER_RESULT = 'RUNNER_RESULT_RAW_SENTINEL_91e16f';
+const ENV_GETTER = 'ENV_GETTER_RAW_SENTINEL_91e16f';
 const PRIVATE = 'PRIVATE_SENTINEL_91e16f';
 const PORT = Number(PORT_SENTINEL);
 const messages = Object.freeze({
@@ -42,6 +43,15 @@ function statefulRunnerResult() {
         return value;
       }
       throw new Error(RUNNER_RESULT);
+    }
+  });
+}
+
+function envWithThrowingGetter(property, base) {
+  return new Proxy(base, {
+    get(target, key, receiver) {
+      if (key === property) throw new Error(ENV_GETTER);
+      return Reflect.get(target, key, receiver);
     }
   });
 }
@@ -79,13 +89,13 @@ function runner({ trace = [], byPhase = {}, throwPhase } = {}) {
   };
 }
 
-async function expectFailure(run, code) {
+async function expectFailure(run, code, rawValues = []) {
   await assert.rejects(run, (error) => {
     assert.equal(error.name, 'WeChatEnvironmentError');
     assert.equal(error.code, code);
     assert.equal(error.message, messages[code]);
     assert.equal('cause' in error, false);
-    assert.doesNotMatch(`${error.name}:${error.message}`, new RegExp(RUNNER_RESULT));
+    for (const rawValue of [RUNNER_RESULT, ...rawValues]) assert.doesNotMatch(`${error.name}:${error.message}`, new RegExp(rawValue));
     return true;
   });
 }
@@ -193,7 +203,7 @@ test('snapshots stateful non-thenable runner results once at each active phase',
 
 test('validates CLI AppID project and version boundaries exhaustively before later commands', async (t) => {
   const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
-  for (const options of [{ env: {} }, { env: { WECHAT_DEVTOOLS_CLI: 'relative' } }, { env: { WECHAT_DEVTOOLS_CLI: f.cli }, platform: 'linux' }, { env: { WECHAT_DEVTOOLS_CLI: join(f.root, 'missing') } }]) {
+  for (const options of [{ env: {} }, { env: null }, { env: 42 }, { env: { WECHAT_DEVTOOLS_CLI: 'relative' } }, { env: { WECHAT_DEVTOOLS_CLI: f.cli }, platform: 'linux' }, { env: { WECHAT_DEVTOOLS_CLI: join(f.root, 'missing') } }]) {
     const trace = [];
     await expectFailure(() => checkWechatDevTools({ runner: runner({ trace }), repoRoot: f.root, port: PORT, platform: 'darwin', ...options }), 'WECHAT_CLI_INVALID'); assert.deepEqual(trace, []);
   }
@@ -223,6 +233,30 @@ test('validates CLI AppID project and version boundaries exhaustively before lat
   const malformedProject = await fixture(); t.after(() => rm(malformedProject.root, { recursive: true, force: true }));
   await writeFile(join(malformedProject.root, 'project.config.json'), '{');
   await expectFailure(() => checkWechatDevTools({ runner: runner(), env: { WECHAT_DEVTOOLS_CLI: malformedProject.cli }, repoRoot: malformedProject.root, port: PORT, platform: 'darwin' }), 'WECHAT_BUILD_FAILED');
+});
+
+test('contains injected environment getter throws within their active phase', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const cliTrace = [];
+  await expectFailure(() => checkWechatDevTools({
+    runner: runner({ trace: cliTrace }),
+    env: envWithThrowingGetter('WECHAT_DEVTOOLS_CLI', { npmExecutable: 'npm' }),
+    repoRoot: f.root,
+    port: PORT,
+    platform: 'darwin'
+  }), 'WECHAT_CLI_INVALID', [ENV_GETTER]);
+  assert.deepEqual(cliTrace, []);
+
+  const buildTrace = [];
+  await expectFailure(() => checkWechatDevTools({
+    runner: runner({ trace: buildTrace }),
+    env: envWithThrowingGetter('npmExecutable', { WECHAT_DEVTOOLS_CLI: f.cli }),
+    repoRoot: f.root,
+    port: PORT,
+    platform: 'darwin'
+  }), 'WECHAT_BUILD_FAILED', [ENV_GETTER]);
+  assertStopsAfter(buildTrace, 'build');
+  assert.doesNotMatch(JSON.stringify(buildTrace), new RegExp(ENV_GETTER));
 });
 
 test('parseArgs rejects every invalid port shape and main keeps the failure channel safe', async () => {

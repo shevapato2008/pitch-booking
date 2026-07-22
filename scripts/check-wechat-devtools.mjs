@@ -86,6 +86,15 @@ function portIsValid(port) {
   return typeof port === 'number' && Number.isSafeInteger(port) && port > 0;
 }
 
+function snapshotEnvironmentField(env, field, code) {
+  try {
+    if (!env || (typeof env !== 'object' && typeof env !== 'function')) return undefined;
+    return env[field];
+  } catch {
+    fail(code);
+  }
+}
+
 function loginIsAffirmative(stdout, stderr) {
   return [stdout, stderr].some((channel) => channel.split(/\r?\n/).some((line) => line === '{"login":true}'));
 }
@@ -167,8 +176,9 @@ export function parseArgs(argv) {
 
 export async function checkWechatDevTools({ runner = createDefaultRunner(), env = {}, repoRoot, port, platform = process.platform, output = () => {} } = {}) {
   if (!portIsValid(port)) fail('WECHAT_AUTOMATION_FAILED');
-  const cliPath = env.WECHAT_DEVTOOLS_CLI;
-  if (platform !== 'darwin' || typeof cliPath !== 'string' || !cliPath.startsWith('/') || cliPath.split('/').some((part) => part === '.' || part === '..')) fail('WECHAT_CLI_INVALID');
+  if (platform !== 'darwin') fail('WECHAT_CLI_INVALID');
+  const cliPath = snapshotEnvironmentField(env, 'WECHAT_DEVTOOLS_CLI', 'WECHAT_CLI_INVALID');
+  if (typeof cliPath !== 'string' || !cliPath.startsWith('/') || cliPath.split('/').some((part) => part === '.' || part === '..')) fail('WECHAT_CLI_INVALID');
   let canonicalCliPath;
   let cliStat;
   try {
@@ -213,7 +223,8 @@ export async function checkWechatDevTools({ runner = createDefaultRunner(), env 
   if (!projectConfig || projectConfig.miniprogramRoot !== EXPECTED_MINIPROGRAM_ROOT) fail('WECHAT_BUILD_FAILED');
   emit(output, { step: 'validate', status: 'passed' }, 'WECHAT_BUILD_FAILED');
 
-  const npmExecutable = typeof env.npmExecutable === 'string' && env.npmExecutable ? env.npmExecutable : 'npm';
+  const configuredNpmExecutable = snapshotEnvironmentField(env, 'npmExecutable', 'WECHAT_BUILD_FAILED');
+  const npmExecutable = typeof configuredNpmExecutable === 'string' && configuredNpmExecutable ? configuredNpmExecutable : 'npm';
   await invoke(runner, npmExecutable, ['run', 'build:miniprogram:development'], buildOptions, 'WECHAT_BUILD_FAILED', output, 'build');
   emit(output, { step: 'build', status: 'passed' }, 'WECHAT_BUILD_FAILED');
   const cliArgs = ['--project', repoRoot, '--port', String(port)];
