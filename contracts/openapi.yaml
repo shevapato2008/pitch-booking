@@ -237,7 +237,9 @@ components:
         url:
           type: string
           format: uri
-          pattern: '^https://'
+          description: ASCII dotted domain over lowercase HTTPS; no userinfo or port; non-ASCII octets must be percent-encoded.
+          pattern: >-
+            ^https://(?=[^/?#]{1,253}(?:[/?#]|$))[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?(?:\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?(?:#(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?$
         alt:
           type: string
           minLength: 1

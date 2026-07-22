@@ -111,6 +111,42 @@ test('primary venue example uses a stable UUID and contains no placeholder value
   assert.doesNotMatch(JSON.stringify(venue), /TODO|TBD|待配置|"string"/);
 });
 
+test('venue image URLs use the documented narrow ASCII HTTPS grammar', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const imageUrl = contract.components.schemas.VenueImage.properties.url;
+  const pattern = new RegExp(imageUrl.pattern);
+
+  assert.match(imageUrl.description, /ASCII.*domain/i);
+  assert.match(imageUrl.description, /no .*port/i);
+  assert.equal(pattern.test('https://cdn.example.com/a%20b.jpg?size=large#cover'), true);
+  for (const invalid of [
+    'HTTPS://example.com/a.jpg',
+    String.raw`https:\\example.com\a.jpg`,
+    'https://user:pass@example.com/a.jpg',
+    'https://[bad]/a.jpg',
+    'https://example.com/%.jpg',
+    'https://example.com/%2G.jpg',
+    'https://例子.com/a.jpg',
+    'https://example.com/主图.jpg',
+    'https://example.com:443/a.jpg',
+    'https://localhost/a.jpg',
+  ]) assert.equal(pattern.test(invalid), false, `accepted ${invalid}`);
+});
+
+test('contract validator rejects media URLs outside the client grammar', async () => {
+  for (const invalid of [
+    'https://example.com/%.jpg',
+    'https://例子.com/a.jpg',
+    'https://user:pass@example.com/a.jpg',
+    'https://[bad]/a.jpg',
+    'https://example.com:443/a.jpg',
+  ]) {
+    await assertMutatedExampleRejected('venue-primary.json', (venue) => {
+      venue.images[0].url = invalid;
+    }, /url|pattern|format/i);
+  }
+});
+
 test('error examples have an exact envelope and cover every required code', async () => {
   const filenames = [
     'error-invalid-argument.json',

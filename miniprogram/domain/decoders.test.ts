@@ -118,6 +118,12 @@ test.each([
   ["image credentials", { ...venue, images: [{ ...venue.images[0], url: "https://user:pass@example.test/a.jpg" }] }],
   ["malformed image host", { ...venue, images: [{ ...venue.images[0], url: "https://[bad]/a.jpg" }] }],
   ["whitespace in image URL", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/a b.jpg" }] }],
+  ["bare percent in image URL", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/%.jpg" }] }],
+  ["invalid percent escape", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/%2G.jpg" }] }],
+  ["raw Unicode host", { ...venue, images: [{ ...venue.images[0], url: "https://例子.test/a.jpg" }] }],
+  ["raw Unicode path", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/主图.jpg" }] }],
+  ["unsupported port", { ...venue, images: [{ ...venue.images[0], url: "https://example.test:443/a.jpg" }] }],
+  ["single-label host", { ...venue, images: [{ ...venue.images[0], url: "https://localhost/a.jpg" }] }],
   ["bad image role", { ...venue, images: [{ ...venue.images[0], role: "THUMBNAIL" }] }],
   ["fractional sort order", { ...venue, facilities: [{ ...venue.facilities[0], sort_order: 0.5 }] }],
   ["empty required text", { ...venue, name: "" }],
@@ -172,4 +178,24 @@ test("rejects a raw image URL containing backslashes", () => {
     ...venue,
     images: [{ ...venue.images[0], url: backslashUrl }],
   })).toThrow("INVALID_API_RESPONSE");
+});
+
+test("validates media URLs without a global URL implementation", () => {
+  const originalUrl = globalThis.URL;
+  Object.defineProperty(globalThis, "URL", { configurable: true, value: undefined });
+  try {
+    expect(decodeVenue(venue).images[0].url).toBe(venue.images[0].url);
+  } finally {
+    Object.defineProperty(globalThis, "URL", { configurable: true, value: originalUrl });
+  }
+});
+
+test("accepts the documented ASCII media URL grammar", () => {
+  const url = "https://cdn.example.com/a%20b.jpg?size=large#cover";
+  const decoded = decodeVenue({
+    ...venue,
+    images: [{ ...venue.images[0], url }],
+  });
+
+  expect(decoded.images[0].url).toBe(url);
 });
