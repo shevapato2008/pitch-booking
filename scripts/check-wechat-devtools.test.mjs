@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 const moduleUrl = new URL('./check-wechat-devtools.mjs', import.meta.url);
-const { checkWechatDevTools, createDefaultRunner, main, parseArgs } = await import(moduleUrl);
+const { WeChatEnvironmentError, checkWechatDevTools, createDefaultRunner, main, parseArgs } = await import(moduleUrl);
 
 const APPID = 'APPID_SECRET_SENTINEL_91e16f';
 const REPO = 'REPO_PATH_SENTINEL_91e16f';
 const CLI = 'CLI_PATH_SENTINEL_91e16f';
 const PORT_SENTINEL = '98761';
 const SESSION = 'SESSION_RAW_SENTINEL_91e16f';
+const PRIVATE = 'PRIVATE_SENTINEL_91e16f';
 const PORT = Number(PORT_SENTINEL);
 const messages = Object.freeze({
   WECHAT_CLI_INVALID: 'WeChat DevTools CLI must be an absolute executable file',
@@ -38,7 +39,7 @@ async function fixture({ appid = APPID, project = { miniprogramRoot: 'dist/minip
   await writeFile(join(root, `${CLI}.app`, 'Contents', 'Info.plist'), '<plist/>');
   await writeFile(cli, '#!/bin/sh\n');
   await chmod(cli, 0o755);
-  return { root, cli, privateConfig: join(root, 'project.private.config.json') };
+  return { root, cli, canonicalCli: await realpath(cli), privateConfig: join(root, 'project.private.config.json') };
 }
 
 function phaseFor(command, args) {
@@ -91,11 +92,11 @@ test('success runs the full safe trace with one selected port and emits only saf
   assert.equal(Object.isFrozen(report), true);
   assert.deepEqual(trace.map(({ command, args }) => [command, args]), [
     ['git', ['check-ignore', '--quiet', f.privateConfig]],
-    ['/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', `${f.cli.slice(0, f.cli.indexOf('.app') + 4)}/Contents/Info.plist`]],
+    ['/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', `${f.canonicalCli.slice(0, f.canonicalCli.indexOf('.app') + 4)}/Contents/Info.plist`]],
     ['npm', ['run', 'build:miniprogram:development']],
-    [f.cli, ['islogin', '--project', f.root, '--port', PORT_SENTINEL]],
-    [f.cli, ['open', '--project', f.root, '--port', PORT_SENTINEL]],
-    [f.cli, ['auto', '--project', f.root, '--port', PORT_SENTINEL, '--trust-project']]
+    [f.canonicalCli, ['islogin', '--project', f.root, '--port', PORT_SENTINEL]],
+    [f.canonicalCli, ['open', '--project', f.root, '--port', PORT_SENTINEL]],
+    [f.canonicalCli, ['auto', '--project', f.root, '--port', PORT_SENTINEL, '--trust-project']]
   ]);
   assert.deepEqual(trace.map(({ options }) => options), [
     { cwd: f.root, timeoutMs: 30_000, maxBufferBytes: 1_048_576 },
@@ -205,6 +206,26 @@ test('parseArgs rejects every invalid port shape and main keeps the failure chan
   assert.equal(stdout, ''); assert.deepEqual(JSON.parse(stderr), { ok: false, code: 'WECHAT_AUTOMATION_FAILED', message: messages.WECHAT_AUTOMATION_FAILED });
 });
 
+test('main emits only canonical messages for forged WeChatEnvironmentErrors', async () => {
+  for (const [forgedCode, forgedMessage, expectedCode] of [
+    ['PRIVATE_FORGED_CODE', PRIVATE, 'WECHAT_AUTOMATION_FAILED'],
+    ['WECHAT_LOGIN_REQUIRED', PRIVATE, 'WECHAT_LOGIN_REQUIRED']
+  ]) {
+    const forged = new WeChatEnvironmentError(forgedCode, forgedMessage);
+    const argv = new Proxy(['--port', PORT_SENTINEL], {
+      get(target, property, receiver) {
+        if (property === '0') throw forged;
+        return Reflect.get(target, property, receiver);
+      }
+    });
+    let stdout = ''; let stderr = '';
+    assert.equal(await main({ argv, writeOut: (text) => { stdout += text; }, writeErr: (text) => { stderr += text; } }), 1);
+    assert.equal(stdout, '');
+    assert.deepEqual(JSON.parse(stderr), { ok: false, code: expectedCode, message: messages[expectedCode] });
+    assert.doesNotMatch(`${stdout}${stderr}`, new RegExp(PRIVATE));
+  }
+});
+
 test('default runner recognizes real timeout and max-buffer overflow without exposing Node errors', async () => {
   const runner_ = createDefaultRunner();
   const timedOut = await runner_(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], { cwd: process.cwd(), timeoutMs: 10, maxBufferBytes: 1024 });
@@ -212,6 +233,55 @@ test('default runner recognizes real timeout and max-buffer overflow without exp
   const overflow = await runner_(process.execPath, ['-e', 'process.stdout.write("x".repeat(4096))'], { cwd: process.cwd(), timeoutMs: 1_000, maxBufferBytes: 8 });
   assert.equal(overflow.exitCode, 1); assert.equal(overflow.timedOut, false);
   assert.deepEqual(Object.keys(overflow).sort(), ['exitCode', 'signal', 'stderr', 'stdout', 'timedOut']);
+});
+
+test('default runner normalizes synchronous, missing-command, and permission-denied failures', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), `${REPO}-runner-`)); t.after(() => rm(root, { recursive: true, force: true }));
+  const blocked = join(root, 'blocked');
+  await writeFile(blocked, '#!/bin/sh\n');
+  await chmod(blocked, 0o644);
+  const runner_ = createDefaultRunner();
+  const options = { cwd: root, timeoutMs: 1_000, maxBufferBytes: 1_024 };
+  for (const [command, commandOptions] of [
+    ['\0', options],
+    [process.execPath, { ...options, cwd: '\0' }],
+    [join(root, 'missing'), options],
+    [blocked, options]
+  ]) {
+    const normalized = await runner_(command, [], commandOptions);
+    assert.equal(Object.isFrozen(normalized), true);
+    assert.deepEqual(normalized, { exitCode: 1, stdout: '', stderr: '', timedOut: false, signal: null });
+    assert.doesNotMatch(JSON.stringify(normalized), /ERR_INVALID_ARG_VALUE|ENOENT|EACCES/);
+  }
+});
+
+test('canonical CLI targets allow a safe symlink and execute the resolved binary', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const configured = join(f.root, 'approved-cli');
+  await symlink(f.cli, configured);
+  const trace = [];
+  await checkWechatDevTools({ runner: runner({ trace }), env: { WECHAT_DEVTOOLS_CLI: configured }, repoRoot: f.root, port: PORT, platform: 'darwin' });
+  assert.equal(trace[1].args[2], `${f.canonicalCli.slice(0, f.canonicalCli.indexOf('.app') + 4)}/Contents/Info.plist`);
+  assert.deepEqual(trace.slice(3).map(({ command }) => command), [f.canonicalCli, f.canonicalCli, f.canonicalCli]);
+});
+
+test('CLI validation rejects traversal, escaping symlinks, and nested app bundles', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const outside = join(f.root, 'outside-cli');
+  await writeFile(outside, '#!/bin/sh\n');
+  await chmod(outside, 0o755);
+  const escaping = join(f.root, 'Escaping.app', 'Contents', 'MacOS', 'cli');
+  await mkdir(join(f.root, 'Escaping.app', 'Contents', 'MacOS'), { recursive: true });
+  await symlink(outside, escaping);
+  const nested = join(f.root, 'Outer.app', 'Contents', 'MacOS', 'Nested.app', 'Contents', 'MacOS', 'cli');
+  await mkdir(join(f.root, 'Outer.app', 'Contents', 'MacOS', 'Nested.app', 'Contents', 'MacOS'), { recursive: true });
+  await writeFile(nested, '#!/bin/sh\n');
+  await chmod(nested, 0o755);
+  for (const [cli, code] of [[`${f.cli}/../../MacOS/cli`, 'WECHAT_CLI_INVALID'], [escaping, 'WECHAT_VERSION_UNAVAILABLE'], [nested, 'WECHAT_VERSION_UNAVAILABLE']]) {
+    const trace = [];
+    await expectFailure(() => checkWechatDevTools({ runner: runner({ trace }), env: { WECHAT_DEVTOOLS_CLI: cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), code);
+    assert.deepEqual(trace, []);
+  }
 });
 
 test('real entry point emits one safe stderr JSON object for invalid arguments', async () => {

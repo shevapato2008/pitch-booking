@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, readFile, stat } from 'node:fs/promises';
+import { access, readFile, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -50,9 +50,36 @@ function commandFailed(result, maxBufferBytes) {
 }
 
 function appBundleFor(cliPath) {
-  const marker = '.app/Contents/MacOS/';
-  const index = cliPath.indexOf(marker);
-  return index === -1 ? null : cliPath.slice(0, index + 4);
+  const parts = cliPath.split('/');
+  const appIndex = parts.length - 4;
+  if (appIndex < 1
+    || !parts[appIndex].endsWith('.app')
+    || parts.at(-3) !== 'Contents'
+    || parts.at(-2) !== 'MacOS'
+    || parts.at(-1) === ''
+    || parts.slice(1, appIndex).some((part) => part.endsWith('.app'))) return null;
+  return parts.slice(0, appIndex + 1).join('/');
+}
+
+function runnerResult(error, stdout = '', stderr = '') {
+  const timedOut = error?.code === 'ETIMEDOUT' || Boolean(error?.killed && error?.signal === 'SIGTERM');
+  return Object.freeze({
+    exitCode: typeof error?.code === 'number' ? error.code : error ? 1 : 0,
+    stdout: String(stdout),
+    stderr: String(stderr),
+    timedOut,
+    signal: typeof error?.signal === 'string' ? error.signal : null
+  });
+}
+
+function safeErrorCode(error) {
+  try {
+    return error instanceof WeChatEnvironmentError && typeof error.code === 'string' && Object.hasOwn(MESSAGES, error.code)
+      ? error.code
+      : 'WECHAT_AUTOMATION_FAILED';
+  } catch {
+    return 'WECHAT_AUTOMATION_FAILED';
+  }
 }
 
 function portIsValid(port) {
@@ -107,16 +134,13 @@ async function invoke(runner, command, args, options, code, output, step, port) 
 
 export function createDefaultRunner() {
   return (command, args, options) => new Promise((resolve) => {
-    execFile(command, args, { cwd: options.cwd, encoding: 'utf8', timeout: options.timeoutMs, maxBuffer: options.maxBufferBytes }, (error, stdout = '', stderr = '') => {
-      const timedOut = error?.code === 'ETIMEDOUT' || Boolean(error?.killed && error?.signal === 'SIGTERM');
-      resolve(Object.freeze({
-        exitCode: typeof error?.code === 'number' ? error.code : error ? 1 : 0,
-        stdout: String(stdout),
-        stderr: String(stderr),
-        timedOut,
-        signal: typeof error?.signal === 'string' ? error.signal : null
-      }));
-    });
+    try {
+      execFile(command, args, { cwd: options.cwd, encoding: 'utf8', timeout: options.timeoutMs, maxBuffer: options.maxBufferBytes }, (error, stdout = '', stderr = '') => {
+        resolve(runnerResult(error, stdout, stderr));
+      });
+    } catch (error) {
+      resolve(runnerResult(error));
+    }
   });
 }
 
@@ -130,16 +154,20 @@ export function parseArgs(argv) {
 export async function checkWechatDevTools({ runner = createDefaultRunner(), env = {}, repoRoot, port, platform = process.platform, output = () => {} } = {}) {
   if (!portIsValid(port)) fail('WECHAT_AUTOMATION_FAILED');
   const cliPath = env.WECHAT_DEVTOOLS_CLI;
-  if (platform !== 'darwin' || typeof cliPath !== 'string' || !cliPath.startsWith('/')) fail('WECHAT_CLI_INVALID');
+  if (platform !== 'darwin' || typeof cliPath !== 'string' || !cliPath.startsWith('/') || cliPath.split('/').some((part) => part === '.' || part === '..')) fail('WECHAT_CLI_INVALID');
+  let canonicalCliPath;
   let cliStat;
   try {
     cliStat = await stat(cliPath);
     await access(cliPath, constants.X_OK);
+    canonicalCliPath = await realpath(cliPath);
+    cliStat = await stat(canonicalCliPath);
+    await access(canonicalCliPath, constants.X_OK);
   } catch {
     fail('WECHAT_CLI_INVALID');
   }
   if (!cliStat.isFile()) fail('WECHAT_CLI_INVALID');
-  const bundle = appBundleFor(cliPath);
+  const bundle = appBundleFor(canonicalCliPath);
   if (!bundle) fail('WECHAT_VERSION_UNAVAILABLE');
 
   const privateConfigPath = `${repoRoot}/project.private.config.json`;
@@ -175,12 +203,12 @@ export async function checkWechatDevTools({ runner = createDefaultRunner(), env 
   await invoke(runner, npmExecutable, ['run', 'build:miniprogram:development'], buildOptions, 'WECHAT_BUILD_FAILED', output, 'build');
   emit(output, { step: 'build', status: 'passed' }, 'WECHAT_BUILD_FAILED');
   const cliArgs = ['--project', repoRoot, '--port', String(port)];
-  const login = await invoke(runner, cliPath, ['islogin', ...cliArgs], cliOptions, 'WECHAT_LOGIN_REQUIRED', output, 'login', port);
+  const login = await invoke(runner, canonicalCliPath, ['islogin', ...cliArgs], cliOptions, 'WECHAT_LOGIN_REQUIRED', output, 'login', port);
   if (!loginIsAffirmative(login.stdout, login.stderr)) fail('WECHAT_LOGIN_REQUIRED');
   emit(output, { step: 'login', status: 'passed' }, 'WECHAT_LOGIN_REQUIRED');
-  await invoke(runner, cliPath, ['open', ...cliArgs], cliOptions, 'WECHAT_OPEN_FAILED', output, 'open', port);
+  await invoke(runner, canonicalCliPath, ['open', ...cliArgs], cliOptions, 'WECHAT_OPEN_FAILED', output, 'open', port);
   emit(output, { step: 'open', status: 'passed' }, 'WECHAT_OPEN_FAILED');
-  await invoke(runner, cliPath, ['auto', ...cliArgs, '--trust-project'], cliOptions, 'WECHAT_AUTOMATION_FAILED', output, 'automation', port);
+  await invoke(runner, canonicalCliPath, ['auto', ...cliArgs, '--trust-project'], cliOptions, 'WECHAT_AUTOMATION_FAILED', output, 'automation', port);
   emit(output, { step: 'automation', status: 'passed' }, 'WECHAT_AUTOMATION_FAILED');
   return Object.freeze({ ok: true, version, checks: Object.freeze(['APPID_CONFIGURED', 'PROJECT_CONFIGURED', 'BUILD_COMPLETED', 'LOGIN_CONFIRMED', 'PROJECT_OPENED', 'AUTOMATION_ENABLED']) });
 }
@@ -192,8 +220,8 @@ export async function main({ argv = process.argv.slice(2), env = process.env, cw
     writeOut(`${JSON.stringify(report)}\n`);
     return 0;
   } catch (error) {
-    const safe = error instanceof WeChatEnvironmentError ? error : new WeChatEnvironmentError('WECHAT_AUTOMATION_FAILED');
-    writeErr(`${JSON.stringify({ ok: false, code: safe.code, message: safe.message })}\n`);
+    const code = safeErrorCode(error);
+    writeErr(`${JSON.stringify({ ok: false, code, message: MESSAGES[code] })}\n`);
     return 1;
   }
 }
