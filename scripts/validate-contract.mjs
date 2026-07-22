@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 import SwaggerParser from '@apidevtools/swagger-parser';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -102,6 +103,12 @@ const requiredErrorCodes = new Set([
   'INTERNAL_ERROR',
   'PRIMARY_VENUE_MISCONFIGURED',
 ]);
+const expectedOperations = new Map([
+  ['/api/v1/health', new Set(['get'])],
+  ['/api/v1/venues/primary', new Set(['get'])],
+  ['/api/v1/venues/{venue_id}/availability', new Set(['get'])],
+]);
+const httpMethods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
 function fail(message) {
   throw new Error(message);
@@ -127,22 +134,48 @@ function hasExactKeys(value, expectedKeys) {
 }
 
 function isExactCanonicalAttachment(attachedExample, definition) {
-  if (!hasExactKeys(attachedExample, ['value'])) return false;
-  const attachedValue = attachedExample.value;
   const isReference = definition.reference !== undefined
-    && hasExactKeys(attachedValue, ['$ref'])
-    && attachedValue.$ref === definition.reference;
-  const isInlineValue = isDeepStrictEqual(attachedValue, definition.value);
+    && hasExactKeys(attachedExample, ['externalValue'])
+    && attachedExample.externalValue === definition.reference;
+  const isInlineValue = hasExactKeys(attachedExample, ['value'])
+    && isDeepStrictEqual(attachedExample.value, definition.value);
   return isReference || isInlineValue;
+}
+
+function validateOperationMatrix(contract) {
+  const actualPaths = Object.keys(contract.paths ?? {}).sort();
+  const expectedPaths = [...expectedOperations.keys()].sort();
+  if (!isDeepStrictEqual(actualPaths, expectedPaths)) {
+    fail(`operation matrix paths differ: expected ${expectedPaths.join(', ')}; found ${actualPaths.join(', ')}`);
+  }
+  for (const [pathName, pathItem] of Object.entries(contract.paths)) {
+    const methods = httpMethods.filter((method) => pathItem[method] !== undefined);
+    const expectedMethods = [...expectedOperations.get(pathName)].sort();
+    if (!isDeepStrictEqual(methods.sort(), expectedMethods)) {
+      fail(`operation method matrix differs at ${pathName}: expected GET only; found ${methods.join(', ')}`);
+    }
+  }
 }
 
 function findAllAttachments(contract) {
   const found = [];
   for (const [pathName, pathItem] of Object.entries(contract.paths ?? {})) {
-    for (const method of ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']) {
+    for (const method of httpMethods) {
       const operation = pathItem[method];
       for (const [status, response] of Object.entries(operation?.responses ?? {})) {
-        const jsonContent = response.content?.['application/json'];
+        if (Object.hasOwn(response, 'example') || Object.hasOwn(response, 'examples')) {
+          fail(`misplaced response-level example is not allowed at ${method.toUpperCase()} ${pathName} ${status}`);
+        }
+        const content = response.content ?? {};
+        if (Object.hasOwn(content, 'example') || Object.hasOwn(content, 'examples')) {
+          fail(`misplaced content-level example is not allowed at ${method.toUpperCase()} ${pathName} ${status}`);
+        }
+        for (const [mediaType, media] of Object.entries(content)) {
+          if (mediaType !== 'application/json' && (Object.hasOwn(media, 'example') || Object.hasOwn(media, 'examples'))) {
+            fail(`example on unapproved media type ${mediaType} at ${method.toUpperCase()} ${pathName} ${status}`);
+          }
+        }
+        const jsonContent = content['application/json'];
         if (jsonContent && Object.hasOwn(jsonContent, 'example')) {
           fail(`singular attached example is not allowed at ${method.toUpperCase()} ${pathName} ${status}`);
         }
@@ -199,6 +232,11 @@ function validateVenueBusinessRules(venue, filename) {
   for (const field of ['images', 'facilities', 'pitch_types']) {
     assertSorted(venue[field], ({ sort_order: sortOrder }) => sortOrder, `${filename}: ${field}`);
   }
+  const pitchCodes = [...new Set(venue.pitch_types.map(({ code }) => code))].sort();
+  if (!isDeepStrictEqual(pitchCodes, ['FIVE_A_SIDE', 'SEVEN_A_SIDE'])) {
+    fail(`${filename}: venue must support both required pitch types`);
+  }
+  validateWindow(venue.availability_window, filename);
   if (!venue.generated_at.endsWith('+08:00')) {
     fail(`${filename}: generated_at must include explicit +08:00 offset`);
   }
@@ -212,19 +250,47 @@ const expectedReason = {
   EXPIRED: 'TIME_PASSED',
 };
 
+function validateWindow(window, filename) {
+  if (window.start_date > window.end_date) {
+    fail(`${filename}: availability window start_date must be ordered before end_date`);
+  }
+}
+
 function validateAvailabilityBusinessRules(availability, filename) {
   if (!availability.generated_at.endsWith('+08:00')) {
     fail(`${filename}: generated_at must include explicit +08:00 offset`);
   }
+  validateWindow(availability.availability_window, filename);
+  if (
+    availability.date < availability.availability_window.start_date
+    || availability.date > availability.availability_window.end_date
+  ) {
+    fail(`${filename}: availability date must be inside its window`);
+  }
+  if (filename === 'availability-ready.json') {
+    const statuses = [...new Set(availability.pitches.flatMap(({ slots }) => slots.map(({ status }) => status)))].sort();
+    if (!isDeepStrictEqual(statuses, Object.keys(expectedReason).sort())) {
+      fail(`${filename}: ready example must cover all five statuses`);
+    }
+  }
   assertSorted(availability.pitches, ({ sort_order: sortOrder }) => sortOrder, `${filename}: pitches`);
   for (const pitch of availability.pitches) {
+    if (pitch.pitch_type !== availability.pitch_type) {
+      fail(`${filename}: pitch_type data must match the requested filter`);
+    }
     assertSorted(pitch.slots, ({ starts_at: startsAt }) => startsAt, `${filename}: ${pitch.name} slots`);
-    for (const slot of pitch.slots) {
+    for (const [index, slot] of pitch.slots.entries()) {
       if (!slot.starts_at.endsWith('+08:00') || !slot.ends_at.endsWith('+08:00')) {
         fail(`${filename}: slot ${slot.id} timestamps must include explicit +08:00 offset`);
       }
       if (Date.parse(slot.starts_at) >= Date.parse(slot.ends_at)) {
         fail(`${filename}: slot ${slot.id} starts_at must be before ends_at`);
+      }
+      if (slot.starts_at.slice(0, 10) !== availability.date || slot.ends_at.slice(0, 10) !== availability.date) {
+        fail(`${filename}: slot ${slot.id} must stay on the requested local date and not cross midnight`);
+      }
+      if (index > 0 && Date.parse(pitch.slots[index - 1].ends_at) > Date.parse(slot.starts_at)) {
+        fail(`${filename}: slots must not overlap`);
       }
       if (slot.unavailable_reason !== expectedReason[slot.status]) {
         fail(`${filename}: slot ${slot.id} status and unavailable_reason do not correspond`);
@@ -233,26 +299,40 @@ function validateAvailabilityBusinessRules(availability, filename) {
   }
 }
 
-async function main() {
-  const [, , ...arguments_] = process.argv;
-  if (arguments_.length > 1) fail('pass at most one OpenAPI contract path');
-  const contractPath = arguments_[0]
-    ? path.resolve(process.cwd(), arguments_[0])
-    : defaultContractPath;
+async function readJsonWithContext(filename) {
+  try {
+    return JSON.parse(await readFile(filename, 'utf8'));
+  } catch (error) {
+    throw new Error(`${filename}: ${error.message}`);
+  }
+}
+
+export async function validateContract(contractPath = defaultContractPath) {
+  contractPath = path.resolve(contractPath);
   const rawContract = await SwaggerParser.parse(contractPath);
+  validateOperationMatrix(rawContract);
+  findAllAttachments(rawContract);
   await SwaggerParser.validate(contractPath);
   const contract = await SwaggerParser.dereference(contractPath);
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
   const coveredErrorCodes = new Set();
   const mappedExamples = [];
 
   for (const mapping of exampleMap) {
     const canonicalPath = path.resolve(path.dirname(contractPath), mapping.reference);
-    const value = JSON.parse(await readFile(canonicalPath, 'utf8'));
+    const value = await readJsonWithContext(canonicalPath);
     mappedExamples.push({ ...mapping, value });
   }
   validateAttachments(rawContract, [...mappedExamples, ...inlineExampleMap]);
+
+  for (const [schemaName, schema] of Object.entries(contract.components.schemas)) {
+    try {
+      ajv.compile(schema);
+    } catch (error) {
+      fail(`schema ${schemaName}: ${error.message}`);
+    }
+  }
 
   for (const mapping of mappedExamples) {
     if (!contract.components.schemas[mapping.schema]) {
@@ -283,10 +363,20 @@ async function main() {
   const missingCodes = [...requiredErrorCodes].filter((code) => !coveredErrorCodes.has(code));
   if (missingCodes.length > 0) fail(`missing required error example codes: ${missingCodes.join(', ')}`);
 
-  console.log(`Contract validated ${exampleMap.length} JSON examples against the OpenAPI document.`);
+  return { contract, exampleCount: exampleMap.length };
 }
 
-main().catch((error) => {
-  console.error(`Contract validation failed: ${error.message}`);
-  process.exitCode = 1;
-});
+async function main() {
+  const [, , ...arguments_] = process.argv;
+  if (arguments_.length > 1) fail('pass at most one OpenAPI contract path');
+  const contractPath = arguments_[0] ? path.resolve(process.cwd(), arguments_[0]) : defaultContractPath;
+  const { exampleCount } = await validateContract(contractPath);
+  console.log(`Contract validated ${exampleCount} JSON examples against the OpenAPI document.`);
+}
+
+if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? '')) {
+  main().catch((error) => {
+    console.error(`Contract validation failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

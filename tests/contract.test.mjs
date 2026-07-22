@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 import SwaggerParser from '@apidevtools/swagger-parser';
 import YAML from 'yaml';
@@ -12,6 +13,7 @@ import YAML from 'yaml';
 const contractPath = new URL('../contracts/openapi.yaml', import.meta.url);
 const examplesDirectory = new URL('../contracts/examples/', import.meta.url);
 const repositoryDirectory = new URL('../', import.meta.url);
+const repositoryPath = fileURLToPath(repositoryDirectory);
 const execFileAsync = promisify(execFile);
 
 async function readExample(filename) {
@@ -29,7 +31,7 @@ async function withMutatedContract(mutate) {
   return { copiedContractPath, temporaryDirectory };
 }
 
-async function assertMutatedContractRejected(mutate) {
+async function assertMutatedContractRejected(mutate, diagnostic = /Contract validation failed/i) {
   const { copiedContractPath, temporaryDirectory } = await withMutatedContract(mutate);
   try {
     await assert.rejects(
@@ -40,13 +42,48 @@ async function assertMutatedContractRejected(mutate) {
       ),
       (error) => {
         assert.notEqual(error.code, 0);
-        assert.match(`${error.stdout}${error.stderr}`, /attached example/i);
+        assert.match(`${error.stdout}${error.stderr}`, diagnostic);
         return true;
       },
     );
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
+}
+
+async function assertMutatedExampleRejected(filename, mutate, diagnostic) {
+  const { copiedContractPath, temporaryDirectory } = await withMutatedContract(() => {});
+  try {
+    const examplePath = path.join(path.dirname(copiedContractPath), 'examples', filename);
+    const example = JSON.parse(await readFile(examplePath, 'utf8'));
+    mutate(example);
+    await writeFile(examplePath, `${JSON.stringify(example, null, 2)}\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync(process.execPath, ['scripts/validate-contract.mjs', copiedContractPath], {
+        cwd: repositoryDirectory,
+      }),
+      (error) => {
+        assert.match(`${error.stdout}${error.stderr}`, diagnostic);
+        return true;
+      },
+    );
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function createTemporaryRepository() {
+  const temporaryDirectory = await mkdtemp(path.join(repositoryPath, '.contract-generator-test-'));
+  await cp(new URL('../contracts/', import.meta.url), path.join(temporaryDirectory, 'contracts'), { recursive: true });
+  await cp(new URL('../scripts/', import.meta.url), path.join(temporaryDirectory, 'scripts'), { recursive: true });
+  await mkdir(path.join(temporaryDirectory, 'artifacts/ui/fixtures'), { recursive: true });
+  return temporaryDirectory;
+}
+
+async function runTemporaryGenerator(temporaryDirectory, argument) {
+  const arguments_ = [path.join(temporaryDirectory, 'scripts/generate-fixtures.mjs')];
+  if (argument) arguments_.push(argument);
+  return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
 test('OpenAPI document validates and exposes exactly the three browsing paths', async () => {
@@ -115,6 +152,21 @@ test('contract validator checks the OpenAPI document and every mapped example', 
   assert.equal(stderr, '');
 });
 
+test('file-backed OpenAPI examples use standard closed externalValue objects', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  for (const pathItem of Object.values(contract.paths)) {
+    for (const response of Object.values(pathItem.get.responses)) {
+      for (const [key, example] of Object.entries(
+        response.content?.['application/json']?.examples ?? {},
+      )) {
+        if (key === 'HealthOk') continue;
+        assert.deepEqual(Object.keys(example), ['externalValue']);
+        assert.match(example.externalValue, /^\.\/examples\/.+\.json$/);
+      }
+    }
+  }
+});
+
 test('contract validator rejects a missing required attached example', async () => {
   await assertMutatedContractRejected((contract) => {
     delete contract.paths['/api/v1/venues/primary'].get.responses['200']
@@ -134,7 +186,7 @@ test('contract validator rejects an example attached under the wrong status', as
 test('contract validator rejects an attached ref targeting the wrong canonical example', async () => {
   await assertMutatedContractRejected((contract) => {
     contract.paths['/api/v1/venues/primary'].get.responses['200']
-      .content['application/json'].examples.PrimaryVenue.value.$ref =
+      .content['application/json'].examples.PrimaryVenue.externalValue =
         './examples/availability-ready.json';
   });
 });
@@ -143,7 +195,7 @@ test('contract validator rejects a canonical ref with a conflicting value siblin
   await assertMutatedContractRejected((contract) => {
     const attachedExample = contract.paths['/api/v1/venues/primary'].get.responses['200']
       .content['application/json'].examples.PrimaryVenue;
-    attachedExample.value.value = { id: 'conflicts-with-canonical-example' };
+    attachedExample.value = { id: 'conflicts-with-canonical-example' };
   });
 });
 
@@ -151,7 +203,7 @@ test('contract validator rejects a canonical ref with arbitrary sibling metadata
   await assertMutatedContractRejected((contract) => {
     const attachedExample = contract.paths['/api/v1/venues/primary'].get.responses['200']
       .content['application/json'].examples.PrimaryVenue;
-    attachedExample.value.metadata = 'unexpected sibling';
+    attachedExample.summary = 'unexpected sibling';
   });
 });
 
@@ -160,10 +212,8 @@ test('contract validator rejects a wrong-status canonical ref duplicate with met
     const examples = contract.paths['/api/v1/venues/{venue_id}/availability'].get
       .responses['404'].content['application/json'].examples;
     examples.UnexpectedPrimaryVenue = {
-      value: {
-        $ref: './examples/venue-primary.json',
-        metadata: 'must not hide this duplicate from the attachment scan',
-      },
+      externalValue: './examples/venue-primary.json',
+      summary: 'must not hide this duplicate from the attachment scan',
     };
   });
 });
@@ -196,26 +246,165 @@ test('contract validator rejects a singular response example outside the allow-l
   });
 });
 
-test('fixture generator writes only normalized allow-listed success fixtures', async () => {
-  const { stdout, stderr } = await execFileAsync(
-    process.execPath,
-    ['scripts/generate-fixtures.mjs'],
-    { cwd: repositoryDirectory },
-  );
+test('contract validator rejects examples on non-JSON media types', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/health'].get.responses['200'].content['text/plain'] = {
+      examples: { Shadow: { value: 'ok' } },
+    };
+  }, /example/i);
+});
 
-  assert.match(stdout, /generated 3 fixtures/i);
-  assert.equal(stderr, '');
-  const mappings = [
-    ['venue-primary.json', 'venue-ready.json'],
-    ['availability-ready.json', 'slots-ready.json'],
-    ['availability-empty.json', 'slots-empty.json'],
-  ];
-  for (const [sourceName, fixtureName] of mappings) {
-    const source = await readExample(sourceName);
-    const fixture = JSON.parse(
-      await readFile(new URL(`../artifacts/ui/fixtures/${fixtureName}`, import.meta.url), 'utf8'),
+test('contract validator rejects response-level misplaced examples', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/health'].get.responses['200'].examples = {
+      Shadow: { value: { status: 'ok' } },
+    };
+  }, /example/i);
+});
+
+test('contract validator rejects extra operations', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/health'].post = contract.paths['/api/v1/health'].get;
+  }, /operation|method/i);
+});
+
+test('contract validator rejects unknown JSON Schema keywords', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.Health.unknown_contract_keyword = true;
+  }, /unknown_contract_keyword|strict mode/i);
+});
+
+test('venue example supports both required pitch types', async () => {
+  await assertMutatedExampleRejected('venue-primary.json', (venue) => {
+    venue.pitch_types = venue.pitch_types.filter(({ code }) => code !== 'SEVEN_A_SIDE');
+  }, /both.*pitch|pitch.*both/i);
+});
+
+test('ready availability example covers all five statuses', async () => {
+  await assertMutatedExampleRejected('availability-ready.json', (availability) => {
+    availability.pitches[0].slots = availability.pitches[0].slots.filter(({ status }) => status !== 'CLOSED');
+  }, /five.*status|status.*five/i);
+});
+
+test('booking windows must be ordered', async () => {
+  await assertMutatedExampleRejected('venue-primary.json', (venue) => {
+    [venue.availability_window.start_date, venue.availability_window.end_date] =
+      [venue.availability_window.end_date, venue.availability_window.start_date];
+  }, /window.*order|start_date.*end_date/i);
+});
+
+test('availability date must fall inside its booking window', async () => {
+  await assertMutatedExampleRejected('availability-ready.json', (availability) => {
+    availability.date = '2026-08-05';
+  }, /date.*window/i);
+});
+
+test('pitch data must match the requested pitch type filter', async () => {
+  await assertMutatedExampleRejected('availability-ready.json', (availability) => {
+    availability.pitches[0].pitch_type = 'SEVEN_A_SIDE';
+  }, /pitch_type.*filter|pitch.*type/i);
+});
+
+test('slots must stay on the requested local date without crossing midnight', async () => {
+  await assertMutatedExampleRejected('availability-ready.json', (availability) => {
+    availability.pitches[0].slots[4].ends_at = '2026-07-23T00:30:00+08:00';
+  }, /local date|midnight/i);
+});
+
+test('slots must not overlap', async () => {
+  await assertMutatedExampleRejected('availability-ready.json', (availability) => {
+    availability.pitches[0].slots[1].starts_at = '2026-07-22T09:30:00+08:00';
+  }, /overlap/i);
+});
+
+test('fixture generator writes only normalized allow-listed success fixtures', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  try {
+    const { stdout, stderr } = await runTemporaryGenerator(temporaryDirectory);
+    assert.match(stdout, /generated 3 fixtures/i);
+    assert.equal(stderr, '');
+    const mappings = [
+      ['venue-primary.json', 'venue-ready.json'],
+      ['availability-ready.json', 'slots-ready.json'],
+      ['availability-empty.json', 'slots-empty.json'],
+    ];
+    assert.deepEqual(
+      (await readdir(path.join(temporaryDirectory, 'artifacts/ui/fixtures'))).sort(),
+      mappings.map(([, fixtureName]) => fixtureName).sort(),
     );
-    assert.deepEqual(fixture, source);
+    for (const [sourceName, fixtureName] of mappings) {
+      const sourceBytes = await readFile(path.join(temporaryDirectory, 'contracts/examples', sourceName));
+      const normalizedBytes = Buffer.from(`${JSON.stringify(JSON.parse(sourceBytes), null, 2)}\n`);
+      const fixtureBytes = await readFile(path.join(temporaryDirectory, 'artifacts/ui/fixtures', fixtureName));
+      assert.deepEqual(fixtureBytes, normalizedBytes);
+    }
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('fixture generator rejects a symlinked fixture directory without touching its sentinel', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const externalDirectory = await mkdtemp(path.join(tmpdir(), 'pitch-booking-sentinel-'));
+  const sentinelPath = path.join(externalDirectory, 'venue-ready.json');
+  try {
+    await writeFile(sentinelPath, 'EXTERNAL SENTINEL', 'utf8');
+    await rm(path.join(temporaryDirectory, 'artifacts/ui/fixtures'), { recursive: true });
+    await symlink(externalDirectory, path.join(temporaryDirectory, 'artifacts/ui/fixtures'));
+    await assert.rejects(runTemporaryGenerator(temporaryDirectory), /symlink/i);
+    assert.equal(await readFile(sentinelPath, 'utf8'), 'EXTERNAL SENTINEL');
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+    await rm(externalDirectory, { recursive: true, force: true });
+  }
+});
+
+test('fixture generator rejects a symlinked destination file without touching its sentinel', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const sentinelPath = path.join(temporaryDirectory, 'external-sentinel.json');
+  try {
+    await writeFile(sentinelPath, 'EXTERNAL SENTINEL', 'utf8');
+    await symlink(sentinelPath, path.join(temporaryDirectory, 'artifacts/ui/fixtures/venue-ready.json'));
+    await assert.rejects(runTemporaryGenerator(temporaryDirectory), /symlink/i);
+    assert.equal(await readFile(sentinelPath, 'utf8'), 'EXTERNAL SENTINEL');
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('fixture generator validates the full contract before touching outputs', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const sentinelPath = path.join(temporaryDirectory, 'artifacts/ui/fixtures/venue-ready.json');
+  try {
+    await writeFile(sentinelPath, 'LOCAL SENTINEL', 'utf8');
+    const venuePath = path.join(temporaryDirectory, 'contracts/examples/venue-primary.json');
+    const venue = JSON.parse(await readFile(venuePath, 'utf8'));
+    venue.pitch_types.pop();
+    await writeFile(venuePath, JSON.stringify(venue), 'utf8');
+    await assert.rejects(runTemporaryGenerator(temporaryDirectory), /pitch/i);
+    assert.equal(await readFile(sentinelPath, 'utf8'), 'LOCAL SENTINEL');
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('fixture generator pre-reads all sources and reports filename context before writes', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const sentinelPath = path.join(temporaryDirectory, 'artifacts/ui/fixtures/venue-ready.json');
+  try {
+    await writeFile(sentinelPath, 'LOCAL SENTINEL', 'utf8');
+    await writeFile(
+      path.join(temporaryDirectory, 'contracts/examples/availability-ready.json'),
+      '{ malformed JSON',
+      'utf8',
+    );
+    await assert.rejects(
+      runTemporaryGenerator(temporaryDirectory),
+      /availability-ready\.json/i,
+    );
+    assert.equal(await readFile(sentinelPath, 'utf8'), 'LOCAL SENTINEL');
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
 

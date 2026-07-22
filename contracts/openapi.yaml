@@ -28,15 +28,16 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             const: SERVICE_UNAVAILABLE
               examples:
                 ServiceUnavailable:
-                  value:
-                    $ref: './examples/error-service-unavailable.json'
+                  externalValue: './examples/error-service-unavailable.json'
   /api/v1/venues/primary:
     get:
       operationId: getPrimaryVenue
@@ -52,8 +53,7 @@ paths:
                 $ref: '#/components/schemas/Venue'
               examples:
                 PrimaryVenue:
-                  value:
-                    $ref: './examples/venue-primary.json'
+                  externalValue: './examples/venue-primary.json'
         '500':
           description: Primary venue configuration or internal failure.
           content:
@@ -61,18 +61,18 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             enum: [PRIMARY_VENUE_MISCONFIGURED, INTERNAL_ERROR]
               examples:
                 PrimaryVenueMisconfigured:
-                  value:
-                    $ref: './examples/error-primary-venue-misconfigured.json'
+                  externalValue: './examples/error-primary-venue-misconfigured.json'
                 InternalError:
-                  value:
-                    $ref: './examples/error-internal.json'
+                  externalValue: './examples/error-internal.json'
         '503':
           description: Service is temporarily unavailable.
           content:
@@ -80,15 +80,16 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             const: SERVICE_UNAVAILABLE
               examples:
                 ServiceUnavailable:
-                  value:
-                    $ref: './examples/error-service-unavailable.json'
+                  externalValue: './examples/error-service-unavailable.json'
   /api/v1/venues/{venue_id}/availability:
     get:
       operationId: getVenueAvailability
@@ -122,11 +123,9 @@ paths:
                 $ref: '#/components/schemas/Availability'
               examples:
                 AvailabilityReady:
-                  value:
-                    $ref: './examples/availability-ready.json'
+                  externalValue: './examples/availability-ready.json'
                 AvailabilityEmpty:
-                  value:
-                    $ref: './examples/availability-empty.json'
+                  externalValue: './examples/availability-empty.json'
         '404':
           description: Venue does not exist.
           content:
@@ -134,15 +133,16 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             const: VENUE_NOT_FOUND
               examples:
                 VenueNotFound:
-                  value:
-                    $ref: './examples/error-venue-not-found.json'
+                  externalValue: './examples/error-venue-not-found.json'
         '422':
           description: Request parameters are invalid or outside supported bounds.
           content:
@@ -150,21 +150,20 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             enum: [INVALID_ARGUMENT, PITCH_TYPE_NOT_SUPPORTED, DATE_OUT_OF_RANGE]
               examples:
                 InvalidArgument:
-                  value:
-                    $ref: './examples/error-invalid-argument.json'
+                  externalValue: './examples/error-invalid-argument.json'
                 PitchTypeNotSupported:
-                  value:
-                    $ref: './examples/error-pitch-type-not-supported.json'
+                  externalValue: './examples/error-pitch-type-not-supported.json'
                 DateOutOfRange:
-                  value:
-                    $ref: './examples/error-date-out-of-range.json'
+                  externalValue: './examples/error-date-out-of-range.json'
         '500':
           description: Internal service failure.
           content:
@@ -172,15 +171,16 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             const: INTERNAL_ERROR
               examples:
                 InternalError:
-                  value:
-                    $ref: './examples/error-internal.json'
+                  externalValue: './examples/error-internal.json'
         '503':
           description: Service is temporarily unavailable.
           content:
@@ -188,15 +188,16 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
-                  - properties:
+                  - type: object
+                    properties:
                       error:
+                        type: object
                         properties:
                           code:
                             const: SERVICE_UNAVAILABLE
               examples:
                 ServiceUnavailable:
-                  value:
-                    $ref: './examples/error-service-unavailable.json'
+                  externalValue: './examples/error-service-unavailable.json'
 components:
   headers:
     RequestId:
@@ -376,27 +377,32 @@ components:
           type: [string, 'null']
           enum: [HELD_FOR_PAYMENT, ALREADY_BOOKED, VENUE_CLOSED, TIME_PASSED, null]
       oneOf:
-        - properties:
+        - type: object
+          properties:
             status:
               const: AVAILABLE
             unavailable_reason:
               const: null
-        - properties:
+        - type: object
+          properties:
             status:
               const: TEMPORARILY_LOCKED
             unavailable_reason:
               const: HELD_FOR_PAYMENT
-        - properties:
+        - type: object
+          properties:
             status:
               const: BOOKED
             unavailable_reason:
               const: ALREADY_BOOKED
-        - properties:
+        - type: object
+          properties:
             status:
               const: CLOSED
             unavailable_reason:
               const: VENUE_CLOSED
-        - properties:
+        - type: object
+          properties:
             status:
               const: EXPIRED
             unavailable_reason:
