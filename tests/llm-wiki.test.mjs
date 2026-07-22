@@ -122,14 +122,13 @@ test('WX-ENV guide requires native evidence and makes CLI selection and output b
   assert.match(build, /两者.*不是.*项目.*导入根/s);
 });
 
-test('WX-ENV-003 zsh snippets are syntactically valid', () => {
-  const cli = section(readFileSync(environmentGuide, 'utf8'), 'WX-ENV-003：定位并配置 CLI');
-  const snippets = fencedCodeBlocks(cli, 'zsh');
+test('every zsh snippet in the WX-ENV guide is syntactically valid', () => {
+  const snippets = fencedCodeBlocks(readFileSync(environmentGuide, 'utf8'), 'zsh');
 
-  assert.ok(snippets.length > 0, 'WX-ENV-003 must contain zsh snippets');
+  assert.ok(snippets.length > 0, 'WX-ENV guide must contain zsh snippets');
   for (const snippet of snippets) {
     const result = spawnSync('zsh', ['-n'], { input: snippet, encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr || 'zsh rejected a WX-ENV-003 snippet');
+    assert.equal(result.status, 0, result.stderr || 'zsh rejected a WX-ENV zsh snippet');
   }
 });
 

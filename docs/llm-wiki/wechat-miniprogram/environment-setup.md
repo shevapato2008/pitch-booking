@@ -88,7 +88,7 @@ app_bundle="$(dirname "$(dirname "$(dirname "$WECHAT_DEVTOOLS_CLI")")")"
 
 ```zsh
 cd "$(git rev-parse --show-toplevel)"
-npm run env:wechat:check -- --port <positive-integer>
+npm run env:wechat:check -- --port '<positive-integer>'
 ```
 
 本项目的 `project.config.json` 拥有 `miniprogramRoot`；被忽略的 `project.private.config.json` 才放机器/账户私有的 AppID。导入、编译和预览的基本流程以[微信快速开始](https://developers.weixin.qq.com/miniprogram/dev/framework/quickstart/getstart.html)为准。
