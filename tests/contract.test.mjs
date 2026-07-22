@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 import SwaggerParser from '@apidevtools/swagger-parser';
 import YAML from 'yaml';
+
+import { generateFixtures } from '../scripts/generate-fixtures.mjs';
 
 const contractPath = new URL('../contracts/openapi.yaml', import.meta.url);
 const examplesDirectory = new URL('../contracts/examples/', import.meta.url);
@@ -76,7 +78,12 @@ async function createTemporaryRepository() {
   const temporaryDirectory = await mkdtemp(path.join(repositoryPath, '.contract-generator-test-'));
   await cp(new URL('../contracts/', import.meta.url), path.join(temporaryDirectory, 'contracts'), { recursive: true });
   await cp(new URL('../scripts/', import.meta.url), path.join(temporaryDirectory, 'scripts'), { recursive: true });
-  await mkdir(path.join(temporaryDirectory, 'artifacts/ui/fixtures'), { recursive: true });
+  await mkdir(path.join(temporaryDirectory, 'artifacts/ui'), { recursive: true });
+  await cp(
+    new URL('../artifacts/ui/fixtures/', import.meta.url),
+    path.join(temporaryDirectory, 'artifacts/ui/fixtures'),
+    { recursive: true },
+  );
   return temporaryDirectory;
 }
 
@@ -274,6 +281,19 @@ test('contract validator rejects unknown JSON Schema keywords', async () => {
   }, /unknown_contract_keyword|strict mode/i);
 });
 
+test('contract validator rejects unknown keywords in inline parameter schemas', async () => {
+  await assertMutatedContractRejected((contract) => {
+    const availability = contract.paths['/api/v1/venues/{venue_id}/availability'].get;
+    availability.parameters.find(({ name }) => name === 'date').schema.unknown_parameter_keyword = true;
+  }, /unknown_parameter_keyword|strict mode/i);
+});
+
+test('contract validator validates inline HealthOk against its response schema', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.Health.properties.status.const = 'healthy';
+  }, /HealthOk|status|const/i);
+});
+
 test('venue example supports both required pitch types', async () => {
   await assertMutatedExampleRejected('venue-primary.json', (venue) => {
     venue.pitch_types = venue.pitch_types.filter(({ code }) => code !== 'SEVEN_A_SIDE');
@@ -343,6 +363,20 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
   }
 });
 
+test('checked-in fixtures already match normalized canonical examples byte-for-byte', async () => {
+  const mappings = [
+    ['venue-primary.json', 'venue-ready.json'],
+    ['availability-ready.json', 'slots-ready.json'],
+    ['availability-empty.json', 'slots-empty.json'],
+  ];
+  for (const [sourceName, fixtureName] of mappings) {
+    const sourceBytes = await readFile(new URL(`../contracts/examples/${sourceName}`, import.meta.url));
+    const expected = Buffer.from(`${JSON.stringify(JSON.parse(sourceBytes), null, 2)}\n`);
+    const actual = await readFile(new URL(`../artifacts/ui/fixtures/${fixtureName}`, import.meta.url));
+    assert.deepEqual(actual, expected, fixtureName);
+  }
+});
+
 test('fixture generator rejects a symlinked fixture directory without touching its sentinel', async () => {
   const temporaryDirectory = await createTemporaryRepository();
   const externalDirectory = await mkdtemp(path.join(tmpdir(), 'pitch-booking-sentinel-'));
@@ -364,7 +398,9 @@ test('fixture generator rejects a symlinked destination file without touching it
   const sentinelPath = path.join(temporaryDirectory, 'external-sentinel.json');
   try {
     await writeFile(sentinelPath, 'EXTERNAL SENTINEL', 'utf8');
-    await symlink(sentinelPath, path.join(temporaryDirectory, 'artifacts/ui/fixtures/venue-ready.json'));
+    const destinationPath = path.join(temporaryDirectory, 'artifacts/ui/fixtures/venue-ready.json');
+    await rm(destinationPath);
+    await symlink(sentinelPath, destinationPath);
     await assert.rejects(runTemporaryGenerator(temporaryDirectory), /symlink/i);
     assert.equal(await readFile(sentinelPath, 'utf8'), 'EXTERNAL SENTINEL');
   } finally {
@@ -403,6 +439,46 @@ test('fixture generator pre-reads all sources and reports filename context befor
       /availability-ready\.json/i,
     );
     assert.equal(await readFile(sentinelPath, 'utf8'), 'LOCAL SENTINEL');
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('fixture publication rolls back every file after a deterministic second-publish failure', async () => {
+  const temporaryDirectory = await createTemporaryRepository();
+  const fixturesDirectory = path.join(temporaryDirectory, 'artifacts/ui/fixtures');
+  const fixtureNames = ['venue-ready.json', 'slots-ready.json', 'slots-empty.json'];
+  try {
+    const before = new Map(await Promise.all(fixtureNames.map(async (filename) => [
+      filename,
+      await readFile(path.join(fixturesDirectory, filename)),
+    ])));
+    const venuePath = path.join(temporaryDirectory, 'contracts/examples/venue-primary.json');
+    const venue = JSON.parse(await readFile(venuePath, 'utf8'));
+    venue.description = 'transaction candidate venue copy';
+    await writeFile(venuePath, JSON.stringify(venue), 'utf8');
+    for (const filename of ['availability-ready.json', 'availability-empty.json']) {
+      const sourcePath = path.join(temporaryDirectory, 'contracts/examples', filename);
+      const availability = JSON.parse(await readFile(sourcePath, 'utf8'));
+      availability.generated_at = '2026-07-22T09:31:00+08:00';
+      await writeFile(sourcePath, JSON.stringify(availability), 'utf8');
+    }
+    let publishCount = 0;
+    await assert.rejects(
+      generateFixtures({
+        repositoryDirectory: temporaryDirectory,
+        publishFile: async (source, destination) => {
+          publishCount += 1;
+          if (publishCount === 2) throw new Error('injected second publish failure');
+          await rename(source, destination);
+        },
+      }),
+      /injected second publish failure/i,
+    );
+    for (const filename of fixtureNames) {
+      assert.deepEqual(await readFile(path.join(fixturesDirectory, filename)), before.get(filename));
+    }
+    assert.deepEqual((await readdir(fixturesDirectory)).sort(), fixtureNames.sort());
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

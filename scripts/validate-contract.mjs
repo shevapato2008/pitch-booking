@@ -7,7 +7,7 @@ import SwaggerParser from '@apidevtools/swagger-parser';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
-const defaultContractPath = new URL('../contracts/openapi.yaml', import.meta.url).pathname;
+const defaultContractPath = fileURLToPath(new URL('../contracts/openapi.yaml', import.meta.url));
 
 const attachment = (pathName, status, key) => ({
   path: pathName,
@@ -89,6 +89,7 @@ const exampleMap = [
 const inlineExampleMap = [
   {
     filename: 'inline HealthOk',
+    schema: 'Health',
     value: { status: 'ok' },
     attachments: [attachment('/api/v1/health', '200', 'HealthOk')],
   },
@@ -225,6 +226,32 @@ function validateAttachments(contract, definitions) {
   }
 }
 
+function collectSchemaObjects(contract) {
+  const schemas = [];
+  for (const [name, schema] of Object.entries(contract.components?.schemas ?? {})) {
+    schemas.push({ label: `components.schemas.${name}`, schema });
+  }
+  function visit(value, location) {
+    if (value === null || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${location}[${index}]`));
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'example' || key === 'examples' || key === 'externalValue') continue;
+      const childLocation = location ? `${location}.${key}` : key;
+      if (key === 'schemas' && location === 'components') continue;
+      if (key === 'schema' && child !== null && typeof child === 'object' && !Array.isArray(child)) {
+        schemas.push({ label: childLocation, schema: child });
+        continue;
+      }
+      visit(child, childLocation);
+    }
+  }
+  visit(contract, '');
+  return schemas;
+}
+
 function validateVenueBusinessRules(venue, filename) {
   if (venue.images.filter(({ role }) => role === 'COVER').length !== 1) {
     fail(`${filename}: images must contain exactly one COVER`);
@@ -326,11 +353,21 @@ export async function validateContract(contractPath = defaultContractPath) {
   }
   validateAttachments(rawContract, [...mappedExamples, ...inlineExampleMap]);
 
-  for (const [schemaName, schema] of Object.entries(contract.components.schemas)) {
+  for (const { label, schema } of collectSchemaObjects(contract)) {
     try {
       ajv.compile(schema);
     } catch (error) {
-      fail(`schema ${schemaName}: ${error.message}`);
+      fail(`schema ${label}: ${error.message}`);
+    }
+  }
+
+  for (const definition of inlineExampleMap) {
+    const schemaAttachment = definition.attachments[0];
+    const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
+      .responses[schemaAttachment.status].content?.['application/json']?.schema;
+    const validate = ajv.compile(responseSchema);
+    if (!validate(definition.value)) {
+      fail(`${definition.filename}: response schema failed: ${ajv.errorsText(validate.errors, { separator: '; ' })}`);
     }
   }
 

@@ -98,6 +98,7 @@ async function verifyDestinations(fixturesDirectory) {
 export async function generateFixtures({
   repositoryDirectory = defaultRepositoryDirectory,
   argument,
+  publishFile = rename,
 } = {}) {
   repositoryDirectory = path.resolve(repositoryDirectory);
   const examplesDirectory = path.join(repositoryDirectory, 'contracts/examples');
@@ -118,6 +119,7 @@ export async function generateFixtures({
   const fixturesDirectory = await ensureSafeDirectoryTree(repositoryDirectory, 'artifacts/ui/fixtures');
   await verifyDestinations(fixturesDirectory);
   const stagedPaths = [];
+  let transactionError;
   try {
     for (const fixture of prepared) {
       const stagedPath = path.join(
@@ -129,27 +131,76 @@ export async function generateFixtures({
       } catch (error) {
         throw new Error(`cannot stage fixture ${fixture.sourcePath} -> ${stagedPath}: ${error.message}`);
       }
-      stagedPaths.push({ stagedPath, destinationPath: path.join(fixturesDirectory, fixture.destinationName) });
+      stagedPaths.push({
+        stagedPath,
+        destinationPath: path.join(fixturesDirectory, fixture.destinationName),
+        backupPath: path.join(fixturesDirectory, `.fixture-backup-${process.pid}-${randomUUID()}-${fixture.destinationName}`),
+        backedUp: false,
+        published: false,
+      });
     }
-    for (const { stagedPath, destinationPath } of stagedPaths) {
+    for (const item of stagedPaths) {
+      const { destinationPath, backupPath } = item;
       const destinationStat = await inspect(destinationPath, 'cannot inspect fixture destination before rename');
       if (destinationStat && (!destinationStat.isFile() || destinationStat.isSymbolicLink())) {
         throw new Error(`fixture destination must be a regular file, not a symlink: ${destinationPath}`);
       }
+      if (destinationStat) {
+        await rename(destinationPath, backupPath);
+        item.backedUp = true;
+      }
+    }
+    for (const [index, item] of stagedPaths.entries()) {
+      const { stagedPath, destinationPath } = item;
       try {
-        await rename(stagedPath, destinationPath);
+        await publishFile(stagedPath, destinationPath, index);
+        item.published = true;
       } catch (error) {
         throw new Error(`cannot publish fixture ${stagedPath} -> ${destinationPath}: ${error.message}`);
       }
     }
-  } finally {
-    await Promise.all(stagedPaths.map(async ({ stagedPath }) => {
-      try {
-        await unlink(stagedPath);
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
+    for (const item of stagedPaths) {
+      if (item.backedUp) {
+        await unlink(item.backupPath);
+        item.backedUp = false;
       }
-    }));
+    }
+  } catch (error) {
+    transactionError = error;
+    const rollbackErrors = [];
+    for (const item of [...stagedPaths].reverse()) {
+      try {
+        if (item.published) {
+          await unlink(item.destinationPath);
+          item.published = false;
+        }
+        if (item.backedUp) {
+          await rename(item.backupPath, item.destinationPath);
+          item.backedUp = false;
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(`${item.destinationPath}: ${rollbackError.message}`);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(`${error.message}; rollback failed: ${rollbackErrors.join('; ')}`);
+    }
+    throw error;
+  } finally {
+    const cleanupErrors = [];
+    for (const item of stagedPaths) {
+      const cleanupPaths = item.backedUp ? [item.stagedPath] : [item.stagedPath, item.backupPath];
+      for (const temporaryPath of cleanupPaths) {
+        try {
+          await unlink(temporaryPath);
+        } catch (error) {
+          if (error.code !== 'ENOENT') cleanupErrors.push(`${temporaryPath}: ${error.message}`);
+        }
+      }
+    }
+    if (cleanupErrors.length > 0 && !transactionError) {
+      throw new Error(`fixture transaction cleanup failed: ${cleanupErrors.join('; ')}`);
+    }
   }
   return selected.length;
 }
