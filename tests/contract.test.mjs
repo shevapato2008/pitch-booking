@@ -189,6 +189,13 @@ test('contract validator rejects an unknown response example key', async () => {
   });
 });
 
+test('contract validator rejects a singular response example outside the allow-list', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/health'].get.responses['200']
+      .content['application/json'].example = { status: 'shadow-health-example' };
+  });
+});
+
 test('fixture generator writes only normalized allow-listed success fixtures', async () => {
   const { stdout, stderr } = await execFileAsync(
     process.execPath,

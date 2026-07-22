@@ -142,7 +142,11 @@ function findAllAttachments(contract) {
     for (const method of ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']) {
       const operation = pathItem[method];
       for (const [status, response] of Object.entries(operation?.responses ?? {})) {
-        const examples = response.content?.['application/json']?.examples ?? {};
+        const jsonContent = response.content?.['application/json'];
+        if (jsonContent && Object.hasOwn(jsonContent, 'example')) {
+          fail(`singular attached example is not allowed at ${method.toUpperCase()} ${pathName} ${status}`);
+        }
+        const examples = jsonContent?.examples ?? {};
         for (const [key, attachedExample] of Object.entries(examples)) {
           found.push({
             location: { path: pathName, method, status, key },
