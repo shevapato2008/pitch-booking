@@ -1,4 +1,4 @@
-/// <reference types="node" />
+import { FIXTURE_DATA } from "./fixture-data";
 
 const ALLOWED_FIXTURES = ["venue-ready", "slots-ready", "slots-empty"] as const;
 export type FixtureName = typeof ALLOWED_FIXTURES[number];
@@ -7,11 +7,15 @@ export function isFixtureName(value: unknown): value is FixtureName {
   return typeof value === "string" && (ALLOWED_FIXTURES as readonly string[]).includes(value);
 }
 
-export function loadFixtureForTest(name: FixtureName): unknown {
-  // This loader is used by source-level Scenario tests. Development packaging later
-  // supplies generated data to the same narrow transport boundary.
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
-  return JSON.parse(readFileSync(`artifacts/ui/fixtures/${name}.json`, "utf8")) as unknown;
+export interface FixtureLoader {
+  load(name: FixtureName): unknown;
 }
 
-declare const require: (id: string) => unknown;
+export const packagedFixtureLoader: FixtureLoader = {
+  load(name) {
+    if (!Object.prototype.hasOwnProperty.call(FIXTURE_DATA, name)) {
+      throw new Error("FIXTURE_DATA_MISSING");
+    }
+    return JSON.parse(JSON.stringify(FIXTURE_DATA[name])) as unknown;
+  },
+};

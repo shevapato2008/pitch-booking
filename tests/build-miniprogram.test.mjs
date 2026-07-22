@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -124,6 +124,58 @@ test("Scenario runtime is development-only", async (t) => {
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-transport.js")), true);
 });
 
+test("built development Scenario runtime is self-contained without URL", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await cp("miniprogram/runtime", path.join(projectRoot, "miniprogram/runtime"), { recursive: true });
+  await cp("miniprogram/dev/fixture-transport.ts", path.join(projectRoot, "miniprogram/dev/fixture-transport.ts"));
+  if (existsSync("miniprogram/dev/fixture-data.ts")) {
+    await cp("miniprogram/dev/fixture-data.ts", path.join(projectRoot, "miniprogram/dev/fixture-data.ts"));
+  }
+  await mkdir(path.join(projectRoot, "artifacts/ui"), { recursive: true });
+  await cp("artifacts/ui/fixtures", path.join(projectRoot, "artifacts/ui/fixtures"), { recursive: true });
+  await symlink(path.resolve("node_modules"), path.join(projectRoot, "node_modules"));
+
+  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-development");
+  for (const file of await collectFiles(outputRoot)) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, /node:fs|["']yaml["']|\bnew URL\b/);
+  }
+
+  const verification = `
+    void (async () => {
+      global.URL = undefined;
+      const assert = require("node:assert/strict");
+      const { scenarioRuntime } = require("./runtime/scenario.js");
+      const { FIXTURE_DATA } = require("./dev/fixture-data.js");
+      const names = ["venue-ready", "slots-ready", "slots-empty"];
+      assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
+      assert.equal(Object.isFrozen(FIXTURE_DATA), true);
+      for (const name of names) {
+        const runtime = scenarioRuntime({
+          id: name,
+          clock: "2026-07-22T10:30:00+08:00",
+          http: [{ match: {}, fixture: name }],
+        });
+        const value = await runtime.transport.get("/resource");
+        assert.equal(typeof value, "object");
+        value.__scenarioMutation = true;
+        const freshValue = await scenarioRuntime({
+          id: name,
+          clock: "2026-07-22T10:30:00+08:00",
+          http: [{ match: {}, fixture: name }],
+        }).transport.get("/resource");
+        assert.equal(freshValue.__scenarioMutation, undefined);
+      }
+      assert.equal(typeof FIXTURE_DATA["venue-ready"].name, "string");
+      assert.equal(FIXTURE_DATA["slots-ready"].pitches.length > 0, true);
+      assert.deepEqual(FIXTURE_DATA["slots-empty"].pitches, []);
+    })();
+  `;
+  await execFileAsync(process.execPath, ["--input-type=commonjs", "--eval", verification], { cwd: outputRoot });
+});
+
 async function createBuildProject(source) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-"));
   return createBuildProjectIn(projectRoot, source);
@@ -133,7 +185,22 @@ async function createBuildProjectIn(projectRoot, source) {
   const sourceRoot = path.join(projectRoot, "miniprogram");
   await mkdir(sourceRoot, { recursive: true });
   await mkdir(path.join(sourceRoot, "dev"));
+  const fixtureRoot = path.join(projectRoot, "artifacts/ui/fixtures");
+  await mkdir(fixtureRoot, { recursive: true });
+  for (const name of ["slots-empty", "slots-ready", "venue-ready"]) {
+    await writeFile(path.join(fixtureRoot, `${name}.json`), `${JSON.stringify({ id: name })}\n`);
+  }
   await writeFile(path.join(sourceRoot, "app.json"), '{"pages":[]}\n');
   await writeFile(path.join(sourceRoot, "app.ts"), source);
   return projectRoot;
+}
+
+async function collectFiles(directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await collectFiles(entryPath)));
+    else files.push(entryPath);
+  }
+  return files;
 }

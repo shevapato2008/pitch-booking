@@ -1,12 +1,15 @@
-/// <reference types="node" />
-
 import type {
   Clock,
   MediaSourceResolver,
   NativeCapabilities,
   Transport,
 } from "./interfaces";
-import { isFixtureName, loadFixtureForTest, type FixtureName } from "../dev/fixture-transport";
+import {
+  isFixtureName,
+  packagedFixtureLoader,
+  type FixtureLoader,
+  type FixtureName,
+} from "../dev/fixture-transport";
 
 const MISSING_COVER_SOURCE = "/_scenario_missing_/venue-cover.png";
 const TOP_LEVEL_KEYS = new Set(["id", "clock", "http", "native", "media", "actions"]);
@@ -81,7 +84,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
   return { id, clock, http, native, media: { fail_image_roles: failImageRoles }, actions };
 }
 
-export function scenarioRuntime(input: unknown) {
+export function scenarioRuntime(input: unknown, fixtureLoader: FixtureLoader = packagedFixtureLoader) {
   const scenario = parseScenario(input);
   const instant = new Date(scenario.clock);
   const sequenceIndexes = new Map<HttpRule, number>();
@@ -102,7 +105,7 @@ export function scenarioRuntime(input: unknown) {
       } else {
         outcome = rule.outcome;
       }
-      return settleOutcome<T>(outcome, rule.delay_ms ?? 0);
+      return settleOutcome<T>(outcome, rule.delay_ms ?? 0, fixtureLoader);
     },
   };
 
@@ -136,17 +139,6 @@ export function scenarioBehaviorSignature(scenario: ScenarioDefinition): string[
   if (scenario.native.make_phone_call === "failure") signature.push("native-failure:make_phone_call");
   for (const action of scenario.actions) signature.push(`action:${action.type}:${action.target}:${action.id}`);
   return signature;
-}
-
-export function loadScenarioForTest(path: string): ScenarioDefinition {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
-  const { parse } = require("yaml") as typeof import("yaml");
-  return parseScenario(parse(readFileSync(path, "utf8")));
-}
-
-export function assertMissingImageSentinel(path: string): void {
-  const { existsSync } = require("node:fs") as typeof import("node:fs");
-  if (existsSync(path)) throw new Error("SENTINEL_MUST_NOT_EXIST");
 }
 
 function parseRule(value: unknown): HttpRule {
@@ -201,14 +193,42 @@ function parseAction(value: unknown): ScenarioAction {
 }
 
 function matches(match: Record<string, string>, path: string): boolean {
-  const url = new URL(path, "https://scenario.invalid");
+  const fragmentIndex = path.indexOf("#");
+  const withoutFragment = fragmentIndex === -1 ? path : path.slice(0, fragmentIndex);
+  const queryIndex = withoutFragment.indexOf("?");
+  const pathname = queryIndex === -1 ? withoutFragment : withoutFragment.slice(0, queryIndex);
+  const query = queryIndex === -1 ? "" : withoutFragment.slice(queryIndex + 1);
+  const parameters = parseQuery(query);
   return Object.entries(match).every(([key, expected]) => {
-    if (key === "path") return url.pathname === expected;
-    return url.searchParams.get(key) === expected;
+    if (key === "path") return pathname === expected;
+    return parameters[key] === expected;
   });
 }
 
-function settleOutcome<T>(outcome: HttpOutcome, inheritedDelay: number): Promise<T> {
+function parseQuery(query: string): Record<string, string> {
+  const parameters: Record<string, string> = {};
+  for (const pair of query.split("&")) {
+    if (pair.length === 0) continue;
+    const separator = pair.indexOf("=");
+    const rawKey = separator === -1 ? pair : pair.slice(0, separator);
+    const rawValue = separator === -1 ? "" : pair.slice(separator + 1);
+    const key = decodeQueryPart(rawKey);
+    if (!Object.prototype.hasOwnProperty.call(parameters, key)) {
+      parameters[key] = decodeQueryPart(rawValue);
+    }
+  }
+  return parameters;
+}
+
+function decodeQueryPart(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, " "));
+  } catch {
+    return value;
+  }
+}
+
+function settleOutcome<T>(outcome: HttpOutcome, inheritedDelay: number, fixtureLoader: FixtureLoader): Promise<T> {
   const delay = outcome.delay_ms ?? inheritedDelay;
   if ("timeout_ms" in outcome) {
     return new Promise((_resolve, reject) => {
@@ -218,7 +238,7 @@ function settleOutcome<T>(outcome: HttpOutcome, inheritedDelay: number): Promise
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       if ("error" in outcome) reject(runtimeError(outcome.error));
-      else resolve(clone(loadFixtureForTest(outcome.fixture)) as T);
+      else resolve(fixtureLoader.load(outcome.fixture) as T);
     }, delay);
   });
 }
@@ -231,10 +251,6 @@ function outcomeSignature(outcome: HttpOutcome): string {
 
 function runtimeError(code: string): { code: string } {
   return { code };
-}
-
-function clone(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
 function asRecord(value: unknown, error: string): Record<string, unknown> {
@@ -266,5 +282,3 @@ function positiveInteger(value: unknown, error: string): number {
 function assertKnownKeys(value: Record<string, unknown>, allowed: Set<string>): void {
   if (Object.keys(value).some((key) => !allowed.has(key))) throw new Error("UNKNOWN_SCENARIO_KEY");
 }
-
-declare const require: (id: string) => unknown;

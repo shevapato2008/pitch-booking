@@ -1,11 +1,28 @@
 /// <reference types="node" />
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { expect, jest, test } from "@jest/globals";
+import { parse as parseYaml } from "yaml";
+import type { FixtureLoader, FixtureName } from "../dev/fixture-transport";
 import {
-  assertMissingImageSentinel, loadScenarioForTest, parseScenario,
-  scenarioBehaviorSignature, scenarioRuntime
+  parseScenario, scenarioBehaviorSignature, scenarioRuntime as createScenarioRuntime,
+  type ScenarioDefinition,
 } from "./scenario";
+
+const fixtureLoader: FixtureLoader = {
+  load(name: FixtureName): unknown {
+    return JSON.parse(readFileSync(`artifacts/ui/fixtures/${name}.json`, "utf8")) as unknown;
+  },
+};
+const scenarioRuntime = (input: unknown) => createScenarioRuntime(input, fixtureLoader);
+
+function loadScenarioForTest(path: string): ScenarioDefinition {
+  return parseScenario(parseYaml(readFileSync(path, "utf8")));
+}
+
+function assertMissingImageSentinel(path: string): void {
+  if (existsSync(path)) throw new Error("SENTINEL_MUST_NOT_EXIST");
+}
 
 const fixture = (name: string) => ({ fixture: name });
 const base = { id: "base", clock: "2026-07-22T10:30:00+08:00" };
@@ -31,6 +48,21 @@ test("late responses preserve configured completion order", async () => {
   const second = runtime.transport.get("/availability?date=2026-07-23");
   await expect(second).resolves.toMatchObject({ pitches: [] });
   await expect(first).resolves.toMatchObject({ pitches: expect.any(Array) });
+});
+
+test("matches paths and query parameters without a global URL constructor", async () => {
+  const originalUrl = globalThis.URL;
+  Object.defineProperty(globalThis, "URL", { configurable: true, value: undefined });
+  try {
+    const runtime = scenarioRuntime({
+      ...base,
+      http: [{ match: { path: "/availability", date: "2026-07-22" }, ...fixture("slots-ready") }]
+    });
+    await expect(runtime.transport.get("/availability?date=2026-07-22"))
+      .resolves.toMatchObject({ pitches: expect.any(Array) });
+  } finally {
+    Object.defineProperty(globalThis, "URL", { configurable: true, value: originalUrl });
+  }
 });
 
 test("image failure uses a guaranteed absent local source", () => {

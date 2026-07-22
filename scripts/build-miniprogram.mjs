@@ -31,6 +31,9 @@ async function build(selectedMode) {
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
+  if (selectedMode === "development") {
+    await writeDevelopmentFixtureData(projectRoot, outputRoot);
+  }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
   const pages = selectedMode === "development"
@@ -150,6 +153,34 @@ function shouldInclude(name, directory, sourceRoot, includeDevelopment) {
   if (includeDevelopment) return true;
   if (directory === sourceRoot && name === "dev") return false;
   return !(path.relative(sourceRoot, directory) === "runtime" && name === "scenario.ts");
+}
+
+async function writeDevelopmentFixtureData(projectRoot, outputRoot) {
+  const fixtureDirectory = path.join(projectRoot, "artifacts/ui/fixtures");
+  const expectedNames = ["slots-empty", "slots-ready", "venue-ready"];
+  const expectedFiles = expectedNames.map((name) => `${name}.json`);
+  const actualFiles = (await readdir(fixtureDirectory)).sort();
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+    throw new Error(`Development Fixture inventory mismatch: ${JSON.stringify(actualFiles)}`);
+  }
+
+  const data = {};
+  for (const name of expectedNames) {
+    const fixturePath = path.join(fixtureDirectory, `${name}.json`);
+    const fixtureStat = await lstat(fixturePath);
+    if (!fixtureStat.isFile() || fixtureStat.isSymbolicLink()) {
+      throw new Error(`Development Fixture must be a regular file: ${fixturePath}`);
+    }
+    data[name] = JSON.parse(await readFile(fixturePath, "utf8"));
+  }
+
+  const output = [
+    '"use strict";',
+    'Object.defineProperty(exports, "__esModule", { value: true });',
+    `exports.FIXTURE_DATA = Object.freeze(${JSON.stringify(data, null, 2)});`,
+    "",
+  ].join("\n");
+  await writeFile(path.join(outputRoot, "dev/fixture-data.js"), output);
 }
 
 function isTestArtifact(filename) {
