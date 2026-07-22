@@ -246,7 +246,9 @@ export async function main({ argv = process.argv.slice(2), env = process.env, cw
     return 0;
   } catch (error) {
     const code = safeErrorCode(error);
-    writeErr(`${JSON.stringify({ ok: false, code, message: MESSAGES[code] })}\n`);
+    try {
+      writeErr(`${JSON.stringify({ ok: false, code, message: MESSAGES[code] })}\n`);
+    } catch {}
     return 1;
   }
 }

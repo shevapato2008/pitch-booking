@@ -267,6 +267,24 @@ test('parseArgs rejects every invalid port shape and main keeps the failure chan
   assert.equal(stdout, ''); assert.deepEqual(JSON.parse(stderr), { ok: false, code: 'WECHAT_AUTOMATION_FAILED', message: messages.WECHAT_AUTOMATION_FAILED });
 });
 
+test('main contains injected writer throws on both output channels', async (t) => {
+  const writerError = new Error('PRIVATE_WRITE_SENTINEL');
+  assert.equal(await main({ argv: ['--port', 'nope'], writeErr: () => { throw writerError; } }), 1);
+
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  let stderr = '';
+  assert.equal(await main({
+    argv: ['--port', PORT_SENTINEL],
+    env: { WECHAT_DEVTOOLS_CLI: f.cli },
+    cwd: f.root,
+    runner: runner(),
+    writeOut: () => { throw writerError; },
+    writeErr: (text) => { stderr += text; }
+  }), 1);
+  assert.deepEqual(JSON.parse(stderr), { ok: false, code: 'WECHAT_AUTOMATION_FAILED', message: messages.WECHAT_AUTOMATION_FAILED });
+  assert.doesNotMatch(stderr, /PRIVATE_WRITE_SENTINEL/);
+});
+
 test('main emits only canonical messages for forged WeChatEnvironmentErrors', async () => {
   for (const [forgedCode, forgedMessage, expectedCode] of [
     ['PRIVATE_FORGED_CODE', PRIVATE, 'WECHAT_AUTOMATION_FAILED'],
