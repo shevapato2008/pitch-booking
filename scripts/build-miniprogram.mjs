@@ -115,7 +115,7 @@ async function validateTypeScript(sourceRoot, includeDevelopment) {
 async function collectTypeScriptFiles(directory, includeDevelopment, sourceRoot = directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (!includeDevelopment && directory === sourceRoot && entry.name === "dev") continue;
+    if (!shouldInclude(entry.name, directory, sourceRoot, includeDevelopment)) continue;
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await collectTypeScriptFiles(entryPath, includeDevelopment, sourceRoot)));
     else if (entry.name.endsWith(".ts") && !isTestArtifact(entry.name)) files.push(entryPath);
@@ -126,7 +126,7 @@ async function collectTypeScriptFiles(directory, includeDevelopment, sourceRoot 
 async function copyTree(source, destination, includeDevelopment) {
   await mkdir(destination, { recursive: true });
   for (const entry of await readdir(source, { withFileTypes: true })) {
-    if (!includeDevelopment && entry.name === "dev") continue;
+    if (!shouldInclude(entry.name, source, path.resolve(process.cwd(), "miniprogram"), includeDevelopment)) continue;
     if (entry.isFile() && isTestArtifact(entry.name)) continue;
 
     const from = path.join(source, entry.name);
@@ -144,6 +144,12 @@ async function copyTree(source, destination, includeDevelopment) {
       await cp(from, to);
     }
   }
+}
+
+function shouldInclude(name, directory, sourceRoot, includeDevelopment) {
+  if (includeDevelopment) return true;
+  if (directory === sourceRoot && name === "dev") return false;
+  return !(path.relative(sourceRoot, directory) === "runtime" && name === "scenario.ts");
 }
 
 function isTestArtifact(filename) {

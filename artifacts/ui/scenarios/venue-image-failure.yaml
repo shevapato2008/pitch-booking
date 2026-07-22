@@ -1,0 +1,7 @@
+id: venue-image-failure
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {}
+    fixture: venue-ready
+media:
+  fail_image_roles: [COVER]

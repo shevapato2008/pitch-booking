@@ -1,0 +1,9 @@
+id: slots-selected
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {}
+    fixture: slots-ready
+actions:
+  - type: tap
+    target: slot
+    id: 00000000-0000-4000-8000-000000000201

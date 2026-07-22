@@ -1,0 +1,8 @@
+id: venue-phone-error
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {}
+    fixture: venue-ready
+native:
+  open_location: success
+  make_phone_call: failure

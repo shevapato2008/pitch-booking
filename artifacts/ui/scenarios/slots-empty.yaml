@@ -1,0 +1,5 @@
+id: slots-empty
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {}
+    fixture: slots-empty

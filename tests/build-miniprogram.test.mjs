@@ -106,6 +106,24 @@ test("production and development builds exclude test and spec TypeScript", async
   }
 });
 
+test("Scenario runtime is development-only", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await mkdir(path.join(projectRoot, "miniprogram/runtime"));
+  await writeFile(path.join(projectRoot, "miniprogram/runtime/interfaces.ts"), "export interface Clock { now(): Date; }\n");
+  await writeFile(path.join(projectRoot, "miniprogram/runtime/scenario.ts"), "export const scenarioMarker = true;\n");
+  await writeFile(path.join(projectRoot, "miniprogram/dev/fixture-transport.ts"), "export const fixtureMarker = true;\n");
+
+  await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+  assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-production/runtime/interfaces.js")), true);
+  assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-production/runtime/scenario.js")), false);
+  assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-production/dev/fixture-transport.js")), false);
+
+  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/runtime/scenario.js")), true);
+  assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-transport.js")), true);
+});
+
 async function createBuildProject(source) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-"));
   return createBuildProjectIn(projectRoot, source);

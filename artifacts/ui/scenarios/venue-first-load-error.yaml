@@ -1,0 +1,5 @@
+id: venue-first-load-error
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {}
+    error: SERVICE_UNAVAILABLE

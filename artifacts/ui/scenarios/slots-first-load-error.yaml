@@ -1,0 +1,7 @@
+id: slots-first-load-error
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {case: service-error}
+    error: SERVICE_UNAVAILABLE
+  - match: {case: timeout}
+    timeout_ms: 8000

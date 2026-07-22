@@ -1,0 +1,9 @@
+id: slots-late-response
+clock: 2026-07-22T10:30:00+08:00
+http:
+  - match: {date: 2026-07-22}
+    fixture: slots-ready
+    delay_ms: 1200
+  - match: {date: 2026-07-23}
+    fixture: slots-empty
+    delay_ms: 100
