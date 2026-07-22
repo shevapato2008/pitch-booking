@@ -117,19 +117,32 @@ async function invoke(runner, command, args, options, code, output, step, port) 
     emit(output, { step, status: 'failed', code }, code);
     fail(code);
   }
-  if (!isRunnerResult(value)) {
+  let result;
+  try {
+    if (isRunnerResult(value)) result = Object.freeze({
+      exitCode: value.exitCode,
+      stdout: value.stdout,
+      stderr: value.stderr,
+      timedOut: value.timedOut,
+      signal: value.signal
+    });
+  } catch {
     emit(output, { step, status: 'failed', code }, code);
     fail(code);
   }
-  if (port !== undefined && isPortMismatch(value.stdout, value.stderr, port)) {
+  if (!result) {
+    emit(output, { step, status: 'failed', code }, code);
+    fail(code);
+  }
+  if (port !== undefined && isPortMismatch(result.stdout, result.stderr, port)) {
     emit(output, { step, status: 'failed', code: 'WECHAT_PORT_MISMATCH' }, 'WECHAT_PORT_MISMATCH');
     fail('WECHAT_PORT_MISMATCH');
   }
-  if (commandFailed(value, options.maxBufferBytes)) {
+  if (commandFailed(result, options.maxBufferBytes)) {
     emit(output, { step, status: 'failed', code }, code);
     fail(code);
   }
-  return value;
+  return result;
 }
 
 export function createDefaultRunner() {

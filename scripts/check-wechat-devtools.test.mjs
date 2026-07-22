@@ -13,6 +13,7 @@ const REPO = 'REPO_PATH_SENTINEL_91e16f';
 const CLI = 'CLI_PATH_SENTINEL_91e16f';
 const PORT_SENTINEL = '98761';
 const SESSION = 'SESSION_RAW_SENTINEL_91e16f';
+const RUNNER_RESULT = 'RUNNER_RESULT_RAW_SENTINEL_91e16f';
 const PRIVATE = 'PRIVATE_SENTINEL_91e16f';
 const PORT = Number(PORT_SENTINEL);
 const messages = Object.freeze({
@@ -28,6 +29,15 @@ const messages = Object.freeze({
 
 function result(overrides = {}) {
   return { exitCode: 0, stdout: '', stderr: '', timedOut: false, signal: null, ...overrides };
+}
+
+function hostileRunnerResult() {
+  return new Proxy({}, {
+    get(_target, property) {
+      if (property === 'then') return undefined;
+      throw new Error(RUNNER_RESULT);
+    }
+  });
 }
 
 async function fixture({ appid = APPID, project = { miniprogramRoot: 'dist/miniprogram-development/' } } = {}) {
@@ -69,6 +79,7 @@ async function expectFailure(run, code) {
     assert.equal(error.code, code);
     assert.equal(error.message, messages[code]);
     assert.equal('cause' in error, false);
+    assert.doesNotMatch(`${error.name}:${error.message}`, new RegExp(RUNNER_RESULT));
     return true;
   });
 }
@@ -160,6 +171,16 @@ test('maps generic runner throws, malformed results, timeout, signal, oversized 
     const trace = [];
     const options = outcome === undefined ? { throwPhase: phase } : { byPhase: { [phase]: outcome } };
     await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, ...options }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), code);
+    assertStopsAfter(trace, phase);
+  }
+});
+
+test('maps hostile non-thenable runner results to each active phase without exposing getter errors', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const expectations = { build: 'WECHAT_BUILD_FAILED', login: 'WECHAT_LOGIN_REQUIRED', open: 'WECHAT_OPEN_FAILED', automation: 'WECHAT_AUTOMATION_FAILED' };
+  for (const [phase, code] of Object.entries(expectations)) {
+    const trace = [];
+    await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, byPhase: { [phase]: hostileRunnerResult() } }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), code);
     assertStopsAfter(trace, phase);
   }
 });
