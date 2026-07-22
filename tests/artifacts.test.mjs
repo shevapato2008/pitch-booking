@@ -1,5 +1,8 @@
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import {
+  existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve, sep } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -15,6 +18,7 @@ const screenKeys = [
   "acceptance", "components", "fixtures", "goldens", "id", "route", "scenarios", "states"
 ];
 const approvedAcceptanceIds = ["SLOT-01", "VENUE-01", "VENUE-02", "VENUE-03"];
+const approvedSelectedSlotId = "00000000-0000-4000-8000-000000000201";
 
 const assertSafeArtifactPath = (root, id, extension) => {
   assert.match(id, safeIdPattern, `unsafe artifact id: ${id}`);
@@ -61,6 +65,7 @@ const validateManifest = (source) => {
 
   const appRoutes = JSON.parse(readFileSync("miniprogram/app.json", "utf8")).pages;
   const screenIds = new Set();
+  const routes = new Set();
   const acceptanceIds = [];
   for (const screen of manifest.screens) {
     assert.deepEqual(Object.keys(screen).sort(), screenKeys);
@@ -68,6 +73,8 @@ const validateManifest = (source) => {
     assert.equal(screenIds.has(screen.id), false, `duplicate screen id: ${screen.id}`);
     screenIds.add(screen.id);
     assert.equal(appRoutes.includes(screen.route), true, `unknown production route: ${screen.route}`);
+    assert.equal(routes.has(screen.route), false, `duplicate screen route: ${screen.route}`);
+    routes.add(screen.route);
 
     for (const key of ["components", "states", "fixtures", "scenarios", "goldens", "acceptance"]) {
       assert.ok(Array.isArray(screen[key]), `${screen.id}.${key} must be an array`);
@@ -167,12 +174,25 @@ test("manifest validation rejects unsafe or ambiguous mutations", () => {
   assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[0].fixtures[0] = "../escape"; })));
   assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[1].id = value.screens[0].id; })));
   assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[0].states.push("ready"); })));
+  assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[1].route = value.screens[0].route; })));
+  assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[0].fixtures.push("venue-ready"); })));
+  assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[0].acceptance.push("VENUE-01"); })));
   assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[0].route = "pages/unknown/index"; })));
   assert.throws(() => validateManifest(mutateManifest((value) => { value.screens[0].acceptance[0] = "VENUE-99"; })));
   assert.throws(
     () => validateManifest("screens: &screens []\ncopy: *screens\n"),
     /anchors and aliases/,
   );
+});
+
+test("artifact path validation rejects symlinked files", (t) => {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "pitch-booking-artifact-path-"));
+  t.after(() => rmSync(temporaryRoot, { recursive: true, force: true }));
+  const externalFile = join(tmpdir(), `pitch-booking-artifact-outside-${process.pid}.json`);
+  writeFileSync(externalFile, "{}\n");
+  t.after(() => rmSync(externalFile, { force: true }));
+  symlinkSync(externalFile, join(temporaryRoot, "linked.json"));
+  assert.throws(() => assertSafeArtifactPath(temporaryRoot, "linked", ".json"), /regular file/);
 });
 
 test("the approved fixture and scenario inventories are closed and internally resolvable", () => {
@@ -234,6 +254,22 @@ test("every slot tap resolves to an AVAILABLE slot in its scenario fixture", () 
       );
     }
   }
+});
+
+test("the approved selected slot ID is identical across contract, fixture, and Scenario action", () => {
+  const canonical = JSON.parse(readFileSync("contracts/examples/availability-ready.json", "utf8"));
+  const fixture = JSON.parse(readFileSync(`${fixtureRoot}/slots-ready.json`, "utf8"));
+  const scenario = readYaml(`${scenarioRoot}/slots-selected.yaml`);
+  const availableId = (value) => value.pitches
+    .flatMap((pitch) => pitch.slots)
+    .find((slot) => slot.status === "AVAILABLE")?.id;
+  const actionIds = scenario.actions
+    .filter((action) => action.type === "tap" && action.target === "slot")
+    .map((action) => action.id);
+
+  assert.equal(availableId(canonical), approvedSelectedSlotId);
+  assert.equal(availableId(fixture), approvedSelectedSlotId);
+  assert.deepEqual(actionIds, [approvedSelectedSlotId]);
 });
 
 test("tokens contain only the approved first-slice constraints", () => {
