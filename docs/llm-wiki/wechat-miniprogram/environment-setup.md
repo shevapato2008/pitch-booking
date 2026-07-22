@@ -16,7 +16,7 @@ updated: 2026-07-22
 
 首次启动后由人本人扫描二维码并完成登录；CLI 的登录检查和打开能力以[微信 CLI 文档](https://developers.weixin.qq.com/miniprogram/dev/devtools/cli.html)为准。二维码登录是人工操作，绝不自动化或保存二维码、凭据、会话数据、AppID、端口、观察到的绝对路径或机器本地设置到 Git。
 
-若需要留存机器证据，只把脱敏的运行记录放进已忽略的 `.superpowers/run-evidence`，并说明该记录确认没有 WXML、WXSS 或 Console 错误；它不能替代官方文档或项目配置。
+完成首次启动和人工登录后，必须把脱敏的运行记录放进已忽略的 `.superpowers/run-evidence`，并在记录中明确确认没有 WXML、WXSS 或 Console 错误；它不能替代官方文档或项目配置。
 
 ## WX-ENV-003：定位并配置 CLI
 
@@ -31,10 +31,16 @@ configure_wechat_cli() {
       candidates+=("$candidate")
     done < <(find "$app_root" -type f -path '*/Contents/MacOS/cli' -perm -111 -print)
   done
-  print -rl -- $candidates
   (( ${#candidates[@]} > 0 )) || { print -u2 'No executable CLI found'; return 1; }
-  (( ${#candidates[@]} == 1 )) || { print -u2 'Multiple CLI candidates: choose one explicitly from the list'; return 1; }
-  selected_cli="$candidates[1]"
+  if (( ${#candidates[@]} == 1 )); then
+    selected_cli="$candidates[1]"
+  else
+    print 'Choose a WeChat DevTools CLI:'
+    select selected_cli in "${candidates[@]}"; do
+      [[ -n "$selected_cli" ]] || { print -u2 'Choose a numbered candidate'; continue; }
+      break
+    done
+  fi
   WECHAT_DEVTOOLS_CLI="$(realpath "$selected_cli")"
   [[ -f "$WECHAT_DEVTOOLS_CLI" && -x "$WECHAT_DEVTOOLS_CLI" ]] || { print -u2 'Selected CLI is not a regular executable'; return 1; }
   export WECHAT_DEVTOOLS_CLI
@@ -42,7 +48,7 @@ configure_wechat_cli() {
 configure_wechat_cli
 ```
 
-若有多个候选项，先人工设置 `selected_cli` 为列表中的一个值，再运行 `realpath` 和可执行性校验；不要猜测或提交路径。`export WECHAT_DEVTOOLS_CLI` 仅作用于当前 shell；持久化时只能写入已忽略的机器本地环境文件。
+若有多个候选项，`select` 会显示编号并要求交互选择；随后才运行 `realpath` 和常规可执行文件校验。不要猜测或提交路径。`export WECHAT_DEVTOOLS_CLI` 仅作用于当前 shell；持久化时只能写入已忽略的机器本地环境文件。
 
 CLI 冒烟命令是 `"$WECHAT_DEVTOOLS_CLI" --help`，参数支持以[微信 CLI 文档](https://developers.weixin.qq.com/miniprogram/dev/devtools/cli.html)为准。应用版本从已解析 CLI 所在 `.app` 的 `Info.plist` 读取，`--version` **不是**应用版本来源：
 
@@ -68,7 +74,7 @@ npm run env:wechat:check -- --port <positive-integer>
 
 本项目的 `project.config.json` 拥有 `miniprogramRoot`；被忽略的 `project.private.config.json` 才放机器/账户私有的 AppID。导入、编译和预览的基本流程以[微信快速开始](https://developers.weixin.qq.com/miniprogram/dev/framework/quickstart/getstart.html)为准。
 
-开发输出可以含 preview、Fixture、Scenario 条目，生产输出必须排除它们；两种 dist 输出都不是项目根目录。不要把生成目录作为导入根，也不要提交私有配置。
+`dist/miniprogram-development/` 可以含 preview、Fixture、Scenario 条目；`dist/miniprogram-production/` 必须排除 preview、Fixture、Scenario 条目。两者都不是项目根目录或导入根。不要把生成目录作为导入根，也不要提交私有配置。
 
 稳定失败码及安全修复方向如下：
 

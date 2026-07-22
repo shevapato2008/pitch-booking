@@ -27,17 +27,44 @@ function markdownFiles(directory) {
 }
 
 function localDestinations(markdown) {
-  const inline = [...markdown.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1].trim().replace(/^<|>$/g, ''));
+  const inline = [...markdown.matchAll(/!?\[[^\]]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g)]
+    .map((match) => (match[1] ?? match[2]).trim());
   const definitions = [...markdown.matchAll(/^\s*\[[^\]]+\]:\s*(?:<([^>]+)>|(\S+))/gm)]
     .map((match) => (match[1] ?? match[2]).trim());
   return [...inline, ...definitions];
 }
+
+test('inline Markdown destinations exclude optional titles', () => {
+  assert.deepEqual(
+    localDestinations('[plain](README.md "Read me") ![angle](<assets/icon.svg> \'Icon\')'),
+    ['README.md', 'assets/icon.svg'],
+  );
+});
 
 test('WX-ENV guide has one required section per stable environment knowledge ID', () => {
   const markdown = readFileSync(environmentGuide, 'utf8');
   for (const id of ['WX-ENV-001', 'WX-ENV-002', 'WX-ENV-003', 'WX-ENV-004', 'WX-ENV-005', 'WX-ENV-006']) {
     assert.equal((markdown.match(new RegExp(`^## ${id}：`, 'gm')) ?? []).length, 1, `${id} must have exactly one level-2 heading`);
   }
+});
+
+test('WX-ENV guide requires native evidence and makes CLI selection and output boundaries explicit', () => {
+  const markdown = readFileSync(environmentGuide, 'utf8');
+  const login = section(markdown, 'WX-ENV-002：首次启动与人工登录');
+  const cli = section(markdown, 'WX-ENV-003：定位并配置 CLI');
+  const build = section(markdown, 'WX-ENV-005：导入并构建本项目');
+
+  assert.doesNotMatch(login, /若需要留存机器证据/);
+  assert.match(login, /必须.*\.superpowers\/run-evidence/);
+  assert.match(login, /确认没有 WXML、WXSS 或 Console 错误/);
+  assert.match(cli, /select/);
+  assert.match(cli, /realpath/);
+  assert.match(cli, /-f.*-x/);
+  assert.match(build, /dist\/miniprogram-development\//);
+  assert.match(build, /dist\/miniprogram-production\//);
+  assert.match(build, /dist\/miniprogram-development\/.*preview.*Fixture.*Scenario/s);
+  assert.match(build, /dist\/miniprogram-production\/.*排除.*preview.*Fixture.*Scenario/s);
+  assert.match(build, /两者.*不是.*项目.*导入根/s);
 });
 
 test('installation plus CLI questions route to the environment guide', () => {
