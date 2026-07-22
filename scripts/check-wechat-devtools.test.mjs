@@ -31,10 +31,16 @@ function result(overrides = {}) {
   return { exitCode: 0, stdout: '', stderr: '', timedOut: false, signal: null, ...overrides };
 }
 
-function hostileRunnerResult() {
+function statefulRunnerResult() {
+  const valid = result({ exitCode: 1 });
   return new Proxy({}, {
     get(_target, property) {
       if (property === 'then') return undefined;
+      if (Object.hasOwn(valid, property)) {
+        const value = valid[property];
+        valid[property] = Symbol(RUNNER_RESULT);
+        return value;
+      }
       throw new Error(RUNNER_RESULT);
     }
   });
@@ -175,12 +181,12 @@ test('maps generic runner throws, malformed results, timeout, signal, oversized 
   }
 });
 
-test('maps hostile non-thenable runner results to each active phase without exposing getter errors', async (t) => {
+test('snapshots stateful non-thenable runner results once at each active phase', async (t) => {
   const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
   const expectations = { build: 'WECHAT_BUILD_FAILED', login: 'WECHAT_LOGIN_REQUIRED', open: 'WECHAT_OPEN_FAILED', automation: 'WECHAT_AUTOMATION_FAILED' };
   for (const [phase, code] of Object.entries(expectations)) {
     const trace = [];
-    await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, byPhase: { [phase]: hostileRunnerResult() } }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), code);
+    await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, byPhase: { [phase]: statefulRunnerResult() } }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), code);
     assertStopsAfter(trace, phase);
   }
 });

@@ -119,13 +119,14 @@ async function invoke(runner, command, args, options, code, output, step, port) 
   }
   let result;
   try {
-    if (isRunnerResult(value)) result = Object.freeze({
+    const snapshot = {
       exitCode: value.exitCode,
       stdout: value.stdout,
       stderr: value.stderr,
       timedOut: value.timedOut,
       signal: value.signal
-    });
+    };
+    if (isRunnerResult(snapshot)) result = Object.freeze(snapshot);
   } catch {
     emit(output, { step, status: 'failed', code }, code);
     fail(code);
