@@ -68,6 +68,30 @@ test("production audit rejects a TypeScript route artifact", async (t) => {
   await assertAuditRejects(packageRoot, "TypeScript source: pages/venue/index.ts");
 });
 
+for (const filename of ["domain/decoder.test.js", "domain/decoder.spec.js"]) {
+  test(`production audit rejects test artifact ${filename}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await mkdir(path.dirname(path.join(packageRoot, filename)), { recursive: true });
+    await writeFile(path.join(packageRoot, filename), "\n");
+
+    await assertAuditRejects(packageRoot, filename);
+  });
+}
+
+for (const [source, diagnostic] of [
+  ['jest.requireActual("../../contracts/examples/venue-primary.json");\n', "jest."],
+  ['expect(value).toEqual(expected);\n', "expect("],
+]) {
+  test(`production audit rejects Jest global ${diagnostic}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await writeFile(path.join(packageRoot, "app.js"), source);
+
+    await assertAuditRejects(packageRoot, diagnostic);
+  });
+}
+
 test("production audit requires compiled artifacts to be regular files", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));

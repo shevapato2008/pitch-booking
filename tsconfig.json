@@ -6,7 +6,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["miniprogram-api-typings", "jest"]
+    "types": ["miniprogram-api-typings"]
   },
   "include": ["miniprogram/**/*.ts"]
 }

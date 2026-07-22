@@ -99,6 +99,7 @@ async function validateTypeScript(sourceRoot, includeDevelopment) {
     target: ts.ScriptTarget.ES2020,
     strict: true,
     skipLibCheck: true,
+    types: [],
   });
   const diagnostics = ts.getPreEmitDiagnostics(program);
   if (diagnostics.length > 0) {
@@ -117,7 +118,7 @@ async function collectTypeScriptFiles(directory, includeDevelopment, sourceRoot 
     if (!includeDevelopment && directory === sourceRoot && entry.name === "dev") continue;
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await collectTypeScriptFiles(entryPath, includeDevelopment, sourceRoot)));
-    else if (entry.name.endsWith(".ts")) files.push(entryPath);
+    else if (entry.name.endsWith(".ts") && !isTestArtifact(entry.name)) files.push(entryPath);
   }
   return files;
 }
@@ -126,12 +127,13 @@ async function copyTree(source, destination, includeDevelopment) {
   await mkdir(destination, { recursive: true });
   for (const entry of await readdir(source, { withFileTypes: true })) {
     if (!includeDevelopment && entry.name === "dev") continue;
+    if (entry.isFile() && isTestArtifact(entry.name)) continue;
 
     const from = path.join(source, entry.name);
     const to = path.join(destination, entry.name);
     if (entry.isDirectory()) {
       await copyTree(from, to, includeDevelopment);
-    } else if (entry.name.endsWith(".ts")) {
+    } else if (entry.name.endsWith(".ts") && !isTestArtifact(entry.name)) {
       const sourceText = await readFile(from, "utf8");
       const output = ts.transpileModule(sourceText, {
         compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 },
@@ -142,6 +144,10 @@ async function copyTree(source, destination, includeDevelopment) {
       await cp(from, to);
     }
   }
+}
+
+function isTestArtifact(filename) {
+  return /\.(?:test|spec)\.ts$/i.test(filename);
 }
 
 async function findDevelopmentRoutes(sourceRoot) {

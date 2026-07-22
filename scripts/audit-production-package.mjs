@@ -9,13 +9,20 @@ if (!targetArgument) {
 }
 
 const target = path.resolve(targetArgument);
-const forbiddenPathPatterns = [/(^|[/\\])dev([/\\]|$)/i, /\.dev-generated/i, /fixture/i];
+const forbiddenPathPatterns = [
+  /(^|[/\\])dev([/\\]|$)/i,
+  /\.dev-generated/i,
+  /fixture/i,
+  /\.(?:test|spec)\.[^/\\]+$/i,
+];
 const forbiddenContentPatterns = [
   /FIXTURE_MODE/,
   /\b(?:fixture[A-Z]|Fixture[A-Z])[A-Za-z0-9_$]*\b/,
   /\bfixtures:generate\b/,
   /\bScenario[A-Z][A-Za-z0-9_$]*\b/,
   /["']dev\//,
+  /\bjest\s*\./,
+  /\bexpect\s*\(/,
 ];
 const forbidden = [];
 

@@ -84,6 +84,28 @@ test("build rejects a symlinked output child without deleting its target", async
   assert.equal(rejected, true, "build accepted a symlinked output child");
 });
 
+test("production and development builds exclude test and spec TypeScript", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await writeFile(
+    path.join(projectRoot, "miniprogram/domain-boundary.test.ts"),
+    'const invalid: number = "test-only"; jest.requireActual("../../contracts/examples/venue-primary.json");\n',
+  );
+  await writeFile(
+    path.join(projectRoot, "miniprogram/domain-boundary.spec.ts"),
+    'expect("test-only").toBeDefined();\n',
+  );
+
+  for (const mode of ["production", "development"]) {
+    await execFileAsync(process.execPath, [buildScript, mode], { cwd: projectRoot });
+    const outputRoot = path.join(projectRoot, `dist/miniprogram-${mode}`);
+    assert.equal(existsSync(path.join(outputRoot, "domain-boundary.test.js")), false);
+    assert.equal(existsSync(path.join(outputRoot, "domain-boundary.test.ts")), false);
+    assert.equal(existsSync(path.join(outputRoot, "domain-boundary.spec.js")), false);
+    assert.equal(existsSync(path.join(outputRoot, "domain-boundary.spec.ts")), false);
+  }
+});
+
 async function createBuildProject(source) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-"));
   return createBuildProjectIn(projectRoot, source);
@@ -92,6 +114,7 @@ async function createBuildProject(source) {
 async function createBuildProjectIn(projectRoot, source) {
   const sourceRoot = path.join(projectRoot, "miniprogram");
   await mkdir(sourceRoot, { recursive: true });
+  await mkdir(path.join(sourceRoot, "dev"));
   await writeFile(path.join(sourceRoot, "app.json"), '{"pages":[]}\n');
   await writeFile(path.join(sourceRoot, "app.ts"), source);
   return projectRoot;
