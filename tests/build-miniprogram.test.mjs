@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -40,10 +41,57 @@ test("output resolution is restricted to allow-listed children of dist", async (
   await execFileAsync(process.execPath, ["--input-type=module", "--eval", verification]);
 });
 
+test("build rejects a symlinked dist parent without deleting external output", async (t) => {
+  const sandboxRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-boundary-"));
+  t.after(() => rm(sandboxRoot, { recursive: true, force: true }));
+  const projectRoot = await createBuildProjectIn(path.join(sandboxRoot, "project"), "");
+  const externalRoot = path.join(sandboxRoot, "external");
+  const sentinel = path.join(externalRoot, "miniprogram-production/sentinel");
+  await mkdir(path.dirname(sentinel), { recursive: true });
+  await writeFile(sentinel, "preserve\n");
+  await symlink(externalRoot, path.join(projectRoot, "dist"));
+
+  let rejected = false;
+  try {
+    await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+  } catch {
+    rejected = true;
+  }
+
+  assert.equal(existsSync(sentinel), true, "external sentinel was deleted");
+  assert.equal(rejected, true, "build accepted a symlinked dist parent");
+});
+
+test("build rejects a symlinked output child without deleting its target", async (t) => {
+  const sandboxRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-boundary-"));
+  t.after(() => rm(sandboxRoot, { recursive: true, force: true }));
+  const projectRoot = await createBuildProjectIn(path.join(sandboxRoot, "project"), "");
+  const externalOutput = path.join(sandboxRoot, "external-output");
+  const sentinel = path.join(externalOutput, "sentinel");
+  await mkdir(path.join(projectRoot, "dist"));
+  await mkdir(externalOutput);
+  await writeFile(sentinel, "preserve\n");
+  await symlink(externalOutput, path.join(projectRoot, "dist/miniprogram-production"));
+
+  let rejected = false;
+  try {
+    await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+  } catch {
+    rejected = true;
+  }
+
+  assert.equal(existsSync(sentinel), true, "external sentinel was deleted");
+  assert.equal(rejected, true, "build accepted a symlinked output child");
+});
+
 async function createBuildProject(source) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-build-"));
+  return createBuildProjectIn(projectRoot, source);
+}
+
+async function createBuildProjectIn(projectRoot, source) {
   const sourceRoot = path.join(projectRoot, "miniprogram");
-  await mkdir(sourceRoot);
+  await mkdir(sourceRoot, { recursive: true });
   await writeFile(path.join(sourceRoot, "app.json"), '{"pages":[]}\n');
   await writeFile(path.join(sourceRoot, "app.ts"), source);
   return projectRoot;

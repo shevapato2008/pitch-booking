@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -19,10 +19,18 @@ const forbiddenContentPatterns = [
 ];
 const forbidden = [];
 
-if (!(await stat(target)).isDirectory()) throw new Error(`${targetArgument} is not a directory`);
+const targetStat = await lstat(target);
+if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
+  throw new Error(`${targetArgument} must be a non-symlink directory`);
+}
 
 for (const file of await collectFiles(target)) {
   const relativePath = path.relative(target, file);
+  const fileStat = await lstat(file);
+  if (fileStat.isSymbolicLink()) {
+    forbidden.push(`symlink: ${relativePath}`);
+    continue;
+  }
   if (forbiddenPathPatterns.some((pattern) => pattern.test(relativePath))) {
     forbidden.push(`path: ${relativePath}`);
   }
@@ -43,14 +51,14 @@ for (const route of productionRoutes) {
   for (const extension of ["js", "json", "wxml", "wxss"]) {
     const artifact = `${route}.${extension}`;
     try {
-      const artifactStat = await stat(path.join(target, artifact));
+      const artifactStat = await lstat(path.join(target, artifact));
       if (!artifactStat.isFile()) forbidden.push(`not a regular file: ${artifact}`);
     } catch {
       forbidden.push(`missing: ${artifact}`);
     }
   }
   try {
-    await stat(path.join(target, `${route}.ts`));
+    await lstat(path.join(target, `${route}.ts`));
     forbidden.push(`TypeScript source: ${route}.ts`);
   } catch {}
 }

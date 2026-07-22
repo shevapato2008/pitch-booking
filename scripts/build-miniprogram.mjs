@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -22,9 +22,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
 }
 
 async function build(selectedMode) {
-  const sourceRoot = path.resolve("miniprogram");
-  const outputRoot = resolveOutputRoot(selectedMode, process.cwd());
+  const projectRoot = process.cwd();
+  const sourceRoot = path.resolve(projectRoot, "miniprogram");
+  const outputRoot = resolveOutputRoot(selectedMode, projectRoot);
 
+  await ensureSafeOutputBoundary(projectRoot, outputRoot);
   await validateTypeScript(sourceRoot, selectedMode === "development");
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
@@ -56,6 +58,37 @@ export function resolveOutputRoot(selectedMode, projectRoot) {
     throw new Error("Refusing an output directory that is not allow-listed");
   }
   return outputRoot;
+}
+
+async function ensureSafeOutputBoundary(projectRoot, outputRoot) {
+  const resolvedProjectRoot = path.resolve(projectRoot);
+  const realProjectRoot = await realpath(resolvedProjectRoot);
+  if (realProjectRoot !== resolvedProjectRoot) {
+    throw new Error("Refusing a project root reached through a symlink");
+  }
+
+  const distRoot = path.resolve(resolvedProjectRoot, "dist");
+  let distStat;
+  try {
+    distStat = await lstat(distRoot);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    await mkdir(distRoot);
+    distStat = await lstat(distRoot);
+  }
+  if (distStat.isSymbolicLink()) throw new Error("Refusing a symlinked dist root");
+  if (!distStat.isDirectory()) throw new Error("Refusing a dist root that is not a directory");
+  if ((await realpath(distRoot)) !== distRoot) {
+    throw new Error("Refusing a dist root outside the project-local path");
+  }
+
+  if (path.dirname(outputRoot) !== distRoot) throw new Error("Refusing output outside the verified dist root");
+  try {
+    const outputStat = await lstat(outputRoot);
+    if (outputStat.isSymbolicLink()) throw new Error("Refusing a symlinked output directory");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
 }
 
 async function validateTypeScript(sourceRoot, includeDevelopment) {

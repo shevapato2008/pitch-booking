@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -76,6 +76,16 @@ test("production audit requires compiled artifacts to be regular files", async (
   await mkdir(compiledArtifact);
 
   await assertAuditRejects(packageRoot, "not a regular file: pages/venue/index.js");
+});
+
+test("production audit rejects a symlinked required artifact", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  const compiledArtifact = path.join(packageRoot, "pages/venue/index.js");
+  await rm(compiledArtifact);
+  await symlink("../availability/index.js", compiledArtifact);
+
+  await assertAuditRejects(packageRoot, "symlink: pages/venue/index.js");
 });
 
 test("production audit accepts ordinary production code", async (t) => {
