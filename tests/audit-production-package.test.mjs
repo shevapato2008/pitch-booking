@@ -108,6 +108,10 @@ for (const [description, source, diagnostic] of [
   ["compiled Jest require", 'const globals = require("@jest/globals");\n', "@jest/globals"],
   ["Node test require", 'const test = require("node:test");\n', "node:test"],
   ["Vitest import", 'import { describe } from "vitest";\n', "vitest"],
+  ["Jest dynamic subpath import", 'const runner = import ( "@jest/globals/internal" );\n', "@jest/globals/internal"],
+  ["Node test static subpath import", 'import reporter from "node:test/reporters";\n', "node:test/reporters"],
+  ["Vitest bare subpath import", 'import "vitest/config";\n', "vitest/config"],
+  ["Mocha spaced subpath require", "const runner = require ( 'mocha/lib/mocha' );\n", "mocha/lib/mocha"],
 ]) {
   test(`production audit rejects ${description}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -117,6 +121,18 @@ for (const [description, source, diagnostic] of [
     await assertAuditRejects(packageRoot, diagnostic);
   });
 }
+
+test("production audit accepts harmless runner-name string literals", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    'const flavor = "mocha";\nconst label = "vitest";\n',
+  );
+
+  const result = await execFileAsync(process.execPath, [auditScript, packageRoot]);
+  assert.match(result.stdout, /0 forbidden paths\/tokens/);
+});
 
 test("production audit requires compiled artifacts to be regular files", async (t) => {
   const packageRoot = await createProductionPackage();

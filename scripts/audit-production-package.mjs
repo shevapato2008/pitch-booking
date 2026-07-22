@@ -9,6 +9,7 @@ if (!targetArgument) {
 }
 
 const target = path.resolve(targetArgument);
+const runnerModule = String.raw`(?:@jest/globals|node:test|vitest|mocha)(?:/[A-Za-z0-9._@/-]+)?`;
 const forbiddenPathPatterns = [
   /(^|[/\\])dev([/\\]|$)/i,
   /\.dev-generated/i,
@@ -24,7 +25,9 @@ const forbiddenContentPatterns = [
   /\bjest\s*\./,
   /\bexpect\s*\(/,
   /contracts[/\\]examples[/\\]/,
-  /["'](?:@jest\/globals|node:test|vitest|mocha)["']/,
+  new RegExp(String.raw`\b(?:require|import)\s*\(\s*["']${runnerModule}["']\s*\)`),
+  new RegExp(String.raw`\bfrom\s*["']${runnerModule}["']`),
+  new RegExp(String.raw`\bimport\s*["']${runnerModule}["']`),
 ];
 const forbidden = [];
 
