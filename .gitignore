@@ -1,2 +1,7 @@
 .superpowers/
 .worktrees/
+node_modules/
+dist/
+coverage/
+project.private.config.json
+.DS_Store

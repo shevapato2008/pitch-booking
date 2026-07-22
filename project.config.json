@@ -1,0 +1,12 @@
+{
+  "appid": "",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "dist/miniprogram-development/",
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "enhance": true,
+    "compileWorklet": false
+  }
+}

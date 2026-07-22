@@ -1,0 +1,10 @@
+{
+  "pages": ["pages/venue/index", "pages/availability/index"],
+  "window": {
+    "navigationBarTitleText": "球场预订",
+    "navigationBarBackgroundColor": "#F8FAFC",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F8FAFC"
+  },
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,4 @@
+{
+  "desc": "Pitch Booking sitemap",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

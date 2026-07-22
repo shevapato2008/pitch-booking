@@ -1,0 +1,3 @@
+.loading {
+  padding: 48rpx 32rpx;
+}
