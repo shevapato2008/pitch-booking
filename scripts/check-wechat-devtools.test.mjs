@@ -156,7 +156,7 @@ test('login accepts only the independent characterized JSON line from stdout or 
     await checkWechatDevTools({ runner: runner({ trace, byPhase: { login } }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' });
     assert.equal(trace.at(-1).args[0], 'auto');
   }
-  for (const login of [result({ exitCode: 1, stdout: '{"login":true}' }), result(), result({ stdout: '{"login":false}' }), result({ stdout: '{"login":true} extra' }), result({ stdout: 'yes' }), result({ stdout: 'logged in' }), result({ stdout: '{' })]) {
+  for (const login of [result({ exitCode: 1, stdout: '{"login":true}' }), result(), result({ stdout: '{"login":false}' }), result({ stdout: '{"login":true}\n', stderr: '{"login":false}\n' }), result({ stdout: '{"login":true} extra' }), result({ stdout: 'yes' }), result({ stdout: 'logged in' }), result({ stdout: '{' })]) {
     const trace = [];
     await expectFailure(() => checkWechatDevTools({ runner: runner({ trace, byPhase: { login } }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot: f.root, port: PORT, platform: 'darwin' }), 'WECHAT_LOGIN_REQUIRED');
     assertStopsAfter(trace, 'login');
@@ -236,6 +236,18 @@ test('validates CLI AppID project and version boundaries exhaustively before lat
   await expectFailure(() => checkWechatDevTools({ runner: runner(), env: { WECHAT_DEVTOOLS_CLI: malformedProject.cli }, repoRoot: malformedProject.root, port: PORT, platform: 'darwin' }), 'WECHAT_BUILD_FAILED');
 });
 
+test('rejects invalid repo roots as build failures before commands without coercion leaks', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const hostileRoot = {
+    [Symbol.toPrimitive]() { throw new Error(PRIVATE); }
+  };
+  for (const repoRoot of [undefined, null, 42, '', 'relative', `${f.root}/./project`, `${f.root}/../project`, hostileRoot]) {
+    const trace = [];
+    await expectFailure(() => checkWechatDevTools({ runner: runner({ trace }), env: { WECHAT_DEVTOOLS_CLI: f.cli }, repoRoot, port: PORT, platform: 'darwin' }), 'WECHAT_BUILD_FAILED', [PRIVATE]);
+    assert.deepEqual(trace, []);
+  }
+});
+
 test('rejects ambiguous PlistBuddy version output without exposing it or running later commands', async (t) => {
   const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
   for (const version of [
@@ -256,7 +268,7 @@ test('rejects ambiguous PlistBuddy version output without exposing it or running
   }
 });
 
-test('contains injected environment getter throws within their active phase', async (t) => {
+test('contains injected CLI environment getter throws before commands', async (t) => {
   const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
   const cliTrace = [];
   await expectFailure(() => checkWechatDevTools({
@@ -268,16 +280,18 @@ test('contains injected environment getter throws within their active phase', as
   }), 'WECHAT_CLI_INVALID', [ENV_GETTER]);
   assert.deepEqual(cliTrace, []);
 
-  const buildTrace = [];
-  await expectFailure(() => checkWechatDevTools({
-    runner: runner({ trace: buildTrace }),
-    env: envWithThrowingGetter('npmExecutable', { WECHAT_DEVTOOLS_CLI: f.cli }),
-    repoRoot: f.root,
-    port: PORT,
-    platform: 'darwin'
-  }), 'WECHAT_BUILD_FAILED', [ENV_GETTER]);
-  assertStopsAfter(buildTrace, 'build');
-  assert.doesNotMatch(JSON.stringify(buildTrace), new RegExp(ENV_GETTER));
+});
+
+test('build always invokes literal npm without reading an environment override', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  for (const env of [
+    { WECHAT_DEVTOOLS_CLI: f.cli, npmExecutable: '/usr/bin/true' },
+    envWithThrowingGetter('npmExecutable', { WECHAT_DEVTOOLS_CLI: f.cli })
+  ]) {
+    const trace = [];
+    await checkWechatDevTools({ runner: runner({ trace }), env, repoRoot: f.root, port: PORT, platform: 'darwin' });
+    assert.equal(trace.find(({ args }) => args[0] === 'run').command, 'npm');
+  }
 });
 
 test('parseArgs rejects every invalid port shape and main keeps the failure channel safe', async () => {

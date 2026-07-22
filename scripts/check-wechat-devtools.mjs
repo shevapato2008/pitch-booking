@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { access, readFile, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MAX_BUFFER_BYTES = 1024 * 1024;
@@ -95,8 +96,17 @@ function snapshotEnvironmentField(env, field, code) {
   }
 }
 
+function snapshotRepoRoot(repoRoot) {
+  if (typeof repoRoot !== 'string'
+    || repoRoot === ''
+    || !path.isAbsolute(repoRoot)
+    || repoRoot.split(path.sep).some((part) => part === '.' || part === '..')) fail('WECHAT_BUILD_FAILED');
+  return repoRoot;
+}
+
 function loginIsAffirmative(stdout, stderr) {
-  return [stdout, stderr].some((channel) => channel.split(/\r?\n/).some((line) => line === '{"login":true}'));
+  const lines = [stdout, stderr].flatMap((channel) => channel.split(/\r?\n/));
+  return lines.includes('{"login":true}') && !lines.includes('{"login":false}');
 }
 
 function shortVersion(stdout, stderr) {
@@ -199,10 +209,11 @@ export async function checkWechatDevTools({ runner = createDefaultRunner(), env 
   const bundle = appBundleFor(canonicalCliPath);
   if (!bundle) fail('WECHAT_VERSION_UNAVAILABLE');
 
-  const privateConfigPath = `${repoRoot}/project.private.config.json`;
-  const projectConfigPath = `${repoRoot}/project.config.json`;
-  const cliOptions = Object.freeze({ cwd: repoRoot, timeoutMs: CLI_TIMEOUT_MS, maxBufferBytes: MAX_BUFFER_BYTES });
-  const buildOptions = Object.freeze({ cwd: repoRoot, timeoutMs: BUILD_TIMEOUT_MS, maxBufferBytes: MAX_BUFFER_BYTES });
+  const safeRepoRoot = snapshotRepoRoot(repoRoot);
+  const privateConfigPath = `${safeRepoRoot}/project.private.config.json`;
+  const projectConfigPath = `${safeRepoRoot}/project.config.json`;
+  const cliOptions = Object.freeze({ cwd: safeRepoRoot, timeoutMs: CLI_TIMEOUT_MS, maxBufferBytes: MAX_BUFFER_BYTES });
+  const buildOptions = Object.freeze({ cwd: safeRepoRoot, timeoutMs: BUILD_TIMEOUT_MS, maxBufferBytes: MAX_BUFFER_BYTES });
 
   await invoke(runner, 'git', ['check-ignore', '--quiet', privateConfigPath], cliOptions, 'WECHAT_APPID_REQUIRED', output, 'appid');
   let privateConfig;
@@ -228,11 +239,9 @@ export async function checkWechatDevTools({ runner = createDefaultRunner(), env 
   if (!projectConfig || projectConfig.miniprogramRoot !== EXPECTED_MINIPROGRAM_ROOT) fail('WECHAT_BUILD_FAILED');
   emit(output, { step: 'validate', status: 'passed' }, 'WECHAT_BUILD_FAILED');
 
-  const configuredNpmExecutable = snapshotEnvironmentField(env, 'npmExecutable', 'WECHAT_BUILD_FAILED');
-  const npmExecutable = typeof configuredNpmExecutable === 'string' && configuredNpmExecutable ? configuredNpmExecutable : 'npm';
-  await invoke(runner, npmExecutable, ['run', 'build:miniprogram:development'], buildOptions, 'WECHAT_BUILD_FAILED', output, 'build');
+  await invoke(runner, 'npm', ['run', 'build:miniprogram:development'], buildOptions, 'WECHAT_BUILD_FAILED', output, 'build');
   emit(output, { step: 'build', status: 'passed' }, 'WECHAT_BUILD_FAILED');
-  const cliArgs = ['--project', repoRoot, '--port', String(port)];
+  const cliArgs = ['--project', safeRepoRoot, '--port', String(port)];
   const login = await invoke(runner, canonicalCliPath, ['islogin', ...cliArgs], cliOptions, 'WECHAT_LOGIN_REQUIRED', output, 'login', port);
   if (!loginIsAffirmative(login.stdout, login.stderr)) fail('WECHAT_LOGIN_REQUIRED');
   emit(output, { step: 'login', status: 'passed' }, 'WECHAT_LOGIN_REQUIRED');
