@@ -139,6 +139,22 @@ test('contract validator rejects an attached ref targeting the wrong canonical e
   });
 });
 
+test('contract validator rejects a canonical ref with a conflicting value sibling', async () => {
+  await assertMutatedContractRejected((contract) => {
+    const attachedExample = contract.paths['/api/v1/venues/primary'].get.responses['200']
+      .content['application/json'].examples.PrimaryVenue;
+    attachedExample.value.value = { id: 'conflicts-with-canonical-example' };
+  });
+});
+
+test('contract validator rejects a canonical ref with arbitrary sibling metadata', async () => {
+  await assertMutatedContractRejected((contract) => {
+    const attachedExample = contract.paths['/api/v1/venues/primary'].get.responses['200']
+      .content['application/json'].examples.PrimaryVenue;
+    attachedExample.value.metadata = 'unexpected sibling';
+  });
+});
+
 test('fixture generator writes only normalized allow-listed success fixtures', async () => {
   const { stdout, stderr } = await execFileAsync(
     process.execPath,

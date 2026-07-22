@@ -116,13 +116,23 @@ function getAttachedExample(contract, expected) {
     ?.content?.['application/json']?.examples?.[expected.key];
 }
 
-function referencesCanonicalFile(attachedExample, contractPath, canonicalPath) {
-  const reference = attachedExample?.$ref ?? attachedExample?.value?.$ref;
-  return typeof reference === 'string'
-    && path.resolve(path.dirname(contractPath), reference) === canonicalPath;
+function hasExactKeys(value, expectedKeys) {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && isDeepStrictEqual(Object.keys(value).sort(), [...expectedKeys].sort());
 }
 
-function findCanonicalAttachments(contract, contractPath, canonicalPath, canonicalValue) {
+function isExactCanonicalAttachment(attachedExample, mapping, canonicalValue) {
+  if (!hasExactKeys(attachedExample, ['value'])) return false;
+  const attachedValue = attachedExample.value;
+  const isReference = hasExactKeys(attachedValue, ['$ref'])
+    && attachedValue.$ref === mapping.reference;
+  const isInlineValue = isDeepStrictEqual(attachedValue, canonicalValue);
+  return isReference || isInlineValue;
+}
+
+function findCanonicalAttachments(contract, mapping, canonicalValue) {
   const found = [];
   for (const [pathName, pathItem] of Object.entries(contract.paths ?? {})) {
     for (const method of ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']) {
@@ -131,8 +141,7 @@ function findCanonicalAttachments(contract, contractPath, canonicalPath, canonic
         const examples = response.content?.['application/json']?.examples ?? {};
         for (const [key, attachedExample] of Object.entries(examples)) {
           if (
-            referencesCanonicalFile(attachedExample, contractPath, canonicalPath)
-            || isDeepStrictEqual(attachedExample?.value, canonicalValue)
+            isExactCanonicalAttachment(attachedExample, mapping, canonicalValue)
           ) {
             found.push({ path: pathName, method, status, key });
           }
@@ -143,16 +152,13 @@ function findCanonicalAttachments(contract, contractPath, canonicalPath, canonic
   return found;
 }
 
-function validateAttachments(contract, contractPath, mapping, canonicalPath, canonicalValue) {
+function validateAttachments(contract, mapping, canonicalValue) {
   for (const expected of mapping.attachments) {
     const attachedExample = getAttachedExample(contract, expected);
     if (!attachedExample) {
       fail(`${mapping.filename}: required attached example is missing at ${attachmentIdentity(expected)}`);
     }
-    if (
-      !referencesCanonicalFile(attachedExample, contractPath, canonicalPath)
-      && !isDeepStrictEqual(attachedExample.value, canonicalValue)
-    ) {
+    if (!isExactCanonicalAttachment(attachedExample, mapping, canonicalValue)) {
       fail(`${mapping.filename}: attached example at ${attachmentIdentity(expected)} does not match the canonical file`);
     }
   }
@@ -160,8 +166,7 @@ function validateAttachments(contract, contractPath, mapping, canonicalPath, can
   const expectedIdentities = mapping.attachments.map(attachmentIdentity).sort();
   const actualIdentities = findCanonicalAttachments(
     contract,
-    contractPath,
-    canonicalPath,
+    mapping,
     canonicalValue,
   ).map(attachmentIdentity).sort();
   if (!isDeepStrictEqual(actualIdentities, expectedIdentities)) {
@@ -231,7 +236,7 @@ async function main() {
     }
     const canonicalPath = path.resolve(path.dirname(contractPath), mapping.reference);
     const example = JSON.parse(await readFile(canonicalPath, 'utf8'));
-    validateAttachments(rawContract, contractPath, mapping, canonicalPath, example);
+    validateAttachments(rawContract, mapping, example);
     const schemaAttachment = mapping.attachments[0];
     const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
       .responses[schemaAttachment.status].content?.['application/json']?.schema;
