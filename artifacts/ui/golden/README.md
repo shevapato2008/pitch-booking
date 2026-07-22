@@ -51,6 +51,14 @@ Promotion is a separate operation after capture. It requires explicit acceptance
 3. prove the metadata commit equals the candidate namespace commit and that it is a clean and reviewed generating commit and visual diff; and
 4. verify that both candidate files are regular, non-symlink files at the expected collision-safe paths.
 
-Only after every check succeeds may promotion copy into the canonical namespace. It writes each canonical file to a same-filesystem temporary sibling, flushes and closes it, and completes it with an atomic rename. If any validation, staging write, or rename fails, promotion aborts without treating a partial pair as accepted and preserves the previous canonical pair. Canonical replacement is therefore an explicit promotion result, never a side effect of capture.
+Only after every check succeeds may promotion copy into the canonical namespace using this two-file transaction:
+
+1. Acquire an exclusive per-identity promotion lock so no other capture or promotion process can write that identity.
+2. Stage and fsync both candidate files into unique same-filesystem temporary siblings of their canonical targets; each sibling is published only by atomic rename. Then fsync the containing directory. Neither staged file is canonical yet.
+3. If a canonical pair exists, back up and fsync both previous canonical files before publishing and verify the backup hashes. A missing half-pair is an error requiring recovery, not a valid baseline.
+4. Publish the PNG first and the metadata last as the pair's commit marker. Each publication uses an atomic rename of its staged sibling, followed by a directory fsync. Every reader and comparison tool must reject any canonical pair whose PNG hash does not match its metadata `sha256`, so the PNG cannot become accepted before the binding metadata commit.
+5. After both renames and the final directory fsync succeed, remove the backups and temporary files, report any cleanup failure, and release the lock.
+
+On any staging or publish failure, keep the lock, remove any partially published new file, and restore both previous canonical files from the verified backups, publishing restored metadata last. If no previous pair existed, remove both new canonical paths. Fsync the directory after rollback. Report the primary, rollback, and cleanup failures separately; if rollback is incomplete, mark the identity as requiring manual recovery and never report the candidate as accepted. Canonical replacement is therefore an explicit successful promotion result, never a side effect of capture.
 
 No canonical PNG is included at this stage. Candidates must be captured later from the implemented runtime in the fixed environments, reviewed on the target devices, and explicitly accepted before promotion. A later visual change must provide both a difference image and a replacement candidate; canonical baselines must never be overwritten silently.

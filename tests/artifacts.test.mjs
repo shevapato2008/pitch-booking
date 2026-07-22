@@ -464,6 +464,13 @@ test("golden capture matrix covers every unique screen-qualified identity", () =
   assert.match(protocol, /PNG SHA-256.*metadata `sha256`/i);
   assert.match(protocol, /clean and reviewed generating commit and visual diff/i);
   assert.match(protocol, /same-filesystem temporary sibling.*atomic rename/i);
+  assert.match(protocol, /exclusive per-identity promotion lock/i);
+  assert.match(protocol, /stage and fsync both candidate files/i);
+  assert.match(protocol, /back up and fsync both previous canonical files before publishing/i);
+  assert.match(protocol, /publish the PNG first and the metadata last as the pair's commit marker/i);
+  assert.match(protocol, /restore both previous canonical files/i);
+  assert.match(protocol, /reject any canonical pair whose PNG hash does not match its metadata/i);
+  assert.match(protocol, /primary, rollback, and cleanup failures/i);
 
   const matrixSection = protocol.split("## Closed capture matrix\n")[1].split("\n## Capture")[0];
   const tableLines = matrixSection.split("\n").filter((line) => line.startsWith("|"));
