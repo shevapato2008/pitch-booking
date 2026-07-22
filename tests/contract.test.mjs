@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 
 import SwaggerParser from '@apidevtools/swagger-parser';
+import YAML from 'yaml';
 
 const contractPath = new URL('../contracts/openapi.yaml', import.meta.url);
 const examplesDirectory = new URL('../contracts/examples/', import.meta.url);
@@ -13,6 +16,37 @@ const execFileAsync = promisify(execFile);
 
 async function readExample(filename) {
   return JSON.parse(await readFile(new URL(filename, examplesDirectory), 'utf8'));
+}
+
+async function withMutatedContract(mutate) {
+  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'pitch-booking-contract-'));
+  const copiedContractsDirectory = path.join(temporaryDirectory, 'contracts');
+  await cp(new URL('../contracts/', import.meta.url), copiedContractsDirectory, { recursive: true });
+  const copiedContractPath = path.join(copiedContractsDirectory, 'openapi.yaml');
+  const contract = YAML.parse(await readFile(copiedContractPath, 'utf8'));
+  mutate(contract);
+  await writeFile(copiedContractPath, YAML.stringify(contract), 'utf8');
+  return { copiedContractPath, temporaryDirectory };
+}
+
+async function assertMutatedContractRejected(mutate) {
+  const { copiedContractPath, temporaryDirectory } = await withMutatedContract(mutate);
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ['scripts/validate-contract.mjs', copiedContractPath],
+        { cwd: repositoryDirectory },
+      ),
+      (error) => {
+        assert.notEqual(error.code, 0);
+        assert.match(`${error.stdout}${error.stderr}`, /attached example/i);
+        return true;
+      },
+    );
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 test('OpenAPI document validates and exposes exactly the three browsing paths', async () => {
@@ -79,6 +113,30 @@ test('contract validator checks the OpenAPI document and every mapped example', 
 
   assert.match(stdout, /validated 10 JSON examples/i);
   assert.equal(stderr, '');
+});
+
+test('contract validator rejects a missing required attached example', async () => {
+  await assertMutatedContractRejected((contract) => {
+    delete contract.paths['/api/v1/venues/primary'].get.responses['200']
+      .content['application/json'].examples.PrimaryVenue;
+  });
+});
+
+test('contract validator rejects an example attached under the wrong status', async () => {
+  await assertMutatedContractRejected((contract) => {
+    const responses = contract.paths['/api/v1/venues/{venue_id}/availability'].get.responses;
+    responses['404'].content['application/json'].examples.DateOutOfRange =
+      responses['422'].content['application/json'].examples.DateOutOfRange;
+    delete responses['422'].content['application/json'].examples.DateOutOfRange;
+  });
+});
+
+test('contract validator rejects an attached ref targeting the wrong canonical example', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/venues/primary'].get.responses['200']
+      .content['application/json'].examples.PrimaryVenue.value.$ref =
+        './examples/availability-ready.json';
+  });
 });
 
 test('fixture generator writes only normalized allow-listed success fixtures', async () => {

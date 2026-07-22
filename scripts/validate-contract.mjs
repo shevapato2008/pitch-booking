@@ -1,23 +1,88 @@
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import SwaggerParser from '@apidevtools/swagger-parser';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
-const contractUrl = new URL('../contracts/openapi.yaml', import.meta.url);
-const examplesUrl = new URL('../contracts/examples/', import.meta.url);
+const defaultContractPath = new URL('../contracts/openapi.yaml', import.meta.url).pathname;
+
+const attachment = (pathName, status, key) => ({
+  path: pathName,
+  method: 'get',
+  status,
+  key,
+});
 
 const exampleMap = [
-  { filename: 'venue-primary.json', operation: 'getPrimaryVenue', status: '200', schema: 'Venue' },
-  { filename: 'availability-ready.json', operation: 'getVenueAvailability', status: '200', schema: 'Availability' },
-  { filename: 'availability-empty.json', operation: 'getVenueAvailability', status: '200', schema: 'Availability' },
-  { filename: 'error-invalid-argument.json', operation: 'getVenueAvailability', status: '422', schema: 'ErrorEnvelope' },
-  { filename: 'error-pitch-type-not-supported.json', operation: 'getVenueAvailability', status: '422', schema: 'ErrorEnvelope' },
-  { filename: 'error-date-out-of-range.json', operation: 'getVenueAvailability', status: '422', schema: 'ErrorEnvelope' },
-  { filename: 'error-venue-not-found.json', operation: 'getVenueAvailability', status: '404', schema: 'ErrorEnvelope' },
-  { filename: 'error-service-unavailable.json', operation: 'getHealth', status: '503', schema: 'ErrorEnvelope' },
-  { filename: 'error-internal.json', operation: 'getVenueAvailability', status: '500', schema: 'ErrorEnvelope' },
-  { filename: 'error-primary-venue-misconfigured.json', operation: 'getPrimaryVenue', status: '500', schema: 'ErrorEnvelope' },
+  {
+    filename: 'venue-primary.json',
+    reference: './examples/venue-primary.json',
+    schema: 'Venue',
+    attachments: [attachment('/api/v1/venues/primary', '200', 'PrimaryVenue')],
+  },
+  {
+    filename: 'availability-ready.json',
+    reference: './examples/availability-ready.json',
+    schema: 'Availability',
+    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '200', 'AvailabilityReady')],
+  },
+  {
+    filename: 'availability-empty.json',
+    reference: './examples/availability-empty.json',
+    schema: 'Availability',
+    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '200', 'AvailabilityEmpty')],
+  },
+  {
+    filename: 'error-invalid-argument.json',
+    reference: './examples/error-invalid-argument.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '422', 'InvalidArgument')],
+  },
+  {
+    filename: 'error-pitch-type-not-supported.json',
+    reference: './examples/error-pitch-type-not-supported.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '422', 'PitchTypeNotSupported')],
+  },
+  {
+    filename: 'error-date-out-of-range.json',
+    reference: './examples/error-date-out-of-range.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '422', 'DateOutOfRange')],
+  },
+  {
+    filename: 'error-venue-not-found.json',
+    reference: './examples/error-venue-not-found.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '404', 'VenueNotFound')],
+  },
+  {
+    filename: 'error-service-unavailable.json',
+    reference: './examples/error-service-unavailable.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/health', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venues/primary', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venues/{venue_id}/availability', '503', 'ServiceUnavailable'),
+    ],
+  },
+  {
+    filename: 'error-internal.json',
+    reference: './examples/error-internal.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/venues/primary', '500', 'InternalError'),
+      attachment('/api/v1/venues/{venue_id}/availability', '500', 'InternalError'),
+    ],
+  },
+  {
+    filename: 'error-primary-venue-misconfigured.json',
+    reference: './examples/error-primary-venue-misconfigured.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venues/primary', '500', 'PrimaryVenueMisconfigured')],
+  },
 ];
 
 const requiredErrorCodes = new Set([
@@ -42,13 +107,68 @@ function assertSorted(items, selector, label) {
   }
 }
 
-function findOperation(contract, operationId) {
-  for (const [path, pathItem] of Object.entries(contract.paths)) {
-    for (const [method, operation] of Object.entries(pathItem)) {
-      if (operation?.operationId === operationId) return { method, operation, path };
+function attachmentIdentity({ path: pathName, method, status, key }) {
+  return `${method.toUpperCase()} ${pathName} ${status} ${key}`;
+}
+
+function getAttachedExample(contract, expected) {
+  return contract.paths?.[expected.path]?.[expected.method]?.responses?.[expected.status]
+    ?.content?.['application/json']?.examples?.[expected.key];
+}
+
+function referencesCanonicalFile(attachedExample, contractPath, canonicalPath) {
+  const reference = attachedExample?.$ref ?? attachedExample?.value?.$ref;
+  return typeof reference === 'string'
+    && path.resolve(path.dirname(contractPath), reference) === canonicalPath;
+}
+
+function findCanonicalAttachments(contract, contractPath, canonicalPath, canonicalValue) {
+  const found = [];
+  for (const [pathName, pathItem] of Object.entries(contract.paths ?? {})) {
+    for (const method of ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']) {
+      const operation = pathItem[method];
+      for (const [status, response] of Object.entries(operation?.responses ?? {})) {
+        const examples = response.content?.['application/json']?.examples ?? {};
+        for (const [key, attachedExample] of Object.entries(examples)) {
+          if (
+            referencesCanonicalFile(attachedExample, contractPath, canonicalPath)
+            || isDeepStrictEqual(attachedExample?.value, canonicalValue)
+          ) {
+            found.push({ path: pathName, method, status, key });
+          }
+        }
+      }
     }
   }
-  return undefined;
+  return found;
+}
+
+function validateAttachments(contract, contractPath, mapping, canonicalPath, canonicalValue) {
+  for (const expected of mapping.attachments) {
+    const attachedExample = getAttachedExample(contract, expected);
+    if (!attachedExample) {
+      fail(`${mapping.filename}: required attached example is missing at ${attachmentIdentity(expected)}`);
+    }
+    if (
+      !referencesCanonicalFile(attachedExample, contractPath, canonicalPath)
+      && !isDeepStrictEqual(attachedExample.value, canonicalValue)
+    ) {
+      fail(`${mapping.filename}: attached example at ${attachmentIdentity(expected)} does not match the canonical file`);
+    }
+  }
+
+  const expectedIdentities = mapping.attachments.map(attachmentIdentity).sort();
+  const actualIdentities = findCanonicalAttachments(
+    contract,
+    contractPath,
+    canonicalPath,
+    canonicalValue,
+  ).map(attachmentIdentity).sort();
+  if (!isDeepStrictEqual(actualIdentities, expectedIdentities)) {
+    fail(
+      `${mapping.filename}: attached example locations differ; expected ${expectedIdentities.join(', ')}; found ${actualIdentities.join(', ') || 'none'}`,
+    );
+  }
 }
 
 function validateVenueBusinessRules(venue, filename) {
@@ -93,25 +213,30 @@ function validateAvailabilityBusinessRules(availability, filename) {
 }
 
 async function main() {
-  const parser = new SwaggerParser();
-  await parser.validate(contractUrl.pathname);
-  const contract = await parser.dereference(contractUrl.pathname);
+  const [, , ...arguments_] = process.argv;
+  if (arguments_.length > 1) fail('pass at most one OpenAPI contract path');
+  const contractPath = arguments_[0]
+    ? path.resolve(process.cwd(), arguments_[0])
+    : defaultContractPath;
+  const rawContract = await SwaggerParser.parse(contractPath);
+  await SwaggerParser.validate(contractPath);
+  const contract = await SwaggerParser.dereference(contractPath);
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   const coveredErrorCodes = new Set();
 
   for (const mapping of exampleMap) {
-    const located = findOperation(contract, mapping.operation);
-    if (!located?.operation.responses?.[mapping.status]) {
-      fail(`${mapping.filename}: mapped operation/status ${mapping.operation}/${mapping.status} does not exist`);
-    }
     if (!contract.components.schemas[mapping.schema]) {
       fail(`${mapping.filename}: mapped schema ${mapping.schema} does not exist`);
     }
-    const example = JSON.parse(await readFile(new URL(mapping.filename, examplesUrl), 'utf8'));
-    const responseSchema = located.operation.responses[mapping.status].content?.['application/json']?.schema;
+    const canonicalPath = path.resolve(path.dirname(contractPath), mapping.reference);
+    const example = JSON.parse(await readFile(canonicalPath, 'utf8'));
+    validateAttachments(rawContract, contractPath, mapping, canonicalPath, example);
+    const schemaAttachment = mapping.attachments[0];
+    const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
+      .responses[schemaAttachment.status].content?.['application/json']?.schema;
     if (!responseSchema) {
-      fail(`${mapping.filename}: mapped response has no application/json schema`);
+      fail(`${mapping.filename}: mapped response has no application/json schema at ${attachmentIdentity(schemaAttachment)}`);
     }
     const validate = ajv.compile(responseSchema);
     if (!validate(example)) {
