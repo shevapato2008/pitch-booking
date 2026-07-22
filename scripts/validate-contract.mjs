@@ -85,6 +85,14 @@ const exampleMap = [
   },
 ];
 
+const inlineExampleMap = [
+  {
+    filename: 'inline HealthOk',
+    value: { status: 'ok' },
+    attachments: [attachment('/api/v1/health', '200', 'HealthOk')],
+  },
+];
+
 const requiredErrorCodes = new Set([
   'INVALID_ARGUMENT',
   'PITCH_TYPE_NOT_SUPPORTED',
@@ -111,11 +119,6 @@ function attachmentIdentity({ path: pathName, method, status, key }) {
   return `${method.toUpperCase()} ${pathName} ${status} ${key}`;
 }
 
-function getAttachedExample(contract, expected) {
-  return contract.paths?.[expected.path]?.[expected.method]?.responses?.[expected.status]
-    ?.content?.['application/json']?.examples?.[expected.key];
-}
-
 function hasExactKeys(value, expectedKeys) {
   return value !== null
     && typeof value === 'object'
@@ -123,16 +126,17 @@ function hasExactKeys(value, expectedKeys) {
     && isDeepStrictEqual(Object.keys(value).sort(), [...expectedKeys].sort());
 }
 
-function isExactCanonicalAttachment(attachedExample, mapping, canonicalValue) {
+function isExactCanonicalAttachment(attachedExample, definition) {
   if (!hasExactKeys(attachedExample, ['value'])) return false;
   const attachedValue = attachedExample.value;
-  const isReference = hasExactKeys(attachedValue, ['$ref'])
-    && attachedValue.$ref === mapping.reference;
-  const isInlineValue = isDeepStrictEqual(attachedValue, canonicalValue);
+  const isReference = definition.reference !== undefined
+    && hasExactKeys(attachedValue, ['$ref'])
+    && attachedValue.$ref === definition.reference;
+  const isInlineValue = isDeepStrictEqual(attachedValue, definition.value);
   return isReference || isInlineValue;
 }
 
-function findCanonicalAttachments(contract, mapping, canonicalValue) {
+function findAllAttachments(contract) {
   const found = [];
   for (const [pathName, pathItem] of Object.entries(contract.paths ?? {})) {
     for (const method of ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']) {
@@ -140,11 +144,10 @@ function findCanonicalAttachments(contract, mapping, canonicalValue) {
       for (const [status, response] of Object.entries(operation?.responses ?? {})) {
         const examples = response.content?.['application/json']?.examples ?? {};
         for (const [key, attachedExample] of Object.entries(examples)) {
-          if (
-            isExactCanonicalAttachment(attachedExample, mapping, canonicalValue)
-          ) {
-            found.push({ path: pathName, method, status, key });
-          }
+          found.push({
+            location: { path: pathName, method, status, key },
+            attachedExample,
+          });
         }
       }
     }
@@ -152,27 +155,36 @@ function findCanonicalAttachments(contract, mapping, canonicalValue) {
   return found;
 }
 
-function validateAttachments(contract, mapping, canonicalValue) {
-  for (const expected of mapping.attachments) {
-    const attachedExample = getAttachedExample(contract, expected);
-    if (!attachedExample) {
-      fail(`${mapping.filename}: required attached example is missing at ${attachmentIdentity(expected)}`);
-    }
-    if (!isExactCanonicalAttachment(attachedExample, mapping, canonicalValue)) {
-      fail(`${mapping.filename}: attached example at ${attachmentIdentity(expected)} does not match the canonical file`);
+function validateAttachments(contract, definitions) {
+  const allowList = new Map();
+  for (const definition of definitions) {
+    for (const expected of definition.attachments) {
+      const identity = attachmentIdentity(expected);
+      if (allowList.has(identity)) {
+        fail(`duplicate attached example declaration at ${identity}`);
+      }
+      allowList.set(identity, definition);
     }
   }
 
-  const expectedIdentities = mapping.attachments.map(attachmentIdentity).sort();
-  const actualIdentities = findCanonicalAttachments(
-    contract,
-    mapping,
-    canonicalValue,
-  ).map(attachmentIdentity).sort();
-  if (!isDeepStrictEqual(actualIdentities, expectedIdentities)) {
-    fail(
-      `${mapping.filename}: attached example locations differ; expected ${expectedIdentities.join(', ')}; found ${actualIdentities.join(', ') || 'none'}`,
-    );
+  const discovered = findAllAttachments(contract);
+  const discoveredIdentities = new Set();
+  for (const { location, attachedExample } of discovered) {
+    const identity = attachmentIdentity(location);
+    const definition = allowList.get(identity);
+    if (!definition) {
+      fail(`unknown attached example at ${identity}`);
+    }
+    if (!isExactCanonicalAttachment(attachedExample, definition)) {
+      fail(`${definition.filename}: attached example at ${identity} is not an exact canonical reference or inline value`);
+    }
+    discoveredIdentities.add(identity);
+  }
+
+  for (const [identity, definition] of allowList) {
+    if (!discoveredIdentities.has(identity)) {
+      fail(`${definition.filename}: required attached example is missing at ${identity}`);
+    }
   }
 }
 
@@ -229,14 +241,19 @@ async function main() {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   const coveredErrorCodes = new Set();
+  const mappedExamples = [];
 
   for (const mapping of exampleMap) {
+    const canonicalPath = path.resolve(path.dirname(contractPath), mapping.reference);
+    const value = JSON.parse(await readFile(canonicalPath, 'utf8'));
+    mappedExamples.push({ ...mapping, value });
+  }
+  validateAttachments(rawContract, [...mappedExamples, ...inlineExampleMap]);
+
+  for (const mapping of mappedExamples) {
     if (!contract.components.schemas[mapping.schema]) {
       fail(`${mapping.filename}: mapped schema ${mapping.schema} does not exist`);
     }
-    const canonicalPath = path.resolve(path.dirname(contractPath), mapping.reference);
-    const example = JSON.parse(await readFile(canonicalPath, 'utf8'));
-    validateAttachments(rawContract, mapping, example);
     const schemaAttachment = mapping.attachments[0];
     const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
       .responses[schemaAttachment.status].content?.['application/json']?.schema;
@@ -244,15 +261,15 @@ async function main() {
       fail(`${mapping.filename}: mapped response has no application/json schema at ${attachmentIdentity(schemaAttachment)}`);
     }
     const validate = ajv.compile(responseSchema);
-    if (!validate(example)) {
+    if (!validate(mapping.value)) {
       fail(`${mapping.filename}: schema ${mapping.schema} failed: ${ajv.errorsText(validate.errors, { separator: '; ' })}`);
     }
 
-    if (mapping.schema === 'Venue') validateVenueBusinessRules(example, mapping.filename);
-    if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(example, mapping.filename);
-    if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(example.error.code);
+    if (mapping.schema === 'Venue') validateVenueBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {
-      const keys = Object.keys(example.error.details).sort();
+      const keys = Object.keys(mapping.value.error.details).sort();
       if (keys.join(',') !== 'end_date,start_date') {
         fail(`${mapping.filename}: details must contain exactly start_date and end_date`);
       }

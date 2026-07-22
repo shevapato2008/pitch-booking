@@ -155,6 +155,40 @@ test('contract validator rejects a canonical ref with arbitrary sibling metadata
   });
 });
 
+test('contract validator rejects a wrong-status canonical ref duplicate with metadata', async () => {
+  await assertMutatedContractRejected((contract) => {
+    const examples = contract.paths['/api/v1/venues/{venue_id}/availability'].get
+      .responses['404'].content['application/json'].examples;
+    examples.UnexpectedPrimaryVenue = {
+      value: {
+        $ref: './examples/venue-primary.json',
+        metadata: 'must not hide this duplicate from the attachment scan',
+      },
+    };
+  });
+});
+
+test('contract validator rejects a wrong-status inline canonical duplicate with a sibling', async () => {
+  const canonicalVenue = await readExample('venue-primary.json');
+  await assertMutatedContractRejected((contract) => {
+    const examples = contract.paths['/api/v1/venues/{venue_id}/availability'].get
+      .responses['404'].content['application/json'].examples;
+    examples.UnexpectedInlinePrimaryVenue = {
+      value: canonicalVenue,
+      summary: 'must not hide this duplicate from the attachment scan',
+    };
+  });
+});
+
+test('contract validator rejects an unknown response example key', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/health'].get.responses['200']
+      .content['application/json'].examples.UnknownHealth = {
+        value: { status: 'unknown' },
+      };
+  });
+});
+
 test('fixture generator writes only normalized allow-listed success fixtures', async () => {
   const { stdout, stderr } = await execFileAsync(
     process.execPath,
