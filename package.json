@@ -15,7 +15,8 @@
     "fixtures:generate": "node scripts/generate-fixtures.mjs",
     "build:miniprogram:production": "node scripts/build-miniprogram.mjs production",
     "build:miniprogram:development": "node scripts/build-miniprogram.mjs development",
-    "audit:miniprogram-package": "node scripts/audit-production-package.mjs dist/miniprogram-production"
+    "audit:miniprogram-package": "node scripts/audit-production-package.mjs dist/miniprogram-production",
+    "env:wechat:check": "node scripts/check-wechat-devtools.mjs"
   },
   "overrides": {
     "js-yaml": "4.3.0"
