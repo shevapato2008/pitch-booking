@@ -239,3 +239,125 @@ test("accepts the documented ASCII media URL grammar", () => {
 
   expect(decoded.images[0].url).toBe(url);
 });
+
+test("canonical venue DTO is exactly camelCase and view-safe", () => {
+  expect(decodeVenue(venue)).toStrictEqual({
+    id: venue.id,
+    name: venue.name,
+    description: venue.description,
+    priceAdvantageText: venue.price_advantage_text,
+    timezone: venue.timezone,
+    businessHoursText: venue.business_hours_text,
+    address: venue.address,
+    latitude: venue.latitude,
+    longitude: venue.longitude,
+    parkingText: venue.parking_text,
+    phone: venue.phone,
+    refundPolicySummary: venue.refund_policy_summary,
+    images: venue.images.map((image) => ({
+      url: image.url, alt: image.alt, role: image.role, sortOrder: image.sort_order,
+    })),
+    facilities: venue.facilities.map((facility) => ({
+      code: facility.code, name: facility.name, sortOrder: facility.sort_order,
+    })),
+    pitchTypes: venue.pitch_types.map((pitchType) => ({
+      code: pitchType.code, name: pitchType.name, sortOrder: pitchType.sort_order,
+    })),
+    availabilityWindow: {
+      startDate: venue.availability_window.start_date,
+      endDate: venue.availability_window.end_date,
+    },
+    generatedAt: venue.generated_at,
+  });
+});
+
+test("canonical availability DTO is exactly camelCase and view-safe", () => {
+  expect(decodeAvailability(ready)).toStrictEqual({
+    venueId: ready.venue_id,
+    timezone: ready.timezone,
+    date: ready.date,
+    pitchType: ready.pitch_type,
+    availabilityWindow: {
+      startDate: ready.availability_window.start_date,
+      endDate: ready.availability_window.end_date,
+    },
+    pitchGroups: ready.pitches.map((pitch) => ({
+      id: pitch.id,
+      name: pitch.name,
+      pitchType: pitch.pitch_type,
+      sortOrder: pitch.sort_order,
+      slots: pitch.slots.map((slot) => ({
+        id: slot.id,
+        startsAt: slot.starts_at,
+        endsAt: slot.ends_at,
+        priceCents: slot.price_cents,
+        status: slot.status,
+        unavailableReason: slot.unavailable_reason,
+      })),
+    })),
+    generatedAt: ready.generated_at,
+  });
+});
+
+const expectApiPath = (decode: () => unknown, path: string) => {
+  try {
+    decode();
+    throw new Error("decoder unexpectedly accepted corrupt data");
+  } catch (error) {
+    expect(error).toBeInstanceOf(ApiResponseError);
+    expect(error).toMatchObject({ code: "INVALID_API_RESPONSE", path });
+  }
+};
+
+test.each([
+  ["images", { ...venue, images: [venue.images[1], venue.images[0], venue.images[2]] }, "$.images[1].sort_order"],
+  ["facilities", { ...venue, facilities: [venue.facilities[1], venue.facilities[0], ...venue.facilities.slice(2)] }, "$.facilities[1].sort_order"],
+  ["pitch types", { ...venue, pitch_types: [venue.pitch_types[1], venue.pitch_types[0]] }, "$.pitch_types[1].sort_order"],
+])("rejects unsorted venue %s at its exact path", (_name, value, path) => {
+  expectApiPath(() => decodeVenue(value), path);
+});
+
+test("rejects an availability date outside its window", () => {
+  expectApiPath(() => decodeAvailability({ ...ready, date: "2026-08-05" }), "$.date");
+});
+
+test("rejects a child pitch type that differs from the filter", () => {
+  const value = { ...ready, pitches: [{ ...ready.pitches[0], pitch_type: "SEVEN_A_SIDE" }] };
+  expectApiPath(() => decodeAvailability(value), "$.pitches[0].pitch_type");
+});
+
+test("rejects unsorted pitch groups", () => {
+  const later = { ...ready.pitches[0], sort_order: 1 };
+  const value = { ...ready, pitches: [later, ready.pitches[0]] };
+  expectApiPath(() => decodeAvailability(value), "$.pitches[1].sort_order");
+});
+
+test("rejects unsorted slots", () => {
+  const slots = [ready.pitches[0].slots[1], ready.pitches[0].slots[0], ...ready.pitches[0].slots.slice(2)];
+  const value = { ...ready, pitches: [{ ...ready.pitches[0], slots }] };
+  expectApiPath(() => decodeAvailability(value), "$.pitches[0].slots[1].starts_at");
+});
+
+test("rejects a slot outside the requested local date", () => {
+  const slot = { ...firstSlot, ends_at: "2026-07-23T00:30:00+08:00" };
+  expectApiPath(() => decodeAvailability(withSlot(slot)), "$.pitches[0].slots[0].ends_at");
+});
+
+test("rejects overlapping slots", () => {
+  const slots = ready.pitches[0].slots.map((slot, index) => index === 1
+    ? { ...slot, starts_at: "2026-07-22T09:30:00+08:00" }
+    : slot);
+  const value = { ...ready, pitches: [{ ...ready.pitches[0], slots }] };
+  expectApiPath(() => decodeAvailability(value), "$.pitches[0].slots[1].starts_at");
+});
+
+test.each([
+  ["top-level", () => decodeAvailability({ ...ready, venue_id: "bad" }), "$.venue_id"],
+  ["nested", () => decodeAvailability(withSlot({ ...firstSlot, price_cents: 1.5 })), "$.pitches[0].slots[0].price_cents"],
+  ["cross-field", () => decodeAvailability({
+    ...ready,
+    pitches: [{ ...ready.pitches[0], pitch_type: "SEVEN_A_SIDE" }],
+  }), "$.pitches[0].pitch_type"],
+])("reports exact ApiResponseError path for %s failures", (_name, decode, path) => {
+  expectApiPath(decode, path);
+});

@@ -76,6 +76,17 @@ function decodePitchType(value: unknown, path: string): VenuePitchType {
   };
 }
 
+function assertSorted<T>(
+  items: T[],
+  select: (item: T) => number | string,
+  path: string,
+  field: string,
+): void {
+  for (let index = 1; index < items.length; index += 1) {
+    if (select(items[index - 1]) > select(items[index])) invalid(`${path}[${index}].${field}`);
+  }
+}
+
 export function decodeVenue(value: unknown): Venue {
   const path = "$";
   const object = exactObject(value, [
@@ -86,8 +97,7 @@ export function decodeVenue(value: unknown): Venue {
   ], path);
   const images = arrayAt(object.images, "$.images", 1)
     .map((image, index) => decodeImage(image, `$.images[${index}]`));
-  if (images.filter((image) => image.role === "COVER").length !== 1) invalid("$.images");
-  return {
+  const decoded: Venue = {
     id: uuidAt(object.id, "$.id"),
     name: stringAt(object.name, "$.name"),
     description: stringAt(object.description, "$.description", true),
@@ -108,6 +118,11 @@ export function decodeVenue(value: unknown): Venue {
     availabilityWindow: decodeWindow(object.availability_window, "$.availability_window"),
     generatedAt: rfc3339At(object.generated_at, "$.generated_at"),
   };
+  if (decoded.images.filter((image) => image.role === "COVER").length !== 1) invalid("$.images");
+  assertSorted(decoded.images, (image) => image.sortOrder, "$.images", "sort_order");
+  assertSorted(decoded.facilities, (facility) => facility.sortOrder, "$.facilities", "sort_order");
+  assertSorted(decoded.pitchTypes, (pitchType) => pitchType.sortOrder, "$.pitch_types", "sort_order");
+  return decoded;
 }
 
 function decodeSlot(value: unknown, path: string): Slot {
@@ -148,7 +163,7 @@ export function decodeAvailability(value: unknown): Availability {
   const object = exactObject(value, [
     "venue_id", "timezone", "date", "pitch_type", "availability_window", "pitches", "generated_at",
   ], "$");
-  return {
+  const decoded: Availability = {
     venueId: uuidAt(object.venue_id, "$.venue_id"),
     timezone: enumAt(object.timezone, ["Asia/Shanghai"] as const, "$.timezone"),
     date: dateAt(object.date, "$.date"),
@@ -158,4 +173,23 @@ export function decodeAvailability(value: unknown): Availability {
       .map((pitch, index) => decodePitchGroup(pitch, `$.pitches[${index}]`)),
     generatedAt: rfc3339At(object.generated_at, "$.generated_at"),
   };
+  if (decoded.date < decoded.availabilityWindow.startDate
+    || decoded.date > decoded.availabilityWindow.endDate) {
+    invalid("$.date");
+  }
+  assertSorted(decoded.pitchGroups, (pitch) => pitch.sortOrder, "$.pitches", "sort_order");
+  decoded.pitchGroups.forEach((pitch, pitchIndex) => {
+    const pitchPath = `$.pitches[${pitchIndex}]`;
+    if (pitch.pitchType !== decoded.pitchType) invalid(`${pitchPath}.pitch_type`);
+    assertSorted(pitch.slots, (slot) => slot.startsAt, `${pitchPath}.slots`, "starts_at");
+    pitch.slots.forEach((slot, slotIndex) => {
+      const slotPath = `${pitchPath}.slots[${slotIndex}]`;
+      if (slot.startsAt.slice(0, 10) !== decoded.date) invalid(`${slotPath}.starts_at`);
+      if (slot.endsAt.slice(0, 10) !== decoded.date) invalid(`${slotPath}.ends_at`);
+      if (slotIndex > 0 && rfc3339Before(slot.startsAt, pitch.slots[slotIndex - 1].endsAt)) {
+        invalid(`${slotPath}.starts_at`);
+      }
+    });
+  });
+  return decoded;
 }
