@@ -1,0 +1,12 @@
+{
+  "sha256": "d87535064574535c67a9647b79ba38636806a1021a2f5b4dc64e8a1f1a75fe8c",
+  "route": "pages/availability/index",
+  "scenario": "slots-ready",
+  "logical_width": 375,
+  "device_pixel_ratio": 3,
+  "operating_system": "iOS 10.0.1 / iPhone 12/13 mini (WeChat Developer Tools profile)",
+  "wechat_version": "8.0.5",
+  "base_library_version": "3.15.2",
+  "developer_tools_version": "2.01.2510290",
+  "commit": "cca405f06b2f6542073b36ba8ceb78027dff59ea"
+}

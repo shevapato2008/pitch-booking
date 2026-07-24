@@ -1,0 +1,12 @@
+{
+  "sha256": "b110f14cb4db5176916232e7e7411a9558cd94675aca34eda1bb8fd83a9404f1",
+  "route": "pages/venue/index",
+  "scenario": "venue-image-failure",
+  "logical_width": 375,
+  "device_pixel_ratio": 3,
+  "operating_system": "iOS 10.0.1 / iPhone 12/13 mini (WeChat Developer Tools profile)",
+  "wechat_version": "8.0.5",
+  "base_library_version": "3.15.2",
+  "developer_tools_version": "2.01.2510290",
+  "commit": "cca405f06b2f6542073b36ba8ceb78027dff59ea"
+}

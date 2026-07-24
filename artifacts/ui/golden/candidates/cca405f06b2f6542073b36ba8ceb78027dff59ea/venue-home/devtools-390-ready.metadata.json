@@ -1,0 +1,12 @@
+{
+  "sha256": "8e36ca6adb3f7dc4a38140659558de804dbf38ffc260a60a93800c7162804564",
+  "route": "pages/venue/index",
+  "scenario": "venue-ready",
+  "logical_width": 390,
+  "device_pixel_ratio": 3,
+  "operating_system": "iOS 10.0.1 / iPhone 12/13 (Pro) (WeChat Developer Tools profile)",
+  "wechat_version": "8.0.5",
+  "base_library_version": "3.15.2",
+  "developer_tools_version": "2.01.2510290",
+  "commit": "cca405f06b2f6542073b36ba8ceb78027dff59ea"
+}
