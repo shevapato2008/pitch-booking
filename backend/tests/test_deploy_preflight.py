@@ -1,0 +1,60 @@
+from pathlib import Path
+
+from scripts.preflight_deploy import preflight
+
+
+def write_env(path: Path, values: dict[str, str]) -> Path:
+    env_file = path / "staging.env"
+    env_file.write_text(
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+    )
+    return env_file
+
+
+def valid_local_environment() -> dict[str, str]:
+    return {
+        "APP_ENV": "staging",
+        "APP_REVISION": "a" * 40,
+        "DATABASE_URL": "postgresql+psycopg://pitch:local-password@postgres:5432/pitch",
+        "POSTGRES_DB": "pitch",
+        "POSTGRES_USER": "pitch",
+        "POSTGRES_PASSWORD": "local-password",
+        "PUBLIC_API_BASE_URL": "http://127.0.0.1:8080",
+        "PUBLIC_IMAGE_HOSTS": "cdn.example.test",
+    }
+
+
+def test_preflight_rejects_validation_sentinels(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values.update(
+        POSTGRES_PASSWORD="change-before-deploy",
+        APP_REVISION="uncommitted",
+        PUBLIC_API_BASE_URL="https://staging.invalid",
+    )
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert set(result.failures) == {
+        "POSTGRES_PASSWORD uses validation sentinel",
+        "APP_REVISION is not a 40-character commit SHA",
+        "PUBLIC_API_BASE_URL uses validation sentinel",
+    }
+
+
+def test_preflight_rejects_malformed_or_unsafe_public_url(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values["PUBLIC_API_BASE_URL"] = "http://staging.example.test"
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",
+    )
+
+
+def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> None:
+    result = preflight(write_env(tmp_path, valid_local_environment()))
+
+    assert result.ok is True
+    assert result.failures == ()
