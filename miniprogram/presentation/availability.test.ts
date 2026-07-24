@@ -84,6 +84,33 @@ test("filters and sorts physical pitches by the selected Fixture pitch type with
   expect(JSON.stringify(availability)).toBe(original);
 });
 
+test("marks availability empty when every matching pitch group has no slots", () => {
+  const emptyAvailability: Availability = {
+    ...availability,
+    pitchGroups: [makePitchGroup({ slots: [] })],
+  };
+
+  expect(toAvailabilityViewModel(emptyAvailability, null).isEmpty).toBe(true);
+});
+
+test("sorts slots by their real start time", () => {
+  const slotAt = (id: string, hour: string): Slot => ({
+    ...baseSlot,
+    id,
+    startsAt: `2026-07-22T${hour}:00:00+08:00`,
+    endsAt: `2026-07-22T${hour}:30:00+08:00`,
+  });
+  const unsortedAvailability: Availability = {
+    ...availability,
+    pitchGroups: [makePitchGroup({
+      slots: [slotAt("slot-noon", "12"), slotAt("slot-morning", "09"), slotAt("slot-mid", "10")],
+    })],
+  };
+
+  expect(toAvailabilityViewModel(unsortedAvailability, null).pitchGroups[0].slots.map((slot) => slot.id))
+    .toEqual(["slot-morning", "slot-mid", "slot-noon"]);
+});
+
 test("builds an inclusive serializable date range from the availability window", () => {
   expect(buildAvailabilityDates(availability.availabilityWindow)).toEqual([
     { date: "2026-07-22", monthDayLabel: "7月22日", weekdayLabel: "周三" },

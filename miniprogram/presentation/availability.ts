@@ -136,6 +136,6 @@ export function toAvailabilityViewModel(
     pitchType: availability.pitchType,
     dates: buildAvailabilityDates(availability.availabilityWindow),
     pitchGroups,
-    isEmpty: pitchGroups.length === 0,
+    isEmpty: pitchGroups.every((pitchGroup) => pitchGroup.slots.length === 0),
   };
 }
