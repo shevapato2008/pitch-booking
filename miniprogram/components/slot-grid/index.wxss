@@ -31,4 +31,4 @@
 .slot--temporarily-locked { color: #B45309; background: #FFFBEB; border-color: #FDE68A; }
 .slot--selected { color: #FFFFFF; background: #0284C7; border-color: #0284C7; }
 .slot--pressed { opacity: 0.76; transform: scale(0.99); }
-.slot[disabled] { opacity: 1; }
+.slot--disabled { opacity: 1; }

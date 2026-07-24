@@ -6,7 +6,7 @@
         wx:for="{{item.slots}}"
         wx:for-item="slot"
         wx:key="id"
-        class="slot u-control u-radius-md {{slot.className}}"
+        class="slot u-control u-radius-md {{slot.className}} {{!slot.isSelectable ? 'slot--disabled' : ''}}"
         disabled="{{!slot.isSelectable}}"
         data-slot-id="{{slot.id}}"
         data-selectable="{{slot.isSelectable}}"

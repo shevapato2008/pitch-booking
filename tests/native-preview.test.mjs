@@ -166,3 +166,14 @@ test("availability boundary exposes all slot states and an explicit empty state"
   }
   assert.match(pageMarkup, />\s*当天暂无可订时段\s*</);
 });
+
+test("slot grid avoids unsupported component attribute selectors", async () => {
+  const [markup, styles] = await Promise.all([
+    read("miniprogram/components/slot-grid/index.wxml"),
+    read("miniprogram/components/slot-grid/index.wxss"),
+  ]);
+
+  assert.doesNotMatch(styles, /\[[^\]]+\]\s*\{/);
+  assert.match(markup, /slot--disabled/);
+  assertDeclaration(styles, ".slot--disabled", { opacity: "1" });
+});
