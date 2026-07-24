@@ -191,7 +191,7 @@ test("every manifest scenario and fixture exists", () => {
       states: ["loading", "ready", "first-load-error", "image-fallback", "map-error", "phone-error"],
       fixtures: ["venue-ready"],
       scenarios: ["venue-first-load-error", "venue-image-failure", "venue-map-error", "venue-phone-error"],
-      goldens: ["devtools-375-ready", "devtools-390-ready", "ios-ready", "android-ready"],
+      goldens: ["devtools-375-ready", "devtools-390-ready", "devtools-375-image-fallback", "ios-ready", "android-ready"],
       acceptance: ["VENUE-01", "VENUE-02", "VENUE-03"]
     },
     {
@@ -449,7 +449,7 @@ test("golden capture matrix covers every unique screen-qualified identity", () =
     identity: `${screen.id}/${golden}`,
     route: screen.route,
   })));
-  assert.equal(new Set(manifestIdentities.map(({ identity }) => identity)).size, 8);
+  assert.equal(new Set(manifestIdentities.map(({ identity }) => identity)).size, 9);
 
   const protocol = readFileSync("artifacts/ui/golden/README.md", "utf8");
   assert.match(protocol, /canonical identity is `<screen-id>\/<golden-id>`/);
@@ -471,6 +471,10 @@ test("golden capture matrix covers every unique screen-qualified identity", () =
   assert.match(protocol, /restore both previous canonical files/i);
   assert.match(protocol, /reject any canonical pair whose PNG hash does not match its metadata/i);
   assert.match(protocol, /primary, rollback, and cleanup failures/i);
+  assert.match(
+    protocol,
+    /pages\/venue\/index\?scenario=image-fallback.*metadata.*venue-image-failure/i,
+  );
 
   const matrixSection = protocol.split("## Closed capture matrix\n")[1].split("\n## Capture")[0];
   const tableLines = matrixSection.split("\n").filter((line) => line.startsWith("|"));
@@ -501,6 +505,7 @@ test("golden capture matrix covers every unique screen-qualified identity", () =
     [
       { identity: "venue-home/devtools-375-ready", route: "pages/venue/index", scenario: "venue-ready", runtime: "WeChat Developer Tools", logicalWidth: "375" },
       { identity: "venue-home/devtools-390-ready", route: "pages/venue/index", scenario: "venue-ready", runtime: "WeChat Developer Tools", logicalWidth: "390" },
+      { identity: "venue-home/devtools-375-image-fallback", route: "pages/venue/index", scenario: "venue-image-failure", runtime: "WeChat Developer Tools", logicalWidth: "375" },
       { identity: "venue-home/ios-ready", route: "pages/venue/index", scenario: "venue-ready", runtime: "iOS WeChat Mini Program", logicalWidth: "actual target device" },
       { identity: "venue-home/android-ready", route: "pages/venue/index", scenario: "venue-ready", runtime: "Android WeChat Mini Program", logicalWidth: "actual target device" },
       { identity: "availability/devtools-375-ready", route: "pages/availability/index", scenario: "slots-ready", runtime: "WeChat Developer Tools", logicalWidth: "375" },

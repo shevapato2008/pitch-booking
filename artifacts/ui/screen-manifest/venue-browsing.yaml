@@ -5,7 +5,7 @@ screens:
     states: [loading, ready, first-load-error, image-fallback, map-error, phone-error]
     fixtures: [venue-ready]
     scenarios: [venue-first-load-error, venue-image-failure, venue-map-error, venue-phone-error]
-    goldens: [devtools-375-ready, devtools-390-ready, ios-ready, android-ready]
+    goldens: [devtools-375-ready, devtools-390-ready, devtools-375-image-fallback, ios-ready, android-ready]
     acceptance: [VENUE-01, VENUE-02, VENUE-03]
   - id: availability
     route: pages/availability/index

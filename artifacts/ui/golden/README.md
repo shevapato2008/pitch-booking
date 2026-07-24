@@ -26,12 +26,15 @@ The table below is the capture authority. Every manifest golden appears exactly 
 | --- | --- | --- | --- | --- | --- |
 | `venue-home/devtools-375-ready` | `pages/venue/index` | `venue-ready` | WeChat Developer Tools | 375 | Active profile DPR and exact Developer Tools version |
 | `venue-home/devtools-390-ready` | `pages/venue/index` | `venue-ready` | WeChat Developer Tools | 390 | Active profile DPR and exact Developer Tools version |
+| `venue-home/devtools-375-image-fallback` | `pages/venue/index` | `venue-image-failure` | WeChat Developer Tools | 375 | Active profile DPR and exact Developer Tools version |
 | `venue-home/ios-ready` | `pages/venue/index` | `venue-ready` | iOS WeChat Mini Program | actual target device | Actual width/DPR/model recorded in `operating_system` |
 | `venue-home/android-ready` | `pages/venue/index` | `venue-ready` | Android WeChat Mini Program | actual target device | Actual width/DPR/model recorded in `operating_system` |
 | `availability/devtools-375-ready` | `pages/availability/index` | `slots-ready` | WeChat Developer Tools | 375 | Active profile DPR and exact Developer Tools version |
 | `availability/devtools-390-empty` | `pages/availability/index` | `slots-empty` | WeChat Developer Tools | 390 | Active profile DPR and exact Developer Tools version |
 | `availability/ios-ready` | `pages/availability/index` | `slots-ready` | iOS WeChat Mini Program | actual target device | Actual width/DPR/model recorded in `operating_system` |
 | `availability/android-ready` | `pages/availability/index` | `slots-ready` | Android WeChat Mini Program | actual target device | Actual width/DPR/model recorded in `operating_system` |
+
+For `venue-home/devtools-375-image-fallback`, open the concrete Developer Tools compile condition `pages/venue/index?scenario=image-fallback`; its metadata continues to record the approved Scenario id `venue-image-failure`.
 
 ## Capture
 
