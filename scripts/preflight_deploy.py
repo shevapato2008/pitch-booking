@@ -67,6 +67,17 @@ def preflight(env_file: str | Path) -> PreflightResult:
     elif parsed.scheme == "http" and parsed.hostname not in LOOPBACK_HOSTS:
         failures.append("PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback")
 
+    try:
+        image_hosts = json.loads(values.get("PUBLIC_IMAGE_HOSTS", ""))
+    except json.JSONDecodeError:
+        image_hosts = None
+    if (
+        not isinstance(image_hosts, list)
+        or not image_hosts
+        or any(not isinstance(host, str) or not host for host in image_hosts)
+    ):
+        failures.append("PUBLIC_IMAGE_HOSTS must be a non-empty JSON string array")
+
     return PreflightResult(tuple(failures))
 
 

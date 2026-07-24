@@ -1,3 +1,5 @@
+import json
+import subprocess
 from pathlib import Path
 
 from scripts.preflight_deploy import preflight
@@ -21,7 +23,7 @@ def valid_local_environment() -> dict[str, str]:
         "POSTGRES_USER": "pitch",
         "POSTGRES_PASSWORD": "local-password",
         "PUBLIC_API_BASE_URL": "http://127.0.0.1:8080",
-        "PUBLIC_IMAGE_HOSTS": "cdn.example.test",
+        "PUBLIC_IMAGE_HOSTS": '["cdn.example.test"]',
     }
 
 
@@ -53,8 +55,41 @@ def test_preflight_rejects_malformed_or_unsafe_public_url(tmp_path: Path) -> Non
     )
 
 
+def test_preflight_rejects_non_json_image_hosts(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values["PUBLIC_IMAGE_HOSTS"] = "cdn.example.test"
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == ("PUBLIC_IMAGE_HOSTS must be a non-empty JSON string array",)
+
+
 def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> None:
     result = preflight(write_env(tmp_path, valid_local_environment()))
 
     assert result.ok is True
     assert result.failures == ()
+
+
+def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
+    env_file = write_env(tmp_path, valid_local_environment())
+
+    completed = subprocess.run(
+        ["docker", "compose", "--env-file", str(env_file), "config", "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    config = json.loads(completed.stdout)
+
+    assert set(config["services"]) == {"api", "caddy", "postgres"}
+    assert config["services"]["postgres"]["healthcheck"]
+    assert config["services"]["api"]["depends_on"]["postgres"]["condition"] == "service_healthy"
+    assert "alembic upgrade head" in " ".join(config["services"]["api"]["command"])
+    assert "postgres_data" in config["volumes"]
+
+
+def test_runtime_image_never_syncs_development_dependencies() -> None:
+    dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
+
+    assert "UV_NO_DEV=1" in dockerfile

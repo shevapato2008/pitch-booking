@@ -1,0 +1,7 @@
+:8080 {
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	respond 404
+}

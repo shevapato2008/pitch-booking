@@ -1,0 +1,10 @@
+.git
+.worktrees
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.superpowers
+dist
+node_modules
+artifacts/ui/golden/candidates
