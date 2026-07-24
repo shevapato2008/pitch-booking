@@ -5,3 +5,8 @@ dist/
 coverage/
 project.private.config.json
 .DS_Store
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
