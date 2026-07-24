@@ -83,6 +83,60 @@ function safeErrorCode(error) {
   }
 }
 
+function isOptionsObject(value) {
+  return Boolean(value) && (typeof value === 'object' || typeof value === 'function');
+}
+
+function snapshotCheckOptions(options) {
+  try {
+    if (!isOptionsObject(options)) fail('WECHAT_AUTOMATION_FAILED');
+    const runner = options.runner;
+    const env = options.env;
+    const repoRoot = options.repoRoot;
+    const port = options.port;
+    const platform = options.platform;
+    const output = options.output;
+    return Object.freeze({
+      runner: runner === undefined ? createDefaultRunner() : runner,
+      env: env === undefined ? {} : env,
+      repoRoot,
+      port,
+      platform: platform === undefined ? process.platform : platform,
+      output: output === undefined ? () => {} : output
+    });
+  } catch {
+    fail('WECHAT_AUTOMATION_FAILED');
+  }
+}
+
+function snapshotMainOptions(options) {
+  const writers = {};
+  if (!isOptionsObject(options)) return Object.freeze({ writers, errorCode: 'WECHAT_AUTOMATION_FAILED' });
+  try {
+    const writeErr = options.writeErr;
+    writers.writeErr = writeErr === undefined ? (text) => process.stderr.write(text) : writeErr;
+  } catch {}
+  try {
+    const writeOut = options.writeOut;
+    writers.writeOut = writeOut === undefined ? (text) => process.stdout.write(text) : writeOut;
+  } catch {}
+  try {
+    const argv = options.argv;
+    const env = options.env;
+    const cwd = options.cwd;
+    const runner = options.runner;
+    return Object.freeze({
+      writers,
+      argv: argv === undefined ? process.argv.slice(2) : argv,
+      env: env === undefined ? process.env : env,
+      cwd: cwd === undefined ? process.cwd() : cwd,
+      runner: runner === undefined ? createDefaultRunner() : runner
+    });
+  } catch {
+    return Object.freeze({ writers, errorCode: 'WECHAT_AUTOMATION_FAILED' });
+  }
+}
+
 function portIsValid(port) {
   return typeof port === 'number' && Number.isSafeInteger(port) && port > 0;
 }
@@ -189,7 +243,9 @@ export function parseArgs(argv) {
   return Object.freeze({ port });
 }
 
-export async function checkWechatDevTools({ runner = createDefaultRunner(), env = {}, repoRoot, port, platform = process.platform, output = () => {} } = {}) {
+export async function checkWechatDevTools(options = {}) {
+  const snapshot = snapshotCheckOptions(options);
+  const { runner, env, repoRoot, port, platform, output } = snapshot;
   if (!portIsValid(port)) fail('WECHAT_AUTOMATION_FAILED');
   if (platform !== 'darwin') fail('WECHAT_CLI_INVALID');
   const cliPath = snapshotEnvironmentField(env, 'WECHAT_DEVTOOLS_CLI', 'WECHAT_CLI_INVALID');
@@ -252,16 +308,24 @@ export async function checkWechatDevTools({ runner = createDefaultRunner(), env 
   return Object.freeze({ ok: true, version, checks: Object.freeze(['APPID_CONFIGURED', 'PROJECT_CONFIGURED', 'BUILD_COMPLETED', 'LOGIN_CONFIRMED', 'PROJECT_OPENED', 'AUTOMATION_ENABLED']) });
 }
 
-export async function main({ argv = process.argv.slice(2), env = process.env, cwd = process.cwd(), runner = createDefaultRunner(), writeOut = (text) => process.stdout.write(text), writeErr = (text) => process.stderr.write(text) } = {}) {
+export async function main(options = {}) {
+  const snapshot = snapshotMainOptions(options);
+  const { writers } = snapshot;
+  if (snapshot.errorCode) {
+    try {
+      writers.writeErr(`${JSON.stringify({ ok: false, code: snapshot.errorCode, message: MESSAGES[snapshot.errorCode] })}\n`);
+    } catch {}
+    return 1;
+  }
   try {
-    const { port } = parseArgs(argv);
-    const report = await checkWechatDevTools({ runner, env, repoRoot: cwd, port, platform: process.platform, output: () => {} });
-    writeOut(`${JSON.stringify(report)}\n`);
+    const { port } = parseArgs(snapshot.argv);
+    const report = await checkWechatDevTools({ runner: snapshot.runner, env: snapshot.env, repoRoot: snapshot.cwd, port, platform: process.platform, output: () => {} });
+    writers.writeOut(`${JSON.stringify(report)}\n`);
     return 0;
   } catch (error) {
     const code = safeErrorCode(error);
     try {
-      writeErr(`${JSON.stringify({ ok: false, code, message: MESSAGES[code] })}\n`);
+      writers.writeErr(`${JSON.stringify({ ok: false, code, message: MESSAGES[code] })}\n`);
     } catch {}
     return 1;
   }

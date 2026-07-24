@@ -15,6 +15,7 @@ const PORT_SENTINEL = '98761';
 const SESSION = 'SESSION_RAW_SENTINEL_91e16f';
 const RUNNER_RESULT = 'RUNNER_RESULT_RAW_SENTINEL_91e16f';
 const ENV_GETTER = 'ENV_GETTER_RAW_SENTINEL_91e16f';
+const OPTIONS_GETTER = 'OPTIONS_GETTER_RAW_SENTINEL_91e16f';
 const PRIVATE = 'PRIVATE_SENTINEL_91e16f';
 const VERSION_OUTPUT = '2.01.2510290';
 const PORT = Number(PORT_SENTINEL);
@@ -282,6 +283,38 @@ test('contains injected CLI environment getter throws before commands', async (t
 
 });
 
+test('normalizes hostile check options at the public boundary before commands', async (t) => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  for (const options of [
+    null,
+    42,
+    new Proxy({}, { get() { throw new Error(OPTIONS_GETTER); } })
+  ]) {
+    const trace = [];
+    await expectFailure(() => checkWechatDevTools(options), 'WECHAT_AUTOMATION_FAILED', [OPTIONS_GETTER]);
+    assert.deepEqual(trace, []);
+  }
+
+  const reads = new Map();
+  const options = new Proxy({
+    runner: runner(),
+    env: { WECHAT_DEVTOOLS_CLI: f.cli },
+    repoRoot: f.root,
+    port: PORT,
+    platform: 'darwin',
+    output: () => {}
+  }, {
+    get(target, property, receiver) {
+      const count = (reads.get(property) ?? 0) + 1;
+      reads.set(property, count);
+      if (count > 1) throw new Error(OPTIONS_GETTER);
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  await checkWechatDevTools(options);
+  assert.deepEqual(Object.fromEntries(reads), { runner: 1, env: 1, repoRoot: 1, port: 1, platform: 1, output: 1 });
+});
+
 test('build always invokes literal npm without reading an environment override', async (t) => {
   const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
   for (const env of [
@@ -318,6 +351,31 @@ test('main contains injected writer throws on both output channels', async (t) =
   }), 1);
   assert.deepEqual(JSON.parse(stderr), { ok: false, code: 'WECHAT_AUTOMATION_FAILED', message: messages.WECHAT_AUTOMATION_FAILED });
   assert.doesNotMatch(stderr, /PRIVATE_WRITE_SENTINEL/);
+});
+
+test('main contains hostile public options and writes canonical failure JSON when a safe writer is available', async () => {
+  for (const options of [null, 42, new Proxy({}, { get() { throw new Error(OPTIONS_GETTER); } })]) {
+    assert.equal(await main(options), 1);
+  }
+
+  let stderr = '';
+  const options = new Proxy({ writeErr: (text) => { stderr += text; } }, {
+    get(target, property, receiver) {
+      if (property === 'argv') throw new Error(OPTIONS_GETTER);
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  assert.equal(await main(options), 1);
+  assert.deepEqual(JSON.parse(stderr), { ok: false, code: 'WECHAT_AUTOMATION_FAILED', message: messages.WECHAT_AUTOMATION_FAILED });
+  assert.doesNotMatch(stderr, new RegExp(OPTIONS_GETTER));
+
+  const hostileWriters = new Proxy({}, {
+    get(_target, property) {
+      if (property === 'writeOut' || property === 'writeErr') throw new Error(OPTIONS_GETTER);
+      return ['--port', 'nope'];
+    }
+  });
+  assert.equal(await main(hostileWriters), 1);
 });
 
 test('main emits only canonical messages for forged WeChatEnvironmentErrors', async () => {
