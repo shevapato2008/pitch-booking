@@ -50,6 +50,32 @@ test("production venue page has no development import", async () => {
   assert.doesNotMatch(pageController, /(?:from\s+["'][^"']*\/dev\/|require\s*\(\s*["'][^"']*\/dev\/)/);
 });
 
+test("venue CTA keeps all required navigation parameters guarded", async () => {
+  const pageController = await read("miniprogram/pages/venue/index.ts");
+
+  assert.match(pageController, /if\s*\(\s*!venue\s*\|\|\s*!initialPitchType\s*\|\|\s*!initialDate\s*\)\s*return/);
+  assert.match(pageController, /venueId=\$\{encodeURIComponent\(venue\.id\)\}/);
+  assert.match(pageController, /[?&]pitchType=\$\{initialPitchType\}/);
+  assert.match(pageController, /[?&]date=\$\{initialDate\}/);
+});
+
+test("venue content reserves the fixed action bar and device safe area", async () => {
+  const pageStyles = await read("miniprogram/pages/venue/index.wxss");
+  const content = declarationProperties(pageStyles, ".content");
+
+  assert.equal(content["padding-bottom"], "calc(160rpx + env(safe-area-inset-bottom))");
+});
+
+test("global and isolated styles import the shared tokens", async () => {
+  const [appStyles, componentStyles] = await Promise.all([
+    read("miniprogram/app.wxss"),
+    read("miniprogram/components/venue-card/index.wxss"),
+  ]);
+
+  assert.match(appStyles, /^@import\s+["']\.\/styles\/tokens\.wxss["'];/m);
+  assert.match(componentStyles, /^@import\s+["']\.\.\/\.\.\/styles\/tokens\.wxss["'];/m);
+});
+
 test("shared tokens contain the approved native design values", async () => {
   const tokens = await read("miniprogram/styles/tokens.wxss");
 
@@ -69,6 +95,10 @@ test("shared tokens contain the approved native design values", async () => {
   assertDeclaration(tokens, ".u-pad-page", { "padding-right": "24rpx", "padding-left": "24rpx" });
   assertDeclaration(tokens, ".u-control", { "min-height": "88rpx" });
   assertDeclaration(tokens, ".u-status-available", { color: "#059669", background: "#EFFBF6" });
+  assertDeclaration(tokens, ".u-trust-primary", { color: "#0284C7" });
+  assertDeclaration(tokens, ".u-trust-secondary", { color: "#0EA5E9" });
+  assertDeclaration(tokens, ".u-status-unavailable", { color: "#94A3B8" });
+  assertDeclaration(tokens, ".u-status-held", { color: "#B45309" });
   assert.doesNotMatch(tokens, /--[a-z][a-z0-9-]*\s*:/i);
 });
 
@@ -108,4 +138,5 @@ test("venue consumers use shared token utilities", async () => {
     assert.match(`${componentMarkup}\n${pageMarkup}`, new RegExp(`class="[^"]*\\b${utility}\\b`), `unused utility ${utility}`);
   }
   assert.match(pageMarkup, /class="[^"]*\bu-control\b/);
+  assert.match(componentMarkup, /class="[^"]*\bu-trust-primary\b/);
 });

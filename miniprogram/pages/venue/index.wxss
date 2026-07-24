@@ -4,7 +4,7 @@
 
 .content {
   padding-top: 32rpx;
-  padding-bottom: 160rpx;
+  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
 }
 
 .state-message {

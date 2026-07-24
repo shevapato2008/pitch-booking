@@ -22,4 +22,8 @@
 .u-type-cta { font-size: 30rpx; }
 .u-pad-page { padding-right: 24rpx; padding-left: 24rpx; }
 .u-control { min-height: 88rpx; }
+.u-trust-primary { color: #0284C7; }
+.u-trust-secondary { color: #0EA5E9; }
 .u-status-available { color: #059669; background: #EFFBF6; }
+.u-status-unavailable { color: #94A3B8; }
+.u-status-held { color: #B45309; }

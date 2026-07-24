@@ -60,7 +60,6 @@
 
 .trust-mark {
   padding: 8rpx 16rpx;
-  color: #0284C7;
   font-weight: 600;
   background: #EAF7FD;
   border: 2rpx solid #B9E6F7;

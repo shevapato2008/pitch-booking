@@ -21,7 +21,7 @@
 
   <view class="card-body">
     <view class="trust-row">
-      <view class="trust-mark u-type-caption u-radius-sm" aria-label="场馆资料已核验">已核验</view>
+      <view class="trust-mark u-trust-primary u-type-caption u-radius-sm" aria-label="场馆资料已核验">已核验</view>
     </view>
 
     <view class="chip-group" aria-label="场地与设施">
