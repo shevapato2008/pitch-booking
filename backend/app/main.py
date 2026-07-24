@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
 from backend.app.errors import AppError, app_error_handler, unexpected_error_handler
+from backend.app.modules.availability.router import router as availability_router
 from backend.app.modules.venues.router import router as venues_router
 from backend.app.request_id import RequestIdMiddleware
 
@@ -15,6 +16,7 @@ def create_app(*, include_test_routes: bool = False) -> FastAPI:
     application.add_middleware(RequestIdMiddleware)
     application.add_exception_handler(AppError, app_error_handler)
     application.add_exception_handler(Exception, unexpected_error_handler)
+    application.include_router(availability_router)
     application.include_router(venues_router)
 
     @application.get("/api/v1/health")

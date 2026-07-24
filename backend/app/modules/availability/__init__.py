@@ -1,0 +1,1 @@
+"""Venue availability module."""
