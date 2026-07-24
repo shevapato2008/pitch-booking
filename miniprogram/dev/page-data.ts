@@ -19,8 +19,11 @@ export function createDevelopmentPageDataSource(
       pitchType: PitchType,
       date: string,
     ): Promise<Availability> {
-      if (date === "2026-07-22" && pitchType === "FIVE_A_SIDE") {
-        return { ...decodeAvailability(fixtureLoader.load("slots-ready")), venueId };
+      const decodedReady = decodeAvailability(fixtureLoader.load("slots-ready"));
+      if (venueId === decodedReady.venueId
+        && date === decodedReady.date
+        && pitchType === decodedReady.pitchType) {
+        return decodedReady;
       }
 
       const decodedEmpty = decodeAvailability(fixtureLoader.load("slots-empty"));

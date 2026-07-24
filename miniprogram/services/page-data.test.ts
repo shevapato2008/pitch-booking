@@ -29,6 +29,7 @@ const fixtureLoader: FixtureLoader = {
     return JSON.parse(JSON.stringify(fixtures[name])) as unknown;
   },
 };
+const readyVenueId = "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f";
 
 test("fails clearly before a page data source is configured", () => {
   expect(() => getPageDataSource()).toThrow("PAGE_DATA_SOURCE_NOT_CONFIGURED");
@@ -65,17 +66,30 @@ test("development data source decodes the venue and uses its packaged cover", as
 test("development data source returns ready slots only for the exact ready selection", async () => {
   const source = createDevelopmentPageDataSource(fixtureLoader);
   const availability = await source.getAvailability(
-    "11111111-1111-4111-8111-111111111111",
+    readyVenueId,
     "FIVE_A_SIDE",
     "2026-07-22",
   );
 
   expect(availability).toMatchObject({
-    venueId: "11111111-1111-4111-8111-111111111111",
+    venueId: readyVenueId,
     date: "2026-07-22",
     pitchType: "FIVE_A_SIDE",
   });
   expect(availability.pitchGroups[0].slots.length).toBeGreaterThan(0);
+});
+
+test("development data source does not return ready slots for a different venue", async () => {
+  const source = createDevelopmentPageDataSource(fixtureLoader);
+  const venueId = "11111111-1111-4111-8111-111111111111";
+  const availability = await source.getAvailability(venueId, "FIVE_A_SIDE", "2026-07-22");
+
+  expect(availability).toMatchObject({
+    venueId,
+    date: "2026-07-22",
+    pitchType: "FIVE_A_SIDE",
+    pitchGroups: [],
+  });
 });
 
 test("development data source returns the decoded exact empty selection", async () => {
