@@ -37,6 +37,9 @@ async function build(selectedMode) {
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
+  if (selectedMode === "production" && process.env.MINIPROGRAM_API_BASE_URL !== undefined) {
+    await writeProductionRuntimeConfig(outputRoot, process.env.MINIPROGRAM_API_BASE_URL);
+  }
   if (developmentFixtureData) {
     await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
     await writeDevelopmentAppBootstrap(sourceRoot, outputRoot);
@@ -54,6 +57,25 @@ async function build(selectedMode) {
   );
 
   console.log(`Built ${selectedMode} mini program at ${path.relative(process.cwd(), outputRoot)}`);
+}
+
+async function writeProductionRuntimeConfig(outputRoot, apiBaseUrl) {
+  let parsed;
+  try {
+    parsed = new URL(apiBaseUrl);
+  } catch {
+    throw new Error("MINIPROGRAM_API_BASE_URL must use http or https");
+  }
+  if (!new Set(["http:", "https:"]).has(parsed.protocol)) {
+    throw new Error("MINIPROGRAM_API_BASE_URL must use http or https");
+  }
+
+  const source = `export const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`;
+  const output = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 },
+    fileName: "runtime.ts",
+  }).outputText;
+  await writeFile(path.join(outputRoot, "config/runtime.js"), output);
 }
 
 async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot) {

@@ -160,6 +160,46 @@ test("production app registers HTTP page data without development or Fixture ref
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
+test("production API URL override changes generated production config only", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await mkdir(path.join(projectRoot, "miniprogram/config"));
+  const runtimePath = path.join(projectRoot, "miniprogram/config/runtime.ts");
+  await writeFile(runtimePath, 'export const API_BASE_URL = "https://placeholder.invalid";\n');
+
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: projectRoot,
+    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "http://127.0.0.1:8080" },
+  });
+  await execFileAsync(process.execPath, [buildScript, "development"], {
+    cwd: projectRoot,
+    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "http://127.0.0.1:8080" },
+  });
+
+  assert.match(
+    await readFile(path.join(projectRoot, "dist/miniprogram-production/config/runtime.js"), "utf8"),
+    /http:\/\/127\.0\.0\.1:8080/,
+  );
+  assert.match(
+    await readFile(path.join(projectRoot, "dist/miniprogram-development/config/runtime.js"), "utf8"),
+    /https:\/\/placeholder\.invalid/,
+  );
+  assert.match(await readFile(runtimePath, "utf8"), /https:\/\/placeholder\.invalid/);
+});
+
+test("production build rejects a non-HTTP API URL override", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [buildScript, "production"], {
+      cwd: projectRoot,
+      env: { ...process.env, MINIPROGRAM_API_BASE_URL: "file:///tmp/api" },
+    }),
+    /MINIPROGRAM_API_BASE_URL must use http or https/,
+  );
+});
+
 test("built development Scenario runtime is self-contained without URL", async (t) => {
   const projectRoot = await createBuildProject("");
   t.after(() => rm(projectRoot, { recursive: true, force: true }));

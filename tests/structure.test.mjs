@@ -23,6 +23,12 @@ test("required roots exist", () => {
     assert.equal(existsSync(path), true, `missing ${path}`);
 });
 
+test("ESLint excludes local Python environments and caches", () => {
+  const config = readFileSync("eslint.config.js", "utf8");
+  for (const directory of [".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache"])
+    assert.equal(config.includes(`"${directory}/**"`), true, `missing ESLint ignore for ${directory}`);
+});
+
 test("every production route has four native page files", () => {
   const app = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
   for (const route of app.pages)
