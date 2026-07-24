@@ -7,8 +7,19 @@
 /* Spacing: 8rpx / 16rpx / 24rpx / 32rpx / 48rpx. */
 /* Interactive controls: minimum 88rpx. */
 
-.text-primary { color: #10243E; }
-.text-muted { color: #64748B; }
-.surface { background: #FFFFFF; }
-.status-available { color: #059669; background: #EFFBF6; }
-
+.u-page { background: #F8FAFC; }
+.u-surface { background: #FFFFFF; }
+.u-text { color: #10243E; }
+.u-muted { color: #64748B; }
+.u-border { border: 2rpx solid #DBE5EC; }
+.u-radius-sm { border-radius: 16rpx; }
+.u-radius-md { border-radius: 24rpx; }
+.u-radius-lg { border-radius: 32rpx; }
+.u-type-caption { font-size: 24rpx; }
+.u-type-body { font-size: 28rpx; }
+.u-type-subtitle { font-size: 32rpx; }
+.u-type-title { font-size: 40rpx; }
+.u-type-cta { font-size: 30rpx; }
+.u-pad-page { padding-right: 24rpx; padding-left: 24rpx; }
+.u-control { min-height: 88rpx; }
+.u-status-available { color: #059669; background: #EFFBF6; }

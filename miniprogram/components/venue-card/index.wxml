@@ -1,4 +1,4 @@
-<view wx:if="{{venue}}" class="venue-card">
+<view wx:if="{{venue}}" class="venue-card u-surface u-border u-radius-lg">
   <view class="hero">
     <image
       wx:if="{{venue.cover.state === 'image'}}"
@@ -11,64 +11,64 @@
       <view class="pitch-line pitch-line--outer"></view>
       <view class="pitch-line pitch-line--half"></view>
       <view class="pitch-line pitch-line--circle"></view>
-      <view class="fallback-copy">{{venue.cover.fallbackText}}</view>
+      <view class="fallback-copy u-type-caption u-radius-sm">{{venue.cover.fallbackText}}</view>
+    </view>
+    <view class="hero-overlay">
+      <view class="hero-name u-type-title">{{venue.name}}</view>
+      <view class="hero-description u-type-body">{{venue.description}}</view>
     </view>
   </view>
 
   <view class="card-body">
-    <view class="heading-row">
-      <view class="heading-copy">
-        <view class="venue-name">{{venue.name}}</view>
-        <view class="venue-description">{{venue.description}}</view>
-      </view>
-      <view class="trust-mark" aria-label="场馆资料已核验">已核验</view>
+    <view class="trust-row">
+      <view class="trust-mark u-type-caption u-radius-sm" aria-label="场馆资料已核验">已核验</view>
     </view>
 
     <view class="chip-group" aria-label="场地与设施">
-      <view wx:for="{{venue.pitchTypes}}" wx:key="code" class="chip chip--pitch">{{item.label}}</view>
-      <view wx:for="{{venue.facilities}}" wx:key="code" class="chip">{{item.label}}</view>
+      <view wx:if="{{venue.pitchTypes[0]}}" class="chip chip--pitch u-type-caption u-radius-md">{{venue.pitchTypes[0].label}}</view>
+      <view wx:if="{{venue.pitchTypes[1]}}" class="chip chip--pitch u-type-caption u-radius-md">{{venue.pitchTypes[1].label}}</view>
+      <view wx:if="{{venue.facilities[0]}}" class="chip u-type-caption u-radius-md">{{venue.facilities[0].label}}</view>
     </view>
 
-    <view class="price-panel">
-      <view class="price-kicker">透明场地价</view>
-      <view class="price-text">{{venue.priceAdvantageText}}</view>
+    <view class="price-panel u-radius-md">
+      <view class="price-kicker u-type-caption">透明场地价</view>
+      <view class="price-text u-type-subtitle">{{venue.priceAdvantageText}}</view>
     </view>
 
     <view class="information" aria-label="场馆信息">
       <view class="info-row">
-        <view class="info-badge" aria-hidden="true">址</view>
+        <view class="info-badge u-type-caption u-radius-sm" aria-hidden="true">址</view>
         <view class="info-copy">
-          <view class="info-label">场馆地址</view>
-          <view class="info-value">{{venue.address}}</view>
+          <view class="info-label u-muted u-type-caption">场馆地址</view>
+          <view class="info-value u-text u-type-body">{{venue.address}}</view>
         </view>
       </view>
       <view class="info-row">
-        <view class="info-badge" aria-hidden="true">停</view>
+        <view class="info-badge u-type-caption u-radius-sm" aria-hidden="true">停</view>
         <view class="info-copy">
-          <view class="info-label">停车信息</view>
-          <view class="info-value">{{venue.parkingText}}</view>
+          <view class="info-label u-muted u-type-caption">停车信息</view>
+          <view class="info-value u-text u-type-body">{{venue.parkingText}}</view>
         </view>
       </view>
       <view class="info-row">
-        <view class="info-badge" aria-hidden="true">时</view>
+        <view class="info-badge u-type-caption u-radius-sm" aria-hidden="true">时</view>
         <view class="info-copy">
-          <view class="info-label">营业时间</view>
-          <view class="info-value">{{venue.businessHoursText}}</view>
+          <view class="info-label u-muted u-type-caption">营业时间</view>
+          <view class="info-value u-text u-type-body">{{venue.businessHoursText}}</view>
         </view>
       </view>
       <view class="info-row info-row--last">
-        <view class="info-badge" aria-hidden="true">话</view>
+        <view class="info-badge u-type-caption u-radius-sm" aria-hidden="true">话</view>
         <view class="info-copy">
-          <view class="info-label">联系电话</view>
-          <view class="info-value">{{venue.phone}}</view>
+          <view class="info-label u-muted u-type-caption">联系电话</view>
+          <view class="info-value u-text u-type-body">{{venue.phone}}</view>
         </view>
       </view>
     </view>
 
-    <view class="policy-note">
-      <view class="policy-title">取消规则</view>
-      <view class="policy-text">{{venue.refundPolicySummary}}</view>
+    <view class="policy-note u-radius-sm">
+      <view class="policy-title u-text u-type-caption">取消规则</view>
+      <view class="policy-text u-muted u-type-caption">{{venue.refundPolicySummary}}</view>
     </view>
   </view>
 </view>
-

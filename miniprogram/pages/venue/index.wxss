@@ -1,16 +1,14 @@
 .venue-page {
   min-height: 100vh;
-  background: #F8FAFC;
 }
 
 .content {
-  padding: 32rpx 24rpx 160rpx;
+  padding-top: 32rpx;
+  padding-bottom: 160rpx;
 }
 
 .state-message {
   padding: 96rpx 32rpx;
-  color: #64748B;
-  font-size: 28rpx;
   line-height: 1.5;
   text-align: center;
 }
@@ -32,16 +30,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 88rpx;
   margin: 0;
   padding: 0 32rpx;
   color: #FFFFFF;
-  font-size: 30rpx;
   line-height: 1.2;
   font-weight: 700;
   background: #0284C7;
   border: 0;
-  border-radius: 24rpx;
   box-shadow: 0 10rpx 24rpx rgba(2, 132, 199, 0.22);
 }
 

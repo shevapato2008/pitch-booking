@@ -1,12 +1,12 @@
-<view class="venue-page">
-  <view wx:if="{{loading}}" class="state-message">正在加载场馆信息…</view>
-  <view wx:elif="{{errorText}}" class="state-message state-message--error">{{errorText}}</view>
+<view class="venue-page u-page u-text">
+  <view wx:if="{{loading}}" class="state-message u-muted u-type-body">正在加载场馆信息…</view>
+  <view wx:elif="{{errorText}}" class="state-message state-message--error u-type-body">{{errorText}}</view>
   <block wx:else>
-    <view class="content">
+    <view class="content u-pad-page">
       <venue-card venue="{{venue}}" />
     </view>
     <view class="action-bar">
-      <button class="primary-action" bindtap="onViewAvailability" hover-class="primary-action--pressed">
+      <button class="primary-action u-control u-type-cta u-radius-md" bindtap="onViewAvailability" hover-class="primary-action--pressed">
         查看可订时段
       </button>
     </view>

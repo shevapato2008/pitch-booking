@@ -44,3 +44,38 @@ test("shared tokens contain the approved native design values", async () => {
   for (const value of exactValues) assert.match(tokens, new RegExp(value), `missing ${value}`);
   assert.doesNotMatch(tokens, /--[a-z][a-z0-9-]*\s*:/i);
 });
+
+test("venue identity is overlaid inside the hero", async () => {
+  const markup = await read("miniprogram/components/venue-card/index.wxml");
+  const hero = markup.match(/<view class="hero">([\s\S]*?)<\/view>\s*<view class="card-body/)?.[1] ?? "";
+
+  assert.match(hero, /class="hero-overlay/);
+  assert.match(hero, /\{\{venue\.name\}\}/);
+  assert.match(hero, /\{\{venue\.description\}\}/);
+});
+
+test("venue card shows exactly the three confirmed preview labels", async () => {
+  const markup = await read("miniprogram/components/venue-card/index.wxml");
+  const chipBindings = markup.match(/\{\{venue\.(?:pitchTypes|facilities)\[\d\]\.label\}\}/g) ?? [];
+
+  assert.deepEqual(chipBindings, [
+    "{{venue.pitchTypes[0].label}}",
+    "{{venue.pitchTypes[1].label}}",
+    "{{venue.facilities[0].label}}",
+  ]);
+  assert.doesNotMatch(markup, /wx:for="\{\{venue\.(?:pitchTypes|facilities)\}\}"/);
+});
+
+test("venue consumers use shared token utilities", async () => {
+  const [tokens, componentMarkup, pageMarkup] = await Promise.all([
+    read("miniprogram/styles/tokens.wxss"),
+    read("miniprogram/components/venue-card/index.wxml"),
+    read("miniprogram/pages/venue/index.wxml"),
+  ]);
+
+  for (const utility of ["u-surface", "u-text", "u-muted", "u-radius-lg", "u-type-body"]) {
+    assert.match(tokens, new RegExp(`\\.${utility}\\s*\\{`), `missing utility ${utility}`);
+    assert.match(`${componentMarkup}\n${pageMarkup}`, new RegExp(`class="[^"]*\\b${utility}\\b`), `unused utility ${utility}`);
+  }
+  assert.match(pageMarkup, /class="[^"]*\bu-control\b/);
+});
