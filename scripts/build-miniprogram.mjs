@@ -40,6 +40,8 @@ async function build(selectedMode) {
   if (developmentFixtureData) {
     await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
     await writeDevelopmentAppBootstrap(sourceRoot, outputRoot);
+  } else {
+    await writeProductionAppBootstrap(sourceRoot, outputRoot);
   }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
@@ -60,6 +62,24 @@ async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot) {
     'import { developmentPageDataSource } from "./dev/page-data";',
     'import { registerPageDataSource } from "./services/page-data";',
     "registerPageDataSource(developmentPageDataSource);",
+    appSource,
+  ].join("\n");
+  const output = ts.transpileModule(bootstrappedSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    fileName: path.join(sourceRoot, "app.ts"),
+  }).outputText;
+  await writeFile(path.join(outputRoot, "app.js"), output);
+}
+
+async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
+  const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
+  const bootstrappedSource = [
+    'import { API_BASE_URL } from "./config/runtime";',
+    'import { productionRuntime } from "./runtime/production";',
+    'import { createHttpPageDataSource } from "./services/http-page-data";',
+    'import { registerPageDataSource } from "./services/page-data";',
+    "const runtime = productionRuntime(API_BASE_URL);",
+    "registerPageDataSource(createHttpPageDataSource(runtime.transport, runtime.media));",
     appSource,
   ].join("\n");
   const output = ts.transpileModule(bootstrappedSource, {

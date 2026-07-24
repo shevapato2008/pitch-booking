@@ -146,7 +146,7 @@ test("development app registers page data before source app code can open a page
   assert.equal(registration < directPage, true);
 });
 
-test("production app remains the compiled app source without development or Fixture references", async (t) => {
+test("production app registers HTTP page data without development or Fixture references", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -154,6 +154,9 @@ test("production app remains the compiled app source without development or Fixt
   const app = await readFile(path.join(projectRoot, "dist/miniprogram-production/app.js"), "utf8");
 
   assert.match(app, /venueFallbackUrl/);
+  assert.match(app, /productionRuntime/);
+  assert.match(app, /createHttpPageDataSource/);
+  assert.match(app, /registerPageDataSource/);
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
