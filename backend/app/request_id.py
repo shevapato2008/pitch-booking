@@ -4,6 +4,7 @@ import time
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp
 
 SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -24,10 +25,15 @@ def new_request_id() -> str:
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp, *, app_revision: str) -> None:
+        super().__init__(app)
+        self.app_revision = app_revision
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         supplied = request.headers.get("X-Request-Id", "")
         request_id = supplied if SAFE_REQUEST_ID.fullmatch(supplied) else new_request_id()
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-Id"] = request_id
+        response.headers["X-App-Revision"] = self.app_revision
         return response

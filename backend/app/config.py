@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="", case_sensitive=False, extra="ignore")
 
     app_env: Literal["development", "test", "staging", "production"] = "development"
+    app_revision: str = "development"
     database_url: str = "sqlite+pysqlite:///:memory:"
     public_api_base_url: AnyHttpUrl | None = None
     public_image_hosts: tuple[str, ...] = ()

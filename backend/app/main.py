@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.app.config import Settings
 from backend.app.database import get_database
 from backend.app.errors import AppError, app_error_handler, unexpected_error_handler
 from backend.app.modules.availability.router import router as availability_router
@@ -11,9 +12,13 @@ from backend.app.modules.venues.router import router as venues_router
 from backend.app.request_id import RequestIdMiddleware
 
 
-def create_app(*, include_test_routes: bool = False) -> FastAPI:
+def create_app(*, include_test_routes: bool = False, settings: Settings | None = None) -> FastAPI:
+    resolved_settings = settings or Settings()
     application = FastAPI(title="Pitch Booking API", version="0.1.0")
-    application.add_middleware(RequestIdMiddleware)
+    application.add_middleware(
+        RequestIdMiddleware,
+        app_revision=resolved_settings.app_revision,
+    )
     application.add_exception_handler(AppError, app_error_handler)
     application.add_exception_handler(Exception, unexpected_error_handler)
     application.include_router(availability_router)
