@@ -39,6 +39,7 @@ async function build(selectedMode) {
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
   if (developmentFixtureData) {
     await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
+    await writeDevelopmentAppBootstrap(sourceRoot, outputRoot);
   }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
@@ -51,6 +52,21 @@ async function build(selectedMode) {
   );
 
   console.log(`Built ${selectedMode} mini program at ${path.relative(process.cwd(), outputRoot)}`);
+}
+
+async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot) {
+  const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
+  const bootstrappedSource = [
+    'import { developmentPageDataSource } from "./dev/page-data";',
+    'import { registerPageDataSource } from "./services/page-data";',
+    "registerPageDataSource(developmentPageDataSource);",
+    appSource,
+  ].join("\n");
+  const output = ts.transpileModule(bootstrappedSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    fileName: path.join(sourceRoot, "app.ts"),
+  }).outputText;
+  await writeFile(path.join(outputRoot, "app.js"), output);
 }
 
 export function resolveOutputRoot(selectedMode, projectRoot) {

@@ -124,6 +124,39 @@ test("Scenario runtime is development-only", async (t) => {
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-transport.js")), true);
 });
 
+test("development app registers page data before source app code can open a page", async (t) => {
+  const projectRoot = await createBuildProject(
+    'const venueFallbackUrl = "https://example.test/cover.png";\nPage({ route: "direct-availability" });\nApp({});\n',
+  );
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+
+  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  const app = await readFile(path.join(projectRoot, "dist/miniprogram-development/app.js"), "utf8");
+  const devImport = app.indexOf('require("./dev/page-data")');
+  const registryImport = app.indexOf('require("./services/page-data")');
+  const registration = app.indexOf("registerPageDataSource");
+  const venueFallback = app.indexOf("venueFallbackUrl");
+  const directPage = app.indexOf("Page({");
+
+  assert.notEqual(devImport, -1);
+  assert.notEqual(registryImport, -1);
+  assert.equal(devImport < registryImport, true);
+  assert.equal(registryImport < registration, true);
+  assert.equal(registration < venueFallback, true);
+  assert.equal(registration < directPage, true);
+});
+
+test("production app remains the compiled app source without development or Fixture references", async (t) => {
+  const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+
+  await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+  const app = await readFile(path.join(projectRoot, "dist/miniprogram-production/app.js"), "utf8");
+
+  assert.match(app, /venueFallbackUrl/);
+  assert.doesNotMatch(app, /dev\/|fixture/i);
+});
+
 test("built development Scenario runtime is self-contained without URL", async (t) => {
   const projectRoot = await createBuildProject("");
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
