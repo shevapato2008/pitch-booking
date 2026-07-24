@@ -1,5 +1,7 @@
 # Local staging
 
+> Delivery status: public HTTPS staging is paused while ICP filing for `modelstella.com` is in progress. See [venue browsing delivery progress](../docs/acceptance/venue-browsing-progress.md) for completed evidence, blockers, and the resume checklist.
+
 The first venue-browsing slice uses a staging-shaped local stack before any remote deployment:
 
 - PostgreSQL 17 stores venue and availability data in the `postgres_data` volume.
