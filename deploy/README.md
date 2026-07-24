@@ -17,6 +17,10 @@ docker compose --env-file deploy/.env.local config --quiet
 docker compose --env-file deploy/.env.local up -d --build
 docker compose --env-file deploy/.env.local exec api uv run python -m scripts.seed_demo --anchor-date today --days 31
 curl -fsS http://127.0.0.1:8080/api/v1/health
+uv run python -m scripts.verify_staging \
+  --base-url http://127.0.0.1:8080 \
+  --expected-revision "$(git rev-parse HEAD)" \
+  --output /tmp/pitch-booking-staging-report.json
 ```
 
 Build the production Mini Program against this real API without changing checked-in configuration:
