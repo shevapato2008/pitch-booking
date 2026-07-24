@@ -1,1 +1,28 @@
-<view class="loading">加载中…</view>
+<view class="availability-page u-page u-text">
+  <view wx:if="{{loading}}" class="state-message u-muted u-type-body">正在加载可订时段…</view>
+  <view wx:elif="{{errorText}}" class="state-message state-message--error u-type-body">{{errorText}}</view>
+  <view wx:else class="availability-content">
+    <view class="date-section">
+      <date-strip
+        dates="{{viewModel.dates}}"
+        selectedDate="{{selectedDate}}"
+        bind:select="onDateSelect"
+      />
+    </view>
+
+    <view class="filter-section u-pad-page">
+      <pitch-filter
+        options="{{pitchOptions}}"
+        selectedPitchType="{{selectedPitchType}}"
+        bind:select="onPitchTypeSelect"
+      />
+    </view>
+
+    <view wx:if="{{viewModel.isEmpty}}" class="empty-state u-surface u-border u-radius-md u-muted u-type-body">
+      当天暂无可订时段
+    </view>
+    <view wx:else class="slot-section u-pad-page">
+      <slot-grid pitchGroups="{{viewModel.pitchGroups}}" bind:select="onSlotSelect" />
+    </view>
+  </view>
+</view>

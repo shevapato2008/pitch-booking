@@ -1,0 +1,34 @@
+@import "../../styles/tokens.wxss";
+
+.pitch-group + .pitch-group { margin-top: 40rpx; }
+.pitch-heading { margin-bottom: 16rpx; line-height: 1.4; font-weight: 700; }
+.slot-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx; }
+.slot {
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  margin: 0;
+  padding: 20rpx;
+  color: #10243E;
+  line-height: 1.3;
+  text-align: left;
+  background: #FFFFFF;
+  border: 2rpx solid #DBE5EC;
+}
+.slot::after { border: 0; }
+.slot-time { display: block; font-weight: 700; }
+.slot-meta { display: flex; justify-content: space-between; gap: 8rpx; margin-top: 10rpx; }
+.slot-price,
+.slot-status { white-space: nowrap; }
+.slot-status { font-weight: 600; }
+.slot--available { color: #059669; background: #EFFBF6; border-color: #BFEBD8; }
+.slot--expired,
+.slot--booked,
+.slot--closed { color: #94A3B8; background: #F8FAFC; }
+.slot--temporarily-locked { color: #B45309; background: #FFFBEB; border-color: #FDE68A; }
+.slot--selected { color: #FFFFFF; background: #0284C7; border-color: #0284C7; }
+.slot--pressed { opacity: 0.76; transform: scale(0.99); }
+.slot[disabled] { opacity: 1; }

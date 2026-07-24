@@ -1,0 +1,19 @@
+@import "../../styles/tokens.wxss";
+
+.pitch-filter { display: flex; gap: 8rpx; padding: 8rpx; background: #E8F1F6; }
+.pitch-option {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 20rpx;
+  color: #64748B;
+  line-height: 1.2;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+}
+.pitch-option::after { border: 0; }
+.pitch-option--selected { color: #0284C7; background: #FFFFFF; box-shadow: 0 4rpx 12rpx rgba(16, 36, 62, 0.08); }
+.pitch-option--pressed { opacity: 0.72; }

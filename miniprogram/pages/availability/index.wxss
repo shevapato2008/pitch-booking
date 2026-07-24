@@ -1,3 +1,7 @@
-.loading {
-  padding: 48rpx 32rpx;
-}
+.availability-page { min-height: 100vh; }
+.availability-content { box-sizing: border-box; width: 100%; padding: 24rpx 0 calc(48rpx + env(safe-area-inset-bottom)); overflow: hidden; }
+.filter-section { margin-top: 16rpx; }
+.slot-section { margin-top: 40rpx; }
+.state-message { padding: 96rpx 32rpx; line-height: 1.5; text-align: center; }
+.state-message--error { color: #10243E; }
+.empty-state { margin: 40rpx 24rpx 0; padding: 64rpx 24rpx; line-height: 1.5; text-align: center; }

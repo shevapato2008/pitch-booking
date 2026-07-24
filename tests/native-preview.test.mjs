@@ -140,3 +140,29 @@ test("venue consumers use shared token utilities", async () => {
   assert.match(pageMarkup, /class="[^"]*\bu-control\b/);
   assert.match(componentMarkup, /class="[^"]*\bu-trust-primary\b/);
 });
+
+test("availability page registers native controls with the system title", async () => {
+  const pageConfig = JSON.parse(await read("miniprogram/pages/availability/index.json"));
+
+  assert.equal(pageConfig.navigationBarTitleText, "选择可订时段");
+  assert.equal(pageConfig.navigationStyle, undefined);
+  assert.deepEqual(pageConfig.usingComponents, {
+    "date-strip": "/components/date-strip/index",
+    "pitch-filter": "/components/pitch-filter/index",
+    "slot-grid": "/components/slot-grid/index",
+  });
+});
+
+test("availability boundary exposes all slot states and an explicit empty state", async () => {
+  const [pageMarkup, slotMarkup, presentation] = await Promise.all([
+    read("miniprogram/pages/availability/index.wxml"),
+    read("miniprogram/components/slot-grid/index.wxml").catch(() => ""),
+    read("miniprogram/presentation/availability.ts"),
+  ]);
+  const availabilityBoundary = `${pageMarkup}\n${slotMarkup}\n${presentation}`;
+
+  for (const label of ["可订", "已结束", "暂时锁定", "已预订", "未开放"]) {
+    assert.match(availabilityBoundary, new RegExp(label));
+  }
+  assert.match(pageMarkup, />\s*当天暂无可订时段\s*</);
+});

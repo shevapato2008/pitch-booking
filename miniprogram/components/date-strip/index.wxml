@@ -1,0 +1,16 @@
+<scroll-view class="date-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+  <view class="date-row">
+    <button
+      wx:for="{{dates}}"
+      wx:key="date"
+      class="date-item u-control u-radius-md {{item.date === selectedDate ? 'date-item--selected' : ''}}"
+      data-date="{{item.date}}"
+      bindtap="onSelect"
+      hover-class="date-item--pressed"
+      aria-label="{{item.monthDayLabel}} {{item.weekdayLabel}}"
+    >
+      <text class="date-weekday u-type-caption">{{item.weekdayLabel}}</text>
+      <text class="date-label u-type-body">{{item.monthDayLabel}}</text>
+    </button>
+  </view>
+</scroll-view>

@@ -1,0 +1,25 @@
+<view class="pitch-groups">
+  <view wx:for="{{pitchGroups}}" wx:key="id" class="pitch-group" aria-label="{{item.name}}">
+    <view class="pitch-heading u-text u-type-subtitle">{{item.name}}</view>
+    <view class="slot-list">
+      <button
+        wx:for="{{item.slots}}"
+        wx:for-item="slot"
+        wx:key="id"
+        class="slot u-control u-radius-md {{slot.className}}"
+        disabled="{{!slot.isSelectable}}"
+        data-slot-id="{{slot.id}}"
+        data-selectable="{{slot.isSelectable}}"
+        bindtap="onSelect"
+        hover-class="slot--pressed"
+        aria-label="{{slot.timeText}} {{slot.priceText}} {{slot.statusLabel}}"
+      >
+        <text class="slot-time u-type-body">{{slot.timeText}}</text>
+        <text class="slot-meta">
+          <text class="slot-price u-type-caption">{{slot.priceText}}</text>
+          <text class="slot-status u-type-caption">{{slot.statusLabel}}</text>
+        </text>
+      </button>
+    </view>
+  </view>
+</view>
