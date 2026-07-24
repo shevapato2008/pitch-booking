@@ -1,0 +1,74 @@
+<view wx:if="{{venue}}" class="venue-card">
+  <view class="hero">
+    <image
+      wx:if="{{venue.cover.state === 'image'}}"
+      class="hero-image"
+      src="{{venue.cover.source}}"
+      mode="aspectFill"
+      aria-label="{{venue.cover.alt}}"
+    />
+    <view wx:else class="hero-fallback" aria-label="{{venue.cover.alt}}">
+      <view class="pitch-line pitch-line--outer"></view>
+      <view class="pitch-line pitch-line--half"></view>
+      <view class="pitch-line pitch-line--circle"></view>
+      <view class="fallback-copy">{{venue.cover.fallbackText}}</view>
+    </view>
+  </view>
+
+  <view class="card-body">
+    <view class="heading-row">
+      <view class="heading-copy">
+        <view class="venue-name">{{venue.name}}</view>
+        <view class="venue-description">{{venue.description}}</view>
+      </view>
+      <view class="trust-mark" aria-label="场馆资料已核验">已核验</view>
+    </view>
+
+    <view class="chip-group" aria-label="场地与设施">
+      <view wx:for="{{venue.pitchTypes}}" wx:key="code" class="chip chip--pitch">{{item.label}}</view>
+      <view wx:for="{{venue.facilities}}" wx:key="code" class="chip">{{item.label}}</view>
+    </view>
+
+    <view class="price-panel">
+      <view class="price-kicker">透明场地价</view>
+      <view class="price-text">{{venue.priceAdvantageText}}</view>
+    </view>
+
+    <view class="information" aria-label="场馆信息">
+      <view class="info-row">
+        <view class="info-badge" aria-hidden="true">址</view>
+        <view class="info-copy">
+          <view class="info-label">场馆地址</view>
+          <view class="info-value">{{venue.address}}</view>
+        </view>
+      </view>
+      <view class="info-row">
+        <view class="info-badge" aria-hidden="true">停</view>
+        <view class="info-copy">
+          <view class="info-label">停车信息</view>
+          <view class="info-value">{{venue.parkingText}}</view>
+        </view>
+      </view>
+      <view class="info-row">
+        <view class="info-badge" aria-hidden="true">时</view>
+        <view class="info-copy">
+          <view class="info-label">营业时间</view>
+          <view class="info-value">{{venue.businessHoursText}}</view>
+        </view>
+      </view>
+      <view class="info-row info-row--last">
+        <view class="info-badge" aria-hidden="true">话</view>
+        <view class="info-copy">
+          <view class="info-label">联系电话</view>
+          <view class="info-value">{{venue.phone}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="policy-note">
+      <view class="policy-title">取消规则</view>
+      <view class="policy-text">{{venue.refundPolicySummary}}</view>
+    </view>
+  </view>
+</view>
+

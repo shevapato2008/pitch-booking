@@ -1,0 +1,14 @@
+/* Approved native design tokens. WXSS custom properties are intentionally avoided. */
+/* Colors: bg #F8FAFC; surface #FFFFFF; text #10243E; muted #64748B; border #DBE5EC. */
+/* Trust: blue #0284C7; sky #0EA5E9. */
+/* States: available #059669 on #EFFBF6; unavailable #94A3B8; held #B45309. */
+/* Type: 24rpx / 28rpx / 32rpx / 40rpx; CTA 30rpx. */
+/* Radius: 16rpx / 24rpx / 32rpx. */
+/* Spacing: 8rpx / 16rpx / 24rpx / 32rpx / 48rpx. */
+/* Interactive controls: minimum 88rpx. */
+
+.text-primary { color: #10243E; }
+.text-muted { color: #64748B; }
+.surface { background: #FFFFFF; }
+.status-available { color: #059669; background: #EFFBF6; }
+

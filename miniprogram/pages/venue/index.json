@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "选择球场"
+  "navigationBarTitleText": "球场预订",
+  "usingComponents": {
+    "venue-card": "/components/venue-card/index"
+  }
 }
