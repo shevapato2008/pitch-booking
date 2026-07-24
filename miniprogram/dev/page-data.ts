@@ -43,7 +43,7 @@ export function createDevelopmentPageDataSource(
       throw new Error("DATE_OUTSIDE_AVAILABILITY_WINDOW");
     },
 
-    coverSource(_venue: Venue): string {
+    coverSource(): string {
       return "/dev/assets/venue-cover.png";
     },
   };
