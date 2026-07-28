@@ -3,7 +3,7 @@
 ## Status
 
 - Artifact state: frozen for implementation
-- Implementation visual status: same-viewport evidence captured; awaiting user confirmation
+- Implementation visual status: approved by the user on 2026-07-28
 - Target viewport: 375 × 812
 - Browser review board: `review-board.html`
 - Active order cancellation belongs to the next slice.
