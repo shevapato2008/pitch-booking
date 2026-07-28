@@ -126,7 +126,15 @@ Payment: CREATING → PREPAY_CREATED → CONFIRMING | SUCCESS | CLOSED | UNKNOWN
 
 ```ts
 interface PaymentDataSource {
-  createPayment(orderId: string, idempotencyKey: string): Promise<PaymentLaunchParams>;
+  createPayment(orderId: string, idempotencyKey: string): Promise<
+    | { outcome: "PREPAY_CREATED"; paymentId: string; launchParams: PaymentLaunchParams }
+    | { outcome: "PAYMENT_CONFIRMING"; paymentId: string }
+    | { outcome: "ALREADY_CONFIRMED"; order: OrderDetail }
+  >;
+  reconcilePayment(orderId: string, paymentId: string): Promise<
+    | { outcome: "PAYMENT_CONFIRMING"; order: OrderDetail }
+    | { outcome: "TERMINAL"; order: OrderDetail }
+  >;
   getOrder(orderId: string): Promise<OrderDetail>;
 }
 
@@ -189,6 +197,8 @@ interface PaymentCapability {
 
 因此 Provider 已受理但本地进程崩溃时，已提交的 `CREATING` 记录仍会阻止旧快速过期，并可用商户订单号恢复。Provider 明确拒绝且确认未创建预支付单时才把该尝试转 `CLOSED`，允许后续新尝试。
 
+`CREATING` 恢复必须区分两个崩溃窗口：按商户订单号查到 Provider 订单时收敛为其权威状态；查无 Provider 订单且本地订单仍未到期时，使用同一商户订单号安全重试 `create_prepay`，不得创建第二个商户订单号。现有幂等记录扩展为可持久化 `PROCESSING`、关联 `payment_id` 及最终响应；同键重放或新键再次点击都加入该订单当前未终结支付尝试。尚未得到 launch params 时统一返回既定 `202 PAYMENT_CONFIRMING`，进程重启后仍可继续。
+
 ### 7.2 请求立即对账
 
 `POST /api/v1/orders/{order_id}/payments/{payment_id}/reconcile`
@@ -233,10 +243,13 @@ interface PaymentCapability {
 | `PENDING_PAYMENT` | `null` | false | false | 待支付 |
 | `PENDING_PAYMENT` | `CREATING/PREPAY_CREATED` | false | false | 待支付或收银台打开中；客户端本地成功可暂显确认中 |
 | `PENDING_PAYMENT` | `CONFIRMING/UNKNOWN` | true | false | 支付确认中 |
+| `PENDING_PAYMENT` | `CLOSED` 且未到期 | false | false | 待支付，允许创建新的支付尝试 |
 | `PENDING_PAYMENT` | 任一未终结状态且已到期 | true | true | 正在查单/关单，禁止释放表达 |
 | `CONFIRMED` | `SUCCESS` | false | false | 预订成功，`paid_at` 非空 |
 | `EXPIRED` | `null/CLOSED` | false | false | 已过期，场次已安全释放 |
 | `PAYMENT_EXCEPTION` | `SUCCESS` 或 `UNKNOWN` | false | false | 支付异常，场次不宣称可用 |
+
+订单可能保留多个历史已终结支付尝试，但最多一个未终结尝试。订单详情的支付投影依次选择：任何 `SUCCESS` 记录；否则当前未终结记录；否则最新终结记录。`paid_at` 只来自被选中的 `SUCCESS` 记录。
 
 普通用户仍只能访问自己的订单，越权与不存在统一返回 `404 ORDER_NOT_FOUND`。
 
@@ -294,6 +307,12 @@ close_payment(payment) → CLOSED | SUCCESS | UNKNOWN
 - 服务重启后从数据库继续；
 - 待支付订单到期且存在预支付单时先查单；已支付则确认，未支付则关单；只有得到 `CLOSED` 才将订单转 `EXPIRED` 并释放仍属于它的场次；
 - Provider 未知或不可达时保持锁定并安排重试。
+
+异常恢复使用统一终态矩阵：
+
+- `PAYMENT_EXCEPTION + SUCCESS`：按第 8 节到账成功规则重新判断可履约性；资金事实保持 `SUCCESS`，可履约则恢复 `CONFIRMED/BOOKED`，不可履约则保持订单异常等待后续退款；
+- `PAYMENT_EXCEPTION + CLOSED` 或权威确认从未支付：在同一事务把支付转 `CLOSED`、订单转 `EXPIRED`，并且只释放仍由原订单持有的场次；
+- `PAYMENT_EXCEPTION + UNKNOWN`：不释放场次，继续每 6 小时主动查单。
 
 ## 10. 错误处理
 
