@@ -132,6 +132,14 @@ const exampleMap = [
     ],
   },
   {
+    filename: 'payment-already-confirmed.json',
+    reference: './examples/payment-already-confirmed.json',
+    schema: 'PaymentAlreadyConfirmedResponse',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/pay', '200', 'AlreadyConfirmed', 'post'),
+    ],
+  },
+  {
     filename: 'payment-confirming.json',
     reference: './examples/payment-confirming.json',
     schema: 'PaymentConfirmingResponse',

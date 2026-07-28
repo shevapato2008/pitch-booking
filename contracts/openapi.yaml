@@ -641,6 +641,8 @@ paths:
               examples:
                 PrepayReplayed:
                   externalValue: './examples/payment-prepay-created.json'
+                AlreadyConfirmed:
+                  externalValue: './examples/payment-already-confirmed.json'
         '201':
           description: A new prepay was created and can be launched in the cashier.
           headers:
@@ -1308,7 +1310,7 @@ components:
           type: string
           const: PAYMENT_CONFIRMING
         order:
-          $ref: '#/components/schemas/OrderDetail'
+          $ref: '#/components/schemas/PaymentAuthorityUnresolvedOrder'
     PaymentAlreadyConfirmedResponse:
       type: object
       additionalProperties: false
@@ -1321,7 +1323,7 @@ components:
           type: string
           const: ALREADY_CONFIRMED
         order:
-          $ref: '#/components/schemas/OrderDetail'
+          $ref: '#/components/schemas/ConfirmedOrderDetail'
     OrderVenue:
       type: object
       additionalProperties: false
@@ -1362,6 +1364,145 @@ components:
     OrderDetail:
       type: object
       additionalProperties: false
+      oneOf:
+        - type: object
+          description: Pending order with no payment attempt.
+          properties:
+            status:
+              const: PENDING_PAYMENT
+            payment_state:
+              const: null
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              const: null
+            expired_at:
+              const: null
+        - type: object
+          description: Pending order with a launchable or creating payment attempt.
+          properties:
+            status:
+              const: PENDING_PAYMENT
+            payment_state:
+              enum: [CREATING, PREPAY_CREATED]
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              const: null
+            expired_at:
+              const: null
+        - type: object
+          description: Pending order waiting for payment authority.
+          properties:
+            status:
+              const: PENDING_PAYMENT
+            payment_state:
+              enum: [CONFIRMING, UNKNOWN]
+            payment_confirming:
+              const: true
+            closing_payment:
+              const: false
+            paid_at:
+              const: null
+            expired_at:
+              const: null
+        - type: object
+          description: Pending order whose latest payment attempt closed safely.
+          properties:
+            status:
+              const: PENDING_PAYMENT
+            payment_state:
+              const: CLOSED
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              const: null
+            expired_at:
+              const: null
+        - type: object
+          description: Pending order past its deadline while an unfinished payment is converging.
+          properties:
+            status:
+              const: PENDING_PAYMENT
+            payment_state:
+              enum: [CREATING, PREPAY_CREATED, CONFIRMING, UNKNOWN]
+            payment_confirming:
+              const: true
+            closing_payment:
+              const: true
+            paid_at:
+              const: null
+            expired_at:
+              const: null
+        - type: object
+          description: Confirmed order backed by authoritative payment success.
+          properties:
+            status:
+              const: CONFIRMED
+            payment_state:
+              const: SUCCESS
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              type: string
+              format: date-time
+            expired_at:
+              const: null
+        - type: object
+          description: Expired order released only after no payment or a safely closed attempt.
+          properties:
+            status:
+              const: EXPIRED
+            payment_state:
+              enum: [null, CLOSED]
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              const: null
+            expired_at:
+              type: string
+              format: date-time
+        - type: object
+          description: Payment exception after authoritative payment success.
+          properties:
+            status:
+              const: PAYMENT_EXCEPTION
+            payment_state:
+              const: SUCCESS
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              type: string
+              format: date-time
+            expired_at:
+              const: null
+        - type: object
+          description: Payment exception whose authority remains unknown.
+          properties:
+            status:
+              const: PAYMENT_EXCEPTION
+            payment_state:
+              const: UNKNOWN
+            payment_confirming:
+              const: false
+            closing_payment:
+              const: false
+            paid_at:
+              const: null
+            expired_at:
+              const: null
       required:
         - id
         - order_number
@@ -1443,6 +1584,29 @@ components:
         detail_path:
           type: string
           pattern: '^/api/v1/orders/[0-9a-f-]{36}$'
+    ConfirmedOrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/OrderDetail'
+        - type: object
+          properties:
+            status:
+              const: CONFIRMED
+    PaymentAuthorityUnresolvedOrder:
+      allOf:
+        - $ref: '#/components/schemas/OrderDetail'
+        - oneOf:
+            - type: object
+              properties:
+                status:
+                  const: PENDING_PAYMENT
+                payment_state:
+                  enum: [CREATING, CONFIRMING, UNKNOWN]
+            - type: object
+              properties:
+                status:
+                  const: PAYMENT_EXCEPTION
+                payment_state:
+                  const: UNKNOWN
     ErrorDetails:
       type: object
       additionalProperties: false

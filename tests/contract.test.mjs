@@ -119,8 +119,8 @@ test('payment creation and reconciliation expose exact authority-aware response 
   assert.deepEqual(Object.keys(pay.responses), ['200', '201', '202', '401', '404', '409', '503']);
   assert.deepEqual(Object.keys(reconcile.responses), ['200', '202', '401', '404']);
   assert.deepEqual(
-    Object.keys(pay.responses['200'].content['application/json'].examples),
-    ['PrepayReplayed'],
+    Object.keys(pay.responses['200'].content['application/json'].examples).sort(),
+    ['AlreadyConfirmed', 'PrepayReplayed'],
   );
   assert.deepEqual(
     Object.keys(pay.responses['201'].content['application/json'].examples),
@@ -146,6 +146,61 @@ test('payment creation and reconciliation expose exact authority-aware response 
     reconcile.responses['202'].content['application/json'].schema.$ref,
     '#/components/schemas/PaymentConfirmingResponse',
   );
+});
+
+test('confirmed orders reject unsettled payment authority combinations', async () => {
+  for (const mutate of [
+    (order) => { order.payment_state = null; },
+    (order) => { order.paid_at = null; },
+    (order) => { order.payment_confirming = true; },
+    (order) => { order.closing_payment = true; },
+  ]) {
+    await assertMutatedExampleRejected(
+      'order-confirmed.json',
+      mutate,
+      /order-confirmed|oneOf|payment|paid_at|closing/i,
+    );
+  }
+});
+
+test('expired orders require safe terminal payment authority and an expiry timestamp', async () => {
+  for (const mutate of [
+    (order) => { order.expired_at = null; },
+    (order) => { order.payment_state = 'UNKNOWN'; },
+    (order) => { order.payment_confirming = true; },
+  ]) {
+    await assertMutatedExampleRejected(
+      'order-expired.json',
+      mutate,
+      /order-expired|oneOf|expired_at|payment/i,
+    );
+  }
+});
+
+test('pending orders reject contradictory payment flags and settlement data', async () => {
+  for (const mutate of [
+    (order) => { order.payment_state = 'SUCCESS'; },
+    (order) => { order.payment_confirming = true; },
+    (order) => { order.paid_at = '2026-07-27T12:04:00+08:00'; },
+  ]) {
+    await assertMutatedExampleRejected(
+      'order-pending.json',
+      mutate,
+      /order-pending|oneOf|payment|paid_at/i,
+    );
+  }
+});
+
+test('payment response wrappers reject resolved and non-confirmed nested orders', async () => {
+  const confirmed = await readExample('order-confirmed.json');
+  const expired = await readExample('order-expired.json');
+
+  await assertMutatedExampleRejected('payment-confirming.json', (response) => {
+    response.order = confirmed;
+  }, /payment-confirming|oneOf|status|authority/i);
+  await assertMutatedExampleRejected('payment-already-confirmed.json', (response) => {
+    response.order = expired;
+  }, /payment-already-confirmed|oneOf|status|confirmed/i);
 });
 
 test('OrderDetail freezes payment authority fields for every visible order state', async () => {
@@ -265,7 +320,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 32 JSON examples/i);
+  assert.match(stdout, /validated 33 JSON examples/i);
   assert.equal(stderr, '');
 });
 
