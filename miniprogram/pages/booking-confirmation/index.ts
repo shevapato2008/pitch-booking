@@ -69,6 +69,7 @@ Page({
     try {
       const session = await getBookingDataSource().login(); if (!this.isCurrent(this.loadGate, generation)) return;
       state = reduceBooking(state, { type: "SESSION_READY", session }); this.sync(state);
+      if (this.resumeStoredAttempt()) return;
     } catch {
       if (!this.isCurrent(this.loadGate, generation)) return;
       const message = "登录失败，请重试。";
@@ -83,7 +84,6 @@ Page({
     try {
       const checkout = await getBookingDataSource().getCheckout(this.data.slotId); if (!this.isCurrent(this.loadGate, generation)) return;
       loading = reduceBooking(loading, { type: "CHECKOUT_READY", checkout }); this.sync(loading, { loadError: "" });
-      this.resumeStoredAttempt();
     } catch {
       if (!this.isCurrent(this.loadGate, generation)) return;
       const message = "结算信息加载失败，请重试。";
@@ -174,13 +174,13 @@ Page({
   },
   cancelRetryDelay() { if (this.retryTimer !== undefined) clearTimeout(this.retryTimer); this.retryTimer = undefined; this.retryResolve?.(false); this.retryResolve = undefined; },
   resumeStoredAttempt() {
-    if (this.createInFlight) return;
+    if (this.createInFlight) return false;
     const attempt = getCreateOrderAttemptStore()?.load();
-    if (!attempt || attempt.request.slotId !== this.data.slotId) return;
-    let state = reduceBooking(this.data.state, { type: "CONTACT_NAME_CHANGED", contactName: attempt.request.contactName });
-    state = reduceBooking(state, { type: "SUBMIT_STARTED", idempotencyKey: attempt.idempotencyKey, request: attempt.request });
+    if (!attempt || attempt.request.slotId !== this.data.slotId) return false;
+    const state = reduceBooking(this.data.state, { type: "SUBMIT_RESTORED", idempotencyKey: attempt.idempotencyKey, request: attempt.request });
     this.sync(state, { actionError: "", navigationError: "" });
     void this.runCreateAttempt(attempt, this.createGate.begin());
+    return true;
   },
   onResumeUnknown() {
     const submission = this.data.state.submission;

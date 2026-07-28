@@ -223,6 +223,40 @@ describe("booking confirmation lifecycle orchestration", () => {
     } finally { jest.useRealTimers(); }
   });
 
+  test("stored attempt reconciles before checkout can reject the now-locked slot", async () => {
+    const storedAttempt: CreateOrderAttempt = {
+      request: { slotId, checkoutVersion: 12, contactName: "张三" },
+      idempotencyKey: "booking-stored-unknown",
+    };
+    const storage = memoryStorage();
+    const store = createCreateOrderAttemptStore(storage);
+    store.save(storedAttempt);
+    registerCreateOrderAttemptStore(store);
+    const attempts: CreateOrderAttempt[] = [];
+    let checkoutCalls = 0;
+    registerBookingDataSource({
+      ...sourceWith(
+        async () => ({ userId: "user", maskedPhone: "138****0000" }),
+        async (attempt) => { attempts.push(attempt); return pendingResult(attempt.request.contactName); },
+      ),
+      async getCheckout() {
+        checkoutCalls += 1;
+        throw Object.assign(new Error("locked"), { code: "SLOT_NOT_AVAILABLE" });
+      },
+    });
+    (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = { async navigateTo() {} };
+    const page = loadPage();
+
+    call(page, "onLoad", { slot_id: slotId });
+    await flush(); await flush();
+
+    expect(attempts).toEqual([storedAttempt]);
+    expect(checkoutCalls).toBe(0);
+    expect((page.data.state as { submission: { status: string } }).submission.status).toBe("created");
+    expect(storage.remove).toHaveBeenCalledWith("modelstella.pitch-booking.create-order-attempt.v1");
+    call(page, "onUnload");
+  });
+
   test("accepted price change submits the new version with a fresh key", async () => {
     const now = jest.spyOn(Date, "now").mockReturnValue(1000);
     const random = jest.spyOn(Math, "random").mockReturnValueOnce(0.1).mockReturnValueOnce(0.2);

@@ -212,6 +212,29 @@ describe("canSubmit", () => {
 });
 
 describe("reduceBooking", () => {
+  test("SUBMIT_RESTORED requires a session but not checkout readiness", () => {
+    const checkoutLoading = readyState({ checkout: { status: "loading" } });
+    const unauthenticated = readyState({
+      session: { status: "loading" },
+      checkout: { status: "loading" },
+    });
+
+    expect(reduceBooking(checkoutLoading, {
+      type: "SUBMIT_RESTORED",
+      idempotencyKey: "stored-key",
+      request: input,
+    }).submission).toEqual({
+      status: "submitting",
+      idempotencyKey: "stored-key",
+      request: input,
+    });
+    expect(reduceBooking(unauthenticated, {
+      type: "SUBMIT_RESTORED",
+      idempotencyKey: "stored-key",
+      request: input,
+    })).toBe(unauthenticated);
+  });
+
   test("CHECKOUT_READY backfills the last contact name only when the field is still blank", () => {
     const loading = readyState({
       checkout: { status: "loading" },

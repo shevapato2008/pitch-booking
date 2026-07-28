@@ -53,6 +53,11 @@ export type BookingPageEvent =
       readonly idempotencyKey: string;
       readonly request: CreateOrderInput;
     }
+  | {
+      readonly type: "SUBMIT_RESTORED";
+      readonly idempotencyKey: string;
+      readonly request: CreateOrderInput;
+    }
   | { readonly type: "SUBMIT_UNKNOWN"; readonly idempotencyKey: string }
   | { readonly type: "SUBMIT_RETRY"; readonly idempotencyKey: string }
   | { readonly type: "SUBMIT_FAILED"; readonly idempotencyKey: string }
@@ -164,6 +169,17 @@ export function reduceBooking(
       if (!canSubmit(state)) return state;
       return {
         ...state,
+        submission: {
+          status: "submitting",
+          idempotencyKey: event.idempotencyKey,
+          request: { ...event.request },
+        },
+      };
+    case "SUBMIT_RESTORED":
+      if (state.session.status !== "ready") return state;
+      return {
+        ...state,
+        contactName: event.request.contactName,
         submission: {
           status: "submitting",
           idempotencyKey: event.idempotencyKey,
