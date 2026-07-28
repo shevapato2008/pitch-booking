@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "SLOT_NOT_AVAILABLE",
+    "message": "该时段已不可预订，请返回刷新。",
+    "request_id": "req-contract-slot-not-available",
+    "details": {}
+  }
+}

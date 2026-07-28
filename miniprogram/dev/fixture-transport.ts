@@ -1,6 +1,13 @@
 import { FIXTURE_DATA } from "./fixture-data";
 
-const ALLOWED_FIXTURES = ["venue-ready", "slots-ready", "slots-empty"] as const;
+const ALLOWED_FIXTURES = [
+  "venue-ready",
+  "slots-ready",
+  "slots-empty",
+  "booking-checkout-ready",
+  "order-pending",
+  "order-expired",
+] as const;
 export type FixtureName = typeof ALLOWED_FIXTURES[number];
 
 export function isFixtureName(value: unknown): value is FixtureName {

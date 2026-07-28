@@ -1,10 +1,12 @@
 import argparse
 import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -20,9 +22,9 @@ def stable_id(key: str) -> uuid.UUID:
     return uuid.uuid5(NAMESPACE, key)
 
 
-def parse_anchor_date(value: str) -> date:
+def parse_anchor_date(value: str, *, now: datetime | None = None) -> date:
     if value == "today":
-        return datetime.now(SHANGHAI).date()
+        return (now or datetime.now(UTC)).astimezone(SHANGHAI).date()
     return date.fromisoformat(value)
 
 
@@ -30,20 +32,42 @@ def _insert_missing(session: Session, model: type[object], values: dict[str, obj
     session.execute(insert(model).values(**values).on_conflict_do_nothing())
 
 
+@contextmanager
+def _seed_engine(database_url: str) -> Iterator[Engine]:
+    engine = create_engine(database_url)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
 def run_seed(
-    *, anchor: str, days: int, database_url: str | None = None
+    *,
+    anchor: str,
+    days: int,
+    database_url: str | None = None,
+    now: datetime | None = None,
 ) -> None:
-    if os.environ.get("APP_ENV", "").lower() == "production":
-        raise SystemExit("seed is disabled in production")
-    settings = Settings()
     if days <= 0:
         raise ValueError("days must be positive")
-    anchor_date = parse_anchor_date(anchor)
-    engine = create_engine(database_url or settings.database_url)
-
+    app_env = os.environ.get("APP_ENV", "").lower()
+    if app_env == "production":
+        raise SystemExit("seed is disabled in production")
+    if app_env not in {"development", "test", "staging"}:
+        raise SystemExit(
+            "seed requires explicit non-production APP_ENV="
+            "development, test, or staging"
+        )
+    settings = Settings()
+    resolved_now = now or datetime.now(UTC)
+    if resolved_now.tzinfo is None or resolved_now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    anchor_date = parse_anchor_date(anchor, now=resolved_now)
     five_id = stable_id("pitch-five-a")
     seven_id = stable_id("pitch-seven-a")
-    with Session(engine) as session:
+    with _seed_engine(database_url or settings.database_url) as engine, Session(
+        engine
+    ) as session:
         _insert_missing(
             session,
             Venue,
@@ -136,8 +160,34 @@ def run_seed(
                             "locked_by_order_id": None,
                         },
                     )
+
+        # The regular inventory intentionally includes a 09:00 AVAILABLE state for
+        # projection tests. A seed executed later in the day also needs one slot that
+        # is unambiguously bookable by the local HTTP journey.
+        bookable_day = max(
+            anchor_date,
+            resolved_now.astimezone(SHANGHAI).date() + timedelta(days=1),
+        )
+        bookable_start = datetime.combine(
+            bookable_day,
+            time(19),
+            SHANGHAI,
+        ).astimezone(UTC)
+        _insert_missing(
+            session,
+            Slot,
+            {
+                "id": stable_id(f"slot-five-{bookable_day}-19-local-booking"),
+                "pitch_id": five_id,
+                "starts_at": bookable_start,
+                "ends_at": bookable_start + timedelta(hours=2),
+                "status": "AVAILABLE",
+                "price_cents": 32000,
+                "locked_until": None,
+                "locked_by_order_id": None,
+            },
+        )
         session.commit()
-    engine.dispose()
 
 
 def main() -> None:

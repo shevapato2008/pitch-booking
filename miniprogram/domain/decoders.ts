@@ -1,4 +1,5 @@
 import type {
+  ApiErrorCode,
   Availability,
   AvailabilityWindow,
   Facility,
@@ -12,7 +13,10 @@ import type {
   Venue,
   VenueImage,
   VenuePitchType,
+  PhoneVerificationView,
+  SessionTokenView,
 } from "./contracts";
+import type { CheckoutView, OrderView } from "./booking";
 import {
   arrayAt,
   dateAt,
@@ -39,6 +43,174 @@ const STATUS_REASONS: Record<SlotStatus, UnavailableReason | null> = {
   CLOSED: "VENUE_CLOSED",
   EXPIRED: "TIME_PASSED",
 };
+
+const API_ERROR_CODES = [
+  "INVALID_ARGUMENT", "PITCH_TYPE_NOT_SUPPORTED", "DATE_OUT_OF_RANGE", "VENUE_NOT_FOUND",
+  "SERVICE_UNAVAILABLE", "INTERNAL_ERROR", "PRIMARY_VENUE_MISCONFIGURED", "AUTH_REQUIRED",
+  "WECHAT_LOGIN_FAILED", "PHONE_AUTH_REQUIRED", "PHONE_AUTH_UNAVAILABLE", "PHONE_AUTH_FAILED",
+  "INVALID_CONTACT", "SLOT_NOT_AVAILABLE", "PRICE_CHANGED", "IDEMPOTENCY_KEY_REUSED",
+  "ORDER_NOT_FOUND",
+] as const;
+const MASKED_PHONE = /^1[0-9]{2}\*{4}[0-9]{4}$/;
+
+function nullableString(value: unknown, path: string, maxLength?: number): string | null {
+  if (value === null) return null;
+  const decoded = stringAt(value, path);
+  if (maxLength !== undefined && [...decoded].length > maxLength) invalid(path);
+  return decoded;
+}
+
+function boundedString(value: unknown, path: string, maxLength: number): string {
+  const decoded = stringAt(value, path);
+  if ([...decoded].length > maxLength) invalid(path);
+  return decoded;
+}
+
+function maskedPhone(value: unknown, path: string): string {
+  const decoded = stringAt(value, path);
+  if (!MASKED_PHONE.test(decoded)) invalid(path);
+  return decoded;
+}
+
+function booleanAt(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") invalid(path);
+  return value;
+}
+
+export function decodeWeChatSession(value: unknown): SessionTokenView {
+  const object = exactObject(value, ["session_token", "expires_at", "user"], "$");
+  const user = exactObject(object.user, ["id", "masked_phone", "last_contact_name"], "$.user");
+  const token = stringAt(object.session_token, "$.session_token");
+  if (token.length < 43 || token.length > 256) invalid("$.session_token");
+  nullableString(user.last_contact_name, "$.user.last_contact_name", 40);
+  return {
+    token,
+    expiresAt: rfc3339At(object.expires_at, "$.expires_at"),
+    user: {
+      userId: uuidAt(user.id, "$.user.id"),
+      maskedPhone: user.masked_phone === null ? null : maskedPhone(user.masked_phone, "$.user.masked_phone"),
+    },
+  };
+}
+
+export function decodePhoneVerification(value: unknown): PhoneVerificationView {
+  const object = exactObject(value, ["masked_phone", "verified_at"], "$");
+  return {
+    maskedPhone: maskedPhone(object.masked_phone, "$.masked_phone"),
+    verifiedAt: rfc3339At(object.verified_at, "$.verified_at"),
+  };
+}
+
+export function decodeCheckout(value: unknown): CheckoutView {
+  const object = exactObject(value, [
+    "slot_id", "venue", "pitch", "date", "starts_at", "ends_at", "duration_minutes",
+    "price_cents", "currency", "available", "cancellation_summary", "lock_duration_seconds",
+    "contact", "checkout_version",
+  ], "$");
+  const venue = exactObject(object.venue, ["id", "name"], "$.venue");
+  const pitch = exactObject(object.pitch, ["id", "name"], "$.pitch");
+  const contact = exactObject(object.contact, ["masked_phone", "last_contact_name"], "$.contact");
+  const startsAt = rfc3339At(object.starts_at, "$.starts_at");
+  const endsAt = rfc3339At(object.ends_at, "$.ends_at");
+  if (!rfc3339Before(startsAt, endsAt)) invalid("$.ends_at");
+  if (object.currency !== "CNY") invalid("$.currency");
+  if (object.available !== true) invalid("$.available");
+  return {
+    venueId: uuidAt(venue.id, "$.venue.id"),
+    venueName: stringAt(venue.name, "$.venue.name"),
+    pitchId: uuidAt(pitch.id, "$.pitch.id"),
+    pitchName: stringAt(pitch.name, "$.pitch.name"),
+    slotId: uuidAt(object.slot_id, "$.slot_id"),
+    startsAt,
+    endsAt,
+    priceCents: integerAt(object.price_cents, "$.price_cents"),
+    date: dateAt(object.date, "$.date"),
+    durationMinutes: integerAt(object.duration_minutes, "$.duration_minutes", 1),
+    currency: "CNY",
+    available: true,
+    cancellationSummary: stringAt(object.cancellation_summary, "$.cancellation_summary"),
+    lockDurationSeconds: integerAt(object.lock_duration_seconds, "$.lock_duration_seconds", 1),
+    maskedPhone: contact.masked_phone === null ? null : maskedPhone(contact.masked_phone, "$.contact.masked_phone"),
+    lastContactName: nullableString(contact.last_contact_name, "$.contact.last_contact_name", 40),
+    version: integerAt(object.checkout_version, "$.checkout_version", 1),
+  };
+}
+
+export function decodeOrder(value: unknown): OrderView {
+  const object = exactObject(value, [
+    "id", "order_number", "status", "slot_id", "venue", "pitch", "starts_at", "ends_at",
+    "duration_minutes", "price_cents", "currency", "contact", "created_at", "expires_at",
+    "expired_at", "cancellation_summary", "closing_payment", "detail_path",
+  ], "$");
+  const venue = exactObject(object.venue, ["id", "name", "address", "latitude", "longitude", "customer_service_phone"], "$.venue");
+  const pitch = exactObject(object.pitch, ["id", "name"], "$.pitch");
+  const contact = exactObject(object.contact, ["name", "masked_phone"], "$.contact");
+  const orderId = uuidAt(object.id, "$.id");
+  const status = enumAt(object.status, ["PENDING_PAYMENT", "EXPIRED"] as const, "$.status");
+  const startsAt = rfc3339At(object.starts_at, "$.starts_at");
+  const endsAt = rfc3339At(object.ends_at, "$.ends_at");
+  if (!rfc3339Before(startsAt, endsAt)) invalid("$.ends_at");
+  const expiredAt = object.expired_at === null ? null : rfc3339At(object.expired_at, "$.expired_at");
+  if ((status === "PENDING_PAYMENT") !== (expiredAt === null)) invalid("$.expired_at");
+  if (object.currency !== "CNY") invalid("$.currency");
+  const detailPath = stringAt(object.detail_path, "$.detail_path");
+  if (detailPath !== `/api/v1/orders/${orderId}`) invalid("$.detail_path");
+  const common = {
+    orderId,
+    orderNumber: stringAt(object.order_number, "$.order_number"),
+    slotId: uuidAt(object.slot_id, "$.slot_id"),
+    venue: {
+      id: uuidAt(venue.id, "$.venue.id"), name: stringAt(venue.name, "$.venue.name"),
+      address: stringAt(venue.address, "$.venue.address"),
+      latitude: numberAt(venue.latitude, "$.venue.latitude", -90, 90),
+      longitude: numberAt(venue.longitude, "$.venue.longitude", -180, 180),
+      customerServicePhone: stringAt(venue.customer_service_phone, "$.venue.customer_service_phone"),
+    },
+    pitch: { id: uuidAt(pitch.id, "$.pitch.id"), name: stringAt(pitch.name, "$.pitch.name") },
+    contact: {
+      name: boundedString(contact.name, "$.contact.name", 40),
+      maskedPhone: maskedPhone(contact.masked_phone, "$.contact.masked_phone"),
+    },
+    priceCents: integerAt(object.price_cents, "$.price_cents"), startsAt, endsAt,
+    durationMinutes: integerAt(object.duration_minutes, "$.duration_minutes", 1),
+    currency: "CNY" as const,
+    createdAt: rfc3339At(object.created_at, "$.created_at"),
+    expiresAt: rfc3339At(object.expires_at, "$.expires_at"),
+    cancellationSummary: stringAt(object.cancellation_summary, "$.cancellation_summary"),
+    closingPayment: booleanAt(object.closing_payment, "$.closing_payment"), detailPath,
+  };
+  return status === "PENDING_PAYMENT"
+    ? { ...common, status, expiredAt: null }
+    : { ...common, status, expiredAt: expiredAt as string };
+}
+
+export interface DecodedApiError {
+  readonly code: ApiErrorCode;
+  readonly details?: { readonly checkout: CheckoutView };
+}
+
+export function decodeApiError(value: unknown): DecodedApiError {
+  const envelope = exactObject(value, ["error"], "$");
+  const error = exactObject(envelope.error, ["code", "message", "request_id", "details"], "$.error");
+  const code = enumAt<ApiErrorCode>(error.code, API_ERROR_CODES, "$.error.code");
+  stringAt(error.message, "$.error.message");
+  stringAt(error.request_id, "$.error.request_id");
+  const details = error.details;
+  if (typeof details !== "object" || details === null || Array.isArray(details)) invalid("$.error.details");
+  const keys = Object.keys(details);
+  if (code === "PRICE_CHANGED") {
+    const exact = exactObject(details, ["current_checkout"], "$.error.details");
+    return { code, details: { checkout: decodeCheckout(exact.current_checkout) } };
+  }
+  const allowed = new Set(["field", "pitch_type", "start_date", "end_date"]);
+  for (const key of keys) if (!allowed.has(key)) invalid(`$.error.details.${key}`);
+  const detailObject = details as Record<string, unknown>;
+  if (detailObject.field !== undefined) stringAt(detailObject.field, "$.error.details.field");
+  if (detailObject.pitch_type !== undefined) stringAt(detailObject.pitch_type, "$.error.details.pitch_type");
+  if (detailObject.start_date !== undefined) dateAt(detailObject.start_date, "$.error.details.start_date");
+  if (detailObject.end_date !== undefined) dateAt(detailObject.end_date, "$.error.details.end_date");
+  return { code };
+}
 
 function decodeWindow(value: unknown, path: string): AvailabilityWindow {
   const object = exactObject(value, ["start_date", "end_date"], path);

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "AUTH_REQUIRED",
+    "message": "登录状态已失效，请重新登录。",
+    "request_id": "req-contract-auth-required",
+    "details": {}
+  }
+}

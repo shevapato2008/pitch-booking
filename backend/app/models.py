@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -11,13 +12,14 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID, ExcludeConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID, ExcludeConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -43,6 +45,16 @@ class SlotStatus(StrEnum):
     LOCKED = "LOCKED"
     BOOKED = "BOOKED"
     CLOSED = "CLOSED"
+
+
+class OrderStatus(StrEnum):
+    PENDING_PAYMENT = "PENDING_PAYMENT"
+    EXPIRED = "EXPIRED"
+
+
+class IdempotencyState(StrEnum):
+    CLAIMED = "CLAIMED"
+    COMPLETED = "COMPLETED"
 
 
 class Base(DeclarativeBase):
@@ -182,6 +194,7 @@ class Slot(Base):
             name="ex_slots_no_overlap",
         ),
         Index("ix_slots_pitch_id", "pitch_id"),
+        Index("ix_slots_locked_by_order_id", "locked_by_order_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -192,7 +205,220 @@ class Slot(Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[SlotStatus] = mapped_column(Enum(SlotStatus, name="slot_status"))
     price_cents: Mapped[int] = mapped_column(Integer)
+    checkout_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    locked_by_order_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    locked_by_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "orders.id",
+            name="fk_slots_locked_by_order_id_orders",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
 
     pitch: Mapped[Pitch] = relationship(back_populates="slots")
+    orders: Mapped[list["Order"]] = relationship(
+        back_populates="slot", foreign_keys="Order.slot_id"
+    )
+    locked_order: Mapped["Order | None"] = relationship(
+        foreign_keys=[locked_by_order_id], post_update=True
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "(phone_ciphertext IS NULL AND phone_nonce IS NULL "
+            "AND phone_key_version IS NULL AND phone_verified_at IS NULL) OR "
+            "(phone_ciphertext IS NOT NULL AND phone_nonce IS NOT NULL "
+            "AND phone_key_version IS NOT NULL AND phone_verified_at IS NOT NULL)",
+            name="ck_users_phone_encrypted_fields",
+        ),
+        CheckConstraint(
+            "phone_key_version IS NULL OR phone_key_version > 0",
+            name="ck_users_phone_key_version",
+        ),
+        CheckConstraint(
+            "phone_nonce IS NULL OR octet_length(phone_nonce) = 12",
+            name="ck_users_phone_nonce_length",
+        ),
+        CheckConstraint(
+            "phone_ciphertext IS NULL OR octet_length(phone_ciphertext) >= 16",
+            name="ck_users_phone_ciphertext_length",
+        ),
+        UniqueConstraint("wechat_openid", name="uq_users_wechat_openid"),
+        UniqueConstraint("wechat_unionid", name="uq_users_wechat_unionid"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    wechat_openid: Mapped[str] = mapped_column(String(128))
+    wechat_unionid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    phone_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    phone_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    phone_key_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_contact_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
+    orders: Mapped[list["Order"]] = relationship(back_populates="user")
+    idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
+        back_populates="user"
+    )
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "token_hash ~ '^[0-9a-f]{64}$'", name="ck_user_sessions_token_hash"
+        ),
+        CheckConstraint("expires_at > issued_at", name="ck_user_sessions_expiry"),
+        UniqueConstraint("token_hash", name="uq_user_sessions_token_hash"),
+        Index("ix_user_sessions_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_user_sessions_user_id_users", ondelete="CASCADE"),
+    )
+    token_hash: Mapped[str] = mapped_column(String(64))
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        CheckConstraint("price_cents >= 0", name="ck_orders_price_cents"),
+        CheckConstraint(
+            "length(trim(contact_name)) BETWEEN 1 AND 40",
+            name="ck_orders_contact_name",
+        ),
+        CheckConstraint(
+            "contact_phone_ciphertext IS NOT NULL AND contact_phone_nonce IS NOT NULL "
+            "AND contact_phone_key_version > 0",
+            name="ck_orders_contact_phone_encrypted_fields",
+        ),
+        CheckConstraint(
+            "octet_length(contact_phone_nonce) = 12",
+            name="ck_orders_contact_phone_nonce_length",
+        ),
+        CheckConstraint(
+            "octet_length(contact_phone_ciphertext) >= 16",
+            name="ck_orders_contact_phone_ciphertext_length",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_orders_expiry"),
+        CheckConstraint(
+            "(status = 'PENDING_PAYMENT' AND expired_at IS NULL) OR "
+            "(status = 'EXPIRED' AND expired_at IS NOT NULL AND expired_at >= expires_at)",
+            name="ck_orders_status_expired_at",
+        ),
+        UniqueConstraint("order_number", name="uq_orders_order_number"),
+        Index("ix_orders_user_id", "user_id"),
+        Index("ix_orders_slot_id", "slot_id"),
+        Index(
+            "ix_orders_pending_expiry_candidates",
+            "expires_at",
+            "id",
+            postgresql_where=text(
+                "status = 'PENDING_PAYMENT' AND wechat_prepay_id IS NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_number: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_orders_user_id_users", ondelete="RESTRICT"),
+    )
+    slot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("slots.id", name="fk_orders_slot_id_slots", ondelete="RESTRICT"),
+    )
+    status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus, name="order_status"))
+    price_cents: Mapped[int] = mapped_column(Integer)
+    contact_name: Mapped[str] = mapped_column(String(40))
+    contact_phone_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    contact_phone_nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    contact_phone_key_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    wechat_prepay_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="orders")
+    slot: Mapped[Slot] = relationship(
+        back_populates="orders", foreign_keys=[slot_id]
+    )
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(operation)) > 0", name="ck_idempotency_records_operation"
+        ),
+        CheckConstraint("length(key) > 0", name="ck_idempotency_records_key"),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_idempotency_records_request_sha256",
+        ),
+        CheckConstraint(
+            "(state = 'CLAIMED' AND response_status IS NULL AND response_body IS NULL) OR "
+            "(state = 'COMPLETED' AND response_status IS NOT NULL AND response_body IS NOT NULL)",
+            name="ck_idempotency_records_state_response",
+        ),
+        CheckConstraint(
+            "response_status IS NULL OR response_status BETWEEN 100 AND 599",
+            name="ck_idempotency_records_response_status",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "operation",
+            "key",
+            name="uq_idempotency_records_user_operation_key",
+        ),
+        Index("ix_idempotency_records_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_idempotency_records_user_id_users",
+            ondelete="CASCADE",
+        ),
+    )
+    operation: Mapped[str] = mapped_column(String(80))
+    key: Mapped[str] = mapped_column(String(255))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[IdempotencyState] = mapped_column(
+        Enum(IdempotencyState, name="idempotency_state")
+    )
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="idempotency_records")

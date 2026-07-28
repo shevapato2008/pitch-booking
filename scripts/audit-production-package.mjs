@@ -14,9 +14,15 @@ const forbiddenPathPatterns = [
   /(^|[/\\])dev([/\\]|$)/i,
   /\.dev-generated/i,
   /fixture/i,
+  /\.ts$/i,
   /\.(?:test|spec)\.[^/\\]+$/i,
 ];
 const forbiddenContentPatterns = [
+  /dev-login-code/,
+  /dev-phone-code/,
+  /138\*{4}0000/,
+  /developmentBookingDataSource/,
+  /booking-fixture/,
   /FIXTURE_MODE/,
   /\b(?:fixture[A-Z]|Fixture[A-Z])[A-Za-z0-9_$]*\b/,
   /\bfixtures:generate\b/,
@@ -54,7 +60,12 @@ for (const file of await collectFiles(target)) {
 }
 
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
-const productionRoutes = ["pages/venue/index", "pages/availability/index"];
+const productionRoutes = [
+  "pages/venue/index",
+  "pages/availability/index",
+  "pages/booking-confirmation/index",
+  "pages/order-detail/index",
+];
 if (JSON.stringify(manifest.pages) !== JSON.stringify(productionRoutes)) {
   forbidden.push(`unexpected routes: ${JSON.stringify(manifest.pages)}`);
 }

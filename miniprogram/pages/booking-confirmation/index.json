@@ -1,0 +1,1 @@
+{"navigationBarTitleText":"确认订单","usingComponents":{"slot-summary-card":"/components/slot-summary-card/index","contact-card":"/components/contact-card/index","booking-rules-card":"/components/booking-rules-card/index","order-submit-bar":"/components/order-submit-bar/index"}}

@@ -24,5 +24,7 @@
     <view wx:else class="slot-section u-pad-page">
       <slot-grid pitchGroups="{{viewModel.pitchGroups}}" bind:select="onSlotSelect" />
     </view>
+    <text wx:if="{{navigationError}}" class="state-message state-message--error u-type-body">{{navigationError}}</text>
+    <button wx:if="{{selectedSlotId}}" class="u-control" bindtap="onConfirmSlot">确认场次</button>
   </view>
 </view>

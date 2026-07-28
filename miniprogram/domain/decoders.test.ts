@@ -1,7 +1,15 @@
 import { expect, jest, test } from "@jest/globals";
 
 import { ApiResponseError } from "./contracts";
-import { decodeAvailability, decodeVenue } from "./decoders";
+import {
+  decodeApiError,
+  decodeAvailability,
+  decodeCheckout,
+  decodeOrder,
+  decodePhoneVerification,
+  decodeWeChatSession,
+  decodeVenue,
+} from "./decoders";
 
 interface SlotExample {
   id: string;
@@ -50,6 +58,12 @@ interface VenueExample {
 
 const venue = jest.requireActual<VenueExample>("../../contracts/examples/venue-primary.json");
 const ready = jest.requireActual<ReadyExample>("../../contracts/examples/availability-ready.json");
+const session = jest.requireActual<Record<string, unknown>>("../../contracts/examples/wechat-session.json");
+const phone = jest.requireActual<Record<string, unknown>>("../../contracts/examples/phone-verified.json");
+const checkout = jest.requireActual<Record<string, unknown>>("../../contracts/examples/checkout-ready.json");
+const pendingOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-pending.json");
+const expiredOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-expired.json");
+const priceChanged = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-price-changed.json");
 
 const firstSlot = ready.pitches[0].slots[0];
 const withSlot = (slot: object) => ({
@@ -159,6 +173,77 @@ test("reports the precise corrupt response path and stable code", () => {
       path: "$.pitches[0].slots[0].price_cents",
     });
   }
+});
+
+test("strictly decodes session, phone, checkout and both order states", () => {
+  expect(decodeWeChatSession(session)).toMatchObject({
+    token: session.session_token,
+    expiresAt: session.expires_at,
+    user: { userId: "00000000-0000-4000-8000-000000000001", maskedPhone: null },
+  });
+  expect(decodePhoneVerification(phone)).toEqual({
+    maskedPhone: "138****5678",
+    verifiedAt: "2026-07-27T12:00:00+08:00",
+  });
+  expect(decodeCheckout(checkout)).toMatchObject({
+    venueName: "浦东星跃足球公园",
+    pitchName: "五人制 A 场",
+    priceCents: 32000,
+    version: 12,
+  });
+  expect(decodeOrder(pendingOrder)).toMatchObject({ status: "PENDING_PAYMENT", expiredAt: null });
+  expect(decodeOrder(expiredOrder)).toMatchObject({ status: "EXPIRED", expiredAt: expect.any(String) });
+});
+
+test("accepts a 40-code-unit order contact name and rejects 41", () => {
+  const forty = "张".repeat(40);
+  expect(decodeOrder({
+    ...pendingOrder,
+    contact: { ...(pendingOrder.contact as object), name: forty },
+  }).contact.name).toBe(forty);
+  expect(() => decodeOrder({
+    ...pendingOrder,
+    contact: { ...(pendingOrder.contact as object), name: `${forty}张` },
+  })).toThrow("INVALID_API_RESPONSE");
+});
+
+test("counts astral Han characters as single code points for contact maxLength", () => {
+  const forty = "𠀀".repeat(40);
+  expect(decodeOrder({
+    ...pendingOrder,
+    contact: { ...(pendingOrder.contact as object), name: forty },
+  }).contact.name).toBe(forty);
+});
+
+test.each([
+  ["session extra key", decodeWeChatSession, { ...session, debug: true }],
+  ["session short token", decodeWeChatSession, { ...session, session_token: "short" }],
+  ["phone malformed mask", decodePhoneVerification, { ...phone, masked_phone: "13800005678" }],
+  ["checkout extra nested key", decodeCheckout, { ...checkout, contact: { ...(checkout.contact as object), raw_phone: "secret" } }],
+  ["checkout reversed time", decodeCheckout, { ...checkout, ends_at: checkout.starts_at }],
+  ["pending with expired_at", decodeOrder, { ...pendingOrder, expired_at: expiredOrder.expired_at }],
+  ["expired without expired_at", decodeOrder, { ...expiredOrder, expired_at: null }],
+  ["order wrong detail path", decodeOrder, { ...pendingOrder, detail_path: "/api/v1/orders/not-it" }],
+] as const)("rejects corrupt wire DTO: %s", (_label, decode, value) => {
+  expect(() => decode(value)).toThrow("INVALID_API_RESPONSE");
+});
+
+test("decodes PRICE_CHANGED using current_checkout and never trusts message text", () => {
+  const decoded = decodeApiError(priceChanged);
+  expect(decoded).toMatchObject({
+    code: "PRICE_CHANGED",
+    details: { checkout: { priceCents: 36000, version: 13 } },
+  });
+  expect(decoded).not.toHaveProperty("message");
+});
+
+test.each([
+  { unexpected: true },
+  { error: { code: "UNKNOWN", message: "x", request_id: "r", details: {} } },
+  { error: { code: "PRICE_CHANGED", message: "x", request_id: "r", details: {} } },
+  { error: { code: "AUTH_REQUIRED", message: "x", request_id: "r", details: { current_checkout: checkout } } },
+])("rejects malformed error envelopes", (value) => {
+  expect(() => decodeApiError(value)).toThrow("INVALID_API_RESPONSE");
 });
 
 test("accepts RFC3339's case-insensitive t and z grammar", () => {

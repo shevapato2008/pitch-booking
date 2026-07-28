@@ -93,11 +93,16 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes exactly the three browsing paths', async () => {
+test('OpenAPI document validates and exposes the frozen eight-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
+    '/api/v1/auth/wechat/phone',
+    '/api/v1/auth/wechat/session',
     '/api/v1/health',
+    '/api/v1/orders',
+    '/api/v1/orders/{order_id}',
+    '/api/v1/slots/{slot_id}/checkout',
     '/api/v1/venues/primary',
     '/api/v1/venues/{venue_id}/availability',
   ]);
@@ -191,20 +196,22 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 10 JSON examples/i);
+  assert.match(stdout, /validated 25 JSON examples/i);
   assert.equal(stderr, '');
 });
 
 test('file-backed OpenAPI examples use standard closed externalValue objects', async () => {
   const contract = YAML.parse(await readFile(contractPath, 'utf8'));
   for (const pathItem of Object.values(contract.paths)) {
-    for (const response of Object.values(pathItem.get.responses)) {
-      for (const [key, example] of Object.entries(
-        response.content?.['application/json']?.examples ?? {},
-      )) {
-        if (key === 'HealthOk') continue;
-        assert.deepEqual(Object.keys(example), ['externalValue']);
-        assert.match(example.externalValue, /^\.\/examples\/.+\.json$/);
+    for (const operation of Object.values(pathItem)) {
+      for (const response of Object.values(operation.responses)) {
+        for (const [key, example] of Object.entries(
+          response.content?.['application/json']?.examples ?? {},
+        )) {
+          if (key === 'HealthOk') continue;
+          assert.deepEqual(Object.keys(example), ['externalValue']);
+          assert.match(example.externalValue, /^\.\/examples\/.+\.json$/);
+        }
       }
     }
   }
@@ -226,12 +233,25 @@ test('contract validator rejects an example attached under the wrong status', as
   });
 });
 
+test('PRICE_CHANGED requires a complete current_checkout detail', async () => {
+  await assertMutatedExampleRejected('error-price-changed.json', (example) => {
+    delete example.error.details.current_checkout;
+  }, /current_checkout|required/i);
+});
+
 test('contract validator rejects an attached ref targeting the wrong canonical example', async () => {
   await assertMutatedContractRejected((contract) => {
     contract.paths['/api/v1/venues/primary'].get.responses['200']
       .content['application/json'].examples.PrimaryVenue.externalValue =
         './examples/availability-ready.json';
   });
+});
+
+test('contract validator validates a canonical example against every attachment schema', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/orders'].post.responses['201']
+      .content['application/json'].schema = { $ref: '#/components/schemas/Health' };
+  }, /order-pending|schema|status/i);
 });
 
 test('contract validator rejects a canonical ref with a conflicting value sibling', async () => {
@@ -317,6 +337,12 @@ test('contract validator rejects unknown JSON Schema keywords', async () => {
   }, /unknown_contract_keyword|strict mode/i);
 });
 
+test('contract validator rejects error enum values outside the canonical error set', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.Error.properties.code.enum.push('UNDECLARED_ERROR');
+  }, /Error\.code\.enum|UNDECLARED_ERROR|error code/i);
+});
+
 test('contract validator rejects unknown keywords in inline parameter schemas', async () => {
   await assertMutatedContractRejected((contract) => {
     const availability = contract.paths['/api/v1/venues/{venue_id}/availability'].get;
@@ -393,12 +419,15 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
   const temporaryDirectory = await createTemporaryRepository();
   try {
     const { stdout, stderr } = await runTemporaryGenerator(temporaryDirectory);
-    assert.match(stdout, /generated 3 fixtures/i);
+    assert.match(stdout, /generated 6 fixtures/i);
     assert.equal(stderr, '');
     const mappings = [
       ['venue-primary.json', 'venue-ready.json'],
       ['availability-ready.json', 'slots-ready.json'],
       ['availability-empty.json', 'slots-empty.json'],
+      ['checkout-ready.json', 'booking-checkout-ready.json'],
+      ['order-pending.json', 'order-pending.json'],
+      ['order-expired.json', 'order-expired.json'],
     ];
     assert.deepEqual(
       (await readdir(path.join(temporaryDirectory, 'artifacts/ui/fixtures'))).sort(),
@@ -420,6 +449,9 @@ test('checked-in fixtures already match normalized canonical examples byte-for-b
     ['venue-primary.json', 'venue-ready.json'],
     ['availability-ready.json', 'slots-ready.json'],
     ['availability-empty.json', 'slots-empty.json'],
+    ['checkout-ready.json', 'booking-checkout-ready.json'],
+    ['order-pending.json', 'order-pending.json'],
+    ['order-expired.json', 'order-expired.json'],
   ];
   for (const [sourceName, fixtureName] of mappings) {
     const sourceBytes = await readFile(new URL(`../contracts/examples/${sourceName}`, import.meta.url));
@@ -499,7 +531,14 @@ test('fixture generator pre-reads all sources and reports filename context befor
 test('fixture publication rolls back every file after a deterministic second-publish failure', async () => {
   const temporaryDirectory = await createTemporaryRepository();
   const fixturesDirectory = path.join(temporaryDirectory, 'artifacts/ui/fixtures');
-  const fixtureNames = ['venue-ready.json', 'slots-ready.json', 'slots-empty.json'];
+  const fixtureNames = [
+    'venue-ready.json',
+    'slots-ready.json',
+    'slots-empty.json',
+    'booking-checkout-ready.json',
+    'order-pending.json',
+    'order-expired.json',
+  ];
   try {
     const before = new Map(await Promise.all(fixtureNames.map(async (filename) => [
       filename,

@@ -1,0 +1,26 @@
+@import "../../styles/tokens.wxss";
+
+.slot-summary-card {
+  box-sizing: border-box;
+  padding: 28rpx;
+}
+.section-title {
+  margin-bottom: 20rpx;
+  line-height: 1.4;
+  font-weight: 700;
+}
+.summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin: 14rpx 0;
+  line-height: 1.45;
+}
+.summary-row--last { margin-bottom: 0; }
+.summary-emphasis { font-weight: 700; }
+.price {
+  font-size: 38rpx;
+  line-height: 1.25;
+  font-weight: 800;
+}

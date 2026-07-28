@@ -1,0 +1,38 @@
+<view class="contact-card u-surface u-border u-radius-lg">
+  <view class="section-title u-text u-type-subtitle">联系人</view>
+
+  <button
+    wx:if="{{!maskedPhone}}"
+    class="phone-button u-control u-radius-md"
+    open-type="{{phoneOpenType}}"
+    bindtap="onAuthorizeTap"
+    bindgetphonenumber="onPhoneEvent"
+    hover-class="phone-button--pressed"
+    aria-label="{{phoneButtonText}}"
+  >{{phoneButtonText}}</button>
+
+  <view wx:else class="phone-row">
+    <text class="masked-phone u-text u-type-body">{{maskedPhone}}</text>
+    <button
+      class="text-button u-control"
+      open-type="{{phoneOpenType}}"
+      bindtap="onReauthorize"
+      bindgetphonenumber="onPhoneEvent"
+      hover-class="text-button--pressed"
+      aria-label="重新授权微信手机号"
+    >重新授权</button>
+  </view>
+
+  <view wx:if="{{showContactLabel}}" class="field-label u-text u-type-caption">联系人姓名</view>
+  <input
+    class="contact-input u-control u-radius-sm {{showContactLabel ? '' : 'contact-input--without-label'}} {{contactError ? 'contact-input--error' : ''}}"
+    value="{{contactName}}"
+    maxlength="30"
+    placeholder="请输入联系人姓名"
+    bindinput="onContactInput"
+    bindblur="onContactBlur"
+    aria-label="联系人姓名"
+  />
+  <text wx:if="{{contactError}}" class="field-error u-type-caption" role="alert">{{contactError}}</text>
+  <text class="privacy-note u-muted u-type-caption">仅用于订单通知与场馆联系</text>
+</view>

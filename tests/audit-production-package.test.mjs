@@ -165,7 +165,12 @@ test("production audit accepts ordinary production code", async (t) => {
 
 async function createProductionPackage() {
   const packageRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-audit-"));
-  const routes = ["pages/venue/index", "pages/availability/index"];
+  const routes = [
+    "pages/venue/index",
+    "pages/availability/index",
+    "pages/booking-confirmation/index",
+    "pages/order-detail/index",
+  ];
   await writeFile(
     path.join(packageRoot, "app.json"),
     `${JSON.stringify({ pages: routes })}\n`,

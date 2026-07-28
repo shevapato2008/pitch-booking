@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "PHONE_AUTH_FAILED",
+    "message": "手机号授权失败，请重新授权。",
+    "request_id": "req-contract-phone-auth-failed",
+    "details": {}
+  }
+}

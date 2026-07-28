@@ -18,22 +18,39 @@ const OUTCOME_KEYS = new Set(["fixture", "error", "timeout_ms", "delay_ms"]);
 const NATIVE_KEYS = new Set(["open_location", "make_phone_call"]);
 const MEDIA_KEYS = new Set(["fail_image_roles"]);
 const ACTION_KEYS = new Set(["type", "target", "id"]);
-const MATCH_KEYS = new Set(["path", "date", "case"]);
+const MATCH_KEYS = new Set(["path", "date", "case", "method", "headers", "body"]);
 const RFC3339_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(z|([+-])(\d{2}):(\d{2}))$/i;
 
 type NativeResult = "success" | "failure";
 type MediaRole = "COVER" | "GALLERY";
+type HttpMethod = "GET" | "POST";
 
 interface FixtureOutcome { fixture: FixtureName; delay_ms?: number }
 interface ErrorOutcome { error: string; delay_ms?: number }
 interface TimeoutOutcome { timeout_ms: number; delay_ms?: number }
 type HttpOutcome = FixtureOutcome | ErrorOutcome | TimeoutOutcome;
 
+interface HttpMatch {
+  path?: string;
+  date?: string;
+  case?: string;
+  method?: HttpMethod;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
 interface HttpRule {
-  match: Record<string, string>;
+  match: HttpMatch;
   outcome: HttpOutcome | { sequence: HttpOutcome[] };
   delay_ms?: number;
+}
+
+export interface ScenarioHttpRequest {
+  readonly method: HttpMethod;
+  readonly path: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body?: unknown;
 }
 
 export interface ScenarioAction {
@@ -88,25 +105,35 @@ export function scenarioRuntime(input: unknown, fixtureLoader: FixtureLoader = p
   const scenario = parseScenario(input);
   const instantMilliseconds = clockMilliseconds(scenario.clock);
   const sequenceIndexes = new Map<HttpRule, number>();
+  const requests: ScenarioHttpRequest[] = [];
 
   const clock: Clock = { now: () => new Date(instantMilliseconds) };
-  const transport: Transport = {
-    get<T>(path: string): Promise<T> {
-      const rule = scenario.http.find((candidate) => matches(candidate.match, path));
-      if (!rule) return Promise.reject(runtimeError("NO_HTTP_MATCH"));
-      let outcome: HttpOutcome;
-      if ("sequence" in rule.outcome) {
-        const index = sequenceIndexes.get(rule) ?? 0;
-        if (index >= rule.outcome.sequence.length) {
-          return Promise.reject(runtimeError("SEQUENCE_EXHAUSTED"));
-        }
-        outcome = rule.outcome.sequence[index];
-        sequenceIndexes.set(rule, index + 1);
-      } else {
-        outcome = rule.outcome;
+  const dispatch = <T>(method: HttpMethod, path: string, headers: Readonly<Record<string, string>> = {}, body?: unknown): Promise<T> => {
+    const request: ScenarioHttpRequest = {
+      method,
+      path,
+      headers: { ...headers },
+      ...(body === undefined ? {} : { body: cloneJson(body) }),
+    };
+    requests.push(request);
+    const rule = scenario.http.find((candidate) => matches(candidate.match, request));
+    if (!rule) return Promise.reject(runtimeError("NO_HTTP_MATCH"));
+    let outcome: HttpOutcome;
+    if ("sequence" in rule.outcome) {
+      const index = sequenceIndexes.get(rule) ?? 0;
+      if (index >= rule.outcome.sequence.length) {
+        return Promise.reject(runtimeError("SEQUENCE_EXHAUSTED"));
       }
-      return settleOutcome<T>(outcome, rule.delay_ms ?? 0, fixtureLoader);
-    },
+      outcome = rule.outcome.sequence[index];
+      sequenceIndexes.set(rule, index + 1);
+    } else {
+      outcome = rule.outcome;
+    }
+    return settleOutcome<T>(outcome, rule.delay_ms ?? 0, fixtureLoader);
+  };
+  const transport: Transport = {
+    get: <T>(path: string, headers?: Readonly<Record<string, string>>) => dispatch<T>("GET", path, headers),
+    post: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => dispatch<T>("POST", path, headers, body),
   };
 
   const native: NativeCapabilities = {
@@ -123,7 +150,7 @@ export function scenarioRuntime(input: unknown, fixtureLoader: FixtureLoader = p
     resolve: (role, source) => failedRoles.has(role) ? MISSING_COVER_SOURCE : source,
   };
 
-  return { clock, transport, native, media, actions: scenario.actions };
+  return { clock, transport, native, media, actions: scenario.actions, requests };
 }
 
 export function scenarioBehaviorSignature(scenario: ScenarioDefinition): string[] {
@@ -147,8 +174,22 @@ function parseRule(value: unknown): HttpRule {
   assertKnownKeys(rule, RULE_KEYS);
   const matchInput = rule.match === undefined ? {} : asRecord(rule.match, "MATCH_MUST_BE_OBJECT");
   assertKnownKeys(matchInput, MATCH_KEYS);
-  const match: Record<string, string> = {};
-  for (const [key, item] of Object.entries(matchInput)) match[key] = requiredString(item, "INVALID_MATCH_VALUE");
+  const match: HttpMatch = {};
+  for (const key of ["path", "date", "case"] as const) {
+    if (matchInput[key] !== undefined) match[key] = requiredString(matchInput[key], "INVALID_MATCH_VALUE");
+  }
+  if (matchInput.method !== undefined) {
+    if (matchInput.method !== "GET" && matchInput.method !== "POST") throw new Error("INVALID_MATCH_METHOD");
+    match.method = matchInput.method;
+  }
+  if (matchInput.headers !== undefined) {
+    const headerInput = asRecord(matchInput.headers, "MATCH_HEADERS_MUST_BE_OBJECT");
+    match.headers = {};
+    for (const [key, item] of Object.entries(headerInput)) {
+      match.headers[requiredString(key, "INVALID_MATCH_HEADER")] = requiredString(item, "INVALID_MATCH_HEADER");
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(matchInput, "body")) match.body = matchInput.body;
 
   const outcomeKeys = ["fixture", "error", "timeout_ms", "sequence"].filter((key) => rule[key] !== undefined);
   if (outcomeKeys.length === 0) throw new Error("HTTP_OUTCOME_REQUIRED");
@@ -194,17 +235,45 @@ function parseAction(value: unknown): ScenarioAction {
   return { type: "tap", target: "slot", id: requiredString(action.id, "ACTION_ID_REQUIRED") };
 }
 
-function matches(match: Record<string, string>, path: string): boolean {
+function matches(match: HttpMatch, request: ScenarioHttpRequest): boolean {
+  if (match.method !== undefined && match.method !== request.method) return false;
+  if (match.headers !== undefined && !headersContain(request.headers, match.headers)) return false;
+  if (Object.prototype.hasOwnProperty.call(match, "body") && !sameJson(request.body, match.body)) return false;
+  const path = request.path;
   const fragmentIndex = path.indexOf("#");
   const withoutFragment = fragmentIndex === -1 ? path : path.slice(0, fragmentIndex);
   const queryIndex = withoutFragment.indexOf("?");
   const pathname = queryIndex === -1 ? withoutFragment : withoutFragment.slice(0, queryIndex);
   const query = queryIndex === -1 ? "" : withoutFragment.slice(queryIndex + 1);
   const parameters = parseQuery(query);
-  return Object.entries(match).every(([key, expected]) => {
-    if (key === "path") return pathname === expected;
-    return parameters[key] === expected;
-  });
+  if (match.path !== undefined && pathname !== match.path) return false;
+  if (match.date !== undefined && parameters.date !== match.date) return false;
+  if (match.case !== undefined && parameters.case !== match.case) return false;
+  return true;
+}
+
+function headersContain(actual: Readonly<Record<string, string>>, expected: Readonly<Record<string, string>>): boolean {
+  const normalized = new Map(Object.entries(actual).map(([key, value]) => [key.toLowerCase(), value]));
+  return Object.entries(expected).every(([key, value]) => normalized.get(key.toLowerCase()) === value);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+      && left.every((item, index) => sameJson(item, right[index]));
+  }
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) return false;
+  const leftObject = left as Record<string, unknown>;
+  const rightObject = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftObject).sort();
+  const rightKeys = Object.keys(rightObject).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && sameJson(leftObject[key], rightObject[key]));
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function parseQuery(query: string): Record<string, string> {

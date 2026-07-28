@@ -1,0 +1,11 @@
+<view wx:if="{{checkout}}" class="slot-summary-card u-surface u-border u-radius-lg" aria-label="预订场次摘要">
+  <view class="section-title u-text u-type-subtitle">{{checkout.venueName}} · {{checkout.pitchName}}</view>
+  <view class="summary-row">
+    <text class="u-muted u-type-body">{{dateLabel}}</text>
+    <text class="summary-emphasis u-text u-type-body">{{timeLabel}}</text>
+  </view>
+  <view class="summary-row summary-row--last">
+    <text class="u-muted u-type-body">{{durationLabel}}</text>
+    <text class="price u-text">{{priceText}}</text>
+  </view>
+</view>

@@ -2,9 +2,26 @@ import logging
 from typing import Any
 
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+class ErrorBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    request_id: str
+    details: dict[str, Any]
+
+
+class ErrorEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error: ErrorBody
 
 
 class AppError(Exception):
@@ -57,6 +74,22 @@ async def app_error_handler(request: Request, error: Exception) -> JSONResponse:
                 "details": error.details,
             }
         },
+    )
+
+
+async def request_validation_error_handler(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    if not isinstance(error, RequestValidationError):
+        raise TypeError(
+            "request_validation_error_handler requires RequestValidationError"
+        )
+    return _response(
+        request,
+        422,
+        "INVALID_ARGUMENT",
+        "请求参数格式不正确，请检查后重试。",
     )
 
 

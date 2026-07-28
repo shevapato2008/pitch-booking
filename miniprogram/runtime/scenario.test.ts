@@ -73,6 +73,29 @@ test("late responses preserve configured completion order", async () => {
   await expect(first).resolves.toMatchObject({ pitches: expect.any(Array) });
 });
 
+test("scenario transport matches and records method, auth, idempotency key, and create body", async () => {
+  const body = { slot_id: "slot-1", checkout_version: 12, contact_name: "张三" };
+  const headers = { Authorization: "Bearer token", "Idempotency-Key": "key-1" };
+  const runtime = scenarioRuntime({
+    ...base,
+    http: [{ match: { path: "/api/v1/orders", method: "POST", headers, body }, fixture: "order-pending" }],
+  });
+
+  await expect(runtime.transport.post("/api/v1/orders", body, headers))
+    .resolves.toMatchObject({ status: "PENDING_PAYMENT" });
+  expect(runtime.requests).toEqual([{ method: "POST", path: "/api/v1/orders", headers, body }]);
+});
+
+test.each([
+  ["wrong method", () => scenarioRuntime({ ...base, http: [{ match: { path: "/api/v1/orders", method: "POST" }, fixture: "order-pending" }] }).transport.get("/api/v1/orders")],
+  ["wrong POST method", () => scenarioRuntime({ ...base, http: [{ match: { path: "/api/v1/orders", method: "GET" }, fixture: "order-pending" }] }).transport.post("/api/v1/orders", {})],
+  ["missing authorization", () => scenarioRuntime({ ...base, http: [{ match: { path: "/api/v1/orders", method: "POST", headers: { Authorization: "Bearer token" } }, fixture: "order-pending" }] }).transport.post("/api/v1/orders", {})],
+  ["missing idempotency key", () => scenarioRuntime({ ...base, http: [{ match: { path: "/api/v1/orders", method: "POST", headers: { "Idempotency-Key": "key-1" } }, fixture: "order-pending" }] }).transport.post("/api/v1/orders", {})],
+  ["missing body", () => scenarioRuntime({ ...base, http: [{ match: { path: "/api/v1/orders", method: "POST", body: { slot_id: "slot-1" } }, fixture: "order-pending" }] }).transport.post("/api/v1/orders", {})],
+] as const)("rejects a request with %s", async (_label, request) => {
+  await expect(request()).rejects.toMatchObject({ code: "NO_HTTP_MATCH" });
+});
+
 test("matches paths and query parameters without a global URL constructor", async () => {
   const originalUrl = globalThis.URL;
   Object.defineProperty(globalThis, "URL", { configurable: true, value: undefined });

@@ -1,0 +1,167 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import assert from "node:assert/strict";
+import test from "node:test";
+
+const execFileAsync = promisify(execFile);
+const buildScript = path.resolve("scripts/build-miniprogram.mjs");
+const auditScript = path.resolve("scripts/audit-production-package.mjs");
+
+async function createBuildProject(t) {
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-development-http-build-"));
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await cp("miniprogram", path.join(projectRoot, "miniprogram"), { recursive: true });
+  await cp("contracts", path.join(projectRoot, "contracts"), { recursive: true });
+  await mkdir(path.join(projectRoot, "artifacts/ui"), { recursive: true });
+  await cp("artifacts/ui/fixtures", path.join(projectRoot, "artifacts/ui/fixtures"), { recursive: true });
+  return projectRoot;
+}
+
+async function build(projectRoot, mode, environment = {}) {
+  return execFileAsync(process.execPath, [buildScript, mode], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      MINIPROGRAM_DEV_BOOKING_SOURCE: "",
+      MINIPROGRAM_API_BASE_URL: "",
+      ...environment,
+    },
+  });
+}
+
+test("development booking source defaults to the existing Fixture composition", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  const developmentOutput = path.join(projectRoot, "dist/miniprogram-development");
+
+  await build(projectRoot, "development");
+
+  const app = await readFile(path.join(developmentOutput, "app.js"), "utf8");
+  assert.match(app, /bootstrapDevelopment\)\(\)/);
+  assert.equal(existsSync(path.join(developmentOutput, "dev/fixture-data.js")), true);
+});
+
+test("development HTTP build injects an explicit localhost API URL into the typed composition root", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  const developmentOutput = path.join(projectRoot, "dist/miniprogram-development");
+
+  await build(projectRoot, "development", {
+    MINIPROGRAM_DEV_BOOKING_SOURCE: "http",
+    MINIPROGRAM_API_BASE_URL: "http://127.0.0.1:8000/",
+  });
+
+  const app = await readFile(path.join(developmentOutput, "app.js"), "utf8");
+  const source = await readFile(path.join(developmentOutput, "dev/http-booking-source.js"), "utf8");
+  assert.match(app, /bootstrapDevelopment\)\(\{\s*source:\s*["']http["']/s);
+  assert.match(app, /apiBaseUrl:\s*["']http:\/\/127\.0\.0\.1:8000["']/);
+  assert.match(source, /createHttpBookingDataSource/);
+  assert.match(source, /createHttpPageDataSource/);
+  assert.match(source, /productionTransport/);
+  assert.match(source, /createSessionStore/);
+  assert.match(source, /dev-login-code/);
+  assert.match(source, /dev-phone-code/);
+});
+
+test("development HTTP mode requires its explicit API base URL", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  await assert.rejects(
+    build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "http" }),
+    /MINIPROGRAM_API_BASE_URL is required for development HTTP mode/,
+  );
+});
+
+for (const apiBaseUrl of [
+  "https://127.0.0.1:8000",
+  "http://0.0.0.0:8000",
+  "http://example.com:8000",
+  "file:///tmp/api",
+  " http://localhost:8000",
+  "http://localhost:8000 ",
+  "http://localhost:8000/a/..",
+  "http://localhost:8000/%2e%2e",
+  "http://user:password@localhost:8000",
+  "http://localhost:8000/path",
+  "http://localhost:8000?query=true",
+  "http://localhost:8000#fragment",
+]) {
+  test(`development HTTP mode rejects non-local HTTP API URL ${apiBaseUrl}`, async (t) => {
+    const projectRoot = await createBuildProject(t);
+    await assert.rejects(
+      build(projectRoot, "development", {
+        MINIPROGRAM_DEV_BOOKING_SOURCE: "http",
+        MINIPROGRAM_API_BASE_URL: apiBaseUrl,
+      }),
+      /development HTTP API base URL must use http on localhost or 127\.0\.0\.1/,
+    );
+  });
+}
+
+test("development rejects an unknown booking source instead of silently falling back", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  await assert.rejects(
+    build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "remote" }),
+    /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http/,
+  );
+});
+
+test("production ignores the development selector and excludes all development code", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  const productionOutput = path.join(projectRoot, "dist/miniprogram-production");
+
+  await build(projectRoot, "production", {
+    MINIPROGRAM_DEV_BOOKING_SOURCE: "http",
+    MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com",
+  });
+
+  assert.equal(existsSync(path.join(productionOutput, "dev")), false);
+  const app = await readFile(path.join(productionOutput, "app.js"), "utf8");
+  assert.doesNotMatch(app, /dev-login-code|dev-phone-code|http-booking-source|bootstrapDevelopment/);
+  await execFileAsync(process.execPath, [
+    auditScript,
+    productionOutput,
+  ]);
+});
+
+for (const apiBaseUrl of [
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+  "http://127.0.0.2:8000",
+  "http://127.255.255.255:8000",
+  "http://[::1]:8000",
+  "http://[0:0:0:0:0:0:0:1]:8000",
+  "http://[::ffff:127.0.0.1]:8000",
+  "http://[::ffff:127.255.255.255]:8000",
+  "http://127.1:8000",
+  "http://2130706433:8000",
+  "http://0x7f000001:8000",
+]) {
+  test(`production rejects a shared loopback API URL ${apiBaseUrl}`, async (t) => {
+    const projectRoot = await createBuildProject(t);
+    await assert.rejects(
+      build(projectRoot, "production", {
+        MINIPROGRAM_DEV_BOOKING_SOURCE: "http",
+        MINIPROGRAM_API_BASE_URL: apiBaseUrl,
+      }),
+      /production MINIPROGRAM_API_BASE_URL must not target a loopback host/,
+    );
+  });
+}
+
+test("invalid production URL fails before touching an existing output", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
+  const sentinel = path.join(outputRoot, "sentinel.txt");
+  await mkdir(outputRoot, { recursive: true });
+  await writeFile(sentinel, "unchanged\n");
+  await writeFile(path.join(projectRoot, "miniprogram/preflight-proof.ts"), 'const broken: number = "wrong";\n');
+
+  await assert.rejects(
+    build(projectRoot, "production", { MINIPROGRAM_API_BASE_URL: "http://127.0.0.2:8000" }),
+    /production MINIPROGRAM_API_BASE_URL must not target a loopback host/,
+  );
+  assert.equal(await readFile(sentinel, "utf8"), "unchanged\n");
+  assert.deepEqual(await readFile(path.join(projectRoot, "miniprogram/preflight-proof.ts"), "utf8"), 'const broken: number = "wrong";\n');
+});

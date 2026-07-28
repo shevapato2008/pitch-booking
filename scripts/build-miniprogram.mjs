@@ -28,28 +28,34 @@ async function build(selectedMode) {
   const projectRoot = process.cwd();
   const sourceRoot = path.resolve(projectRoot, "miniprogram");
   const outputRoot = resolveOutputRoot(selectedMode, projectRoot);
+  const developmentConfig = selectedMode === "development"
+    ? resolveDevelopmentConfig(process.env)
+    : undefined;
+  const productionApiBaseUrl = selectedMode === "production"
+    ? resolveProductionApiBaseUrl(process.env.MINIPROGRAM_API_BASE_URL)
+    : undefined;
 
   await ensureSafeOutputBoundary(projectRoot, outputRoot);
-  const developmentFixtureData = selectedMode === "development"
+  const developmentFixtureData = developmentConfig?.source === "fixture"
     ? await prepareDevelopmentFixtureData(projectRoot)
     : undefined;
   await validateTypeScript(sourceRoot, selectedMode === "development");
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
-  if (selectedMode === "production" && process.env.MINIPROGRAM_API_BASE_URL !== undefined) {
-    await writeProductionRuntimeConfig(outputRoot, process.env.MINIPROGRAM_API_BASE_URL);
+  if (productionApiBaseUrl !== undefined) {
+    await writeProductionRuntimeConfig(outputRoot, productionApiBaseUrl);
   }
-  if (developmentFixtureData) {
-    await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
-    await writeDevelopmentAppBootstrap(sourceRoot, outputRoot);
+  if (developmentConfig) {
+    if (developmentFixtureData) await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
+    await writeDevelopmentAppBootstrap(sourceRoot, outputRoot, developmentConfig);
   } else {
     await writeProductionAppBootstrap(sourceRoot, outputRoot);
   }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
   const pages = selectedMode === "development"
-    ? [...sourceManifest.pages, ...(await findDevelopmentRoutes(sourceRoot))]
+    ? [...new Set([...sourceManifest.pages, ...(await readDevelopmentPreviewRoutes(sourceRoot)), ...(await findDevelopmentRoutes(sourceRoot))])]
     : sourceManifest.pages;
   await writeFile(
     path.join(outputRoot, "app.json"),
@@ -60,6 +66,16 @@ async function build(selectedMode) {
 }
 
 async function writeProductionRuntimeConfig(outputRoot, apiBaseUrl) {
+  const source = `export const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`;
+  const output = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 },
+    fileName: "runtime.ts",
+  }).outputText;
+  await writeFile(path.join(outputRoot, "config/runtime.js"), output);
+}
+
+export function resolveProductionApiBaseUrl(apiBaseUrl) {
+  if (apiBaseUrl === undefined) return undefined;
   let parsed;
   try {
     parsed = new URL(apiBaseUrl);
@@ -69,21 +85,24 @@ async function writeProductionRuntimeConfig(outputRoot, apiBaseUrl) {
   if (!new Set(["http:", "https:"]).has(parsed.protocol)) {
     throw new Error("MINIPROGRAM_API_BASE_URL must use http or https");
   }
-
-  const source = `export const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`;
-  const output = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 },
-    fileName: "runtime.ts",
-  }).outputText;
-  await writeFile(path.join(outputRoot, "config/runtime.js"), output);
+  const hostname = parsed.hostname.toLowerCase();
+  const unqualifiedHostname = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  if (unqualifiedHostname === "localhost" || unqualifiedHostname.endsWith(".localhost")
+    || unqualifiedHostname === "[::1]" || /^127(?:\.|$)/.test(unqualifiedHostname)
+    || /^\[::ffff:7f[0-9a-f]{2}:/.test(unqualifiedHostname)) {
+    throw new Error("production MINIPROGRAM_API_BASE_URL must not target a loopback host");
+  }
+  return apiBaseUrl;
 }
 
-async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot) {
+async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
+  const bootstrap = config.source === "http"
+    ? `bootstrapDevelopment({ source: "http", apiBaseUrl: ${JSON.stringify(config.apiBaseUrl)} });`
+    : "bootstrapDevelopment();";
   const bootstrappedSource = [
-    'import { developmentPageDataSource } from "./dev/page-data";',
-    'import { registerPageDataSource } from "./services/page-data";',
-    "registerPageDataSource(developmentPageDataSource);",
+    'import { bootstrapDevelopment } from "./dev/bootstrap";',
+    bootstrap,
     appSource,
   ].join("\n");
   const output = ts.transpileModule(bootstrappedSource, {
@@ -93,15 +112,81 @@ async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot) {
   await writeFile(path.join(outputRoot, "app.js"), output);
 }
 
+export function resolveDevelopmentConfig(environment) {
+  const source = environment.MINIPROGRAM_DEV_BOOKING_SOURCE || "fixture";
+  if (source === "fixture") return { source };
+  if (source !== "http") {
+    throw new Error("MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http");
+  }
+
+  const apiBaseUrl = environment.MINIPROGRAM_API_BASE_URL;
+  if (!apiBaseUrl) {
+    throw new Error("MINIPROGRAM_API_BASE_URL is required for development HTTP mode");
+  }
+  let parsed;
+  try {
+    parsed = new URL(apiBaseUrl);
+  } catch {
+    throw new Error("development HTTP API base URL must use http on localhost or 127.0.0.1");
+  }
+  const normalizedInputs = new Set([parsed.origin, `${parsed.origin}/`]);
+  if (apiBaseUrl !== apiBaseUrl.trim()
+    || !normalizedInputs.has(apiBaseUrl)
+    || parsed.protocol !== "http:"
+    || !new Set(["localhost", "127.0.0.1"]).has(parsed.hostname)
+    || parsed.username !== "" || parsed.password !== ""
+    || parsed.pathname !== "/" || parsed.search !== "" || parsed.hash !== "") {
+    throw new Error("development HTTP API base URL must use http on localhost or 127.0.0.1");
+  }
+  return { source, apiBaseUrl: parsed.origin };
+}
+
+export async function readDevelopmentPreviewRoutes(sourceRoot) {
+  const manifest = JSON.parse(await readFile(path.join(sourceRoot, "dev/app-pages.json"), "utf8"));
+  if (!manifest || Object.keys(manifest).length !== 1 || !Array.isArray(manifest.pages)
+    || manifest.pages.some((route) => typeof route !== "string")) {
+    throw new Error("Development preview route manifest must contain only a string pages array");
+  }
+  const seen = new Set();
+  for (const route of manifest.pages) {
+    if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(route) || route.startsWith("/")
+      || route.includes("..") || route.includes("?") || route.includes("#")) {
+      throw new Error(`Invalid development preview route: ${route}`);
+    }
+    if (seen.has(route)) throw new Error(`Duplicate development preview route: ${route}`);
+    seen.add(route);
+  }
+  for (const route of manifest.pages) {
+    for (const extension of ["ts", "json", "wxml", "wxss"]) {
+      try {
+        const stat = await lstat(path.join(sourceRoot, `${route}.${extension}`));
+        if (!stat.isFile()) throw new Error("not a file");
+      } catch {
+        throw new Error(`Missing development preview artifact: ${route}.${extension}`);
+      }
+    }
+  }
+  return manifest.pages;
+}
+
 async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
   const bootstrappedSource = [
     'import { API_BASE_URL } from "./config/runtime";',
-    'import { productionRuntime } from "./runtime/production";',
+    'import { productionIdentity, productionPhone, productionRuntime, productionSessionStorage } from "./runtime/production";',
+    'import { registerBookingDataSource } from "./services/booking";',
+    'import { createHttpBookingDataSource } from "./services/http-booking";',
     'import { createHttpPageDataSource } from "./services/http-page-data";',
     'import { registerPageDataSource } from "./services/page-data";',
+    'import { createSessionStore } from "./services/session-store";',
     "const runtime = productionRuntime(API_BASE_URL);",
     "registerPageDataSource(createHttpPageDataSource(runtime.transport, runtime.media));",
+    "registerBookingDataSource(createHttpBookingDataSource({",
+    "  transport: runtime.transport,",
+    "  identity: productionIdentity,",
+    "  phone: productionPhone,",
+    "  sessionStore: createSessionStore(productionSessionStorage),",
+    "}));",
     appSource,
   ].join("\n");
   const output = ts.transpileModule(bootstrappedSource, {
@@ -225,7 +310,14 @@ async function prepareDevelopmentFixtureData(projectRoot) {
   await verifyInputTree(projectRoot, contractsDirectory);
   await verifyInputTree(projectRoot, fixtureDirectory);
 
-  const expectedNames = ["slots-empty", "slots-ready", "venue-ready"];
+  const expectedNames = [
+    "booking-checkout-ready",
+    "order-expired",
+    "order-pending",
+    "slots-empty",
+    "slots-ready",
+    "venue-ready",
+  ];
   const expectedFiles = expectedNames.map((name) => `${name}.json`);
   const actualFiles = (await readdir(fixtureDirectory)).sort();
   if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
@@ -235,6 +327,9 @@ async function prepareDevelopmentFixtureData(projectRoot) {
   await validateContract(path.join(contractsDirectory, "openapi.yaml"));
 
   const canonicalNames = {
+    "booking-checkout-ready": "checkout-ready.json",
+    "order-expired": "order-expired.json",
+    "order-pending": "order-pending.json",
     "slots-empty": "availability-empty.json",
     "slots-ready": "availability-ready.json",
     "venue-ready": "venue-primary.json",

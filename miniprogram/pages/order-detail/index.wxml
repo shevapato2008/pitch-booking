@@ -1,0 +1,14 @@
+<view class="order-page u-page u-text">
+  <view class="hero"><text class="eyebrow u-trust-primary">待支付订单</text><text class="title u-type-title">{{heroTitle}}</text><text wx:if="{{status === 'pending-payment'}}" class="countdown">{{countdown}}</text><text wx:elif="{{showClosingMessage}}" class="u-muted">正在确认服务端关闭状态…</text></view>
+  <view wx:if="{{status === 'loading'}}" class="state-card">正在加载订单…</view>
+  <view wx:elif="{{status === 'route-error'}}" class="state-card state-card--error"><text>{{errorText}}</text></view>
+  <view wx:elif="{{status === 'load-error'}}" class="state-card state-card--error"><text>{{errorText}}</text><button class="retry" bindtap="onRetryLoad">重新加载</button></view>
+  <view wx:elif="{{status === 'closing-error'}}" class="state-card state-card--error"><text>{{errorText}}</text><button wx:if="{{showClosingRetry}}" class="retry" bindtap="onRetryClosing">重试确认</button></view>
+  <view wx:if="{{order}}" class="content">
+    <view class="order-card u-surface u-border u-radius-lg"><text>{{venuePitchLabel}}</text><text class="u-muted">{{timeLabel}} · {{durationLabel}}</text><text class="amount">{{priceText}}</text></view>
+    <view class="order-card u-surface u-border u-radius-lg"><text class="u-muted">联系人</text><text>{{order.contact.name}} · {{order.contact.maskedPhone}}</text><text class="amount">{{priceText}}</text></view>
+    <booking-rules-card lockRule="仅服务端确认后才显示已关闭" cancellationRule="客户端 0 秒不代表库存已释放" priceRule="支付功能将在后续切片接入" />
+    <text wx:if="{{navigationError}}" class="state-card state-card--error">{{navigationError}}</text>
+    <button wx:if="{{showReselect}}" class="retry" bindtap="onReselectSlot">重新选择时段</button>
+  </view>
+</view>

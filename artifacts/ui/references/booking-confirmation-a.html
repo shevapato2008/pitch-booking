@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=375, initial-scale=1">
+  <title>确认订单</title>
+  <style>
+    :root {
+      --background: #f8fafc;
+      --surface: #ffffff;
+      --text: #10243e;
+      --muted: #64748b;
+      --border: #dbe5ec;
+      --brand-trust: #0284c7;
+      --brand-secondary: #0ea5e9;
+      --action-blue: #0369a1;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 375px;
+      height: 812px;
+      margin: 0;
+    }
+
+    body {
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .artifact {
+      position: relative;
+      width: 375px;
+      height: 812px;
+      background: var(--background);
+      overflow: hidden;
+    }
+
+    .status {
+      height: 28px;
+      padding-top: 8px;
+      background: var(--surface);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 50px;
+      margin: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .screen {
+      height: calc(100% - 78px);
+      padding: 14px 14px 94px;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .card {
+      margin-bottom: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 7px 0;
+      font-size: 13px;
+    }
+
+    .muted { color: var(--muted); }
+
+    .price {
+      font-size: 19px;
+      font-weight: 800;
+    }
+
+    .auth {
+      border: 1px dashed #7dd3fc;
+      background: #f0f9ff;
+    }
+
+    .auth-btn {
+      width: 100%;
+      min-height: 44px;
+      padding: 11px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--action-blue);
+      color: var(--surface);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .contact-input {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 8px;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface);
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    .contact-input::placeholder {
+      color: var(--muted);
+      opacity: 1;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .desc {
+      margin: 8px 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .rules {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .footer {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .total {
+      min-width: 92px;
+      font-size: 12px;
+    }
+
+    .cta {
+      flex: 1;
+      min-height: 44px;
+      padding: 13px 8px;
+      border: 0;
+      border-radius: 13px;
+      background: var(--action-blue);
+      color: var(--surface);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 800;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main class="artifact">
+    <div class="status">9:41</div>
+    <h1 class="nav">确认订单</h1>
+    <section class="screen">
+      <article class="card">
+        <h2>星河体育中心 · 5号场</h2>
+        <div class="row"><span class="muted">7月28日 周二</span><b>19:00–21:00</b></div>
+        <div class="row"><span class="muted">2小时</span><span class="price">¥320</span></div>
+      </article>
+      <article class="card auth">
+        <h2>联系人</h2>
+        <button type="button" class="auth-btn">授权微信手机号</button>
+        <label class="sr-only" for="contact-name">联系人姓名</label>
+        <input id="contact-name" class="contact-input" type="text" placeholder="请输入联系人姓名" readonly>
+        <div class="desc">仅用于订单通知与场馆联系</div>
+      </article>
+      <article class="card">
+        <h2>预订须知</h2>
+        <div class="rules">提交后锁定场地 10 分钟 · 开场前 24 小时可取消 · 实际价格以服务端确认为准</div>
+      </article>
+    </section>
+    <footer class="footer">
+      <div class="total">合计<br><span class="price">¥320</span></div>
+      <button type="button" class="cta">确认下单</button>
+    </footer>
+  </main>
+</body>
+</html>

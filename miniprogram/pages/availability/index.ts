@@ -22,6 +22,7 @@ Page({
     viewModel: null as AvailabilityViewModel | null,
     loading: true,
     errorText: "",
+    navigationError: "",
   },
 
   async onLoad(query: Record<string, string | undefined>) {
@@ -93,5 +94,18 @@ Page({
       selectedSlotId,
       viewModel: toAvailabilityViewModel(availability, selectedSlotId),
     });
+  },
+
+  async onConfirmSlot() {
+    const slotId = this.data.selectedSlotId;
+    if (!slotId) return;
+    this.setData({ navigationError: "" });
+    try {
+      await wx.navigateTo({
+        url: `/pages/booking-confirmation/index?slot_id=${encodeURIComponent(slotId)}`,
+      });
+    } catch {
+      this.setData({ navigationError: "页面打开失败，请重试。" });
+    }
   },
 });

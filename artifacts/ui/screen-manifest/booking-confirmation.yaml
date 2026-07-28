@@ -1,0 +1,49 @@
+screens:
+  - id: booking-confirmation
+    route: pages/booking-confirmation/index
+    target_viewport: {width: 375, height: 812}
+    components:
+      - slot-summary-card
+      - contact-card
+      - booking-rules-card
+      - order-submit-bar
+    states:
+      - loading-session
+      - login-error
+      - loading-checkout
+      - checkout-error
+      - phone-required
+      - phone-rejected
+      - phone-unavailable
+      - contact-required
+      - invalid-contact
+      - submittable
+      - submitting
+      - price-changed
+      - slot-unavailable
+      - result-reconciling
+      - created
+    fixtures:
+      - booking-checkout-ready
+    acceptance:
+      - AUTH-02
+      - AUTH-03
+      - ORDER-01
+      - ORDER-02
+  - id: order-detail
+    route: pages/order-detail/index
+    target_viewport: {width: 375, height: 812}
+    components:
+      - slot-summary-card
+      - booking-rules-card
+    states:
+      - pending-payment
+      - closing-payment
+      - closing-error
+      - expired
+    fixtures:
+      - order-pending
+      - order-expired
+    acceptance:
+      - ORDER-03
+      - ORDER-04

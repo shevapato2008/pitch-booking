@@ -4,36 +4,35 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
 from backend.app.main import create_app
-from backend.app.models import Pitch, Slot
-from backend.tests.test_schema_constraints import DATABASE_URL, venue
+from backend.app.models import Order, Pitch, Slot, SlotStatus, User
+from backend.tests.test_schema_constraints import venue
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
-def availability_engine() -> Iterator[Engine]:
-    engine = create_engine(DATABASE_URL)
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", DATABASE_URL)
-    command.downgrade(config, "base")
-    command.upgrade(config, "head")
-    yield engine
-    command.downgrade(config, "base")
-    engine.dispose()
+def availability_engine(pg_engine: Engine) -> Engine:
+    return pg_engine
 
 
 @pytest.fixture
 def availability_client(availability_engine: Engine) -> Iterator[TestClient]:
     with availability_engine.begin() as connection:
-        for table in ("slots", "pitches", "venue_facilities", "venue_images", "venues"):
+        for table in (
+            "slots",
+            "pitches",
+            "venue_facilities",
+            "venue_images",
+            "venues",
+            "users",
+        ):
             connection.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
 
     def database_override() -> Iterator[Session]:
@@ -76,24 +75,45 @@ def add_status_slot(
     pitch_id: uuid.UUID,
     stored_status: str,
     local_day: date,
+    *,
+    already_ended: bool = False,
 ) -> uuid.UUID:
-    starts_at = datetime.combine(local_day, time(9), SHANGHAI).astimezone(UTC)
-    values: dict[str, object] = {}
-    if stored_status == "LOCKED":
-        values = {
-            "locked_until": starts_at + timedelta(minutes=15),
-            "locked_by_order_id": uuid.uuid4(),
-        }
+    local_start = datetime.combine(
+        local_day, time.min if already_ended else time(9), SHANGHAI
+    )
+    starts_at = local_start.astimezone(UTC)
+    ends_at = starts_at + (
+        timedelta(microseconds=1) if already_ended else timedelta(hours=1)
+    )
     with Session(engine) as session:
         row = Slot(
             pitch_id=pitch_id,
             starts_at=starts_at,
-            ends_at=starts_at + timedelta(hours=1),
-            status=stored_status,
+            ends_at=ends_at,
+            status="AVAILABLE" if stored_status == "LOCKED" else stored_status,
             price_cents=36000,
-            **values,
         )
         session.add(row)
+        if stored_status == "LOCKED":
+            session.flush()
+            order = Order(
+                order_number=f"PB-{uuid.uuid4().hex}",
+                user=User(wechat_openid=f"openid-{uuid.uuid4()}"),
+                slot=row,
+                status="PENDING_PAYMENT",
+                price_cents=row.price_cents,
+                contact_name="张三",
+                contact_phone_ciphertext=b"encrypted-snapshot-and-tag",
+                contact_phone_nonce=b"abcdefghijkl",
+                contact_phone_key_version=1,
+                expires_at=starts_at + timedelta(minutes=15),
+                wechat_prepay_id=None,
+            )
+            session.add(order)
+            session.flush()
+            row.status = SlotStatus.LOCKED
+            row.locked_until = order.expires_at
+            row.locked_by_order_id = order.id
         session.commit()
         return row.id
 
@@ -118,7 +138,13 @@ def test_status_projection(
 ) -> None:
     venue_id, pitch_id = seed_venue(availability_engine)
     local_day = datetime.now(SHANGHAI).date() + timedelta(days=day_offset)
-    slot_id = add_status_slot(availability_engine, pitch_id, stored, local_day)
+    slot_id = add_status_slot(
+        availability_engine,
+        pitch_id,
+        stored,
+        local_day,
+        already_ended=expected == "EXPIRED",
+    )
 
     response = availability_client.get(
         f"/api/v1/venues/{venue_id}/availability",
@@ -133,36 +159,31 @@ def test_status_projection(
 
 
 @pytest.mark.parametrize(
-    ("query", "code"),
+    ("date_spec", "pitch_type", "code"),
     [
-        ({"date": "bad", "pitch_type": "FIVE_A_SIDE"}, "INVALID_ARGUMENT"),
-        (
-            {"date": str(datetime.now(SHANGHAI).date()), "pitch_type": "ELEVEN_A_SIDE"},
-            "INVALID_ARGUMENT",
-        ),
-        (
-            {"date": str(datetime.now(SHANGHAI).date()), "pitch_type": "SEVEN_A_SIDE"},
-            "PITCH_TYPE_NOT_SUPPORTED",
-        ),
-        (
-            {
-                "date": str(datetime.now(SHANGHAI).date() + timedelta(days=14)),
-                "pitch_type": "FIVE_A_SIDE",
-            },
-            "DATE_OUT_OF_RANGE",
-        ),
+        ("bad", "FIVE_A_SIDE", "INVALID_ARGUMENT"),
+        (0, "ELEVEN_A_SIDE", "INVALID_ARGUMENT"),
+        (1, "SEVEN_A_SIDE", "PITCH_TYPE_NOT_SUPPORTED"),
+        (15, "FIVE_A_SIDE", "DATE_OUT_OF_RANGE"),
     ],
 )
 def test_query_errors_use_contract_envelope(
     availability_client: TestClient,
     availability_engine: Engine,
-    query: dict[str, str],
+    date_spec: str | int,
+    pitch_type: str,
     code: str,
 ) -> None:
     venue_id, _ = seed_venue(availability_engine)
+    query_date = (
+        date_spec
+        if isinstance(date_spec, str)
+        else str(datetime.now(SHANGHAI).date() + timedelta(days=date_spec))
+    )
 
     response = availability_client.get(
-        f"/api/v1/venues/{venue_id}/availability", params=query
+        f"/api/v1/venues/{venue_id}/availability",
+        params={"date": query_date, "pitch_type": pitch_type},
     )
 
     assert response.status_code == 422

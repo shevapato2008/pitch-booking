@@ -1,0 +1,10 @@
+<view wx:if="{{lockRule || cancellationRule || priceRule}}" class="booking-rules-card u-surface u-border u-radius-lg" aria-label="预订须知">
+  <view class="section-title u-text u-type-subtitle">预订须知</view>
+  <view class="rules u-muted u-type-caption">
+    <text wx:if="{{lockRule}}">{{lockRule}}</text>
+    <text wx:if="{{lockRule && (cancellationRule || priceRule)}}" class="separator" aria-hidden="true"> · </text>
+    <text wx:if="{{cancellationRule}}">{{cancellationRule}}</text>
+    <text wx:if="{{cancellationRule && priceRule}}" class="separator" aria-hidden="true"> · </text>
+    <text wx:if="{{priceRule}}">{{priceRule}}</text>
+  </view>
+</view>

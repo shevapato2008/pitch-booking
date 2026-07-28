@@ -1,10 +1,67 @@
 import { expect, jest, test } from "@jest/globals";
 
 import {
+  createProductionIdentity,
+  productionIdentity,
   productionMedia,
   productionNative,
+  productionPhone,
+  productionSessionStorage,
   productionTransport,
 } from "./production";
+
+test("rejects a wx.login call that never invokes a callback", async () => {
+  jest.useFakeTimers();
+  try {
+    setWx({ login: jest.fn(() => undefined) });
+    const pending = createProductionIdentity({ timeoutMs: 50 }).login();
+    const rejection = expect(pending).rejects.toMatchObject({ code: "LOGIN_FAILED" });
+    await jest.advanceTimersByTimeAsync(50);
+    await rejection;
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("binds the single session-store boundary to synchronous wx storage", () => {
+  const getStorageSync = jest.fn((key: string) => {
+    void key;
+    return { token: "token", expiresAt: "2099-01-01T00:00:00Z" };
+  });
+  const setStorageSync = jest.fn();
+  const removeStorageSync = jest.fn();
+  setWx({ getStorageSync, setStorageSync, removeStorageSync });
+
+  expect(productionSessionStorage.get("session-key")).toEqual({ token: "token", expiresAt: "2099-01-01T00:00:00Z" });
+  productionSessionStorage.set("session-key", { token: "next", expiresAt: "2099-02-01T00:00:00Z" });
+  productionSessionStorage.remove("session-key");
+
+  expect(getStorageSync).toHaveBeenCalledWith("session-key");
+  expect(setStorageSync).toHaveBeenCalledWith("session-key", { token: "next", expiresAt: "2099-02-01T00:00:00Z" });
+  expect(removeStorageSync).toHaveBeenCalledWith("session-key");
+});
+
+test("normalizes wx.login and getPhoneNumber event codes and rejects failure or empty codes", async () => {
+  const login = jest.fn((options: WechatMiniprogram.LoginOption) => options.success?.({ code: "login-code", errMsg: "login:ok" }));
+  setWx({ login });
+  await expect(productionIdentity.login()).resolves.toEqual({ code: "login-code" });
+  expect(productionPhone.normalizeEvent({ code: "phone-code", errMsg: "getPhoneNumber:ok" }))
+    .toEqual({ code: "phone-code" });
+  expect(() => productionPhone.normalizeEvent({ code: "", errMsg: "getPhoneNumber:ok" }))
+    .toThrow("PHONE_REJECTED");
+  expect(() => productionPhone.normalizeEvent({ code: "phone-code", errMsg: "getPhoneNumber:fail user deny" }))
+    .toThrow("PHONE_REJECTED");
+  expect(() => productionPhone.normalizeEvent({ code: "phone-code", errMsg: "getPhoneNumber:ok forged-suffix" }))
+    .toThrow("PHONE_REJECTED");
+  expect(() => productionPhone.normalizeEvent({ code: "x".repeat(257), errMsg: "getPhoneNumber:ok" }))
+    .toThrow("PHONE_REJECTED");
+  expect(productionPhone.normalizeEvent({ code: "x".repeat(256), errMsg: "getPhoneNumber:ok" }))
+    .toEqual({ code: "x".repeat(256) });
+
+  const failedLogin = jest.fn((options: WechatMiniprogram.LoginOption) => options.fail?.({ errMsg: "login:fail", errno: -1 }));
+  setWx({ login: failedLogin });
+  await expect(productionIdentity.login()).rejects.toMatchObject({ code: "LOGIN_FAILED" });
+});
 
 test("uses an eight-second GET request and resolves only 2xx response data", async () => {
   const request = captureRequest();
@@ -16,6 +73,28 @@ test("uses an eight-second GET request and resolves only 2xx response data", asy
     url: "https://api.example/venues/primary",
     method: "GET",
     timeout: 8000,
+  }));
+});
+
+test("forwards GET headers and POST body/headers through the frozen transport boundary", async () => {
+  const getRequest = captureRequest();
+  const transport = productionTransport("https://api.example");
+  const getResponse = transport.get("/resource", { Authorization: "Bearer token" });
+  getRequest.options.success?.(requestResult(200, { method: "get" }));
+  await expect(getResponse).resolves.toEqual({ method: "get" });
+  expect(getRequest.call).toHaveBeenCalledWith(expect.objectContaining({
+    method: "GET",
+    header: { Authorization: "Bearer token" },
+  }));
+
+  const postRequest = captureRequest();
+  const postResponse = transport.post("/resource", { code: "one-time" }, { "Idempotency-Key": "key-1" });
+  postRequest.options.success?.(requestResult(201, { method: "post" }));
+  await expect(postResponse).resolves.toEqual({ method: "post" });
+  expect(postRequest.call).toHaveBeenCalledWith(expect.objectContaining({
+    method: "POST",
+    data: { code: "one-time" },
+    header: { "Idempotency-Key": "key-1" },
   }));
 });
 

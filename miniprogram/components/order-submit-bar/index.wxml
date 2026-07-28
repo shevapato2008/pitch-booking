@@ -1,0 +1,16 @@
+<view class="order-submit-bar u-surface">
+  <view class="total">
+    <text class="total-label u-muted u-type-caption">合计</text>
+    <text class="total-price u-text">{{price}}</text>
+  </view>
+  <view class="action-area">
+    <button
+      class="submit-button u-control u-radius-md {{disabled || loading || reconciling ? 'submit-button--disabled' : ''}}"
+      disabled="{{disabled || loading || reconciling}}"
+      loading="{{loading}}"
+      bindtap="onSubmit"
+      hover-class="submit-button--pressed"
+      aria-label="{{reconciling ? '正在确认下单结果' : (loading ? '正在提交订单' : (disabledReason && disabled ? disabledReason : cta))}}"
+    >{{reconciling ? '正在确认结果' : (loading ? '正在提交' : (disabledReason && disabled ? disabledReason : cta))}}</button>
+  </view>
+</view>

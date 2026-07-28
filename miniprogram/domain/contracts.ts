@@ -96,3 +96,36 @@ export interface Availability {
   pitchGroups: PitchGroup[];
   generatedAt: string;
 }
+
+export interface SessionTokenView {
+  readonly token: string;
+  readonly expiresAt: string;
+  readonly user: {
+    readonly userId: string;
+    readonly maskedPhone: string | null;
+  };
+}
+
+export interface PhoneVerificationView {
+  readonly maskedPhone: string;
+  readonly verifiedAt: string;
+}
+
+export type ApiErrorCode =
+  | "INVALID_ARGUMENT"
+  | "PITCH_TYPE_NOT_SUPPORTED"
+  | "DATE_OUT_OF_RANGE"
+  | "VENUE_NOT_FOUND"
+  | "SERVICE_UNAVAILABLE"
+  | "INTERNAL_ERROR"
+  | "PRIMARY_VENUE_MISCONFIGURED"
+  | "AUTH_REQUIRED"
+  | "WECHAT_LOGIN_FAILED"
+  | "PHONE_AUTH_REQUIRED"
+  | "PHONE_AUTH_UNAVAILABLE"
+  | "PHONE_AUTH_FAILED"
+  | "INVALID_CONTACT"
+  | "SLOT_NOT_AVAILABLE"
+  | "PRICE_CHANGED"
+  | "IDEMPOTENCY_KEY_REUSED"
+  | "ORDER_NOT_FOUND";

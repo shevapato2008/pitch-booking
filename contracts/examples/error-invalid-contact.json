@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "INVALID_CONTACT",
+    "message": "联系人姓名无效，请检查后重试。",
+    "request_id": "req-contract-invalid-contact",
+    "details": {
+      "field": "contact_name"
+    }
+  }
+}

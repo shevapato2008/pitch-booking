@@ -3,28 +3,21 @@ from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
 from backend.app.main import create_app
 from backend.app.models import Pitch, VenueFacility, VenueImage
-from backend.tests.test_schema_constraints import DATABASE_URL, venue
+from backend.tests.test_schema_constraints import venue
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
-def venue_engine() -> Iterator[Engine]:
-    engine = create_engine(DATABASE_URL)
-    migration_config = Config("alembic.ini")
-    migration_config.set_main_option("sqlalchemy.url", DATABASE_URL)
-    command.downgrade(migration_config, "base")
-    command.upgrade(migration_config, "head")
-    yield engine
-    command.downgrade(migration_config, "base")
-    engine.dispose()
+def venue_engine(pg_engine: Engine) -> Engine:
+    return pg_engine
 
 
 @pytest.fixture

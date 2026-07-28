@@ -1,0 +1,77 @@
+@import "../../styles/tokens.wxss";
+
+.contact-card {
+  box-sizing: border-box;
+  padding: 28rpx;
+  border-style: dashed;
+  border-color: #7DD3FC;
+  background: #F0F9FF;
+}
+.section-title {
+  margin-bottom: 20rpx;
+  line-height: 1.4;
+  font-weight: 700;
+}
+.phone-button {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 20rpx 24rpx;
+  color: #FFFFFF;
+  font-size: 26rpx;
+  line-height: 1.4;
+  font-weight: 700;
+  background: #0369A1;
+  border: 0;
+}
+.phone-button::after,
+.text-button::after { border: 0; }
+.phone-button--pressed,
+.text-button--pressed { opacity: 0.76; }
+.phone-row {
+  display: flex;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 0 4rpx;
+}
+.masked-phone { font-weight: 700; }
+.text-button {
+  flex: none;
+  margin: 0;
+  padding: 0 16rpx;
+  color: #0369A1;
+  font-size: 26rpx;
+  line-height: 88rpx;
+  background: transparent;
+  border: 0;
+}
+.field-label {
+  margin-top: 16rpx;
+  margin-bottom: 8rpx;
+  font-weight: 600;
+}
+.contact-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 20rpx 22rpx;
+  color: #10243E;
+  font-size: 26rpx;
+  line-height: 1.4;
+  background: #FFFFFF;
+  border: 2rpx solid #DBE5EC;
+}
+.contact-input--without-label { margin-top: 16rpx; }
+.contact-input--error { border-color: #B91C1C; }
+.field-error {
+  display: block;
+  margin-top: 8rpx;
+  color: #B91C1C;
+  line-height: 1.5;
+}
+.privacy-note {
+  display: block;
+  margin-top: 16rpx;
+  line-height: 1.55;
+}

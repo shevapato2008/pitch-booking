@@ -19,6 +19,9 @@ const allowList = new Map([
   ['venue-primary.json', 'venue-ready.json'],
   ['availability-ready.json', 'slots-ready.json'],
   ['availability-empty.json', 'slots-empty.json'],
+  ['checkout-ready.json', 'booking-checkout-ready.json'],
+  ['order-pending.json', 'order-pending.json'],
+  ['order-expired.json', 'order-expired.json'],
 ]);
 
 function resolveSelection(argument, repositoryDirectory, examplesDirectory) {

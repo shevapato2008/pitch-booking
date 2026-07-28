@@ -1,43 +1,15 @@
-import os
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.models import Pitch, Slot, Venue, VenueFacility, VenueImage
 
-DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test",
-)
-
-
-@pytest.fixture(scope="session")
-def pg_engine() -> Iterator[Engine]:
-    engine = create_engine(DATABASE_URL)
-    migration_config = Config("alembic.ini")
-    migration_config.set_main_option("sqlalchemy.url", DATABASE_URL)
-    command.downgrade(migration_config, "base")
-    command.upgrade(migration_config, "head")
-    yield engine
-    command.downgrade(migration_config, "base")
-    engine.dispose()
-
-
-@pytest.fixture
-def pg_session(pg_engine: Engine) -> Iterator[Session]:
-    with pg_engine.begin() as connection:
-        for table in ("slots", "pitches", "venue_facilities", "venue_images", "venues"):
-            connection.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
-    with Session(pg_engine) as session:
-        yield session
-        session.rollback()
+pytestmark = pytest.mark.integration
 
 
 def venue(**overrides: object) -> Venue:
@@ -131,7 +103,7 @@ def test_adjacent_slots_are_allowed_but_overlap_is_rejected(pg_session: Session)
 @pytest.mark.parametrize(
     ("status", "locked_until", "order_id", "valid"),
     [
-        ("LOCKED", datetime(2026, 7, 24, 11, tzinfo=UTC), uuid.uuid4(), True),
+        ("LOCKED", datetime(2026, 7, 24, 11, tzinfo=UTC), uuid.uuid4(), False),
         ("LOCKED", None, None, False),
         ("AVAILABLE", datetime(2026, 7, 24, 11, tzinfo=UTC), uuid.uuid4(), False),
         ("BOOKED", None, None, True),
@@ -197,9 +169,11 @@ def test_declared_indexes_and_overlap_constraint_exist(pg_engine: Engine) -> Non
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("slots")} >= {
         "uq_slots_pitch_time"
     }
-    exclusions = pg_engine.connect().execute(
-        text(
-            "SELECT conname FROM pg_constraint WHERE contype = 'x' AND conrelid = 'slots'::regclass"
+    with pg_engine.connect() as connection:
+        exclusions = connection.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE contype = 'x' AND conrelid = 'slots'::regclass"
+            )
         )
-    )
-    assert {row[0] for row in exclusions} == {"ex_slots_no_overlap"}
+        assert {row[0] for row in exclusions} == {"ex_slots_no_overlap"}

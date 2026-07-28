@@ -293,7 +293,14 @@ test("the approved fixture and scenario inventories are closed and internally re
     .map((name) => name.slice(0, -5))
     .sort();
 
-  assert.deepEqual(fixtureIds, ["slots-empty", "slots-ready", "venue-ready"]);
+  assert.deepEqual(fixtureIds, [
+    "booking-checkout-ready",
+    "order-expired",
+    "order-pending",
+    "slots-empty",
+    "slots-ready",
+    "venue-ready",
+  ]);
   assert.deepEqual(scenarioIds, [
     "slots-empty",
     "slots-first-load-error",
@@ -318,7 +325,7 @@ test("the approved fixture and scenario inventories are closed and internally re
     collectFixtureReferences(scenario, fixtureReferences);
   }
 
-  assert.deepEqual([...fixtureReferences].sort(), fixtureIds);
+  assert.deepEqual([...fixtureReferences].sort(), ["slots-empty", "slots-ready", "venue-ready"]);
   for (const id of fixtureReferences) assertFile(`artifacts/ui/fixtures/${id}.json`);
 });
 
@@ -392,11 +399,21 @@ test("golden metadata schema requires reproducibility fields", () => {
   assert.equal(schema.additionalProperties, false);
 
   const appRoutes = JSON.parse(readFileSync("miniprogram/app.json", "utf8")).pages;
+  const goldenRoutes = readYaml(manifestPath).screens.map((screen) => screen.route);
+  const bookingRoutes = readYaml(
+    "artifacts/ui/screen-manifest/booking-confirmation.yaml",
+  ).screens.map((screen) => screen.route);
   const scenarioIds = readdirSync(scenarioRoot)
     .filter((name) => name.endsWith(".yaml"))
     .map((name) => name.slice(0, -5))
     .sort();
-  assert.deepEqual(schema.properties.route.enum, appRoutes);
+  assert.deepEqual(schema.properties.route.enum, goldenRoutes);
+  assert.deepEqual(
+    bookingRoutes,
+    appRoutes.filter((route) => !goldenRoutes.includes(route)),
+    "production routes outside the browsing golden matrix must be covered by the booking manifest",
+  );
+  assert.deepEqual([...new Set([...goldenRoutes, ...bookingRoutes])], appRoutes);
   assert.deepEqual([...schema.properties.scenario.enum].sort(), scenarioIds);
 
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);

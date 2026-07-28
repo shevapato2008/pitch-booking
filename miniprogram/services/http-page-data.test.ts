@@ -23,6 +23,7 @@ test("loads and decodes the primary venue and its availability over HTTP", async
       paths.push(path);
       return (path === "/api/v1/venues/primary" ? venuePayload : availabilityPayload) as T;
     },
+    async post<T>(): Promise<T> { throw new Error("unused"); },
   };
   const media: MediaSourceResolver = {
     resolve: (role, source) => `${role}:${source}`,
@@ -50,6 +51,7 @@ test("rejects malformed API data at the HTTP boundary", async () => {
     async get<T>(): Promise<T> {
       return { id: "not-a-venue" } as T;
     },
+    async post<T>(): Promise<T> { throw new Error("unused"); },
   };
 
   await expect(createHttpPageDataSource(transport).getVenue())

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "IDEMPOTENCY_KEY_REUSED",
+    "message": "该幂等键已用于其他请求，请生成新键后重试。",
+    "request_id": "req-contract-idempotency-key-reused",
+    "details": {}
+  }
+}

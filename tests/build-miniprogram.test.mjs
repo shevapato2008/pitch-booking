@@ -124,7 +124,7 @@ test("Scenario runtime is development-only", async (t) => {
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-transport.js")), true);
 });
 
-test("development app registers page data before source app code can open a page", async (t) => {
+test("development app invokes its single composition root before source app code can open a page", async (t) => {
   const projectRoot = await createBuildProject(
     'const venueFallbackUrl = "https://example.test/cover.png";\nPage({ route: "direct-availability" });\nApp({});\n',
   );
@@ -132,21 +132,19 @@ test("development app registers page data before source app code can open a page
 
   await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
   const app = await readFile(path.join(projectRoot, "dist/miniprogram-development/app.js"), "utf8");
-  const devImport = app.indexOf('require("./dev/page-data")');
-  const registryImport = app.indexOf('require("./services/page-data")');
-  const registration = app.indexOf("registerPageDataSource");
+  const devImport = app.indexOf('require("./dev/bootstrap")');
+  const registration = app.indexOf("bootstrapDevelopment");
   const venueFallback = app.indexOf("venueFallbackUrl");
   const directPage = app.indexOf("Page({");
 
   assert.notEqual(devImport, -1);
-  assert.notEqual(registryImport, -1);
-  assert.equal(devImport < registryImport, true);
-  assert.equal(registryImport < registration, true);
+  assert.notEqual(registration, -1);
+  assert.equal(devImport < registration, true);
   assert.equal(registration < venueFallback, true);
   assert.equal(registration < directPage, true);
 });
 
-test("production app registers HTTP page data without development or Fixture references", async (t) => {
+test("production app registers HTTP page and booking data before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -157,7 +155,33 @@ test("production app registers HTTP page data without development or Fixture ref
   assert.match(app, /productionRuntime/);
   assert.match(app, /createHttpPageDataSource/);
   assert.match(app, /registerPageDataSource/);
+  assert.match(app, /createHttpBookingDataSource/);
+  assert.match(app, /registerBookingDataSource/);
+  assert.match(app, /createSessionStore/);
+  assert.match(app, /productionSessionStorage/);
+  assert.match(app, /productionPhone/);
+  assert.equal(app.indexOf("registerPageDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.doesNotMatch(app, /dev\/|fixture/i);
+});
+
+test("real production build emits all four production routes as native artifacts", async (t) => {
+  await execFileAsync(process.execPath, [buildScript, "production"]);
+  const outputRoot = path.resolve("dist/miniprogram-production");
+  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
+  const routes = [
+    "pages/venue/index",
+    "pages/availability/index",
+    "pages/booking-confirmation/index",
+    "pages/order-detail/index",
+  ];
+  assert.deepEqual(manifest.pages, routes);
+  for (const route of routes) {
+    for (const extension of ["js", "json", "wxml", "wxss"])
+      assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
+    assert.equal(existsSync(path.join(outputRoot, `${route}.ts`)), false);
+  }
 });
 
 test("production API URL override changes generated production config only", async (t) => {
@@ -169,16 +193,16 @@ test("production API URL override changes generated production config only", asy
 
   await execFileAsync(process.execPath, [buildScript, "production"], {
     cwd: projectRoot,
-    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "http://127.0.0.1:8080" },
+    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com" },
   });
   await execFileAsync(process.execPath, [buildScript, "development"], {
     cwd: projectRoot,
-    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "http://127.0.0.1:8080" },
+    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com" },
   });
 
   assert.match(
     await readFile(path.join(projectRoot, "dist/miniprogram-production/config/runtime.js"), "utf8"),
-    /http:\/\/127\.0\.0\.1:8080/,
+    /https:\/\/api\.modelstella\.com/,
   );
   assert.match(
     await readFile(path.join(projectRoot, "dist/miniprogram-development/config/runtime.js"), "utf8"),
@@ -204,6 +228,11 @@ test("built development Scenario runtime is self-contained without URL", async (
   const projectRoot = await createBuildProject("");
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await cp("miniprogram/runtime", path.join(projectRoot, "miniprogram/runtime"), { recursive: true });
+  await mkdir(path.join(projectRoot, "miniprogram/services"));
+  await writeFile(
+    path.join(projectRoot, "miniprogram/services/session-store.ts"),
+    "export interface SessionStorage { get(key: string): unknown; set(key: string, value: unknown): void; remove(key: string): void; }\n",
+  );
   await cp("miniprogram/dev/fixture-transport.ts", path.join(projectRoot, "miniprogram/dev/fixture-transport.ts"));
   if (existsSync("miniprogram/dev/fixture-data.ts")) {
     await cp("miniprogram/dev/fixture-data.ts", path.join(projectRoot, "miniprogram/dev/fixture-data.ts"));
@@ -221,7 +250,10 @@ test("built development Scenario runtime is self-contained without URL", async (
       const assert = require("node:assert/strict");
       const { scenarioRuntime } = require("./runtime/scenario.js");
       const { FIXTURE_DATA } = require("./dev/fixture-data.js");
-      const names = ["venue-ready", "slots-ready", "slots-empty"];
+      const names = [
+        "venue-ready", "slots-ready", "slots-empty",
+        "booking-checkout-ready", "order-pending", "order-expired",
+      ];
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
       assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"]), true);
@@ -323,6 +355,7 @@ async function createBuildProjectIn(projectRoot, source) {
   const sourceRoot = path.join(projectRoot, "miniprogram");
   await mkdir(sourceRoot, { recursive: true });
   await mkdir(path.join(sourceRoot, "dev"));
+  await writeFile(path.join(sourceRoot, "dev/app-pages.json"), '{"pages":[]}\n');
   await cp("contracts", path.join(projectRoot, "contracts"), { recursive: true });
   await mkdir(path.join(projectRoot, "artifacts/ui"), { recursive: true });
   await cp("artifacts/ui/fixtures", path.join(projectRoot, "artifacts/ui/fixtures"), { recursive: true });

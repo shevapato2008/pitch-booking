@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Pitch Booking Venue Browsing API
+  title: Pitch Booking API
   version: 1.0.0
-  description: Wire contract for browsing the primary venue and its availability.
+  description: Wire contract for venue browsing, WeChat authentication, checkout, and orders.
 paths:
   /api/v1/health:
     get:
@@ -198,7 +198,417 @@ paths:
               examples:
                 ServiceUnavailable:
                   externalValue: './examples/error-service-unavailable.json'
+  /api/v1/auth/wechat/session:
+    post:
+      operationId: createWeChatSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WeChatCodeRequest'
+      responses:
+        '200':
+          description: Business session created from a WeChat login code.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeChatSession'
+              examples:
+                WeChatSession:
+                  externalValue: './examples/wechat-session.json'
+        '422':
+          description: Request body is invalid.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INVALID_ARGUMENT
+              examples:
+                InvalidArgument:
+                  externalValue: './examples/error-invalid-argument.json'
+        '502':
+          description: WeChat login code exchange failed.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: WECHAT_LOGIN_FAILED
+              examples:
+                WeChatLoginFailed:
+                  externalValue: './examples/error-wechat-login-failed.json'
+  /api/v1/auth/wechat/phone:
+    post:
+      operationId: verifyWeChatPhone
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WeChatCodeRequest'
+      responses:
+        '200':
+          description: Phone number verified from a WeChat phone code.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhoneVerification'
+              examples:
+                PhoneVerified:
+                  externalValue: './examples/phone-verified.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '422':
+          description: Request body is invalid.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INVALID_ARGUMENT
+              examples:
+                InvalidArgument:
+                  externalValue: './examples/error-invalid-argument.json'
+        '502':
+          description: WeChat phone code exchange failed.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: PHONE_AUTH_FAILED
+              examples:
+                PhoneAuthFailed:
+                  externalValue: './examples/error-phone-auth-failed.json'
+        '503':
+          description: WeChat phone capability is unavailable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: PHONE_AUTH_UNAVAILABLE
+              examples:
+                PhoneAuthUnavailable:
+                  externalValue: './examples/error-phone-auth-unavailable.json'
+  /api/v1/slots/{slot_id}/checkout:
+    get:
+      operationId: getSlotCheckout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current authoritative checkout snapshot for the slot and user.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Checkout'
+              examples:
+                CheckoutReady:
+                  externalValue: './examples/checkout-ready.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '409':
+          description: Slot is no longer available for checkout.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: SLOT_NOT_AVAILABLE
+              examples:
+                SlotNotAvailable:
+                  externalValue: './examples/error-slot-not-available.json'
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '200':
+          description: An existing pending order for this user and slot is returned.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+              examples:
+                ExistingPendingOrder:
+                  externalValue: './examples/order-pending.json'
+        '201':
+          description: Pending order created and slot locked.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+              examples:
+                PendingOrderCreated:
+                  externalValue: './examples/order-pending.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '409':
+          description: Slot, checkout version, or idempotency key conflicts with current state.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - oneOf:
+                      - $ref: '#/components/schemas/PriceChangedError'
+                      - $ref: '#/components/schemas/OrderConflictError'
+              examples:
+                SlotNotAvailable:
+                  externalValue: './examples/error-slot-not-available.json'
+                PriceChanged:
+                  externalValue: './examples/error-price-changed.json'
+                IdempotencyKeyReused:
+                  externalValue: './examples/error-idempotency-key-reused.json'
+        '422':
+          description: A verified phone or a valid contact name is required.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            enum: [PHONE_AUTH_REQUIRED, INVALID_CONTACT]
+              examples:
+                PhoneAuthRequired:
+                  externalValue: './examples/error-phone-auth-required.json'
+                InvalidContact:
+                  externalValue: './examples/error-invalid-contact.json'
+  /api/v1/orders/{order_id}:
+    get:
+      operationId: getOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order detail owned by the authenticated user.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+              examples:
+                PendingOrder:
+                  externalValue: './examples/order-pending.json'
+                ExpiredOrder:
+                  externalValue: './examples/order-expired.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '404':
+          description: Order does not exist or is not owned by this user.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: ORDER_NOT_FOUND
+              examples:
+                OrderNotFound:
+                  externalValue: './examples/error-order-not-found.json'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
   headers:
     RequestId:
       description: Identifier used to trace the request.
@@ -461,6 +871,273 @@ components:
         generated_at:
           type: string
           format: date-time
+    WeChatCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 256
+    SessionUser:
+      type: object
+      additionalProperties: false
+      required: [id, masked_phone, last_contact_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        masked_phone:
+          type: [string, 'null']
+          pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'
+        last_contact_name:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 40
+    WeChatSession:
+      type: object
+      additionalProperties: false
+      required: [session_token, expires_at, user]
+      properties:
+        session_token:
+          type: string
+          minLength: 43
+          maxLength: 256
+          description: Opaque bearer token containing at least 256 bits of randomness.
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/SessionUser'
+    PhoneVerification:
+      type: object
+      additionalProperties: false
+      required: [masked_phone, verified_at]
+      properties:
+        masked_phone:
+          type: string
+          pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'
+        verified_at:
+          type: string
+          format: date-time
+    CheckoutVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+    PhysicalPitch:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+    CheckoutContact:
+      type: object
+      additionalProperties: false
+      required: [masked_phone, last_contact_name]
+      properties:
+        masked_phone:
+          type: [string, 'null']
+          pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'
+        last_contact_name:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 40
+    Checkout:
+      type: object
+      additionalProperties: false
+      required:
+        - slot_id
+        - venue
+        - pitch
+        - date
+        - starts_at
+        - ends_at
+        - duration_minutes
+        - price_cents
+        - currency
+        - available
+        - cancellation_summary
+        - lock_duration_seconds
+        - contact
+        - checkout_version
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+        venue:
+          $ref: '#/components/schemas/CheckoutVenue'
+        pitch:
+          $ref: '#/components/schemas/PhysicalPitch'
+        date:
+          type: string
+          format: date
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+          minimum: 1
+        price_cents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: CNY
+        available:
+          type: boolean
+          const: true
+        cancellation_summary:
+          type: string
+          minLength: 1
+        lock_duration_seconds:
+          type: integer
+          minimum: 1
+        contact:
+          $ref: '#/components/schemas/CheckoutContact'
+        checkout_version:
+          type: integer
+          minimum: 1
+    CreateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [slot_id, checkout_version, contact_name]
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+        checkout_version:
+          type: integer
+          minimum: 1
+        contact_name:
+          type: string
+          minLength: 1
+          maxLength: 40
+    OrderVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, address, latitude, longitude, customer_service_phone]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        customer_service_phone:
+          type: string
+          minLength: 1
+    OrderContact:
+      type: object
+      additionalProperties: false
+      required: [name, masked_phone]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        masked_phone:
+          type: string
+          pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'
+    OrderDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - order_number
+        - status
+        - slot_id
+        - venue
+        - pitch
+        - starts_at
+        - ends_at
+        - duration_minutes
+        - price_cents
+        - currency
+        - contact
+        - created_at
+        - expires_at
+        - expired_at
+        - cancellation_summary
+        - closing_payment
+        - detail_path
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_number:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, EXPIRED]
+        slot_id:
+          type: string
+          format: uuid
+        venue:
+          $ref: '#/components/schemas/OrderVenue'
+        pitch:
+          $ref: '#/components/schemas/PhysicalPitch'
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+          minimum: 1
+        price_cents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: CNY
+        contact:
+          $ref: '#/components/schemas/OrderContact'
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        expired_at:
+          type: [string, 'null']
+          format: date-time
+        cancellation_summary:
+          type: string
+          minLength: 1
+        closing_payment:
+          type: boolean
+        detail_path:
+          type: string
+          pattern: '^/api/v1/orders/[0-9a-f-]{36}$'
     ErrorDetails:
       type: object
       additionalProperties: false
@@ -477,6 +1154,8 @@ components:
         end_date:
           type: string
           format: date
+        current_checkout:
+          $ref: '#/components/schemas/Checkout'
     Error:
       type: object
       additionalProperties: false
@@ -492,6 +1171,16 @@ components:
             - SERVICE_UNAVAILABLE
             - INTERNAL_ERROR
             - PRIMARY_VENUE_MISCONFIGURED
+            - AUTH_REQUIRED
+            - WECHAT_LOGIN_FAILED
+            - PHONE_AUTH_REQUIRED
+            - PHONE_AUTH_UNAVAILABLE
+            - PHONE_AUTH_FAILED
+            - INVALID_CONTACT
+            - SLOT_NOT_AVAILABLE
+            - PRICE_CHANGED
+            - IDEMPOTENCY_KEY_REUSED
+            - ORDER_NOT_FOUND
         message:
           type: string
           minLength: 1
@@ -507,3 +1196,38 @@ components:
       properties:
         error:
           $ref: '#/components/schemas/Error'
+    PriceChangedErrorDetails:
+      type: object
+      additionalProperties: false
+      required: [current_checkout]
+      properties:
+        current_checkout:
+          $ref: '#/components/schemas/Checkout'
+    PriceChangedError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code, details]
+              properties:
+                code:
+                  type: string
+                  enum: [PRICE_CHANGED]
+                details:
+                  $ref: '#/components/schemas/PriceChangedErrorDetails'
+    OrderConflictError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  enum: [SLOT_NOT_AVAILABLE, IDEMPOTENCY_KEY_REUSED]

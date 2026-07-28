@@ -1,25 +1,294 @@
-from typing import Literal, Self
+import base64
+import binascii
+import inspect
+import re
+from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import InitErrorDetails
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_CANONICAL_POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*", re.ASCII)
+_HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
+_PUBLIC_API_URL_ADAPTER = TypeAdapter(AnyHttpUrl)
+_SETTINGS_CONTROL_NAMES = frozenset(
+    name
+    for name in inspect.signature(BaseSettings.__init__).parameters
+    if name.startswith("_") and name != "__pydantic_self__"
+)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        case_sensitive=False,
+        extra="ignore",
+        validate_default=True,
+    )
 
     app_env: Literal["development", "test", "staging", "production"] = "development"
     app_revision: str = "development"
-    database_url: str = "sqlite+pysqlite:///:memory:"
-    public_api_base_url: AnyHttpUrl | None = None
+    database_url: str = Field(default="sqlite+pysqlite:///:memory:", repr=False)
+    public_api_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
     public_image_hosts: tuple[str, ...] = ()
+    wechat_provider: Literal["development", "real"] = "development"
+    wechat_app_id: str | None = None
+    wechat_app_secret: SecretStr | None = Field(default=None, repr=False)
+    phone_encryption_key_base64: SecretStr | None = Field(default=None, repr=False)
+    phone_encryption_key_version: int | None = None
+    session_ttl_days: int = 30
 
-    @model_validator(mode="after")
-    def require_deploy_configuration(self) -> Self:
-        if self.app_env in {"staging", "production"}:
-            if self.database_url == "sqlite+pysqlite:///:memory:":
-                raise ValueError("DATABASE_URL is required for staging and production")
-            if self.public_api_base_url is None:
-                raise ValueError("PUBLIC_API_BASE_URL is required for staging and production")
-            if not self.public_image_hosts:
+    def __init__(self, **values: object) -> None:
+        known_fields = {name.casefold(): name for name in type(self).model_fields}
+        normalized: dict[str, object] = {}
+        controls: dict[str, object] = {}
+        errors: list[InitErrorDetails] = []
+        strict_integer_fields = {"phone_encryption_key_version", "session_ttl_days"}
+
+        for supplied_name, supplied_value in values.items():
+            if supplied_name in _SETTINGS_CONTROL_NAMES:
+                controls[supplied_name] = supplied_value
+                continue
+            canonical_name = known_fields.get(supplied_name.casefold())
+            if canonical_name is None or canonical_name in normalized:
+                errors.append(
+                    InitErrorDetails(
+                        type="extra_forbidden",
+                        loc=(supplied_name,),
+                        input="<redacted>",
+                    )
+                )
+                continue
+            if canonical_name == "database_url" and type(supplied_value) is not str:
+                errors.append(self._input_error(canonical_name, "DATABASE_URL is invalid"))
+                continue
+            if (
+                canonical_name in strict_integer_fields
+                and supplied_value is not None
+                and type(supplied_value) is not int
+            ):
+                errors.append(
+                    self._input_error(
+                        canonical_name,
+                        f"{canonical_name.upper()} must be an integer",
+                    )
+                )
+                continue
+            normalized[canonical_name] = supplied_value
+
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        super().__init__(
+            **cast(dict[str, Any], controls),
+            **cast(dict[str, Any], normalized),
+        )
+
+    @model_validator(mode="before")
+    @classmethod
+    def redact_secret_inputs(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        sanitized = value.copy()
+        for key in (
+            "wechat_app_secret",
+            "WECHAT_APP_SECRET",
+            "phone_encryption_key_base64",
+            "PHONE_ENCRYPTION_KEY_BASE64",
+        ):
+            secret = sanitized.get(key)
+            if secret is None or isinstance(secret, SecretStr):
+                continue
+            sanitized[key] = SecretStr(secret if type(secret) is str else "")
+        return sanitized
+
+    @field_validator("wechat_app_secret")
+    @classmethod
+    def validate_wechat_app_secret(
+        cls, value: SecretStr | None, info: ValidationInfo
+    ) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            if cls._is_deployed(info):
+                raise ValueError("WECHAT_APP_SECRET is required for staging and production")
+            if value is not None:
+                raise ValueError("WECHAT_APP_SECRET must not be empty")
+        return value
+
+    @field_validator("phone_encryption_key_base64")
+    @classmethod
+    def validate_phone_encryption_key(
+        cls, value: SecretStr | None, info: ValidationInfo
+    ) -> SecretStr | None:
+        if value is None:
+            if cls._is_deployed(info):
+                raise ValueError(
+                    "PHONE_ENCRYPTION_KEY_BASE64 is required for staging and production"
+                )
+            return None
+        encoded_key = value.get_secret_value()
+        try:
+            key = base64.b64decode(encoded_key, validate=True)
+        except (binascii.Error, UnicodeEncodeError, ValueError) as error:
+            raise ValueError("PHONE_ENCRYPTION_KEY_BASE64 must be valid Base64") from error
+        if len(key) != 32:
+            raise ValueError("PHONE_ENCRYPTION_KEY_BASE64 must decode to exactly 32 bytes")
+        if base64.b64encode(key).decode("ascii") != encoded_key:
+            raise ValueError("PHONE_ENCRYPTION_KEY_BASE64 must be canonical Base64")
+        return value
+
+    @field_validator("phone_encryption_key_version", mode="before")
+    @classmethod
+    def validate_phone_encryption_key_version(
+        cls, value: object, info: ValidationInfo
+    ) -> int | None:
+        if value is None and cls._is_deployed(info):
+            raise ValueError("PHONE_ENCRYPTION_KEY_VERSION is required for staging and production")
+        if value is None:
+            return None
+        return cls._parse_positive_integer(value, "PHONE_ENCRYPTION_KEY_VERSION")
+
+    @field_validator("session_ttl_days", mode="before")
+    @classmethod
+    def validate_session_ttl_days(cls, value: object) -> int:
+        return cls._parse_positive_integer(value, "SESSION_TTL_DAYS")
+
+    @field_validator("database_url")
+    @classmethod
+    def require_deploy_database(cls, value: str, info: ValidationInfo) -> str:
+        if not cls._is_deployed(info):
+            return value
+
+        normalized = value.strip()
+        try:
+            parsed = urlsplit(normalized)
+            host = parsed.hostname
+            port = parsed.port
+        except ValueError:
+            raise cls._safe_value_error("database_url", "DATABASE_URL is invalid") from None
+        database = parsed.path.removeprefix("/")
+        if (
+            not normalized
+            or value != normalized
+            or any(character.isspace() for character in normalized)
+            or not normalized.startswith("postgresql+psycopg://")
+            or parsed.scheme != "postgresql+psycopg"
+            or host is None
+            or cls._normalize_host(host) is None
+            or port is not None
+            and not 0 < port <= 65535
+            or not database
+            or "/" in database
+        ):
+            raise cls._safe_value_error("database_url", "DATABASE_URL is invalid")
+        return normalized
+
+    @field_validator("public_api_base_url", mode="before")
+    @classmethod
+    def require_deploy_public_url(cls, value: object, info: ValidationInfo) -> AnyHttpUrl | None:
+        if cls._is_deployed(info) and value is None:
+            raise cls._safe_value_error(
+                "public_api_base_url",
+                "PUBLIC_API_BASE_URL is required for staging and production",
+            )
+        if value is None:
+            return None
+        try:
+            validated = _PUBLIC_API_URL_ADAPTER.validate_python(value)
+        except (TypeError, ValueError, ValidationError):
+            raise cls._safe_value_error(
+                "public_api_base_url", "PUBLIC_API_BASE_URL is invalid"
+            ) from None
+        if validated.username is not None or validated.password is not None:
+            raise cls._safe_value_error(
+                "public_api_base_url", "PUBLIC_API_BASE_URL must not contain credentials"
+            )
+        return validated
+
+    @field_validator("public_image_hosts")
+    @classmethod
+    def require_deploy_image_hosts(
+        cls, value: tuple[str, ...], info: ValidationInfo
+    ) -> tuple[str, ...]:
+        if not value:
+            if cls._is_deployed(info):
                 raise ValueError("PUBLIC_IMAGE_HOSTS is required for staging and production")
-        return self
+            return value
+
+        normalized_hosts: list[str] = []
+        for host in value:
+            normalized = cls._normalize_host(host)
+            if normalized is None:
+                raise cls._safe_value_error(
+                    "public_image_hosts", "PUBLIC_IMAGE_HOSTS contains an invalid host"
+                )
+            normalized_hosts.append(normalized)
+        return tuple(normalized_hosts)
+
+    @field_validator("wechat_provider")
+    @classmethod
+    def require_real_deploy_provider(
+        cls, value: Literal["development", "real"], info: ValidationInfo
+    ) -> Literal["development", "real"]:
+        if cls._is_deployed(info) and value != "real":
+            raise ValueError("WECHAT_PROVIDER must be real for staging and production")
+        return value
+
+    @field_validator("wechat_app_id")
+    @classmethod
+    def require_deploy_app_id(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if cls._is_deployed(info) and (value is None or not value.strip()):
+            raise ValueError("WECHAT_APP_ID is required for staging and production")
+        return value
+
+    @staticmethod
+    def _is_deployed(info: ValidationInfo) -> bool:
+        return info.data.get("app_env") in {"staging", "production"}
+
+    @staticmethod
+    def _normalize_host(value: str) -> str | None:
+        normalized = value.strip().lower()
+        if not normalized or len(normalized) > 253:
+            return None
+        labels = normalized.split(".")
+        if any(_HOST_LABEL.fullmatch(label) is None for label in labels):
+            return None
+        return normalized
+
+    @staticmethod
+    def _parse_positive_integer(value: object, field_name: str) -> int:
+        if type(value) is int:
+            parsed = value
+        elif type(value) is str and _CANONICAL_POSITIVE_INTEGER.fullmatch(value) is not None:
+            parsed = int(value)
+        else:
+            raise Settings._safe_value_error(
+                field_name.lower(), f"{field_name} must be a positive canonical integer"
+            )
+        if parsed <= 0:
+            raise Settings._safe_value_error(field_name.lower(), f"{field_name} must be positive")
+        return parsed
+
+    @staticmethod
+    def _safe_value_error(field_name: str, message: str) -> ValidationError:
+        return ValidationError.from_exception_data(
+            "Settings",
+            [Settings._input_error(field_name, message)],
+        )
+
+    @staticmethod
+    def _input_error(field_name: str, message: str) -> InitErrorDetails:
+        return InitErrorDetails(
+            type="value_error",
+            loc=(field_name,),
+            input="<redacted>",
+            ctx={"error": ValueError(message)},
+        )

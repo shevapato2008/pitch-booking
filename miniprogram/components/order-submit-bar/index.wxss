@@ -1,0 +1,48 @@
+@import "../../styles/tokens.wxss";
+
+.order-submit-bar {
+  box-sizing: border-box;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 28rpx calc(32rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid #DBE5EC;
+}
+.total {
+  display: flex;
+  min-width: 184rpx;
+  flex-direction: column;
+  gap: 2rpx;
+}
+.total-label,
+.total-price { display: block; }
+.total-price {
+  font-size: 38rpx;
+  line-height: 1.25;
+  font-weight: 800;
+}
+.action-area { min-width: 0; flex: 1; }
+.submit-button {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 20rpx 16rpx;
+  color: #FFFFFF;
+  font-size: 28rpx;
+  line-height: 1.4;
+  font-weight: 800;
+  background: #0369A1;
+  border: 0;
+}
+.submit-button::after { border: 0; }
+.submit-button--disabled {
+  color: #FFFFFF;
+  background: #94A3B8;
+  opacity: 1;
+}
+.submit-button--pressed { opacity: 0.76; }

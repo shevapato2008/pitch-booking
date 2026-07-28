@@ -1,0 +1,13 @@
+@import "../../styles/tokens.wxss";
+
+.booking-rules-card {
+  box-sizing: border-box;
+  padding: 28rpx;
+}
+.section-title {
+  margin-bottom: 20rpx;
+  line-height: 1.4;
+  font-weight: 700;
+}
+.rules { line-height: 1.6; }
+.separator { white-space: nowrap; }

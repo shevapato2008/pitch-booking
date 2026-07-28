@@ -9,9 +9,9 @@ import addFormats from 'ajv-formats';
 
 const defaultContractPath = fileURLToPath(new URL('../contracts/openapi.yaml', import.meta.url));
 
-const attachment = (pathName, status, key) => ({
+const attachment = (pathName, status, key, method = 'get') => ({
   path: pathName,
-  method: 'get',
+  method,
   status,
   key,
 });
@@ -39,7 +39,11 @@ const exampleMap = [
     filename: 'error-invalid-argument.json',
     reference: './examples/error-invalid-argument.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '422', 'InvalidArgument')],
+    attachments: [
+      attachment('/api/v1/venues/{venue_id}/availability', '422', 'InvalidArgument'),
+      attachment('/api/v1/auth/wechat/session', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/auth/wechat/phone', '422', 'InvalidArgument', 'post'),
+    ],
   },
   {
     filename: 'error-pitch-type-not-supported.json',
@@ -84,6 +88,108 @@ const exampleMap = [
     schema: 'ErrorEnvelope',
     attachments: [attachment('/api/v1/venues/primary', '500', 'PrimaryVenueMisconfigured')],
   },
+  {
+    filename: 'wechat-session.json',
+    reference: './examples/wechat-session.json',
+    schema: 'WeChatSession',
+    attachments: [attachment('/api/v1/auth/wechat/session', '200', 'WeChatSession', 'post')],
+  },
+  {
+    filename: 'phone-verified.json',
+    reference: './examples/phone-verified.json',
+    schema: 'PhoneVerification',
+    attachments: [attachment('/api/v1/auth/wechat/phone', '200', 'PhoneVerified', 'post')],
+  },
+  {
+    filename: 'checkout-ready.json',
+    reference: './examples/checkout-ready.json',
+    schema: 'Checkout',
+    attachments: [attachment('/api/v1/slots/{slot_id}/checkout', '200', 'CheckoutReady')],
+  },
+  {
+    filename: 'order-pending.json',
+    reference: './examples/order-pending.json',
+    schema: 'OrderDetail',
+    attachments: [
+      attachment('/api/v1/orders', '200', 'ExistingPendingOrder', 'post'),
+      attachment('/api/v1/orders', '201', 'PendingOrderCreated', 'post'),
+      attachment('/api/v1/orders/{order_id}', '200', 'PendingOrder'),
+    ],
+  },
+  {
+    filename: 'order-expired.json',
+    reference: './examples/order-expired.json',
+    schema: 'OrderDetail',
+    attachments: [attachment('/api/v1/orders/{order_id}', '200', 'ExpiredOrder')],
+  },
+  {
+    filename: 'error-auth-required.json',
+    reference: './examples/error-auth-required.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/auth/wechat/phone', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/slots/{slot_id}/checkout', '401', 'AuthRequired'),
+      attachment('/api/v1/orders', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/orders/{order_id}', '401', 'AuthRequired'),
+    ],
+  },
+  {
+    filename: 'error-wechat-login-failed.json',
+    reference: './examples/error-wechat-login-failed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/auth/wechat/session', '502', 'WeChatLoginFailed', 'post')],
+  },
+  {
+    filename: 'error-phone-auth-required.json',
+    reference: './examples/error-phone-auth-required.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders', '422', 'PhoneAuthRequired', 'post')],
+  },
+  {
+    filename: 'error-phone-auth-unavailable.json',
+    reference: './examples/error-phone-auth-unavailable.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/auth/wechat/phone', '503', 'PhoneAuthUnavailable', 'post')],
+  },
+  {
+    filename: 'error-phone-auth-failed.json',
+    reference: './examples/error-phone-auth-failed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/auth/wechat/phone', '502', 'PhoneAuthFailed', 'post')],
+  },
+  {
+    filename: 'error-invalid-contact.json',
+    reference: './examples/error-invalid-contact.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders', '422', 'InvalidContact', 'post')],
+  },
+  {
+    filename: 'error-slot-not-available.json',
+    reference: './examples/error-slot-not-available.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/slots/{slot_id}/checkout', '409', 'SlotNotAvailable'),
+      attachment('/api/v1/orders', '409', 'SlotNotAvailable', 'post'),
+    ],
+  },
+  {
+    filename: 'error-price-changed.json',
+    reference: './examples/error-price-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders', '409', 'PriceChanged', 'post')],
+  },
+  {
+    filename: 'error-idempotency-key-reused.json',
+    reference: './examples/error-idempotency-key-reused.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders', '409', 'IdempotencyKeyReused', 'post')],
+  },
+  {
+    filename: 'error-order-not-found.json',
+    reference: './examples/error-order-not-found.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}', '404', 'OrderNotFound')],
+  },
 ];
 
 const inlineExampleMap = [
@@ -103,11 +209,26 @@ const requiredErrorCodes = new Set([
   'SERVICE_UNAVAILABLE',
   'INTERNAL_ERROR',
   'PRIMARY_VENUE_MISCONFIGURED',
+  'AUTH_REQUIRED',
+  'WECHAT_LOGIN_FAILED',
+  'PHONE_AUTH_REQUIRED',
+  'PHONE_AUTH_UNAVAILABLE',
+  'PHONE_AUTH_FAILED',
+  'INVALID_CONTACT',
+  'SLOT_NOT_AVAILABLE',
+  'PRICE_CHANGED',
+  'IDEMPOTENCY_KEY_REUSED',
+  'ORDER_NOT_FOUND',
 ]);
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
   ['/api/v1/venues/primary', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/availability', new Set(['get'])],
+  ['/api/v1/auth/wechat/session', new Set(['post'])],
+  ['/api/v1/auth/wechat/phone', new Set(['post'])],
+  ['/api/v1/slots/{slot_id}/checkout', new Set(['get'])],
+  ['/api/v1/orders', new Set(['post'])],
+  ['/api/v1/orders/{order_id}', new Set(['get'])],
 ]);
 const httpMethods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
@@ -120,6 +241,14 @@ function assertSorted(items, selector, label) {
     if (selector(items[index - 1]) > selector(items[index])) {
       fail(`${label} must be sorted at index ${index}`);
     }
+  }
+}
+
+function assertExactSet(actual, expected, label) {
+  const missing = [...expected].filter((item) => !actual.has(item));
+  const unexpected = [...actual].filter((item) => !expected.has(item));
+  if (missing.length > 0 || unexpected.length > 0) {
+    fail(`${label} differs: missing ${missing.join(', ') || 'none'}; unexpected ${unexpected.join(', ') || 'none'}`);
   }
 }
 
@@ -153,9 +282,16 @@ function validateOperationMatrix(contract) {
     const methods = httpMethods.filter((method) => pathItem[method] !== undefined);
     const expectedMethods = [...expectedOperations.get(pathName)].sort();
     if (!isDeepStrictEqual(methods.sort(), expectedMethods)) {
-      fail(`operation method matrix differs at ${pathName}: expected GET only; found ${methods.join(', ')}`);
+      const expectedLabel = expectedMethods.map((method) => method.toUpperCase()).join(', ');
+      fail(`operation method matrix differs at ${pathName}: expected ${expectedLabel} only; found ${methods.join(', ')}`);
     }
   }
+}
+
+function validateErrorCodeEnum(contract) {
+  const declaredCodes = contract.components?.schemas?.Error?.properties?.code?.enum;
+  if (!Array.isArray(declaredCodes)) fail('Error.code.enum must be an array');
+  assertExactSet(new Set(declaredCodes), requiredErrorCodes, 'Error.code.enum');
 }
 
 function findAllAttachments(contract) {
@@ -339,6 +475,7 @@ export async function validateContract(contractPath = defaultContractPath) {
   contractPath = path.resolve(contractPath);
   const rawContract = await SwaggerParser.parse(contractPath);
   validateOperationMatrix(rawContract);
+  validateErrorCodeEnum(rawContract);
   findAllAttachments(rawContract);
   await SwaggerParser.validate(contractPath);
   const contract = await SwaggerParser.dereference(contractPath);
@@ -376,15 +513,16 @@ export async function validateContract(contractPath = defaultContractPath) {
     if (!contract.components.schemas[mapping.schema]) {
       fail(`${mapping.filename}: mapped schema ${mapping.schema} does not exist`);
     }
-    const schemaAttachment = mapping.attachments[0];
-    const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
-      .responses[schemaAttachment.status].content?.['application/json']?.schema;
-    if (!responseSchema) {
-      fail(`${mapping.filename}: mapped response has no application/json schema at ${attachmentIdentity(schemaAttachment)}`);
-    }
-    const validate = ajv.compile(responseSchema);
-    if (!validate(mapping.value)) {
-      fail(`${mapping.filename}: schema ${mapping.schema} failed: ${ajv.errorsText(validate.errors, { separator: '; ' })}`);
+    for (const schemaAttachment of mapping.attachments) {
+      const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
+        .responses[schemaAttachment.status].content?.['application/json']?.schema;
+      if (!responseSchema) {
+        fail(`${mapping.filename}: mapped response has no application/json schema at ${attachmentIdentity(schemaAttachment)}`);
+      }
+      const validate = ajv.compile(responseSchema);
+      if (!validate(mapping.value)) {
+        fail(`${mapping.filename}: response schema failed at ${attachmentIdentity(schemaAttachment)}: ${ajv.errorsText(validate.errors, { separator: '; ' })}`);
+      }
     }
 
     if (mapping.schema === 'Venue') validateVenueBusinessRules(mapping.value, mapping.filename);
@@ -398,8 +536,7 @@ export async function validateContract(contractPath = defaultContractPath) {
     }
   }
 
-  const missingCodes = [...requiredErrorCodes].filter((code) => !coveredErrorCodes.has(code));
-  if (missingCodes.length > 0) fail(`missing required error example codes: ${missingCodes.join(', ')}`);
+  assertExactSet(coveredErrorCodes, requiredErrorCodes, 'canonical error example codes');
 
   return { contract, exampleCount: exampleMap.length };
 }
