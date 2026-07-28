@@ -15,6 +15,9 @@ const fixtureMappings = [
   ["availability-empty.json", "slots-empty.json"],
   ["checkout-ready.json", "booking-checkout-ready.json"],
   ["order-pending.json", "order-pending.json"],
+  ["payment-confirming.json", "order-payment-confirming.json"],
+  ["order-confirmed.json", "order-confirmed.json"],
+  ["order-payment-exception.json", "order-payment-exception.json"],
   ["order-expired.json", "order-expired.json"],
 ];
 
@@ -59,6 +62,26 @@ test("development build packages the complete closed fixture inventory", async (
   `;
   assert.match(fixtureModule, /deepFreeze/);
   await execFileAsync(process.execPath, ["--input-type=commonjs", "--eval", verification]);
+});
+
+test("order fixtures expose explicit payment authority instead of importing visual scenarios", async () => {
+  const expected = {
+    "order-pending.json": ["PENDING_PAYMENT", null, false, false, null],
+    "order-payment-confirming.json": ["PENDING_PAYMENT", "CONFIRMING", true, false, null],
+    "order-confirmed.json": ["CONFIRMED", "SUCCESS", false, false, "2026-07-27T12:04:00+08:00"],
+    "order-payment-exception.json": ["PAYMENT_EXCEPTION", "UNKNOWN", false, false, null],
+  };
+  for (const [filename, authority] of Object.entries(expected)) {
+    const fixture = JSON.parse(await readFile(`artifacts/ui/fixtures/${filename}`, "utf8"));
+    const order = filename === "order-payment-confirming.json" ? fixture.order : fixture;
+    assert.deepEqual([
+      order.status,
+      order.payment_state,
+      order.payment_confirming,
+      order.closing_payment,
+      order.paid_at,
+    ], authority, filename);
+  }
 });
 
 test("hand-written booking preview data has been removed", () => {

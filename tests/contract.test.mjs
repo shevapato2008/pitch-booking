@@ -93,7 +93,7 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen eight-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen ten-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
@@ -102,10 +102,79 @@ test('OpenAPI document validates and exposes the frozen eight-path operation mat
     '/api/v1/health',
     '/api/v1/orders',
     '/api/v1/orders/{order_id}',
+    '/api/v1/orders/{order_id}/pay',
+    '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
     '/api/v1/slots/{slot_id}/checkout',
     '/api/v1/venues/primary',
     '/api/v1/venues/{venue_id}/availability',
   ]);
+  assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
+});
+
+test('payment creation and reconciliation expose exact authority-aware response matrices', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const pay = contract.paths['/api/v1/orders/{order_id}/pay'].post;
+  const reconcile = contract.paths['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile'].post;
+
+  assert.deepEqual(Object.keys(pay.responses), ['200', '201', '202', '401', '404', '409', '503']);
+  assert.deepEqual(Object.keys(reconcile.responses), ['200', '202', '401', '404']);
+  assert.deepEqual(
+    Object.keys(pay.responses['200'].content['application/json'].examples),
+    ['PrepayReplayed'],
+  );
+  assert.deepEqual(
+    Object.keys(pay.responses['201'].content['application/json'].examples),
+    ['PrepayCreated'],
+  );
+  assert.deepEqual(
+    Object.keys(pay.responses['202'].content['application/json'].examples),
+    ['PaymentConfirming'],
+  );
+  assert.deepEqual(
+    Object.keys(reconcile.responses['200'].content['application/json'].examples),
+    ['ConfirmedOrder'],
+  );
+  assert.deepEqual(
+    Object.keys(reconcile.responses['202'].content['application/json'].examples),
+    ['PaymentConfirming'],
+  );
+  assert.equal(
+    pay.responses['202'].content['application/json'].schema.$ref,
+    '#/components/schemas/PaymentConfirmingResponse',
+  );
+  assert.equal(
+    reconcile.responses['202'].content['application/json'].schema.$ref,
+    '#/components/schemas/PaymentConfirmingResponse',
+  );
+});
+
+test('OrderDetail freezes payment authority fields for every visible order state', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const order = contract.components.schemas.OrderDetail;
+
+  assert.equal(order.additionalProperties, false);
+  assert.deepEqual(order.properties.status.enum, [
+    'PENDING_PAYMENT',
+    'CONFIRMED',
+    'EXPIRED',
+    'PAYMENT_EXCEPTION',
+  ]);
+  assert.deepEqual(order.properties.payment_state.type, ['string', 'null']);
+  assert.deepEqual(order.properties.payment_state.enum, [
+    'CREATING',
+    'PREPAY_CREATED',
+    'CONFIRMING',
+    'SUCCESS',
+    'CLOSED',
+    'UNKNOWN',
+    null,
+  ]);
+  assert.deepEqual(order.properties.payment_confirming, { type: 'boolean' });
+  assert.deepEqual(order.properties.closing_payment, { type: 'boolean' });
+  assert.deepEqual(order.properties.paid_at, { type: ['string', 'null'], format: 'date-time' });
+  for (const property of ['payment_state', 'payment_confirming', 'closing_payment', 'paid_at']) {
+    assert.equal(order.required.includes(property), true, property);
+  }
 });
 
 test('primary venue example uses a stable UUID and contains no placeholder values', async () => {
@@ -196,7 +265,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 25 JSON examples/i);
+  assert.match(stdout, /validated 32 JSON examples/i);
   assert.equal(stderr, '');
 });
 
@@ -419,7 +488,7 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
   const temporaryDirectory = await createTemporaryRepository();
   try {
     const { stdout, stderr } = await runTemporaryGenerator(temporaryDirectory);
-    assert.match(stdout, /generated 6 fixtures/i);
+    assert.match(stdout, /generated 9 fixtures/i);
     assert.equal(stderr, '');
     const mappings = [
       ['venue-primary.json', 'venue-ready.json'],
@@ -427,6 +496,9 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
       ['availability-empty.json', 'slots-empty.json'],
       ['checkout-ready.json', 'booking-checkout-ready.json'],
       ['order-pending.json', 'order-pending.json'],
+      ['payment-confirming.json', 'order-payment-confirming.json'],
+      ['order-confirmed.json', 'order-confirmed.json'],
+      ['order-payment-exception.json', 'order-payment-exception.json'],
       ['order-expired.json', 'order-expired.json'],
     ];
     assert.deepEqual(
@@ -451,6 +523,9 @@ test('checked-in fixtures already match normalized canonical examples byte-for-b
     ['availability-empty.json', 'slots-empty.json'],
     ['checkout-ready.json', 'booking-checkout-ready.json'],
     ['order-pending.json', 'order-pending.json'],
+    ['payment-confirming.json', 'order-payment-confirming.json'],
+    ['order-confirmed.json', 'order-confirmed.json'],
+    ['order-payment-exception.json', 'order-payment-exception.json'],
     ['order-expired.json', 'order-expired.json'],
   ];
   for (const [sourceName, fixtureName] of mappings) {
@@ -537,6 +612,9 @@ test('fixture publication rolls back every file after a deterministic second-pub
     'slots-empty.json',
     'booking-checkout-ready.json',
     'order-pending.json',
+    'order-payment-confirming.json',
+    'order-confirmed.json',
+    'order-payment-exception.json',
     'order-expired.json',
   ];
   try {

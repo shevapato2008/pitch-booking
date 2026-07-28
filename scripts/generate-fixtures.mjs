@@ -21,6 +21,9 @@ const allowList = new Map([
   ['availability-empty.json', 'slots-empty.json'],
   ['checkout-ready.json', 'booking-checkout-ready.json'],
   ['order-pending.json', 'order-pending.json'],
+  ['payment-confirming.json', 'order-payment-confirming.json'],
+  ['order-confirmed.json', 'order-confirmed.json'],
+  ['order-payment-exception.json', 'order-payment-exception.json'],
   ['order-expired.json', 'order-expired.json'],
 ]);
 

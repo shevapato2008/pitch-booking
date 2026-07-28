@@ -28,6 +28,9 @@
   "expires_at": "2026-07-27T12:10:00+08:00",
   "expired_at": "2026-07-27T12:10:01+08:00",
   "cancellation_summary": "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。",
+  "payment_state": null,
+  "payment_confirming": false,
   "closing_payment": false,
+  "paid_at": null,
   "detail_path": "/api/v1/orders/00000000-0000-4000-8000-000000000041"
 }

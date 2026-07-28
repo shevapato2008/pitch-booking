@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "PAYMENT_CREATE_FAILED",
+    "message": "暂时无法创建支付，请稍后重试。",
+    "request_id": "req-contract-payment-create-failed",
+    "details": {}
+  }
+}

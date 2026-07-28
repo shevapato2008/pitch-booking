@@ -314,7 +314,10 @@ async function prepareDevelopmentFixtureData(projectRoot) {
 
   const expectedNames = [
     "booking-checkout-ready",
+    "order-confirmed",
     "order-expired",
+    "order-payment-confirming",
+    "order-payment-exception",
     "order-pending",
     "slots-empty",
     "slots-ready",
@@ -330,7 +333,10 @@ async function prepareDevelopmentFixtureData(projectRoot) {
 
   const canonicalNames = {
     "booking-checkout-ready": "checkout-ready.json",
+    "order-confirmed": "order-confirmed.json",
     "order-expired": "order-expired.json",
+    "order-payment-confirming": "payment-confirming.json",
+    "order-payment-exception": "order-payment-exception.json",
     "order-pending": "order-pending.json",
     "slots-empty": "availability-empty.json",
     "slots-ready": "availability-ready.json",

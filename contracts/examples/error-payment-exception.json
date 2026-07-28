@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "PAYMENT_EXCEPTION",
+    "message": "支付状态异常，请重新查询。",
+    "request_id": "req-contract-payment-exception",
+    "details": {}
+  }
+}

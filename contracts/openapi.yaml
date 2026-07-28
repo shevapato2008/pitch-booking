@@ -563,6 +563,10 @@ paths:
                   externalValue: './examples/order-pending.json'
                 ExpiredOrder:
                   externalValue: './examples/order-expired.json'
+                ConfirmedOrder:
+                  externalValue: './examples/order-confirmed.json'
+                PaymentExceptionOrder:
+                  externalValue: './examples/order-payment-exception.json'
         '401':
           description: Business session is missing, invalid, or expired.
           headers:
@@ -585,6 +589,231 @@ paths:
                   externalValue: './examples/error-auth-required.json'
         '404':
           description: Order does not exist or is not owned by this user.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: ORDER_NOT_FOUND
+              examples:
+                OrderNotFound:
+                  externalValue: './examples/error-order-not-found.json'
+  /api/v1/orders/{order_id}/pay:
+    post:
+      operationId: createPayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 128
+      responses:
+        '200':
+          description: An existing prepay result is replayed, or the order was already confirmed.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PaymentPrepayCreatedResponse'
+                  - $ref: '#/components/schemas/PaymentAlreadyConfirmedResponse'
+              examples:
+                PrepayReplayed:
+                  externalValue: './examples/payment-prepay-created.json'
+        '201':
+          description: A new prepay was created and can be launched in the cashier.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPrepayCreatedResponse'
+              examples:
+                PrepayCreated:
+                  externalValue: './examples/payment-prepay-created.json'
+        '202':
+          description: Payment authority remains unresolved and no launch parameters are available.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentConfirmingResponse'
+              examples:
+                PaymentConfirming:
+                  externalValue: './examples/payment-confirming.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '404':
+          description: Order does not exist or is not owned by this user.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: ORDER_NOT_FOUND
+              examples:
+                OrderNotFound:
+                  externalValue: './examples/error-order-not-found.json'
+        '409':
+          description: The order cannot enter or resume payment in its current state.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            enum: [ORDER_EXPIRED, PAYMENT_EXCEPTION, IDEMPOTENCY_KEY_REUSED]
+              examples:
+                OrderExpired:
+                  externalValue: './examples/error-order-expired.json'
+                PaymentException:
+                  externalValue: './examples/error-payment-exception.json'
+                IdempotencyKeyReused:
+                  externalValue: './examples/error-idempotency-key-reused.json'
+        '503':
+          description: The payment provider definitively rejected prepay creation.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: PAYMENT_CREATE_FAILED
+              examples:
+                PaymentCreateFailed:
+                  externalValue: './examples/error-payment-create-failed.json'
+  /api/v1/orders/{order_id}/payments/{payment_id}/reconcile:
+    post:
+      operationId: reconcilePayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: payment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment authority reached a terminal state; the latest order projection is returned.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+              examples:
+                ConfirmedOrder:
+                  externalValue: './examples/order-confirmed.json'
+        '202':
+          description: Payment authority remains unresolved and the confirming projection is returned.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentConfirmingResponse'
+              examples:
+                PaymentConfirming:
+                  externalValue: './examples/payment-confirming.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '404':
+          description: Order or payment does not exist, or is not owned by this user.
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
@@ -1028,6 +1257,71 @@ components:
           type: string
           minLength: 1
           maxLength: 40
+    PaymentLaunchParams:
+      type: object
+      additionalProperties: false
+      required: [timeStamp, nonceStr, package, signType, paySign]
+      properties:
+        timeStamp:
+          type: string
+          minLength: 1
+        nonceStr:
+          type: string
+          minLength: 1
+        package:
+          type: string
+          pattern: '^prepay_id=.+$'
+        signType:
+          type: string
+          const: RSA
+        paySign:
+          type: string
+          minLength: 1
+    PaymentPrepayCreatedResponse:
+      type: object
+      additionalProperties: false
+      required: [order_id, payment_id, status, launch_params]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        payment_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: PREPAY_CREATED
+        launch_params:
+          $ref: '#/components/schemas/PaymentLaunchParams'
+    PaymentConfirmingResponse:
+      type: object
+      additionalProperties: false
+      required: [order_id, payment_id, status, order]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        payment_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: PAYMENT_CONFIRMING
+        order:
+          $ref: '#/components/schemas/OrderDetail'
+    PaymentAlreadyConfirmedResponse:
+      type: object
+      additionalProperties: false
+      required: [order_id, status, order]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: ALREADY_CONFIRMED
+        order:
+          $ref: '#/components/schemas/OrderDetail'
     OrderVenue:
       type: object
       additionalProperties: false
@@ -1085,7 +1379,10 @@ components:
         - expires_at
         - expired_at
         - cancellation_summary
+        - payment_state
+        - payment_confirming
         - closing_payment
+        - paid_at
         - detail_path
       properties:
         id:
@@ -1096,7 +1393,7 @@ components:
           minLength: 1
         status:
           type: string
-          enum: [PENDING_PAYMENT, EXPIRED]
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION]
         slot_id:
           type: string
           format: uuid
@@ -1133,8 +1430,16 @@ components:
         cancellation_summary:
           type: string
           minLength: 1
+        payment_state:
+          type: [string, 'null']
+          enum: [CREATING, PREPAY_CREATED, CONFIRMING, SUCCESS, CLOSED, UNKNOWN, null]
+        payment_confirming:
+          type: boolean
         closing_payment:
           type: boolean
+        paid_at:
+          type: [string, 'null']
+          format: date-time
         detail_path:
           type: string
           pattern: '^/api/v1/orders/[0-9a-f-]{36}$'
@@ -1181,6 +1486,9 @@ components:
             - PRICE_CHANGED
             - IDEMPOTENCY_KEY_REUSED
             - ORDER_NOT_FOUND
+            - ORDER_EXPIRED
+            - PAYMENT_CREATE_FAILED
+            - PAYMENT_EXCEPTION
         message:
           type: string
           minLength: 1

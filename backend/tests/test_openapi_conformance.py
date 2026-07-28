@@ -96,6 +96,8 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         "/api/v1/slots/{slot_id}/checkout": {"get"},
         "/api/v1/orders": {"post"},
         "/api/v1/orders/{order_id}": {"get"},
+        "/api/v1/orders/{order_id}/pay": {"post"},
+        "/api/v1/orders/{order_id}/payments/{payment_id}/reconcile": {"post"},
     }
     actual_operations = {
         path: set(contract["paths"][path])
@@ -110,6 +112,12 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         ("/api/v1/slots/{slot_id}/checkout", "get"): {"200", "401", "409"},
         ("/api/v1/orders", "post"): {"200", "201", "401", "409", "422"},
         ("/api/v1/orders/{order_id}", "get"): {"200", "401", "404"},
+        ("/api/v1/orders/{order_id}/pay", "post"): {
+            "200", "201", "202", "401", "404", "409", "503"
+        },
+        ("/api/v1/orders/{order_id}/payments/{payment_id}/reconcile", "post"): {
+            "200", "202", "401", "404"
+        },
     }
     protected_operations = set(expected_statuses) - {("/api/v1/auth/wechat/session", "post")}
     for (path, method), statuses in expected_statuses.items():
@@ -139,6 +147,8 @@ def test_every_auth_checkout_and_order_response_declares_request_id_header() -> 
         ("/api/v1/slots/{slot_id}/checkout", "get"),
         ("/api/v1/orders", "post"),
         ("/api/v1/orders/{order_id}", "get"),
+        ("/api/v1/orders/{order_id}/pay", "post"),
+        ("/api/v1/orders/{order_id}/payments/{payment_id}/reconcile", "post"),
     }
 
     for path, method in operations:
@@ -222,8 +232,30 @@ def test_order_detail_and_price_changed_contract_are_complete() -> None:
         "expires_at",
         "cancellation_summary",
         "closing_payment",
+        "payment_state",
+        "payment_confirming",
+        "paid_at",
     }
-    assert set(order["properties"]["status"]["enum"]) >= {"PENDING_PAYMENT", "EXPIRED"}
+    assert order["properties"]["status"]["enum"] == [
+        "PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"
+    ]
+    assert order["properties"]["payment_state"] == {
+        "type": ["string", "null"],
+        "enum": [
+            "CREATING",
+            "PREPAY_CREATED",
+            "CONFIRMING",
+            "SUCCESS",
+            "CLOSED",
+            "UNKNOWN",
+            None,
+        ],
+    }
+    assert order["properties"]["payment_confirming"] == {"type": "boolean"}
+    assert order["properties"]["closing_payment"] == {"type": "boolean"}
+    assert order["properties"]["paid_at"] == {
+        "type": ["string", "null"], "format": "date-time"
+    }
     venue = _resolve_schema(contract, order["properties"]["venue"])
     assert set(venue["required"]) >= {
         "id",
@@ -259,6 +291,9 @@ def test_every_booking_business_error_has_a_canonical_external_example() -> None
         "PRICE_CHANGED": "error-price-changed.json",
         "IDEMPOTENCY_KEY_REUSED": "error-idempotency-key-reused.json",
         "ORDER_NOT_FOUND": "error-order-not-found.json",
+        "ORDER_EXPIRED": "error-order-expired.json",
+        "PAYMENT_CREATE_FAILED": "error-payment-create-failed.json",
+        "PAYMENT_EXCEPTION": "error-payment-exception.json",
     }
     attached_external_values = {
         example["externalValue"]

@@ -123,6 +123,41 @@ const exampleMap = [
     attachments: [attachment('/api/v1/orders/{order_id}', '200', 'ExpiredOrder')],
   },
   {
+    filename: 'payment-prepay-created.json',
+    reference: './examples/payment-prepay-created.json',
+    schema: 'PaymentPrepayCreatedResponse',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/pay', '200', 'PrepayReplayed', 'post'),
+      attachment('/api/v1/orders/{order_id}/pay', '201', 'PrepayCreated', 'post'),
+    ],
+  },
+  {
+    filename: 'payment-confirming.json',
+    reference: './examples/payment-confirming.json',
+    schema: 'PaymentConfirmingResponse',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/pay', '202', 'PaymentConfirming', 'post'),
+      attachment('/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', '202', 'PaymentConfirming', 'post'),
+    ],
+  },
+  {
+    filename: 'order-confirmed.json',
+    reference: './examples/order-confirmed.json',
+    schema: 'OrderDetail',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}', '200', 'ConfirmedOrder'),
+      attachment('/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', '200', 'ConfirmedOrder', 'post'),
+    ],
+  },
+  {
+    filename: 'order-payment-exception.json',
+    reference: './examples/order-payment-exception.json',
+    schema: 'OrderDetail',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}', '200', 'PaymentExceptionOrder'),
+    ],
+  },
+  {
     filename: 'error-auth-required.json',
     reference: './examples/error-auth-required.json',
     schema: 'ErrorEnvelope',
@@ -131,6 +166,8 @@ const exampleMap = [
       attachment('/api/v1/slots/{slot_id}/checkout', '401', 'AuthRequired'),
       attachment('/api/v1/orders', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/orders/{order_id}', '401', 'AuthRequired'),
+      attachment('/api/v1/orders/{order_id}/pay', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', '401', 'AuthRequired', 'post'),
     ],
   },
   {
@@ -182,13 +219,38 @@ const exampleMap = [
     filename: 'error-idempotency-key-reused.json',
     reference: './examples/error-idempotency-key-reused.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/orders', '409', 'IdempotencyKeyReused', 'post')],
+    attachments: [
+      attachment('/api/v1/orders', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/orders/{order_id}/pay', '409', 'IdempotencyKeyReused', 'post'),
+    ],
   },
   {
     filename: 'error-order-not-found.json',
     reference: './examples/error-order-not-found.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/orders/{order_id}', '404', 'OrderNotFound')],
+    attachments: [
+      attachment('/api/v1/orders/{order_id}', '404', 'OrderNotFound'),
+      attachment('/api/v1/orders/{order_id}/pay', '404', 'OrderNotFound', 'post'),
+      attachment('/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', '404', 'OrderNotFound', 'post'),
+    ],
+  },
+  {
+    filename: 'error-order-expired.json',
+    reference: './examples/error-order-expired.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}/pay', '409', 'OrderExpired', 'post')],
+  },
+  {
+    filename: 'error-payment-create-failed.json',
+    reference: './examples/error-payment-create-failed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}/pay', '503', 'PaymentCreateFailed', 'post')],
+  },
+  {
+    filename: 'error-payment-exception.json',
+    reference: './examples/error-payment-exception.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}/pay', '409', 'PaymentException', 'post')],
   },
 ];
 
@@ -219,6 +281,9 @@ const requiredErrorCodes = new Set([
   'PRICE_CHANGED',
   'IDEMPOTENCY_KEY_REUSED',
   'ORDER_NOT_FOUND',
+  'ORDER_EXPIRED',
+  'PAYMENT_CREATE_FAILED',
+  'PAYMENT_EXCEPTION',
 ]);
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
@@ -229,6 +294,8 @@ const expectedOperations = new Map([
   ['/api/v1/slots/{slot_id}/checkout', new Set(['get'])],
   ['/api/v1/orders', new Set(['post'])],
   ['/api/v1/orders/{order_id}', new Set(['get'])],
+  ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
+  ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
 ]);
 const httpMethods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
