@@ -4,9 +4,14 @@ import pytest
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
-from backend.app.models import IdempotencyRecord, Payment, PaymentState
-from backend.app.modules.payments.mock_provider import MockPaymentProvider
-from backend.app.modules.payments.provider import CreatePrepayRequest, QueryPaymentRequest
+from backend.app.models import IdempotencyRecord, IdempotencyState, Payment, PaymentState
+from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
+from backend.app.modules.payments.provider import (
+    CreatePrepayRequest,
+    QueryPaymentRequest,
+    Unknown,
+)
+from backend.app.modules.payments.service import _PhaseOne
 from backend.tests.test_payment_creation import seed_order, service
 
 pytestmark = pytest.mark.integration
@@ -127,3 +132,94 @@ def test_twenty_concurrent_keys_share_one_nonterminal_payment(pg_engine: Engine)
             payment.id
         }
     assert provider.provider_order_count == 1
+
+
+def test_stale_unknown_for_same_key_replays_completed_prepay_without_regression(
+    pg_engine: Engine,
+) -> None:
+    user_id, order_id = seed_order(pg_engine)
+    provider = MockPaymentProvider(create_mode=MockCreateMode.UNKNOWN_AFTER_ACCEPTANCE)
+    payments = service(pg_engine, provider)
+    fast = payments._phase_one(  # noqa: SLF001 - deterministic phase interleaving
+        user_id=user_id, order_id=order_id, idempotency_key="payment-same-key-race"
+    )
+    slow = payments._phase_one(  # noqa: SLF001 - deterministic phase interleaving
+        user_id=user_id, order_id=order_id, idempotency_key="payment-same-key-race"
+    )
+    assert isinstance(fast, _PhaseOne) and isinstance(slow, _PhaseOne)
+    unknown = provider.create_prepay(
+        CreatePrepayRequest(
+            fast.merchant_order_no,
+            "预订场地",
+            32000,
+            "CNY",
+            "openid",
+        )
+    )
+    assert isinstance(unknown, Unknown)
+    accepted = provider.query_payment(QueryPaymentRequest(fast.merchant_order_no))
+
+    created = payments._phase_three(fast, accepted)  # noqa: SLF001
+    replay = payments._phase_three(slow, unknown)  # noqa: SLF001
+
+    assert created.status_code == 201
+    assert replay.status_code == 200
+    assert replay.body == created.body
+    with Session(pg_engine) as session:
+        payment = session.scalar(select(Payment))
+        record = session.scalar(select(IdempotencyRecord))
+        assert payment is not None and payment.status is PaymentState.PREPAY_CREATED
+        assert record is not None and record.state is IdempotencyState.COMPLETED
+
+
+def test_stale_unknown_for_different_key_keeps_current_monotonic_result(
+    pg_engine: Engine,
+) -> None:
+    user_id, order_id = seed_order(pg_engine)
+    provider = MockPaymentProvider(create_mode=MockCreateMode.UNKNOWN_AFTER_ACCEPTANCE)
+    payments = service(pg_engine, provider)
+    fast = payments._phase_one(  # noqa: SLF001 - deterministic phase interleaving
+        user_id=user_id, order_id=order_id, idempotency_key="payment-fast-key-race"
+    )
+    slow = payments._phase_one(  # noqa: SLF001 - deterministic phase interleaving
+        user_id=user_id, order_id=order_id, idempotency_key="payment-slow-key-race"
+    )
+    assert isinstance(fast, _PhaseOne) and isinstance(slow, _PhaseOne)
+    unknown = provider.create_prepay(
+        CreatePrepayRequest(
+            fast.merchant_order_no,
+            "预订场地",
+            32000,
+            "CNY",
+            "openid",
+        )
+    )
+    assert isinstance(unknown, Unknown)
+    accepted = provider.query_payment(QueryPaymentRequest(fast.merchant_order_no))
+
+    created = payments._phase_three(fast, accepted)  # noqa: SLF001
+    unfinished = payments._phase_three(slow, unknown)  # noqa: SLF001
+
+    assert created.status_code == 201
+    assert unfinished.status_code == 202
+    with Session(pg_engine) as session:
+        payment = session.scalar(select(Payment))
+        records = session.scalars(select(IdempotencyRecord).order_by(IdempotencyRecord.key)).all()
+        assert payment is not None and payment.status is PaymentState.PREPAY_CREATED
+        assert {record.payment_id for record in records} == {payment.id}
+        assert {record.state for record in records} == {
+            IdempotencyState.COMPLETED,
+            IdempotencyState.PROCESSING,
+        }
+
+    recovered = payments.create_payment(
+        user_id=user_id,
+        order_id=order_id,
+        idempotency_key="payment-slow-key-race",
+        payer_openid="openid",
+    )
+    assert recovered.status_code == 200
+    assert recovered.body["payment_id"] == created.body["payment_id"]
+    with Session(pg_engine) as session:
+        assert set(session.scalars(select(IdempotencyRecord.state))) == {IdempotencyState.COMPLETED}
+        assert session.scalar(select(Payment.status)) is PaymentState.PREPAY_CREATED

@@ -111,13 +111,13 @@ class PaymentCreationService:
                     session.commit()
                     return result
                 if order.status is OrderStatus.CONFIRMED:
-                    body: dict[str, object] = {
+                    confirmed_body: dict[str, object] = {
                         "order_id": str(order.id),
                         "status": "ALREADY_CONFIRMED",
                     }
-                    _complete(record, 200, body)
+                    _complete(record, 200, confirmed_body)
                     session.commit()
-                    return CreatePaymentResult(200, body)
+                    return CreatePaymentResult(200, confirmed_body)
                 now = self._now()
                 if order.status is OrderStatus.EXPIRED or (
                     order.status is OrderStatus.PENDING_PAYMENT and order.expires_at <= now
@@ -188,6 +188,40 @@ class PaymentCreationService:
                 record = repository.get_idempotency_for_update(phase.idempotency_id)
                 now = self._now()
 
+                if (
+                    record.payment_id != payment.id
+                    or payment.merchant_order_no != phase.merchant_order_no
+                ):
+                    raise RuntimeError("payment phase identity changed")
+
+                if record.state is IdempotencyState.COMPLETED:
+                    replay = _replay_completed(record)
+                    session.commit()
+                    return replay
+
+                if _order.status is OrderStatus.CONFIRMED:
+                    confirmed_body: dict[str, object] = {
+                        "order_id": str(_order.id),
+                        "status": "ALREADY_CONFIRMED",
+                    }
+                    _complete(record, 200, confirmed_body)
+                    session.commit()
+                    return CreatePaymentResult(200, confirmed_body)
+                if _order.status in {OrderStatus.EXPIRED, OrderStatus.PAYMENT_EXCEPTION}:
+                    code = (
+                        "ORDER_EXPIRED"
+                        if _order.status is OrderStatus.EXPIRED
+                        else "PAYMENT_EXCEPTION"
+                    )
+                    message = (
+                        "订单已过期，请重新选择场次。"
+                        if code == "ORDER_EXPIRED"
+                        else "支付状态异常，请联系场馆处理。"
+                    )
+                    _complete(record, 409, {"code": code, "message": message})
+                    session.commit()
+                    raise AppError(409, code, message)
+
                 created = result if isinstance(result, Created) else None
                 if (
                     isinstance(result, QueryPaymentResult)
@@ -195,18 +229,47 @@ class PaymentCreationService:
                 ):
                     if result.launch_params is not None and result.provider_prepay_id is not None:
                         created = Created(result.provider_prepay_id, result.launch_params)
-                    else:
+                    elif payment.status in {
+                        PaymentState.CREATING,
+                        PaymentState.UNKNOWN,
+                    }:
                         payment.status = PaymentState.PREPAY_CREATED
                         payment.provider_prepay_id = result.provider_prepay_id
                         payment.next_reconcile_at = now + _RECONCILE_DELAY
                         session.commit()
                         return _confirming(phase)
 
+                if payment.status in {PaymentState.SUCCESS, PaymentState.CONFIRMING}:
+                    # Task 8 owns authoritative success and settlement convergence.
+                    session.commit()
+                    return _confirming(phase)
+
+                if payment.status is PaymentState.CLOSED:
+                    terminal_error_body: dict[str, object] = {
+                        "code": "PAYMENT_CREATE_FAILED",
+                        "message": "支付创建失败，请稍后重试。",
+                    }
+                    _complete(record, 503, terminal_error_body)
+                    session.commit()
+                    raise AppError(
+                        503,
+                        "PAYMENT_CREATE_FAILED",
+                        "支付创建失败，请稍后重试。",
+                    )
+
+                if payment.status is PaymentState.PREPAY_CREATED and created is None:
+                    # A slower uncertain or negative result cannot regress a prepay
+                    # already converged by another caller. This key has no launch
+                    # parameters yet, so it stays PROCESSING and honestly returns 202.
+                    session.commit()
+                    return _confirming(phase)
+
                 if created is not None:
-                    payment.status = PaymentState.PREPAY_CREATED
-                    payment.provider_prepay_id = created.provider_prepay_id
-                    payment.next_reconcile_at = now + _RECONCILE_DELAY
-                    payment.last_error_code = None
+                    if payment.status in {PaymentState.CREATING, PaymentState.UNKNOWN}:
+                        payment.status = PaymentState.PREPAY_CREATED
+                        payment.provider_prepay_id = created.provider_prepay_id
+                        payment.next_reconcile_at = now + _RECONCILE_DELAY
+                        payment.last_error_code = None
                     body: dict[str, object] = {
                         "order_id": str(phase.order_id),
                         "payment_id": str(phase.payment_id),
@@ -217,6 +280,10 @@ class PaymentCreationService:
                     _complete(record, status, body)
                     session.commit()
                     return CreatePaymentResult(status, body)
+
+                if payment.status not in {PaymentState.CREATING, PaymentState.UNKNOWN}:
+                    session.commit()
+                    return _confirming(phase)
 
                 if isinstance(result, Rejected) or (
                     isinstance(result, QueryPaymentResult)
