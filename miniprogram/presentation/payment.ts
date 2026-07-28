@@ -1,6 +1,8 @@
 import type {
+  ConfirmedOrderView,
   PaymentLaunchParams,
   PaymentOrderView,
+  PaymentPendingOrderView,
 } from "../domain/payment";
 
 export type PaymentPageStatus =
@@ -13,14 +15,38 @@ export type PaymentPageStatus =
   | "payment-confirming"
   | "booking-confirmed";
 
-export interface PaymentPageState {
-  readonly status: PaymentPageStatus;
+interface LastOrderState {
   readonly order: PaymentOrderView | null;
-  readonly idempotencyKey: string | null;
-  readonly paymentId: string | null;
-  readonly launchParams: PaymentLaunchParams | null;
-  readonly errorMessage: string | null;
 }
+
+interface PendingActionState {
+  readonly order: PaymentPendingOrderView;
+  readonly paymentId: string | null;
+}
+
+export type PaymentPageState =
+  | ({ readonly status: "loading" } & LastOrderState)
+  | ({ readonly status: "load-error"; readonly errorMessage: string } & LastOrderState)
+  | ({ readonly status: "ready" } & PendingActionState & {
+      readonly errorMessage: null;
+    })
+  | ({ readonly status: "payment-pending" } & PendingActionState & {
+      readonly errorMessage: string | null;
+    })
+  | ({ readonly status: "creating-prepay"; readonly idempotencyKey: string } & PendingActionState)
+  | ({
+      readonly status: "cashier-open";
+      readonly idempotencyKey: string;
+      readonly paymentId: string;
+      readonly launchParams: PaymentLaunchParams;
+      readonly order: PaymentPendingOrderView;
+    })
+  | ({ readonly status: "payment-confirming" } & PendingActionState)
+  | {
+      readonly status: "booking-confirmed";
+      readonly order: ConfirmedOrderView;
+      readonly paymentId: string | null;
+    };
 
 export type PaymentPageEvent =
   | { readonly type: "ORDER_LOADING" }
@@ -42,69 +68,73 @@ export type PaymentPageEvent =
   | { readonly type: "CASHIER_FAILED"; readonly message: string };
 
 export function initialPaymentPageState(order: PaymentOrderView | null = null): PaymentPageState {
-  return {
-    status: order === null ? "loading" : order.status === "CONFIRMED" ? "booking-confirmed" : "ready",
-    order,
-    idempotencyKey: null,
-    paymentId: null,
-    launchParams: null,
-    errorMessage: null,
-  };
+  if (order === null) return { status: "loading", order: null };
+  if (order.status === "CONFIRMED") {
+    return { status: "booking-confirmed", order, paymentId: null };
+  }
+  if (order.paymentConfirming) {
+    return { status: "payment-confirming", order, paymentId: null };
+  }
+  return { status: "ready", order, paymentId: null, errorMessage: null };
 }
 
-function isCurrentCreate(state: PaymentPageState, idempotencyKey: string): boolean {
+function isCurrentCreate(
+  state: PaymentPageState,
+  idempotencyKey: string,
+): state is Extract<PaymentPageState, { status: "creating-prepay" }> {
   return state.status === "creating-prepay" && state.idempotencyKey === idempotencyKey;
 }
 
 export function reducePayment(state: PaymentPageState, event: PaymentPageEvent): PaymentPageState {
   switch (event.type) {
     case "ORDER_LOADING":
-      return { ...state, status: "loading", errorMessage: null };
+      return { status: "loading", order: state.order };
     case "ORDER_FAILED":
-      return { ...state, status: "load-error", errorMessage: event.message };
+      return { status: "load-error", order: state.order, errorMessage: event.message };
     case "ORDER_RECEIVED":
       if (event.order.status === "CONFIRMED") {
         return {
-          ...state,
           status: "booking-confirmed",
           order: event.order,
-          idempotencyKey: null,
-          launchParams: null,
-          errorMessage: null,
+          paymentId: "paymentId" in state ? state.paymentId : null,
+        };
+      }
+      if (event.order.paymentConfirming) {
+        return {
+          status: "payment-confirming",
+          order: event.order,
+          paymentId: "paymentId" in state ? state.paymentId : null,
         };
       }
       return {
-        ...state,
-        status: event.order.paymentConfirming ? "payment-confirming" : "payment-pending",
+        status: "payment-pending",
         order: event.order,
+        paymentId: "paymentId" in state ? state.paymentId : null,
         errorMessage: null,
       };
     case "PAY_STARTED":
       if (state.status !== "ready" && state.status !== "payment-pending") return state;
       return {
-        ...state,
         status: "creating-prepay",
+        order: state.order,
         idempotencyKey: event.idempotencyKey,
-        launchParams: null,
-        errorMessage: null,
+        paymentId: state.paymentId,
       };
     case "PREPAY_CREATED":
       if (!isCurrentCreate(state, event.idempotencyKey)) return state;
       return {
-        ...state,
         status: "cashier-open",
+        order: state.order,
+        idempotencyKey: state.idempotencyKey,
         paymentId: event.paymentId,
         launchParams: event.launchParams,
-        errorMessage: null,
       };
     case "PAYMENT_CONFIRMING":
       if (!isCurrentCreate(state, event.idempotencyKey)) return state;
       return {
-        ...state,
         status: "payment-confirming",
+        order: state.order,
         paymentId: event.paymentId,
-        launchParams: null,
-        errorMessage: null,
       };
     case "PAY_CREATE_UNKNOWN":
     case "PAY_CREATE_RETRY":
@@ -113,38 +143,33 @@ export function reducePayment(state: PaymentPageState, event: PaymentPageEvent):
     case "PAY_CREATE_FAILED":
       if (!isCurrentCreate(state, event.idempotencyKey)) return state;
       return {
-        ...state,
         status: "payment-pending",
-        idempotencyKey: null,
-        launchParams: null,
+        order: state.order,
+        paymentId: state.paymentId,
         errorMessage: event.message,
       };
     case "CASHIER_CANCELLED":
       if (state.status !== "cashier-open") return state;
       return {
-        ...state,
         status: "payment-pending",
-        idempotencyKey: null,
-        launchParams: null,
+        order: state.order,
+        paymentId: state.paymentId,
         errorMessage: null,
       };
     case "CASHIER_FAILED":
       if (state.status !== "cashier-open") return state;
       return {
-        ...state,
         status: "payment-pending",
-        idempotencyKey: null,
-        launchParams: null,
+        order: state.order,
+        paymentId: state.paymentId,
         errorMessage: event.message,
       };
     case "CASHIER_SUCCEEDED":
       if (state.status !== "cashier-open") return state;
       return {
-        ...state,
         status: "payment-confirming",
-        idempotencyKey: null,
-        launchParams: null,
-        errorMessage: null,
+        order: state.order,
+        paymentId: state.paymentId,
       };
   }
 }

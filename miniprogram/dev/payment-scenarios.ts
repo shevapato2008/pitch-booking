@@ -4,7 +4,13 @@ import type {
   PaymentPendingOrderView,
 } from "../domain/payment";
 
-const BOOKING_SNAPSHOT = {
+export const PAYMENT_PREVIEW_NOW = "2026-07-27T12:00:00+08:00";
+const HOLD_DURATION_MS = 10 * 60_000;
+const PAYMENT_EXPIRES_AT = new Date(
+  new Date(PAYMENT_PREVIEW_NOW).getTime() + HOLD_DURATION_MS,
+).toISOString();
+
+const bookingSnapshot = () => ({
   orderId: "00000000-0000-4000-8000-000000000040",
   orderNumber: "PB202607270001",
   slotId: "00000000-0000-4000-8000-000000000030",
@@ -26,45 +32,52 @@ const BOOKING_SNAPSHOT = {
   endsAt: "2026-07-28T21:00:00+08:00",
   durationMinutes: 120,
   currency: "CNY" as const,
-  createdAt: "2026-07-27T12:00:00+08:00",
-  expiresAt: "2026-07-27T12:10:00+08:00",
+  createdAt: PAYMENT_PREVIEW_NOW,
+  expiresAt: PAYMENT_EXPIRES_AT,
   expiredAt: null,
   cancellationSummary: "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。",
   closingPayment: false,
   detailPath: "/api/v1/orders/00000000-0000-4000-8000-000000000040",
-};
+});
 
-const launchParams: PaymentLaunchParams = {
+function deepFreezeOrder<T extends PaymentPendingOrderView | ConfirmedOrderView>(order: T): T {
+  Object.freeze(order.venue);
+  Object.freeze(order.pitch);
+  Object.freeze(order.contact);
+  return Object.freeze(order);
+}
+
+const launchParams: PaymentLaunchParams = Object.freeze({
   timeStamp: "1785146640",
   nonceStr: "payment-fixture-nonce",
   package: "prepay_id=payment-fixture-prepay",
   signType: "RSA",
   paySign: "payment-fixture-signature",
-};
+});
 
-const pending: PaymentPendingOrderView = {
-  ...BOOKING_SNAPSHOT,
+const pending: PaymentPendingOrderView = deepFreezeOrder({
+  ...bookingSnapshot(),
   status: "PENDING_PAYMENT",
   paymentState: null,
   paymentConfirming: false,
   paidAt: null,
-};
+});
 
-const confirming: PaymentPendingOrderView = {
-  ...BOOKING_SNAPSHOT,
+const confirming: PaymentPendingOrderView = deepFreezeOrder({
+  ...bookingSnapshot(),
   status: "PENDING_PAYMENT",
   paymentState: "CONFIRMING",
   paymentConfirming: true,
   paidAt: null,
-};
+});
 
-const confirmed: ConfirmedOrderView = {
-  ...BOOKING_SNAPSHOT,
+const confirmed: ConfirmedOrderView = deepFreezeOrder({
+  ...bookingSnapshot(),
   status: "CONFIRMED",
   paymentState: "SUCCESS",
   paymentConfirming: false,
   paidAt: "2026-07-27T12:04:00+08:00",
-};
+});
 
 export const PAYMENT_SCENARIOS = Object.freeze({ pending, confirming, confirmed, launchParams });
 

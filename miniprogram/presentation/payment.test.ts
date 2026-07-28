@@ -1,15 +1,69 @@
 import { describe, expect, test } from "@jest/globals";
 
-import type { PaymentOrderView } from "../domain/payment";
+import type {
+  ConfirmedOrderView,
+  PaymentPendingOrderView,
+} from "../domain/payment";
 import { PAYMENT_SCENARIOS } from "../dev/payment-scenarios";
 import {
   initialPaymentPageState,
   reducePayment,
+  type PaymentPageState,
 } from "./payment";
 
-const pendingOrder = (): PaymentOrderView => structuredClone(PAYMENT_SCENARIOS.pending);
+const pendingOrder = (): PaymentPendingOrderView => structuredClone(PAYMENT_SCENARIOS.pending);
+const confirmedOrder = (): ConfirmedOrderView => structuredClone(PAYMENT_SCENARIOS.confirmed);
 
 describe("payment presentation state machine", () => {
+  test.each([
+    [PAYMENT_SCENARIOS.pending, "ready"],
+    [PAYMENT_SCENARIOS.confirming, "payment-confirming"],
+    [PAYMENT_SCENARIOS.confirmed, "booking-confirmed"],
+  ] as const)("initial authority projects to %s state", (order, status) => {
+    expect(initialPaymentPageState(structuredClone(order)).status).toBe(status);
+  });
+
+  test("an initially confirming order ignores PAY_STARTED", () => {
+    const confirming = initialPaymentPageState(structuredClone(PAYMENT_SCENARIOS.confirming));
+
+    expect(reducePayment(confirming, {
+      type: "PAY_STARTED",
+      idempotencyKey: "must-not-start",
+    })).toBe(confirming);
+  });
+
+  test("state variants reject authority and operation contradictions at compile time", () => {
+    const ready: Extract<PaymentPageState, { status: "ready" }> = {
+      status: "ready",
+      order: pendingOrder(),
+      paymentId: null,
+      errorMessage: null,
+    };
+
+    // @ts-expect-error booking-confirmed requires an authoritative confirmed order
+    const falseConfirmation: PaymentPageState = { ...ready, status: "booking-confirmed" };
+    // @ts-expect-error cashier-open requires a pending order
+    const confirmedCashier: PaymentPageState = {
+      status: "cashier-open",
+      order: confirmedOrder(),
+      idempotencyKey: "key-1",
+      paymentId: "payment-1",
+      launchParams: PAYMENT_SCENARIOS.launchParams,
+      errorMessage: null,
+    };
+    const keylessCreate: PaymentPageState = {
+      status: "creating-prepay",
+      order: pendingOrder(),
+      // @ts-expect-error creating-prepay requires a non-null operation key
+      idempotencyKey: null,
+      paymentId: null,
+      launchParams: null,
+      errorMessage: null,
+    };
+
+    expect([falseConfirmation, confirmedCashier, keylessCreate]).toHaveLength(3);
+  });
+
   test("ready + PAY_STARTED enters creating-prepay with the supplied key", () => {
     const state = initialPaymentPageState(pendingOrder());
 
@@ -30,11 +84,13 @@ describe("payment presentation state machine", () => {
       },
     );
 
-    expect(reducePayment(open, { type: "CASHIER_CANCELLED" })).toMatchObject({
+    const cancelled = reducePayment(open, { type: "CASHIER_CANCELLED" });
+
+    expect(cancelled).toMatchObject({
       status: "payment-pending",
-      idempotencyKey: null,
       paymentId: "payment-current",
     });
+    expect("idempotencyKey" in cancelled).toBe(false);
   });
 
   test("cashier-open + CASHIER_SUCCEEDED enters payment-confirming", () => {
@@ -56,11 +112,7 @@ describe("payment presentation state machine", () => {
   });
 
   test("confirming + authoritative confirmed ORDER_RECEIVED enters booking-confirmed", () => {
-    const confirming = {
-      ...initialPaymentPageState(pendingOrder()),
-      status: "payment-confirming" as const,
-      paymentId: "payment-current",
-    };
+    const confirming = initialPaymentPageState(structuredClone(PAYMENT_SCENARIOS.confirming));
 
     expect(reducePayment(confirming, {
       type: "ORDER_RECEIVED",
