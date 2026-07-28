@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     public_api_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
     public_image_hosts: tuple[str, ...] = ()
     wechat_provider: Literal["development", "real"] = "development"
+    payment_provider: Literal["wechat", "mock"] = "wechat"
+    enable_mock_payment_provider: bool = False
     wechat_app_id: str | None = None
     wechat_app_secret: SecretStr | None = Field(default=None, repr=False)
     phone_encryption_key_base64: SecretStr | None = Field(default=None, repr=False)
@@ -248,6 +250,30 @@ class Settings(BaseSettings):
         if cls._is_deployed(info) and (value is None or not value.strip()):
             raise ValueError("WECHAT_APP_ID is required for staging and production")
         return value
+
+    @model_validator(mode="after")
+    def validate_mock_payment_provider(self) -> "Settings":
+        mock_selected = self.payment_provider == "mock"
+        if mock_selected and not self.enable_mock_payment_provider:
+            raise ValueError(
+                "ENABLE_MOCK_PAYMENT_PROVIDER must be true to select Mock payment provider"
+            )
+        if self.enable_mock_payment_provider and (
+            self.app_env != "development" or not mock_selected
+        ):
+            raise ValueError(
+                "Mock payment provider is allowed only when APP_ENV=development, "
+                "PAYMENT_PROVIDER=mock, and ENABLE_MOCK_PAYMENT_PROVIDER=true"
+            )
+        return self
+
+    @property
+    def mock_payment_provider_enabled(self) -> bool:
+        return (
+            self.app_env == "development"
+            and self.payment_provider == "mock"
+            and self.enable_mock_payment_provider
+        )
 
     @staticmethod
     def _is_deployed(info: ValidationInfo) -> bool:

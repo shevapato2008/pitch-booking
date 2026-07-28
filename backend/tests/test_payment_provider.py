@@ -1,0 +1,148 @@
+from datetime import UTC, datetime
+
+import pytest
+from pydantic import ValidationError
+
+from backend.app.config import Settings
+from backend.app.modules.payments import build_payment_provider
+from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
+from backend.app.modules.payments.provider import (
+    ClosePaymentRequest,
+    ClosePaymentStatus,
+    Created,
+    CreatePrepayRequest,
+    PaymentLaunchParams,
+    QueryPaymentRequest,
+    QueryPaymentStatus,
+    Unknown,
+)
+
+
+def request(merchant_order_no: str = "merchant-1") -> CreatePrepayRequest:
+    return CreatePrepayRequest(
+        merchant_order_no=merchant_order_no,
+        description="预订场地",
+        amount_cents=32000,
+        currency="CNY",
+        payer_openid="openid-secret",
+    )
+
+
+def test_provider_dtos_are_frozen_and_do_not_repr_openid() -> None:
+    value = request()
+
+    assert "openid-secret" not in repr(value)
+    with pytest.raises((AttributeError, TypeError)):
+        value.amount_cents = 1  # type: ignore[misc]
+
+
+def test_launch_params_use_the_exact_cashier_keys() -> None:
+    params = PaymentLaunchParams(
+        timeStamp="1785146640",
+        nonceStr="nonce",
+        package="prepay_id=prepay-1",
+        signType="RSA",
+        paySign="signature",
+    )
+
+    assert params.as_dict() == {
+        "timeStamp": "1785146640",
+        "nonceStr": "nonce",
+        "package": "prepay_id=prepay-1",
+        "signType": "RSA",
+        "paySign": "signature",
+    }
+
+
+def test_mock_create_is_thread_safe_and_merchant_number_idempotent() -> None:
+    provider = MockPaymentProvider()
+
+    first = provider.create_prepay(request())
+    second = provider.create_prepay(request())
+
+    assert isinstance(first, Created)
+    assert second == first
+    assert provider.provider_order_count == 1
+    assert [call.method for call in provider.calls] == ["create_prepay", "create_prepay"]
+    assert "openid-secret" not in repr(provider.calls)
+    assert "openid-secret" not in repr(provider.__dict__)
+
+
+def test_mock_supports_unknown_before_and_after_acceptance() -> None:
+    before = MockPaymentProvider(create_mode=MockCreateMode.UNKNOWN_BEFORE_ACCEPTANCE)
+    after = MockPaymentProvider(create_mode=MockCreateMode.UNKNOWN_AFTER_ACCEPTANCE)
+
+    assert isinstance(before.create_prepay(request("before")), Unknown)
+    assert (
+        before.query_payment(QueryPaymentRequest("before")).status is QueryPaymentStatus.NOT_FOUND
+    )
+    assert isinstance(after.create_prepay(request("after")), Unknown)
+    assert after.query_payment(QueryPaymentRequest("after")).status is QueryPaymentStatus.NOT_PAID
+
+
+def test_mock_can_advance_query_and_close_states() -> None:
+    provider = MockPaymentProvider()
+    provider.create_prepay(request())
+    paid_at = datetime.now(UTC)
+    provider.mark_success("merchant-1", provider_transaction_no="tx-1", paid_at=paid_at)
+
+    query = provider.query_payment(QueryPaymentRequest("merchant-1"))
+    close = provider.close_payment(ClosePaymentRequest("merchant-1"))
+
+    assert query.status is QueryPaymentStatus.SUCCESS
+    assert query.facts is not None
+    assert query.facts.app_id == "mock-app-id"
+    assert query.facts.merchant_id == "mock-merchant-id"
+    assert query.facts.amount_cents == 32000
+    assert close.status is ClosePaymentStatus.SUCCESS
+
+
+@pytest.mark.parametrize("app_env", ["test", "staging", "production"])
+def test_mock_payment_configuration_is_rejected_outside_development(app_env: str) -> None:
+    values: dict[str, object] = {
+        "app_env": app_env,
+        "payment_provider": "mock",
+        "enable_mock_payment_provider": True,
+    }
+    if app_env in {"staging", "production"}:
+        values.update(
+            database_url="postgresql+psycopg://pitch:password@postgres:5432/pitch",
+            public_api_base_url="https://api.example.test",
+            public_image_hosts=("cdn.example.test",),
+            wechat_provider="real",
+            wechat_app_id="wx-app",
+            wechat_app_secret="secret",
+            phone_encryption_key_base64="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+            phone_encryption_key_version=1,
+        )
+
+    with pytest.raises(ValidationError, match="Mock payment provider"):
+        Settings(**values)
+
+
+def test_mock_payment_configuration_requires_all_three_development_switches() -> None:
+    with pytest.raises(ValidationError, match="ENABLE_MOCK_PAYMENT_PROVIDER"):
+        Settings(app_env="development", payment_provider="mock")
+    with pytest.raises(ValidationError, match="Mock payment provider"):
+        Settings(
+            app_env="development", payment_provider="wechat", enable_mock_payment_provider=True
+        )
+
+    settings = Settings(
+        app_env="development",
+        payment_provider="mock",
+        enable_mock_payment_provider=True,
+    )
+    assert settings.mock_payment_provider_enabled is True
+
+
+def test_runtime_provider_factory_never_falls_back_to_mock() -> None:
+    enabled = Settings(
+        app_env="development",
+        payment_provider="mock",
+        enable_mock_payment_provider=True,
+    )
+    assert isinstance(build_payment_provider(enabled), MockPaymentProvider)
+
+    with pytest.raises(RuntimeError, match="WeChat payment provider is not implemented"):
+        build_payment_provider(Settings(app_env="development", payment_provider="wechat"))

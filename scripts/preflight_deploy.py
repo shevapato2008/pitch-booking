@@ -16,6 +16,8 @@ REQUIRED_KEYS = (
     "POSTGRES_PASSWORD",
     "PUBLIC_API_BASE_URL",
     "PUBLIC_IMAGE_HOSTS",
+    "PAYMENT_PROVIDER",
+    "ENABLE_MOCK_PAYMENT_PROVIDER",
 )
 COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -57,6 +59,10 @@ def preflight(env_file: str | Path) -> PreflightResult:
         failures.append("POSTGRES_PASSWORD uses validation sentinel")
     if not COMMIT_SHA.fullmatch(values.get("APP_REVISION", "")):
         failures.append("APP_REVISION is not a 40-character commit SHA")
+    if values.get("PAYMENT_PROVIDER") != "wechat":
+        failures.append("PAYMENT_PROVIDER must be wechat for deployment")
+    if values.get("ENABLE_MOCK_PAYMENT_PROVIDER", "").casefold() != "false":
+        failures.append("ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment")
 
     public_url = values.get("PUBLIC_API_BASE_URL", "")
     parsed = urlsplit(public_url)

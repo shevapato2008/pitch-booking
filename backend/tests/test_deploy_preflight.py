@@ -24,6 +24,8 @@ def valid_local_environment() -> dict[str, str]:
         "POSTGRES_PASSWORD": "local-password",
         "PUBLIC_API_BASE_URL": "http://127.0.0.1:8080",
         "PUBLIC_IMAGE_HOSTS": '["cdn.example.test"]',
+        "PAYMENT_PROVIDER": "wechat",
+        "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
     }
 
 
@@ -50,9 +52,7 @@ def test_preflight_rejects_malformed_or_unsafe_public_url(tmp_path: Path) -> Non
 
     result = preflight(write_env(tmp_path, values))
 
-    assert result.failures == (
-        "PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",
-    )
+    assert result.failures == ("PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",)
 
 
 def test_preflight_rejects_non_json_image_hosts(tmp_path: Path) -> None:
@@ -69,6 +69,19 @@ def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> No
 
     assert result.ok is True
     assert result.failures == ()
+
+
+def test_preflight_rejects_mock_payment_configuration(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values["PAYMENT_PROVIDER"] = "mock"
+    values["ENABLE_MOCK_PAYMENT_PROVIDER"] = "true"
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert set(result.failures) == {
+        "PAYMENT_PROVIDER must be wechat for deployment",
+        "ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment",
+    }
 
 
 def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
