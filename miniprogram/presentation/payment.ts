@@ -139,7 +139,7 @@ export function reducePayment(state: PaymentPageState, event: PaymentPageEvent):
         status: "payment-pending",
         order: event.order,
         paymentId: "paymentId" in state ? state.paymentId : null,
-        errorMessage: null,
+        errorMessage: state.status === "payment-pending" ? state.errorMessage : null,
       };
     case "PAY_STARTED":
       if (state.status !== "ready" && state.status !== "payment-pending") return state;

@@ -292,6 +292,35 @@ describe("order detail payment orchestration", () => {
     call(page, "onUnload");
   });
 
+  test("a pending countdown callback cannot regress cashier success while reconciliation is in flight", async () => {
+    jest.useFakeTimers();
+    const reconciliation = deferred<Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>>();
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.pending),
+      reconcilePayment: () => reconciliation.promise,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    const payment = call(page, "onPay") as Promise<void>;
+    await flush();
+    expect(page.data.status).toBe("payment-confirming");
+
+    jest.advanceTimersByTime(1_000);
+    await flush();
+    const statusAfterOldPendingTick = page.data.status;
+
+    reconciliation.resolve({
+      outcome: "PAYMENT_CONFIRMING",
+      order: structuredClone(PAYMENT_SCENARIOS.confirming),
+    });
+    await payment;
+    expect(statusAfterOldPendingTick).toBe("payment-confirming");
+    call(page, "onUnload");
+    jest.useRealTimers();
+  });
+
   test.each([
     [PAYMENT_SCENARIOS.confirmed, "booking-confirmed", "预订成功"],
     [PAYMENT_SCENARIOS.exception, "payment-exception", "支付状态待确认"],

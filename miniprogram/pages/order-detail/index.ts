@@ -135,7 +135,8 @@ Page({
     switch (state.status) {
       case "loading": {
         if (isActivePaymentOperation(this.paymentState)
-          || this.paymentState.status === "payment-confirming") return;
+          || this.paymentState.status === "payment-confirming"
+          || this.paymentState.status === "payment-pending") return;
         this.paymentState = reducePayment(this.paymentState, { type: "ORDER_LOADING" });
         this.setData({
           ...presentOrderDetailStatus(state.status),
@@ -276,6 +277,7 @@ Page({
     if (started === this.paymentState) return;
     this.paymentState = started;
     this.applyPaymentState(started);
+    this.poller?.cancel();
     const generation = ++this.paymentOperationGeneration;
 
     try {
@@ -309,6 +311,7 @@ Page({
       if (cashier.outcome === "user_cancelled") {
         this.paymentState = reducePayment(this.paymentState, { type: "CASHIER_CANCELLED" });
         this.applyPaymentState(this.paymentState);
+        this.ensurePoller().start(this.data.orderId);
         return;
       }
       if (cashier.outcome === "launch_failed") {
@@ -317,6 +320,7 @@ Page({
           message: cashier.message,
         });
         this.applyPaymentState(this.paymentState);
+        this.ensurePoller().start(this.data.orderId);
         return;
       }
 
@@ -342,6 +346,7 @@ Page({
         message: "支付发起失败，请重试。",
       });
       this.applyPaymentState(this.paymentState);
+      this.ensurePoller().start(this.data.orderId);
     }
   },
 
