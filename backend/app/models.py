@@ -49,11 +49,23 @@ class SlotStatus(StrEnum):
 
 class OrderStatus(StrEnum):
     PENDING_PAYMENT = "PENDING_PAYMENT"
+    CONFIRMED = "CONFIRMED"
     EXPIRED = "EXPIRED"
+    PAYMENT_EXCEPTION = "PAYMENT_EXCEPTION"
+
+
+class PaymentState(StrEnum):
+    CREATING = "CREATING"
+    PREPAY_CREATED = "PREPAY_CREATED"
+    CONFIRMING = "CONFIRMING"
+    SUCCESS = "SUCCESS"
+    CLOSED = "CLOSED"
+    UNKNOWN = "UNKNOWN"
 
 
 class IdempotencyState(StrEnum):
     CLAIMED = "CLAIMED"
+    PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
 
 
@@ -325,7 +337,7 @@ class Order(Base):
         ),
         CheckConstraint("expires_at > created_at", name="ck_orders_expiry"),
         CheckConstraint(
-            "(status = 'PENDING_PAYMENT' AND expired_at IS NULL) OR "
+            "(status <> 'EXPIRED' AND expired_at IS NULL) OR "
             "(status = 'EXPIRED' AND expired_at IS NOT NULL AND expired_at >= expires_at)",
             name="ck_orders_status_expired_at",
         ),
@@ -336,9 +348,7 @@ class Order(Base):
             "ix_orders_pending_expiry_candidates",
             "expires_at",
             "id",
-            postgresql_where=text(
-                "status = 'PENDING_PAYMENT' AND wechat_prepay_id IS NULL"
-            ),
+            postgresql_where=text("status = 'PENDING_PAYMENT'"),
         ),
     )
 
@@ -369,6 +379,118 @@ class Order(Base):
     slot: Mapped[Slot] = relationship(
         back_populates="orders", foreign_keys=[slot_id]
     )
+    payments: Mapped[list["Payment"]] = relationship(back_populates="order")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    __table_args__ = (
+        CheckConstraint("length(trim(provider)) > 0", name="ck_payments_provider_nonempty"),
+        CheckConstraint(
+            "length(trim(merchant_order_no)) > 0",
+            name="ck_payments_merchant_order_no_nonempty",
+        ),
+        CheckConstraint("amount_cents >= 0", name="ck_payments_amount_cents"),
+        CheckConstraint("length(trim(currency)) > 0", name="ck_payments_currency_nonempty"),
+        CheckConstraint(
+            "provider_transaction_no IS NULL OR length(trim(provider_transaction_no)) > 0",
+            name="ck_payments_provider_transaction_no_nonempty",
+        ),
+        CheckConstraint(
+            "provider_prepay_id IS NULL OR length(trim(provider_prepay_id)) > 0",
+            name="ck_payments_provider_prepay_id_nonempty",
+        ),
+        CheckConstraint(
+            "(status = 'SUCCESS' AND paid_at IS NOT NULL) OR "
+            "(status <> 'SUCCESS' AND paid_at IS NULL)",
+            name="ck_payments_success_paid_at",
+        ),
+        CheckConstraint(
+            "reconcile_attempts >= 0", name="ck_payments_reconcile_attempts"
+        ),
+        CheckConstraint(
+            "notification_result IS NULL OR length(trim(notification_result)) > 0",
+            name="ck_payments_notification_result_nonempty",
+        ),
+        CheckConstraint(
+            "notification_code IS NULL OR length(trim(notification_code)) > 0",
+            name="ck_payments_notification_code_nonempty",
+        ),
+        CheckConstraint(
+            "last_error_code IS NULL OR length(trim(last_error_code)) > 0",
+            name="ck_payments_last_error_code_nonempty",
+        ),
+        UniqueConstraint(
+            "provider",
+            "merchant_order_no",
+            name="uq_payments_provider_merchant_order_no",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_transaction_no",
+            name="uq_payments_provider_transaction_no",
+        ),
+        Index("ix_payments_order_id", "order_id"),
+        Index(
+            "uq_payments_one_nonterminal_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('CREATING', 'PREPAY_CREATED', 'CONFIRMING', 'UNKNOWN')"
+            ),
+        ),
+        Index(
+            "ix_payments_reconciliation_due",
+            "next_reconcile_at",
+            "id",
+            postgresql_where=text(
+                "status IN ('CREATING', 'PREPAY_CREATED', 'CONFIRMING', 'UNKNOWN') "
+                "AND next_reconcile_at IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", name="fk_payments_order_id_orders", ondelete="RESTRICT"),
+    )
+    provider: Mapped[str] = mapped_column(String(40))
+    merchant_order_no: Mapped[str] = mapped_column(String(128))
+    provider_transaction_no: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3))
+    status: Mapped[PaymentState] = mapped_column(Enum(PaymentState, name="payment_state"))
+    provider_prepay_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    authority_unknown_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reconcile_attempts: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    next_reconcile_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    notification_result: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    notification_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    order: Mapped[Order] = relationship(back_populates="payments")
+    idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
+        back_populates="payment"
+    )
 
 
 class IdempotencyRecord(Base):
@@ -383,7 +505,10 @@ class IdempotencyRecord(Base):
             name="ck_idempotency_records_request_sha256",
         ),
         CheckConstraint(
-            "(state = 'CLAIMED' AND response_status IS NULL AND response_body IS NULL) OR "
+            "(state = 'CLAIMED' AND payment_id IS NULL "
+            "AND response_status IS NULL AND response_body IS NULL) OR "
+            "(state = 'PROCESSING' AND payment_id IS NOT NULL "
+            "AND response_status IS NULL AND response_body IS NULL) OR "
             "(state = 'COMPLETED' AND response_status IS NOT NULL AND response_body IS NOT NULL)",
             name="ck_idempotency_records_state_response",
         ),
@@ -398,6 +523,7 @@ class IdempotencyRecord(Base):
             name="uq_idempotency_records_user_operation_key",
         ),
         Index("ix_idempotency_records_user_id", "user_id"),
+        Index("ix_idempotency_records_payment_id", "payment_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -415,6 +541,15 @@ class IdempotencyRecord(Base):
     state: Mapped[IdempotencyState] = mapped_column(
         Enum(IdempotencyState, name="idempotency_state")
     )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "payments.id",
+            name="fk_idempotency_records_payment_id_payments",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     response_body: Mapped[dict[str, object] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
@@ -425,3 +560,4 @@ class IdempotencyRecord(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="idempotency_records")
+    payment: Mapped[Payment | None] = relationship(back_populates="idempotency_records")

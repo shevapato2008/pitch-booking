@@ -7,7 +7,7 @@ from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.models import Pitch, Slot, Venue, VenueFacility, VenueImage
+from backend.app.models import Payment, Pitch, Slot, Venue, VenueFacility, VenueImage
 
 pytestmark = pytest.mark.integration
 
@@ -166,6 +166,12 @@ def test_declared_indexes_and_overlap_constraint_exist(pg_engine: Engine) -> Non
     }
     assert {index["name"] for index in inspector.get_indexes("pitches")} >= {"ix_pitches_venue_id"}
     assert {index["name"] for index in inspector.get_indexes("slots")} >= {"ix_slots_pitch_id"}
+    assert Payment.__table__.name == "payments"
+    assert {index["name"] for index in inspector.get_indexes("payments")} >= {
+        "ix_payments_order_id",
+        "ix_payments_reconciliation_due",
+        "uq_payments_one_nonterminal_per_order",
+    }
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("slots")} >= {
         "uq_slots_pitch_time"
     }

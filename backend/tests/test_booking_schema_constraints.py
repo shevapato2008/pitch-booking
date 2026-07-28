@@ -11,6 +11,8 @@ from backend.app.models import (
     IdempotencyRecord,
     Order,
     OrderStatus,
+    Payment,
+    PaymentState,
     Slot,
     SlotStatus,
     User,
@@ -57,6 +59,20 @@ def _order(session: Session) -> tuple[Slot, Order]:
     return slot, order
 
 
+def _payment(order: Order, **overrides: object) -> Payment:
+    values: dict[str, object] = {
+        "order": order,
+        "provider": "WECHAT_PAY",
+        "merchant_order_no": f"merchant-{uuid.uuid4().hex}",
+        "amount_cents": order.price_cents,
+        "currency": "CNY",
+        "status": PaymentState.CREATING,
+        "reconcile_attempts": 0,
+    }
+    values.update(overrides)
+    return Payment(**values)
+
+
 def test_booking_tables_and_slot_version_exist(pg_engine: Engine) -> None:
     inspector = inspect(pg_engine)
 
@@ -81,13 +97,13 @@ def test_booking_tables_and_slot_version_exist(pg_engine: Engine) -> None:
     assert order_columns["expired_at"]["nullable"] is True
 
 
-def test_booking_enum_labels_are_minimal_and_stable(pg_engine: Engine) -> None:
+def test_booking_and_payment_enum_labels_are_stable(pg_engine: Engine) -> None:
     with pg_engine.connect() as connection:
         rows = connection.execute(
             text(
                 "SELECT t.typname, e.enumlabel "
                 "FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid "
-                "WHERE t.typname IN ('order_status', 'idempotency_state') "
+                "WHERE t.typname IN ('order_status', 'idempotency_state', 'payment_state') "
                 "ORDER BY t.typname, e.enumsortorder"
             )
         )
@@ -96,8 +112,21 @@ def test_booking_enum_labels_are_minimal_and_stable(pg_engine: Engine) -> None:
             labels.setdefault(enum_name, []).append(label)
 
     assert labels == {
-        "idempotency_state": ["CLAIMED", "COMPLETED"],
-        "order_status": ["PENDING_PAYMENT", "EXPIRED"],
+        "idempotency_state": ["CLAIMED", "PROCESSING", "COMPLETED"],
+        "order_status": [
+            "PENDING_PAYMENT",
+            "CONFIRMED",
+            "EXPIRED",
+            "PAYMENT_EXCEPTION",
+        ],
+        "payment_state": [
+            "CREATING",
+            "PREPAY_CREATED",
+            "CONFIRMING",
+            "SUCCESS",
+            "CLOSED",
+            "UNKNOWN",
+        ],
     }
 
 
@@ -146,12 +175,18 @@ def test_named_constraints_and_foreign_key_indexes_exist(pg_engine: Engine) -> N
     assert candidate_index["column_names"] == ["expires_at", "id"]
     predicate = str(candidate_index["dialect_options"]["postgresql_where"]).lower()
     assert "status" in predicate and "pending_payment" in predicate
-    assert "wechat_prepay_id is null" in predicate
+    assert "wechat_prepay_id" not in predicate
     assert {item["name"] for item in inspector.get_indexes("user_sessions")} >= {
         "ix_user_sessions_user_id"
     }
     assert {item["name"] for item in inspector.get_indexes("idempotency_records")} >= {
-        "ix_idempotency_records_user_id"
+        "ix_idempotency_records_user_id",
+        "ix_idempotency_records_payment_id",
+    }
+    assert {item["name"] for item in inspector.get_indexes("payments")} >= {
+        "ix_payments_order_id",
+        "ix_payments_reconciliation_due",
+        "uq_payments_one_nonterminal_per_order",
     }
     assert {item["name"] for item in inspector.get_indexes("slots")} >= {
         "ix_slots_locked_by_order_id"
@@ -185,7 +220,15 @@ def test_booking_foreign_key_catalog_is_complete(pg_engine: Engine) -> None:
             ("user_id",),
             "users",
             "CASCADE",
-        )
+        ),
+        "fk_idempotency_records_payment_id_payments": (
+            ("payment_id",),
+            "payments",
+            "RESTRICT",
+        ),
+    }
+    assert foreign_keys("payments") == {
+        "fk_payments_order_id_orders": (("order_id",), "orders", "RESTRICT")
     }
     assert foreign_keys("slots")["fk_slots_locked_by_order_id_orders"] == (
         ("locked_by_order_id",),
@@ -251,7 +294,13 @@ def test_booking_check_and_unique_constraint_catalog_is_complete(pg_engine: Engi
             item["name"]: item["sqltext"].lower()
             for item in inspector.get_check_constraints(table)
         }
-        for table in ("users", "user_sessions", "orders", "idempotency_records")
+        for table in (
+            "users",
+            "user_sessions",
+            "orders",
+            "payments",
+            "idempotency_records",
+        )
     }
     assert all(
         column in check_definitions["users"]["ck_users_phone_encrypted_fields"]
@@ -292,7 +341,7 @@ def test_booking_check_and_unique_constraint_catalog_is_complete(pg_engine: Engi
     status_expiry_check = check_definitions["orders"]["ck_orders_status_expired_at"]
     assert all(
         token in status_expiry_check
-        for token in ("pending_payment", "expired", "expired_at", "expires_at")
+        for token in ("status <> 'expired'", "expired", "expired_at", "expires_at")
     )
     assert "octet_length(contact_phone_nonce) = 12" in check_definitions["orders"][
         "ck_orders_contact_phone_nonce_length"
@@ -309,7 +358,21 @@ def test_booking_check_and_unique_constraint_catalog_is_complete(pg_engine: Engi
     ]
     assert all(
         token in idempotency_checks["ck_idempotency_records_state_response"]
-        for token in ("claimed", "completed", "response_status", "response_body")
+        for token in (
+            "claimed",
+            "processing",
+            "completed",
+            "payment_id",
+            "response_status",
+            "response_body",
+        )
+    )
+    payment_checks = check_definitions["payments"]
+    assert "amount_cents >= 0" in payment_checks["ck_payments_amount_cents"]
+    assert "reconcile_attempts >= 0" in payment_checks["ck_payments_reconcile_attempts"]
+    assert all(
+        token in payment_checks["ck_payments_success_paid_at"]
+        for token in ("success", "paid_at", "is not null", "is null")
     )
 
 
@@ -432,6 +495,147 @@ def test_idempotency_state_requires_a_complete_response_pair(
     else:
         with pytest.raises(IntegrityError):
             pg_session.flush()
+
+
+def test_processing_idempotency_requires_payment_and_no_response(
+    pg_session: Session,
+) -> None:
+    _, order = _order(pg_session)
+    payment = _payment(order)
+    pg_session.add(payment)
+    pg_session.flush()
+    record = IdempotencyRecord(
+        user=order.user,
+        operation="CREATE_PAYMENT",
+        key=str(uuid.uuid4()),
+        request_sha256="c" * 64,
+        state="PROCESSING",
+        payment=payment,
+    )
+    pg_session.add(record)
+    pg_session.flush()
+
+    assert record.payment_id == payment.id
+
+
+def test_processing_idempotency_without_payment_is_rejected(pg_session: Session) -> None:
+    pg_session.add(
+        IdempotencyRecord(
+            user=_user(),
+            operation="CREATE_PAYMENT",
+            key=str(uuid.uuid4()),
+            request_sha256="d" * 64,
+            state="PROCESSING",
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+@pytest.mark.parametrize(
+    ("status", "paid_at", "valid"),
+    [
+        (PaymentState.SUCCESS, datetime.now(UTC), True),
+        (PaymentState.SUCCESS, None, False),
+        (PaymentState.CLOSED, None, True),
+        (PaymentState.CLOSED, datetime.now(UTC), False),
+    ],
+)
+def test_payment_success_is_exactly_the_state_with_paid_at(
+    pg_session: Session,
+    status: PaymentState,
+    paid_at: datetime | None,
+    valid: bool,
+) -> None:
+    _, order = _order(pg_session)
+    pg_session.add(_payment(order, status=status, paid_at=paid_at))
+
+    if valid:
+        pg_session.flush()
+    else:
+        with pytest.raises(IntegrityError):
+            pg_session.flush()
+
+
+def test_payment_authority_unknown_anchor_can_survive_terminal_state(
+    pg_session: Session,
+) -> None:
+    _, order = _order(pg_session)
+    anchor = datetime.now(UTC)
+    payment = _payment(
+        order,
+        status=PaymentState.CLOSED,
+        authority_unknown_since=anchor,
+    )
+    pg_session.add(payment)
+    pg_session.flush()
+
+    assert payment.authority_unknown_since == anchor
+
+
+def test_only_one_nonterminal_payment_is_allowed_per_order(pg_session: Session) -> None:
+    _, order = _order(pg_session)
+    pg_session.add_all(
+        [
+            _payment(order, status=PaymentState.CREATING),
+            _payment(order, status=PaymentState.UNKNOWN),
+        ]
+    )
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+def test_multiple_closed_payment_attempts_are_allowed(pg_session: Session) -> None:
+    _, order = _order(pg_session)
+    pg_session.add_all(
+        [_payment(order, status=PaymentState.CLOSED), _payment(order, status=PaymentState.CLOSED)]
+    )
+    pg_session.flush()
+
+
+@pytest.mark.parametrize("field", ["merchant_order_no", "provider_transaction_no"])
+def test_provider_payment_identifiers_are_unique(
+    pg_session: Session, field: str
+) -> None:
+    _, first_order = _order(pg_session)
+    _, second_order = _order(pg_session)
+    identifier = f"identifier-{uuid.uuid4().hex}"
+    overrides = {field: identifier}
+    pg_session.add_all(
+        [
+            _payment(first_order, status=PaymentState.CLOSED, **overrides),
+            _payment(second_order, status=PaymentState.CLOSED, **overrides),
+        ]
+    )
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+@pytest.mark.parametrize("blocking_status", [PaymentState.CREATING, PaymentState.SUCCESS])
+def test_payment_authority_blocks_order_expiry(
+    pg_session: Session, blocking_status: PaymentState
+) -> None:
+    _, order = _order(pg_session)
+    paid_at = datetime.now(UTC) if blocking_status is PaymentState.SUCCESS else None
+    pg_session.add(_payment(order, status=blocking_status, paid_at=paid_at))
+    pg_session.flush()
+    order.status = OrderStatus.EXPIRED
+    order.expired_at = order.expires_at
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+def test_closed_payment_allows_order_expiry(pg_session: Session) -> None:
+    _, order = _order(pg_session)
+    pg_session.add(_payment(order, status=PaymentState.CLOSED))
+    pg_session.flush()
+    order.status = OrderStatus.EXPIRED
+    order.expired_at = order.expires_at
+    pg_session.flush()
 
 
 @pytest.mark.parametrize(

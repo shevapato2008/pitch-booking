@@ -66,6 +66,7 @@ def test_booking_migration_downgrades_and_reupgrades_cleanly(
         "users",
         "user_sessions",
         "orders",
+        "payments",
         "idempotency_records",
     } & set(inspector.get_table_names())
     assert "checkout_version" not in {
@@ -133,7 +134,16 @@ def test_booking_migration_downgrades_and_reupgrades_cleanly(
     assert candidate_index["column_names"] == ["expires_at", "id"]
     predicate = str(candidate_index["dialect_options"]["postgresql_where"]).lower()
     assert "status" in predicate and "pending_payment" in predicate
-    assert "wechat_prepay_id is null" in predicate
+    assert "wechat_prepay_id" not in predicate
+    payment_columns = {
+        column["name"]: column
+        for column in inspect(migration_engine).get_columns("payments")
+    }
+    assert payment_columns["authority_unknown_since"]["nullable"] is True
+    assert payment_columns["paid_at"]["nullable"] is True
+    assert "paid_at" not in {
+        column["name"] for column in inspect(migration_engine).get_columns("orders")
+    }
 
 
 def test_upgrade_releases_legacy_locked_slots_before_adding_order_fk(
