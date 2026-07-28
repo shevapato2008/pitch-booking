@@ -559,3 +559,23 @@ test("flow parser rejects stray, malformed, and unknown-symbol content", () => {
   assert.throws(() => parseFlow("# Flow\navailability --tap selected--> nowhere\n"), /unknown flow destination/);
   assert.throws(() => parseFlow("# Flow\nvenue-home --tap \"未批准\"--> availability\n"), /unknown flow edge/);
 });
+
+test("payment confirmation artifact inventory freezes all three visual states", () => {
+  for (const path of [
+    "artifacts/ui/references/payment-pending.html",
+    "artifacts/ui/references/payment-confirming.html",
+    "artifacts/ui/references/booking-confirmed.html",
+    "artifacts/ui/flows/payment-confirmation.md",
+    "artifacts/ui/screen-manifest/booking-confirmation.yaml",
+    "artifacts/ui/reviews/payment-confirmation/README.md",
+  ])
+    assertFile(path);
+
+  const index = readFileSync("artifacts/ui/README.md", "utf8");
+  assert.match(index, /payment confirmation/i);
+  assert.match(index, /references\/payment-pending\.html/);
+  assert.match(index, /references\/payment-confirming\.html/);
+  assert.match(index, /references\/booking-confirmed\.html/);
+  assert.match(index, /flows\/payment-confirmation\.md/);
+  assert.match(index, /reviews\/payment-confirmation\/README\.md/);
+});

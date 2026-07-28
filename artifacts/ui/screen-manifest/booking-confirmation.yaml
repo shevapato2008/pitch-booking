@@ -41,6 +41,11 @@ screens:
       - closing-payment
       - closing-error
       - expired
+      - creating-prepay
+      - cashier-open
+      - payment-confirming
+      - payment-exception
+      - booking-confirmed
     fixtures:
       - order-pending
       - order-expired

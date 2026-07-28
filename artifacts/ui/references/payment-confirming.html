@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=375, initial-scale=1">
+  <title>订单详情 · 支付确认中</title>
+  <style>
+    :root {
+      --background: #f8fafc;
+      --surface: #ffffff;
+      --text: #10243e;
+      --muted: #64748b;
+      --border: #dbe5ec;
+      --action-blue: #0369a1;
+    }
+    * { box-sizing: border-box; }
+    html,
+    body {
+      width: 375px;
+      height: 812px;
+      margin: 0;
+    }
+    body { background: var(--background); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .artifact { position: relative; width: 375px; height: 812px; overflow: hidden; background: var(--background); }
+    .status { height: 28px; padding-top: 8px; background: var(--surface); font-size: 11px; text-align: center; }
+    .nav { height: 50px; margin: 0; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 16px; font-weight: 700; }
+    .screen { height: calc(100% - 78px); padding: 16px 14px 100px; overflow-x: hidden; overflow-y: auto; }
+    .hero { display: flex; flex-direction: column; align-items: center; padding: 8px 12px 20px; text-align: center; }
+    .progress-icon { width: 32px; height: 32px; margin-bottom: 8px; color: var(--action-blue); }
+    .state-title { margin: 0; font-size: 24px; line-height: 1.35; }
+    .authority { margin: 8px 0 0; max-width: 300px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+    .card-kicker { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+    .venue { margin: 0; font-size: 16px; line-height: 1.45; }
+    .pitch { margin: 4px 0 12px; color: var(--muted); font-size: 13px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 13px; line-height: 1.5; }
+    .muted { color: var(--muted); }
+    .amount { font-size: 20px; font-weight: 800; }
+    .detail-line { margin: 7px 0 0; font-size: 13px; line-height: 1.55; }
+    .rules { color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .footer { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; gap: 12px; padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); background: var(--surface); }
+    .total { min-width: 94px; font-size: 12px; line-height: 1.35; }
+    .cta { flex: 1; min-height: 44px; padding: 12px; border: 0; border-radius: 13px; background: var(--border); color: var(--text); font: 800 14px/1.4 inherit; }
+  </style>
+</head>
+<body>
+  <main class="artifact" data-state="payment-confirming">
+    <div class="status">9:41</div>
+    <h1 class="nav">订单详情</h1>
+    <section class="screen" aria-labelledby="state-title">
+      <header class="hero">
+        <svg class="progress-icon" viewBox="0 0 32 32" role="img" aria-label="正在查询支付结果">
+          <circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" stroke-width="3" opacity="0.24"></circle>
+          <path d="M16 4a12 12 0 0 1 12 12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+        </svg>
+        <h2 id="state-title" class="state-title">正在确认支付</h2>
+        <p class="authority">支付结果以服务端确认为准，请勿重复付款</p>
+      </header>
+      <article class="card">
+        <p class="card-kicker">订单号 PB202607270001</p>
+        <h3 class="venue">浦东星跃足球公园</h3>
+        <p class="pitch">五人制 A 场</p>
+        <div class="row"><span class="muted">7月28日 周二</span><b>19:00–21:00</b></div>
+        <div class="row"><span class="muted">2 小时</span><span class="amount">¥320</span></div>
+      </article>
+      <article class="card">
+        <p class="card-kicker">联系人</p>
+        <p class="detail-line">张三 · 138****5678</p>
+        <p class="detail-line">导航 · 上海市浦东新区锦绣东路 2777 弄 18 号</p>
+        <p class="detail-line">客服电话 · 021-5899-2608</p>
+      </article>
+      <article class="card">
+        <p class="card-kicker">确认说明</p>
+        <p class="rules">服务端正在查询权威支付结果。结果未知时场地保持锁定，不会显示成功或已释放。</p>
+      </article>
+    </section>
+    <footer class="footer">
+      <div class="total">合计<br><span class="amount">¥320</span></div>
+      <button type="button" class="cta" disabled>支付确认中…</button>
+    </footer>
+  </main>
+</body>
+</html>

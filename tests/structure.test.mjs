@@ -9,8 +9,13 @@ test("booking confirmation artifact set freezes the selected candidate screens",
   for (const path of [
     manifestPath,
     "artifacts/ui/references/booking-confirmation-a.html",
+    "artifacts/ui/references/payment-pending.html",
+    "artifacts/ui/references/payment-confirming.html",
+    "artifacts/ui/references/booking-confirmed.html",
     "artifacts/ui/flows/booking-confirmation.md",
+    "artifacts/ui/flows/payment-confirmation.md",
     "artifacts/ui/reviews/booking-confirmation/README.md",
+    "artifacts/ui/reviews/payment-confirmation/README.md",
   ])
     assert.equal(existsSync(path), true, `missing ${path}`);
 
@@ -52,7 +57,17 @@ test("booking confirmation artifact set freezes the selected candidate screens",
       route: "pages/order-detail/index",
       target_viewport: { width: 375, height: 812 },
       components: ["slot-summary-card", "booking-rules-card"],
-      states: ["pending-payment", "closing-payment", "closing-error", "expired"],
+      states: [
+        "pending-payment",
+        "closing-payment",
+        "closing-error",
+        "expired",
+        "creating-prepay",
+        "cashier-open",
+        "payment-confirming",
+        "payment-exception",
+        "booking-confirmed",
+      ],
       fixtures: ["order-pending", "order-expired"],
       acceptance: ["ORDER-03", "ORDER-04"],
     },
@@ -117,6 +132,95 @@ test("booking confirmation review records the frozen reference hash", () => {
   )?.[1];
   const actualHash = createHash("sha256").update(reference).digest("hex");
   assert.equal(recordedHash, actualHash);
+});
+
+test("payment references freeze one accessible 375 by 812 state each", () => {
+  const references = {
+    "payment-pending": readFileSync("artifacts/ui/references/payment-pending.html", "utf8"),
+    "payment-confirming": readFileSync("artifacts/ui/references/payment-confirming.html", "utf8"),
+    "booking-confirmed": readFileSync("artifacts/ui/references/booking-confirmed.html", "utf8"),
+  };
+
+  for (const [state, html] of Object.entries(references)) {
+    assert.match(html, new RegExp(`<main class="artifact" data-state="${state}">`));
+    assert.equal((html.match(/\bdata-state=/g) ?? []).length, 1);
+    assert.match(html, /html,\s*body\s*{[^}]*width:\s*375px;[^}]*height:\s*812px;/s);
+    assert.match(html, /font-family:\s*-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif/);
+    assert.match(html, /min-height:\s*44px/);
+    assert.match(html, /env\(safe-area-inset-bottom/);
+    assert.doesNotMatch(html, /取消订单|创建球局|WeChat|微信支付|[\u{1F300}-\u{1FAFF}]/u);
+  }
+
+  assert.match(references["payment-pending"], /待支付/);
+  assert.match(references["payment-pending"], /剩余\s*09:34/);
+  assert.match(references["payment-pending"], /¥320/);
+  assert.match(references["payment-pending"], />立即支付<\/button>/);
+
+  assert.match(references["payment-confirming"], /正在确认支付/);
+  assert.match(references["payment-confirming"], /支付结果以服务端确认为准，请勿重复付款/);
+  assert.match(references["payment-confirming"], /<button\b[^>]*\bdisabled[^>]*>支付确认中…<\/button>/);
+
+  assert.match(references["booking-confirmed"], /<svg\b[^>]*\brole="img"[^>]*\baria-label="支付成功"/);
+  assert.match(references["booking-confirmed"], /--success:\s*#059669/i);
+  assert.match(references["booking-confirmed"], /预订成功/);
+  assert.match(references["booking-confirmed"], /已支付/);
+  assert.match(references["booking-confirmed"], /¥320/);
+  assert.match(references["booking-confirmed"], />查看预订详情<\/button>/);
+});
+
+test("payment authority flow freezes cashier and provider boundaries", () => {
+  const semantics = readFileSync(
+    "artifacts/ui/flows/payment-confirmation.md",
+    "utf8",
+  )
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+
+  assert.deepEqual(semantics, [
+    "cashier_success != paid",
+    "cashier_success → payment-confirming",
+    "provider SUCCESS → CONFIRMED + BOOKED → booking-confirmed",
+    "cashier_cancelled → payment-pending",
+    "UNKNOWN → payment-confirming/payment-exception, never success or released inventory",
+    "Active order cancellation is the next slice.",
+    "Real WeChat and final production delivery are deferred.",
+  ]);
+});
+
+test("payment review reserves the complete three-state evidence contract", () => {
+  const reviewRoot = "artifacts/ui/reviews/payment-confirmation";
+  const review = readFileSync(`${reviewRoot}/README.md`, "utf8");
+  const evidencePaths = [];
+  for (const state of ["pending", "confirming", "confirmed"]) {
+    evidencePaths.push(
+      `reference-${state}-375x812.png`,
+      `implementation-${state}-375x812.png`,
+      `side-by-side-${state}.png`,
+      `overlay-50-${state}.png`,
+      `difference-${state}.png`,
+    );
+  }
+  for (const path of evidencePaths) {
+    assert.match(review, new RegExp(`\\b${path.replaceAll(".", "\\.")}\\b`));
+    assert.equal(existsSync(`${reviewRoot}/${path}`), false, `Task 1 must not include ${path}`);
+  }
+
+  for (const category of [
+    "Composition",
+    "Geometry / spacing",
+    "Hierarchy",
+    "Typography",
+    "Colors / materials",
+    "Vector assets",
+    "Copy",
+    "Interaction / state semantics",
+    "Accessibility",
+  ])
+    assert.match(review, new RegExp(`\\| ${category.replace("/", "\\/")} \\|`));
+
+  assert.match(review, /normal text contrast[^\n]*>= 4\.5:1/i);
+  assert.match(review, /No evidence images have been captured/i);
 });
 
 test("production app registers no development pages", () => {
