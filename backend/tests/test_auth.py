@@ -38,6 +38,7 @@ from backend.app.modules.auth.service import AuthService
 from backend.app.security.phone_vault import PhoneVault, SealedPhone
 
 APP_SECRET = "app-secret-auth-leak-sentinel"
+APP_ID = "wx-app-id"
 LOGIN_CODE = "login-code-auth-leak-sentinel"
 PHONE_CODE = "phone-code-auth-leak-sentinel"
 ACCESS_TOKEN = "access-token-auth-leak-sentinel"
@@ -81,7 +82,7 @@ class ConcurrentIdentityProvider:
 
     def exchange(self, _code: str) -> WeChatIdentity:
         self._barrier.wait(timeout=10)
-        return WeChatIdentity("concurrent-openid", "concurrent-unionid", SESSION_KEY)
+        return WeChatIdentity("concurrent-openid", "concurrent-unionid", SESSION_KEY, APP_ID)
 
 
 class ConcurrentMappedIdentityProvider:
@@ -115,6 +116,7 @@ def _service(
                 openid="openid-one",
                 unionid="unionid-one",
                 session_key=SESSION_KEY,
+                app_id=APP_ID,
             )
         ),
         phone_provider=StubPhoneProvider(phones or {}),
@@ -150,7 +152,7 @@ def test_real_identity_provider_returns_internal_dto_without_logging_secrets(
     with caplog.at_level(logging.INFO):
         identity = provider.exchange(LOGIN_CODE)
 
-    assert identity == WeChatIdentity("openid-real", "unionid-real", SESSION_KEY)
+    assert identity == WeChatIdentity("openid-real", "unionid-real", SESSION_KEY, APP_ID)
     assert repr(identity).find(SESSION_KEY) == -1
     _assert_no_secret_leak(caplog.text)
 
@@ -416,9 +418,15 @@ def test_real_phone_provider_concurrent_cache_miss_refreshes_access_token_once()
 
 def test_development_provider_is_guarded_and_accepts_only_explicit_dev_codes() -> None:
     provider = DevelopmentWeChatProvider(
-        Settings(app_env="test", wechat_provider="development")
+        Settings(
+            app_env="test",
+            wechat_provider="development",
+            wechat_app_id="wx-development-app",
+        )
     )
-    assert provider.exchange("dev-login-code").openid.startswith("dev-openid-")
+    identity = provider.exchange("dev-login-code")
+    assert identity.openid.startswith("dev-openid-")
+    assert identity.app_id == "wx-development-app"
     assert provider.exchange_phone("dev-phone-code") == VerifiedPhone("13812345678")
 
     with pytest.raises(IdentityProviderError):
@@ -658,6 +666,26 @@ def test_same_openid_reuses_user_and_business_sessions_are_hash_only(
 
 
 @pytest.mark.integration
+def test_openid_identity_is_scoped_to_wechat_app_id(pg_session: Session) -> None:
+    repository = AuthRepository(pg_session)
+
+    first_app_user = repository.get_or_create_user(
+        app_id="wx-app-one", openid="shared-openid", unionid=None
+    )
+    second_app_user = repository.get_or_create_user(
+        app_id="wx-app-two", openid="shared-openid", unionid=None
+    )
+    repeated_first_app_user = repository.get_or_create_user(
+        app_id="wx-app-one", openid="shared-openid", unionid=None
+    )
+
+    assert first_app_user.id != second_app_user.id
+    assert repeated_first_app_user.id == first_app_user.id
+    assert first_app_user.wechat_app_id == "wx-app-one"
+    assert second_app_user.wechat_app_id == "wx-app-two"
+
+
+@pytest.mark.integration
 def test_existing_openid_only_fills_missing_unionid_without_exposing_it(
     pg_session: Session,
     vault: PhoneVault,
@@ -670,12 +698,12 @@ def test_existing_openid_only_fills_missing_unionid_without_exposing_it(
     first = _service(
         pg_session,
         vault,
-        identity=WeChatIdentity("unionid-openid", None, SESSION_KEY),
+        identity=WeChatIdentity("unionid-openid", None, SESSION_KEY, APP_ID),
     ).create_session(LOGIN_CODE)
     second = _service(
         pg_session,
         vault,
-        identity=WeChatIdentity("unionid-openid", UNIONID, SESSION_KEY),
+        identity=WeChatIdentity("unionid-openid", UNIONID, SESSION_KEY, APP_ID),
     ).create_session(LOGIN_CODE)
 
     users = list(pg_session.scalars(select(User)))
@@ -711,7 +739,14 @@ def test_unionid_conflict_rolls_back_before_token_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pg_session.add_all(
-        [User(wechat_openid=openid, wechat_unionid=unionid) for openid, unionid in users]
+        [
+            User(
+                wechat_app_id=APP_ID,
+                wechat_openid=openid,
+                wechat_unionid=unionid,
+            )
+            for openid, unionid in users
+        ]
     )
     pg_session.commit()
 
@@ -725,7 +760,7 @@ def test_unionid_conflict_rolls_back_before_token_generation(
     service = _service(
         pg_session,
         vault,
-        identity=WeChatIdentity(attempt[0], attempt[1], SESSION_KEY),
+        identity=WeChatIdentity(attempt[0], attempt[1], SESSION_KEY, APP_ID),
     )
 
     with pytest.raises(AppError) as captured:
@@ -750,20 +785,26 @@ def test_concurrent_unionid_conflict_returns_502_without_partial_session(
 ) -> None:
     if scenario == "new-openids":
         identities = {
-            "union-race-a": WeChatIdentity("union-race-openid-a", UNIONID, SESSION_KEY),
-            "union-race-b": WeChatIdentity("union-race-openid-b", UNIONID, SESSION_KEY),
+            "union-race-a": WeChatIdentity("union-race-openid-a", UNIONID, SESSION_KEY, APP_ID),
+            "union-race-b": WeChatIdentity("union-race-openid-b", UNIONID, SESSION_KEY, APP_ID),
         }
         synchronized_prefix = "INSERT INTO users"
     else:
         with Session(pg_engine) as seed_session:
-            seed_session.add(User(wechat_openid="fill-race-openid", wechat_unionid=None))
+            seed_session.add(
+                User(
+                    wechat_app_id=APP_ID,
+                    wechat_openid="fill-race-openid",
+                    wechat_unionid=None,
+                )
+            )
             seed_session.commit()
         identities = {
             "union-race-a": WeChatIdentity(
-                "fill-race-openid", "fill-race-unionid-a", SESSION_KEY
+                "fill-race-openid", "fill-race-unionid-a", SESSION_KEY, APP_ID
             ),
             "union-race-b": WeChatIdentity(
-                "fill-race-openid", "fill-race-unionid-b", SESSION_KEY
+                "fill-race-openid", "fill-race-unionid-b", SESSION_KEY, APP_ID
             ),
         }
         synchronized_prefix = "UPDATE users SET wechat_unionid"
@@ -996,7 +1037,7 @@ def test_session_response_failure_does_not_commit_an_undelivered_business_sessio
     app = create_app(settings=Settings(**settings_values))
     app.dependency_overrides[get_database] = lambda: pg_session
     app.dependency_overrides[get_identity_provider] = lambda: StubIdentityProvider(
-        WeChatIdentity("openid-one", "unionid-one", SESSION_KEY)
+        WeChatIdentity("openid-one", "unionid-one", SESSION_KEY, APP_ID)
     )
     app.dependency_overrides[get_phone_provider] = lambda: StubPhoneProvider({})
 
@@ -1032,7 +1073,7 @@ def test_session_commit_failure_rolls_back_user_and_undelivered_token(
     service = AuthService(
         repository=repository,
         identity_provider=StubIdentityProvider(
-            WeChatIdentity("commit-failure-openid", None, SESSION_KEY)
+            WeChatIdentity("commit-failure-openid", None, SESSION_KEY, APP_ID)
         ),
         phone_provider=StubPhoneProvider({}),
         phone_vault=vault,
@@ -1065,7 +1106,7 @@ def test_auth_routes_match_contract_and_bearer_dependency(
     )
     app = create_app(settings=settings)
     identity = StubIdentityProvider(
-        WeChatIdentity("router-openid", "router-unionid", SESSION_KEY)
+        WeChatIdentity("router-openid", "router-unionid", SESSION_KEY, APP_ID)
     )
     phone = StubPhoneProvider({PHONE_CODE: VerifiedPhone(FULL_PHONE)})
     app.dependency_overrides[get_database] = lambda: pg_session

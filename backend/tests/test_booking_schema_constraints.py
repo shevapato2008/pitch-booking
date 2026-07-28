@@ -22,6 +22,7 @@ pytestmark = pytest.mark.integration
 
 def _user() -> User:
     return User(
+        wechat_app_id="wx-test-app",
         wechat_openid=f"openid-{uuid.uuid4()}",
         phone_ciphertext=b"encrypted-phone-and-tag",
         phone_nonce=b"0123456789ab",
@@ -69,6 +70,9 @@ def test_booking_tables_and_slot_version_exist(pg_engine: Engine) -> None:
     assert slot_columns["checkout_version"]["nullable"] is False
     assert str(slot_columns["checkout_version"]["type"]) == "BIGINT"
     assert slot_columns["checkout_version"]["default"] == "1"
+    user_columns = {column["name"]: column for column in inspector.get_columns("users")}
+    assert user_columns["wechat_app_id"]["nullable"] is False
+    assert str(user_columns["wechat_app_id"]["type"]) == "VARCHAR(128)"
     order_columns = {column["name"]: column for column in inspector.get_columns("orders")}
     expired_at_type = order_columns["expired_at"]["type"]
     assert isinstance(expired_at_type, DateTime)
@@ -223,9 +227,15 @@ def test_booking_check_and_unique_constraint_catalog_is_complete(pg_engine: Engi
     }
 
     assert {item["name"] for item in inspector.get_unique_constraints("users")} >= {
-        "uq_users_wechat_openid",
+        "uq_users_wechat_app_openid",
         "uq_users_wechat_unionid",
     }
+    app_openid_constraint = next(
+        item
+        for item in inspector.get_unique_constraints("users")
+        if item["name"] == "uq_users_wechat_app_openid"
+    )
+    assert app_openid_constraint["column_names"] == ["wechat_app_id", "wechat_openid"]
     assert {
         item["name"] for item in inspector.get_unique_constraints("user_sessions")
     } >= {"uq_user_sessions_token_hash"}

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 import type { PendingOrderView, UserSessionView } from "../../domain/booking";
 import { AsyncGenerationGate } from "../../presentation/lifecycle";
-import { registerBookingDataSource, registerNeutralPhoneTapCode, resetBookingDataSourceForTesting, type BookingDataSource, type CreateOrderAttempt } from "../../services/booking";
+import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode, resetBookingDataSourceForTesting, type BookingDataSource, type CreateOrderAttempt } from "../../services/booking";
+import { createCreateOrderAttemptStore } from "../../services/create-order-attempt-store";
 
 type PageDefinition = Record<string, unknown> & { data: Record<string, unknown> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
@@ -84,6 +85,8 @@ describe("booking confirmation lifecycle orchestration", () => {
 
   test("PRICE_CHANGED reads details.current_checkout without depending on the error message", async () => {
     const changedCheckout = { ...checkout, priceCents: 38000, version: 13 };
+    const storage = memoryStorage();
+    registerCreateOrderAttemptStore(createCreateOrderAttemptStore(storage));
     registerBookingDataSource(sourceWith(
       async () => ({ userId: "user", maskedPhone: "138****0000" }),
       async () => {
@@ -100,6 +103,7 @@ describe("booking confirmation lifecycle orchestration", () => {
 
     expect(page.data.priceChanged).toBe(true);
     expect(page.data.changedPrice).toBe("¥380");
+    expect(storage.remove).toHaveBeenCalledWith("modelstella.pitch-booking.create-order-attempt.v1");
     call(page, "onUnload");
   });
 
@@ -181,6 +185,41 @@ describe("booking confirmation lifecycle orchestration", () => {
       expect(attempts).toHaveLength(2);
       expect(attempts[1]).toEqual(attempts[0]);
       call(page, "onUnload");
+    } finally { jest.useRealTimers(); }
+  });
+
+  test("unknown create result survives unload and resumes with the exact attempt", async () => {
+    jest.useFakeTimers();
+    try {
+      const attempts: CreateOrderAttempt[] = [];
+      const storage = memoryStorage();
+      registerCreateOrderAttemptStore(createCreateOrderAttemptStore(storage));
+      registerBookingDataSource(sourceWith(
+        async () => ({ userId: "user", maskedPhone: "138****0000" }),
+        async (attempt) => {
+          attempts.push(attempt);
+          if (attempts.length === 1) {
+            throw Object.assign(new Error("unknown"), { code: "SUBMISSION_RESULT_UNKNOWN" });
+          }
+          return pendingResult(attempt.request.contactName);
+        },
+      ));
+      (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = { async navigateTo() {} };
+      const firstPage = loadPage(); call(firstPage, "onLoad", { slot_id: slotId }); await flush();
+      call(firstPage, "onContactInput", { detail: { value: "张三" } });
+      const submission = call(firstPage, "onSubmit") as Promise<void>;
+      await flush();
+      expect(attempts).toHaveLength(1);
+
+      call(firstPage, "onUnload");
+      await submission;
+      expect(storage.remove).not.toHaveBeenCalled();
+      const secondPage = loadPage(); call(secondPage, "onLoad", { slot_id: slotId }); await flush(); await flush();
+
+      expect(attempts).toHaveLength(2);
+      expect(attempts[1]).toEqual(attempts[0]);
+      expect(storage.remove).toHaveBeenCalledWith("modelstella.pitch-booking.create-order-attempt.v1");
+      call(secondPage, "onUnload");
     } finally { jest.useRealTimers(); }
   });
 
@@ -278,3 +317,12 @@ describe("booking confirmation lifecycle orchestration", () => {
     call(page, "onUnload");
   });
 });
+
+function memoryStorage(initial?: unknown) {
+  let value = initial;
+  return {
+    get: jest.fn(() => value),
+    set: jest.fn((_key: string, next: unknown) => { value = next; }),
+    remove: jest.fn((key: string) => { void key; value = undefined; }),
+  };
+}

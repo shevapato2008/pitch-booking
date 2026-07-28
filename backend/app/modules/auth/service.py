@@ -47,9 +47,12 @@ class AuthService:
             raise AppError(502, "WECHAT_LOGIN_FAILED", "微信登录失败，请重试。") from None
         openid = identity.openid
         unionid = identity.unionid
+        app_id = identity.app_id
         del identity
         try:
-            user = self._repository.get_or_create_user(openid=openid, unionid=unionid)
+            user = self._repository.get_or_create_user(
+                app_id=app_id, openid=openid, unionid=unionid
+            )
         except IdentityConflictError:
             self._repository.rollback()
             raise AppError(502, "WECHAT_LOGIN_FAILED", "微信登录失败，请重试。") from None

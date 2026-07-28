@@ -36,8 +36,14 @@ def _seed_detail(
 ) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     now = datetime.now(UTC)
     with Session(engine) as session:
-        owner = User(wechat_openid=f"detail-owner-{uuid.uuid4()}")
-        stranger = User(wechat_openid=f"detail-stranger-{uuid.uuid4()}")
+        owner = User(
+            wechat_app_id="wx-test-app",
+            wechat_openid=f"detail-owner-{uuid.uuid4()}",
+        )
+        stranger = User(
+            wechat_app_id="wx-test-app",
+            wechat_openid=f"detail-stranger-{uuid.uuid4()}",
+        )
         session.add_all((owner, stranger))
         session.flush()
         sealed = PhoneVault(key_base64=KEY_BASE64, key_version=KEY_VERSION).encrypt(

@@ -18,17 +18,20 @@ class AuthRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_or_create_user(self, *, openid: str, unionid: str | None) -> User:
+    def get_or_create_user(
+        self, *, app_id: str, openid: str, unionid: str | None
+    ) -> User:
         candidate_id = uuid4()
         try:
             inserted_id = self.session.scalar(
                 insert(User)
                 .values(
                     id=candidate_id,
+                    wechat_app_id=app_id,
                     wechat_openid=openid,
                     wechat_unionid=None,
                 )
-                .on_conflict_do_nothing(constraint="uq_users_wechat_openid")
+                .on_conflict_do_nothing(constraint="uq_users_wechat_app_openid")
                 .returning(User.id)
             )
         except IntegrityError:
@@ -38,7 +41,9 @@ class AuthRepository:
             self.session.get(User, inserted_id)
             if inserted_id is not None
             else self.session.scalar(
-                select(User).where(User.wechat_openid == openid)
+                select(User).where(
+                    User.wechat_app_id == app_id, User.wechat_openid == openid
+                )
             )
         )
         if user is None:

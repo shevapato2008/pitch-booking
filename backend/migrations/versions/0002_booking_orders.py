@@ -24,6 +24,7 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("wechat_app_id", sa.String(length=128), nullable=False),
         sa.Column("wechat_openid", sa.String(length=128), nullable=False),
         sa.Column("wechat_unionid", sa.String(length=128), nullable=True),
         sa.Column("phone_ciphertext", sa.LargeBinary(), nullable=True),
@@ -57,7 +58,9 @@ def upgrade() -> None:
             name="ck_users_phone_ciphertext_length",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("wechat_openid", name="uq_users_wechat_openid"),
+        sa.UniqueConstraint(
+            "wechat_app_id", "wechat_openid", name="uq_users_wechat_app_openid"
+        ),
         sa.UniqueConstraint("wechat_unionid", name="uq_users_wechat_unionid"),
     )
     op.create_table(

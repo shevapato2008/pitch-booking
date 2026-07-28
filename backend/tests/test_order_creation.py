@@ -65,6 +65,7 @@ def _verified_user(
 ) -> User:
     now = datetime.now(UTC)
     user = User(
+        wechat_app_id="wx-test-app",
         wechat_openid=f"order-user-{uuid.uuid4()}",
         last_contact_name="旧联系人",
     )
@@ -183,7 +184,10 @@ def _seed_order_case(
                     checkout_version=4,
                 )
                 session.flush()
-            lock_owner = User(wechat_openid=f"lock-owner-{uuid.uuid4()}")
+            lock_owner = User(
+                wechat_app_id="wx-test-app",
+                wechat_openid=f"lock-owner-{uuid.uuid4()}",
+            )
             stale_order = Order(
                 id=uuid.uuid4(),
                 order_number=f"PB-{uuid.uuid4().hex}",
@@ -541,6 +545,7 @@ def test_partial_phone_state_fails_closed_without_secret_leakage(
 ) -> None:
     user = User(
         id=uuid.uuid4(),
+        wechat_app_id="wx-test-app",
         wechat_openid=f"partial-order-phone-{uuid.uuid4()}",
     )
     vault = PhoneVault(key_base64=KEY_BASE64, key_version=KEY_VERSION)

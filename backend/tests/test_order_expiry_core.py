@@ -33,7 +33,7 @@ def _seed_locked_order(
         NOW + timedelta(days=1, hours=1),
         checkout_version=checkout_version,
     )
-    user = User(wechat_openid=f"openid-{uuid.uuid4()}")
+    user = User(wechat_app_id="wx-test-app", wechat_openid=f"openid-{uuid.uuid4()}")
     order = Order(
         order_number=f"PB-{uuid.uuid4().hex}",
         user=user,
@@ -92,7 +92,7 @@ def test_wrong_lock_owner_is_a_no_op(pg_session: Session) -> None:
     slot, order = _seed_locked_order(pg_session)
     other_order = Order(
         order_number=f"PB-{uuid.uuid4().hex}",
-        user=User(wechat_openid=f"openid-{uuid.uuid4()}"),
+        user=User(wechat_app_id="wx-test-app", wechat_openid=f"openid-{uuid.uuid4()}"),
         slot=slot,
         status=OrderStatus.PENDING_PAYMENT,
         price_cents=36000,
@@ -140,7 +140,7 @@ def test_order_must_belong_to_the_locked_slot(pg_session: Session) -> None:
     )
     order = Order(
         order_number=f"PB-{uuid.uuid4().hex}",
-        user=User(wechat_openid=f"openid-{uuid.uuid4()}"),
+        user=User(wechat_app_id="wx-test-app", wechat_openid=f"openid-{uuid.uuid4()}"),
         slot=order_slot,
         status=OrderStatus.PENDING_PAYMENT,
         price_cents=36000,

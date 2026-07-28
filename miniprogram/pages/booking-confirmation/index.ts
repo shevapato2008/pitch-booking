@@ -2,7 +2,8 @@ import type { CheckoutView, CreateOrderInput, PendingOrderView } from "../../dom
 import { canSubmit, reduceBooking, validateContactName, type BookingPageState } from "../../presentation/booking";
 import { formatPriceCents } from "../../presentation/availability";
 import { AsyncGenerationGate, canRetryUnknownSubmission, isStrictUuid } from "../../presentation/lifecycle";
-import { getBookingDataSource, getNeutralPhoneTapCode, type CreateOrderAttempt } from "../../services/booking";
+import { formatShanghaiDateLabel, formatShanghaiTimeRange } from "../../presentation/shanghai-time";
+import { getBookingDataSource, getCreateOrderAttemptStore, getNeutralPhoneTapCode, type CreateOrderAttempt } from "../../services/booking";
 
 type PhoneEvent = WechatMiniprogram.CustomEvent<{
   source: "tap" | "getphonenumber";
@@ -25,12 +26,9 @@ function requireUuid(value: string | undefined): string {
 function priceText(cents: number): string { return formatPriceCents(cents); }
 function checkoutLabels(checkout: CheckoutView | null) {
   if (!checkout) return { dateLabel: "", timeLabel: "", durationLabel: "", price: "" };
-  const start = new Date(checkout.startsAt); const end = new Date(checkout.endsAt);
-  const two = (value: number) => String(value).padStart(2, "0");
-  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const durationMinutes = Math.round((end.getTime() - start.getTime()) / 60000);
+  const durationMinutes = checkout.durationMinutes;
   const durationLabel = durationMinutes % 60 === 0 ? `${durationMinutes / 60}小时` : `${durationMinutes}分钟`;
-  return { dateLabel: `${start.getMonth() + 1}月${start.getDate()}日 ${weekdays[start.getDay()]}`, timeLabel: `${two(start.getHours())}:${two(start.getMinutes())}–${two(end.getHours())}:${two(end.getMinutes())}`, durationLabel, price: priceText(checkout.priceCents) };
+  return { dateLabel: formatShanghaiDateLabel(checkout.startsAt), timeLabel: formatShanghaiTimeRange(checkout.startsAt, checkout.endsAt), durationLabel, price: priceText(checkout.priceCents) };
 }
 
 const initialState: BookingPageState = { session: { status: "loading" }, checkout: { status: "loading" }, contactName: "", submission: { status: "idle" } };
@@ -85,6 +83,7 @@ Page({
     try {
       const checkout = await getBookingDataSource().getCheckout(this.data.slotId); if (!this.isCurrent(this.loadGate, generation)) return;
       loading = reduceBooking(loading, { type: "CHECKOUT_READY", checkout }); this.sync(loading, { loadError: "" });
+      this.resumeStoredAttempt();
     } catch {
       if (!this.isCurrent(this.loadGate, generation)) return;
       const message = "结算信息加载失败，请重试。";
@@ -128,6 +127,7 @@ Page({
     const validation = validateContactName(this.data.state.contactName); if (!validation.ok) { this.setData({ contactError: "请检查联系人姓名" }); return; }
     const request: CreateOrderInput = { slotId: checkout.value.slotId, checkoutVersion: checkout.value.version, contactName: validation.normalized };
     const attempt = { request, idempotencyKey: `booking-${Date.now()}-${Math.round(Math.random() * 1e9)}` };
+    getCreateOrderAttemptStore()?.save(attempt);
     const state = reduceBooking(this.data.state, { type: "SUBMIT_STARTED", idempotencyKey: attempt.idempotencyKey, request }); this.sync(state, { actionError: "", navigationError: "" });
     this.cancelRetryDelay();
     await this.runCreateAttempt(attempt, this.createGate.begin());
@@ -140,6 +140,7 @@ Page({
       for (;;) {
         try {
           const order = await getBookingDataSource().createOrder(attempt); if (!this.isCurrent(this.createGate, generation)) return;
+          getCreateOrderAttemptStore()?.clear();
           const state = reduceBooking(this.data.state, { type: "SUBMIT_SUCCEEDED", idempotencyKey: attempt.idempotencyKey, order });
           this.createdOrder = order; this.sync(state, { actionError: "" });
           await this.navigateCreatedOrder(order); return;
@@ -154,6 +155,7 @@ Page({
             state = reduceBooking(this.data.state, { type: "SUBMIT_RETRY", idempotencyKey: attempt.idempotencyKey }); this.sync(state); continue;
           }
           const currentCheckout = error.details?.current_checkout ?? error.details?.checkout;
+          getCreateOrderAttemptStore()?.clear();
           if (error.code === "PRICE_CHANGED" && currentCheckout) { this.sync(reduceBooking(this.data.state, { type: "PRICE_CHANGED", idempotencyKey: attempt.idempotencyKey, checkout: currentCheckout })); return; }
           if (error.code === "SLOT_NOT_AVAILABLE") { this.sync(reduceBooking(this.data.state, { type: "SLOT_UNAVAILABLE", idempotencyKey: attempt.idempotencyKey, message: "该时段刚刚被预订，请返回重选。" })); return; }
           const editable = reduceBooking(this.data.state, { type: "SUBMIT_FAILED", idempotencyKey: attempt.idempotencyKey });
@@ -171,6 +173,15 @@ Page({
     });
   },
   cancelRetryDelay() { if (this.retryTimer !== undefined) clearTimeout(this.retryTimer); this.retryTimer = undefined; this.retryResolve?.(false); this.retryResolve = undefined; },
+  resumeStoredAttempt() {
+    if (this.createInFlight) return;
+    const attempt = getCreateOrderAttemptStore()?.load();
+    if (!attempt || attempt.request.slotId !== this.data.slotId) return;
+    let state = reduceBooking(this.data.state, { type: "CONTACT_NAME_CHANGED", contactName: attempt.request.contactName });
+    state = reduceBooking(state, { type: "SUBMIT_STARTED", idempotencyKey: attempt.idempotencyKey, request: attempt.request });
+    this.sync(state, { actionError: "", navigationError: "" });
+    void this.runCreateAttempt(attempt, this.createGate.begin());
+  },
   onResumeUnknown() {
     const submission = this.data.state.submission;
     if (submission.status !== "result-reconciling" || this.createInFlight) return;

@@ -98,7 +98,10 @@ def add_status_slot(
             session.flush()
             order = Order(
                 order_number=f"PB-{uuid.uuid4().hex}",
-                user=User(wechat_openid=f"openid-{uuid.uuid4()}"),
+                user=User(
+                    wechat_app_id="wx-test-app",
+                    wechat_openid=f"openid-{uuid.uuid4()}",
+                ),
                 slot=row,
                 status="PENDING_PAYMENT",
                 price_cents=row.price_cents,

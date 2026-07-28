@@ -42,7 +42,10 @@ def _seed_candidates(
             )
             order = Order(
                 order_number=f"PB-{uuid.uuid4().hex}",
-                user=User(wechat_openid=f"worker-user-{uuid.uuid4()}"),
+                user=User(
+                    wechat_app_id="wx-test-app",
+                    wechat_openid=f"worker-user-{uuid.uuid4()}",
+                ),
                 slot=slot,
                 status=OrderStatus.PENDING_PAYMENT,
                 price_cents=36000,

@@ -50,7 +50,10 @@ def _seed_expired_lock(
             NOW + timedelta(days=1, hours=1),
             checkout_version=4,
         )
-        user = User(wechat_openid=f"availability-expiry-{uuid.uuid4()}")
+        user = User(
+            wechat_app_id="wx-test-app",
+            wechat_openid=f"availability-expiry-{uuid.uuid4()}",
+        )
         order = Order(
             order_number=f"PB-{uuid.uuid4().hex}",
             user=user,

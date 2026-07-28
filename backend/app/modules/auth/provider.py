@@ -100,7 +100,12 @@ class RealWeChatIdentityProvider:
                 and not isinstance(unionid, str)
             ):
                 raise IdentityProviderError("identity exchange failed")
-            return WeChatIdentity(openid=openid, unionid=unionid, session_key=session_key)
+            return WeChatIdentity(
+                openid=openid,
+                unionid=unionid,
+                session_key=session_key,
+                app_id=self._app_id,
+            )
         except IdentityProviderError:
             logger.warning("wechat_identity_exchange_failed")
             raise
@@ -209,6 +214,7 @@ class DevelopmentWeChatProvider:
             "development"
         ):
             raise ValueError("development provider is not allowed")
+        self._app_id = settings.wechat_app_id or "development"
 
     def exchange(self, code: str) -> WeChatIdentity:
         if not code.startswith("dev-"):
@@ -218,6 +224,7 @@ class DevelopmentWeChatProvider:
             openid=f"dev-openid-{suffix}",
             unionid=None,
             session_key=f"dev-session-{suffix}",
+            app_id=self._app_id,
         )
 
     def exchange_phone(self, code: str) -> VerifiedPhone:

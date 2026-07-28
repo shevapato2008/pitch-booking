@@ -84,6 +84,7 @@ def _seed_checkout(
     with Session(engine) as session:
         now = datetime.now(UTC)
         user = User(
+            wechat_app_id="wx-test-app",
             wechat_openid=f"checkout-user-{uuid.uuid4()}",
             last_contact_name="张三",
         )
@@ -137,7 +138,10 @@ def _seed_checkout(
         if slot_status is SlotStatus.LOCKED:
             order = Order(
                 order_number=f"PB-{uuid.uuid4().hex}",
-                user=User(wechat_openid=f"checkout-lock-owner-{uuid.uuid4()}"),
+                user=User(
+                    wechat_app_id="wx-test-app",
+                    wechat_openid=f"checkout-lock-owner-{uuid.uuid4()}",
+                ),
                 slot=slot,
                 status=OrderStatus.PENDING_PAYMENT,
                 price_cents=slot.price_cents,
@@ -439,6 +443,7 @@ def test_checkout_phone_failures_return_safe_internal_error(
 def _transient_user_with_verified_phone() -> User:
     user = User(
         id=uuid.uuid4(),
+        wechat_app_id="wx-test-app",
         wechat_openid=f"partial-phone-{uuid.uuid4()}",
         last_contact_name="张三",
     )
@@ -465,6 +470,7 @@ def _contact_service() -> CheckoutService:
 def test_checkout_treats_all_empty_phone_fields_as_missing() -> None:
     user = User(
         id=uuid.uuid4(),
+        wechat_app_id="wx-test-app",
         wechat_openid=f"missing-phone-{uuid.uuid4()}",
         last_contact_name="张三",
     )

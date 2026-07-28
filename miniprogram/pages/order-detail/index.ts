@@ -7,6 +7,7 @@ import {
 } from "../../presentation/order-detail";
 import { formatPriceCents } from "../../presentation/availability";
 import { isStrictUuid } from "../../presentation/lifecycle";
+import { formatShanghaiTimeRange } from "../../presentation/shanghai-time";
 import { getBookingDataSource } from "../../services/booking";
 
 function requireUuid(value: string | undefined): string {
@@ -134,12 +135,9 @@ Page({
   },
 
   orderLabels(order: OrderView) {
-    const start = new Date(order.startsAt);
-    const end = new Date(order.endsAt);
-    const two = (value: number) => String(value).padStart(2, "0");
     return {
       venuePitchLabel: `${order.venue.name} · ${order.pitch.name}`,
-      timeLabel: `${two(start.getHours())}:${two(start.getMinutes())}–${two(end.getHours())}:${two(end.getMinutes())}`,
+      timeLabel: formatShanghaiTimeRange(order.startsAt, order.endsAt),
       durationLabel: order.durationMinutes % 60 === 0 ? `${order.durationMinutes / 60}小时` : `${order.durationMinutes}分钟`,
       priceText: formatPriceCents(order.priceCents),
     };

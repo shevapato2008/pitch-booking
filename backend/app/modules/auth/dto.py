@@ -13,6 +13,7 @@ class WeChatIdentity:
     openid: str
     unionid: str | None
     session_key: str = field(repr=False)
+    app_id: str
 
 
 @dataclass(frozen=True)

@@ -53,7 +53,10 @@ def _seed_concurrency_case(engine: Engine) -> tuple[uuid.UUID, int, list[str]]:
         vault = PhoneVault(key_base64=KEY_BASE64, key_version=KEY_VERSION)
         for index in range(WORKERS):
             raw_token = f"concurrent-order-token-{index:02d}-with-enough-entropy"
-            user = User(wechat_openid=f"concurrent-user-{uuid.uuid4()}")
+            user = User(
+                wechat_app_id="wx-test-app",
+                wechat_openid=f"concurrent-user-{uuid.uuid4()}",
+            )
             session.add(user)
             session.flush()
             sealed = vault.encrypt(

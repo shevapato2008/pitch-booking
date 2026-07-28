@@ -250,11 +250,14 @@ class User(Base):
             "phone_ciphertext IS NULL OR octet_length(phone_ciphertext) >= 16",
             name="ck_users_phone_ciphertext_length",
         ),
-        UniqueConstraint("wechat_openid", name="uq_users_wechat_openid"),
+        UniqueConstraint(
+            "wechat_app_id", "wechat_openid", name="uq_users_wechat_app_openid"
+        ),
         UniqueConstraint("wechat_unionid", name="uq_users_wechat_unionid"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    wechat_app_id: Mapped[str] = mapped_column(String(128))
     wechat_openid: Mapped[str] = mapped_column(String(128))
     wechat_unionid: Mapped[str | None] = mapped_column(String(128), nullable=True)
     phone_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
