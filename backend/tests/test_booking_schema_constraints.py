@@ -1,5 +1,8 @@
+import time as time_module
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, time, timedelta
+from queue import Queue
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -636,6 +639,198 @@ def test_closed_payment_allows_order_expiry(pg_session: Session) -> None:
     order.status = OrderStatus.EXPIRED
     order.expired_at = order.expires_at
     pg_session.flush()
+
+
+@pytest.mark.parametrize(
+    "blocking_status",
+    [
+        PaymentState.CREATING,
+        PaymentState.PREPAY_CREATED,
+        PaymentState.CONFIRMING,
+        PaymentState.UNKNOWN,
+        PaymentState.SUCCESS,
+    ],
+)
+def test_expired_order_rejects_new_payment_authority(
+    pg_session: Session, blocking_status: PaymentState
+) -> None:
+    _, order = _order(pg_session)
+    order.status = OrderStatus.EXPIRED
+    order.expired_at = order.expires_at
+    pg_session.flush()
+    paid_at = datetime.now(UTC) if blocking_status is PaymentState.SUCCESS else None
+    pg_session.add(_payment(order, status=blocking_status, paid_at=paid_at))
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+@pytest.mark.parametrize(
+    "blocking_status",
+    [
+        PaymentState.CREATING,
+        PaymentState.PREPAY_CREATED,
+        PaymentState.CONFIRMING,
+        PaymentState.UNKNOWN,
+        PaymentState.SUCCESS,
+    ],
+)
+def test_expired_order_rejects_closed_payment_becoming_authoritative(
+    pg_session: Session, blocking_status: PaymentState
+) -> None:
+    _, order = _order(pg_session)
+    payment = _payment(order, status=PaymentState.CLOSED)
+    pg_session.add(payment)
+    pg_session.flush()
+    order.status = OrderStatus.EXPIRED
+    order.expired_at = order.expires_at
+    pg_session.flush()
+    payment.status = blocking_status
+    payment.paid_at = datetime.now(UTC) if blocking_status is PaymentState.SUCCESS else None
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+def test_authoritative_payment_rejects_move_to_expired_order(pg_session: Session) -> None:
+    _, source_order = _order(pg_session)
+    _, expired_order = _order(pg_session)
+    payment = _payment(source_order)
+    pg_session.add(payment)
+    expired_order.status = OrderStatus.EXPIRED
+    expired_order.expired_at = expired_order.expires_at
+    pg_session.flush()
+    payment.order_id = expired_order.id
+
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+def _wait_for_database_lock(engine: Engine, backend_pid: int) -> None:
+    deadline = time_module.monotonic() + 5
+    while time_module.monotonic() < deadline:
+        with engine.connect() as observer:
+            wait_event_type = observer.execute(
+                text(
+                    "SELECT wait_event_type FROM pg_stat_activity "
+                    "WHERE pid = :backend_pid"
+                ),
+                {"backend_pid": backend_pid},
+            ).scalar_one_or_none()
+        if wait_event_type == "Lock":
+            return
+        time_module.sleep(0.01)
+    pytest.fail(f"backend {backend_pid} did not block on a database lock")
+
+
+@pytest.mark.parametrize("first_writer", ["payment", "expiry"])
+def test_payment_authority_and_expiry_are_serialized(
+    pg_engine: Engine, first_writer: str
+) -> None:
+    with Session(pg_engine) as setup_session:
+        _, order = _order(setup_session)
+        setup_session.commit()
+        order_id = order.id
+        expires_at = order.expires_at
+
+    payment_id = uuid.uuid4()
+    blocked_backend: Queue[int] = Queue()
+
+    def insert_payment() -> str:
+        try:
+            with pg_engine.begin() as connection:
+                blocked_backend.put(
+                    connection.execute(text("SELECT pg_backend_pid()")).scalar_one()
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO payments "
+                        "(id, order_id, provider, merchant_order_no, amount_cents, "
+                        "currency, status, reconcile_attempts) VALUES "
+                        "(:id, :order_id, 'WECHAT_PAY', :merchant_order_no, 36000, "
+                        "'CNY', 'CREATING', 0)"
+                    ),
+                    {
+                        "id": payment_id,
+                        "order_id": order_id,
+                        "merchant_order_no": f"merchant-{payment_id.hex}",
+                    },
+                )
+        except IntegrityError:
+            return "rejected"
+        return "committed"
+
+    def expire_order() -> str:
+        try:
+            with pg_engine.begin() as connection:
+                blocked_backend.put(
+                    connection.execute(text("SELECT pg_backend_pid()")).scalar_one()
+                )
+                connection.execute(
+                    text(
+                        "UPDATE orders SET status = 'EXPIRED', expired_at = :expired_at "
+                        "WHERE id = :order_id"
+                    ),
+                    {"expired_at": expires_at, "order_id": order_id},
+                )
+        except IntegrityError:
+            return "rejected"
+        return "committed"
+
+    first_connection = pg_engine.connect()
+    first_transaction = first_connection.begin()
+    try:
+        if first_writer == "payment":
+            first_connection.execute(
+                text(
+                    "INSERT INTO payments "
+                    "(id, order_id, provider, merchant_order_no, amount_cents, "
+                    "currency, status, reconcile_attempts) VALUES "
+                    "(:id, :order_id, 'WECHAT_PAY', :merchant_order_no, 36000, "
+                    "'CNY', 'CREATING', 0)"
+                ),
+                {
+                    "id": payment_id,
+                    "order_id": order_id,
+                    "merchant_order_no": f"merchant-{payment_id.hex}",
+                },
+            )
+            second_writer = expire_order
+        else:
+            first_connection.execute(
+                text(
+                    "UPDATE orders SET status = 'EXPIRED', expired_at = :expired_at "
+                    "WHERE id = :order_id"
+                ),
+                {"expired_at": expires_at, "order_id": order_id},
+            )
+            second_writer = insert_payment
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(second_writer)
+            backend_pid = blocked_backend.get(timeout=5)
+            _wait_for_database_lock(pg_engine, backend_pid)
+            first_transaction.commit()
+            assert result.result(timeout=5) == "rejected"
+    finally:
+        if first_transaction.is_active:
+            first_transaction.rollback()
+        first_connection.close()
+
+    with pg_engine.connect() as connection:
+        order_status = connection.execute(
+            text("SELECT status::text FROM orders WHERE id = :order_id"),
+            {"order_id": order_id},
+        ).scalar_one()
+        payment_count = connection.execute(
+            text("SELECT count(*) FROM payments WHERE order_id = :order_id"),
+            {"order_id": order_id},
+        ).scalar_one()
+
+    if first_writer == "payment":
+        assert (order_status, payment_count) == ("PENDING_PAYMENT", 1)
+    else:
+        assert (order_status, payment_count) == ("EXPIRED", 0)
 
 
 @pytest.mark.parametrize(

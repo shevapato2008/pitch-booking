@@ -4,6 +4,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import DateTime, Engine, create_engine, inspect, text
+from sqlalchemy.exc import DBAPIError
 
 from backend.tests.postgres_test_database import (
     disposable_database,
@@ -208,3 +209,173 @@ def test_upgrade_releases_legacy_locked_slots_before_adding_order_fk(
         ("fk_orders_slot_id_slots", "orders", "slots", "r"),
         ("fk_slots_locked_by_order_id_orders", "slots", "orders", "r"),
     }
+
+
+def _insert_legacy_booking_rows(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO venues "
+                "(id, slug, name, description, price_advantage_text, timezone, "
+                "business_hours_text, address, parking_text, phone, refund_policy_text, "
+                "latitude, longitude, is_primary, is_active) VALUES "
+                "('10000000-0000-0000-0000-000000000001', 'data-venue', "
+                "'Data Venue', '', 'price', 'Asia/Shanghai', 'hours', 'address', "
+                "'parking', 'phone', 'refund', 31, 121, false, true)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO pitches (id, venue_id, code, name, pitch_type, sort_order) "
+                "VALUES ('10000000-0000-0000-0000-000000000002', "
+                "'10000000-0000-0000-0000-000000000001', 'P1', 'Pitch 1', "
+                "'FIVE_A_SIDE', 0)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO slots "
+                "(id, pitch_id, starts_at, ends_at, status, price_cents, locked_until, "
+                "locked_by_order_id, checkout_version) VALUES "
+                "('10000000-0000-0000-0000-000000000003', "
+                "'10000000-0000-0000-0000-000000000002', "
+                "'2026-08-01T02:00:00Z', '2026-08-01T03:00:00Z', "
+                "'AVAILABLE', 36000, NULL, NULL, 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, wechat_app_id, wechat_openid, created_at) VALUES "
+                "('10000000-0000-0000-0000-000000000004', 'wx-app', "
+                "'migration-user', '2026-08-01T00:00:00Z')"
+            )
+        )
+
+
+def test_upgrade_preserves_existing_booking_and_idempotency_enum_rows(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0002")
+    _insert_legacy_booking_rows(migration_engine)
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO orders "
+                "(id, order_number, user_id, slot_id, status, price_cents, contact_name, "
+                "contact_phone_ciphertext, contact_phone_nonce, contact_phone_key_version, "
+                "created_at, expires_at, expired_at) VALUES "
+                "('10000000-0000-0000-0000-000000000010', 'PB-PENDING', "
+                "'10000000-0000-0000-0000-000000000004', "
+                "'10000000-0000-0000-0000-000000000003', 'PENDING_PAYMENT', 36000, "
+                "'张三', decode('00112233445566778899aabbccddeeff', 'hex'), "
+                "decode('00112233445566778899aabb', 'hex'), 1, "
+                "'2026-08-01T00:00:00Z', '2026-08-01T01:00:00Z', NULL), "
+                "('10000000-0000-0000-0000-000000000011', 'PB-EXPIRED', "
+                "'10000000-0000-0000-0000-000000000004', "
+                "'10000000-0000-0000-0000-000000000003', 'EXPIRED', 36000, "
+                "'李四', decode('00112233445566778899aabbccddeeff', 'hex'), "
+                "decode('00112233445566778899aabb', 'hex'), 1, "
+                "'2026-08-01T00:00:00Z', '2026-08-01T01:00:00Z', "
+                "'2026-08-01T01:00:00Z')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO idempotency_records "
+                "(id, user_id, operation, key, request_sha256, state, response_status, "
+                "response_body) VALUES "
+                "('10000000-0000-0000-0000-000000000020', "
+                "'10000000-0000-0000-0000-000000000004', 'CREATE_ORDER', "
+                "'claimed-key', :claimed_digest, 'CLAIMED', NULL, NULL), "
+                "('10000000-0000-0000-0000-000000000021', "
+                "'10000000-0000-0000-0000-000000000004', 'CREATE_ORDER', "
+                "'completed-key', :completed_digest, 'COMPLETED', 201, "
+                "'{\"order_id\":\"legacy\"}'::jsonb)"
+            ),
+            {"claimed_digest": "a" * 64, "completed_digest": "b" * 64},
+        )
+
+    command.upgrade(config, "0003")
+
+    with migration_engine.connect() as connection:
+        order_states = connection.execute(
+            text("SELECT status::text FROM orders ORDER BY order_number")
+        ).scalars().all()
+        idempotency_states = connection.execute(
+            text("SELECT state::text FROM idempotency_records ORDER BY key")
+        ).scalars().all()
+
+    assert order_states == ["EXPIRED", "PENDING_PAYMENT"]
+    assert idempotency_states == ["CLAIMED", "COMPLETED"]
+
+
+def test_downgrade_with_new_enum_rows_fails_atomically(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0003")
+    _insert_legacy_booking_rows(migration_engine)
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO orders "
+                "(id, order_number, user_id, slot_id, status, price_cents, contact_name, "
+                "contact_phone_ciphertext, contact_phone_nonce, contact_phone_key_version, "
+                "created_at, expires_at, expired_at) VALUES "
+                "('10000000-0000-0000-0000-000000000030', 'PB-CONFIRMED', "
+                "'10000000-0000-0000-0000-000000000004', "
+                "'10000000-0000-0000-0000-000000000003', 'CONFIRMED', 36000, "
+                "'张三', decode('00112233445566778899aabbccddeeff', 'hex'), "
+                "decode('00112233445566778899aabb', 'hex'), 1, "
+                "'2026-08-01T00:00:00Z', '2026-08-01T01:00:00Z', NULL), "
+                "('10000000-0000-0000-0000-000000000031', 'PB-EXCEPTION', "
+                "'10000000-0000-0000-0000-000000000004', "
+                "'10000000-0000-0000-0000-000000000003', 'PAYMENT_EXCEPTION', 36000, "
+                "'李四', decode('00112233445566778899aabbccddeeff', 'hex'), "
+                "decode('00112233445566778899aabb', 'hex'), 1, "
+                "'2026-08-01T00:00:00Z', '2026-08-01T01:00:00Z', NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO payments "
+                "(id, order_id, provider, merchant_order_no, amount_cents, currency, "
+                "status, reconcile_attempts) VALUES "
+                "('10000000-0000-0000-0000-000000000040', "
+                "'10000000-0000-0000-0000-000000000030', 'WECHAT_PAY', "
+                "'migration-payment', 36000, 'CNY', 'CLOSED', 0)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO idempotency_records "
+                "(id, user_id, operation, key, request_sha256, state, payment_id) VALUES "
+                "('10000000-0000-0000-0000-000000000041', "
+                "'10000000-0000-0000-0000-000000000004', 'CREATE_PAYMENT', "
+                "'processing-key', :digest, 'PROCESSING', "
+                "'10000000-0000-0000-0000-000000000040')"
+            ),
+            {"digest": "c" * 64},
+        )
+
+    with pytest.raises(DBAPIError):
+        command.downgrade(config, "0002")
+
+    with migration_engine.connect() as connection:
+        revision = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        assert revision == "0003"
+        assert connection.execute(
+            text("SELECT count(*) FROM payments")
+        ).scalar_one() == 1
+        assert connection.execute(
+            text("SELECT state::text FROM idempotency_records WHERE key = 'processing-key'")
+        ).scalar_one() == "PROCESSING"
+        assert connection.execute(
+            text(
+                "SELECT array_agg(status::text ORDER BY order_number) FROM orders"
+            )
+        ).scalar_one() == ["CONFIRMED", "PAYMENT_EXCEPTION"]

@@ -262,6 +262,44 @@ def upgrade() -> None:
         "BEFORE UPDATE OF status ON orders "
         "FOR EACH ROW EXECUTE FUNCTION enforce_order_expiry_payment_authority()"
     )
+    op.execute(
+        """
+        CREATE FUNCTION enforce_payment_order_not_expired()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            parent_order_status text;
+        BEGIN
+            IF NEW.status IN (
+                'CREATING', 'PREPAY_CREATED', 'CONFIRMING', 'UNKNOWN', 'SUCCESS'
+            )
+            THEN
+                SELECT status::text INTO parent_order_status
+                FROM orders
+                WHERE id = NEW.order_id
+                FOR UPDATE;
+
+                -- Let the named foreign key report a missing parent. For an
+                -- existing parent, this row lock serializes payment authority
+                -- with the order-side expiry transition.
+                IF FOUND AND parent_order_status = 'EXPIRED'
+                THEN
+                    RAISE EXCEPTION 'authoritative payment cannot belong to expired order'
+                        USING ERRCODE = '23514',
+                              CONSTRAINT = 'ck_payments_order_not_expired';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER trg_payments_order_not_expired "
+        "BEFORE INSERT OR UPDATE OF order_id, status ON payments "
+        "FOR EACH ROW EXECUTE FUNCTION enforce_payment_order_not_expired()"
+    )
 
 
 def _downgrade_enums() -> None:
@@ -310,6 +348,8 @@ def _downgrade_enums() -> None:
 
 def downgrade() -> None:
     """Remove payment authority without rewriting newer enum values."""
+    op.execute("DROP TRIGGER trg_payments_order_not_expired ON payments")
+    op.execute("DROP FUNCTION enforce_payment_order_not_expired()")
     op.execute("DROP TRIGGER trg_orders_expiry_payment_authority ON orders")
     op.execute("DROP FUNCTION enforce_order_expiry_payment_authority()")
     op.drop_constraint(
