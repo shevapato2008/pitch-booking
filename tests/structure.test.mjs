@@ -204,6 +204,48 @@ test("payment reference key spacing declarations stay on the 4px grid", () => {
   }
 });
 
+test("payment reference CTAs use explicit system-font properties", () => {
+  for (const path of [
+    "artifacts/ui/references/payment-pending.html",
+    "artifacts/ui/references/payment-confirming.html",
+    "artifacts/ui/references/booking-confirmed.html",
+  ]) {
+    const html = readFileSync(path, "utf8");
+    assert.match(
+      html,
+      /--font:\s*-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif/,
+    );
+    const ctaDeclarations = html.match(/\.cta\s*\{([^}]*)\}/s)?.[1];
+    assert.ok(ctaDeclarations, `${path} must declare .cta`);
+    assert.doesNotMatch(ctaDeclarations, /(?:^|;)\s*font\s*:/);
+    assert.match(ctaDeclarations, /font-family:\s*var\(--font\)/);
+    assert.match(ctaDeclarations, /font-size:\s*14px/);
+    assert.match(ctaDeclarations, /font-weight:\s*800/);
+    assert.match(ctaDeclarations, /line-height:\s*1\.4/);
+  }
+});
+
+test("payment review records every frozen reference hash", () => {
+  const review = readFileSync(
+    "artifacts/ui/reviews/payment-confirmation/README.md",
+    "utf8",
+  );
+  for (const referenceId of [
+    "payment-pending",
+    "payment-confirming",
+    "booking-confirmed",
+  ]) {
+    const reference = readFileSync(
+      `artifacts/ui/references/${referenceId}.html`,
+    );
+    const recordedHash = review.match(
+      new RegExp(`Frozen ${referenceId} reference SHA-256:\\s*\\x60([a-f0-9]{64})\\x60`),
+    )?.[1];
+    const actualHash = createHash("sha256").update(reference).digest("hex");
+    assert.equal(recordedHash, actualHash, `${referenceId} hash drifted`);
+  }
+});
+
 test("payment authority flow freezes cashier and provider boundaries", () => {
   const semantics = readFileSync(
     "artifacts/ui/flows/payment-confirmation.md",

@@ -17,6 +17,10 @@
 | Confirming | `../../references/payment-confirming.html` |
 | Confirmed | `../../references/booking-confirmed.html` |
 
+- Frozen payment-pending reference SHA-256: `9b41258e0d32f6e08379eb1bfce29fc6db1d32b381fadfa229631819f4c7170b`
+- Frozen payment-confirming reference SHA-256: `72e650b4fc034fee6166f7b0a901234c631bedeaef939320eb67054167e8815a`
+- Frozen booking-confirmed reference SHA-256: `cd48f116370f653d61f5ba57f75f9f6ef20b3b892ea5a872a51437f57e64f159`
+
 The references preserve the approved order-detail hierarchy: stable status region, order
 snapshot, contact, arrival/service information, rules, and a safe-area-aware bottom action.
 Each file renders exactly one state and is fixed at 375 × 812 for deterministic capture.
