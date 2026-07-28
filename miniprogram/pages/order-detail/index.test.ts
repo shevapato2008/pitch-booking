@@ -1,8 +1,24 @@
+/// <reference types="node" />
+
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
+import { readFileSync } from "node:fs";
 
 import type { ExpiredOrderView, PendingOrderView } from "../../domain/booking";
+import type {
+  PaymentCapability,
+  PaymentCapabilityResult,
+  PaymentDataSource,
+  PaymentLaunchResult,
+} from "../../domain/payment";
+import { PAYMENT_PREVIEW_NOW, PAYMENT_SCENARIOS } from "../../dev/payment-scenarios";
 import { AsyncGenerationGate } from "../../presentation/lifecycle";
 import { registerBookingDataSource, resetBookingDataSourceForTesting, type BookingDataSource } from "../../services/booking";
+import {
+  registerPaymentCapability,
+  registerPaymentClock,
+  registerPaymentDataSource,
+  resetPaymentBindingsForTesting,
+} from "../../services/payment";
 
 type PageDefinition = Record<string, unknown> & { data: Record<string, unknown> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
@@ -23,7 +39,37 @@ const pending: PendingOrderView = { orderId: "00000000-0000-4000-8000-0000000000
 const expiredFrom = (order: PendingOrderView, expiredAt: string): ExpiredOrderView => ({ ...order, status: "EXPIRED", expiredAt });
 const baseSource = (getOrder: BookingDataSource["getOrder"]): BookingDataSource => ({ async login() { throw new Error("unused"); }, async getCheckout() { throw new Error("unused"); }, async authorizePhone() { throw new Error("unused"); }, async createOrder() { throw new Error("unused"); }, getOrder });
 
-beforeEach(() => { resetBookingDataSourceForTesting(); });
+beforeEach(() => {
+  resetBookingDataSourceForTesting();
+  resetPaymentBindingsForTesting();
+});
+
+function registerPaymentRuntime(input: {
+  getOrder?: PaymentDataSource["getOrder"];
+  createPayment?: PaymentDataSource["createPayment"];
+  reconcilePayment?: PaymentDataSource["reconcilePayment"];
+  requestPayment?: PaymentCapability["requestPayment"];
+}) {
+  const source: PaymentDataSource = {
+    getOrder: input.getOrder ?? (async () => structuredClone(PAYMENT_SCENARIOS.pending)),
+    createPayment: input.createPayment ?? (async () => ({
+      outcome: "PREPAY_CREATED",
+      paymentId: "payment-current",
+      launchParams: { ...PAYMENT_SCENARIOS.launchParams },
+    })),
+    reconcilePayment: input.reconcilePayment ?? (async () => ({
+      outcome: "PAYMENT_CONFIRMING",
+      order: structuredClone(PAYMENT_SCENARIOS.confirming),
+    })),
+  };
+  const capability: PaymentCapability = {
+    requestPayment: input.requestPayment ?? (async () => ({ outcome: "cashier_success" })),
+  };
+  registerPaymentDataSource(source);
+  registerPaymentCapability(capability);
+  registerPaymentClock({ now: () => new Date(PAYMENT_PREVIEW_NOW) });
+  return { source, capability };
+}
 
 describe("order detail lifecycle orchestration", () => {
   test("onShow replaces a hidden initial request and stale pending cannot overwrite newer expired", async () => {
@@ -133,5 +179,171 @@ describe("order detail lifecycle orchestration", () => {
     expect(page.data.showReselect).toBe(true);
     expect(page.data.navigationError).toBe("页面打开失败，请重试。");
     call(page, "onUnload");
+  });
+});
+
+describe("order detail payment orchestration", () => {
+  test("native template exposes the approved payment semantics without fake actions or branding", () => {
+    const wxml = readFileSync("miniprogram/pages/order-detail/index.wxml", "utf8");
+    const wxss = readFileSync("miniprogram/pages/order-detail/index.wxss", "utf8");
+
+    for (const copy of [
+      "待支付",
+      "立即支付",
+      "正在发起支付…",
+      "模拟支付，不会扣款",
+      "正在确认支付",
+      "支付结果以服务端确认为准，请勿重复付款",
+      "支付确认中…",
+      "重新查询",
+      "预订成功",
+      "已支付",
+      "查看预订详情",
+    ]) expect(wxml).toContain(copy);
+    expect(wxml).toMatch(/disabled="\{\{primaryDisabled\}\}"/);
+    expect(wxml).toMatch(/aria-label="支付成功"/);
+    expect(wxml).not.toMatch(/取消订单|创建球局|微信支付/);
+    expect(wxss).toMatch(/env\(safe-area-inset-bottom/);
+    expect(wxss).toMatch(/padding-bottom:\s*calc\(/);
+    expect(wxss).toMatch(/min-height:\s*88rpx/);
+  });
+
+  test("renders the fixed ten-minute pending preview and exact payable CTA semantics", async () => {
+    registerPaymentRuntime({});
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "payment-pending",
+      eyebrow: "待支付",
+      heroTitle: "请在有效期内完成支付",
+      countdown: "10:00",
+      primaryText: "立即支付",
+      primaryDisabled: false,
+      showPaymentFooter: true,
+    });
+    call(page, "onUnload");
+  });
+
+  test("disables creating state synchronously and ignores duplicate pay taps", async () => {
+    const pendingCreate = deferred<PaymentLaunchResult>();
+    const createPayment = jest.fn<PaymentDataSource["createPayment"]>(() => pendingCreate.promise);
+    registerPaymentRuntime({ createPayment });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    const first = call(page, "onPay");
+    const duplicate = call(page, "onPay");
+
+    expect(page.data).toMatchObject({ status: "creating-prepay", primaryText: "正在发起支付…", primaryDisabled: true });
+    expect(createPayment).toHaveBeenCalledTimes(1);
+    pendingCreate.resolve({ outcome: "PAYMENT_CONFIRMING", paymentId: "payment-current" });
+    await Promise.all([first, duplicate]);
+    call(page, "onUnload");
+  });
+
+  test.each([
+    [{ outcome: "user_cancelled" }, "", "payment-pending"],
+    [{ outcome: "launch_failed", message: "模拟收银台调起失败" }, "模拟收银台调起失败", "payment-pending"],
+  ] as const)("cashier result %s restores an honest retryable pending state", async (cashierResult, errorText, status) => {
+    const requestPayment = jest.fn<PaymentCapability["requestPayment"]>(async () => cashierResult as PaymentCapabilityResult);
+    const createPayment = jest.fn<PaymentDataSource["createPayment"]>(async () => ({
+      outcome: "PREPAY_CREATED",
+      paymentId: "payment-current",
+      launchParams: { ...PAYMENT_SCENARIOS.launchParams },
+    }));
+    registerPaymentRuntime({ requestPayment, createPayment });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    await call(page, "onPay");
+
+    expect(page.data).toMatchObject({ status, primaryText: "立即支付", primaryDisabled: false, paymentError: errorText });
+    await call(page, "onPay");
+    expect(createPayment).toHaveBeenCalledTimes(2);
+    const keys = createPayment.mock.calls.map((values) => values[1]);
+    expect(keys[0]).not.toBe(keys[1]);
+    call(page, "onUnload");
+  });
+
+  test("cashier success remains confirming until the data source returns authoritative confirmation", async () => {
+    let reads = 0;
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(reads++ === 0 ? PAYMENT_SCENARIOS.pending : PAYMENT_SCENARIOS.confirming),
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    await call(page, "onPay");
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "payment-confirming",
+      heroTitle: "正在确认支付",
+      primaryText: "支付确认中…",
+      primaryDisabled: true,
+    });
+    expect((page.data.order as { status: string }).status).toBe("PENDING_PAYMENT");
+    call(page, "onUnload");
+  });
+
+  test.each([
+    [PAYMENT_SCENARIOS.confirmed, "booking-confirmed", "预订成功"],
+    [PAYMENT_SCENARIOS.exception, "payment-exception", "支付状态待确认"],
+  ] as const)("renders %s only from an authoritative terminal reconciliation", async (order, status, heroTitle) => {
+    registerPaymentRuntime({
+      reconcilePayment: async () => ({ outcome: "TERMINAL", order: structuredClone(order) }),
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    await call(page, "onPay");
+
+    expect(page.data).toMatchObject({ status, heroTitle });
+    if (status === "booking-confirmed") {
+      expect(page.data).toMatchObject({ paidLabel: "已支付", primaryText: "查看预订详情", primaryDisabled: false });
+    } else {
+      expect(page.data).toMatchObject({ primaryText: "重新查询", primaryDisabled: false });
+    }
+    call(page, "onUnload");
+  });
+
+  test("hide invalidates a late create result, clears timers, and show immediately refreshes", async () => {
+    jest.useFakeTimers();
+    const pendingCreate = deferred<PaymentLaunchResult>();
+    let reads = 0;
+    const requestPayment = jest.fn<PaymentCapability["requestPayment"]>(async () => ({ outcome: "cashier_success" }));
+    registerPaymentRuntime({
+      getOrder: async () => { reads += 1; return structuredClone(PAYMENT_SCENARIOS.pending); },
+      createPayment: () => pendingCreate.promise,
+      requestPayment,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+    void call(page, "onPay");
+    call(page, "onHide");
+    expect(jest.getTimerCount()).toBe(0);
+
+    pendingCreate.resolve({
+      outcome: "PREPAY_CREATED",
+      paymentId: "payment-current",
+      launchParams: { ...PAYMENT_SCENARIOS.launchParams },
+    });
+    await flush();
+    expect(requestPayment).not.toHaveBeenCalled();
+
+    call(page, "onShow");
+    await flush();
+    expect(reads).toBe(2);
+    expect(page.data.status).toBe("payment-pending");
+    call(page, "onUnload");
+    jest.useRealTimers();
   });
 });

@@ -10,6 +10,12 @@ import {
 
 const CURRENT_PAYMENT_ID = "00000000-0000-4000-8000-000000000050";
 
+export interface DevelopmentPaymentSequence {
+  readonly initial: DevelopmentPaymentProjection;
+  readonly reconciliation: "confirming" | "confirmed" | "payment-exception";
+  readonly confirmingReadsBeforeTerminal?: number;
+}
+
 function cloneOrder<T extends PaymentOrderView>(order: T): T {
   return {
     ...order,
@@ -30,10 +36,27 @@ function cloneLaunchResult(result: PaymentLaunchResult): PaymentLaunchResult {
 }
 
 export function createDevelopmentPaymentDataSource(
-  projection: DevelopmentPaymentProjection = "pending",
+  selection: DevelopmentPaymentProjection | DevelopmentPaymentSequence = "pending",
 ): PaymentDataSource {
+  let projection = typeof selection === "string" ? selection : selection.initial;
+  const reconciliation = typeof selection === "string" ? selection : selection.reconciliation;
+  let nextProjection: DevelopmentPaymentProjection | null = null;
+  let confirmingReadsBeforeTerminal = typeof selection === "string"
+    ? 0
+    : selection.confirmingReadsBeforeTerminal ?? 0;
   const resultsByKey = new Map<string, PaymentLaunchResult>();
-  const currentOrder = (): PaymentOrderView => cloneOrder(PAYMENT_SCENARIOS[projection]);
+  const currentOrder = (): PaymentOrderView => {
+    if (nextProjection !== null) {
+      if (confirmingReadsBeforeTerminal > 0) {
+        confirmingReadsBeforeTerminal -= 1;
+      } else {
+        projection = nextProjection;
+        nextProjection = null;
+      }
+    }
+    if (projection === "payment-exception") return cloneOrder(PAYMENT_SCENARIOS.exception);
+    return cloneOrder(PAYMENT_SCENARIOS[projection]);
+  };
   const assertOrder = (orderId: string): void => {
     if (orderId !== PAYMENT_SCENARIOS.pending.orderId) throw new Error("ORDER_NOT_FOUND");
   };
@@ -48,7 +71,7 @@ export function createDevelopmentPaymentDataSource(
       let result: PaymentLaunchResult;
       if (projection === "confirmed") {
         result = { outcome: "ALREADY_CONFIRMED", order: cloneOrder(PAYMENT_SCENARIOS.confirmed) };
-      } else if (projection === "confirming") {
+      } else if (projection === "confirming" || projection === "payment-exception") {
         result = { outcome: "PAYMENT_CONFIRMING", paymentId: CURRENT_PAYMENT_ID };
       } else {
         result = {
@@ -63,9 +86,15 @@ export function createDevelopmentPaymentDataSource(
     async reconcilePayment(orderId: string, paymentId: string) {
       assertOrder(orderId);
       if (paymentId !== CURRENT_PAYMENT_ID) throw new Error("PAYMENT_NOT_FOUND");
-      if (projection === "confirmed") {
+      if (projection === "confirmed" || reconciliation === "confirmed" && typeof selection === "string") {
         return { outcome: "TERMINAL", order: cloneOrder(PAYMENT_SCENARIOS.confirmed) };
       }
+      if (reconciliation === "payment-exception") {
+        projection = "payment-exception";
+        return { outcome: "TERMINAL", order: cloneOrder(PAYMENT_SCENARIOS.exception) };
+      }
+      if (reconciliation === "confirmed") nextProjection = "confirmed";
+      projection = "confirming";
       return {
         outcome: "PAYMENT_CONFIRMING",
         order: cloneOrder(PAYMENT_SCENARIOS.confirming),

@@ -1,14 +1,89 @@
 <view class="order-page u-page u-text">
-  <view class="hero"><text class="eyebrow u-trust-primary">待支付订单</text><text class="title u-type-title">{{heroTitle}}</text><text wx:if="{{status === 'pending-payment'}}" class="countdown">{{countdown}}</text><text wx:elif="{{showClosingMessage}}" class="u-muted">正在确认服务端关闭状态…</text></view>
+  <view class="hero">
+    <view wx:if="{{showSuccessIcon}}" class="success-check" role="img" aria-label="支付成功">
+      <view class="success-check__stroke"></view>
+    </view>
+    <view wx:elif="{{showProgressIcon}}" class="progress-icon" role="img" aria-label="正在查询支付结果">
+      <view class="progress-icon__arc"></view>
+    </view>
+    <text wx:else class="eyebrow">{{eyebrow || '待支付'}}</text>
+    <text wx:if="{{status === 'payment-confirming'}}" class="title">正在确认支付</text>
+    <text wx:elif="{{status === 'payment-exception'}}" class="title">支付状态待确认</text>
+    <text wx:elif="{{status === 'booking-confirmed'}}" class="title">预订成功</text>
+    <text wx:else class="title">{{heroTitle}}</text>
+    <text wx:if="{{status === 'payment-pending' || status === 'creating-prepay' || status === 'cashier-open' || status === 'pending-payment'}}" class="countdown" aria-label="支付剩余时间 {{countdown}}">剩余 {{countdown}}</text>
+    <text wx:if="{{status === 'payment-confirming'}}" class="hero-copy">支付结果以服务端确认为准，请勿重复付款</text>
+    <text wx:elif="{{status === 'payment-exception'}}" class="hero-copy">暂未取得权威支付结果，场地仍保持锁定，请手动重新查询。</text>
+    <text wx:elif="{{status === 'booking-confirmed'}}" class="hero-copy">订单已确认，场地已为你预订</text>
+    <view wx:if="{{showCashierMarker}}" class="cashier-notice" role="status">
+      <text class="cashier-notice__title">开发态模拟收银台</text>
+      <text>模拟支付，不会扣款</text>
+    </view>
+  </view>
+
   <view wx:if="{{status === 'loading'}}" class="state-card">正在加载订单…</view>
   <view wx:elif="{{status === 'route-error'}}" class="state-card state-card--error"><text>{{errorText}}</text></view>
-  <view wx:elif="{{status === 'load-error'}}" class="state-card state-card--error"><text>{{errorText}}</text><button class="retry" bindtap="onRetryLoad">重新加载</button></view>
-  <view wx:elif="{{status === 'closing-error'}}" class="state-card state-card--error"><text>{{errorText}}</text><button wx:if="{{showClosingRetry}}" class="retry" bindtap="onRetryClosing">重试确认</button></view>
-  <view wx:if="{{order}}" class="content">
-    <view class="order-card u-surface u-border u-radius-lg"><text>{{venuePitchLabel}}</text><text class="u-muted">{{timeLabel}} · {{durationLabel}}</text><text class="amount">{{priceText}}</text></view>
-    <view class="order-card u-surface u-border u-radius-lg"><text class="u-muted">联系人</text><text>{{order.contact.name}} · {{order.contact.maskedPhone}}</text><text class="amount">{{priceText}}</text></view>
-    <booking-rules-card lockRule="仅服务端确认后才显示已关闭" cancellationRule="客户端 0 秒不代表库存已释放" priceRule="支付功能将在后续切片接入" />
-    <text wx:if="{{navigationError}}" class="state-card state-card--error">{{navigationError}}</text>
-    <button wx:if="{{showReselect}}" class="retry" bindtap="onReselectSlot">重新选择时段</button>
+  <view wx:elif="{{status === 'load-error'}}" class="state-card state-card--error">
+    <text>{{errorText}}</text>
+    <button class="secondary-button" bindtap="onRetryLoad">重新加载</button>
+  </view>
+  <view wx:elif="{{status === 'closing-error'}}" class="state-card state-card--error">
+    <text>{{errorText}}</text>
+    <button wx:if="{{showClosingRetry}}" class="secondary-button" bindtap="onRetryClosing">重试确认</button>
+  </view>
+
+  <view wx:if="{{order}}" class="content {{showPaymentFooter ? 'content--with-footer' : ''}}">
+    <view class="detail-card">
+      <text class="card-kicker">订单号 {{order.orderNumber}}</text>
+      <text class="venue-name">{{order.venue.name}}</text>
+      <text class="pitch-name">{{order.pitch.name}}</text>
+      <view class="detail-row">
+        <text class="muted">{{dateLabel}}</text>
+        <text class="detail-row__strong">{{timeLabel}}</text>
+      </view>
+      <view class="detail-row">
+        <text class="muted">{{durationLabel}}</text>
+        <text class="amount">{{priceText}}</text>
+      </view>
+      <view wx:if="{{paidLabel}}" class="paid-snapshot" role="status">
+        <text>已支付</text>
+        <text>{{priceText}}</text>
+      </view>
+    </view>
+
+    <view class="detail-card">
+      <text class="card-kicker">联系人</text>
+      <text class="detail-line">{{order.contact.name}} · {{order.contact.maskedPhone}}</text>
+      <text class="detail-line">导航 · {{order.venue.address}}</text>
+      <text class="detail-line">客服电话 · {{order.venue.customerServicePhone}}</text>
+    </view>
+
+    <view class="detail-card">
+      <text class="card-kicker">{{status === 'payment-confirming' || status === 'payment-exception' ? '确认说明' : status === 'booking-confirmed' ? '取消规则' : '预订须知'}}</text>
+      <text wx:if="{{status === 'payment-confirming'}}" class="rules">服务端正在查询权威支付结果。结果未知时场地保持锁定，不会显示成功或已释放。</text>
+      <text wx:elif="{{status === 'payment-exception'}}" class="rules">支付结果暂时无法确认，场地仍保持锁定。重新查询前不会显示成功，也不会声称场次已释放。</text>
+      <text wx:else class="rules">{{order.cancellationSummary}}{{status === 'booking-confirmed' ? '' : ' 页面倒计时不自行释放场地。'}}</text>
+    </view>
+
+    <text wx:if="{{paymentError}}" class="inline-error" role="alert">{{paymentError}}</text>
+    <text wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</text>
+    <text wx:if="{{showClosingMessage}}" class="closing-copy">正在确认服务端关闭状态…</text>
+    <button wx:if="{{showPaymentRetry && status === 'payment-confirming'}}" class="secondary-button" bindtap="onReconcilePayment">重新查询</button>
+    <button wx:if="{{showReselect}}" class="secondary-button" bindtap="onReselectSlot">重新选择时段</button>
+  </view>
+
+  <view wx:if="{{showPaymentFooter}}" class="payment-footer">
+    <view wx:if="{{status !== 'booking-confirmed'}}" class="footer-total">
+      <text class="footer-total__label">合计</text>
+      <text class="footer-total__amount">{{priceText}}</text>
+    </view>
+    <button wx:if="{{status === 'booking-confirmed'}}" class="primary-button primary-button--wide" bindtap="onViewBookingDetails">查看预订详情</button>
+    <button wx:elif="{{status === 'payment-exception'}}" class="primary-button" bindtap="onReconcilePayment">重新查询</button>
+    <button wx:else class="primary-button" disabled="{{primaryDisabled}}" bindtap="onPay">
+      <text wx:if="{{status === 'creating-prepay'}}">正在发起支付…</text>
+      <text wx:elif="{{status === 'cashier-open'}}">模拟收银台处理中…</text>
+      <text wx:elif="{{status === 'payment-confirming'}}">支付确认中…</text>
+      <text wx:else>立即支付</text>
+    </button>
   </view>
 </view>

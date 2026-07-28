@@ -42,6 +42,36 @@ test("development booking source defaults to the existing Fixture composition", 
   const app = await readFile(path.join(developmentOutput, "app.js"), "utf8");
   assert.match(app, /bootstrapDevelopment\)\(\)/);
   assert.equal(existsSync(path.join(developmentOutput, "dev/fixture-data.js")), true);
+  const bootstrap = await readFile(path.join(developmentOutput, "dev/bootstrap.js"), "utf8");
+  const cashier = await readFile(path.join(developmentOutput, "dev/payment-capability.js"), "utf8");
+  assert.match(bootstrap, /registerPaymentDataSource/);
+  assert.match(bootstrap, /registerPaymentCapability/);
+  assert.match(bootstrap, /PAYMENT_PREVIEW_NOW/);
+  assert.match(cashier, /模拟支付，不会扣款/);
+});
+
+test("development native order detail contains all three payment state semantics", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  const developmentOutput = path.join(projectRoot, "dist/miniprogram-development");
+
+  await build(projectRoot, "development");
+
+  const pageRoot = path.join(developmentOutput, "pages/order-detail");
+  const wxml = await readFile(path.join(pageRoot, "index.wxml"), "utf8");
+  const wxss = await readFile(path.join(pageRoot, "index.wxss"), "utf8");
+  for (const copy of [
+    "待支付",
+    "立即支付",
+    "正在发起支付…",
+    "正在确认支付",
+    "支付确认中…",
+    "预订成功",
+    "已支付",
+    "查看预订详情",
+  ]) assert.match(wxml, new RegExp(copy));
+  assert.match(wxml, /aria-label="支付成功"/);
+  assert.match(wxss, /env\(safe-area-inset-bottom/);
+  assert.doesNotMatch(wxml, /取消订单|创建球局|微信支付/);
 });
 
 test("development HTTP build injects an explicit localhost API URL into the typed composition root", async (t) => {
@@ -118,7 +148,7 @@ test("production ignores the development selector and excludes all development c
 
   assert.equal(existsSync(path.join(productionOutput, "dev")), false);
   const app = await readFile(path.join(productionOutput, "app.js"), "utf8");
-  assert.doesNotMatch(app, /dev-login-code|dev-phone-code|http-booking-source|bootstrapDevelopment/);
+  assert.doesNotMatch(app, /dev-login-code|dev-phone-code|http-booking-source|payment-scenarios|payment-capability|payment-source|bootstrapDevelopment/);
   await execFileAsync(process.execPath, [
     auditScript,
     productionOutput,

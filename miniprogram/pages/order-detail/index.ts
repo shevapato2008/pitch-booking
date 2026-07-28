@@ -1,4 +1,5 @@
 import type { OrderView } from "../../domain/booking";
+import type { PaymentOrderView } from "../../domain/payment";
 import {
   OrderDetailPoller,
   presentOrderDetailStatus,
@@ -7,12 +8,35 @@ import {
 } from "../../presentation/order-detail";
 import { formatPriceCents } from "../../presentation/availability";
 import { isStrictUuid } from "../../presentation/lifecycle";
+import {
+  initialPaymentPageState,
+  reducePayment,
+  type PaymentPageState,
+} from "../../presentation/payment";
 import { formatShanghaiTimeRange } from "../../presentation/shanghai-time";
 import { getBookingDataSource } from "../../services/booking";
+import { getPaymentBindings } from "../../services/payment";
 
 function requireUuid(value: string | undefined): string {
   if (!isStrictUuid(value)) throw new Error("INVALID_ORDER_ID");
   return value;
+}
+
+function paymentOrder(order: OrderView | PaymentOrderView): PaymentOrderView | null {
+  if (order.status === "EXPIRED") return null;
+  if (order.status === "PENDING_PAYMENT" && !("paymentState" in order)) {
+    return {
+      ...order,
+      paymentState: null,
+      paymentConfirming: false,
+      paidAt: null,
+    };
+  }
+  return order;
+}
+
+function isActivePaymentOperation(state: PaymentPageState): boolean {
+  return state.status === "creating-prepay" || state.status === "cashier-open";
 }
 
 const scheduler: PollScheduler = {
@@ -23,26 +47,43 @@ const scheduler: PollScheduler = {
 Page({
   data: {
     orderId: "",
-    order: null as OrderView | null,
-    status: "loading" as "loading" | "route-error" | "load-error" | "pending-payment" | "closing-payment" | "closing-error" | "expired",
+    order: null as OrderView | PaymentOrderView | null,
+    status: "loading" as OrderDetailPollState["status"] | "route-error" | "payment-pending" | "creating-prepay" | "cashier-open",
     seconds: 0,
     countdown: "10:00",
     errorText: "",
+    paymentError: "",
     venuePitchLabel: "",
+    dateLabel: "",
     timeLabel: "",
     durationLabel: "",
     priceText: "",
-    heroTitle: "场次已为你保留",
+    eyebrow: "待支付",
+    heroTitle: "请在有效期内完成支付",
+    heroCopy: "",
+    primaryText: "立即支付",
+    primaryDisabled: false,
+    showPaymentFooter: false,
+    showPaymentRetry: false,
+    showCashierMarker: false,
+    showProgressIcon: false,
+    showSuccessIcon: false,
+    paidLabel: "",
     showClosingMessage: false,
     showClosingRetry: false,
     showReselect: false,
     navigationError: "",
   },
   poller: undefined as OrderDetailPoller | undefined,
+  paymentState: initialPaymentPageState() as PaymentPageState,
+  paymentOperationGeneration: 0,
+  paymentClickSerial: 0,
   visible: false,
 
   onLoad(options: Record<string, string | undefined>) {
     this.visible = true;
+    this.paymentState = initialPaymentPageState();
+    this.paymentOperationGeneration += 1;
     try {
       const orderId = requireUuid(options.order_id);
       this.setData({ orderId });
@@ -55,24 +96,32 @@ Page({
   onShow() {
     if (this.visible) return;
     this.visible = true;
+    if (isActivePaymentOperation(this.paymentState)) {
+      this.paymentState = initialPaymentPageState(this.paymentState.order);
+    }
     if (this.data.orderId) this.ensurePoller().start(this.data.orderId);
   },
 
   onHide() {
     this.visible = false;
+    this.paymentOperationGeneration += 1;
     this.poller?.cancel();
   },
 
   onUnload() {
     this.visible = false;
+    this.paymentOperationGeneration += 1;
     this.poller?.cancel();
   },
 
   ensurePoller(): OrderDetailPoller {
     if (!this.poller) {
+      const bindings = getPaymentBindings();
       this.poller = new OrderDetailPoller({
-        getOrder: (orderId) => getBookingDataSource().getOrder(orderId),
-        clock: { now: () => new Date() },
+        getOrder: bindings
+          ? (orderId) => bindings.source.getOrder(orderId)
+          : (orderId) => getBookingDataSource().getOrder(orderId),
+        clock: bindings?.clock ?? { now: () => new Date() },
         scheduler,
         onState: (state) => {
           if (this.visible) this.applyPollState(state);
@@ -84,43 +133,61 @@ Page({
 
   applyPollState(state: OrderDetailPollState) {
     switch (state.status) {
-      case "loading":
+      case "loading": {
+        if (isActivePaymentOperation(this.paymentState)
+          || this.paymentState.status === "payment-confirming") return;
+        this.paymentState = reducePayment(this.paymentState, { type: "ORDER_LOADING" });
         this.setData({
           ...presentOrderDetailStatus(state.status),
           status: "loading",
           errorText: "",
         });
         return;
+      }
       case "load-error":
       case "closing-error":
+        this.paymentState = reducePayment(this.paymentState, {
+          type: "ORDER_LOAD_FAILED",
+          message: state.message,
+        });
         this.setData({
           ...presentOrderDetailStatus(state.status),
           status: state.status,
           errorText: state.message,
         });
         return;
-      case "pending-payment":
-        this.setData({
-          ...presentOrderDetailStatus(state.status),
-          ...this.orderLabels(state.order),
-          order: state.order,
-          status: state.status,
+      case "pending-payment": {
+        if (!getPaymentBindings()) {
+          this.setData({
+            ...presentOrderDetailStatus(state.status),
+            ...this.orderLabels(state.order),
+            order: state.order,
+            status: state.status,
+            seconds: state.seconds,
+            countdown: this.formatCountdown(state.seconds),
+            errorText: "",
+            showPaymentFooter: false,
+          });
+          return;
+        }
+        const order = paymentOrder(state.order);
+        if (order) this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order });
+        this.applyPaymentState(this.paymentState, {
           seconds: state.seconds,
           countdown: this.formatCountdown(state.seconds),
-          errorText: "",
         });
+        return;
+      }
+      case "payment-confirming":
+        this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order: state.order });
+        this.applyPaymentState(this.paymentState, { showPaymentRetry: state.showManualReconcile });
+        return;
+      case "payment-exception":
+      case "booking-confirmed":
+        this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order: state.order });
+        this.applyPaymentState(this.paymentState);
         return;
       case "closing-payment":
-        this.setData({
-          ...presentOrderDetailStatus(state.status),
-          ...this.orderLabels(state.order),
-          order: state.order,
-          status: state.status,
-          seconds: 0,
-          countdown: "00:00",
-          errorText: "",
-        });
-        return;
       case "expired":
         this.setData({
           ...presentOrderDetailStatus(state.status),
@@ -130,17 +197,156 @@ Page({
           seconds: 0,
           countdown: "00:00",
           errorText: "",
+          showPaymentFooter: false,
         });
     }
   },
 
-  orderLabels(order: OrderView) {
+  applyPaymentState(state: PaymentPageState, extra: Record<string, unknown> = {}) {
+    if (!state.order) return;
+    const status = state.status === "ready" ? "payment-pending" : state.status;
+    const presentation = presentOrderDetailStatus(status);
+    const pending = status === "payment-pending";
+    const creating = status === "creating-prepay";
+    const cashierOpen = status === "cashier-open";
+    const confirming = status === "payment-confirming";
+    const exception = status === "payment-exception";
+    const confirmed = status === "booking-confirmed";
+    const paymentError = state.status === "payment-pending" ? state.errorMessage ?? "" : "";
+
+    this.setData({
+      ...presentation,
+      ...this.orderLabels(state.order),
+      order: state.order,
+      status,
+      eyebrow: pending || creating || cashierOpen ? "待支付" : "",
+      heroTitle: pending || creating || cashierOpen ? "请在有效期内完成支付" : presentation.heroTitle,
+      heroCopy: confirming
+        ? "支付结果以服务端确认为准，请勿重复付款"
+        : exception
+          ? "暂未取得权威支付结果，场地仍保持锁定，请手动重新查询。"
+          : confirmed
+            ? "订单已确认，场地已为你预订"
+            : "",
+      primaryText: creating
+        ? "正在发起支付…"
+        : confirming
+          ? "支付确认中…"
+          : exception
+            ? "重新查询"
+            : confirmed
+              ? "查看预订详情"
+              : "立即支付",
+      primaryDisabled: creating || cashierOpen || confirming,
+      showPaymentFooter: true,
+      showPaymentRetry: exception,
+      showCashierMarker: cashierOpen,
+      showProgressIcon: confirming || exception,
+      showSuccessIcon: confirmed,
+      paidLabel: confirmed ? "已支付" : "",
+      paymentError,
+      errorText: "",
+      ...extra,
+    });
+  },
+
+  orderLabels(order: OrderView | PaymentOrderView) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(order.startsAt);
+    const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    const date = new Date(order.startsAt);
+    const dateLabel = match
+      ? `${Number(match[2])}月${Number(match[3])}日 ${weekdays[date.getUTCDay()]}`
+      : "";
     return {
       venuePitchLabel: `${order.venue.name} · ${order.pitch.name}`,
+      dateLabel,
       timeLabel: formatShanghaiTimeRange(order.startsAt, order.endsAt),
-      durationLabel: order.durationMinutes % 60 === 0 ? `${order.durationMinutes / 60}小时` : `${order.durationMinutes}分钟`,
+      durationLabel: order.durationMinutes % 60 === 0
+        ? `${order.durationMinutes / 60} 小时`
+        : `${order.durationMinutes} 分钟`,
       priceText: formatPriceCents(order.priceCents),
     };
+  },
+
+  async onPay() {
+    const bindings = getPaymentBindings();
+    if (!bindings || (this.paymentState.status !== "ready" && this.paymentState.status !== "payment-pending")) return;
+    const idempotencyKey = `payment-preview-${++this.paymentClickSerial}`;
+    const started = reducePayment(this.paymentState, { type: "PAY_STARTED", idempotencyKey });
+    if (started === this.paymentState) return;
+    this.paymentState = started;
+    this.applyPaymentState(started);
+    const generation = ++this.paymentOperationGeneration;
+
+    try {
+      const launch = await bindings.source.createPayment(this.data.orderId, idempotencyKey);
+      if (!this.isCurrentPaymentOperation(generation)) return;
+      if (launch.outcome === "ALREADY_CONFIRMED") {
+        this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order: launch.order });
+        this.applyPaymentState(this.paymentState);
+        return;
+      }
+      if (launch.outcome === "PAYMENT_CONFIRMING") {
+        this.paymentState = reducePayment(this.paymentState, {
+          type: "PAYMENT_CONFIRMING",
+          idempotencyKey,
+          paymentId: launch.paymentId,
+        });
+        this.applyPaymentState(this.paymentState);
+        this.ensurePoller().start(this.data.orderId);
+        return;
+      }
+
+      this.paymentState = reducePayment(this.paymentState, {
+        type: "PREPAY_CREATED",
+        idempotencyKey,
+        paymentId: launch.paymentId,
+        launchParams: launch.launchParams,
+      });
+      this.applyPaymentState(this.paymentState);
+      const cashier = await bindings.capability.requestPayment(launch.launchParams);
+      if (!this.isCurrentPaymentOperation(generation)) return;
+      if (cashier.outcome === "user_cancelled") {
+        this.paymentState = reducePayment(this.paymentState, { type: "CASHIER_CANCELLED" });
+        this.applyPaymentState(this.paymentState);
+        return;
+      }
+      if (cashier.outcome === "launch_failed") {
+        this.paymentState = reducePayment(this.paymentState, {
+          type: "CASHIER_FAILED",
+          message: cashier.message,
+        });
+        this.applyPaymentState(this.paymentState);
+        return;
+      }
+
+      this.paymentState = reducePayment(this.paymentState, { type: "CASHIER_SUCCEEDED" });
+      this.applyPaymentState(this.paymentState);
+      try {
+        const reconciliation = await bindings.source.reconcilePayment(this.data.orderId, launch.paymentId);
+        if (!this.isCurrentPaymentOperation(generation)) return;
+        this.paymentState = reducePayment(this.paymentState, {
+          type: "ORDER_RECEIVED",
+          order: reconciliation.order,
+        });
+        this.applyPaymentState(this.paymentState);
+        if (this.paymentState.status === "payment-confirming") this.ensurePoller().start(this.data.orderId);
+      } catch {
+        if (this.isCurrentPaymentOperation(generation)) this.ensurePoller().start(this.data.orderId);
+      }
+    } catch {
+      if (!this.isCurrentPaymentOperation(generation)) return;
+      this.paymentState = reducePayment(this.paymentState, {
+        type: "PAY_CREATE_FAILED",
+        idempotencyKey,
+        message: "支付发起失败，请重试。",
+      });
+      this.applyPaymentState(this.paymentState);
+    }
+  },
+
+  isCurrentPaymentOperation(generation: number) {
+    return this.visible && generation === this.paymentOperationGeneration;
   },
 
   onRetryLoad() {
@@ -149,6 +355,20 @@ Page({
 
   onRetryClosing() {
     if (this.data.status === "closing-error") this.ensurePoller().retry();
+  },
+
+  onReconcilePayment() {
+    if (this.data.status === "payment-confirming" || this.data.status === "payment-exception") {
+      this.ensurePoller().reconcile();
+    }
+  },
+
+  async onViewBookingDetails() {
+    try {
+      await wx.pageScrollTo({ scrollTop: 0, duration: 200 });
+    } catch {
+      // The user is already on the stable booking detail page.
+    }
   },
 
   async onReselectSlot() {

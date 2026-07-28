@@ -13,6 +13,7 @@ export type PaymentPageStatus =
   | "creating-prepay"
   | "cashier-open"
   | "payment-confirming"
+  | "payment-exception"
   | "booking-confirmed";
 
 interface LastOrderState {
@@ -43,6 +44,11 @@ export type PaymentPageState =
     })
   | ({ readonly status: "payment-confirming" } & PendingActionState)
   | {
+      readonly status: "payment-exception";
+      readonly order: Extract<PaymentOrderView, { status: "PAYMENT_EXCEPTION" }>;
+      readonly paymentId: string | null;
+    }
+  | {
       readonly status: "booking-confirmed";
       readonly order: ConfirmedOrderView;
       readonly paymentId: string | null;
@@ -72,6 +78,9 @@ export function initialPaymentPageState(order: PaymentOrderView | null = null): 
   if (order === null) return { status: "loading", order: null };
   if (order.status === "CONFIRMED") {
     return { status: "booking-confirmed", order, paymentId: null };
+  }
+  if (order.status === "PAYMENT_EXCEPTION") {
+    return { status: "payment-exception", order, paymentId: null };
   }
   if (order.paymentConfirming) {
     return { status: "payment-confirming", order, paymentId: null };
@@ -105,6 +114,13 @@ export function reducePayment(state: PaymentPageState, event: PaymentPageEvent):
       if (event.order.status === "CONFIRMED") {
         return {
           status: "booking-confirmed",
+          order: event.order,
+          paymentId: "paymentId" in state ? state.paymentId : null,
+        };
+      }
+      if (event.order.status === "PAYMENT_EXCEPTION") {
+        return {
+          status: "payment-exception",
           order: event.order,
           paymentId: "paymentId" in state ? state.paymentId : null,
         };

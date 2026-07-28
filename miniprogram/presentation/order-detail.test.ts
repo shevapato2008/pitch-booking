@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
 
 import type { ExpiredOrderView, OrderView, PendingOrderView } from "../domain/booking";
+import { PAYMENT_SCENARIOS } from "../dev/payment-scenarios";
 import {
   OrderDetailPoller,
   presentOrderDetailStatus,
@@ -25,6 +26,17 @@ describe("order detail status presentation", () => {
       showClosingRetry: false,
       showReselect: true,
     });
+  });
+
+  test.each([
+    ["payment-pending", "待支付", false],
+    ["creating-prepay", "待支付", false],
+    ["cashier-open", "待支付", false],
+    ["payment-confirming", "正在确认支付", false],
+    ["payment-exception", "支付状态待确认", true],
+    ["booking-confirmed", "预订成功", false],
+  ] as const)("presents %s with exact payment copy", (status, heroTitle, showPaymentRetry) => {
+    expect(presentOrderDetailStatus(status)).toMatchObject({ heroTitle, showPaymentRetry });
   });
 });
 
@@ -175,7 +187,7 @@ describe("OrderDetailPoller", () => {
     await flush();
     await time.advance(29_999);
     expect(states[states.length - 1]?.status).toBe("closing-payment");
-    expect(calls).toBeGreaterThan(1);
+    expect(calls).toBeGreaterThan(10);
 
     await time.advance(1);
     expect(states[states.length - 1]).toEqual({
@@ -204,6 +216,73 @@ describe("OrderDetailPoller", () => {
     await flush();
 
     expect(states).toEqual([{ status: "loading" }]);
+    expect(time.pendingTaskCount).toBe(0);
+  });
+
+  test("polls confirming every two seconds for thirty seconds then keeps confirming with manual query", async () => {
+    const time = new ManualTime(PAYMENT_SCENARIOS.pending.createdAt);
+    const states: OrderDetailPollState[] = [];
+    let calls = 0;
+    const poller = new OrderDetailPoller({
+      getOrder: async () => {
+        calls += 1;
+        return structuredClone(PAYMENT_SCENARIOS.confirming);
+      },
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.start(PAYMENT_SCENARIOS.pending.orderId);
+    await flush();
+    expect(states[states.length - 1]).toMatchObject({ status: "payment-confirming", showManualReconcile: false });
+
+    await time.advance(29_999);
+    expect(calls).toBe(15);
+    expect(states[states.length - 1]).toMatchObject({ status: "payment-confirming", showManualReconcile: false });
+
+    await time.advance(1);
+    expect(calls).toBe(15);
+    expect(states[states.length - 1]).toMatchObject({ status: "payment-confirming", showManualReconcile: true });
+    expect(time.pendingTaskCount).toBe(0);
+  });
+
+  test("manual reconcile immediately refreshes a slow confirmation and accepts only authoritative success", async () => {
+    const time = new ManualTime(PAYMENT_SCENARIOS.pending.createdAt);
+    const states: OrderDetailPollState[] = [];
+    let confirmed = false;
+    const poller = new OrderDetailPoller({
+      getOrder: async () => structuredClone(confirmed ? PAYMENT_SCENARIOS.confirmed : PAYMENT_SCENARIOS.confirming),
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.start(PAYMENT_SCENARIOS.pending.orderId);
+    await flush();
+    await time.advance(30_000);
+    confirmed = true;
+    poller.reconcile();
+    await flush();
+
+    expect(states[states.length - 1]).toEqual({ status: "booking-confirmed", order: PAYMENT_SCENARIOS.confirmed });
+    expect(time.pendingTaskCount).toBe(0);
+  });
+
+  test("renders payment exception only when the data source returns it explicitly", async () => {
+    const time = new ManualTime(PAYMENT_SCENARIOS.pending.createdAt);
+    const states: OrderDetailPollState[] = [];
+    const poller = new OrderDetailPoller({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.exception),
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.start(PAYMENT_SCENARIOS.pending.orderId);
+    await flush();
+
+    expect(states[states.length - 1]).toEqual({ status: "payment-exception", order: PAYMENT_SCENARIOS.exception });
     expect(time.pendingTaskCount).toBe(0);
   });
 });

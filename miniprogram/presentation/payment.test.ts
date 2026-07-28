@@ -2,6 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 
 import type {
   ConfirmedOrderView,
+  PaymentExceptionOrderView,
   PaymentPendingOrderView,
 } from "../domain/payment";
 import { PAYMENT_SCENARIOS } from "../dev/payment-scenarios";
@@ -13,6 +14,7 @@ import {
 
 const pendingOrder = (): PaymentPendingOrderView => structuredClone(PAYMENT_SCENARIOS.pending);
 const confirmedOrder = (): ConfirmedOrderView => structuredClone(PAYMENT_SCENARIOS.confirmed);
+const exceptionOrder = (): PaymentExceptionOrderView => structuredClone(PAYMENT_SCENARIOS.exception);
 
 function cashierOpenState(): PaymentPageState {
   return reducePayment(
@@ -33,6 +35,7 @@ describe("payment presentation state machine", () => {
   test.each([
     [PAYMENT_SCENARIOS.pending, "ready"],
     [PAYMENT_SCENARIOS.confirming, "payment-confirming"],
+    [PAYMENT_SCENARIOS.exception, "payment-exception"],
     [PAYMENT_SCENARIOS.confirmed, "booking-confirmed"],
   ] as const)("initial authority projects to %s state", (order, status) => {
     expect(initialPaymentPageState(structuredClone(order)).status).toBe(status);
@@ -185,6 +188,19 @@ describe("payment presentation state machine", () => {
     })).toMatchObject({
       status: "booking-confirmed",
       order: { status: "CONFIRMED", paymentState: "SUCCESS" },
+    });
+  });
+
+  test("confirming enters payment-exception only after an authoritative exception order", () => {
+    const confirming = initialPaymentPageState(structuredClone(PAYMENT_SCENARIOS.confirming));
+
+    expect(reducePayment(confirming, {
+      type: "ORDER_RECEIVED",
+      order: exceptionOrder(),
+    })).toEqual({
+      status: "payment-exception",
+      order: PAYMENT_SCENARIOS.exception,
+      paymentId: null,
     });
   });
 

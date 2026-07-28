@@ -2,9 +2,17 @@ import { productionSessionStorage } from "../runtime/production";
 import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode } from "../services/booking";
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
+import {
+  registerPaymentCapability,
+  registerPaymentClock,
+  registerPaymentDataSource,
+} from "../services/payment";
 import { createDevelopmentBookingDataSource } from "./booking-source";
 import { createDevelopmentHttpSources } from "./http-booking-source";
 import { developmentPageDataSource } from "./page-data";
+import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./payment-capability";
+import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
+import { createDevelopmentPaymentDataSource } from "./payment-source";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -12,6 +20,13 @@ export type DevelopmentBootstrapOptions =
 
 export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { source: "fixture" }): void {
   registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));
+  registerPaymentDataSource(createDevelopmentPaymentDataSource({
+    initial: "pending",
+    reconciliation: "confirmed",
+    confirmingReadsBeforeTerminal: 3,
+  }));
+  registerPaymentCapability(createDevelopmentPaymentCapability("success", showDevelopmentCashier));
+  registerPaymentClock({ now: () => new Date(PAYMENT_PREVIEW_NOW) });
   if (options.source === "http") {
     const sources = createDevelopmentHttpSources(options.apiBaseUrl);
     registerPageDataSource(sources.pages);

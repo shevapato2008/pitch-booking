@@ -21,7 +21,14 @@ export interface ConfirmedOrderView extends Omit<PendingOrderView, "status"> {
   readonly paidAt: string;
 }
 
-export type PaymentOrderView = PaymentPendingOrderView | ConfirmedOrderView;
+export interface PaymentExceptionOrderView extends Omit<PendingOrderView, "status"> {
+  readonly status: "PAYMENT_EXCEPTION";
+  readonly paymentState: "UNKNOWN";
+  readonly paymentConfirming: false;
+  readonly paidAt: null;
+}
+
+export type PaymentOrderView = PaymentPendingOrderView | PaymentExceptionOrderView | ConfirmedOrderView;
 
 export type PaymentLaunchResult =
   | {

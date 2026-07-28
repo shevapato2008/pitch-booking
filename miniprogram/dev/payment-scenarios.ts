@@ -1,5 +1,6 @@
 import type {
   ConfirmedOrderView,
+  PaymentExceptionOrderView,
   PaymentLaunchParams,
   PaymentPendingOrderView,
 } from "../domain/payment";
@@ -40,7 +41,7 @@ const bookingSnapshot = () => ({
   detailPath: "/api/v1/orders/00000000-0000-4000-8000-000000000040",
 });
 
-function deepFreezeOrder<T extends PaymentPendingOrderView | ConfirmedOrderView>(order: T): T {
+function deepFreezeOrder<T extends PaymentPendingOrderView | PaymentExceptionOrderView | ConfirmedOrderView>(order: T): T {
   Object.freeze(order.venue);
   Object.freeze(order.pitch);
   Object.freeze(order.contact);
@@ -71,6 +72,14 @@ const confirming: PaymentPendingOrderView = deepFreezeOrder({
   paidAt: null,
 });
 
+const exception: PaymentExceptionOrderView = deepFreezeOrder({
+  ...bookingSnapshot(),
+  status: "PAYMENT_EXCEPTION",
+  paymentState: "UNKNOWN",
+  paymentConfirming: false,
+  paidAt: null,
+});
+
 const confirmed: ConfirmedOrderView = deepFreezeOrder({
   ...bookingSnapshot(),
   status: "CONFIRMED",
@@ -79,6 +88,6 @@ const confirmed: ConfirmedOrderView = deepFreezeOrder({
   paidAt: "2026-07-27T12:04:00+08:00",
 });
 
-export const PAYMENT_SCENARIOS = Object.freeze({ pending, confirming, confirmed, launchParams });
+export const PAYMENT_SCENARIOS = Object.freeze({ pending, confirming, exception, confirmed, launchParams });
 
-export type DevelopmentPaymentProjection = "pending" | "confirming" | "confirmed";
+export type DevelopmentPaymentProjection = "pending" | "confirming" | "payment-exception" | "confirmed";

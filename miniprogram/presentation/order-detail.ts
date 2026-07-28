@@ -1,5 +1,9 @@
 import type { Clock } from "../runtime/interfaces";
 import type { OrderView, PendingOrderView } from "../domain/booking";
+import type { PaymentOrderView } from "../domain/payment";
+import type { PaymentPageStatus } from "./payment";
+
+type OrderDetailOrderView = OrderView | PaymentOrderView;
 
 export type OrderDetailPollState =
   | { readonly status: "loading" }
@@ -7,7 +11,10 @@ export type OrderDetailPollState =
   | { readonly status: "pending-payment"; readonly order: PendingOrderView; readonly seconds: number }
   | { readonly status: "closing-payment"; readonly order: PendingOrderView }
   | { readonly status: "closing-error"; readonly message: string; readonly retryable: true }
-  | { readonly status: "expired"; readonly order: Extract<OrderView, { status: "EXPIRED" }> };
+  | { readonly status: "expired"; readonly order: Extract<OrderView, { status: "EXPIRED" }> }
+  | { readonly status: "payment-confirming"; readonly order: Extract<PaymentOrderView, { status: "PENDING_PAYMENT" }>; readonly showManualReconcile: boolean }
+  | { readonly status: "payment-exception"; readonly order: Extract<PaymentOrderView, { status: "PAYMENT_EXCEPTION" }> }
+  | { readonly status: "booking-confirmed"; readonly order: Extract<PaymentOrderView, { status: "CONFIRMED" }> };
 
 export interface PollScheduler {
   setTimeout(callback: () => void, delayMs: number): unknown;
@@ -19,11 +26,48 @@ export interface OrderDetailStatusPresentation {
   readonly showClosingMessage: boolean;
   readonly showClosingRetry: boolean;
   readonly showReselect: boolean;
+  readonly showPaymentRetry?: boolean;
 }
 
 export function presentOrderDetailStatus(
-  status: OrderDetailPollState["status"],
+  status: OrderDetailPollState["status"] | PaymentPageStatus,
 ): OrderDetailStatusPresentation {
+  if (status === "payment-pending" || status === "creating-prepay" || status === "cashier-open") {
+    return {
+      heroTitle: "待支付",
+      showClosingMessage: false,
+      showClosingRetry: false,
+      showReselect: false,
+      showPaymentRetry: false,
+    };
+  }
+  if (status === "payment-confirming") {
+    return {
+      heroTitle: "正在确认支付",
+      showClosingMessage: false,
+      showClosingRetry: false,
+      showReselect: false,
+      showPaymentRetry: false,
+    };
+  }
+  if (status === "payment-exception") {
+    return {
+      heroTitle: "支付状态待确认",
+      showClosingMessage: false,
+      showClosingRetry: false,
+      showReselect: false,
+      showPaymentRetry: true,
+    };
+  }
+  if (status === "booking-confirmed") {
+    return {
+      heroTitle: "预订成功",
+      showClosingMessage: false,
+      showClosingRetry: false,
+      showReselect: false,
+      showPaymentRetry: false,
+    };
+  }
   if (status === "closing-payment" || status === "closing-error") {
     return {
       heroTitle: "正在关闭支付",
@@ -49,7 +93,7 @@ export function presentOrderDetailStatus(
 }
 
 interface OrderDetailPollerOptions {
-  readonly getOrder: (orderId: string) => Promise<OrderView>;
+  readonly getOrder: (orderId: string) => Promise<OrderDetailOrderView>;
   readonly clock: Clock;
   readonly scheduler: PollScheduler;
   readonly onState: (state: OrderDetailPollState) => void;
@@ -57,6 +101,7 @@ interface OrderDetailPollerOptions {
 
 const POLL_INTERVAL_MS = 2_000;
 const CLOSING_DEADLINE_MS = 30_000;
+const CONFIRMING_HIGH_FREQUENCY_MS = 30_000;
 
 export class OrderDetailPoller {
   private generation = 0;
@@ -64,7 +109,11 @@ export class OrderDetailPoller {
   private pendingTimer: unknown;
   private pollTimer: unknown;
   private closingDeadlineTimer: unknown;
+  private confirmingDeadlineTimer: unknown;
   private requestInFlight = false;
+  private pollMode: "closing" | "confirming" | null = null;
+  private confirmingManual = false;
+  private confirmingStartedAtMilliseconds: number | undefined;
 
   constructor(private readonly options: OrderDetailPollerOptions) {}
 
@@ -80,9 +129,17 @@ export class OrderDetailPoller {
     if (this.orderId) this.start(this.orderId);
   }
 
+  reconcile(): void {
+    if (!this.orderId || this.requestInFlight) return;
+    void this.refresh(this.generation);
+  }
+
   cancel(): void {
     this.generation += 1;
     this.requestInFlight = false;
+    this.confirmingManual = false;
+    this.confirmingStartedAtMilliseconds = undefined;
+    this.pollMode = null;
     this.clearTimers();
   }
 
@@ -108,12 +165,31 @@ export class OrderDetailPoller {
     }
   }
 
-  private applyOrder(order: OrderView, generation: number): void {
+  private applyOrder(order: OrderDetailOrderView, generation: number): void {
     if (order.status === "EXPIRED") {
       this.clearTimers();
       this.options.onState({ status: "expired", order });
       return;
     }
+    if (order.status === "CONFIRMED") {
+      this.confirmingStartedAtMilliseconds = undefined;
+      this.clearTimers();
+      this.options.onState({ status: "booking-confirmed", order });
+      return;
+    }
+    if (order.status === "PAYMENT_EXCEPTION") {
+      this.confirmingStartedAtMilliseconds = undefined;
+      this.clearTimers();
+      this.options.onState({ status: "payment-exception", order });
+      return;
+    }
+    if ("paymentConfirming" in order && order.paymentConfirming) {
+      this.enterConfirming(order, generation);
+      return;
+    }
+    this.confirmingManual = false;
+    this.confirmingStartedAtMilliseconds = undefined;
+    this.pollMode = null;
     const milliseconds = new Date(order.expiresAt).getTime() - this.options.clock.now().getTime();
     if (order.closingPayment || milliseconds <= 0) {
       this.enterClosing(order, generation);
@@ -129,6 +205,8 @@ export class OrderDetailPoller {
 
   private enterClosing(order: PendingOrderView, generation: number): void {
     this.clearTimers();
+    this.confirmingStartedAtMilliseconds = undefined;
+    this.pollMode = "closing";
     this.options.onState({ status: "closing-payment", order });
     this.closingDeadlineTimer = this.options.scheduler.setTimeout(
       () => this.failClosing(generation),
@@ -139,9 +217,34 @@ export class OrderDetailPoller {
 
   private schedulePoll(generation: number): void {
     this.pollTimer = this.options.scheduler.setTimeout(
-      () => { void this.poll(generation); },
+      () => {
+        this.pollTimer = undefined;
+        void this.poll(generation);
+      },
       POLL_INTERVAL_MS,
     );
+  }
+
+  private enterConfirming(
+    order: Extract<PaymentOrderView, { status: "PENDING_PAYMENT" }>,
+    generation: number,
+  ): void {
+    this.clearTimers();
+    this.pollMode = "confirming";
+    this.confirmingStartedAtMilliseconds ??= this.options.clock.now().getTime();
+    const elapsed = this.options.clock.now().getTime() - this.confirmingStartedAtMilliseconds;
+    if (elapsed >= CONFIRMING_HIGH_FREQUENCY_MS) this.confirmingManual = true;
+    this.options.onState({
+      status: "payment-confirming",
+      order,
+      showManualReconcile: this.confirmingManual,
+    });
+    if (this.confirmingManual) return;
+    this.confirmingDeadlineTimer = this.options.scheduler.setTimeout(
+      () => this.stopHighFrequencyConfirmation(generation, order),
+      CONFIRMING_HIGH_FREQUENCY_MS - elapsed,
+    );
+    this.schedulePoll(generation);
   }
 
   private async poll(generation: number): Promise<void> {
@@ -150,20 +253,44 @@ export class OrderDetailPoller {
     try {
       const order = await this.options.getOrder(this.orderId);
       if (!this.isCurrent(generation)) return;
-      if (order.status === "EXPIRED") {
-        this.clearTimers();
-        this.options.onState({ status: "expired", order });
-        return;
-      }
-      this.options.onState({ status: "closing-payment", order });
+      this.applyOrder(order, generation);
     } catch {
       // Closing is eventually consistent. Keep polling until the hard deadline.
     } finally {
       if (this.isCurrent(generation)) {
         this.requestInFlight = false;
-        if (this.closingDeadlineTimer !== undefined) this.schedulePoll(generation);
+        const activeDeadline = this.pollMode === "closing"
+          ? this.closingDeadlineTimer
+          : this.confirmingDeadlineTimer;
+        if (activeDeadline !== undefined && this.pollTimer === undefined) this.schedulePoll(generation);
       }
     }
+  }
+
+  private async refresh(generation: number): Promise<void> {
+    this.requestInFlight = true;
+    try {
+      const order = await this.options.getOrder(this.orderId);
+      if (this.isCurrent(generation)) this.applyOrder(order, generation);
+    } catch {
+      if (this.isCurrent(generation) && this.pollMode === "confirming") {
+        this.confirmingManual = true;
+      }
+    } finally {
+      if (this.isCurrent(generation)) this.requestInFlight = false;
+    }
+  }
+
+  private stopHighFrequencyConfirmation(
+    generation: number,
+    order: Extract<PaymentOrderView, { status: "PENDING_PAYMENT" }>,
+  ): void {
+    if (!this.isCurrent(generation) || this.pollMode !== "confirming") return;
+    this.confirmingManual = true;
+    if (this.pollTimer !== undefined) this.options.scheduler.clearTimeout(this.pollTimer);
+    this.pollTimer = undefined;
+    this.confirmingDeadlineTimer = undefined;
+    this.options.onState({ status: "payment-confirming", order, showManualReconcile: true });
   }
 
   private failClosing(generation: number): void {
@@ -182,8 +309,10 @@ export class OrderDetailPoller {
     if (this.pendingTimer !== undefined) this.options.scheduler.clearTimeout(this.pendingTimer);
     if (this.pollTimer !== undefined) this.options.scheduler.clearTimeout(this.pollTimer);
     if (this.closingDeadlineTimer !== undefined) this.options.scheduler.clearTimeout(this.closingDeadlineTimer);
+    if (this.confirmingDeadlineTimer !== undefined) this.options.scheduler.clearTimeout(this.confirmingDeadlineTimer);
     this.pendingTimer = undefined;
     this.pollTimer = undefined;
     this.closingDeadlineTimer = undefined;
+    this.confirmingDeadlineTimer = undefined;
   }
 }
