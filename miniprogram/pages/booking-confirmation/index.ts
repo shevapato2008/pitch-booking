@@ -38,6 +38,7 @@ Page({
     state: initialState, slotId: "", checkout: null as CheckoutView | null, maskedPhone: "", contactError: "",
     loadError: "", actionError: "", navigationError: "", phoneMessage: "", dateLabel: "", timeLabel: "", durationLabel: "", price: "",
     canSubmit: false, submitting: false, reconciling: false, priceChanged: false, changedPrice: "", slotUnavailable: false, navigationInFlight: false,
+    showNavigationRecovery: false,
   },
   loadGate: new AsyncGenerationGate(),
   phoneGate: new AsyncGenerationGate(),
@@ -140,7 +141,6 @@ Page({
       for (;;) {
         try {
           const order = await getBookingDataSource().createOrder(attempt); if (!this.isCurrent(this.createGate, generation)) return;
-          getCreateOrderAttemptStore()?.clear();
           const state = reduceBooking(this.data.state, { type: "SUBMIT_SUCCEEDED", idempotencyKey: attempt.idempotencyKey, order });
           this.createdOrder = order; this.sync(state, { actionError: "" });
           await this.navigateCreatedOrder(order); return;
@@ -193,8 +193,12 @@ Page({
     if (this.disposed || this.navigationInFlight) return;
     const generation = this.navigationGate.begin();
     this.navigationInFlight = true;
-    this.setData({ navigationError: "", navigationInFlight: true });
-    try { await wx.navigateTo({ url: `/pages/order-detail/index?order_id=${encodeURIComponent(order.orderId)}` }); }
+    this.setData({ navigationError: "", navigationInFlight: true, showNavigationRecovery: true });
+    try {
+      await wx.navigateTo({ url: `/pages/order-detail/index?order_id=${encodeURIComponent(order.orderId)}` });
+      getCreateOrderAttemptStore()?.clear();
+      if (!this.disposed) this.setData({ showNavigationRecovery: false });
+    }
     catch { if (this.isCurrent(this.navigationGate, generation)) this.setData({ navigationError: "订单已创建，但页面打开失败。", actionError: "" }); }
     finally { if (this.navigationGate.isCurrent(generation)) { this.navigationInFlight = false; if (!this.disposed) this.setData({ navigationInFlight: false }); } }
   },

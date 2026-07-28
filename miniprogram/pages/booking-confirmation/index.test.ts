@@ -257,6 +257,102 @@ describe("booking confirmation lifecycle orchestration", () => {
     call(page, "onUnload");
   });
 
+  test("restored order keeps a visible navigation retry and durable attempt when navigation fails", async () => {
+    const storedAttempt: CreateOrderAttempt = {
+      request: { slotId, checkoutVersion: 12, contactName: "张三" },
+      idempotencyKey: "booking-stored-navigation-failure",
+    };
+    const storage = memoryStorage();
+    const store = createCreateOrderAttemptStore(storage);
+    store.save(storedAttempt);
+    registerCreateOrderAttemptStore(store);
+    const attempts: CreateOrderAttempt[] = [];
+    registerBookingDataSource(sourceWith(
+      async () => ({ userId: "user", maskedPhone: "138****0000" }),
+      async (attempt) => { attempts.push(attempt); return pendingResult(attempt.request.contactName); },
+    ));
+    (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = {
+      async navigateTo() { throw new Error("navigation failed"); },
+    };
+    const page = loadPage();
+
+    call(page, "onLoad", { slot_id: slotId });
+    await flush(); await flush();
+
+    expect(attempts).toEqual([storedAttempt]);
+    expect(page.data.checkout).toBeNull();
+    expect((page.data.state as { submission: { status: string } }).submission.status).toBe("created");
+    expect(page.data.navigationError).toBe("订单已创建，但页面打开失败。");
+    expect(storage.remove).not.toHaveBeenCalled();
+    expect(page.data.showNavigationRecovery).toBe(true);
+    call(page, "onUnload");
+  });
+
+  test("successful navigation retry clears the restored durable attempt", async () => {
+    const storedAttempt: CreateOrderAttempt = {
+      request: { slotId, checkoutVersion: 12, contactName: "张三" },
+      idempotencyKey: "booking-stored-navigation-retry",
+    };
+    const storage = memoryStorage();
+    const store = createCreateOrderAttemptStore(storage);
+    store.save(storedAttempt);
+    registerCreateOrderAttemptStore(store);
+    registerBookingDataSource(sourceWith(
+      async () => ({ userId: "user", maskedPhone: "138****0000" }),
+      async (attempt) => pendingResult(attempt.request.contactName),
+    ));
+    let navigationCalls = 0;
+    (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = {
+      async navigateTo() {
+        navigationCalls += 1;
+        if (navigationCalls === 1) throw new Error("navigation failed");
+      },
+    };
+    const page = loadPage(); call(page, "onLoad", { slot_id: slotId }); await flush(); await flush();
+    expect(storage.remove).not.toHaveBeenCalled();
+
+    call(page, "onRetryNavigation");
+    await flush();
+
+    expect(navigationCalls).toBe(2);
+    expect(storage.remove).toHaveBeenCalledWith("modelstella.pitch-booking.create-order-attempt.v1");
+    expect(page.data.showNavigationRecovery).toBe(false);
+    call(page, "onUnload");
+  });
+
+  test("unload after navigation failure reopens with the same exact stored attempt", async () => {
+    const storedAttempt: CreateOrderAttempt = {
+      request: { slotId, checkoutVersion: 12, contactName: "张三" },
+      idempotencyKey: "booking-stored-navigation-reopen",
+    };
+    const storage = memoryStorage();
+    const store = createCreateOrderAttemptStore(storage);
+    store.save(storedAttempt);
+    registerCreateOrderAttemptStore(store);
+    const attempts: CreateOrderAttempt[] = [];
+    registerBookingDataSource(sourceWith(
+      async () => ({ userId: "user", maskedPhone: "138****0000" }),
+      async (attempt) => { attempts.push(attempt); return pendingResult(attempt.request.contactName); },
+    ));
+    let navigationCalls = 0;
+    (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = {
+      async navigateTo() {
+        navigationCalls += 1;
+        if (navigationCalls === 1) throw new Error("navigation failed");
+      },
+    };
+    const firstPage = loadPage(); call(firstPage, "onLoad", { slot_id: slotId }); await flush(); await flush();
+    expect(storage.remove).not.toHaveBeenCalled();
+    call(firstPage, "onUnload");
+
+    const secondPage = loadPage(); call(secondPage, "onLoad", { slot_id: slotId }); await flush(); await flush();
+
+    expect(attempts).toEqual([storedAttempt, storedAttempt]);
+    expect(navigationCalls).toBe(2);
+    expect(storage.remove).toHaveBeenCalledWith("modelstella.pitch-booking.create-order-attempt.v1");
+    call(secondPage, "onUnload");
+  });
+
   test("accepted price change submits the new version with a fresh key", async () => {
     const now = jest.spyOn(Date, "now").mockReturnValue(1000);
     const random = jest.spyOn(Math, "random").mockReturnValueOnce(0.1).mockReturnValueOnce(0.2);

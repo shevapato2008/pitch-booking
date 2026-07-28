@@ -310,6 +310,14 @@ test("booking confirmation ready state preserves the frozen visual contract", ()
   assert.match(pageTemplate, /提交后锁定场地 10 分钟/);
   assert.match(pageTemplate, /开场前 24 小时可取消/);
   assert.match(pageTemplate, /实际价格以服务端确认为准/);
+  assert.match(
+    pageTemplate,
+    /wx:elif="{{!checkout && !showNavigationRecovery}}"/,
+  );
+  assert.match(
+    pageTemplate,
+    /\n  <\/view>\n  <view wx:if="{{showNavigationRecovery}}"[^>]*>.*bindtap="onRetryNavigation".*<\/view>/,
+  );
   assert.match(pageStyles, /padding:\s*28rpx\s+28rpx\s+188rpx/);
   assert.match(contactTemplate, /wx:if="{{showContactLabel}}"[^>]*class="field-label/);
   assert.doesNotMatch(submitTemplate, /class="disabled-reason/);
