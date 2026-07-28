@@ -168,6 +168,42 @@ test("payment references freeze one accessible 375 by 812 state each", () => {
   assert.match(references["booking-confirmed"], />查看预订详情<\/button>/);
 });
 
+test("payment reference key spacing declarations stay on the 4px grid", () => {
+  const referencePaths = [
+    "artifacts/ui/references/payment-pending.html",
+    "artifacts/ui/references/payment-confirming.html",
+    "artifacts/ui/references/booking-confirmed.html",
+  ];
+  const keyDeclarations = [
+    [".screen", "padding"],
+    [".footer", "padding"],
+    [".detail-line", "margin"],
+    [".state-title", "margin"],
+  ];
+
+  for (const path of referencePaths) {
+    const html = readFileSync(path, "utf8");
+    for (const [selector, property] of keyDeclarations) {
+      const selectorPattern = selector.replaceAll(".", "\\.");
+      const declarations = html.match(
+        new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`, "s"),
+      )?.[1];
+      assert.ok(declarations, `${path} must declare ${selector}`);
+      const value = declarations.match(
+        new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+)`),
+      )?.[1];
+      assert.ok(value, `${path} ${selector} must declare ${property}`);
+      for (const match of value.matchAll(/(-?\d+(?:\.\d+)?)px/g)) {
+        assert.equal(
+          Number(match[1]) % 4,
+          0,
+          `${path} ${selector} ${property} uses off-grid ${match[0]}`,
+        );
+      }
+    }
+  }
+});
+
 test("payment authority flow freezes cashier and provider boundaries", () => {
   const semantics = readFileSync(
     "artifacts/ui/flows/payment-confirmation.md",
