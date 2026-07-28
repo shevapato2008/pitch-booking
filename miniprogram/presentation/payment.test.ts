@@ -14,6 +14,21 @@ import {
 const pendingOrder = (): PaymentPendingOrderView => structuredClone(PAYMENT_SCENARIOS.pending);
 const confirmedOrder = (): ConfirmedOrderView => structuredClone(PAYMENT_SCENARIOS.confirmed);
 
+function cashierOpenState(): PaymentPageState {
+  return reducePayment(
+    reducePayment(initialPaymentPageState(pendingOrder()), {
+      type: "PAY_STARTED",
+      idempotencyKey: "pay-key-1",
+    }),
+    {
+      type: "PREPAY_CREATED",
+      idempotencyKey: "pay-key-1",
+      paymentId: "payment-current",
+      launchParams: PAYMENT_SCENARIOS.launchParams,
+    },
+  );
+}
+
 describe("payment presentation state machine", () => {
   test.each([
     [PAYMENT_SCENARIOS.pending, "ready"],
@@ -109,6 +124,56 @@ describe("payment presentation state machine", () => {
     expect(confirming.status).toBe("payment-confirming");
     expect(confirming.order).toEqual(PAYMENT_SCENARIOS.pending);
     expect(confirming.order?.status).not.toBe("CONFIRMED");
+  });
+
+  test("background refresh preserves cashier operation until its outcome", () => {
+    const open = cashierOpenState();
+    const loading = reducePayment(open, { type: "ORDER_LOADING" });
+    const refreshed = reducePayment(loading, {
+      type: "ORDER_RECEIVED",
+      order: {
+        ...pendingOrder(),
+        paymentState: "PREPAY_CREATED",
+      },
+    });
+
+    expect(refreshed).toMatchObject({
+      status: "cashier-open",
+      idempotencyKey: "pay-key-1",
+      paymentId: "payment-current",
+      launchParams: PAYMENT_SCENARIOS.launchParams,
+      order: { paymentState: "PREPAY_CREATED" },
+    });
+    expect(reducePayment(refreshed, { type: "CASHIER_SUCCEEDED" })).toMatchObject({
+      status: "payment-confirming",
+      paymentId: "payment-current",
+    });
+  });
+
+  test.each(["creating-prepay", "cashier-open"] as const)(
+    "background load failure does not discard %s operation",
+    (activeStatus) => {
+      const creating = reducePayment(initialPaymentPageState(pendingOrder()), {
+        type: "PAY_STARTED",
+        idempotencyKey: "pay-key-1",
+      });
+      const active = activeStatus === "creating-prepay" ? creating : cashierOpenState();
+
+      expect(reducePayment(active, {
+        type: "ORDER_LOAD_FAILED",
+        message: "后台刷新失败",
+      })).toBe(active);
+    },
+  );
+
+  test.each([
+    [PAYMENT_SCENARIOS.confirming, "payment-confirming"],
+    [PAYMENT_SCENARIOS.confirmed, "booking-confirmed"],
+  ] as const)("active cashier yields to authoritative %s order", (order, status) => {
+    expect(reducePayment(cashierOpenState(), {
+      type: "ORDER_RECEIVED",
+      order: structuredClone(order),
+    }).status).toBe(status);
   });
 
   test("confirming + authoritative confirmed ORDER_RECEIVED enters booking-confirmed", () => {

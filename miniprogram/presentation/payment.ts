@@ -52,6 +52,7 @@ export type PaymentPageEvent =
   | { readonly type: "ORDER_LOADING" }
   | { readonly type: "ORDER_RECEIVED"; readonly order: PaymentOrderView }
   | { readonly type: "ORDER_FAILED"; readonly message: string }
+  | { readonly type: "ORDER_LOAD_FAILED"; readonly message: string }
   | { readonly type: "PAY_STARTED"; readonly idempotencyKey: string }
   | {
       readonly type: "PREPAY_CREATED";
@@ -85,11 +86,20 @@ function isCurrentCreate(
   return state.status === "creating-prepay" && state.idempotencyKey === idempotencyKey;
 }
 
+function isActivePaymentAction(
+  state: PaymentPageState,
+): state is Extract<PaymentPageState, { status: "creating-prepay" | "cashier-open" }> {
+  return state.status === "creating-prepay" || state.status === "cashier-open";
+}
+
 export function reducePayment(state: PaymentPageState, event: PaymentPageEvent): PaymentPageState {
   switch (event.type) {
     case "ORDER_LOADING":
+      if (isActivePaymentAction(state)) return state;
       return { status: "loading", order: state.order };
     case "ORDER_FAILED":
+    case "ORDER_LOAD_FAILED":
+      if (isActivePaymentAction(state)) return state;
       return { status: "load-error", order: state.order, errorMessage: event.message };
     case "ORDER_RECEIVED":
       if (event.order.status === "CONFIRMED") {
@@ -105,6 +115,9 @@ export function reducePayment(state: PaymentPageState, event: PaymentPageEvent):
           order: event.order,
           paymentId: "paymentId" in state ? state.paymentId : null,
         };
+      }
+      if (isActivePaymentAction(state)) {
+        return { ...state, order: event.order };
       }
       return {
         status: "payment-pending",
