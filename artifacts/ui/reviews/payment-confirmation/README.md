@@ -3,9 +3,9 @@
 ## Status
 
 - Artifact state: frozen for implementation
-- Implementation visual status: awaiting same-viewport capture and user confirmation
+- Implementation visual status: same-viewport evidence captured; awaiting user confirmation
 - Target viewport: 375 × 812
-- No evidence images have been captured in Task 1.
+- Browser review board: `review-board.html`
 - Active order cancellation belongs to the next slice.
 - Real WeChat integration and final production delivery remain deferred.
 
@@ -27,8 +27,8 @@ Each file renders exactly one state and is fixed at 375 × 812 for deterministic
 
 ## Reserved evidence paths
 
-The following paths are reserved now and will be populated only after the real Mini Program
-implementation is ready for the visual gate.
+The following evidence was captured from the frozen browser references and the real native
+Mini Program runtime in WeChat DevTools.
 
 | State | Reference | Implementation | Side-by-side | Overlay 50% | Difference |
 | --- | --- | --- | --- | --- | --- |
@@ -52,15 +52,15 @@ Complete every row for pending, confirming, and confirmed before requesting visu
 
 | Category | Pending | Confirming | Confirmed |
 | --- | --- | --- | --- |
-| Composition | Pending capture | Pending capture | Pending capture |
-| Geometry / spacing | Pending capture | Pending capture | Pending capture |
-| Hierarchy | Pending capture | Pending capture | Pending capture |
-| Typography | Pending capture | Pending capture | Pending capture |
-| Colors / materials | Pending capture | Pending capture | Pending capture |
-| Vector assets | Pending capture | Pending capture | Pending capture |
-| Copy | Pending capture | Pending capture | Pending capture |
-| Interaction / state semantics | Pending capture | Pending capture | Pending capture |
-| Accessibility | Pending capture | Pending capture | Pending capture |
+| Composition | Body hierarchy matches; native WeChat status/navigation chrome is visible only in implementation | Body hierarchy matches; native WeChat chrome adds top height | Body hierarchy matches; native WeChat chrome adds top height |
+| Geometry / spacing | Cards, hero and fixed footer align closely; implementation uses slightly denser vertical rhythm | Cards and confirmation hero align closely | Success hero and cards align; implementation footer sits above Home Indicator |
+| Hierarchy | Status → order → contact → rules → payment action matches | Progress → authoritative copy → snapshot → disabled action matches | Success → paid snapshot → contact → cancellation → details action matches |
+| Typography | Native font rasterization is slightly heavier | Native font rasterization is slightly heavier | Native font rasterization is slightly heavier |
+| Colors / materials | Background, cards, blue CTA and borders match the approved roles | Progress blue, disabled surface and neutral copy match | Green success accent, cards and blue CTA match |
+| Vector assets | No custom asset in pending state; WeChat supplies native chrome icons | CSS progress ring is present in both | CSS success check is present in both |
+| Copy | Runtime countdown is `10:00` versus frozen visual `09:34`; runtime phone includes the fixture's `+86` prefix | State and authority copy match; runtime phone includes `+86` | State, paid snapshot and cancellation copy match; runtime phone includes `+86` |
+| Interaction / state semantics | CTA is active and opens the explicitly labelled development cashier | CTA is truly disabled while server reconciliation is pending | Stable confirmed state exposes only “查看预订详情” |
+| Accessibility | Native button and semantic status labels retained | Disabled native button and progress label retained | Success icon label and native action retained |
 
 Automated layout checks do not constitute visual approval. Compare the reference,
 implementation, side-by-side, 50% overlay, and difference images at the same target viewport;

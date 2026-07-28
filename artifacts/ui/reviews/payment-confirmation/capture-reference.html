@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>支付视觉稿截图容器</title>
+    <style>
+      html,
+      body {
+        width: 375px;
+        height: 812px;
+        margin: 0;
+        overflow: hidden;
+        background: #fff;
+      }
+
+      iframe {
+        display: block;
+        width: 375px;
+        height: 812px;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="reference" title="支付视觉稿" scrolling="no"></iframe>
+    <script>
+      const requestedState = new URLSearchParams(window.location.search).get("state");
+      const state = ["pending", "confirming", "confirmed"].includes(requestedState)
+        ? requestedState
+        : "pending";
+
+      const source = state === "confirmed" ? "booking-confirmed" : `payment-${state}`;
+      const reference = document.querySelector("#reference");
+      reference.addEventListener("load", () => {
+        const style = reference.contentDocument.createElement("style");
+        style.textContent = "::-webkit-scrollbar { display: none; }";
+        reference.contentDocument.head.appendChild(style);
+      });
+      reference.src = `../../references/${source}.html`;
+    </script>
+  </body>
+</html>

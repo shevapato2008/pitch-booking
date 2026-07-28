@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>支付确认垂直切片 · 视觉验收板</title>
+    <style>
+      :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 40px; background: #0b1220; color: #e5eef8; }
+      header, section { max-width: 1560px; margin: 0 auto 48px; }
+      h1 { margin: 0 0 12px; font-size: 32px; }
+      h2 { margin: 0 0 20px; font-size: 24px; }
+      p { max-width: 980px; color: #9fb1c5; line-height: 1.65; }
+      .pill { display: inline-block; margin-right: 8px; padding: 6px 10px; border: 1px solid #27445f; border-radius: 999px; color: #bae6fd; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(375px, 1fr)); gap: 20px; align-items: start; }
+      figure { margin: 0; padding: 14px; border: 1px solid #23354a; border-radius: 16px; background: #111c2e; overflow: auto; }
+      figcaption { margin-bottom: 12px; color: #d4e2f0; font-weight: 700; }
+      img { display: block; max-width: none; border-radius: 8px; background: #fff; }
+      .phone { width: 375px; height: 812px; }
+      .pair { width: 750px; height: 812px; }
+      .notes { padding: 16px 20px; border-left: 4px solid #0ea5e9; border-radius: 8px; background: #10243e; }
+      @media (max-width: 640px) { body { padding: 20px 12px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>支付确认垂直切片 · 视觉验收板</h1>
+      <p><span class="pill">375 × 812</span><span class="pill">微信原生运行时</span><span class="pill">后端尚未开始</span></p>
+      <div class="notes">左侧参考稿不含微信模拟器的刘海、系统时间、胶囊菜单和 Home Indicator；这些平台原生区域会集中出现在叠加图与差异图中。页面主体、三态语义和底部安全区为本次确认重点。</div>
+    </header>
+
+    <section>
+      <h2>1. 待支付</h2>
+      <div class="grid">
+        <figure><figcaption>参考稿</figcaption><img class="phone" src="reference-pending-375x812.png" alt="待支付参考稿" /></figure>
+        <figure><figcaption>微信小程序实现</figcaption><img class="phone" src="implementation-pending-375x812.png" alt="待支付实现" /></figure>
+        <figure><figcaption>并排图：参考 / 实现</figcaption><img class="pair" src="side-by-side-pending.png" alt="待支付并排对比" /></figure>
+        <figure><figcaption>50% 叠加图</figcaption><img class="phone" src="overlay-50-pending.png" alt="待支付叠加对比" /></figure>
+        <figure><figcaption>像素差异图</figcaption><img class="phone" src="difference-pending.png" alt="待支付差异图" /></figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 支付确认中</h2>
+      <div class="grid">
+        <figure><figcaption>参考稿</figcaption><img class="phone" src="reference-confirming-375x812.png" alt="支付确认中参考稿" /></figure>
+        <figure><figcaption>微信小程序实现</figcaption><img class="phone" src="implementation-confirming-375x812.png" alt="支付确认中实现" /></figure>
+        <figure><figcaption>并排图：参考 / 实现</figcaption><img class="pair" src="side-by-side-confirming.png" alt="支付确认中并排对比" /></figure>
+        <figure><figcaption>50% 叠加图</figcaption><img class="phone" src="overlay-50-confirming.png" alt="支付确认中叠加对比" /></figure>
+        <figure><figcaption>像素差异图</figcaption><img class="phone" src="difference-confirming.png" alt="支付确认中差异图" /></figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. 预订成功</h2>
+      <div class="grid">
+        <figure><figcaption>参考稿</figcaption><img class="phone" src="reference-confirmed-375x812.png" alt="预订成功参考稿" /></figure>
+        <figure><figcaption>微信小程序实现</figcaption><img class="phone" src="implementation-confirmed-375x812.png" alt="预订成功实现" /></figure>
+        <figure><figcaption>并排图：参考 / 实现</figcaption><img class="pair" src="side-by-side-confirmed.png" alt="预订成功并排对比" /></figure>
+        <figure><figcaption>50% 叠加图</figcaption><img class="phone" src="overlay-50-confirmed.png" alt="预订成功叠加对比" /></figure>
+        <figure><figcaption>像素差异图</figcaption><img class="phone" src="difference-confirmed.png" alt="预订成功差异图" /></figure>
+      </div>
+    </section>
+  </body>
+</html>
