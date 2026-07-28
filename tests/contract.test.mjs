@@ -203,6 +203,27 @@ test('payment response wrappers reject resolved and non-confirmed nested orders'
   }, /payment-already-confirmed|oneOf|status|confirmed/i);
 });
 
+test('payment confirming accepts overdue PREPAY_CREATED convergence', async () => {
+  const { copiedContractPath, temporaryDirectory } = await withMutatedContract(() => {});
+  try {
+    const examplePath = path.join(
+      path.dirname(copiedContractPath),
+      'examples/payment-confirming.json',
+    );
+    const response = JSON.parse(await readFile(examplePath, 'utf8'));
+    response.order.payment_state = 'PREPAY_CREATED';
+    response.order.payment_confirming = true;
+    response.order.closing_payment = true;
+    await writeFile(examplePath, `${JSON.stringify(response, null, 2)}\n`, 'utf8');
+
+    await execFileAsync(process.execPath, ['scripts/validate-contract.mjs', copiedContractPath], {
+      cwd: repositoryDirectory,
+    });
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test('OrderDetail freezes payment authority fields for every visible order state', async () => {
   const contract = YAML.parse(await readFile(contractPath, 'utf8'));
   const order = contract.components.schemas.OrderDetail;

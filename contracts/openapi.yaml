@@ -1600,7 +1600,7 @@ components:
                 status:
                   const: PENDING_PAYMENT
                 payment_state:
-                  enum: [CREATING, CONFIRMING, UNKNOWN]
+                  enum: [CREATING, PREPAY_CREATED, CONFIRMING, UNKNOWN]
             - type: object
               properties:
                 status:
