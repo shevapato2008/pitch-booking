@@ -89,6 +89,25 @@ class QueryPaymentResult:
     launch_params: PaymentLaunchParams | None = None
     safe_error_code: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.status is QueryPaymentStatus.SUCCESS:
+            if self.facts is None:
+                raise ValueError("SUCCESS requires facts")
+        elif self.facts is not None:
+            raise ValueError("non-SUCCESS must not include facts")
+
+        has_prepay_data = self.provider_prepay_id is not None or self.launch_params is not None
+        if self.status is not QueryPaymentStatus.NOT_PAID and has_prepay_data:
+            raise ValueError("only NOT_PAID may include prepay launch data")
+        if self.launch_params is not None and self.provider_prepay_id is None:
+            raise ValueError("launch_params requires provider_prepay_id")
+
+        if self.status is QueryPaymentStatus.UNKNOWN:
+            if not self.safe_error_code:
+                raise ValueError("UNKNOWN requires safe_error_code")
+        elif self.status is not QueryPaymentStatus.CLOSED and self.safe_error_code is not None:
+            raise ValueError("safe_error_code is allowed only for CLOSED or UNKNOWN")
+
 
 class ClosePaymentStatus(StrEnum):
     CLOSED = "CLOSED"
@@ -101,6 +120,19 @@ class ClosePaymentResult:
     status: ClosePaymentStatus
     facts: AuthoritativePaymentFacts | None = None
     safe_error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status is ClosePaymentStatus.SUCCESS:
+            if self.facts is None:
+                raise ValueError("SUCCESS requires facts")
+        elif self.facts is not None:
+            raise ValueError("non-SUCCESS must not include facts")
+
+        if self.status is ClosePaymentStatus.UNKNOWN:
+            if not self.safe_error_code:
+                raise ValueError("UNKNOWN requires safe_error_code")
+        elif self.status is ClosePaymentStatus.SUCCESS and self.safe_error_code is not None:
+            raise ValueError("SUCCESS must not include safe_error_code")
 
 
 class PaymentProvider(Protocol):

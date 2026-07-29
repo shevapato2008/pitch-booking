@@ -83,6 +83,15 @@ class PaymentCreationService:
                     payer_openid=payer_openid,
                 )
             )
+            if isinstance(provider_result, Rejected):
+                # A concurrent caller may have been accepted after our first query.
+                # Recheck authority without any database row locks before treating
+                # rejection as proof that no provider order exists.
+                rejection_check = self._provider.query_payment(
+                    QueryPaymentRequest(phase.merchant_order_no)
+                )
+                if rejection_check.status is not QueryPaymentStatus.NOT_FOUND:
+                    provider_result = rejection_check
         else:
             provider_result = query
         return self._phase_three(phase, provider_result)
@@ -193,6 +202,25 @@ class PaymentCreationService:
                     or payment.merchant_order_no != phase.merchant_order_no
                 ):
                     raise RuntimeError("payment phase identity changed")
+
+                if (
+                    isinstance(result, QueryPaymentResult)
+                    and result.status is QueryPaymentStatus.SUCCESS
+                    and (
+                        payment.status is PaymentState.CLOSED
+                        or record.state is IdempotencyState.COMPLETED
+                        and record.response_status is not None
+                        and record.response_status >= 400
+                    )
+                ):
+                    # A later authoritative success invalidates an earlier negative
+                    # creation conclusion. Task 8 will validate facts and settle all
+                    # three aggregates; Task 7 only reopens this operation as pending.
+                    record.state = IdempotencyState.PROCESSING
+                    record.response_status = None
+                    record.response_body = None
+                    session.commit()
+                    return _confirming(phase)
 
                 if record.state is IdempotencyState.COMPLETED:
                     replay = _replay_completed(record)

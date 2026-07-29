@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from threading import Barrier
 
 import pytest
 from pydantic import ValidationError
@@ -7,13 +9,17 @@ from backend.app.config import Settings
 from backend.app.modules.payments import build_payment_provider
 from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
 from backend.app.modules.payments.provider import (
+    AuthoritativePaymentFacts,
     ClosePaymentRequest,
+    ClosePaymentResult,
     ClosePaymentStatus,
     Created,
     CreatePrepayRequest,
     PaymentLaunchParams,
     QueryPaymentRequest,
+    QueryPaymentResult,
     QueryPaymentStatus,
+    Rejected,
     Unknown,
 )
 
@@ -68,6 +74,40 @@ def test_mock_create_is_thread_safe_and_merchant_number_idempotent() -> None:
     assert "openid-secret" not in repr(provider.__dict__)
 
 
+def test_mock_rejects_same_merchant_number_with_different_core_request() -> None:
+    provider = MockPaymentProvider()
+    assert isinstance(provider.create_prepay(request()), Created)
+
+    mismatch = provider.create_prepay(
+        CreatePrepayRequest(
+            merchant_order_no="merchant-1",
+            description="另一笔预订",
+            amount_cents=32001,
+            currency="CNY",
+            payer_openid="different-openid",
+        )
+    )
+
+    assert mismatch == Rejected("MOCK_IDEMPOTENCY_MISMATCH")
+    assert provider.provider_order_count == 1
+
+
+def test_mock_is_idempotent_under_true_concurrency() -> None:
+    provider = MockPaymentProvider()
+    barrier = Barrier(8)
+
+    def create() -> object:
+        barrier.wait()
+        return provider.create_prepay(request())
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _index: create(), range(8)))
+
+    assert all(result == results[0] for result in results)
+    assert isinstance(results[0], Created)
+    assert provider.provider_order_count == 1
+
+
 def test_mock_supports_unknown_before_and_after_acceptance() -> None:
     before = MockPaymentProvider(create_mode=MockCreateMode.UNKNOWN_BEFORE_ACCEPTANCE)
     after = MockPaymentProvider(create_mode=MockCreateMode.UNKNOWN_AFTER_ACCEPTANCE)
@@ -95,6 +135,36 @@ def test_mock_can_advance_query_and_close_states() -> None:
     assert query.facts.merchant_id == "mock-merchant-id"
     assert query.facts.amount_cents == 32000
     assert close.status is ClosePaymentStatus.SUCCESS
+
+
+def test_provider_result_dtos_reject_impossible_state_combinations() -> None:
+    facts = AuthoritativePaymentFacts(
+        app_id="app",
+        merchant_id="merchant",
+        merchant_order_no="order",
+        provider_transaction_no="tx",
+        amount_cents=32000,
+        currency="CNY",
+        paid_at=datetime.now(UTC),
+    )
+    launch = PaymentLaunchParams("1", "nonce", "prepay_id=p", "RSA", "sign")
+
+    with pytest.raises(ValueError, match="SUCCESS requires facts"):
+        QueryPaymentResult(QueryPaymentStatus.SUCCESS)
+    with pytest.raises(ValueError, match="non-SUCCESS must not include facts"):
+        QueryPaymentResult(QueryPaymentStatus.NOT_PAID, facts=facts)
+    with pytest.raises(ValueError, match="only NOT_PAID"):
+        QueryPaymentResult(QueryPaymentStatus.NOT_FOUND, provider_prepay_id="p")
+    with pytest.raises(ValueError, match="provider_prepay_id"):
+        QueryPaymentResult(QueryPaymentStatus.NOT_PAID, launch_params=launch)
+    with pytest.raises(ValueError, match="UNKNOWN requires safe_error_code"):
+        QueryPaymentResult(QueryPaymentStatus.UNKNOWN)
+    with pytest.raises(ValueError, match="SUCCESS requires facts"):
+        ClosePaymentResult(ClosePaymentStatus.SUCCESS)
+    with pytest.raises(ValueError, match="non-SUCCESS must not include facts"):
+        ClosePaymentResult(ClosePaymentStatus.CLOSED, facts=facts)
+    with pytest.raises(ValueError, match="UNKNOWN requires safe_error_code"):
+        ClosePaymentResult(ClosePaymentStatus.UNKNOWN)
 
 
 @pytest.mark.parametrize("app_env", ["test", "staging", "production"])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -37,6 +38,7 @@ class MockProviderCall:
 
 @dataclass(slots=True)
 class _MockOrder:
+    request_sha256: str
     amount_cents: int
     currency: str
     created: Created
@@ -78,6 +80,8 @@ class MockPaymentProvider:
             self._calls.append(MockProviderCall("create_prepay", request.merchant_order_no))
             existing = self._orders.get(request.merchant_order_no)
             if existing is not None:
+                if existing.request_sha256 != _request_sha256(request):
+                    return Rejected("MOCK_IDEMPOTENCY_MISMATCH")
                 return existing.created
             if self._create_mode is MockCreateMode.REJECTED:
                 return Rejected("MOCK_PREPAY_REJECTED")
@@ -96,7 +100,7 @@ class MockPaymentProvider:
                 ),
             )
             self._orders[request.merchant_order_no] = _MockOrder(
-                request.amount_cents, request.currency, created
+                _request_sha256(request), request.amount_cents, request.currency, created
             )
             if self._create_mode is MockCreateMode.UNKNOWN_AFTER_ACCEPTANCE:
                 return Unknown("MOCK_RESPONSE_LOST")
@@ -108,12 +112,17 @@ class MockPaymentProvider:
             order = self._orders.get(request.merchant_order_no)
             if order is None:
                 return QueryPaymentResult(QueryPaymentStatus.NOT_FOUND)
-            return QueryPaymentResult(
-                order.status,
-                facts=order.facts,
-                provider_prepay_id=order.created.provider_prepay_id,
-                launch_params=order.created.launch_params,
-            )
+            if order.status is QueryPaymentStatus.NOT_PAID:
+                return QueryPaymentResult(
+                    order.status,
+                    provider_prepay_id=order.created.provider_prepay_id,
+                    launch_params=order.created.launch_params,
+                )
+            if order.status is QueryPaymentStatus.SUCCESS:
+                return QueryPaymentResult(order.status, facts=order.facts)
+            if order.status is QueryPaymentStatus.UNKNOWN:
+                return QueryPaymentResult(order.status, safe_error_code="MOCK_QUERY_UNKNOWN")
+            return QueryPaymentResult(order.status)
 
     def close_payment(self, request: ClosePaymentRequest) -> ClosePaymentResult:
         with self._lock:
@@ -168,3 +177,16 @@ class MockPaymentProvider:
             drained = tuple(self._pending_notifications[:count])
             del self._pending_notifications[:count]
             return drained
+
+
+def _request_sha256(request: CreatePrepayRequest) -> str:
+    digest = hashlib.sha256()
+    for value in (
+        request.description,
+        str(request.amount_cents),
+        request.currency,
+        request.payer_openid,
+    ):
+        digest.update(value.encode())
+        digest.update(b"\0")
+    return digest.hexdigest()
