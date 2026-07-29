@@ -5,7 +5,15 @@ from uuid import UUID
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, object_session
 
-from backend.app.models import Order, OrderStatus, Slot, SlotStatus
+from backend.app.models import Order, OrderStatus, Payment, PaymentState, Slot, SlotStatus
+
+_EXPIRY_BLOCKING_PAYMENT_STATES = (
+    PaymentState.CREATING,
+    PaymentState.PREPAY_CREATED,
+    PaymentState.CONFIRMING,
+    PaymentState.UNKNOWN,
+    PaymentState.SUCCESS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,13 +103,30 @@ class PendingOrderExpiryService:
                 slot_status=slot.status,
             )
 
-        can_expire = (
-            order.status is OrderStatus.PENDING_PAYMENT
-            and order.expires_at <= now
-            and order.wechat_prepay_id is None
-            and slot.status is SlotStatus.LOCKED
+        blocking_payment = session.scalar(
+            select(Payment.id)
+            .where(
+                Payment.order_id == order.id,
+                Payment.status.in_(_EXPIRY_BLOCKING_PAYMENT_STATES),
+            )
+            .order_by(Payment.id)
+            .limit(1)
+            .with_for_update()
+        )
+
+        owns_slot_lock = (
+            slot.status is SlotStatus.LOCKED
             and slot.locked_by_order_id == order.id
             and order.slot_id == slot.id
+        )
+        can_expire = (
+            order.status in {
+                OrderStatus.PENDING_PAYMENT,
+                OrderStatus.PAYMENT_EXCEPTION,
+            }
+            and order.expires_at <= now
+            and blocking_payment is None
+            and (order.status is OrderStatus.PAYMENT_EXCEPTION or owns_slot_lock)
         )
         if not can_expire:
             return ExpiryResult(
@@ -112,10 +137,11 @@ class PendingOrderExpiryService:
 
         order.status = OrderStatus.EXPIRED
         order.expired_at = now
-        slot.status = SlotStatus.AVAILABLE
-        slot.locked_until = None
-        slot.locked_by_order_id = None
-        slot.checkout_version += 1
+        if owns_slot_lock:
+            slot.status = SlotStatus.AVAILABLE
+            slot.locked_until = None
+            slot.locked_by_order_id = None
+            slot.checkout_version += 1
         return ExpiryResult(
             changed=True,
             order_status=order.status,

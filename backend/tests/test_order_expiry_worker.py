@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from backend.app.models import Order, OrderStatus, Slot, SlotStatus, User
+from backend.app.models import Order, OrderStatus, Payment, PaymentState, Slot, SlotStatus, User
 from backend.app.modules.orders.expiry import ExpiryResult, PendingOrderExpiryService
 from backend.app.worker import ExpiryWorker, main
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
@@ -158,8 +158,21 @@ def test_duplicate_and_multi_instance_scans_converge(pg_engine: Engine) -> None:
         assert session.get_one(Order, order_id).expired_at == stable_expired_at
 
 
-def test_worker_never_releases_unsafe_prepay_lock(pg_engine: Engine) -> None:
-    (order_id,) = _seed_candidates(pg_engine, 1, prepay_index=0)
+def test_worker_never_releases_unsafe_payment_lock(pg_engine: Engine) -> None:
+    (order_id,) = _seed_candidates(pg_engine, 1)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        session.add(
+            Payment(
+                order=order,
+                provider="mock",
+                merchant_order_no=f"M-{uuid.uuid4().hex}",
+                amount_cents=order.price_cents,
+                currency="CNY",
+                status=PaymentState.PREPAY_CREATED,
+            )
+        )
+        session.commit()
 
     assert ExpiryWorker(
         session_factory=_SessionFactory(pg_engine), clock=lambda: NOW
@@ -174,14 +187,24 @@ def test_worker_never_releases_unsafe_prepay_lock(pg_engine: Engine) -> None:
         assert slot.locked_by_order_id == order.id
 
 
-def test_prepay_candidates_cannot_starve_safe_orders_beyond_batch_limit(
+def test_payment_candidates_cannot_starve_safe_orders_beyond_batch_limit(
     pg_engine: Engine,
 ) -> None:
-    order_ids = _seed_candidates(
-        pg_engine,
-        102,
-        prepay_indices=set(range(101)),
-    )
+    order_ids = _seed_candidates(pg_engine, 102)
+    with Session(pg_engine) as session:
+        for order_id in order_ids[:-1]:
+            order = session.get_one(Order, order_id)
+            session.add(
+                Payment(
+                    order=order,
+                    provider="mock",
+                    merchant_order_no=f"M-{uuid.uuid4().hex}",
+                    amount_cents=order.price_cents,
+                    currency="CNY",
+                    status=PaymentState.PREPAY_CREATED,
+                )
+            )
+        session.commit()
     safe_order_id = order_ids[-1]
 
     processed = ExpiryWorker(
@@ -238,7 +261,7 @@ def test_each_candidate_failure_is_rolled_back_without_stopping_batch(
         assert second.expired_at == NOW
 
 
-def test_continuous_mode_sleeps_exactly_30_seconds_between_scans(
+def test_continuous_mode_sleeps_exactly_60_seconds_between_scans(
     pg_engine: Engine,
 ) -> None:
     sleeps: list[float] = []
@@ -261,7 +284,7 @@ def test_continuous_mode_sleeps_exactly_30_seconds_between_scans(
     with pytest.raises(KeyboardInterrupt):
         worker.run()
 
-    assert sleeps == [30.0]
+    assert sleeps == [60.0]
 
 
 def test_cli_once_injects_dependencies_and_does_not_sleep(pg_engine: Engine) -> None:

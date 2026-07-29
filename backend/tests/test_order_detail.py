@@ -12,7 +12,16 @@ from sqlalchemy.orm import Session
 from backend.app.config import Settings
 from backend.app.database import get_database
 from backend.app.main import create_app
-from backend.app.models import Order, OrderStatus, Slot, SlotStatus, User, UserSession
+from backend.app.models import (
+    Order,
+    OrderStatus,
+    Payment,
+    PaymentState,
+    Slot,
+    SlotStatus,
+    User,
+    UserSession,
+)
 from backend.app.modules.orders.expiry import ExpiryResult, PendingOrderExpiryService
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.modules.orders.service import OrderService
@@ -109,6 +118,18 @@ def _seed_detail(
         slot.status = SlotStatus.LOCKED
         slot.locked_until = order.expires_at
         slot.locked_by_order_id = order.id
+        if prepay_id is not None:
+            session.add(
+                Payment(
+                    order=order,
+                    provider="mock",
+                    merchant_order_no=f"M-{uuid.uuid4().hex}",
+                    provider_prepay_id=prepay_id,
+                    amount_cents=order.price_cents,
+                    currency="CNY",
+                    status=PaymentState.PREPAY_CREATED,
+                )
+            )
         session.commit()
         return order.id, owner.id, stranger.id
 

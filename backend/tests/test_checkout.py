@@ -20,6 +20,8 @@ from backend.app.main import create_app
 from backend.app.models import (
     Order,
     OrderStatus,
+    Payment,
+    PaymentState,
     Slot,
     SlotStatus,
     User,
@@ -158,6 +160,18 @@ def _seed_checkout(
             slot.status = SlotStatus.LOCKED
             slot.locked_until = order.expires_at
             slot.locked_by_order_id = order.id
+            if wechat_prepay_id is not None:
+                session.add(
+                    Payment(
+                        order=order,
+                        provider="mock",
+                        merchant_order_no=f"M-{uuid.uuid4().hex}",
+                        provider_prepay_id=wechat_prepay_id,
+                        amount_cents=order.price_cents,
+                        currency="CNY",
+                        status=PaymentState.PREPAY_CREATED,
+                    )
+                )
             order_id = order.id
         elif slot_status is not SlotStatus.AVAILABLE:
             slot.status = slot_status

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -42,6 +43,29 @@ class PaymentRepository:
             select(Payment).where(
                 Payment.provider == provider,
                 Payment.merchant_order_no == merchant_order_no,
+            )
+        )
+
+    def list_due_payment_ids(
+        self, *, now: datetime, provider: str, limit: int
+    ) -> list[uuid.UUID]:
+        return list(
+            self.session.scalars(
+                select(Payment.id)
+                .join(Order, Order.id == Payment.order_id)
+                .where(
+                    Payment.provider == provider,
+                    Payment.status.in_(NONTERMINAL_PAYMENT_STATES),
+                    or_(
+                        Payment.next_reconcile_at <= now,
+                        (
+                            (Order.expires_at <= now)
+                            & (Payment.reconcile_attempts == 0)
+                        ),
+                    ),
+                )
+                .order_by(Payment.next_reconcile_at, Payment.id)
+                .limit(limit)
             )
         )
 

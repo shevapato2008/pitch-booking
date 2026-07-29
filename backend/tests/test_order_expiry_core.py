@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import Engine, event, select, text
 from sqlalchemy.orm import Session
 
-from backend.app.models import Order, OrderStatus, Slot, SlotStatus, User
+from backend.app.models import Order, OrderStatus, Payment, PaymentState, Slot, SlotStatus, User
 from backend.app.modules.orders.expiry import ExpiryResult, PendingOrderExpiryService
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
 
@@ -76,8 +76,19 @@ def test_before_deadline_is_a_no_op(pg_session: Session) -> None:
     _assert_unchanged_lock(slot, order)
 
 
-def test_prepay_backed_order_is_never_released(pg_session: Session) -> None:
-    slot, order = _seed_locked_order(pg_session, wechat_prepay_id="wx-prepay-123")
+def test_nonterminal_payment_backed_order_is_never_released(pg_session: Session) -> None:
+    slot, order = _seed_locked_order(pg_session)
+    pg_session.add(
+        Payment(
+            order=order,
+            provider="mock",
+            merchant_order_no=f"M-{uuid.uuid4().hex}",
+            amount_cents=order.price_cents,
+            currency="CNY",
+            status=PaymentState.PREPAY_CREATED,
+        )
+    )
+    pg_session.flush()
 
     result = PendingOrderExpiryService().expire_by_order_id(pg_session, order.id, NOW)
     pg_session.flush()
@@ -236,7 +247,16 @@ def test_direct_helper_refreshes_a_stale_slot_before_applying_invariants(
             assert current_order is not None
             current_slot.checkout_version = 12
             current_slot.locked_until = NOW + timedelta(minutes=1)
-            current_order.wechat_prepay_id = "wx-prepay-after-session-a-read"
+            session_b.add(
+                Payment(
+                    order=current_order,
+                    provider="mock",
+                    merchant_order_no=f"M-{uuid.uuid4().hex}",
+                    amount_cents=current_order.price_cents,
+                    currency="CNY",
+                    status=PaymentState.PREPAY_CREATED,
+                )
+            )
             session_b.commit()
 
         result = PendingOrderExpiryService().expire_with_locked_slot(
@@ -248,7 +268,7 @@ def test_direct_helper_refreshes_a_stale_slot_before_applying_invariants(
         assert stale_slot.status is SlotStatus.LOCKED
         assert stale_slot.checkout_version == 12
         assert stale_slot.locked_until == NOW + timedelta(minutes=1)
-        assert stale_order.wechat_prepay_id == "wx-prepay-after-session-a-read"
+        assert session_a.query(Payment).filter_by(order_id=order_id).count() == 1
 
 
 def test_direct_helper_rejects_a_detached_slot(pg_engine: Engine) -> None:

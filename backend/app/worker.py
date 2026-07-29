@@ -5,17 +5,26 @@ import uuid
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
+from typing import Protocol
 
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_engine
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
 from backend.app.modules.orders.repository import OrderRepository
+from backend.app.modules.payments.repository import PaymentRepository
 
 DEFAULT_BATCH_SIZE = 100
-DEFAULT_INTERVAL_SECONDS = 30.0
+DEFAULT_INTERVAL_SECONDS = 60.0
 SessionFactory = Callable[[], AbstractContextManager[Session]]
 logger = logging.getLogger(__name__)
+
+
+class PaymentRecovery(Protocol):
+    @property
+    def provider_name(self) -> str: ...
+
+    def recover(self, payment_id: uuid.UUID) -> object: ...
 
 
 class ExpiryWorker:
@@ -24,6 +33,7 @@ class ExpiryWorker:
         *,
         session_factory: SessionFactory,
         expiry_service: PendingOrderExpiryService | None = None,
+        payment_reconciliation: PaymentRecovery | None = None,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], None] | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -35,6 +45,7 @@ class ExpiryWorker:
             raise ValueError("interval_seconds must be positive")
         self._session_factory = session_factory
         self._expiry_service = expiry_service or PendingOrderExpiryService()
+        self._payment_reconciliation = payment_reconciliation
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper or time.sleep
         self._batch_size = batch_size
@@ -47,6 +58,24 @@ class ExpiryWorker:
         )
 
     def run_once(self) -> int:
+        payment_ids: list[uuid.UUID] = []
+        if self._payment_reconciliation is not None:
+            with self._session_factory() as payment_scan:
+                payment_ids = PaymentRepository(payment_scan).list_due_payment_ids(
+                    now=self._clock(),
+                    provider=self._payment_reconciliation.provider_name,
+                    limit=self._batch_size,
+                )
+
+            for payment_id in payment_ids:
+                try:
+                    self._payment_reconciliation.recover(payment_id)
+                except Exception:
+                    logger.exception(
+                        "Failed to reconcile payment payment_id=%s",
+                        payment_id,
+                    )
+
         with self._session_factory() as scan_session:
             candidate_ids = self.scan_candidate_ids(
                 scan_session,
@@ -68,7 +97,7 @@ class ExpiryWorker:
                         "Failed to expire pending order order_id=%s",
                         order_id,
                     )
-        return len(candidate_ids)
+        return len(payment_ids) + len(candidate_ids)
 
     def run(self, *, once: bool = False) -> int:
         processed = 0
@@ -99,6 +128,7 @@ def main(
     session_factory: SessionFactory | None = None,
     clock: Callable[[], datetime] | None = None,
     sleeper: Callable[[float], None] | None = None,
+    payment_reconciliation: PaymentRecovery | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(description="Expire stale pending orders safely")
     parser.add_argument("--once", action="store_true")
@@ -114,6 +144,7 @@ def main(
         session_factory=resolved_factory,
         clock=clock,
         sleeper=sleeper,
+        payment_reconciliation=payment_reconciliation,
         batch_size=arguments.batch_size,
         interval_seconds=arguments.interval_seconds,
     ).run(once=arguments.once)

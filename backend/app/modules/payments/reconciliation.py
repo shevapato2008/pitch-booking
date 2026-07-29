@@ -3,20 +3,30 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Protocol
+from datetime import UTC, datetime, timedelta
+from typing import Literal, Protocol, cast
 
 from sqlalchemy.orm import Session
 
 from backend.app.errors import AppError
-from backend.app.models import PaymentState
-from backend.app.modules.payments.convergence import PaymentConvergenceService
+from backend.app.models import IdempotencyState, OrderStatus, PaymentState, User
+from backend.app.modules.orders.expiry import PendingOrderExpiryService
+from backend.app.modules.payments.convergence import (
+    ConvergenceResult,
+    PaymentConvergenceService,
+)
 from backend.app.modules.payments.provider import (
     AuthoritativePaymentFacts,
+    ClosePaymentRequest,
+    ClosePaymentStatus,
+    Created,
+    CreatePrepayRequest,
     PaymentProvider,
     QueryPaymentRequest,
     QueryPaymentResult,
     QueryPaymentStatus,
+    Rejected,
+    Unknown,
 )
 from backend.app.modules.payments.repository import PaymentRepository
 
@@ -41,6 +51,238 @@ class PaymentReconciliationService:
         self._provider = provider
         self._convergence = convergence
         self._now = now or (lambda: datetime.now(UTC))
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider.name
+
+    def recover(self, payment_id: uuid.UUID) -> ConvergenceResult:
+        now = self._now()
+        with self._session_factory() as locating:
+            repository = PaymentRepository(locating)
+            located = repository.locate_payment(payment_id)
+            if located is None:
+                raise LookupError("payment not found")
+            order_id = located.order_id
+            slot_id = located.order.slot_id
+
+        with self._session_factory() as session:
+            repository = PaymentRepository(session)
+            _slot, order, payment = repository.lock_payment_graph(
+                order_id=order_id,
+                slot_id=slot_id,
+                payment_id=payment_id,
+            )
+            if payment.provider != self._provider.name:
+                raise LookupError("payment not found")
+            if payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}:
+                session.commit()
+                return ConvergenceResult(order.id, payment.id, True)
+            if payment.next_reconcile_at is not None and payment.next_reconcile_at > now:
+                session.commit()
+                return ConvergenceResult(order.id, payment.id, False)
+            original_status = payment.status
+            merchant_order_no = payment.merchant_order_no
+            amount_cents = payment.amount_cents
+            if payment.currency != "CNY":
+                raise RuntimeError("unsupported persisted payment currency")
+            currency = cast(Literal["CNY"], payment.currency)
+            order_expired = order.expires_at <= now
+            payer = session.get_one(User, order.user_id).wechat_openid
+            payment.reconcile_attempts += 1
+            # A persisted lease makes a crash during Provider IO retryable without
+            # allowing another worker to issue the same call immediately.
+            payment.next_reconcile_at = now + timedelta(minutes=1)
+            session.commit()
+
+        try:
+            query = self._provider.query_payment(
+                QueryPaymentRequest(merchant_order_no)
+            )
+        except Exception:
+            query = QueryPaymentResult(
+                QueryPaymentStatus.UNKNOWN,
+                safe_error_code="PAYMENT_PROVIDER_QUERY_FAILED",
+            )
+
+        if original_status is PaymentState.CREATING:
+            if query.status is QueryPaymentStatus.NOT_FOUND and not order_expired:
+                created = self._provider.create_prepay(
+                    CreatePrepayRequest(
+                        merchant_order_no=merchant_order_no,
+                        description=f"场地预订 {order_id}",
+                        amount_cents=amount_cents,
+                        currency=currency,
+                        payer_openid=payer,
+                    )
+                )
+                if isinstance(created, Rejected):
+                    # Re-query after rejection so an accepted concurrent call wins.
+                    query = self._provider.query_payment(
+                        QueryPaymentRequest(merchant_order_no)
+                    )
+                    if query.status is QueryPaymentStatus.NOT_FOUND:
+                        query = QueryPaymentResult(
+                            QueryPaymentStatus.CLOSED,
+                            safe_error_code=created.safe_error_code,
+                        )
+                elif isinstance(created, Unknown):
+                    query = QueryPaymentResult(
+                        QueryPaymentStatus.UNKNOWN,
+                        safe_error_code=created.safe_error_code,
+                    )
+                else:
+                    return self._record_created(
+                        order_id=order_id,
+                        slot_id=slot_id,
+                        payment_id=payment_id,
+                        created=created,
+                        now=now,
+                    )
+            elif query.status is QueryPaymentStatus.NOT_FOUND:
+                query = QueryPaymentResult(
+                    QueryPaymentStatus.CLOSED,
+                    safe_error_code="PAYMENT_AUTHORITY_NOT_FOUND",
+                )
+            elif query.status is QueryPaymentStatus.NOT_PAID:
+                if (
+                    query.provider_prepay_id is None
+                    or query.launch_params is None
+                ):
+                    query = QueryPaymentResult(
+                        QueryPaymentStatus.UNKNOWN,
+                        safe_error_code="PAYMENT_PREPAY_RECOVERY_INCOMPLETE",
+                    )
+                else:
+                    return self._record_created(
+                        order_id=order_id,
+                        slot_id=slot_id,
+                        payment_id=payment_id,
+                        created=Created(
+                            provider_prepay_id=query.provider_prepay_id,
+                            launch_params=query.launch_params,
+                        ),
+                        now=now,
+                    )
+
+        if query.status is QueryPaymentStatus.NOT_PAID and order_expired:
+            try:
+                closed = self._provider.close_payment(
+                    ClosePaymentRequest(merchant_order_no)
+                )
+                if closed.status is ClosePaymentStatus.SUCCESS:
+                    query = QueryPaymentResult(
+                        QueryPaymentStatus.SUCCESS,
+                        facts=closed.facts,
+                    )
+                elif closed.status is ClosePaymentStatus.CLOSED:
+                    query = QueryPaymentResult(
+                        QueryPaymentStatus.CLOSED,
+                        safe_error_code=closed.safe_error_code,
+                    )
+                else:
+                    query = QueryPaymentResult(
+                        QueryPaymentStatus.UNKNOWN,
+                        safe_error_code=closed.safe_error_code
+                        or "PAYMENT_PROVIDER_CLOSE_FAILED",
+                    )
+            except Exception:
+                query = QueryPaymentResult(
+                    QueryPaymentStatus.UNKNOWN,
+                    safe_error_code="PAYMENT_PROVIDER_CLOSE_FAILED",
+                )
+
+        converged = self._convergence.converge(
+            payment_id=payment_id,
+            provider=self._provider.name,
+            result=query,
+        )
+        return self._finalize_recovery(converged, now=now)
+
+    def _record_created(
+        self,
+        *,
+        order_id: uuid.UUID,
+        slot_id: uuid.UUID,
+        payment_id: uuid.UUID,
+        created: Created,
+        now: datetime,
+    ) -> ConvergenceResult:
+        with self._session_factory() as session:
+            repository = PaymentRepository(session)
+            _slot, order, payment = repository.lock_payment_graph(
+                order_id=order_id,
+                slot_id=slot_id,
+                payment_id=payment_id,
+            )
+            if payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}:
+                session.commit()
+                return ConvergenceResult(order.id, payment.id, True)
+            payment.status = PaymentState.PREPAY_CREATED
+            payment.provider_prepay_id = created.provider_prepay_id
+            payment.next_reconcile_at = now + _backoff(payment.reconcile_attempts)
+            payment.last_error_code = None
+            payment.last_error_at = None
+            if created.launch_params is not None:
+                body: dict[str, object] = {
+                    "order_id": str(order.id),
+                    "payment_id": str(payment.id),
+                    "status": "PREPAY_CREATED",
+                    "launch_params": created.launch_params.as_dict(),
+                }
+                for record in repository.lock_payment_idempotencies(payment.id):
+                    if record.state is IdempotencyState.PROCESSING:
+                        record.state = IdempotencyState.COMPLETED
+                        record.response_status = 200
+                        record.response_body = body
+            session.commit()
+            return ConvergenceResult(order.id, payment.id, False)
+
+    def _finalize_recovery(
+        self, converged: ConvergenceResult, *, now: datetime
+    ) -> ConvergenceResult:
+        with self._session_factory() as session:
+            repository = PaymentRepository(session)
+            located = repository.locate_payment(converged.payment_id)
+            if located is None:
+                raise LookupError("payment not found")
+            slot_id = located.order.slot_id
+            _slot, order, payment = repository.lock_payment_graph(
+                order_id=converged.order_id,
+                slot_id=slot_id,
+                payment_id=converged.payment_id,
+            )
+            if payment.status is PaymentState.UNKNOWN:
+                anchor = payment.authority_unknown_since
+                if anchor is not None and now - anchor >= timedelta(hours=24):
+                    order.status = OrderStatus.PAYMENT_EXCEPTION
+                    payment.next_reconcile_at = now + timedelta(hours=6)
+                else:
+                    payment.next_reconcile_at = now + _backoff(
+                        payment.reconcile_attempts
+                    )
+            elif payment.status in {
+                PaymentState.CREATING,
+                PaymentState.PREPAY_CREATED,
+                PaymentState.CONFIRMING,
+            }:
+                payment.next_reconcile_at = now + _backoff(
+                    payment.reconcile_attempts
+                )
+            session.commit()
+
+        if converged.terminal:
+            with self._session_factory() as expiry_session:
+                expiry = PendingOrderExpiryService().expire_by_order_id(
+                    expiry_session,
+                    converged.order_id,
+                    now,
+                )
+                if expiry.changed:
+                    expiry_session.commit()
+                else:
+                    expiry_session.rollback()
+        return converged
 
     def reconcile(
         self, *, user_id: uuid.UUID, order_id: uuid.UUID, payment_id: uuid.UUID
@@ -149,3 +391,8 @@ class PaymentNotificationService:
 
 def _not_found() -> AppError:
     return AppError(404, "ORDER_NOT_FOUND", "订单或支付不存在，或不可访问。")
+
+
+def _backoff(attempts: int) -> timedelta:
+    minutes = (1, 2, 5, 10, 30)[min(max(attempts, 1) - 1, 4)]
+    return timedelta(minutes=minutes)

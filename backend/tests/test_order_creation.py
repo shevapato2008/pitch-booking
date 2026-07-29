@@ -22,6 +22,8 @@ from backend.app.models import (
     IdempotencyState,
     Order,
     OrderStatus,
+    Payment,
+    PaymentState,
     Slot,
     SlotStatus,
     User,
@@ -212,6 +214,18 @@ def _seed_order_case(
             slot.status = SlotStatus.LOCKED
             slot.locked_until = stale_order.expires_at
             slot.locked_by_order_id = stale_order.id
+            if stale_lock == "prepay":
+                session.add(
+                    Payment(
+                        order=stale_order,
+                        provider="mock",
+                        merchant_order_no=f"M-{uuid.uuid4().hex}",
+                        provider_prepay_id="wx-prepay-present",
+                        amount_cents=stale_order.price_cents,
+                        currency="CNY",
+                        status=PaymentState.PREPAY_CREATED,
+                    )
+                )
             stale_order_id = stale_order.id
         elif slot_status is not SlotStatus.AVAILABLE:
             slot.status = slot_status

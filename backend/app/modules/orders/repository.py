@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -10,6 +10,8 @@ from backend.app.models import (
     IdempotencyState,
     Order,
     OrderStatus,
+    Payment,
+    PaymentState,
     Slot,
 )
 
@@ -113,7 +115,20 @@ class OrderRepository:
                 .where(
                     Order.status == OrderStatus.PENDING_PAYMENT,
                     Order.expires_at <= now,
-                    Order.wechat_prepay_id.is_(None),
+                    ~exists(
+                        select(Payment.id).where(
+                            Payment.order_id == Order.id,
+                            Payment.status.in_(
+                                (
+                                    PaymentState.CREATING,
+                                    PaymentState.PREPAY_CREATED,
+                                    PaymentState.CONFIRMING,
+                                    PaymentState.UNKNOWN,
+                                    PaymentState.SUCCESS,
+                                )
+                            ),
+                        )
+                    ),
                 )
                 .order_by(Order.expires_at, Order.id)
                 .limit(limit)

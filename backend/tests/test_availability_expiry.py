@@ -9,7 +9,15 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 import backend.app.modules.availability.service as availability_service_module
-from backend.app.models import Order, OrderStatus, Slot, SlotStatus, User
+from backend.app.models import (
+    Order,
+    OrderStatus,
+    Payment,
+    PaymentState,
+    Slot,
+    SlotStatus,
+    User,
+)
 from backend.app.modules.availability.repository import AvailabilityRepository
 from backend.app.modules.availability.service import AvailabilityService
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
@@ -72,6 +80,18 @@ def _seed_expired_lock(
         slot.status = SlotStatus.LOCKED
         slot.locked_until = order.expires_at
         slot.locked_by_order_id = order.id
+        if wechat_prepay_id is not None:
+            session.add(
+                Payment(
+                    order=order,
+                    provider="mock",
+                    merchant_order_no=f"M-{uuid.uuid4().hex}",
+                    provider_prepay_id=wechat_prepay_id,
+                    amount_cents=order.price_cents,
+                    currency="CNY",
+                    status=PaymentState.PREPAY_CREATED,
+                )
+            )
         session.flush()
         identifiers = (parent.id, slot.id, order.id)
         session.commit()
