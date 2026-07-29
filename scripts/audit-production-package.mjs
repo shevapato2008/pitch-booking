@@ -1,6 +1,7 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import ts from "typescript";
 
 const targetArgument = process.argv[2];
 if (!targetArgument) {
@@ -88,6 +89,7 @@ for (const symbol of requiredPaymentComposition) {
 for (const [specifier, pattern] of requiredPaymentImports) {
   if (!pattern.test(appContents)) forbidden.push(`missing payment import: ${specifier}`);
 }
+for (const diagnostic of inspectPaymentRegistration(appContents)) forbidden.push(diagnostic);
 await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
@@ -181,5 +183,153 @@ async function auditDependencyClosure(packageRoot, entryPath, diagnostics) {
       }
       if (resolved.endsWith(".js")) queue.push(resolved);
     }
+  }
+}
+
+function inspectPaymentRegistration(source) {
+  const sourceFile = ts.createSourceFile("app.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const moduleAliases = new Map();
+  const importedBindings = new Map();
+  const valueOrigins = new Map();
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      const requiredModule = requireSpecifier(declaration.initializer);
+      if (requiredModule) {
+        if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
+        if (ts.isObjectBindingPattern(declaration.name)) {
+          for (const element of declaration.name.elements) {
+            if (!ts.isIdentifier(element.name)) continue;
+            const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+              ? element.propertyName.text
+              : element.name.text;
+            importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
+          }
+        }
+        continue;
+      }
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
+      const origin = paymentValueOrigin(declaration.initializer);
+      if (origin) valueOrigins.set(declaration.name.text, { ...origin, position: declaration.initializer.pos });
+    }
+  }
+
+  const dataSourceRegistrations = [];
+  const capabilityRegistrations = [];
+  const startupPositions = [];
+  visit(sourceFile);
+
+  const diagnostics = [];
+  if (dataSourceRegistrations.length === 0) {
+    diagnostics.push("invalid payment registration: data source");
+  }
+  if (capabilityRegistrations.length === 0) {
+    diagnostics.push("invalid payment registration: capability");
+  }
+  if (startupPositions.length > 0) {
+    const startup = Math.min(...startupPositions);
+    if (dataSourceRegistrations.length > 0
+      && !dataSourceRegistrations.some((position) => position < startup)
+      || capabilityRegistrations.length > 0
+      && !capabilityRegistrations.some((position) => position < startup)) {
+      diagnostics.push("payment registration must precede App/Page startup");
+    }
+  }
+  return diagnostics;
+
+  function visit(node) {
+    if (ts.isCallExpression(node)) {
+      const callee = importedSymbol(node.expression);
+      const rawCallee = unwrapExpression(node.expression);
+      if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) {
+        startupPositions.push(node.pos);
+      }
+      if (callee?.module === "./services/payment" && callee.symbol === "registerPaymentDataSource"
+        && isDataSourceValue(node.arguments[0], node.pos)) {
+        dataSourceRegistrations.push(node.pos);
+      }
+      if (callee?.module === "./services/payment" && callee.symbol === "registerPaymentCapability"
+        && isCapabilityValue(node.arguments[0], node.pos)) {
+        capabilityRegistrations.push(node.pos);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  function paymentValueOrigin(expression) {
+    const value = unwrapExpression(expression);
+    if (ts.isCallExpression(value)) {
+      const factory = importedSymbol(value.expression);
+      if (factory?.module === "./services/http-payment" && factory.symbol === "createHttpPaymentDataSource") {
+        return { kind: "data-source" };
+      }
+    }
+    const imported = importedSymbol(value);
+    if (imported?.module === "./runtime/production" && imported.symbol === "productionPayment") {
+      return { kind: "capability" };
+    }
+    return undefined;
+  }
+
+  function isDataSourceValue(expression, registrationPosition) {
+    const origin = resolveValueOrigin(expression);
+    return origin?.kind === "data-source" && origin.position < registrationPosition;
+  }
+
+  function isCapabilityValue(expression, registrationPosition) {
+    const origin = resolveValueOrigin(expression);
+    return origin?.kind === "capability" && origin.position < registrationPosition;
+  }
+
+  function resolveValueOrigin(expression) {
+    if (!expression) return undefined;
+    const value = unwrapExpression(expression);
+    const direct = paymentValueOrigin(value);
+    if (direct) return { ...direct, position: Number.NEGATIVE_INFINITY };
+    if (ts.isIdentifier(value)) return valueOrigins.get(value.text);
+    return undefined;
+  }
+
+  function importedSymbol(expression) {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value)) return importedBindings.get(value.text);
+    if (ts.isPropertyAccessExpression(value)) {
+      const owner = unwrapExpression(value.expression);
+      if (ts.isIdentifier(owner)) {
+        const module = moduleAliases.get(owner.text);
+        if (module) return { module, symbol: value.name.text };
+      }
+    }
+    return undefined;
+  }
+}
+
+function requireSpecifier(expression) {
+  const value = expression && unwrapExpression(expression);
+  if (!value || !ts.isCallExpression(value)) return undefined;
+  const callee = unwrapExpression(value.expression);
+  const argument = value.arguments[0];
+  return ts.isIdentifier(callee) && callee.text === "require"
+    && argument && ts.isStringLiteral(argument)
+    ? argument.text
+    : undefined;
+}
+
+function unwrapExpression(expression) {
+  let value = expression;
+  for (;;) {
+    if (ts.isParenthesizedExpression(value)
+      || ts.isAsExpression(value)
+      || ts.isTypeAssertionExpression(value)
+      || ts.isNonNullExpression(value)) {
+      value = value.expression;
+      continue;
+    }
+    if (ts.isBinaryExpression(value) && value.operatorToken.kind === ts.SyntaxKind.CommaToken) {
+      value = value.right;
+      continue;
+    }
+    return value;
   }
 }

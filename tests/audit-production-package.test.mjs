@@ -200,6 +200,63 @@ test("production audit rejects token-only payment wiring without production sour
   await assertAuditRejects(packageRoot, "missing payment import");
 });
 
+test("production audit rejects real payment imports when the data source registration call is missing", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installPaymentDependencies(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "createHttpPaymentDataSource({});",
+      "registerPaymentCapability(productionPayment);",
+      "App({});",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid payment registration: data source");
+});
+
+test("production audit rejects payment registrations wired to the wrong objects", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installPaymentDependencies(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "registerPaymentDataSource(productionPayment);",
+      "registerPaymentCapability(createHttpPaymentDataSource({}));",
+      "App({});",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid payment registration");
+});
+
+test("production audit rejects payment registration after App startup", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installPaymentDependencies(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "App({});",
+      "registerPaymentDataSource(createHttpPaymentDataSource({}));",
+      "registerPaymentCapability(productionPayment);",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "payment registration must precede App/Page startup");
+});
+
 async function createProductionPackage() {
   const packageRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-audit-"));
   const routes = [
@@ -224,12 +281,7 @@ async function createProductionPackage() {
 }
 
 async function installValidPaymentComposition(packageRoot, extraSource = "") {
-  for (const directory of ["services", "runtime"]) {
-    await mkdir(path.join(packageRoot, directory), { recursive: true });
-  }
-  await writeFile(path.join(packageRoot, "services/http-payment.js"), "\n");
-  await writeFile(path.join(packageRoot, "services/payment.js"), "\n");
-  await writeFile(path.join(packageRoot, "runtime/production.js"), "\n");
+  await installPaymentDependencies(packageRoot);
   await writeFile(
     path.join(packageRoot, "app.js"),
     [
@@ -239,8 +291,18 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       "registerPaymentDataSource(createHttpPaymentDataSource({}));",
       "registerPaymentCapability(productionPayment);",
       extraSource,
+      "App({});",
     ].join("\n"),
   );
+}
+
+async function installPaymentDependencies(packageRoot) {
+  for (const directory of ["services", "runtime"]) {
+    await mkdir(path.join(packageRoot, directory), { recursive: true });
+  }
+  await writeFile(path.join(packageRoot, "services/http-payment.js"), "\n");
+  await writeFile(path.join(packageRoot, "services/payment.js"), "\n");
+  await writeFile(path.join(packageRoot, "runtime/production.js"), "\n");
 }
 
 async function assertAuditRejects(packageRoot, expectedDiagnostic) {
