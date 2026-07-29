@@ -62,7 +62,7 @@ The disposable integration database verifies exact row semantics without retaini
 customer data, full phone numbers, merchant order numbers, signatures, or secrets in
 this document.
 
-## Mini Program local acceptance procedure
+## Mini Program local acceptance
 
 The importable development-HTTP build must use:
 
@@ -80,10 +80,30 @@ PAYMENT_PROVIDER=mock
 ENABLE_MOCK_PAYMENT_PROVIDER=true
 ```
 
-The manual journey to record in WeChat Developer Tools is: open a real local pending order,
-tap “立即支付”, use the visibly labelled simulated cashier, observe “支付确认中”,
-drive the development authority to `SUCCESS`, then observe “预订成功”. The production
-package must contain neither this authority driver nor the simulated cashier binding.
+The WeChat Developer Tools simulator journey was executed locally on 2026-07-29
+against the development HTTP build and a real local PostgreSQL order. The visible
+sequence was:
+
+```text
+待支付 / 立即支付
+→ 开发态模拟收银台 / 模拟支付，不会扣款
+→ 正在确认支付 / 支付确认中
+→ development authority SUCCESS
+→ 预订成功 / 已支付
+```
+
+The final redacted database check recorded exactly one payment for the order,
+`Payment.SUCCESS`, `Order.CONFIRMED`, `Slot.BOOKED`, a present `paid_at`, and cleared
+slot lock fields. No bearer token, full phone number, merchant order number, signing
+material, or Provider secret is retained here.
+
+The journey also exposed a legacy Alembic history-drift case in the reused local
+database. Corrective migration `0005` repaired the missing identity AppID column and
+unique constraint in place; the database was not dropped or reset before the journey
+was rerun successfully.
+
+The production package contains neither the development authority driver nor the
+simulated cashier binding.
 
 Developer Tools local-domain relaxation is a local debugging aid only. It is not
 evidence of an approved WeChat request domain, public HTTPS, or iOS/Android delivery.
