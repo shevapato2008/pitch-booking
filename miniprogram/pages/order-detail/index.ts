@@ -43,6 +43,22 @@ function isUnknownPaymentResult(error: unknown): boolean {
   return (error as { code?: unknown } | null)?.code === "PAYMENT_RESULT_UNKNOWN";
 }
 
+function clearedPaymentUi() {
+  return {
+    eyebrow: "",
+    heroCopy: "",
+    primaryText: "",
+    primaryDisabled: true,
+    showPaymentFooter: false,
+    showPaymentRetry: false,
+    showCashierMarker: false,
+    showProgressIcon: false,
+    showSuccessIcon: false,
+    paidLabel: "",
+    paymentError: "",
+  };
+}
+
 const scheduler: PollScheduler = {
   setTimeout(callback, delayMs) { return setTimeout(callback, delayMs); },
   clearTimeout(handle) { clearTimeout(handle as ReturnType<typeof setTimeout>); },
@@ -83,12 +99,18 @@ Page({
   paymentOperationGeneration: 0,
   paymentClickSerial: 0,
   paymentCreateKey: null as string | null,
+  orderProjectionRevision: 0,
+  terminalOrderStatus: null as "CONFIRMED" | "EXPIRED" | null,
+  manualReconcileInFlight: null as Promise<void> | null,
   visible: false,
 
   onLoad(options: Record<string, string | undefined>) {
     this.visible = true;
     this.paymentState = initialPaymentPageState();
     this.paymentCreateKey = null;
+    this.orderProjectionRevision = 0;
+    this.terminalOrderStatus = null;
+    this.manualReconcileInFlight = null;
     this.paymentOperationGeneration += 1;
     try {
       const orderId = requireUuid(options.order_id);
@@ -112,6 +134,7 @@ Page({
     this.visible = false;
     this.paymentOperationGeneration += 1;
     this.poller?.cancel();
+    this.manualReconcileInFlight = null;
   },
 
   onUnload() {
@@ -119,6 +142,7 @@ Page({
     this.paymentOperationGeneration += 1;
     this.poller?.cancel();
     this.paymentCreateKey = null;
+    this.manualReconcileInFlight = null;
   },
 
   ensurePoller(): OrderDetailPoller {
@@ -139,6 +163,8 @@ Page({
   },
 
   applyPollState(state: OrderDetailPollState) {
+    if (this.terminalOrderStatus && !("order" in state)) return;
+    if ("order" in state && !this.acceptOrderProjection(state.order)) return;
     switch (state.status) {
       case "loading": {
         if (isActivePaymentOperation(this.paymentState)
@@ -159,6 +185,7 @@ Page({
           message: state.message,
         });
         this.setData({
+          ...clearedPaymentUi(),
           ...presentOrderDetailStatus(state.status),
           status: state.status,
           errorText: state.message,
@@ -167,6 +194,7 @@ Page({
       case "pending-payment": {
         if (!getPaymentBindings()) {
           this.setData({
+            ...clearedPaymentUi(),
             ...presentOrderDetailStatus(state.status),
             ...this.orderLabels(state.order),
             order: state.order,
@@ -198,6 +226,7 @@ Page({
       case "closing-payment":
       case "expired":
         this.setData({
+          ...clearedPaymentUi(),
           ...presentOrderDetailStatus(state.status),
           ...this.orderLabels(state.order),
           order: state.order,
@@ -365,11 +394,22 @@ Page({
     return this.visible && generation === this.paymentOperationGeneration;
   },
 
-  applyReconciledOrder(order: OrderView) {
+  acceptOrderProjection(order: OrderView): boolean {
+    if (this.terminalOrderStatus && order.status !== this.terminalOrderStatus) return false;
+    if (order.status === "CONFIRMED" || order.status === "EXPIRED") {
+      this.terminalOrderStatus = order.status;
+    }
+    this.orderProjectionRevision += 1;
+    return true;
+  },
+
+  applyReconciledOrder(order: OrderView, expectedRevision?: number) {
+    if (expectedRevision !== undefined && expectedRevision !== this.orderProjectionRevision) return;
     if (order.status === "EXPIRED") {
       this.applyPollState({ status: "expired", order });
       return;
     }
+    if (!this.acceptOrderProjection(order)) return;
     this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order });
     this.applyPaymentState(this.paymentState);
   },
@@ -382,22 +422,40 @@ Page({
     if (this.data.status === "closing-error") this.ensurePoller().retry();
   },
 
-  async onReconcilePayment() {
-    if (this.data.status !== "payment-confirming" && this.data.status !== "payment-exception") return;
+  onReconcilePayment(): Promise<void> {
+    if (this.manualReconcileInFlight) return this.manualReconcileInFlight;
+    if (this.data.status !== "payment-confirming" && this.data.status !== "payment-exception") {
+      return Promise.resolve();
+    }
+    const operation = this.performManualReconcile();
+    this.manualReconcileInFlight = operation;
+    void operation.then(
+      () => { if (this.manualReconcileInFlight === operation) this.manualReconcileInFlight = null; },
+      () => { if (this.manualReconcileInFlight === operation) this.manualReconcileInFlight = null; },
+    );
+    return operation;
+  },
+
+  async performManualReconcile(): Promise<void> {
     const bindings = getPaymentBindings();
     const paymentId = "paymentId" in this.paymentState ? this.paymentState.paymentId : null;
     if (!bindings || !paymentId) {
       this.ensurePoller().reconcile();
       return;
     }
+    this.poller?.cancel();
+    const generation = ++this.paymentOperationGeneration;
+    const projectionRevision = this.orderProjectionRevision;
     try {
       const reconciliation = await bindings.source.reconcilePayment(this.data.orderId, paymentId);
-      if (!this.visible) return;
-      this.applyReconciledOrder(reconciliation.order);
+      if (!this.isCurrentPaymentOperation(generation)
+        || projectionRevision !== this.orderProjectionRevision) return;
+      this.applyReconciledOrder(reconciliation.order, projectionRevision);
       if (reconciliation.order.status !== "EXPIRED"
         && this.paymentState.status === "payment-confirming") this.ensurePoller().start(this.data.orderId);
     } catch {
-      if (this.visible) this.ensurePoller().reconcile();
+      if (this.isCurrentPaymentOperation(generation)
+        && projectionRevision === this.orderProjectionRevision) this.ensurePoller().reconcile();
     }
   },
 

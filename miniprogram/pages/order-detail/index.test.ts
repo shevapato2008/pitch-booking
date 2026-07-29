@@ -400,6 +400,125 @@ describe("order detail payment orchestration", () => {
     call(page, "onUnload");
   });
 
+  test("ignores a stale manual 202 after a newer authoritative CONFIRMED projection", async () => {
+    const stale = deferred<Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>>();
+    const reconcilePayment = jest.fn<PaymentDataSource["reconcilePayment"]>()
+      .mockResolvedValueOnce({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.exception) })
+      .mockImplementationOnce(() => stale.promise);
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.pending),
+      reconcilePayment,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+    await call(page, "onPay");
+
+    const manual = call(page, "onReconcilePayment") as Promise<void>;
+    await flush();
+    call(page, "applyPollState", {
+      status: "booking-confirmed",
+      order: structuredClone(PAYMENT_SCENARIOS.confirmed),
+    });
+    call(page, "applyPollState", { status: "loading" });
+    stale.resolve({ outcome: "PAYMENT_CONFIRMING", order: structuredClone(PAYMENT_SCENARIOS.confirming) });
+    await manual;
+
+    expect(page.data.status).toBe("booking-confirmed");
+    expect((page.data.order as { status: string }).status).toBe("CONFIRMED");
+    call(page, "onUnload");
+  });
+
+  test("serializes double manual taps into one reconciliation request", async () => {
+    const manualResult = deferred<Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>>();
+    const reconcilePayment = jest.fn<PaymentDataSource["reconcilePayment"]>()
+      .mockResolvedValueOnce({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.exception) })
+      .mockImplementation(() => manualResult.promise);
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.pending),
+      reconcilePayment,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+    await call(page, "onPay");
+
+    const first = call(page, "onReconcilePayment") as Promise<void>;
+    const second = call(page, "onReconcilePayment") as Promise<void>;
+    await flush();
+    expect(reconcilePayment).toHaveBeenCalledTimes(2);
+    manualResult.resolve({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.confirmed) });
+    await Promise.all([first, second]);
+
+    expect(page.data.status).toBe("booking-confirmed");
+    call(page, "onUnload");
+  });
+
+  test("cancels an older poll read before manual reconciliation projects CONFIRMED", async () => {
+    const stalePoll = deferred<typeof PAYMENT_SCENARIOS.confirming>();
+    let reads = 0;
+    const reconcilePayment = jest.fn<PaymentDataSource["reconcilePayment"]>()
+      .mockResolvedValueOnce({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.exception) })
+      .mockResolvedValueOnce({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.confirmed) });
+    registerPaymentRuntime({
+      getOrder: async () => {
+        reads += 1;
+        if (reads === 1) return structuredClone(PAYMENT_SCENARIOS.pending);
+        return stalePoll.promise;
+      },
+      reconcilePayment,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+    await call(page, "onPay");
+    (call(page, "ensurePoller") as { reconcile(): void }).reconcile();
+    await flush();
+
+    await call(page, "onReconcilePayment");
+    stalePoll.resolve(structuredClone(PAYMENT_SCENARIOS.confirming));
+    await flush();
+
+    expect(page.data.status).toBe("booking-confirmed");
+    expect((page.data.order as { status: string }).status).toBe("CONFIRMED");
+    call(page, "onUnload");
+  });
+
+  test.each([
+    ["expired", {
+      status: "expired",
+      order: expiredFrom(PAYMENT_SCENARIOS.pending, PAYMENT_SCENARIOS.pending.expiresAt),
+    }],
+    ["closing-payment", { status: "closing-payment", order: { ...PAYMENT_SCENARIOS.pending, closingPayment: true } }],
+  ] as const)("clears every payment-only field when confirming becomes %s", async (status, nextState) => {
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.confirming),
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+    expect(page.data.showProgressIcon).toBe(true);
+    page.setData({ eyebrow: "待支付", showCashierMarker: true, paidLabel: "已支付", paymentError: "旧错误" });
+
+    call(page, "applyPollState", structuredClone(nextState));
+
+    expect(page.data).toMatchObject({
+      status,
+      eyebrow: "",
+      heroCopy: "",
+      primaryText: "",
+      primaryDisabled: true,
+      showPaymentFooter: false,
+      showPaymentRetry: false,
+      showCashierMarker: false,
+      showProgressIcon: false,
+      showSuccessIcon: false,
+      paidLabel: "",
+      paymentError: "",
+    });
+    call(page, "onUnload");
+  });
+
   test("a pending countdown callback cannot regress cashier success while reconciliation is in flight", async () => {
     jest.useFakeTimers();
     const reconciliation = deferred<Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>>();
