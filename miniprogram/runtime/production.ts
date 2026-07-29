@@ -2,7 +2,7 @@ import type {
   Clock,
   MediaSourceResolver,
   NativeCapabilities,
-  Transport,
+  StatusTransport,
   WeChatIdentityCapability,
   WeChatPhoneCapability,
 } from "./interfaces";
@@ -83,16 +83,16 @@ export const productionPayment: PaymentCapability = {
   },
 };
 
-export function productionTransport(baseUrl: string): Transport {
-  const request = <T>(
+export function productionTransport(baseUrl: string): StatusTransport {
+  const requestWithStatus = <T>(
     method: "GET" | "POST",
     path: string,
     body: unknown,
     headers?: Readonly<Record<string, string>>,
-  ): Promise<T> => {
+  ): Promise<{ readonly statusCode: number; readonly data: T }> => {
     return new Promise((resolve, reject) => {
       let settled = false;
-      const resolveOnce = (value: T) => {
+      const resolveOnce = (value: { readonly statusCode: number; readonly data: T }) => {
         if (settled) return;
         settled = true;
         resolve(value);
@@ -110,7 +110,7 @@ export function productionTransport(baseUrl: string): Transport {
         timeout: 8000,
         success: (response) => {
           if (response.statusCode >= 200 && response.statusCode < 300) {
-            resolveOnce(response.data as T);
+            resolveOnce({ statusCode: response.statusCode, data: response.data as T });
           } else {
             rejectOnce({ code: "HTTP_ERROR", statusCode: response.statusCode, data: response.data });
           }
@@ -126,10 +126,11 @@ export function productionTransport(baseUrl: string): Transport {
     });
   };
   return {
-    get: <T>(path: string, headers?: Readonly<Record<string, string>>) =>
-      request<T>("GET", path, undefined, headers),
-    post: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
-      request<T>("POST", path, body, headers),
+    get: async <T>(path: string, headers?: Readonly<Record<string, string>>) =>
+      (await requestWithStatus<T>("GET", path, undefined, headers)).data,
+    post: async <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
+      (await requestWithStatus<T>("POST", path, body, headers)).data,
+    requestWithStatus,
   };
 }
 

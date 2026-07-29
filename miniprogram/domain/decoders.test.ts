@@ -227,6 +227,9 @@ test("strictly decodes every frozen payment order and response shape", () => {
   expect(decodePaymentReconciliation(confirmedOrder)).toMatchObject({
     outcome: "TERMINAL", order: { status: "CONFIRMED" },
   });
+  expect(decodePaymentReconciliation({ ...expiredOrder, payment_state: "CLOSED" })).toMatchObject({
+    outcome: "TERMINAL", order: { status: "EXPIRED", paymentState: "CLOSED" },
+  });
   expect(decodePaymentReconciliation(paymentConfirming)).toMatchObject({
     outcome: "PAYMENT_CONFIRMING", order: { paymentState: "CONFIRMING" },
   });

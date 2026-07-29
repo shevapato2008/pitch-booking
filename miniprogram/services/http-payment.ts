@@ -8,7 +8,7 @@ import {
   decodeWeChatSession,
 } from "../domain/decoders";
 import type { PaymentDataSource } from "../domain/payment";
-import type { Transport, TransportError, WeChatIdentityCapability } from "../runtime/interfaces";
+import type { StatusTransport, TransportError, WeChatIdentityCapability } from "../runtime/interfaces";
 import type { SessionStore } from "./session-store";
 
 export type PaymentApiErrorCode =
@@ -24,15 +24,23 @@ export class PaymentApiError extends Error {
 }
 
 export interface HttpPaymentDataSourceOptions {
-  readonly transport: Transport;
+  readonly transport: PaymentTransport;
   readonly identity: WeChatIdentityCapability;
   readonly sessionStore: SessionStore;
 }
+
+export type PaymentTransport = StatusTransport;
 
 interface HttpFailure {
   readonly statusCode: number;
   readonly decoded?: ReturnType<typeof decodeApiError>;
 }
+
+const CREATE_CONFLICT_CODES = new Set<ApiErrorCode>([
+  "ORDER_EXPIRED",
+  "PAYMENT_EXCEPTION",
+  "IDEMPOTENCY_KEY_REUSED",
+]);
 
 export function createHttpPaymentDataSource({
   transport,
@@ -53,7 +61,6 @@ export function createHttpPaymentDataSource({
     if (transportError.statusCode === 401) sessionStore.clear();
     try {
       const decoded = decodeApiError(transportError.data);
-      if (decoded.code === "AUTH_REQUIRED") sessionStore.clear();
       return { statusCode: transportError.statusCode, decoded };
     } catch {
       return { statusCode: transportError.statusCode };
@@ -66,10 +73,13 @@ export function createHttpPaymentDataSource({
       try {
         const { code } = await identity.login();
         if (!code) throw new PaymentApiError("LOGIN_FAILED");
-        const session = decodeWeChatSession(await transport.post(
+        const response = await transport.requestWithStatus<unknown>(
+          "POST",
           "/api/v1/auth/wechat/session",
           { code },
-        ));
+        );
+        if (response.statusCode !== 200) throw new ApiResponseError("$.status");
+        const session = decodeWeChatSession(response.data);
         sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
       } catch (caught) {
         if (caught instanceof ApiResponseError || caught instanceof PaymentApiError) throw caught;
@@ -84,33 +94,43 @@ export function createHttpPaymentDataSource({
     return exchange;
   };
 
-  const throwFinal = (caught: unknown, failure: HttpFailure | null): never => {
+  const throwFinal = (
+    caught: unknown,
+    failure: HttpFailure | null,
+    operation: "create" | "reconcile" | "get",
+  ): never => {
     if (failure?.statusCode === 404) throw new PaymentApiError("ORDER_NOT_FOUND");
-    if (failure?.statusCode === 401 || failure?.decoded?.code === "AUTH_REQUIRED") {
+    if (failure?.statusCode === 401) {
       throw new PaymentApiError("AUTH_REQUIRED");
     }
-    if (failure?.decoded
-      && (failure.statusCode < 500 || failure.decoded.code === "PAYMENT_CREATE_FAILED")) {
+    if (failure?.statusCode === 503 && operation === "create"
+      && failure.decoded?.code === "PAYMENT_CREATE_FAILED") {
+      throw new PaymentApiError("PAYMENT_CREATE_FAILED");
+    }
+    if (failure?.statusCode === 409 && operation === "create" && failure.decoded
+      && CREATE_CONFLICT_CODES.has(failure.decoded.code)) {
       throw new PaymentApiError(failure.decoded.code);
     }
+    if (failure && failure.statusCode < 500) throw new ApiResponseError("$.status");
     if (caught instanceof ApiResponseError || caught instanceof PaymentApiError) throw caught;
     throw new PaymentApiError("PAYMENT_RESULT_UNKNOWN");
   };
 
-  const authorized = async <T>(perform: () => Promise<T>): Promise<T> => {
+  const authorized = async <T>(
+    operation: "create" | "reconcile" | "get",
+    perform: () => Promise<T>,
+  ): Promise<T> => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         return await perform();
       } catch (caught) {
         const failure = inspectHttpFailure(caught);
-        const authRejected = failure?.statusCode === 401
-          || failure?.decoded?.code === "AUTH_REQUIRED"
-          || (caught instanceof PaymentApiError && caught.code === "AUTH_REQUIRED");
+        const authRejected = failure?.statusCode === 401;
         if (authRejected && attempt === 0) {
           await exchangeSession();
           continue;
         }
-        return throwFinal(caught, failure);
+        return throwFinal(caught, failure, operation);
       }
     }
     throw new Error("UNREACHABLE_AUTH_RETRY");
@@ -118,24 +138,51 @@ export function createHttpPaymentDataSource({
 
   return {
     createPayment(orderId, idempotencyKey) {
-      return authorized(async () => decodePaymentLaunch(await transport.post(
-        `/api/v1/orders/${orderId}/pay`,
-        undefined,
-        { ...bearer(), "Idempotency-Key": idempotencyKey },
-      )));
+      return authorized("create", async () => {
+        const response = await transport.requestWithStatus<unknown>(
+          "POST",
+          `/api/v1/orders/${orderId}/pay`,
+          undefined,
+          { ...bearer(), "Idempotency-Key": idempotencyKey },
+        );
+        const decoded = decodePaymentLaunch(response.data);
+        const valid = (response.statusCode === 200
+            && (decoded.outcome === "PREPAY_CREATED" || decoded.outcome === "ALREADY_CONFIRMED"))
+          || (response.statusCode === 201 && decoded.outcome === "PREPAY_CREATED")
+          || (response.statusCode === 202 && decoded.outcome === "PAYMENT_CONFIRMING");
+        if (!valid) throw new ApiResponseError("$.status");
+        return decoded;
+      });
     },
     reconcilePayment(orderId, paymentId) {
-      return authorized(async () => decodePaymentReconciliation(await transport.post(
-        `/api/v1/orders/${orderId}/payments/${paymentId}/reconcile`,
-        undefined,
-        bearer(),
-      )));
+      return authorized("reconcile", async () => {
+        const response = await transport.requestWithStatus<unknown>(
+          "POST",
+          `/api/v1/orders/${orderId}/payments/${paymentId}/reconcile`,
+          undefined,
+          bearer(),
+        );
+        const decoded = decodePaymentReconciliation(response.data);
+        if ((response.statusCode === 200) !== (decoded.outcome === "TERMINAL")) {
+          throw new ApiResponseError("$.status");
+        }
+        if (response.statusCode !== 200 && response.statusCode !== 202) {
+          throw new ApiResponseError("$.status");
+        }
+        return decoded as Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>;
+      });
     },
     getOrder(orderId) {
-      return authorized(async () => decodeOrder(await transport.get(
-        `/api/v1/orders/${orderId}`,
-        bearer(),
-      )));
+      return authorized("get", async () => {
+        const response = await transport.requestWithStatus<unknown>(
+          "GET",
+          `/api/v1/orders/${orderId}`,
+          undefined,
+          bearer(),
+        );
+        if (response.statusCode !== 200) throw new ApiResponseError("$.status");
+        return decodeOrder(response.data);
+      });
     },
   };
 }

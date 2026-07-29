@@ -275,7 +275,14 @@ export function decodePaymentLaunch(value: unknown): PaymentLaunchResult {
   invalid("$.status");
 }
 
-export function decodePaymentReconciliation(value: unknown): Awaited<ReturnType<import("./payment").PaymentDataSource["reconcilePayment"]>> {
+export type DecodedPaymentReconciliation =
+  | {
+      readonly outcome: "PAYMENT_CONFIRMING";
+      readonly order: PaymentPendingOrderView | Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
+    }
+  | { readonly outcome: "TERMINAL"; readonly order: OrderView };
+
+export function decodePaymentReconciliation(value: unknown): DecodedPaymentReconciliation {
   if (typeof value === "object" && value !== null && !Array.isArray(value)
     && (value as Record<string, unknown>).status === "PAYMENT_CONFIRMING") {
     const decoded = decodePaymentLaunch(value);
@@ -283,7 +290,6 @@ export function decodePaymentReconciliation(value: unknown): Awaited<ReturnType<
     return { outcome: "PAYMENT_CONFIRMING", order: decoded.order };
   }
   const order = decodeOrder(value);
-  if (order.status === "EXPIRED") invalid("$.status");
   return { outcome: "TERMINAL", order };
 }
 

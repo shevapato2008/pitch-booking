@@ -77,6 +77,15 @@ test("uses an eight-second GET request and resolves only 2xx response data", asy
   }));
 });
 
+test("exposes successful HTTP status only through the payment-aware transport boundary", async () => {
+  const request = captureRequest();
+  const result = productionTransport("https://api.example").requestWithStatus(
+    "POST", "/orders/order/pay", undefined, { Authorization: "Bearer token" },
+  );
+  request.options.success?.(requestResult(202, { status: "PAYMENT_CONFIRMING" }));
+  await expect(result).resolves.toEqual({ statusCode: 202, data: { status: "PAYMENT_CONFIRMING" } });
+});
+
 test("forwards GET headers and POST body/headers through the frozen transport boundary", async () => {
   const getRequest = captureRequest();
   const transport = productionTransport("https://api.example");

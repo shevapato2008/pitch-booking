@@ -7,6 +7,20 @@ export interface Transport {
   post<T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>): Promise<T>;
 }
 
+export interface TransportResponse<T> {
+  readonly statusCode: number;
+  readonly data: T;
+}
+
+export interface StatusTransport extends Transport {
+  requestWithStatus<T>(
+    method: "GET" | "POST",
+    path: string,
+    body: unknown,
+    headers?: Readonly<Record<string, string>>,
+  ): Promise<TransportResponse<T>>;
+}
+
 export interface HttpTransportError {
   readonly code: "HTTP_ERROR";
   readonly statusCode: number;

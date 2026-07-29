@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
-import type { Transport, WeChatIdentityCapability } from "../runtime/interfaces";
+import type { WeChatIdentityCapability } from "../runtime/interfaces";
 import type { SessionStore } from "./session-store";
-import { createHttpPaymentDataSource, PaymentApiError } from "./http-payment";
+import {
+  createHttpPaymentDataSource,
+  PaymentApiError,
+  type PaymentTransport,
+} from "./http-payment";
 
 const pendingOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-pending.json");
 const confirmedOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-confirmed.json");
@@ -21,22 +25,34 @@ function httpError(statusCode: number, data: unknown) {
   return { code: "HTTP_ERROR" as const, statusCode, data };
 }
 
-function harness(responses: Array<unknown | Error | ReturnType<typeof httpError>>) {
+function response(statusCode: number, data: unknown) {
+  return { statusCode, data };
+}
+
+function harness(
+  responses: Array<unknown | Error | ReturnType<typeof httpError>>,
+  initialSession: "present" | "missing" = "present",
+) {
   const calls: Call[] = [];
-  let stored = { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" } as { token: string; expiresAt: string } | null;
+  let stored = initialSession === "present"
+    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" }
+    : null as { token: string; expiresAt: string } | null;
   const next = async () => {
     const value = responses.shift();
     if (value instanceof Error || (typeof value === "object" && value !== null && "code" in value)) throw value;
     return value;
   };
-  const transport: Transport = {
-    get: async <T>(path: string, headers?: Readonly<Record<string, string>>) => {
-      calls.push({ method: "GET", path, headers });
-      return await next() as T;
-    },
-    post: async <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => {
-      calls.push({ method: "POST", path, body, headers });
-      return await next() as T;
+  const transport: PaymentTransport = {
+    get: async <T>() => await next() as T,
+    post: async <T>() => await next() as T,
+    requestWithStatus: async <T>(
+      method: "GET" | "POST",
+      path: string,
+      body: unknown,
+      headers?: Readonly<Record<string, string>>,
+    ) => {
+      calls.push({ method, path, body, headers });
+      return await next() as { readonly statusCode: number; readonly data: T };
     },
   };
   const sessionStore: SessionStore = {
@@ -55,7 +71,7 @@ describe("HTTP payment data source", () => {
   beforeEach(() => { jest.clearAllMocks(); });
 
   test("creates prepay with Bearer and the original idempotency key", async () => {
-    const testHarness = harness([paymentPrepay]);
+    const testHarness = harness([response(201, paymentPrepay)]);
     await expect(testHarness.source.createPayment("order-1", "unchanged-key-1234"))
       .resolves.toMatchObject({ outcome: "PREPAY_CREATED" });
     expect(testHarness.calls).toEqual([{
@@ -65,21 +81,25 @@ describe("HTTP payment data source", () => {
   });
 
   test("decodes confirming and already-confirmed create results without inventing authority", async () => {
-    const confirming = harness([paymentConfirming]);
+    const confirming = harness([response(202, paymentConfirming)]);
     await expect(confirming.source.createPayment("order-1", "confirming-key-1"))
       .resolves.toMatchObject({ outcome: "PAYMENT_CONFIRMING", order: { status: "PENDING_PAYMENT" } });
 
-    const already = harness([{
+    const already = harness([response(200, {
       order_id: confirmedOrder.id,
       status: "ALREADY_CONFIRMED",
       order: confirmedOrder,
-    }]);
+    })]);
     await expect(already.source.createPayment("order-1", "confirmed-key-12"))
       .resolves.toMatchObject({ outcome: "ALREADY_CONFIRMED", order: { status: "CONFIRMED" } });
   });
 
   test("reconciles confirming and terminal responses and gets authoritative orders", async () => {
-    const testHarness = harness([paymentConfirming, confirmedOrder, pendingOrder]);
+    const testHarness = harness([
+      response(202, paymentConfirming),
+      response(200, confirmedOrder),
+      response(200, pendingOrder),
+    ]);
     await expect(testHarness.source.reconcilePayment("order-1", "payment-1"))
       .resolves.toMatchObject({ outcome: "PAYMENT_CONFIRMING" });
     await expect(testHarness.source.reconcilePayment("order-1", "payment-1"))
@@ -97,7 +117,7 @@ describe("HTTP payment data source", () => {
     const authError = httpError(401, {
       error: { code: "AUTH_REQUIRED", message: "auth", request_id: "r", details: {} },
     });
-    const testHarness = harness([authError, session, paymentPrepay]);
+    const testHarness = harness([authError, response(200, session), response(201, paymentPrepay)]);
     await expect(testHarness.source.createPayment("order-1", "stable-key-12345"))
       .resolves.toMatchObject({ outcome: "PREPAY_CREATED" });
     expect(testHarness.identity.login).toHaveBeenCalledTimes(1);
@@ -114,11 +134,19 @@ describe("HTTP payment data source", () => {
     const authError = httpError(401, {
       error: { code: "AUTH_REQUIRED", message: "auth", request_id: "r", details: {} },
     });
-    const testHarness = harness([authError, session, authError]);
+    const testHarness = harness([authError, response(200, session), authError]);
     await expect(testHarness.source.createPayment("order-1", "stable-key-12345"))
       .rejects.toMatchObject({ code: "AUTH_REQUIRED" });
     expect(testHarness.identity.login).toHaveBeenCalledTimes(1);
     expect(testHarness.calls.filter(({ path }) => path.endsWith("/pay"))).toHaveLength(2);
+  });
+
+  test("does not treat a local missing session as an HTTP 401 retry", async () => {
+    const testHarness = harness([], "missing");
+    await expect(testHarness.source.getOrder("order-1"))
+      .rejects.toEqual(new PaymentApiError("AUTH_REQUIRED"));
+    expect(testHarness.identity.login).not.toHaveBeenCalled();
+    expect(testHarness.calls).toHaveLength(0);
   });
 
   test("hides every 404 and treats unverified network or server failures conservatively", async () => {
@@ -141,5 +169,63 @@ describe("HTTP payment data source", () => {
     })]);
     await expect(rejected.source.createPayment("order-1", "rejected-key-123"))
       .rejects.toEqual(new PaymentApiError("PAYMENT_CREATE_FAILED"));
+  });
+
+  test("rejects a definitive payment failure forged onto an undeclared 409 status", async () => {
+    const forged = harness([httpError(409, {
+      error: { code: "PAYMENT_CREATE_FAILED", message: "fake", request_id: "r", details: {} },
+    })]);
+    await expect(forged.source.createPayment("order-1", "forged-key-1234"))
+      .rejects.toMatchObject({ code: "INVALID_API_RESPONSE" });
+  });
+
+  test("binds each successful payment body to its declared HTTP status", async () => {
+    await expect(harness([response(200, paymentConfirming)]).source.createPayment("o", "status-key-12345"))
+      .rejects.toMatchObject({ code: "INVALID_API_RESPONSE" });
+    await expect(harness([response(202, paymentPrepay)]).source.createPayment("o", "status-key-12345"))
+      .rejects.toMatchObject({ code: "INVALID_API_RESPONSE" });
+    await expect(harness([response(201, paymentConfirming)]).source.createPayment("o", "status-key-12345"))
+      .rejects.toMatchObject({ code: "INVALID_API_RESPONSE" });
+    await expect(harness([response(200, paymentConfirming)]).source.reconcilePayment("o", "p"))
+      .rejects.toMatchObject({ code: "INVALID_API_RESPONSE" });
+    await expect(harness([response(202, confirmedOrder)]).source.reconcilePayment("o", "p"))
+      .rejects.toMatchObject({ code: "INVALID_API_RESPONSE" });
+  });
+
+  test("accepts a replayed 200 prepay and a CLOSED/EXPIRED 200 reconciliation", async () => {
+    await expect(harness([response(200, paymentPrepay)]).source.createPayment("o", "replay-key-12345"))
+      .resolves.toMatchObject({ outcome: "PREPAY_CREATED" });
+    await expect(harness([response(200, {
+      ...jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-expired.json"),
+      payment_state: "CLOSED",
+    })]).source.reconcilePayment("o", "p"))
+      .resolves.toMatchObject({ outcome: "TERMINAL", order: { status: "EXPIRED", paymentState: "CLOSED" } });
+  });
+
+  test("does not let forged 5xx bodies trigger login or definitive authority", async () => {
+    const forgedAuth = harness([httpError(500, {
+      error: { code: "AUTH_REQUIRED", message: "fake", request_id: "r", details: {} },
+    })]);
+    await expect(forgedAuth.source.createPayment("o", "forged-key-1234"))
+      .rejects.toEqual(new PaymentApiError("PAYMENT_RESULT_UNKNOWN"));
+    expect(forgedAuth.identity.login).not.toHaveBeenCalled();
+
+    const forgedFailure = harness([httpError(500, {
+      error: { code: "PAYMENT_CREATE_FAILED", message: "fake", request_id: "r", details: {} },
+    })]);
+    await expect(forgedFailure.source.createPayment("o", "forged-key-1234"))
+      .rejects.toEqual(new PaymentApiError("PAYMENT_RESULT_UNKNOWN"));
+  });
+
+  test.each(["create", "reconcile", "get"] as const)("hides 404 for %s", async (operation) => {
+    const hidden = harness([httpError(404, {
+      error: { code: "PAYMENT_CREATE_FAILED", message: "private", request_id: "r", details: {} },
+    })]);
+    const pending = operation === "create"
+      ? hidden.source.createPayment("secret", "hidden-key-12345")
+      : operation === "reconcile"
+        ? hidden.source.reconcilePayment("secret", "payment")
+        : hidden.source.getOrder("secret");
+    await expect(pending).rejects.toEqual(new PaymentApiError("ORDER_NOT_FOUND"));
   });
 });
