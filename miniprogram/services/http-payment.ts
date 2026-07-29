@@ -120,14 +120,20 @@ export function createHttpPaymentDataSource({
     operation: "create" | "reconcile" | "get",
     perform: () => Promise<T>,
   ): Promise<T> => {
+    let authenticationRecovered = false;
+    if (!sessionStore.load()) {
+      await exchangeSession();
+      authenticationRecovered = true;
+    }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         return await perform();
       } catch (caught) {
         const failure = inspectHttpFailure(caught);
         const authRejected = failure?.statusCode === 401;
-        if (authRejected && attempt === 0) {
+        if (authRejected && !authenticationRecovered && attempt === 0) {
           await exchangeSession();
+          authenticationRecovered = true;
           continue;
         }
         return throwFinal(caught, failure, operation);
@@ -169,7 +175,7 @@ export function createHttpPaymentDataSource({
         if (response.statusCode !== 200 && response.statusCode !== 202) {
           throw new ApiResponseError("$.status");
         }
-        return decoded as Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>;
+        return decoded;
       });
     },
     getOrder(orderId) {

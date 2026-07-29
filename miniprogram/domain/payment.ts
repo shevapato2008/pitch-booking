@@ -44,7 +44,7 @@ export interface PaymentDataSource {
         readonly outcome: "PAYMENT_CONFIRMING";
         readonly order: PaymentPendingOrderView | PaymentExceptionOrderView;
       }
-    | { readonly outcome: "TERMINAL"; readonly order: PaymentOrderView }
+    | { readonly outcome: "TERMINAL"; readonly order: OrderView }
   >;
   getOrder(orderId: string): Promise<OrderView>;
 }

@@ -5,6 +5,7 @@ import type {
   PaymentExceptionOrderView,
   PaymentPendingOrderView,
 } from "../domain/payment";
+import type { ExpiredOrderView } from "../domain/booking";
 import { PAYMENT_SCENARIOS } from "../dev/payment-scenarios";
 import {
   initialPaymentPageState,
@@ -202,6 +203,20 @@ describe("payment presentation state machine", () => {
       order: PAYMENT_SCENARIOS.exception,
       paymentId: null,
     });
+  });
+
+  test("an expired terminal projection stays out of payment-pending while the order poller owns expiry rendering", () => {
+    const confirming = initialPaymentPageState(structuredClone(PAYMENT_SCENARIOS.confirming));
+    const expired: ExpiredOrderView = {
+      ...PAYMENT_SCENARIOS.pending,
+      status: "EXPIRED",
+      expiredAt: "2026-07-27T12:10:01+08:00",
+      paymentState: "CLOSED",
+      paymentConfirming: false,
+      paidAt: null,
+    };
+
+    expect(reducePayment(confirming, { type: "ORDER_RECEIVED", order: expired })).toBe(confirming);
   });
 
   test.each(["PAY_CREATE_UNKNOWN", "PAY_CREATE_RETRY"] as const)(

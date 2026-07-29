@@ -4,6 +4,7 @@ import type {
   PaymentOrderView,
   PaymentPendingOrderView,
 } from "../domain/payment";
+import type { OrderView } from "../domain/booking";
 
 export type PaymentPageStatus =
   | "loading"
@@ -56,7 +57,7 @@ export type PaymentPageState =
 
 export type PaymentPageEvent =
   | { readonly type: "ORDER_LOADING" }
-  | { readonly type: "ORDER_RECEIVED"; readonly order: PaymentOrderView }
+  | { readonly type: "ORDER_RECEIVED"; readonly order: OrderView }
   | { readonly type: "ORDER_FAILED"; readonly message: string }
   | { readonly type: "ORDER_LOAD_FAILED"; readonly message: string }
   | { readonly type: "PAY_STARTED"; readonly idempotencyKey: string }
@@ -111,6 +112,9 @@ export function reducePayment(state: PaymentPageState, event: PaymentPageEvent):
       if (isActivePaymentAction(state)) return state;
       return { status: "load-error", order: state.order, errorMessage: event.message };
     case "ORDER_RECEIVED":
+      // Task11's order-detail poller owns EXPIRED rendering. Keep the current payment
+      // state until that controller explicitly projects expiry; never coerce it to pending.
+      if (event.order.status === "EXPIRED") return state;
       if (event.order.status === "CONFIRMED") {
         return {
           status: "booking-confirmed",

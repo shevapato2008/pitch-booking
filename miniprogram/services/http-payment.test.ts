@@ -141,12 +141,44 @@ describe("HTTP payment data source", () => {
     expect(testHarness.calls.filter(({ path }) => path.endsWith("/pay"))).toHaveLength(2);
   });
 
-  test("does not treat a local missing session as an HTTP 401 retry", async () => {
-    const testHarness = harness([], "missing");
-    await expect(testHarness.source.getOrder("order-1"))
+  test("exchanges a missing session once before create and preserves the idempotency key", async () => {
+    const testHarness = harness([response(200, session), response(201, paymentPrepay)], "missing");
+    await expect(testHarness.source.createPayment("order-1", "missing-session-key"))
+      .resolves.toMatchObject({ outcome: "PREPAY_CREATED" });
+    expect(testHarness.identity.login).toHaveBeenCalledTimes(1);
+    expect(testHarness.calls.map(({ path }) => path)).toEqual([
+      "/api/v1/auth/wechat/session",
+      "/api/v1/orders/order-1/pay",
+    ]);
+    expect(testHarness.calls[1]?.headers).toEqual({
+      Authorization: `Bearer ${String(session.session_token)}`,
+      "Idempotency-Key": "missing-session-key",
+    });
+  });
+
+  test("does not perform a second exchange when the request after missing-session recovery returns 401", async () => {
+    const authError = httpError(401, {
+      error: { code: "AUTH_REQUIRED", message: "auth", request_id: "r", details: {} },
+    });
+    const testHarness = harness([response(200, session), authError], "missing");
+    await expect(testHarness.source.createPayment("order-1", "one-recovery-key"))
       .rejects.toEqual(new PaymentApiError("AUTH_REQUIRED"));
-    expect(testHarness.identity.login).not.toHaveBeenCalled();
-    expect(testHarness.calls).toHaveLength(0);
+    expect(testHarness.identity.login).toHaveBeenCalledTimes(1);
+    expect(testHarness.calls.filter(({ path }) => path.endsWith("/pay"))).toHaveLength(1);
+  });
+
+  test("shares one in-flight exchange across concurrent missing-session reads", async () => {
+    const testHarness = harness([
+      response(200, session),
+      response(200, pendingOrder),
+      response(200, pendingOrder),
+    ], "missing");
+    await expect(Promise.all([
+      testHarness.source.getOrder("order-1"),
+      testHarness.source.getOrder("order-2"),
+    ])).resolves.toHaveLength(2);
+    expect(testHarness.identity.login).toHaveBeenCalledTimes(1);
+    expect(testHarness.calls.filter(({ path }) => path.endsWith("/auth/wechat/session"))).toHaveLength(1);
   });
 
   test("hides every 404 and treats unverified network or server failures conservatively", async () => {
