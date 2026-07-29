@@ -190,7 +190,10 @@ class PaymentReconciliationService:
                     QueryPaymentStatus.CLOSED,
                     safe_error_code="PAYMENT_AUTHORITY_NOT_FOUND",
                 )
-            elif query.status is QueryPaymentStatus.NOT_PAID:
+            elif (
+                query.status is QueryPaymentStatus.NOT_PAID
+                and not order_expired
+            ):
                 if (
                     query.provider_prepay_id is None
                     or query.launch_params is None

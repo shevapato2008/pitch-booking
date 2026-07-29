@@ -14,9 +14,11 @@ from backend.app.modules.payments.mock_provider import MockCreateMode, MockPayme
 from backend.app.modules.payments.provider import (
     PAYMENT_PROVIDER_MAX_REQUEST_DURATION,
     ClosePaymentRequest,
+    Created,
     CreatePrepayRequest,
     QueryPaymentRequest,
     QueryPaymentResult,
+    QueryPaymentStatus,
 )
 from backend.app.modules.payments.reconciliation import (
     RECOVERY_LEASE_DURATION,
@@ -108,6 +110,30 @@ class BlockingQueryProvider(MockPaymentProvider):
         if not self.release_query.wait(timeout=5):
             raise RuntimeError("test did not release Provider query")
         return super().query_payment(request)
+
+
+class ForcedNotPaidProvider(MockPaymentProvider):
+    def __init__(self, *, include_launch_params: bool) -> None:
+        super().__init__()
+        self.include_launch_params = include_launch_params
+        self.created: Created | None = None
+
+    def create_prepay(self, request: CreatePrepayRequest):  # type: ignore[no-untyped-def]
+        result = super().create_prepay(request)
+        assert isinstance(result, Created)
+        self.created = result
+        return result
+
+    def query_payment(self, request: QueryPaymentRequest) -> QueryPaymentResult:
+        super().query_payment(request)
+        if not self.include_launch_params:
+            return QueryPaymentResult(QueryPaymentStatus.NOT_PAID)
+        assert self.created is not None
+        return QueryPaymentResult(
+            QueryPaymentStatus.NOT_PAID,
+            provider_prepay_id=self.created.provider_prepay_id,
+            launch_params=self.created.launch_params,
+        )
 
 
 def test_recovery_lease_exceeds_provider_timeout_contract() -> None:
@@ -295,6 +321,103 @@ def test_creating_after_provider_acceptance_recovers_without_second_create(
     assert [call.method for call in provider.calls].count("create_prepay") == 1
     with Session(pg_engine) as session:
         assert session.get_one(Payment, payment_id).status is PaymentState.PREPAY_CREATED
+
+
+def test_expired_creating_not_paid_with_launch_closes_before_release(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, now = seed_payment(
+        pg_engine, status=PaymentState.CREATING
+    )
+    provider = ForcedNotPaidProvider(include_launch_params=True)
+    seed_provider_order(pg_engine, provider, payment_id)
+    expiry_time = now + timedelta(minutes=11)
+    with Session(pg_engine) as session:
+        session.get_one(Payment, payment_id).next_reconcile_at = expiry_time
+        session.commit()
+
+    result = recovery_service(
+        pg_engine, provider, now=lambda: expiry_time
+    ).recover(payment_id)
+
+    assert result.terminal is True
+    assert [call.method for call in provider.calls][-2:] == ["query_payment", "close_payment"]
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, payment_id).status is PaymentState.CLOSED
+        assert session.get_one(Order, order_id).status is OrderStatus.EXPIRED
+        assert session.get_one(Slot, slot_id).status is SlotStatus.AVAILABLE
+
+
+def test_expired_creation_recovery_not_paid_without_launch_still_closes(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, now = seed_payment(
+        pg_engine, status=PaymentState.UNKNOWN
+    )
+    provider = ForcedNotPaidProvider(include_launch_params=False)
+    seed_provider_order(pg_engine, provider, payment_id)
+    expiry_time = now + timedelta(minutes=11)
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        payment.creation_recovery_pending = True
+        payment.next_reconcile_at = expiry_time
+        session.commit()
+
+    recovery_service(pg_engine, provider, now=lambda: expiry_time).recover(payment_id)
+
+    assert [call.method for call in provider.calls][-2:] == ["query_payment", "close_payment"]
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, payment_id).status is PaymentState.CLOSED
+        assert session.get_one(Order, order_id).status is OrderStatus.EXPIRED
+        assert session.get_one(Slot, slot_id).status is SlotStatus.AVAILABLE
+
+
+def test_expired_creation_recovery_close_success_books_instead_of_releasing(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, now = seed_payment(
+        pg_engine, status=PaymentState.CREATING
+    )
+    provider = ForcedNotPaidProvider(include_launch_params=True)
+    merchant = seed_provider_order(pg_engine, provider, payment_id)
+    provider.mark_success(
+        merchant,
+        provider_transaction_no=f"T-{uuid.uuid4().hex}",
+        paid_at=now,
+    )
+    expiry_time = now + timedelta(minutes=11)
+    with Session(pg_engine) as session:
+        session.get_one(Payment, payment_id).next_reconcile_at = expiry_time
+        session.commit()
+
+    recovery_service(pg_engine, provider, now=lambda: expiry_time).recover(payment_id)
+
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, payment_id).status is PaymentState.SUCCESS
+        assert session.get_one(Order, order_id).status is OrderStatus.CONFIRMED
+        assert session.get_one(Slot, slot_id).status is SlotStatus.BOOKED
+
+
+def test_expired_creation_recovery_close_unknown_never_releases(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, now = seed_payment(
+        pg_engine, status=PaymentState.CREATING
+    )
+    provider = ForcedNotPaidProvider(include_launch_params=True)
+    merchant = seed_provider_order(pg_engine, provider, payment_id)
+    provider.set_close_unknown(merchant)
+    expiry_time = now + timedelta(minutes=11)
+    with Session(pg_engine) as session:
+        session.get_one(Payment, payment_id).next_reconcile_at = expiry_time
+        session.commit()
+
+    recovery_service(pg_engine, provider, now=lambda: expiry_time).recover(payment_id)
+
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, payment_id).status is PaymentState.UNKNOWN
+        assert session.get_one(Order, order_id).status is OrderStatus.PENDING_PAYMENT
+        assert session.get_one(Slot, slot_id).status is SlotStatus.LOCKED
 
 
 def test_creating_create_timeout_converges_unknown_then_new_service_retries_same_merchant(
