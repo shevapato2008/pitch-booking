@@ -82,7 +82,7 @@
 
 底部卡片采用同层渲染的普通视图覆盖地图，默认停在约 43% 高度，并提供收起、默认、展开三个吸附位置。只有把手与卡片标题区响应垂直拖动；卡片内容保留横向切换，卡片外地图区域保留平移和缩放，避免手势争抢。展开态最高不覆盖系统导航栏与安全区，收起态仍显示选中场馆名称、状态和主动作。
 
-首期视觉与交互基准固定为已安装的微信开发者工具 Stable `2.01.2510290`、基础库 `3.17.0` 和 WebView 渲染；`project.config.json` 必须显式记录基础库版本，不能依赖 `latest`。地图挂载后等待第一次 `bindupdated`：收到 `binderror`，或 10 秒内没有首次 `bindupdated`，即进入纯场馆列表降级。用户点击“重试地图”时递增组件 key、完整卸载并重新挂载 `<map>`，每次重试只启动一个新计时器。开发态提供显式 `map-render-failure` 场景触发该状态，场景绑定和符号必须被生产包审计排除。
+首期视觉与交互基准固定为已安装的微信开发者工具 Stable `2.01.2510290`、基础库 `3.17.0` 和 WebView 渲染；`project.config.json` 必须显式记录基础库版本，不能依赖 `latest`。规范只依赖可观测的首次 `bindupdated`：地图挂载后 10 秒内没有收到该事件，即进入纯场馆列表降级，不把版本语义不稳定的其他原生错误事件作为完成条件。用户点击“重试地图”时递增组件 key、完整卸载并重新挂载 `<map>`，每次重试只启动一个新计时器。开发态提供显式 `map-render-failure` 场景抑制首次 updated、确定性触发该状态，场景绑定和符号必须被生产包审计排除。
 
 ### 5.2 场馆主页 `pages/venue/index`
 
@@ -161,11 +161,13 @@ OpenAPI 使用以 `booking_mode` 为判别字段的封闭 `oneOf`，两种变体
 - 场馆标记 `latitude`、`longitude` 和固定 `coordinate_system: GCJ02`；
 - `navigation_poi_name`、`navigation_latitude`、`navigation_longitude`；
 - `booking_mode`、`pitch_types`、`cover_image`、完整 `nearest_transit`；
-- `content_verified_at` 和固定状态说明。
+- `content_verified_at`。
 
-`OnlineVenueDetail` 额外要求 `price_advantage_text`、`timezone`、`business_hours_text`、`parking_text`、`phone`、`refund_policy_summary`、非空 `images`、非空 `facilities`、非空 `pitch_types` 和 `availability_window`，字段语义与现有 `PrimaryVenueResponse` 一致。`DirectoryVenueDetail` 不包含价格、库存、联系电话、退款规则或 availability window；可核验的 `business_hours_text`、`parking_text`、`images`、`facilities` 使用独立可选字段，未知时明确为 `null`，不能用“待定”字符串伪装数据。其 `pitch_types` 可为空。
+`OnlineVenueDetail` 额外要求 `price_advantage_text`、`timezone`、`business_hours_text`、`parking_text`、`phone`、`refund_policy_summary`、非空 `images`、非空 `facilities`、非空 `pitch_types` 和 `availability_window`，字段语义与现有 `PrimaryVenueResponse` 一致。`DirectoryVenueDetail` 不包含价格、库存、联系电话、退款规则或 availability window；其公开展示字段按下一段使用统一的 required-nullable/required-array 规则，不能用“待定”字符串伪装数据。
 
-`GET /api/v1/venues/primary` 的路径、状态码、字段集合、必填性和现有 OpenAPI 示例保持字节级契约兼容，不增加目录字段。FastAPI 必须先注册字面量 `/venues/primary` 和 `/venues/map`，再注册 `/venues/{venue_id}`；路由表测试直接请求两个字面量路径，证明未被 UUID 参数路由遮蔽。
+为消除可选/空值歧义，`DirectoryVenueDetail` 的 `business_hours_text`、`parking_text` 必须存在且类型为 `string | null`；`images`、`facilities` 必须存在且类型为数组，无数据时返回空数组；`pitch_types` 必须存在且可为空。`cover_image` 必须存在且为 HTTPS URL 或 `null`。状态文案不由服务器下发，客户端只根据 `booking_mode` 映射固定文案“可预订”或“暂未接入在线预订”。
+
+`GET /api/v1/venues/primary` 的路径、状态码、schema、字段集合、必填性和语义保持兼容，不增加目录字段。兼容测试比较规范化 golden response：除按类型验证的动态 `generated_at` 外，字段和值与现有 golden 一致。FastAPI 必须先注册字面量 `/venues/primary` 和 `/venues/map`，再注册 `/venues/{venue_id}`；路由表测试直接请求两个字面量路径，证明未被 UUID 参数路由遮蔽。
 
 ### 7.3 错误
 
@@ -180,7 +182,7 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 
 `booking_mode = ONLINE` 是服务端业务门槛，而不只是 UI 状态。`/venues/primary`、availability、checkout、创建订单和创建支付入口都必须在读取关联场馆后校验 `ONLINE`；直接构造目录场馆 URL 一律返回不泄露库存细节的 `404 VENUE_NOT_FOUND`。数据库约束保证 `is_primary => booking_mode = ONLINE`。存在 pitch、slot、order 或 payment 历史的场馆不得从 `ONLINE` 改为 `DIRECTORY_ONLY`，内容装载必须在事务提交前拒绝该变更。
 
-订单详情继续使用订单创建时已经确定的在线场馆边界；本切片不把目录场馆的可空电话或其他可变资料引入订单快照。自动化必须直接请求目录场馆的 availability、checkout、order 和 payment 路径，证明所有入口均无法到达，而不能只验证前端隐藏按钮。
+订单详情继续使用订单创建时已经确定的在线场馆边界；本切片不把目录场馆的可空电话或其他可变资料引入订单快照。availability 使用目录 venue ID 可直接验证拒绝。checkout、order 和 payment 是 slot/order 定址，测试在隔离事务中绕过内容装载器，刻意构造 `DIRECTORY_ONLY venue → pitch → slot → order → payment` 的不一致防御性图，再直接请求各入口并断言服务层 mode guard 拒绝；事务随后回滚。该 fixture 只证明纵深防御，不允许出现在 seed、内容清单或运行时 Fixture。
 
 ## 8. PostgreSQL 模型
 
@@ -216,13 +218,13 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 迁移必须兼容已经存在主场馆、库存、订单和支付的数据库：
 
 1. 先增加允许为空的新列；`booking_mode`、`is_listed`、`sort_order` 使用只用于迁移的安全默认值；
-2. 通过现有主场馆不可变 UUID/slug 回填 `ONLINE`、导航入口、排序和核验时间，不按可变名称匹配；
+2. 使用受版本控制的 legacy UUID/slug 映射覆盖数据库中的每一条既有 venue，并回填 mode、导航入口、排序和核验时间，不按可变名称匹配；主场馆映射为 `ONLINE`，其他记录必须有明确映射决定，否则整个事务在施加最终约束前回滚；
 3. 更新非生产 demo seed，使其显式写入全部新字段；
 4. 对回填数据和现有订单链路做完整验证；
 5. 最后移除临时默认值并施加非空、条件字段、主场馆模式检查约束；
 6. 目录数据由迁移后的独立内容装载步骤创建，不写死在 Alembic 迁移中。
 
-降级不得把目录场馆伪装成在线场馆、补造字段或静默删除历史。如果存在 `DIRECTORY_ONLY` 或其他不能满足旧 schema 非空约束的记录，downgrade 必须在任何 DDL 前原子拒绝，并提示先运行显式目录卸载；只有目录内容已卸载且现有在线场馆满足旧 schema 时才允许降级。迁移测试必须覆盖包含主场馆、pitch、slot、order 和 payment 的 legacy 数据库，以及目录装载后的安全拒绝、卸载后的 downgrade、再次 upgrade。
+降级不得把目录场馆伪装成在线场馆、补造字段或静默删除历史。如果存在 `DIRECTORY_ONLY` 或其他不能满足旧 schema 非空约束的记录，downgrade 必须在任何 DDL 前原子拒绝，并提示先运行显式目录卸载；只有目录内容已卸载且现有在线场馆满足旧 schema 时才允许降级。迁移测试必须覆盖包含主场馆、pitch、slot、order 和 payment 的 legacy 数据库、额外 inactive/non-primary legacy venue 的完整映射、未映射 legacy venue 的原子失败，以及目录装载后的安全拒绝、卸载后的 downgrade、再次 upgrade。
 
 ## 9. 内容装载与权威边界
 
@@ -248,7 +250,7 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 - 使用位置的目的文案为“在地图中显示你的位置并估算你与球场的距离”；
 - 坐标只存在于页面内存，不进入请求、缓存、埋点、日志或数据库；
 - `<map show-location>` 初始为 false，只有 `wx.getLocation({type: "gcj02"})` 成功后才设为 true，避免地图组件自行触发首次授权；
-- 本地开发阶段即在代码包中声明 `permission.scope.userLocation.desc` 和微信要求的隐私 API 声明，不能因 ICP 暂缓；
+- 本地开发阶段即在 `app.json` 声明 `permission.scope.userLocation.desc = "在地图中显示你的位置并估算你与球场的距离"` 和 `requiredPrivateInfos: ["getLocation"]`，不能因 ICP 暂缓；
 - `LocationCapability` 区分：小程序隐私同意被拒绝、`scope.userLocation` 权限拒绝、系统定位服务关闭、超时和其他失败。只有 `scope.userLocation` 权限拒绝显示“前往设置”并调用 `wx.openSetting`；其他失败给出对应非阻断说明；
 - 从设置返回后不在 `onShow` 自动重新定位，用户必须再次点击“定位到我”；成功前不得保留上一次失败的坐标；
 - 用户拒绝、系统定位关闭或接口失败时，目录和预订功能保持可用；
@@ -260,7 +262,7 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 | --- | --- | --- |
 | 首次加载 | 地图骨架与卡片骨架，不显示假标记 | 请求成功后一次替换 |
 | 目录加载失败 | 错误说明与“重新加载” | 用户主动重试 |
-| 地图渲染失败 | `binderror` 或挂载后 10 秒无首次 `bindupdated`，切换纯列表；地址、详情和导航仍可用 | “重试地图”卸载并重新挂载组件 |
+| 地图渲染失败 | 挂载后 10 秒无首次 `bindupdated`，切换纯列表；地址、详情和导航仍可用 | “重试地图”卸载并重新挂载组件 |
 | 定位进行中 | 定位按钮显示加载反馈，防重复点击 | 成功显示位置，失败恢复按钮 |
 | 小程序隐私拒绝 | 非阻断隐私说明，不打开系统设置 | 用户再次点击后重新走隐私同意 |
 | 位置权限拒绝 | 非阻断说明和“前往设置” | 返回后用户再次点击，不在 `onShow` 自动获取 |
@@ -281,7 +283,7 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 - API 排序、目录详情、404、空目录错误和在线主场馆兼容；
 - `/primary`、`/map` 字面量路由不被 `/{venue_id}` 遮蔽；在线/目录详情判别联合约束完整；
 - 地图 presentation、标记选择、卡片联动、深链回退、距离格式化；
-- 地图首次 `bindupdated`、`binderror`、10 秒超时、重试 remount 和重复错误；
+- 地图首次 `bindupdated`、10 秒超时、重试 remount 和重复超时；
 - 小程序隐私拒绝、位置权限拒绝、系统定位关闭、超时、其他失败、从设置返回后的显式重试、重复点击、页面卸载晚响应；
 - 初次 `onLoad`/`onShow` 不调用定位，只有成功后启用 `show-location`；
 - 直接 API 请求证明目录场馆不能进入 availability、checkout、order、payment；在线场馆仍完成现有预订入口；
