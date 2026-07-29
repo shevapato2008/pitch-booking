@@ -281,10 +281,14 @@ def test_booking_check_and_unique_constraint_catalog_is_complete(pg_engine: Engi
         "ck_idempotency_records_state_response",
     }
 
-    assert {item["name"] for item in inspector.get_unique_constraints("users")} >= {
+    user_unique_constraints = {
+        item["name"] for item in inspector.get_unique_constraints("users")
+    }
+    assert user_unique_constraints >= {
         "uq_users_wechat_app_openid",
         "uq_users_wechat_unionid",
     }
+    assert "uq_users_wechat_openid" not in user_unique_constraints
     app_openid_constraint = next(
         item
         for item in inspector.get_unique_constraints("users")

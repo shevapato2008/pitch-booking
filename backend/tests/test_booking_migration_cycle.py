@@ -1,11 +1,17 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import DateTime, Engine, create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
+from backend.app.models import UserSession
+from backend.app.modules.auth.dto import VerifiedPhone, WeChatIdentity
+from backend.app.modules.auth.repository import AuthRepository
+from backend.app.modules.auth.service import AuthService
 from backend.tests.postgres_test_database import (
     disposable_database,
     override_test_database_url,
@@ -48,6 +54,183 @@ def _circular_foreign_keys(engine: Engine) -> set[tuple[str, str, str, str]]:
         return {
             (str(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in rows
         }
+
+
+def _make_legacy_identity_schema_at_0004(
+    engine: Engine,
+    *,
+    with_user: bool,
+) -> None:
+    config = _config(engine)
+    command.upgrade(config, "0004")
+    with engine.begin() as connection:
+        if with_user:
+            connection.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id, wechat_app_id, wechat_openid, created_at) VALUES "
+                    "('20000000-0000-0000-0000-000000000001', "
+                    "'discarded-by-legacy-shape', 'legacy-openid', now())"
+                )
+            )
+        connection.execute(
+            text("ALTER TABLE users DROP CONSTRAINT uq_users_wechat_app_openid")
+        )
+        connection.execute(text("ALTER TABLE users DROP COLUMN wechat_app_id"))
+        connection.execute(
+            text(
+                "ALTER TABLE users ADD CONSTRAINT uq_users_wechat_openid "
+                "UNIQUE (wechat_openid)"
+            )
+        )
+
+
+class _MigrationIdentityProvider:
+    def __init__(self, app_id: str) -> None:
+        self.app_id = app_id
+
+    def exchange(self, _code: str) -> WeChatIdentity:
+        return WeChatIdentity(
+            openid="legacy-openid",
+            unionid=None,
+            session_key="migration-session-key",
+            app_id=self.app_id,
+        )
+
+
+class _MigrationPhoneProvider:
+    def exchange(self, _code: str) -> VerifiedPhone:
+        return VerifiedPhone("13812345678")
+
+
+def _identity_constraints(engine: Engine) -> dict[str | None, list[str]]:
+    return {
+        item["name"]: item["column_names"]
+        for item in inspect(engine).get_unique_constraints("users")
+    }
+
+
+def test_fresh_migration_path_reaches_identity_repair_head(
+    migration_engine: Engine,
+) -> None:
+    command.upgrade(_config(migration_engine), "head")
+
+    with migration_engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == "0005"
+    columns = {item["name"] for item in inspect(migration_engine).get_columns("users")}
+    assert "wechat_app_id" in columns
+    assert _identity_constraints(migration_engine)["uq_users_wechat_app_openid"] == [
+        "wechat_app_id",
+        "wechat_openid",
+    ]
+
+
+def test_empty_legacy_users_upgrade_without_app_id(
+    migration_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_legacy_identity_schema_at_0004(migration_engine, with_user=False)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("WECHAT_APP_ID", raising=False)
+
+    command.upgrade(_config(migration_engine), "head")
+
+    columns = {
+        item["name"]: item for item in inspect(migration_engine).get_columns("users")
+    }
+    assert columns["wechat_app_id"]["nullable"] is False
+    assert "uq_users_wechat_openid" not in _identity_constraints(migration_engine)
+
+
+def test_legacy_user_explicit_app_id_backfills_and_login_reuses_user(
+    migration_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_legacy_identity_schema_at_0004(migration_engine, with_user=True)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WECHAT_APP_ID", "wx-explicit-repair")
+
+    command.upgrade(_config(migration_engine), "head")
+
+    with Session(migration_engine) as session:
+        response = AuthService(
+            repository=AuthRepository(session),
+            identity_provider=_MigrationIdentityProvider("wx-explicit-repair"),
+            phone_provider=_MigrationPhoneProvider(),
+            phone_vault=None,
+            session_ttl=timedelta(days=30),
+            now=lambda: datetime(2026, 7, 29, tzinfo=UTC),
+        ).create_session("migration-login")
+        assert str(response.user.id) == "20000000-0000-0000-0000-000000000001"
+        assert session.query(UserSession).count() == 1
+        assert session.execute(
+            text("SELECT wechat_app_id FROM users WHERE wechat_openid='legacy-openid'")
+        ).scalar_one() == "wx-explicit-repair"
+
+
+@pytest.mark.parametrize("app_env", ["development", "test"])
+def test_legacy_user_development_environments_use_development_app_id(
+    migration_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    app_env: str,
+) -> None:
+    _make_legacy_identity_schema_at_0004(migration_engine, with_user=True)
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.delenv("WECHAT_APP_ID", raising=False)
+
+    command.upgrade(_config(migration_engine), "head")
+
+    with migration_engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT wechat_app_id FROM users WHERE wechat_openid='legacy-openid'")
+        ).scalar_one() == "development"
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_legacy_user_deployed_upgrade_without_app_id_fails_atomically(
+    migration_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    app_env: str,
+) -> None:
+    _make_legacy_identity_schema_at_0004(migration_engine, with_user=True)
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.delenv("WECHAT_APP_ID", raising=False)
+
+    with pytest.raises(RuntimeError, match="application identity") as captured:
+        command.upgrade(_config(migration_engine), "head")
+    assert app_env not in str(captured.value)
+
+    with migration_engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == "0004"
+    columns = {item["name"] for item in inspect(migration_engine).get_columns("users")}
+    assert "wechat_app_id" not in columns
+    assert _identity_constraints(migration_engine)["uq_users_wechat_openid"] == [
+        "wechat_openid"
+    ]
+
+
+def test_corrective_identity_downgrade_preserves_0004_identity_contract(
+    migration_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_legacy_identity_schema_at_0004(migration_engine, with_user=True)
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.delenv("WECHAT_APP_ID", raising=False)
+    config = _config(migration_engine)
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "0004")
+
+    columns = {item["name"] for item in inspect(migration_engine).get_columns("users")}
+    assert "wechat_app_id" in columns
+    assert _identity_constraints(migration_engine)["uq_users_wechat_app_openid"] == [
+        "wechat_app_id",
+        "wechat_openid",
+    ]
 
 
 def test_booking_migration_downgrades_and_reupgrades_cleanly(
@@ -427,7 +610,7 @@ def test_payment_recovery_scheduling_migration_backfills_and_downgrades(
         assert tuple(row) == (None, None, None, False)
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0004"
+        ).scalar_one() == "0005"
 
     command.downgrade(config, "0003")
 
