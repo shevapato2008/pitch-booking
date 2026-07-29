@@ -1,6 +1,8 @@
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from threading import Barrier, Event
 
 import pytest
 from sqlalchemy import Engine
@@ -8,9 +10,19 @@ from sqlalchemy.orm import Session
 
 from backend.app.models import Order, OrderStatus, Payment, PaymentState, Slot, SlotStatus
 from backend.app.modules.payments.convergence import PaymentConvergenceService
-from backend.app.modules.payments.mock_provider import MockPaymentProvider
-from backend.app.modules.payments.provider import ClosePaymentRequest, CreatePrepayRequest
-from backend.app.modules.payments.reconciliation import PaymentReconciliationService
+from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
+from backend.app.modules.payments.provider import (
+    PAYMENT_PROVIDER_MAX_REQUEST_DURATION,
+    ClosePaymentRequest,
+    CreatePrepayRequest,
+    QueryPaymentRequest,
+    QueryPaymentResult,
+)
+from backend.app.modules.payments.reconciliation import (
+    RECOVERY_LEASE_DURATION,
+    PaymentReconciliationService,
+)
+from backend.app.modules.payments.repository import PaymentRecoveryClaim, PaymentRepository
 from backend.app.worker import ExpiryWorker
 from backend.tests.test_payment_concurrency import LockCheckingProvider
 from backend.tests.test_payment_settlement import seed_payment, session_factory
@@ -59,6 +71,47 @@ class RecoveryLockCheckingProvider(LockCheckingProvider):
     def close_payment(self, request: ClosePaymentRequest):  # type: ignore[no-untyped-def]
         self._assert_no_business_row_locks(request.merchant_order_no)
         return super().close_payment(request)
+
+
+class CreateCrashesOnceProvider(MockPaymentProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.crash_create = True
+
+    def create_prepay(self, request: CreatePrepayRequest):  # type: ignore[no-untyped-def]
+        if self.crash_create:
+            self.crash_create = False
+            raise RuntimeError("injected create timeout")
+        return super().create_prepay(request)
+
+
+class RequeryCrashesProvider(MockPaymentProvider):
+    def __init__(self) -> None:
+        super().__init__(create_mode=MockCreateMode.REJECTED)
+        self.query_count = 0
+
+    def query_payment(self, request: QueryPaymentRequest) -> QueryPaymentResult:
+        self.query_count += 1
+        if self.query_count == 2:
+            raise RuntimeError("injected rejection requery timeout")
+        return super().query_payment(request)
+
+
+class BlockingQueryProvider(MockPaymentProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.query_started = Event()
+        self.release_query = Event()
+
+    def query_payment(self, request: QueryPaymentRequest) -> QueryPaymentResult:
+        self.query_started.set()
+        if not self.release_query.wait(timeout=5):
+            raise RuntimeError("test did not release Provider query")
+        return super().query_payment(request)
+
+
+def test_recovery_lease_exceeds_provider_timeout_contract() -> None:
+    assert RECOVERY_LEASE_DURATION >= PAYMENT_PROVIDER_MAX_REQUEST_DURATION * 2
 
 
 def test_expired_not_paid_payment_is_queried_closed_then_released(pg_engine: Engine) -> None:
@@ -244,6 +297,60 @@ def test_creating_after_provider_acceptance_recovers_without_second_create(
         assert session.get_one(Payment, payment_id).status is PaymentState.PREPAY_CREATED
 
 
+def test_creating_create_timeout_converges_unknown_then_new_service_retries_same_merchant(
+    pg_engine: Engine,
+) -> None:
+    _, payment_id, _, now = seed_payment(pg_engine, status=PaymentState.CREATING)
+    provider = CreateCrashesOnceProvider()
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        merchant = payment.merchant_order_no
+        payment.next_reconcile_at = now
+        session.commit()
+
+    first = recovery_service(pg_engine, provider, now=lambda: now).recover(payment_id)
+
+    assert first.terminal is False
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.UNKNOWN
+        assert payment.last_error_code == "PAYMENT_PROVIDER_CREATE_FAILED"
+        assert payment.last_error_at == now
+        assert payment.authority_unknown_since == now
+        assert payment.next_reconcile_at == now + timedelta(minutes=1)
+
+    retry_at = now + timedelta(minutes=1)
+    recovery_service(pg_engine, provider, now=lambda: retry_at).recover(payment_id)
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.PREPAY_CREATED
+        assert payment.merchant_order_no == merchant
+        assert payment.reconcile_attempts == 2
+        assert payment.next_reconcile_at == retry_at + timedelta(minutes=2)
+
+
+def test_creating_rejection_requery_timeout_converges_unknown_safely(
+    pg_engine: Engine,
+) -> None:
+    _, payment_id, _, now = seed_payment(pg_engine, status=PaymentState.CREATING)
+    provider = RequeryCrashesProvider()
+    with Session(pg_engine) as session:
+        session.get_one(Payment, payment_id).next_reconcile_at = now
+        session.commit()
+
+    result = recovery_service(pg_engine, provider, now=lambda: now).recover(payment_id)
+
+    assert result.terminal is False
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.UNKNOWN
+        assert payment.last_error_code == "PAYMENT_PROVIDER_REQUERY_FAILED"
+        assert payment.last_error_at == now
+        assert payment.authority_unknown_since == now
+        assert payment.next_reconcile_at == now + timedelta(minutes=1)
+
+
 def test_new_worker_instance_respects_persisted_next_reconcile_lease(
     pg_engine: Engine,
 ) -> None:
@@ -285,6 +392,120 @@ def test_expired_payment_also_respects_persisted_next_reconcile_lease(
         payment = session.get_one(Payment, payment_id)
         assert payment.reconcile_attempts == 1
         assert payment.next_reconcile_at == expiry_time + timedelta(minutes=1)
+
+
+def test_first_expiry_crossing_promotes_retry_ahead_of_business_backoff(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, now = seed_payment(
+        pg_engine, status=PaymentState.PREPAY_CREATED
+    )
+    provider = MockPaymentProvider()
+    seed_provider_order(pg_engine, provider, payment_id)
+    expiry_time = now + timedelta(minutes=11)
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        payment.reconcile_attempts = 4
+        payment.next_reconcile_at = now + timedelta(minutes=30)
+        session.commit()
+
+    processed = ExpiryWorker(
+        session_factory=lambda: Session(pg_engine),
+        payment_reconciliation=recovery_service(
+            pg_engine, provider, now=lambda: expiry_time
+        ),
+        clock=lambda: expiry_time,
+    ).run(once=True)
+
+    assert processed == 1
+    assert [call.method for call in provider.calls][-2:] == ["query_payment", "close_payment"]
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, payment_id).status is PaymentState.CLOSED
+        assert session.get_one(Order, order_id).status is OrderStatus.EXPIRED
+        assert session.get_one(Slot, slot_id).status is SlotStatus.AVAILABLE
+
+
+def test_active_io_lease_blocks_expiry_promotion(pg_engine: Engine) -> None:
+    _, payment_id, _, now = seed_payment(
+        pg_engine, status=PaymentState.PREPAY_CREATED
+    )
+    provider = MockPaymentProvider()
+    seed_provider_order(pg_engine, provider, payment_id)
+    expiry_time = now + timedelta(minutes=11)
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        payment.reconcile_attempts = 4
+        payment.next_reconcile_at = now + timedelta(minutes=30)
+        payment.reconcile_claim_token = uuid.uuid4()
+        payment.reconcile_lease_until = expiry_time + timedelta(minutes=5)
+        session.commit()
+
+    processed = ExpiryWorker(
+        session_factory=lambda: Session(pg_engine),
+        payment_reconciliation=recovery_service(
+            pg_engine, provider, now=lambda: expiry_time
+        ),
+        clock=lambda: expiry_time,
+    ).run(once=True)
+
+    assert processed == 0
+    assert [call.method for call in provider.calls] == ["create_prepay"]
+
+
+def test_concurrent_atomic_claim_returns_payment_to_only_one_worker(
+    pg_engine: Engine,
+) -> None:
+    _, payment_id, _, now = seed_payment(
+        pg_engine, status=PaymentState.PREPAY_CREATED
+    )
+    start = Barrier(2)
+
+    def claim_once(_index: int) -> PaymentRecoveryClaim | None:
+        start.wait(timeout=5)
+        with Session(pg_engine) as session:
+            claim = PaymentRepository(session).claim_next_due_payment(
+                now=now,
+                provider="mock",
+                lease_until=now + timedelta(minutes=10),
+            )
+            session.commit()
+            return claim
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(claim_once, range(2)))
+
+    claimed = [claim for claim in claims if claim is not None]
+    assert len(claimed) == 1
+    assert claimed[0].payment_id == payment_id
+
+
+def test_second_worker_does_not_call_provider_during_first_workers_io(
+    pg_engine: Engine,
+) -> None:
+    _, payment_id, _, now = seed_payment(
+        pg_engine, status=PaymentState.PREPAY_CREATED
+    )
+    provider = BlockingQueryProvider()
+    seed_provider_order(pg_engine, provider, payment_id)
+    service = recovery_service(pg_engine, provider, now=lambda: now)
+
+    def worker() -> int:
+        return ExpiryWorker(
+            session_factory=lambda: Session(pg_engine),
+            payment_reconciliation=service,
+            clock=lambda: now,
+        ).run(once=True)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(worker)
+        assert provider.query_started.wait(timeout=5)
+        try:
+            assert worker() == 0
+        finally:
+            provider.release_query.set()
+        assert first.result(timeout=5) == 1
+
+    assert [call.method for call in provider.calls].count("query_payment") == 1
 
 
 def test_worker_scans_due_payments_and_recovers_them(pg_engine: Engine) -> None:

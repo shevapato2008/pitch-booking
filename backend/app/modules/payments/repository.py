@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from backend.app.models import (
     IdempotencyRecord,
@@ -22,6 +24,12 @@ from backend.app.modules.orders.locking import (
     lock_payment,
     lock_slot,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentRecoveryClaim:
+    payment_id: uuid.UUID
+    claim_token: uuid.UUID
 
 
 class PaymentRepository:
@@ -56,18 +64,56 @@ class PaymentRepository:
                 .where(
                     Payment.provider == provider,
                     Payment.status.in_(NONTERMINAL_PAYMENT_STATES),
-                    or_(
-                        Payment.next_reconcile_at <= now,
-                        (
-                            (Order.expires_at <= now)
-                            & (Payment.reconcile_attempts == 0)
-                        ),
-                    ),
+                    self._is_recovery_due(now),
                 )
                 .order_by(Payment.next_reconcile_at, Payment.id)
                 .limit(limit)
             )
         )
+
+    def claim_next_due_payment(
+        self,
+        *,
+        now: datetime,
+        provider: str,
+        lease_until: datetime,
+    ) -> PaymentRecoveryClaim | None:
+        payment = self.session.scalar(
+            select(Payment)
+            .join(Order, Order.id == Payment.order_id)
+            .where(
+                Payment.provider == provider,
+                Payment.status.in_(NONTERMINAL_PAYMENT_STATES),
+                self._is_recovery_due(now),
+            )
+            .order_by(Payment.next_reconcile_at, Payment.id)
+            .limit(1)
+            .with_for_update(of=Payment, skip_locked=True)
+        )
+        if payment is None:
+            return None
+        token = uuid.uuid4()
+        payment.reconcile_claim_token = token
+        payment.reconcile_lease_until = lease_until
+        payment.reconcile_attempts += 1
+        self.session.flush()
+        return PaymentRecoveryClaim(payment.id, token)
+
+    @staticmethod
+    def _is_recovery_due(now: datetime) -> ColumnElement[bool]:
+        lease_available = or_(
+            Payment.reconcile_lease_until.is_(None),
+            Payment.reconcile_lease_until <= now,
+        )
+        schedule_due = or_(
+            Payment.next_reconcile_at.is_(None),
+            Payment.next_reconcile_at <= now,
+            (
+                (Order.expires_at <= now)
+                & Payment.expiry_reconciled_at.is_(None)
+            ),
+        )
+        return lease_available & schedule_due
 
     def lock_order_graph(
         self, *, order_id: uuid.UUID, slot_id: uuid.UUID

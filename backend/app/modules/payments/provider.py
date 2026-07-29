@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Literal, Protocol
+
+PAYMENT_PROVIDER_MAX_REQUEST_DURATION = timedelta(seconds=30)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +138,8 @@ class ClosePaymentResult:
 
 
 class PaymentProvider(Protocol):
+    """Calls must enforce PAYMENT_PROVIDER_MAX_REQUEST_DURATION as their timeout."""
+
     name: str
 
     @property

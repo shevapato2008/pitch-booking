@@ -379,3 +379,71 @@ def test_downgrade_with_new_enum_rows_fails_atomically(
                 "SELECT array_agg(status::text ORDER BY order_number) FROM orders"
             )
         ).scalar_one() == ["CONFIRMED", "PAYMENT_EXCEPTION"]
+
+
+def test_payment_recovery_scheduling_migration_backfills_and_downgrades(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0003")
+    _insert_legacy_booking_rows(migration_engine)
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO orders "
+                "(id, order_number, user_id, slot_id, status, price_cents, contact_name, "
+                "contact_phone_ciphertext, contact_phone_nonce, contact_phone_key_version, "
+                "created_at, expires_at, expired_at) VALUES "
+                "('10000000-0000-0000-0000-000000000010', 'PB-RECOVERY', "
+                "'10000000-0000-0000-0000-000000000004', "
+                "'10000000-0000-0000-0000-000000000003', 'PENDING_PAYMENT', 36000, "
+                "'张三', decode('00112233445566778899aabbccddeeff', 'hex'), "
+                "decode('00112233445566778899aabb', 'hex'), 1, "
+                "'2026-08-01T00:00:00Z', '2026-08-01T01:00:00Z', NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO payments "
+                "(id, order_id, provider, merchant_order_no, amount_cents, currency, "
+                "status, reconcile_attempts, next_reconcile_at) VALUES "
+                "('10000000-0000-0000-0000-000000000042', "
+                "'10000000-0000-0000-0000-000000000010', 'WECHAT_PAY', "
+                "'migration-recovery', 36000, 'CNY', 'UNKNOWN', 3, "
+                "'2026-08-01T00:05:00Z')"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    with migration_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT reconcile_claim_token, reconcile_lease_until, "
+                "expiry_reconciled_at, creation_recovery_pending "
+                "FROM payments WHERE merchant_order_no = 'migration-recovery'"
+            )
+        ).one()
+        assert tuple(row) == (None, None, None, False)
+        assert connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == "0004"
+
+    command.downgrade(config, "0003")
+
+    with migration_engine.connect() as connection:
+        columns = {
+            row[0]
+            for row in connection.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'payments'"
+                )
+            )
+        }
+        assert {
+            "reconcile_claim_token",
+            "reconcile_lease_until",
+            "expiry_reconciled_at",
+            "creation_recovery_pending",
+        }.isdisjoint(columns)

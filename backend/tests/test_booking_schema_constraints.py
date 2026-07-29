@@ -98,6 +98,14 @@ def test_booking_tables_and_slot_version_exist(pg_engine: Engine) -> None:
     assert str(expired_at_type) == "TIMESTAMP"
     assert expired_at_type.timezone is True
     assert order_columns["expired_at"]["nullable"] is True
+    payment_columns = {
+        column["name"]: column for column in inspector.get_columns("payments")
+    }
+    assert payment_columns["reconcile_claim_token"]["nullable"] is True
+    assert payment_columns["reconcile_lease_until"]["nullable"] is True
+    assert payment_columns["expiry_reconciled_at"]["nullable"] is True
+    assert payment_columns["creation_recovery_pending"]["nullable"] is False
+    assert payment_columns["creation_recovery_pending"]["default"] == "false"
 
 
 def test_booking_and_payment_enum_labels_are_stable(pg_engine: Engine) -> None:
@@ -188,6 +196,7 @@ def test_named_constraints_and_foreign_key_indexes_exist(pg_engine: Engine) -> N
     }
     assert {item["name"] for item in inspector.get_indexes("payments")} >= {
         "ix_payments_order_id",
+        "ix_payments_reconcile_lease_until",
         "ix_payments_reconciliation_due",
         "uq_payments_one_nonterminal_per_order",
     }
@@ -373,6 +382,10 @@ def test_booking_check_and_unique_constraint_catalog_is_complete(pg_engine: Engi
     payment_checks = check_definitions["payments"]
     assert "amount_cents >= 0" in payment_checks["ck_payments_amount_cents"]
     assert "reconcile_attempts >= 0" in payment_checks["ck_payments_reconcile_attempts"]
+    assert all(
+        token in payment_checks["ck_payments_reconcile_lease_pair"]
+        for token in ("reconcile_claim_token", "reconcile_lease_until", "is null")
+    )
     assert all(
         token in payment_checks["ck_payments_success_paid_at"]
         for token in ("success", "paid_at", "is not null", "is null")

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_engine
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
 from backend.app.modules.orders.repository import OrderRepository
+from backend.app.modules.payments.reconciliation import RECOVERY_LEASE_DURATION
 from backend.app.modules.payments.repository import PaymentRepository
 
 DEFAULT_BATCH_SIZE = 100
@@ -24,7 +25,12 @@ class PaymentRecovery(Protocol):
     @property
     def provider_name(self) -> str: ...
 
-    def recover(self, payment_id: uuid.UUID) -> object: ...
+    def recover(
+        self,
+        payment_id: uuid.UUID,
+        *,
+        claim_token: uuid.UUID | None = None,
+    ) -> object: ...
 
 
 class ExpiryWorker:
@@ -58,22 +64,29 @@ class ExpiryWorker:
         )
 
     def run_once(self) -> int:
-        payment_ids: list[uuid.UUID] = []
+        payment_count = 0
         if self._payment_reconciliation is not None:
-            with self._session_factory() as payment_scan:
-                payment_ids = PaymentRepository(payment_scan).list_due_payment_ids(
-                    now=self._clock(),
-                    provider=self._payment_reconciliation.provider_name,
-                    limit=self._batch_size,
-                )
-
-            for payment_id in payment_ids:
+            for _ in range(self._batch_size):
+                claim_now = self._clock()
+                with self._session_factory() as payment_claim:
+                    claim = PaymentRepository(payment_claim).claim_next_due_payment(
+                        now=claim_now,
+                        provider=self._payment_reconciliation.provider_name,
+                        lease_until=claim_now + RECOVERY_LEASE_DURATION,
+                    )
+                    payment_claim.commit()
+                if claim is None:
+                    break
+                payment_count += 1
                 try:
-                    self._payment_reconciliation.recover(payment_id)
+                    self._payment_reconciliation.recover(
+                        claim.payment_id,
+                        claim_token=claim.claim_token,
+                    )
                 except Exception:
                     logger.exception(
                         "Failed to reconcile payment payment_id=%s",
-                        payment_id,
+                        claim.payment_id,
                     )
 
         with self._session_factory() as scan_session:
@@ -97,7 +110,7 @@ class ExpiryWorker:
                         "Failed to expire pending order order_id=%s",
                         order_id,
                     )
-        return len(payment_ids) + len(candidate_ids)
+        return payment_count + len(candidate_ids)
 
     def run(self, *, once: bool = False) -> int:
         processed = 0

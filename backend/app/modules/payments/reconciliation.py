@@ -16,6 +16,7 @@ from backend.app.modules.payments.convergence import (
     PaymentConvergenceService,
 )
 from backend.app.modules.payments.provider import (
+    PAYMENT_PROVIDER_MAX_REQUEST_DURATION,
     AuthoritativePaymentFacts,
     ClosePaymentRequest,
     ClosePaymentStatus,
@@ -29,6 +30,11 @@ from backend.app.modules.payments.provider import (
     Unknown,
 )
 from backend.app.modules.payments.repository import PaymentRepository
+
+RECOVERY_LEASE_DURATION = timedelta(minutes=10)
+# Provider adapters must time out before this contract. Keeping the durable lease
+# far longer prevents a timed-out caller and its replacement from overlapping.
+assert RECOVERY_LEASE_DURATION >= PAYMENT_PROVIDER_MAX_REQUEST_DURATION * 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +62,12 @@ class PaymentReconciliationService:
     def provider_name(self) -> str:
         return self._provider.name
 
-    def recover(self, payment_id: uuid.UUID) -> ConvergenceResult:
+    def recover(
+        self,
+        payment_id: uuid.UUID,
+        *,
+        claim_token: uuid.UUID | None = None,
+    ) -> ConvergenceResult:
         now = self._now()
         with self._session_factory() as locating:
             repository = PaymentRepository(locating)
@@ -76,12 +87,41 @@ class PaymentReconciliationService:
             if payment.provider != self._provider.name:
                 raise LookupError("payment not found")
             if payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}:
+                payment.reconcile_claim_token = None
+                payment.reconcile_lease_until = None
+                payment.creation_recovery_pending = False
                 session.commit()
                 return ConvergenceResult(order.id, payment.id, True)
-            if payment.next_reconcile_at is not None and payment.next_reconcile_at > now:
+            if claim_token is None:
+                lease_active = (
+                    payment.reconcile_lease_until is not None
+                    and payment.reconcile_lease_until > now
+                )
+                schedule_due = (
+                    payment.next_reconcile_at is None
+                    or payment.next_reconcile_at <= now
+                ) or (
+                    order.expires_at <= now
+                    and payment.expiry_reconciled_at is None
+                )
+                if lease_active or not schedule_due:
+                    session.commit()
+                    return ConvergenceResult(order.id, payment.id, False)
+                claim_token = uuid.uuid4()
+                payment.reconcile_claim_token = claim_token
+                payment.reconcile_lease_until = now + RECOVERY_LEASE_DURATION
+                payment.reconcile_attempts += 1
+            elif (
+                payment.reconcile_claim_token != claim_token
+                or payment.reconcile_lease_until is None
+                or payment.reconcile_lease_until <= now
+            ):
                 session.commit()
                 return ConvergenceResult(order.id, payment.id, False)
             original_status = payment.status
+            if original_status is PaymentState.CREATING:
+                payment.creation_recovery_pending = True
+            recover_creation = payment.creation_recovery_pending
             merchant_order_no = payment.merchant_order_no
             amount_cents = payment.amount_cents
             if payment.currency != "CNY":
@@ -89,10 +129,6 @@ class PaymentReconciliationService:
             currency = cast(Literal["CNY"], payment.currency)
             order_expired = order.expires_at <= now
             payer = session.get_one(User, order.user_id).wechat_openid
-            payment.reconcile_attempts += 1
-            # A persisted lease makes a crash during Provider IO retryable without
-            # allowing another worker to issue the same call immediately.
-            payment.next_reconcile_at = now + timedelta(minutes=1)
             session.commit()
 
         try:
@@ -105,22 +141,31 @@ class PaymentReconciliationService:
                 safe_error_code="PAYMENT_PROVIDER_QUERY_FAILED",
             )
 
-        if original_status is PaymentState.CREATING:
+        if recover_creation:
             if query.status is QueryPaymentStatus.NOT_FOUND and not order_expired:
-                created = self._provider.create_prepay(
-                    CreatePrepayRequest(
-                        merchant_order_no=merchant_order_no,
-                        description=f"场地预订 {order_id}",
-                        amount_cents=amount_cents,
-                        currency=currency,
-                        payer_openid=payer,
+                try:
+                    created = self._provider.create_prepay(
+                        CreatePrepayRequest(
+                            merchant_order_no=merchant_order_no,
+                            description=f"场地预订 {order_id}",
+                            amount_cents=amount_cents,
+                            currency=currency,
+                            payer_openid=payer,
+                        )
                     )
-                )
+                except Exception:
+                    created = Unknown("PAYMENT_PROVIDER_CREATE_FAILED")
                 if isinstance(created, Rejected):
                     # Re-query after rejection so an accepted concurrent call wins.
-                    query = self._provider.query_payment(
-                        QueryPaymentRequest(merchant_order_no)
-                    )
+                    try:
+                        query = self._provider.query_payment(
+                            QueryPaymentRequest(merchant_order_no)
+                        )
+                    except Exception:
+                        query = QueryPaymentResult(
+                            QueryPaymentStatus.UNKNOWN,
+                            safe_error_code="PAYMENT_PROVIDER_REQUERY_FAILED",
+                        )
                     if query.status is QueryPaymentStatus.NOT_FOUND:
                         query = QueryPaymentResult(
                             QueryPaymentStatus.CLOSED,
@@ -138,6 +183,7 @@ class PaymentReconciliationService:
                         payment_id=payment_id,
                         created=created,
                         now=now,
+                        order_expired=order_expired,
                     )
             elif query.status is QueryPaymentStatus.NOT_FOUND:
                 query = QueryPaymentResult(
@@ -163,6 +209,7 @@ class PaymentReconciliationService:
                             launch_params=query.launch_params,
                         ),
                         now=now,
+                        order_expired=order_expired,
                     )
 
         if query.status is QueryPaymentStatus.NOT_PAID and order_expired:
@@ -207,6 +254,7 @@ class PaymentReconciliationService:
         payment_id: uuid.UUID,
         created: Created,
         now: datetime,
+        order_expired: bool,
     ) -> ConvergenceResult:
         with self._session_factory() as session:
             repository = PaymentRepository(session)
@@ -216,11 +264,19 @@ class PaymentReconciliationService:
                 payment_id=payment_id,
             )
             if payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}:
+                payment.reconcile_claim_token = None
+                payment.reconcile_lease_until = None
+                payment.creation_recovery_pending = False
                 session.commit()
                 return ConvergenceResult(order.id, payment.id, True)
             payment.status = PaymentState.PREPAY_CREATED
             payment.provider_prepay_id = created.provider_prepay_id
             payment.next_reconcile_at = now + _backoff(payment.reconcile_attempts)
+            payment.reconcile_claim_token = None
+            payment.reconcile_lease_until = None
+            payment.creation_recovery_pending = False
+            if order_expired:
+                payment.expiry_reconciled_at = now
             payment.last_error_code = None
             payment.last_error_at = None
             if created.launch_params is not None:
@@ -269,6 +325,12 @@ class PaymentReconciliationService:
                 payment.next_reconcile_at = now + _backoff(
                     payment.reconcile_attempts
                 )
+            payment.reconcile_claim_token = None
+            payment.reconcile_lease_until = None
+            if order.expires_at <= now:
+                payment.expiry_reconciled_at = now
+            if payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}:
+                payment.creation_recovery_pending = False
             session.commit()
 
         if converged.terminal:

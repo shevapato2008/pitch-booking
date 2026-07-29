@@ -420,6 +420,10 @@ class Payment(Base):
             "last_error_code IS NULL OR length(trim(last_error_code)) > 0",
             name="ck_payments_last_error_code_nonempty",
         ),
+        CheckConstraint(
+            "(reconcile_claim_token IS NULL) = (reconcile_lease_until IS NULL)",
+            name="ck_payments_reconcile_lease_pair",
+        ),
         UniqueConstraint(
             "provider",
             "merchant_order_no",
@@ -448,6 +452,11 @@ class Payment(Base):
                 "AND next_reconcile_at IS NOT NULL"
             ),
         ),
+        Index(
+            "ix_payments_reconcile_lease_until",
+            "reconcile_lease_until",
+            postgresql_where=text("reconcile_lease_until IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -473,6 +482,18 @@ class Payment(Base):
     )
     next_reconcile_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    reconcile_claim_token: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    reconcile_lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    expiry_reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    creation_recovery_pending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
     )
     last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     last_error_at: Mapped[datetime | None] = mapped_column(
