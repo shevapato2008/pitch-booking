@@ -80,7 +80,9 @@
 6. 点击“定位到我”后申请定位。成功则显示当前位置并可在卡片中显示“距你约 X km”；失败或拒绝不改变目录可用性。
 7. 用户拖动、缩放地图只改变视野；首期不因视野变化重新请求或过滤场馆。
 
-底部卡片采用同层渲染的普通视图覆盖地图。实现必须在微信开发者工具及目标基础库验证叠层、滚动和触摸事件；若地图运行时发生渲染错误，页面切换为纯场馆列表，不留下空白地图或不可操作遮罩。
+底部卡片采用同层渲染的普通视图覆盖地图，默认停在约 43% 高度，并提供收起、默认、展开三个吸附位置。只有把手与卡片标题区响应垂直拖动；卡片内容保留横向切换，卡片外地图区域保留平移和缩放，避免手势争抢。展开态最高不覆盖系统导航栏与安全区，收起态仍显示选中场馆名称、状态和主动作。
+
+首期视觉与交互基准固定为已安装的微信开发者工具 Stable `2.01.2510290`、基础库 `3.17.0` 和 WebView 渲染；`project.config.json` 必须显式记录基础库版本，不能依赖 `latest`。地图挂载后等待第一次 `bindupdated`：收到 `binderror`，或 10 秒内没有首次 `bindupdated`，即进入纯场馆列表降级。用户点击“重试地图”时递增组件 key、完整卸载并重新挂载 `<map>`，每次重试只启动一个新计时器。开发态提供显式 `map-render-failure` 场景触发该状态，场景绑定和符号必须被生产包审计排除。
 
 ### 5.2 场馆主页 `pages/venue/index`
 
@@ -149,11 +151,21 @@
 }
 ```
 
-`cover_image` 只允许已授权的 HTTPS 或包内开发资源；目录场馆没有授权图片时返回 `null`，前端使用统一的品牌足球场占位视觉，不抓取第三方图片。
+`cover_image` 只允许已授权的 HTTPS URL 或 `null`；包内占位图属于客户端 presentation，不出现在 HTTP 契约。目录场馆没有授权图片时返回 `null`，前端使用统一的品牌足球场占位视觉，不抓取第三方图片。
 
 ### 7.2 `GET /api/v1/venues/{venue_id}`
 
-返回公共详情与 `booking_mode`。`ONLINE` 响应保持当前完整在线预订字段；`DIRECTORY_ONLY` 的价格优势、营业时间、停车、电话和退款摘要允许为 `null`，但不能用“待定”字符串伪装真实数据。目录详情必须至少包含名称、地址、合法坐标、导航落点、场地类型（若已核验）、交通站点、数据核验时间和状态说明。
+OpenAPI 使用以 `booking_mode` 为判别字段的封闭 `oneOf`，两种变体均拒绝额外字段。共同必填字段为：
+
+- `id`、`slug`、`name`、`description`、`address`；
+- 场馆标记 `latitude`、`longitude` 和固定 `coordinate_system: GCJ02`；
+- `navigation_poi_name`、`navigation_latitude`、`navigation_longitude`；
+- `booking_mode`、`pitch_types`、`cover_image`、完整 `nearest_transit`；
+- `content_verified_at` 和固定状态说明。
+
+`OnlineVenueDetail` 额外要求 `price_advantage_text`、`timezone`、`business_hours_text`、`parking_text`、`phone`、`refund_policy_summary`、非空 `images`、非空 `facilities`、非空 `pitch_types` 和 `availability_window`，字段语义与现有 `PrimaryVenueResponse` 一致。`DirectoryVenueDetail` 不包含价格、库存、联系电话、退款规则或 availability window；可核验的 `business_hours_text`、`parking_text`、`images`、`facilities` 使用独立可选字段，未知时明确为 `null`，不能用“待定”字符串伪装数据。其 `pitch_types` 可为空。
+
+`GET /api/v1/venues/primary` 的路径、状态码、字段集合、必填性和现有 OpenAPI 示例保持字节级契约兼容，不增加目录字段。FastAPI 必须先注册字面量 `/venues/primary` 和 `/venues/map`，再注册 `/venues/{venue_id}`；路由表测试直接请求两个字面量路径，证明未被 UUID 参数路由遮蔽。
 
 ### 7.3 错误
 
@@ -164,18 +176,25 @@
 
 API 不接收用户经纬度，也不提供按用户位置排序的服务端参数。
 
+### 7.4 预订边界
+
+`booking_mode = ONLINE` 是服务端业务门槛，而不只是 UI 状态。`/venues/primary`、availability、checkout、创建订单和创建支付入口都必须在读取关联场馆后校验 `ONLINE`；直接构造目录场馆 URL 一律返回不泄露库存细节的 `404 VENUE_NOT_FOUND`。数据库约束保证 `is_primary => booking_mode = ONLINE`。存在 pitch、slot、order 或 payment 历史的场馆不得从 `ONLINE` 改为 `DIRECTORY_ONLY`，内容装载必须在事务提交前拒绝该变更。
+
+订单详情继续使用订单创建时已经确定的在线场馆边界；本切片不把目录场馆的可空电话或其他可变资料引入订单快照。自动化必须直接请求目录场馆的 availability、checkout、order 和 payment 路径，证明所有入口均无法到达，而不能只验证前端隐藏按钮。
+
 ## 8. PostgreSQL 模型
 
 在现有 `venues` 上增加：
 
 - `booking_mode` 枚举：`ONLINE | DIRECTORY_ONLY`，非空；
 - `navigation_poi_name`，非空；
+- `navigation_latitude`、`navigation_longitude`，合法范围且非空；
 - `sort_order >= 0`，非空；
 - `content_verified_at`，非空；
 - `is_listed`，非空；
 - 将只属于在线预订的展示字段改为可空，并增加条件检查：`booking_mode = ONLINE` 时必须完整且非空。
 
-现有合作场馆保持 `is_primary = true` 和 `booking_mode = ONLINE`。目录场馆不得拥有 pitch/slot 数据；服务层和部署验证共同检查这一条件。现有“最多一个启用主场馆”约束不变。
+`latitude/longitude` 表示地图标记使用的场馆中心点；`navigation_latitude/navigation_longitude` 表示 `wx.openLocation` 使用的已核验入口，二者不得混用。现有合作场馆保持 `is_primary = true` 和 `booking_mode = ONLINE`。目录场馆不得拥有 pitch/slot 数据；服务层和部署验证共同检查这一条件。现有“最多一个启用主场馆”约束不变，并新增 `is_primary => booking_mode = ONLINE` 检查。
 
 新增 `venue_transit_stops`：
 
@@ -192,9 +211,26 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 
 公开 API 不返回内部来源 URL，但部署内容校验必须检查来源和核验时间。首期不建设空间数据库、PostGIS 或半径查询。
 
+### 8.1 迁移策略
+
+迁移必须兼容已经存在主场馆、库存、订单和支付的数据库：
+
+1. 先增加允许为空的新列；`booking_mode`、`is_listed`、`sort_order` 使用只用于迁移的安全默认值；
+2. 通过现有主场馆不可变 UUID/slug 回填 `ONLINE`、导航入口、排序和核验时间，不按可变名称匹配；
+3. 更新非生产 demo seed，使其显式写入全部新字段；
+4. 对回填数据和现有订单链路做完整验证；
+5. 最后移除临时默认值并施加非空、条件字段、主场馆模式检查约束；
+6. 目录数据由迁移后的独立内容装载步骤创建，不写死在 Alembic 迁移中。
+
+降级不得把目录场馆伪装成在线场馆、补造字段或静默删除历史。如果存在 `DIRECTORY_ONLY` 或其他不能满足旧 schema 非空约束的记录，downgrade 必须在任何 DDL 前原子拒绝，并提示先运行显式目录卸载；只有目录内容已卸载且现有在线场馆满足旧 schema 时才允许降级。迁移测试必须覆盖包含主场馆、pitch、slot、order 和 payment 的 legacy 数据库，以及目录装载后的安全拒绝、卸载后的 downgrade、再次 upgrade。
+
 ## 9. 内容装载与权威边界
 
-新增受版本控制的场馆目录内容文件和显式装载命令。装载前进行 schema 校验；命令支持 dry-run，输出新增、更新、停用差异，但不能改订单、库存或支付数据。生产模式必须要求显式审批文件，开发/测试可装载明确标记的测试内容。
+新增受版本控制的场馆目录内容文件和显式装载命令。每个场馆使用清单中固定、不可复用的 UUID 和唯一 slug 作为幂等身份；后续更名或地址修正不能改变 UUID/slug，任何 UUID/slug 交叉指向现有其他场馆都必须失败。装载在单一事务内完成 schema 校验、引用校验、全部差异计算和约束预检，全部通过后才提交；失败不得产生部分场馆或交通站点。
+
+地图目录和任意场馆详情的公开谓词统一为 `is_active AND is_listed`。`is_active` 表示业务实体仍有效，`is_listed` 只控制公共目录展示。内容清单移除一条记录时，装载器只把对应记录 `is_listed` 设为 false，不删除、改 UUID、改 slug、改 `booking_mode` 或改变现有主场馆身份；恢复展示继续使用同一身份。`/venues/primary` 仍使用原有 active-primary 规则并额外要求 `ONLINE`，不依赖 `is_listed`，避免一次目录下架破坏已有订单入口。
+
+命令支持 dry-run，输出新增、更新、下架和拒绝差异，但不能改订单、库存或支付数据。生产模式必须要求显式审批文件，开发/测试可装载明确标记的测试内容。
 
 距离语义必须诚实：
 
@@ -203,14 +239,20 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 - UI 统一显示“距场馆约 Xm”，不暗示步行时间；
 - 未核验时不创建站点记录，页面显示“交通信息待核验”。
 
+清单中的每个场馆中心点、导航入口和站点坐标都必须显式标注 `coordinate_system: GCJ02`；其他坐标系或缺失标注直接拒绝。装载器除通用经纬度范围外，还使用覆盖天津市及合理缓冲区的边界盒做防错校验，并保存来源名称、来源链接或内部证据编号、核验人和核验时间。边界盒只用于发现录入错误，不声称能够从数值证明坐标系真实性；GCJ-02 真实性由证据和人工核验负责。
+
 ## 10. 隐私与权限
 
 - 页面不在首次加载时调用定位；
 - 只有用户点击明确的“定位到我”按钮后才触发隐私授权和系统权限；
 - 使用位置的目的文案为“在地图中显示你的位置并估算你与球场的距离”；
 - 坐标只存在于页面内存，不进入请求、缓存、埋点、日志或数据库；
+- `<map show-location>` 初始为 false，只有 `wx.getLocation({type: "gcj02"})` 成功后才设为 true，避免地图组件自行触发首次授权；
+- 本地开发阶段即在代码包中声明 `permission.scope.userLocation.desc` 和微信要求的隐私 API 声明，不能因 ICP 暂缓；
+- `LocationCapability` 区分：小程序隐私同意被拒绝、`scope.userLocation` 权限拒绝、系统定位服务关闭、超时和其他失败。只有 `scope.userLocation` 权限拒绝显示“前往设置”并调用 `wx.openSetting`；其他失败给出对应非阻断说明；
+- 从设置返回后不在 `onShow` 自动重新定位，用户必须再次点击“定位到我”；成功前不得保留上一次失败的坐标；
 - 用户拒绝、系统定位关闭或接口失败时，目录和预订功能保持可用；
-- 正式提审前更新微信小程序用户隐私保护指引，并在 iOS、Android 真机验证授权、拒绝和再次开启流程；该生产步骤因 ICP 约束暂缓。
+- 正式提审前仍需在微信公众平台更新用户隐私保护指引，并在 iOS、Android 真机验证授权、拒绝和再次开启流程；只有平台提交和真机生产证据因 ICP 约束暂缓，代码包配置和开发者工具测试不暂缓。
 
 ## 11. 状态与恢复
 
@@ -218,9 +260,12 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 | --- | --- | --- |
 | 首次加载 | 地图骨架与卡片骨架，不显示假标记 | 请求成功后一次替换 |
 | 目录加载失败 | 错误说明与“重新加载” | 用户主动重试 |
-| 地图渲染失败 | 纯列表、地址、详情和导航仍可用 | 可重试地图，不阻断目录 |
+| 地图渲染失败 | `binderror` 或挂载后 10 秒无首次 `bindupdated`，切换纯列表；地址、详情和导航仍可用 | “重试地图”卸载并重新挂载组件 |
 | 定位进行中 | 定位按钮显示加载反馈，防重复点击 | 成功显示位置，失败恢复按钮 |
-| 定位拒绝 | 非阻断说明，可进入设置 | 返回后用户再次点击 |
+| 小程序隐私拒绝 | 非阻断隐私说明，不打开系统设置 | 用户再次点击后重新走隐私同意 |
+| 位置权限拒绝 | 非阻断说明和“前往设置” | 返回后用户再次点击，不在 `onShow` 自动获取 |
+| 系统定位关闭 | 提示开启系统定位服务，不调用 `openSetting` | 开启后用户再次点击 |
+| 定位超时/其他失败 | 短提示并恢复定位按钮 | 用户主动重试 |
 | 深链 ID 无效 | 全部场馆视野 + 轻提示 | 可正常选择其他场馆 |
 | 交通无记录 | “交通信息待核验” | 内容重新装载后自然恢复 |
 | 目录场馆 | “暂未接入在线预订” | 不显示库存和预订 CTA |
@@ -234,9 +279,12 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 - OpenAPI 示例和严格解码器覆盖在线、目录、无图片、无交通和错误响应；
 - PostgreSQL 迁移升级/降级/升级、条件字段约束、场馆状态和交通唯一性；
 - API 排序、目录详情、404、空目录错误和在线主场馆兼容；
+- `/primary`、`/map` 字面量路由不被 `/{venue_id}` 遮蔽；在线/目录详情判别联合约束完整；
 - 地图 presentation、标记选择、卡片联动、深链回退、距离格式化；
-- 定位成功、拒绝、超时、重复点击、页面卸载晚响应；
-- 目录场馆不能进入时段/订单流程；在线场馆仍完成现有预订入口；
+- 地图首次 `bindupdated`、`binderror`、10 秒超时、重试 remount 和重复错误；
+- 小程序隐私拒绝、位置权限拒绝、系统定位关闭、超时、其他失败、从设置返回后的显式重试、重复点击、页面卸载晚响应；
+- 初次 `onLoad`/`onShow` 不调用定位，只有成功后启用 `show-location`；
+- 直接 API 请求证明目录场馆不能进入 availability、checkout、order、payment；在线场馆仍完成现有预订入口；
 - 生产包不包含地图 Fixture、开发坐标或模拟定位能力。
 
 不为首期 UI 扩张恶意输入模糊测试、地图性能基础设施或通用空间索引。
@@ -253,7 +301,7 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 - 拒绝定位；
 - 地图失败后的列表降级。
 
-核对构图、地图与底卡比例、标记层级、字体色彩、44×44 最小触控目标、8px 最小交互间距、状态文案和安全区。自动布局测试不能替代视觉确认。
+核对构图、地图与底卡比例、标记层级、字体色彩、44×44 最小触控目标、8px 最小交互间距、状态文案和安全区。固定在 DevTools Stable `2.01.2510290`、基础库 `3.17.0` 验证普通 view 叠层、三个底卡吸附位置、底卡横向切换、地图平移/缩放、手势边界和失败重试；验收记录必须写明实际版本。自动布局测试不能替代视觉确认。
 
 ### 12.3 本地真实旅程
 
@@ -264,18 +312,21 @@ API 不接收用户经纬度，也不提供按用户位置排序的服务端参�
 5. 从渤海元丰进入时段页，证明现有预订旅程仍可达；
 6. 从目录场馆确认没有预订入口；
 7. 从每个场馆主页定点返回地图；
-8. 模拟定位成功与拒绝；
+8. 模拟定位成功、隐私拒绝、位置权限拒绝、系统定位关闭和设置返回后的显式重试；
 9. 查询 PostgreSQL 证明目录场馆没有 pitch、slot、order 或 payment 数据。
 
 ## 13. Fixture 删除条件与完成定义
 
-地图 Fixture 只用于 Artifact 和视觉阶段。满足以下条件后删除页面运行时 Fixture 绑定：
+地图 Fixture 只用于 Artifact 和视觉阶段。HTTP 集成完成后必须删除地图专用 fixture 数据文件、fixture transport 注册、默认 fixture bootstrap 分支、模拟定位实现和 `map-render-failure` 以外的业务模拟入口；若失败截图仍需保留，`map-render-failure` 只能存在于 artifact/scenario 工具并且不能进入 development-HTTP 或 production 依赖图。现有预订/支付切片的独立测试 Fixture 不在本切片删除范围内。
+
+完成条件：
 
 - OpenAPI 契约冻结；
 - PostgreSQL 已装载五家核验数据；
 - 地图和详情页从真实 HTTP 获得业务状态；
 - 微信开发者工具本地真实旅程通过；
+- development-HTTP 与 production 两套编译依赖图均不包含地图业务 Fixture 或模拟定位；
+- 包审计搜索已知 mock venue UUID、测试坐标、fixture bootstrap 符号和 simulated-location 符号均为零匹配；
 - 生产包审计证明没有地图 Fixture、模拟场馆或模拟定位。
 
 本切片的“本地开发完成”要求设计确认、契约、后端、前端、真实 HTTP/PostgreSQL 集成和开发者工具验收全部通过。阿里云部署、公开 HTTPS、生产隐私配置、iOS/Android 真机定位和最终上线证据按用户要求作为最后一步保留，ICP备案完成后执行；在此之前不得宣称生产交付完成。
-
