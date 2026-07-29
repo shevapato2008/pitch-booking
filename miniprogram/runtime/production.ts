@@ -7,6 +7,7 @@ import type {
   WeChatPhoneCapability,
 } from "./interfaces";
 import type { SessionStorage } from "../services/session-store";
+import type { PaymentCapability } from "../domain/payment";
 
 export const productionClock: Clock = {
   now: () => new Date(),
@@ -61,6 +62,24 @@ export const productionPhone: WeChatPhoneCapability = {
       throw Object.assign(new Error("PHONE_REJECTED"), { code: "PHONE_REJECTED" });
     }
     return { code: value.code };
+  },
+};
+
+export const productionPayment: PaymentCapability = {
+  requestPayment(params) {
+    return new Promise((resolve) => {
+      wx.requestPayment({
+        ...params,
+        success: () => resolve({ outcome: "cashier_success" }),
+        fail: (error) => {
+          if (error.errMsg === "requestPayment:fail cancel") {
+            resolve({ outcome: "user_cancelled" });
+            return;
+          }
+          resolve({ outcome: "launch_failed", message: "支付调起失败，请重试。" });
+        },
+      });
+    });
   },
 };
 

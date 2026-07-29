@@ -16,7 +16,12 @@ import type {
   PhoneVerificationView,
   SessionTokenView,
 } from "./contracts";
-import type { CheckoutView, OrderView } from "./booking";
+import type { CheckoutView, OrderView, PaymentState } from "./booking";
+import type {
+  PaymentLaunchParams,
+  PaymentLaunchResult,
+  PaymentPendingOrderView,
+} from "./payment";
 import {
   arrayAt,
   dateAt,
@@ -49,8 +54,9 @@ const API_ERROR_CODES = [
   "SERVICE_UNAVAILABLE", "INTERNAL_ERROR", "PRIMARY_VENUE_MISCONFIGURED", "AUTH_REQUIRED",
   "WECHAT_LOGIN_FAILED", "PHONE_AUTH_REQUIRED", "PHONE_AUTH_UNAVAILABLE", "PHONE_AUTH_FAILED",
   "INVALID_CONTACT", "SLOT_NOT_AVAILABLE", "PRICE_CHANGED", "IDEMPOTENCY_KEY_REUSED",
-  "ORDER_NOT_FOUND",
+  "ORDER_NOT_FOUND", "ORDER_EXPIRED", "PAYMENT_EXCEPTION", "PAYMENT_CREATE_FAILED",
 ] as const;
+const PAYMENT_STATES = ["CREATING", "PREPAY_CREATED", "CONFIRMING", "SUCCESS", "CLOSED", "UNKNOWN"] as const;
 const MASKED_PHONE = /^1[0-9]{2}\*{4}[0-9]{4}$/;
 
 function nullableString(value: unknown, path: string, maxLength?: number): string | null {
@@ -140,18 +146,28 @@ export function decodeOrder(value: unknown): OrderView {
   const object = exactObject(value, [
     "id", "order_number", "status", "slot_id", "venue", "pitch", "starts_at", "ends_at",
     "duration_minutes", "price_cents", "currency", "contact", "created_at", "expires_at",
-    "expired_at", "cancellation_summary", "closing_payment", "detail_path",
+    "expired_at", "cancellation_summary", "payment_state", "payment_confirming",
+    "closing_payment", "paid_at", "detail_path",
   ], "$");
   const venue = exactObject(object.venue, ["id", "name", "address", "latitude", "longitude", "customer_service_phone"], "$.venue");
   const pitch = exactObject(object.pitch, ["id", "name"], "$.pitch");
   const contact = exactObject(object.contact, ["name", "masked_phone"], "$.contact");
   const orderId = uuidAt(object.id, "$.id");
-  const status = enumAt(object.status, ["PENDING_PAYMENT", "EXPIRED"] as const, "$.status");
+  const status = enumAt(
+    object.status,
+    ["PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"] as const,
+    "$.status",
+  );
   const startsAt = rfc3339At(object.starts_at, "$.starts_at");
   const endsAt = rfc3339At(object.ends_at, "$.ends_at");
   if (!rfc3339Before(startsAt, endsAt)) invalid("$.ends_at");
   const expiredAt = object.expired_at === null ? null : rfc3339At(object.expired_at, "$.expired_at");
-  if ((status === "PENDING_PAYMENT") !== (expiredAt === null)) invalid("$.expired_at");
+  const paymentState = object.payment_state === null
+    ? null
+    : enumAt<PaymentState>(object.payment_state, PAYMENT_STATES, "$.payment_state");
+  const paymentConfirming = booleanAt(object.payment_confirming, "$.payment_confirming");
+  const closingPayment = booleanAt(object.closing_payment, "$.closing_payment");
+  const paidAt = object.paid_at === null ? null : rfc3339At(object.paid_at, "$.paid_at");
   if (object.currency !== "CNY") invalid("$.currency");
   const detailPath = stringAt(object.detail_path, "$.detail_path");
   if (detailPath !== `/api/v1/orders/${orderId}`) invalid("$.detail_path");
@@ -177,11 +193,98 @@ export function decodeOrder(value: unknown): OrderView {
     createdAt: rfc3339At(object.created_at, "$.created_at"),
     expiresAt: rfc3339At(object.expires_at, "$.expires_at"),
     cancellationSummary: stringAt(object.cancellation_summary, "$.cancellation_summary"),
-    closingPayment: booleanAt(object.closing_payment, "$.closing_payment"), detailPath,
+    paymentState, paymentConfirming, closingPayment, paidAt, detailPath,
   };
-  return status === "PENDING_PAYMENT"
-    ? { ...common, status, expiredAt: null }
-    : { ...common, status, expiredAt: expiredAt as string };
+
+  if (status === "PENDING_PAYMENT") {
+    if (expiredAt !== null || paidAt !== null || paymentState === "SUCCESS") invalid("$.status");
+    const unfinished = paymentState === "CREATING" || paymentState === "PREPAY_CREATED"
+      || paymentState === "CONFIRMING" || paymentState === "UNKNOWN";
+    const expectsConfirming = paymentState === "CONFIRMING" || paymentState === "UNKNOWN"
+      || (closingPayment && unfinished);
+    if (paymentConfirming !== expectsConfirming) invalid("$.payment_confirming");
+    if (closingPayment && !unfinished) invalid("$.closing_payment");
+    return { ...common, status, expiredAt: null } as PaymentPendingOrderView;
+  }
+  if (status === "CONFIRMED") {
+    if (expiredAt !== null || paymentState !== "SUCCESS" || paymentConfirming || closingPayment || paidAt === null) {
+      invalid("$.status");
+    }
+    return { ...common, status, expiredAt: null, paymentState: "SUCCESS", paymentConfirming: false, closingPayment: false, paidAt };
+  }
+  if (status === "EXPIRED") {
+    if (expiredAt === null || (paymentState !== null && paymentState !== "CLOSED")
+      || paymentConfirming || closingPayment || paidAt !== null) invalid("$.status");
+    return { ...common, status, expiredAt, paymentState, paymentConfirming: false, closingPayment: false, paidAt: null };
+  }
+  if (expiredAt !== null || paymentConfirming || closingPayment
+    || (paymentState === "UNKNOWN" && paidAt !== null)
+    || (paymentState === "SUCCESS" && paidAt === null)
+    || (paymentState !== "UNKNOWN" && paymentState !== "SUCCESS")) invalid("$.status");
+  return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
+}
+
+function decodePaymentLaunchParams(value: unknown, path: string): PaymentLaunchParams {
+  const object = exactObject(value, ["timeStamp", "nonceStr", "package", "signType", "paySign"], path);
+  const paymentPackage = stringAt(object.package, `${path}.package`);
+  if (!paymentPackage.startsWith("prepay_id=") || paymentPackage.length === "prepay_id=".length) {
+    invalid(`${path}.package`);
+  }
+  if (object.signType !== "RSA") invalid(`${path}.signType`);
+  return {
+    timeStamp: stringAt(object.timeStamp, `${path}.timeStamp`),
+    nonceStr: stringAt(object.nonceStr, `${path}.nonceStr`),
+    package: paymentPackage,
+    signType: "RSA",
+    paySign: stringAt(object.paySign, `${path}.paySign`),
+  };
+}
+
+export function decodePaymentLaunch(value: unknown): PaymentLaunchResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid("$");
+  const status = stringAt((value as Record<string, unknown>).status, "$.status");
+  if (status === "PREPAY_CREATED") {
+    const object = exactObject(value, ["order_id", "payment_id", "status", "launch_params"], "$");
+    uuidAt(object.order_id, "$.order_id");
+    return {
+      outcome: "PREPAY_CREATED",
+      paymentId: uuidAt(object.payment_id, "$.payment_id"),
+      launchParams: decodePaymentLaunchParams(object.launch_params, "$.launch_params"),
+    };
+  }
+  if (status === "PAYMENT_CONFIRMING") {
+    const object = exactObject(value, ["order_id", "payment_id", "status", "order"], "$");
+    const orderId = uuidAt(object.order_id, "$.order_id");
+    const order = decodeOrder(object.order);
+    if (order.orderId !== orderId || (order.status !== "PENDING_PAYMENT" && order.status !== "PAYMENT_EXCEPTION")) {
+      invalid("$.order");
+    }
+    return {
+      outcome: "PAYMENT_CONFIRMING",
+      paymentId: uuidAt(object.payment_id, "$.payment_id"),
+      order: order as PaymentPendingOrderView | Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>,
+    };
+  }
+  if (status === "ALREADY_CONFIRMED") {
+    const object = exactObject(value, ["order_id", "status", "order"], "$");
+    const orderId = uuidAt(object.order_id, "$.order_id");
+    const order = decodeOrder(object.order);
+    if (order.status !== "CONFIRMED" || order.orderId !== orderId) invalid("$.order");
+    return { outcome: "ALREADY_CONFIRMED", order };
+  }
+  invalid("$.status");
+}
+
+export function decodePaymentReconciliation(value: unknown): Awaited<ReturnType<import("./payment").PaymentDataSource["reconcilePayment"]>> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)
+    && (value as Record<string, unknown>).status === "PAYMENT_CONFIRMING") {
+    const decoded = decodePaymentLaunch(value);
+    if (decoded.outcome !== "PAYMENT_CONFIRMING" || !decoded.order) invalid("$");
+    return { outcome: "PAYMENT_CONFIRMING", order: decoded.order };
+  }
+  const order = decodeOrder(value);
+  if (order.status === "EXPIRED") invalid("$.status");
+  return { outcome: "TERMINAL", order };
 }
 
 export interface DecodedApiError {

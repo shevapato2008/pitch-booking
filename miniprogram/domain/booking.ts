@@ -67,14 +67,56 @@ interface OrderViewBase {
   readonly detailPath: string;
 }
 
+export type PaymentState =
+  | "CREATING"
+  | "PREPAY_CREATED"
+  | "CONFIRMING"
+  | "SUCCESS"
+  | "CLOSED"
+  | "UNKNOWN";
+
 export interface PendingOrderView extends OrderViewBase {
   readonly status: "PENDING_PAYMENT";
   readonly expiredAt: null;
+  readonly paymentState?: null | Exclude<PaymentState, "SUCCESS">;
+  readonly paymentConfirming?: boolean;
+  readonly paidAt?: null;
 }
 
 export interface ExpiredOrderView extends OrderViewBase {
   readonly status: "EXPIRED";
   readonly expiredAt: string;
+  readonly paymentState?: null | Exclude<PaymentState, "SUCCESS">;
+  readonly paymentConfirming?: boolean;
+  readonly paidAt?: null;
 }
 
-export type OrderView = PendingOrderView | ExpiredOrderView;
+export interface ConfirmedOrderView extends OrderViewBase {
+  readonly status: "CONFIRMED";
+  readonly expiredAt: null;
+  readonly paymentState: "SUCCESS";
+  readonly paymentConfirming: false;
+  readonly paidAt: string;
+}
+
+export type PaymentExceptionOrderView =
+  | (OrderViewBase & {
+      readonly status: "PAYMENT_EXCEPTION";
+      readonly expiredAt: null;
+      readonly paymentState: "UNKNOWN";
+      readonly paymentConfirming: false;
+      readonly paidAt: null;
+    })
+  | (OrderViewBase & {
+      readonly status: "PAYMENT_EXCEPTION";
+      readonly expiredAt: null;
+      readonly paymentState: "SUCCESS";
+      readonly paymentConfirming: false;
+      readonly paidAt: string;
+    });
+
+export type OrderView =
+  | PendingOrderView
+  | ExpiredOrderView
+  | ConfirmedOrderView
+  | PaymentExceptionOrderView;

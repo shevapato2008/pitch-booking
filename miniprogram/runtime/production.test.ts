@@ -5,6 +5,7 @@ import {
   productionIdentity,
   productionMedia,
   productionNative,
+  productionPayment,
   productionPhone,
   productionSessionStorage,
   productionTransport,
@@ -155,6 +156,35 @@ test("forwards native capability arguments exactly and preserves media sources",
   expect(phoneOptions).toEqual(expect.objectContaining({ phoneNumber: "02212345678" }));
   expect(productionMedia.resolve("COVER", "https://example.test/cover.jpg"))
     .toBe("https://example.test/cover.jpg");
+});
+
+test("normalizes wx.requestPayment success without manufacturing order authority", async () => {
+  const requestPayment = jest.fn((options: WechatMiniprogram.RequestPaymentOption) => {
+    options.success?.({ errMsg: "requestPayment:ok" });
+  });
+  setWx({ requestPayment });
+  const params = {
+    timeStamp: "1785146640", nonceStr: "nonce", package: "prepay_id=one",
+    signType: "RSA" as const, paySign: "signature",
+  };
+  await expect(productionPayment.requestPayment(params)).resolves.toEqual({ outcome: "cashier_success" });
+  expect(requestPayment).toHaveBeenCalledWith(expect.objectContaining(params));
+  expect(await productionPayment.requestPayment(params)).not.toHaveProperty("order");
+});
+
+test.each([
+  ["requestPayment:fail cancel", { outcome: "user_cancelled" }],
+  ["requestPayment:fail cancel extra", { outcome: "launch_failed", message: "支付调起失败，请重试。" }],
+  ["requestPayment:fail system error", { outcome: "launch_failed", message: "支付调起失败，请重试。" }],
+] as const)("normalizes exact requestPayment failure %s", async (errMsg, expected) => {
+  setWx({
+    requestPayment(options: WechatMiniprogram.RequestPaymentOption) {
+      options.fail?.({ errMsg } as Parameters<NonNullable<typeof options.fail>>[0]);
+    },
+  });
+  await expect(productionPayment.requestPayment({
+    timeStamp: "1", nonceStr: "n", package: "prepay_id=p", signType: "RSA", paySign: "s",
+  })).resolves.toEqual(expected);
 });
 
 function captureRequest() {

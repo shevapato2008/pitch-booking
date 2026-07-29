@@ -6,6 +6,8 @@ import {
   decodeAvailability,
   decodeCheckout,
   decodeOrder,
+  decodePaymentLaunch,
+  decodePaymentReconciliation,
   decodePhoneVerification,
   decodeWeChatSession,
   decodeVenue,
@@ -63,6 +65,11 @@ const phone = jest.requireActual<Record<string, unknown>>("../../contracts/examp
 const checkout = jest.requireActual<Record<string, unknown>>("../../contracts/examples/checkout-ready.json");
 const pendingOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-pending.json");
 const expiredOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-expired.json");
+const paymentPrepay = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-prepay-created.json");
+const paymentConfirming = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-confirming.json");
+const paymentAlreadyConfirmed = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-already-confirmed.json");
+const confirmedOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-confirmed.json");
+const paymentExceptionOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-payment-exception.json");
 const priceChanged = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-price-changed.json");
 
 const firstSlot = ready.pitches[0].slots[0];
@@ -193,6 +200,93 @@ test("strictly decodes session, phone, checkout and both order states", () => {
   });
   expect(decodeOrder(pendingOrder)).toMatchObject({ status: "PENDING_PAYMENT", expiredAt: null });
   expect(decodeOrder(expiredOrder)).toMatchObject({ status: "EXPIRED", expiredAt: expect.any(String) });
+});
+
+test("strictly decodes every frozen payment order and response shape", () => {
+  expect(decodeOrder(confirmedOrder)).toMatchObject({
+    status: "CONFIRMED", paymentState: "SUCCESS", paymentConfirming: false,
+    closingPayment: false, paidAt: "2026-07-27T12:04:00+08:00",
+  });
+  expect(decodeOrder(paymentExceptionOrder)).toMatchObject({
+    status: "PAYMENT_EXCEPTION", paymentState: "UNKNOWN", paymentConfirming: false,
+    closingPayment: false, paidAt: null,
+  });
+  expect(decodePaymentLaunch(paymentPrepay)).toMatchObject({
+    outcome: "PREPAY_CREATED",
+    paymentId: "00000000-0000-4000-8000-000000000050",
+    launchParams: { signType: "RSA", package: "prepay_id=payment-contract-prepay" },
+  });
+  expect(decodePaymentLaunch(paymentConfirming)).toMatchObject({
+    outcome: "PAYMENT_CONFIRMING",
+    order: { paymentState: "CONFIRMING" },
+  });
+  expect(decodePaymentLaunch(paymentAlreadyConfirmed)).toMatchObject({
+    outcome: "ALREADY_CONFIRMED",
+    order: { status: "CONFIRMED", paymentState: "SUCCESS" },
+  });
+  expect(decodePaymentReconciliation(confirmedOrder)).toMatchObject({
+    outcome: "TERMINAL", order: { status: "CONFIRMED" },
+  });
+  expect(decodePaymentReconciliation(paymentConfirming)).toMatchObject({
+    outcome: "PAYMENT_CONFIRMING", order: { paymentState: "CONFIRMING" },
+  });
+});
+
+test("accepts the frozen exceptional-success and closed-expired combinations", () => {
+  expect(decodeOrder({
+    ...paymentExceptionOrder,
+    payment_state: "SUCCESS",
+    paid_at: "2026-07-27T12:04:00+08:00",
+  })).toMatchObject({ status: "PAYMENT_EXCEPTION", paymentState: "SUCCESS" });
+  expect(decodeOrder({ ...expiredOrder, payment_state: "CLOSED" }))
+    .toMatchObject({ status: "EXPIRED", paymentState: "CLOSED" });
+});
+
+test.each([
+  [null, false, false],
+  ["CREATING", false, false],
+  ["PREPAY_CREATED", false, false],
+  ["CONFIRMING", true, false],
+  ["UNKNOWN", true, false],
+  ["CLOSED", false, false],
+  ["CREATING", true, true],
+  ["PREPAY_CREATED", true, true],
+  ["CONFIRMING", true, true],
+  ["UNKNOWN", true, true],
+] as const)(
+  "decodes pending payment state %s with confirming=%s closing=%s",
+  (paymentState, paymentConfirming, closingPayment) => {
+    expect(decodeOrder({
+      ...pendingOrder,
+      payment_state: paymentState,
+      payment_confirming: paymentConfirming,
+      closing_payment: closingPayment,
+    })).toMatchObject({ paymentState, paymentConfirming, closingPayment });
+  },
+);
+
+test.each([
+  ["pending success", { ...pendingOrder, payment_state: "SUCCESS", paid_at: "2026-07-27T12:04:00+08:00" }],
+  ["confirmed without paid time", { ...confirmedOrder, paid_at: null }],
+  ["confirmed unknown", { ...confirmedOrder, payment_state: "UNKNOWN" }],
+  ["expired unfinished", { ...expiredOrder, payment_state: "CONFIRMING" }],
+  ["unknown exception with paid time", { ...paymentExceptionOrder, paid_at: "2026-07-27T12:04:00+08:00" }],
+  ["success exception without paid time", { ...paymentExceptionOrder, payment_state: "SUCCESS" }],
+  ["confirming flag contradiction", { ...paymentConfirming.order as object, payment_confirming: false }],
+  ["closing without unfinished payment", { ...pendingOrder, closing_payment: true }],
+  ["extra payment key", { ...confirmedOrder, provider_transaction_no: "secret" }],
+] as const)("rejects contradictory payment order: %s", (_label, value) => {
+  expect(() => decodeOrder(value)).toThrow("INVALID_API_RESPONSE");
+});
+
+test.each([
+  { ...paymentPrepay, extra: true },
+  { ...paymentPrepay, launch_params: { ...(paymentPrepay.launch_params as object), extra: true } },
+  { ...paymentPrepay, launch_params: { ...(paymentPrepay.launch_params as object), package: "wrong" } },
+  { ...paymentConfirming, order: confirmedOrder },
+  { ...paymentAlreadyConfirmed, order: pendingOrder },
+])("rejects a non-closed or contradictory payment launch response", (value) => {
+  expect(() => decodePaymentLaunch(value)).toThrow("INVALID_API_RESPONSE");
 });
 
 test("accepts a 40-code-unit order contact name and rejects 41", () => {

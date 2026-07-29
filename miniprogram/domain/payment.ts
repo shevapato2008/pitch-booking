@@ -1,4 +1,11 @@
-import type { PendingOrderView } from "./booking";
+import type {
+  ConfirmedOrderView,
+  OrderView,
+  PaymentExceptionOrderView,
+  PendingOrderView,
+} from "./booking";
+
+export type { ConfirmedOrderView, PaymentExceptionOrderView } from "./booking";
 
 export interface PaymentLaunchParams {
   readonly timeStamp: string;
@@ -8,25 +15,7 @@ export interface PaymentLaunchParams {
   readonly paySign: string;
 }
 
-export interface PaymentPendingOrderView extends PendingOrderView {
-  readonly paymentState: null | "CREATING" | "PREPAY_CREATED" | "CONFIRMING" | "UNKNOWN" | "CLOSED";
-  readonly paymentConfirming: boolean;
-  readonly paidAt: null;
-}
-
-export interface ConfirmedOrderView extends Omit<PendingOrderView, "status"> {
-  readonly status: "CONFIRMED";
-  readonly paymentState: "SUCCESS";
-  readonly paymentConfirming: false;
-  readonly paidAt: string;
-}
-
-export interface PaymentExceptionOrderView extends Omit<PendingOrderView, "status"> {
-  readonly status: "PAYMENT_EXCEPTION";
-  readonly paymentState: "UNKNOWN";
-  readonly paymentConfirming: false;
-  readonly paidAt: null;
-}
+export type PaymentPendingOrderView = PendingOrderView;
 
 export type PaymentOrderView = PaymentPendingOrderView | PaymentExceptionOrderView | ConfirmedOrderView;
 
@@ -36,7 +25,11 @@ export type PaymentLaunchResult =
       readonly paymentId: string;
       readonly launchParams: PaymentLaunchParams;
     }
-  | { readonly outcome: "PAYMENT_CONFIRMING"; readonly paymentId: string }
+  | {
+      readonly outcome: "PAYMENT_CONFIRMING";
+      readonly paymentId: string;
+      readonly order?: PaymentPendingOrderView | PaymentExceptionOrderView;
+    }
   | { readonly outcome: "ALREADY_CONFIRMED"; readonly order: ConfirmedOrderView };
 
 export type PaymentCapabilityResult =
@@ -47,10 +40,13 @@ export type PaymentCapabilityResult =
 export interface PaymentDataSource {
   createPayment(orderId: string, idempotencyKey: string): Promise<PaymentLaunchResult>;
   reconcilePayment(orderId: string, paymentId: string): Promise<
-    | { readonly outcome: "PAYMENT_CONFIRMING"; readonly order: PaymentPendingOrderView }
+    | {
+        readonly outcome: "PAYMENT_CONFIRMING";
+        readonly order: PaymentPendingOrderView | PaymentExceptionOrderView;
+      }
     | { readonly outcome: "TERMINAL"; readonly order: PaymentOrderView }
   >;
-  getOrder(orderId: string): Promise<PaymentOrderView>;
+  getOrder(orderId: string): Promise<OrderView>;
 }
 
 export interface PaymentCapability {
