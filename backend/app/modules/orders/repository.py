@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from backend.app.models import (
     IdempotencyRecord,
@@ -39,9 +39,7 @@ class OrderRepository:
                 response_status=None,
                 response_body=None,
             )
-            .on_conflict_do_nothing(
-                constraint="uq_idempotency_records_user_operation_key"
-            )
+            .on_conflict_do_nothing(constraint="uq_idempotency_records_user_operation_key")
             .returning(IdempotencyRecord.id)
         )
         if inserted_id is not None:
@@ -96,7 +94,10 @@ class OrderRepository:
         return self.session.scalar(
             select(Order)
             .where(Order.id == order_id, Order.user_id == user_id)
-            .options(joinedload(Order.slot).joinedload(Slot.pitch))
+            .options(
+                joinedload(Order.slot).joinedload(Slot.pitch),
+                selectinload(Order.payments),
+            )
             .execution_options(populate_existing=True)
         )
 

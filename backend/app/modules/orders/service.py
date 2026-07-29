@@ -13,6 +13,8 @@ from backend.app.models import (
     IdempotencyState,
     Order,
     OrderStatus,
+    Payment,
+    PaymentState,
     Slot,
     SlotStatus,
     User,
@@ -186,6 +188,14 @@ class OrderService:
         now = self._now()
         closing_payment = False
         if order.status is OrderStatus.PENDING_PAYMENT and order.expires_at <= now:
+            projected_payment = _project_payment(order.payments)
+            if projected_payment is not None and projected_payment.status in {
+                PaymentState.CREATING,
+                PaymentState.PREPAY_CREATED,
+                PaymentState.CONFIRMING,
+                PaymentState.UNKNOWN,
+            }:
+                return self._order_response(order, order.slot, closing_payment=True)
             try:
                 result = self._expiry_service.expire_by_order_id(
                     self._repository.session,
@@ -322,6 +332,23 @@ class OrderService:
         closing_payment: bool = False,
     ) -> OrderDetailResponse:
         phone = known_phone or self._order_phone(order)
+        payment = _project_payment(order.payments)
+        payment_state = payment.status if payment is not None else None
+        past_deadline = (
+            order.status is OrderStatus.PENDING_PAYMENT and order.expires_at <= self._now()
+        )
+        payment_confirming = bool(
+            order.status is OrderStatus.PENDING_PAYMENT
+            and payment_state in {PaymentState.CONFIRMING, PaymentState.UNKNOWN}
+        )
+        if past_deadline and payment_state in {
+            PaymentState.CREATING,
+            PaymentState.PREPAY_CREATED,
+            PaymentState.CONFIRMING,
+            PaymentState.UNKNOWN,
+        }:
+            payment_confirming = True
+            closing_payment = True
         pitch = slot.pitch
         venue = pitch.venue
         timezone = ZoneInfo(venue.timezone)
@@ -356,7 +383,14 @@ class OrderService:
                 else None
             ),
             cancellation_summary=venue.refund_policy_text,
+            payment_state=payment_state,
+            payment_confirming=payment_confirming,
             closing_payment=closing_payment,
+            paid_at=(
+                payment.paid_at
+                if payment is not None and payment.status is PaymentState.SUCCESS
+                else None
+            ),
             detail_path=f"/api/v1/orders/{order.id}",
         )
 
@@ -376,6 +410,36 @@ class OrderService:
             )
         except PhoneVaultError:
             raise _internal_error() from None
+
+
+def _project_payment(payments: list[Payment]) -> Payment | None:
+    successes = [payment for payment in payments if payment.status is PaymentState.SUCCESS]
+    if successes:
+        return max(
+            successes,
+            key=lambda payment: (
+                payment.paid_at or payment.created_at,
+                payment.created_at,
+                payment.id,
+            ),
+        )
+    nonterminal = [
+        payment
+        for payment in payments
+        if payment.status
+        in {
+            PaymentState.CREATING,
+            PaymentState.PREPAY_CREATED,
+            PaymentState.CONFIRMING,
+            PaymentState.UNKNOWN,
+        }
+    ]
+    candidates = nonterminal or payments
+    return (
+        max(candidates, key=lambda payment: (payment.created_at, payment.id))
+        if candidates
+        else None
+    )
 
 
 def _normalize_contact_name(value: str) -> str:

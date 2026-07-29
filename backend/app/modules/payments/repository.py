@@ -6,7 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from backend.app.models import IdempotencyRecord, IdempotencyState, Order, Payment
+from backend.app.models import (
+    IdempotencyRecord,
+    IdempotencyState,
+    Order,
+    OrderStatus,
+    Payment,
+    Slot,
+)
 from backend.app.modules.orders.locking import (
     NONTERMINAL_PAYMENT_STATES,
     lock_current_payment,
@@ -25,6 +32,19 @@ class PaymentRepository:
             select(Order).where(Order.id == order_id, Order.user_id == user_id)
         )
 
+    def locate_payment(self, payment_id: uuid.UUID) -> Payment | None:
+        return self.session.get(Payment, payment_id)
+
+    def locate_payment_by_merchant_order_no(
+        self, *, provider: str, merchant_order_no: str
+    ) -> Payment | None:
+        return self.session.scalar(
+            select(Payment).where(
+                Payment.provider == provider,
+                Payment.merchant_order_no == merchant_order_no,
+            )
+        )
+
     def lock_order_graph(
         self, *, order_id: uuid.UUID, slot_id: uuid.UUID
     ) -> tuple[Order, Payment | None]:
@@ -36,7 +56,7 @@ class PaymentRepository:
 
     def lock_payment_graph(
         self, *, order_id: uuid.UUID, slot_id: uuid.UUID, payment_id: uuid.UUID
-    ) -> tuple[Order, Payment]:
+    ) -> tuple[Slot, Order, Payment]:
         slot = lock_slot(self.session, slot_id)
         order = lock_order(self.session, order_id)
         payment = lock_payment(self.session, payment_id)
@@ -48,7 +68,42 @@ class PaymentRepository:
             or payment.order_id != order.id
         ):
             raise RuntimeError("payment lock graph changed")
-        return order, payment
+        return slot, order, payment
+
+    def find_transaction_owner(
+        self,
+        *,
+        provider: str,
+        provider_transaction_no: str,
+        payment_id: uuid.UUID,
+    ) -> Payment | None:
+        return self.session.scalar(
+            select(Payment).where(
+                Payment.provider == provider,
+                Payment.provider_transaction_no == provider_transaction_no,
+                Payment.id != payment_id,
+            )
+        )
+
+    def has_other_valid_order(self, *, slot_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return (
+            self.session.scalar(
+                select(Order.id)
+                .where(
+                    Order.slot_id == slot_id,
+                    Order.id != order_id,
+                    Order.status.in_(
+                        (
+                            OrderStatus.PENDING_PAYMENT,
+                            OrderStatus.CONFIRMED,
+                            OrderStatus.PAYMENT_EXCEPTION,
+                        )
+                    ),
+                )
+                .limit(1)
+            )
+            is not None
+        )
 
     def claim_idempotency(
         self, *, user_id: uuid.UUID, key: str, request_sha256: str

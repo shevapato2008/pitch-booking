@@ -710,9 +710,15 @@ def test_success_creates_server_authoritative_snapshots_and_lock(pg_engine: Engi
         "expires_at",
         "expired_at",
         "cancellation_summary",
+        "payment_state",
+        "payment_confirming",
         "closing_payment",
+        "paid_at",
         "detail_path",
     }
+    assert payload["payment_state"] is None
+    assert payload["payment_confirming"] is False
+    assert payload["paid_at"] is None
     order_id = uuid.UUID(payload["id"])
     assert payload["status"] == "PENDING_PAYMENT"
     assert payload["slot_id"] == str(seeded.slot_id)

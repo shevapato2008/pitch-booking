@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.models import OrderStatus
+from backend.app.models import OrderStatus, PaymentState
 
 
 class ClosedModel(BaseModel):
@@ -56,7 +56,10 @@ class OrderDetailResponse(ClosedModel):
     expires_at: datetime
     expired_at: datetime | None
     cancellation_summary: str = Field(min_length=1)
+    payment_state: PaymentState | None
+    payment_confirming: bool
     closing_payment: bool
+    paid_at: datetime | None
     detail_path: str = Field(pattern=r"^/api/v1/orders/[0-9a-f-]{36}$")
 
 

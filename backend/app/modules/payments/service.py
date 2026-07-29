@@ -191,7 +191,7 @@ class PaymentCreationService:
         with self._session_factory() as session:
             repository = PaymentRepository(session)
             try:
-                _order, payment = repository.lock_payment_graph(
+                _slot, _order, payment = repository.lock_payment_graph(
                     order_id=phase.order_id, slot_id=phase.slot_id, payment_id=phase.payment_id
                 )
                 record = repository.get_idempotency_for_update(phase.idempotency_id)

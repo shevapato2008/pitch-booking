@@ -75,6 +75,14 @@ class MockPaymentProvider:
         with self._lock:
             return len(self._orders)
 
+    @property
+    def app_id(self) -> str:
+        return self._app_id
+
+    @property
+    def merchant_id(self) -> str:
+        return self._merchant_id
+
     def create_prepay(self, request: CreatePrepayRequest) -> CreatePrepayResult:
         with self._lock:
             self._calls.append(MockProviderCall("create_prepay", request.merchant_order_no))
