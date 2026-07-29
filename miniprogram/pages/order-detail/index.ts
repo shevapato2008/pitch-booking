@@ -39,6 +39,10 @@ function isActivePaymentOperation(state: PaymentPageState): boolean {
   return state.status === "creating-prepay" || state.status === "cashier-open";
 }
 
+function isUnknownPaymentResult(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "PAYMENT_RESULT_UNKNOWN";
+}
+
 const scheduler: PollScheduler = {
   setTimeout(callback, delayMs) { return setTimeout(callback, delayMs); },
   clearTimeout(handle) { clearTimeout(handle as ReturnType<typeof setTimeout>); },
@@ -78,11 +82,13 @@ Page({
   paymentState: initialPaymentPageState() as PaymentPageState,
   paymentOperationGeneration: 0,
   paymentClickSerial: 0,
+  paymentCreateKey: null as string | null,
   visible: false,
 
   onLoad(options: Record<string, string | undefined>) {
     this.visible = true;
     this.paymentState = initialPaymentPageState();
+    this.paymentCreateKey = null;
     this.paymentOperationGeneration += 1;
     try {
       const orderId = requireUuid(options.order_id);
@@ -112,6 +118,7 @@ Page({
     this.visible = false;
     this.paymentOperationGeneration += 1;
     this.poller?.cancel();
+    this.paymentCreateKey = null;
   },
 
   ensurePoller(): OrderDetailPoller {
@@ -272,7 +279,9 @@ Page({
   async onPay() {
     const bindings = getPaymentBindings();
     if (!bindings || (this.paymentState.status !== "ready" && this.paymentState.status !== "payment-pending")) return;
-    const idempotencyKey = `payment-preview-${++this.paymentClickSerial}`;
+    const idempotencyKey = this.paymentCreateKey
+      ?? `payment-${Date.now()}-${++this.paymentClickSerial}`;
+    this.paymentCreateKey = idempotencyKey;
     const started = reducePayment(this.paymentState, { type: "PAY_STARTED", idempotencyKey });
     if (started === this.paymentState) return;
     this.paymentState = started;
@@ -284,11 +293,13 @@ Page({
       const launch = await bindings.source.createPayment(this.data.orderId, idempotencyKey);
       if (!this.isCurrentPaymentOperation(generation)) return;
       if (launch.outcome === "ALREADY_CONFIRMED") {
+        this.paymentCreateKey = null;
         this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order: launch.order });
         this.applyPaymentState(this.paymentState);
         return;
       }
       if (launch.outcome === "PAYMENT_CONFIRMING") {
+        this.paymentCreateKey = null;
         this.paymentState = reducePayment(this.paymentState, {
           type: "PAYMENT_CONFIRMING",
           idempotencyKey,
@@ -305,6 +316,7 @@ Page({
         paymentId: launch.paymentId,
         launchParams: launch.launchParams,
       });
+      this.paymentCreateKey = null;
       this.applyPaymentState(this.paymentState);
       const cashier = await bindings.capability.requestPayment(launch.launchParams);
       if (!this.isCurrentPaymentOperation(generation)) return;
@@ -329,21 +341,20 @@ Page({
       try {
         const reconciliation = await bindings.source.reconcilePayment(this.data.orderId, launch.paymentId);
         if (!this.isCurrentPaymentOperation(generation)) return;
-        this.paymentState = reducePayment(this.paymentState, {
-          type: "ORDER_RECEIVED",
-          order: reconciliation.order,
-        });
-        this.applyPaymentState(this.paymentState);
-        if (this.paymentState.status === "payment-confirming") this.ensurePoller().start(this.data.orderId);
+        this.applyReconciledOrder(reconciliation.order);
+        if (reconciliation.order.status !== "EXPIRED"
+          && this.paymentState.status === "payment-confirming") this.ensurePoller().start(this.data.orderId);
       } catch {
         if (this.isCurrentPaymentOperation(generation)) this.ensurePoller().start(this.data.orderId);
       }
-    } catch {
+    } catch (error) {
       if (!this.isCurrentPaymentOperation(generation)) return;
+      const unknown = isUnknownPaymentResult(error);
+      if (!unknown) this.paymentCreateKey = null;
       this.paymentState = reducePayment(this.paymentState, {
         type: "PAY_CREATE_FAILED",
         idempotencyKey,
-        message: "支付发起失败，请重试。",
+        message: unknown ? "支付结果待确认，请重试。" : "支付发起失败，请重试。",
       });
       this.applyPaymentState(this.paymentState);
       this.ensurePoller().start(this.data.orderId);
@@ -354,6 +365,15 @@ Page({
     return this.visible && generation === this.paymentOperationGeneration;
   },
 
+  applyReconciledOrder(order: OrderView) {
+    if (order.status === "EXPIRED") {
+      this.applyPollState({ status: "expired", order });
+      return;
+    }
+    this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order });
+    this.applyPaymentState(this.paymentState);
+  },
+
   onRetryLoad() {
     if (this.data.status === "load-error") this.ensurePoller().retry();
   },
@@ -362,9 +382,22 @@ Page({
     if (this.data.status === "closing-error") this.ensurePoller().retry();
   },
 
-  onReconcilePayment() {
-    if (this.data.status === "payment-confirming" || this.data.status === "payment-exception") {
+  async onReconcilePayment() {
+    if (this.data.status !== "payment-confirming" && this.data.status !== "payment-exception") return;
+    const bindings = getPaymentBindings();
+    const paymentId = "paymentId" in this.paymentState ? this.paymentState.paymentId : null;
+    if (!bindings || !paymentId) {
       this.ensurePoller().reconcile();
+      return;
+    }
+    try {
+      const reconciliation = await bindings.source.reconcilePayment(this.data.orderId, paymentId);
+      if (!this.visible) return;
+      this.applyReconciledOrder(reconciliation.order);
+      if (reconciliation.order.status !== "EXPIRED"
+        && this.paymentState.status === "payment-confirming") this.ensurePoller().start(this.data.orderId);
+    } catch {
+      if (this.visible) this.ensurePoller().reconcile();
     }
   },
 

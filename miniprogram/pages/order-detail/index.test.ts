@@ -292,6 +292,114 @@ describe("order detail payment orchestration", () => {
     call(page, "onUnload");
   });
 
+  test("runs pending through prepay, simulated cashier, 202 reconciliation, HTTP polling, and authoritative success", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(PAYMENT_PREVIEW_NOW));
+    let reads = 0;
+    const createPayment = jest.fn<PaymentDataSource["createPayment"]>(async () => ({
+      outcome: "PREPAY_CREATED",
+      paymentId: "payment-current",
+      launchParams: { ...PAYMENT_SCENARIOS.launchParams },
+    }));
+    const reconcilePayment = jest.fn<PaymentDataSource["reconcilePayment"]>(async () => ({
+      outcome: "PAYMENT_CONFIRMING",
+      order: structuredClone(PAYMENT_SCENARIOS.confirming),
+    }));
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(
+        reads++ === 0
+          ? PAYMENT_SCENARIOS.pending
+          : reads === 2
+            ? PAYMENT_SCENARIOS.confirming
+            : PAYMENT_SCENARIOS.confirmed,
+      ),
+      createPayment,
+      reconcilePayment,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    await call(page, "onPay");
+    await flush();
+    expect(page.data.status).toBe("payment-confirming");
+    expect(reconcilePayment).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(2_000);
+    await flush();
+    expect(page.data).toMatchObject({ status: "booking-confirmed", heroTitle: "预订成功" });
+    expect(createPayment.mock.calls[0]?.[1]).toMatch(/^payment-/);
+    call(page, "onUnload");
+    jest.useRealTimers();
+  });
+
+  test("reuses an idempotency key after an unknown create result but rotates it after a definitive cancellation", async () => {
+    let creates = 0;
+    const createPayment = jest.fn<PaymentDataSource["createPayment"]>(async () => {
+      creates += 1;
+      if (creates === 1) throw Object.assign(new Error("response lost"), { code: "PAYMENT_RESULT_UNKNOWN" });
+      return {
+        outcome: "PREPAY_CREATED",
+        paymentId: "payment-current",
+        launchParams: { ...PAYMENT_SCENARIOS.launchParams },
+      };
+    });
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.pending),
+      createPayment,
+      requestPayment: async () => ({ outcome: "user_cancelled" }),
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    await call(page, "onPay");
+    expect(page.data).toMatchObject({ status: "payment-pending", primaryDisabled: false });
+    await call(page, "onPay");
+    await call(page, "onPay");
+
+    const keys = createPayment.mock.calls.map((values) => values[1]);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[1]);
+    call(page, "onUnload");
+  });
+
+  test("projects EXPIRED returned by reconciliation immediately instead of leaving payment confirming", async () => {
+    const expired = expiredFrom(PAYMENT_SCENARIOS.pending, PAYMENT_SCENARIOS.pending.expiresAt);
+    registerPaymentRuntime({
+      reconcilePayment: async () => ({ outcome: "TERMINAL", order: expired }),
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    await call(page, "onPay");
+
+    expect(page.data).toMatchObject({ status: "expired", heroTitle: "订单已过期", showReselect: true });
+    call(page, "onUnload");
+  });
+
+  test("manual query from payment exception reconciles the known payment before accepting success", async () => {
+    const reconcilePayment = jest.fn<PaymentDataSource["reconcilePayment"]>()
+      .mockResolvedValueOnce({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.exception) })
+      .mockResolvedValueOnce({ outcome: "TERMINAL", order: structuredClone(PAYMENT_SCENARIOS.confirmed) });
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.pending),
+      reconcilePayment,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+    await call(page, "onPay");
+    expect(page.data.status).toBe("payment-exception");
+
+    await call(page, "onReconcilePayment");
+
+    expect(reconcilePayment).toHaveBeenCalledTimes(2);
+    expect(page.data.status).toBe("booking-confirmed");
+    call(page, "onUnload");
+  });
+
   test("a pending countdown callback cannot regress cashier success while reconciliation is in flight", async () => {
     jest.useFakeTimers();
     const reconciliation = deferred<Awaited<ReturnType<PaymentDataSource["reconcilePayment"]>>>();

@@ -2,8 +2,10 @@ import type { WeChatIdentityCapability, WeChatPhoneCapability } from "../runtime
 import { productionMedia, productionTransport } from "../runtime/production";
 import type { BookingDataSource } from "../services/booking";
 import { createHttpBookingDataSource } from "../services/http-booking";
+import { createHttpPaymentDataSource } from "../services/http-payment";
 import { createHttpPageDataSource } from "../services/http-page-data";
 import type { PageDataSource } from "../services/page-data";
+import type { PaymentDataSource } from "../services/payment";
 import { createSessionStore, type SessionStorage } from "../services/session-store";
 
 const DEVELOPMENT_LOGIN_CODE = "dev-login-code";
@@ -11,6 +13,7 @@ const DEVELOPMENT_PHONE_CODE = "dev-phone-code";
 
 export interface DevelopmentHttpSources {
   readonly booking: BookingDataSource;
+  readonly payment: PaymentDataSource;
   readonly pages: PageDataSource;
   readonly neutralPhoneTapDetail: () => unknown;
 }
@@ -41,12 +44,18 @@ const developmentPhone: WeChatPhoneCapability = {
 
 export function createDevelopmentHttpSources(apiBaseUrl: string): DevelopmentHttpSources {
   const transport = productionTransport(apiBaseUrl);
+  const sessionStore = createSessionStore(createMemorySessionStorage());
   return {
     booking: createHttpBookingDataSource({
       transport,
       identity: developmentIdentity,
       phone: developmentPhone,
-      sessionStore: createSessionStore(createMemorySessionStorage()),
+      sessionStore,
+    }),
+    payment: createHttpPaymentDataSource({
+      transport,
+      identity: developmentIdentity,
+      sessionStore,
     }),
     pages: createHttpPageDataSource(transport, productionMedia),
     neutralPhoneTapDetail: () => DEVELOPMENT_PHONE_CODE,
