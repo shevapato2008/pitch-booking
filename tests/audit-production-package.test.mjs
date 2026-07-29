@@ -257,6 +257,48 @@ test("production audit rejects payment registration after App startup", async (t
   await assertAuditRejects(packageRoot, "payment registration must precede App/Page startup");
 });
 
+test("production audit rejects payment composition hidden in a dead branch", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installPaymentDependencies(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "if (false) {",
+      "  registerPaymentDataSource(createHttpPaymentDataSource({}));",
+      "  registerPaymentCapability(productionPayment);",
+      "}",
+      "App({});",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid payment registration");
+});
+
+test("production audit rejects payment composition hidden in an uninvoked function", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installPaymentDependencies(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "function registerProductionPayment() {",
+      "  registerPaymentDataSource(createHttpPaymentDataSource({}));",
+      "  registerPaymentCapability(productionPayment);",
+      "}",
+      "App({});",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid payment registration");
+});
+
 async function createProductionPackage() {
   const packageRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-audit-"));
   const routes = [

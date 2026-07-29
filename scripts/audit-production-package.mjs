@@ -191,34 +191,50 @@ function inspectPaymentRegistration(source) {
   const moduleAliases = new Map();
   const importedBindings = new Map();
   const valueOrigins = new Map();
-
-  for (const statement of sourceFile.statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      const requiredModule = requireSpecifier(declaration.initializer);
-      if (requiredModule) {
-        if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
-        if (ts.isObjectBindingPattern(declaration.name)) {
-          for (const element of declaration.name.elements) {
-            if (!ts.isIdentifier(element.name)) continue;
-            const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
-              ? element.propertyName.text
-              : element.name.text;
-            importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
-          }
-        }
-        continue;
-      }
-      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
-      const origin = paymentValueOrigin(declaration.initializer);
-      if (origin) valueOrigins.set(declaration.name.text, { ...origin, position: declaration.initializer.pos });
-    }
-  }
-
   const dataSourceRegistrations = [];
   const capabilityRegistrations = [];
   const startupPositions = [];
-  visit(sourceFile);
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const requiredModule = requireSpecifier(declaration.initializer);
+        if (requiredModule) {
+          if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
+          if (ts.isObjectBindingPattern(declaration.name)) {
+            for (const element of declaration.name.elements) {
+              if (!ts.isIdentifier(element.name)) continue;
+              const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+                ? element.propertyName.text
+                : element.name.text;
+              importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
+            }
+          }
+          continue;
+        }
+        if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
+        const origin = paymentValueOrigin(declaration.initializer);
+        if (origin) valueOrigins.set(declaration.name.text, { ...origin, position: declaration.initializer.pos });
+      }
+      continue;
+    }
+    if (!ts.isExpressionStatement(statement)) continue;
+    const expression = unwrapExpression(statement.expression);
+    if (!ts.isCallExpression(expression)) continue;
+    const callee = importedSymbol(expression.expression);
+    const rawCallee = unwrapExpression(expression.expression);
+    if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) {
+      startupPositions.push(expression.pos);
+    }
+    if (callee?.module === "./services/payment" && callee.symbol === "registerPaymentDataSource"
+      && isDataSourceValue(expression.arguments[0], expression.pos)) {
+      dataSourceRegistrations.push(expression.pos);
+    }
+    if (callee?.module === "./services/payment" && callee.symbol === "registerPaymentCapability"
+      && isCapabilityValue(expression.arguments[0], expression.pos)) {
+      capabilityRegistrations.push(expression.pos);
+    }
+  }
 
   const diagnostics = [];
   if (dataSourceRegistrations.length === 0) {
@@ -237,25 +253,6 @@ function inspectPaymentRegistration(source) {
     }
   }
   return diagnostics;
-
-  function visit(node) {
-    if (ts.isCallExpression(node)) {
-      const callee = importedSymbol(node.expression);
-      const rawCallee = unwrapExpression(node.expression);
-      if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) {
-        startupPositions.push(node.pos);
-      }
-      if (callee?.module === "./services/payment" && callee.symbol === "registerPaymentDataSource"
-        && isDataSourceValue(node.arguments[0], node.pos)) {
-        dataSourceRegistrations.push(node.pos);
-      }
-      if (callee?.module === "./services/payment" && callee.symbol === "registerPaymentCapability"
-        && isCapabilityValue(node.arguments[0], node.pos)) {
-        capabilityRegistrations.push(node.pos);
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
 
   function paymentValueOrigin(expression) {
     const value = unwrapExpression(expression);
