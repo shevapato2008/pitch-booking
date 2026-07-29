@@ -281,7 +281,7 @@ test("payment review reserves the complete three-state evidence contract", () =>
   }
   for (const path of evidencePaths) {
     assert.match(review, new RegExp(`\\b${path.replaceAll(".", "\\.")}\\b`));
-    assert.equal(existsSync(`${reviewRoot}/${path}`), false, `Task 1 must not include ${path}`);
+    assert.equal(existsSync(`${reviewRoot}/${path}`), true, `captured evidence missing: ${path}`);
   }
 
   for (const category of [
@@ -298,7 +298,7 @@ test("payment review reserves the complete three-state evidence contract", () =>
     assert.match(review, new RegExp(`\\| ${category.replace("/", "\\/")} \\|`));
 
   assert.match(review, /normal text contrast[^\n]*>= 4\.5:1/i);
-  assert.match(review, /No evidence images have been captured/i);
+  assert.match(review, /evidence was captured/i);
 });
 
 test("production app registers no development pages", () => {
@@ -356,7 +356,7 @@ test("booking development preview declares two complete native pages", () => {
   }
   assert.match(confirmation, /requireUuid\(options\.slot_id\)/);
   assert.match(detail, /OrderDetailPoller/);
-  assert.equal((detail.match(/this\.poller\?\.cancel\(\)/g) ?? []).length, 2);
+  assert.equal((detail.match(/this\.poller\?\.cancel\(\)/g) ?? []).length, 4);
   assert.match(bookingPresentation, /elapsedMs\s*<\s*30_000/);
 });
 

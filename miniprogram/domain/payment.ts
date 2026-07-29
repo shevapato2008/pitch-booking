@@ -50,5 +50,6 @@ export interface PaymentDataSource {
 }
 
 export interface PaymentCapability {
+  readonly cashierNotice?: string;
   requestPayment(params: PaymentLaunchParams): Promise<PaymentCapabilityResult>;
 }

@@ -49,6 +49,7 @@ function registerPaymentRuntime(input: {
   createPayment?: PaymentDataSource["createPayment"];
   reconcilePayment?: PaymentDataSource["reconcilePayment"];
   requestPayment?: PaymentCapability["requestPayment"];
+  cashierNotice?: string;
 }) {
   const source: PaymentDataSource = {
     getOrder: input.getOrder ?? (async () => structuredClone(PAYMENT_SCENARIOS.pending)),
@@ -64,6 +65,7 @@ function registerPaymentRuntime(input: {
   };
   const capability: PaymentCapability = {
     requestPayment: input.requestPayment ?? (async () => ({ outcome: "cashier_success" })),
+    ...(input.cashierNotice === undefined ? {} : { cashierNotice: input.cashierNotice }),
   };
   registerPaymentDataSource(source);
   registerPaymentCapability(capability);
@@ -191,7 +193,6 @@ describe("order detail payment orchestration", () => {
       "待支付",
       "立即支付",
       "正在发起支付…",
-      "模拟支付，不会扣款",
       "正在确认支付",
       "支付结果以服务端确认为准，请勿重复付款",
       "支付确认中…",
@@ -202,10 +203,22 @@ describe("order detail payment orchestration", () => {
     ]) expect(wxml).toContain(copy);
     expect(wxml).toMatch(/disabled="\{\{primaryDisabled\}\}"/);
     expect(wxml).toMatch(/aria-label="支付成功"/);
+    expect(wxml).toContain("{{cashierNotice}}");
+    expect(wxml).not.toContain("模拟支付，不会扣款");
     expect(wxml).not.toMatch(/取消订单|创建球局|微信支付/);
     expect(wxss).toMatch(/env\(safe-area-inset-bottom/);
     expect(wxss).toMatch(/padding-bottom:\s*calc\(/);
     expect(wxss).toMatch(/min-height:\s*88rpx/);
+  });
+
+  test("renders the simulated cashier notice only when the injected capability declares it", async () => {
+    registerPaymentRuntime({ cashierNotice: "模拟支付，不会扣款" });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    expect(page.data.cashierNotice).toBe("模拟支付，不会扣款");
+    call(page, "onUnload");
   });
 
   test("renders the fixed ten-minute pending preview and exact payable CTA semantics", async () => {
@@ -498,7 +511,13 @@ describe("order detail payment orchestration", () => {
     call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
     await flush();
     expect(page.data.showProgressIcon).toBe(true);
-    page.setData({ eyebrow: "待支付", showCashierMarker: true, paidLabel: "已支付", paymentError: "旧错误" });
+    page.setData({
+      eyebrow: "待支付",
+      showCashierMarker: true,
+      cashierNotice: "旧提示",
+      paidLabel: "已支付",
+      paymentError: "旧错误",
+    });
 
     call(page, "applyPollState", structuredClone(nextState));
 
@@ -511,6 +530,7 @@ describe("order detail payment orchestration", () => {
       showPaymentFooter: false,
       showPaymentRetry: false,
       showCashierMarker: false,
+      cashierNotice: "",
       showProgressIcon: false,
       showSuccessIcon: false,
       paidLabel: "",

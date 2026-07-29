@@ -15,6 +15,7 @@ describe("simulated payment capability", () => {
     const result: PaymentCapabilityResult = await capability.requestPayment(PAYMENT_SCENARIOS.launchParams);
 
     expect(result).toEqual(expected);
+    expect(capability.cashierNotice).toBe("模拟支付，不会扣款");
   });
 
   test("cashier success, including delayed confirmation, never mutates OrderView authority", async () => {

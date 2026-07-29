@@ -295,7 +295,10 @@ test("the approved fixture and scenario inventories are closed and internally re
 
   assert.deepEqual(fixtureIds, [
     "booking-checkout-ready",
+    "order-confirmed",
     "order-expired",
+    "order-payment-confirming",
+    "order-payment-exception",
     "order-pending",
     "slots-empty",
     "slots-ready",

@@ -27,6 +27,12 @@ const forbiddenContentPatterns = [
   /\b(?:fixture[A-Z]|Fixture[A-Z])[A-Za-z0-9_$]*\b/,
   /\bfixtures:generate\b/,
   /\bScenario[A-Z][A-Za-z0-9_$]*\b/,
+  /\bPAYMENT_SCENARIOS\b/,
+  /\bPAYMENT_PREVIEW_NOW\b/,
+  /\bcreateDevelopmentPaymentDataSource\b/,
+  /\bcreateDevelopmentPaymentCapability\b/,
+  /\bshowDevelopmentCashier\b/,
+  /开发态模拟收银台|模拟支付，不会扣款|模拟收银台处理中/,
   /["']dev\//,
   /\bjest\s*\./,
   /\bexpect\s*\(/,
@@ -36,6 +42,17 @@ const forbiddenContentPatterns = [
   new RegExp(String.raw`\bimport\s*["']${runnerModule}["']`),
 ];
 const forbidden = [];
+const requiredPaymentComposition = [
+  "createHttpPaymentDataSource",
+  "registerPaymentDataSource",
+  "productionPayment",
+  "registerPaymentCapability",
+];
+const requiredPaymentImports = [
+  ["./services/http-payment", /\brequire\s*\(\s*["']\.\/services\/http-payment["']\s*\)/],
+  ["./services/payment", /\brequire\s*\(\s*["']\.\/services\/payment["']\s*\)/],
+  ["./runtime/production", /\brequire\s*\(\s*["']\.\/runtime\/production["']\s*\)/],
+];
 
 const targetStat = await lstat(target);
 if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
@@ -58,6 +75,20 @@ for (const file of await collectFiles(target)) {
     if (match) forbidden.push(`token ${match[0]} in ${relativePath}`);
   }
 }
+
+let appContents = "";
+try {
+  appContents = await readFile(path.join(target, "app.js"), "utf8");
+} catch {
+  forbidden.push("missing payment composition: app.js");
+}
+for (const symbol of requiredPaymentComposition) {
+  if (!appContents.includes(symbol)) forbidden.push(`missing payment composition: ${symbol}`);
+}
+for (const [specifier, pattern] of requiredPaymentImports) {
+  if (!pattern.test(appContents)) forbidden.push(`missing payment import: ${specifier}`);
+}
+await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
 const productionRoutes = [
@@ -101,4 +132,54 @@ async function collectFiles(directory) {
     else files.push(entryPath);
   }
   return files;
+}
+
+async function auditDependencyClosure(packageRoot, entryPath, diagnostics) {
+  const queue = [entryPath];
+  const visited = new Set();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+    let contents;
+    try {
+      const stat = await lstat(current);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        diagnostics.push(`invalid dependency: ${path.relative(packageRoot, current)}`);
+        continue;
+      }
+      contents = await readFile(current, "utf8");
+    } catch {
+      diagnostics.push(`missing dependency: ${path.relative(packageRoot, current)}`);
+      continue;
+    }
+    for (const match of contents.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g)) {
+      const specifier = match[1];
+      if (!specifier.startsWith(".")) continue;
+      const unresolved = path.resolve(path.dirname(current), specifier);
+      const relative = path.relative(packageRoot, unresolved);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        diagnostics.push(`dependency escapes package: ${specifier} from ${path.relative(packageRoot, current)}`);
+        continue;
+      }
+      const candidates = path.extname(unresolved)
+        ? [unresolved]
+        : [`${unresolved}.js`, `${unresolved}.json`, path.join(unresolved, "index.js")];
+      let resolved;
+      for (const candidate of candidates) {
+        try {
+          const stat = await lstat(candidate);
+          if (stat.isFile() && !stat.isSymbolicLink()) {
+            resolved = candidate;
+            break;
+          }
+        } catch {}
+      }
+      if (!resolved) {
+        diagnostics.push(`missing dependency: ${specifier} from ${path.relative(packageRoot, current)}`);
+        continue;
+      }
+      if (resolved.endsWith(".js")) queue.push(resolved);
+    }
+  }
 }

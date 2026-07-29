@@ -29,6 +29,7 @@ export function createDevelopmentPaymentCapability(
   prompt?: DevelopmentCashierPrompt,
 ): PaymentCapability {
   return {
+    cashierNotice: DEVELOPMENT_CASHIER_NOTICE,
     async requestPayment(): Promise<PaymentCapabilityResult> {
       if (scenario === "user-cancel") return { outcome: "user_cancelled" };
       if (scenario === "launch-failure") {

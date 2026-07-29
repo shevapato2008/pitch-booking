@@ -16,8 +16,7 @@
     <text wx:elif="{{status === 'payment-exception'}}" class="hero-copy">暂未取得权威支付结果，场地仍保持锁定，请手动重新查询。</text>
     <text wx:elif="{{status === 'booking-confirmed'}}" class="hero-copy">订单已确认，场地已为你预订</text>
     <view wx:if="{{showCashierMarker}}" class="cashier-notice" role="status">
-      <text class="cashier-notice__title">开发态模拟收银台</text>
-      <text>模拟支付，不会扣款</text>
+      <text class="cashier-notice__title">{{cashierNotice}}</text>
     </view>
   </view>
 
@@ -81,7 +80,7 @@
     <button wx:elif="{{status === 'payment-exception'}}" class="primary-button" bindtap="onReconcilePayment">重新查询</button>
     <button wx:else class="primary-button" disabled="{{primaryDisabled}}" bindtap="onPay">
       <text wx:if="{{status === 'creating-prepay'}}">正在发起支付…</text>
-      <text wx:elif="{{status === 'cashier-open'}}">模拟收银台处理中…</text>
+      <text wx:elif="{{status === 'cashier-open'}}">收银台处理中…</text>
       <text wx:elif="{{status === 'payment-confirming'}}">支付确认中…</text>
       <text wx:else>立即支付</text>
     </button>

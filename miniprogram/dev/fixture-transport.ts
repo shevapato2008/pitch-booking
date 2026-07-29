@@ -7,6 +7,9 @@ const ALLOWED_FIXTURES = [
   "booking-checkout-ready",
   "order-pending",
   "order-expired",
+  "order-confirmed",
+  "order-payment-confirming",
+  "order-payment-exception",
 ] as const;
 export type FixtureName = typeof ALLOWED_FIXTURES[number];
 

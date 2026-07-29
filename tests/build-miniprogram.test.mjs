@@ -144,7 +144,7 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
-test("production app registers HTTP page and booking data before source app code", async (t) => {
+test("production app registers HTTP page, booking, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -158,10 +158,16 @@ test("production app registers HTTP page and booking data before source app code
   assert.match(app, /createHttpBookingDataSource/);
   assert.match(app, /registerBookingDataSource/);
   assert.match(app, /createSessionStore/);
+  assert.match(app, /createHttpPaymentDataSource/);
+  assert.match(app, /registerPaymentDataSource/);
+  assert.match(app, /productionPayment/);
+  assert.match(app, /registerPaymentCapability/);
   assert.match(app, /productionSessionStorage/);
   assert.match(app, /productionPhone/);
   assert.equal(app.indexOf("registerPageDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
@@ -233,6 +239,9 @@ test("built development Scenario runtime is self-contained without URL", async (
     path.join(projectRoot, "miniprogram/services/session-store.ts"),
     "export interface SessionStorage { get(key: string): unknown; set(key: string, value: unknown): void; remove(key: string): void; }\n",
   );
+  await mkdir(path.join(projectRoot, "miniprogram/domain"));
+  await cp("miniprogram/domain/booking.ts", path.join(projectRoot, "miniprogram/domain/booking.ts"));
+  await cp("miniprogram/domain/payment.ts", path.join(projectRoot, "miniprogram/domain/payment.ts"));
   await cp("miniprogram/dev/fixture-transport.ts", path.join(projectRoot, "miniprogram/dev/fixture-transport.ts"));
   if (existsSync("miniprogram/dev/fixture-data.ts")) {
     await cp("miniprogram/dev/fixture-data.ts", path.join(projectRoot, "miniprogram/dev/fixture-data.ts"));
@@ -253,6 +262,7 @@ test("built development Scenario runtime is self-contained without URL", async (
       const names = [
         "venue-ready", "slots-ready", "slots-empty",
         "booking-checkout-ready", "order-pending", "order-expired",
+        "order-confirmed", "order-payment-confirming", "order-payment-exception",
       ];
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);

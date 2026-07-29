@@ -17,6 +17,10 @@ for (const token of [
   "ScenarioClock",
   "ScenarioTransport",
   "ScenarioClockStub",
+  "PAYMENT_SCENARIOS",
+  "createDevelopmentPaymentDataSource",
+  "createDevelopmentPaymentCapability",
+  "模拟支付，不会扣款",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -125,10 +129,7 @@ for (const [description, source, diagnostic] of [
 test("production audit accepts harmless runner-name string literals", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
-  await writeFile(
-    path.join(packageRoot, "app.js"),
-    'const flavor = "mocha";\nconst label = "vitest";\n',
-  );
+  await installValidPaymentComposition(packageRoot, 'const flavor = "mocha";\nconst label = "vitest";\n');
 
   const result = await execFileAsync(process.execPath, [auditScript, packageRoot]);
   assert.match(result.stdout, /0 forbidden paths\/tokens/);
@@ -157,10 +158,46 @@ test("production audit rejects a symlinked required artifact", async (t) => {
 test("production audit accepts ordinary production code", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
-  await writeFile(path.join(packageRoot, "app.js"), 'const bookingMode = "production";\n');
+  await installValidPaymentComposition(packageRoot, 'const bookingMode = "production";\n');
 
   const result = await execFileAsync(process.execPath, [auditScript, packageRoot]);
   assert.match(result.stdout, /0 forbidden paths\/tokens/);
+});
+
+test("production audit requires compiled native payment composition", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+
+  await assertAuditRejects(packageRoot, "missing payment composition");
+});
+
+test("production audit rejects an unresolved dependency in the app closure", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    'require("./missing-payment-runtime");\ncreateHttpPaymentDataSource();\nregisterPaymentDataSource();\nregisterPaymentCapability(productionPayment);\n',
+  );
+
+  await assertAuditRejects(packageRoot, "missing dependency");
+});
+
+test("production audit rejects token-only payment wiring without production source imports", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      "const createHttpPaymentDataSource = () => ({});",
+      "const registerPaymentDataSource = () => {};",
+      "const registerPaymentCapability = () => {};",
+      "const productionPayment = {};",
+      "registerPaymentDataSource(createHttpPaymentDataSource({}));",
+      "registerPaymentCapability(productionPayment);",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "missing payment import");
 });
 
 async function createProductionPackage() {
@@ -184,6 +221,26 @@ async function createProductionPackage() {
   }
 
   return packageRoot;
+}
+
+async function installValidPaymentComposition(packageRoot, extraSource = "") {
+  for (const directory of ["services", "runtime"]) {
+    await mkdir(path.join(packageRoot, directory), { recursive: true });
+  }
+  await writeFile(path.join(packageRoot, "services/http-payment.js"), "\n");
+  await writeFile(path.join(packageRoot, "services/payment.js"), "\n");
+  await writeFile(path.join(packageRoot, "runtime/production.js"), "\n");
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "registerPaymentDataSource(createHttpPaymentDataSource({}));",
+      "registerPaymentCapability(productionPayment);",
+      extraSource,
+    ].join("\n"),
+  );
 }
 
 async function assertAuditRejects(packageRoot, expectedDiagnostic) {
