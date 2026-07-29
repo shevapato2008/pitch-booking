@@ -64,19 +64,26 @@ class PaymentReconciliationService:
             )
             if order.user_id != user_id:
                 raise _not_found()
+            if payment.provider != self._provider.name:
+                raise _not_found()
             now = self._now()
             if payment.status not in {PaymentState.SUCCESS, PaymentState.CLOSED}:
                 payment.status = PaymentState.CONFIRMING
                 payment.next_reconcile_at = now
             merchant_order_no = payment.merchant_order_no
-            provider_name = payment.provider
             session.commit()
 
         # Provider IO is intentionally outside every row-lock transaction.
-        query = self._provider.query_payment(QueryPaymentRequest(merchant_order_no))
+        try:
+            query = self._provider.query_payment(QueryPaymentRequest(merchant_order_no))
+        except Exception:
+            query = QueryPaymentResult(
+                QueryPaymentStatus.UNKNOWN,
+                safe_error_code="PAYMENT_PROVIDER_QUERY_FAILED",
+            )
         converged = self._convergence.converge(
             payment_id=payment_id,
-            provider=provider_name,
+            provider=self._provider.name,
             result=query,
         )
         return ReconciliationResult(

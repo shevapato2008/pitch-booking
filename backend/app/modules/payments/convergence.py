@@ -220,10 +220,10 @@ class PaymentConvergenceService:
             code = self._validate_facts(payment, facts)
             if code is None and facts.provider_transaction_no != payment.provider_transaction_no:
                 code = "PAYMENT_TRANSACTION_MISMATCH"
-        if code is not None and payment.last_error_code is None:
-            payment.last_error_code = code
-            payment.last_error_at = now
-            payment.notification_result = "MISMATCH"
+        if code is not None:
+            if payment.last_error_code is None:
+                payment.last_error_code = code
+                payment.last_error_at = now
             payment.notification_code = code
 
     @staticmethod
@@ -233,10 +233,11 @@ class PaymentConvergenceService:
         payment.provider_transaction_no = None
         payment.next_reconcile_at = now + _RETRY_DELAY
         payment.authority_unknown_since = payment.authority_unknown_since or now
-        payment.last_error_code = payment.last_error_code or code
+        if payment.notification_result != "MISMATCH":
+            payment.last_error_code = code
         payment.last_error_at = now
         payment.notification_result = "MISMATCH"
-        payment.notification_code = payment.last_error_code
+        payment.notification_code = code
         order.status = OrderStatus.PAYMENT_EXCEPTION
 
 

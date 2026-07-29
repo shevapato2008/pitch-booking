@@ -300,3 +300,58 @@ def test_success_on_closed_inventory_preserves_money_but_marks_order_exception(
         assert session.get_one(Payment, payment_id).status is PaymentState.SUCCESS
         assert session.get_one(Order, order_id).status is OrderStatus.PAYMENT_EXCEPTION
         assert session.get_one(Slot, slot_id).status is SlotStatus.CLOSED
+
+
+def test_authoritative_mismatch_replaces_transient_unknown_code(pg_engine: Engine) -> None:
+    order_id, payment_id, _, _ = seed_payment(pg_engine, status=PaymentState.UNKNOWN)
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        payment.last_error_code = "PAYMENT_PROVIDER_QUERY_FAILED"
+        payment.last_error_at = datetime.now(UTC)
+        session.commit()
+
+    convergence(pg_engine).converge(
+        payment_id=payment_id,
+        provider="mock",
+        result=QueryPaymentResult(
+            QueryPaymentStatus.SUCCESS,
+            facts=success_facts(pg_engine, payment_id, amount_cents=1),
+        ),
+    )
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.UNKNOWN
+        assert payment.last_error_code == "PAYMENT_AMOUNT_MISMATCH"
+        assert payment.notification_result == "MISMATCH"
+        assert payment.notification_code == "PAYMENT_AMOUNT_MISMATCH"
+        assert session.get_one(Order, order_id).status is OrderStatus.PAYMENT_EXCEPTION
+
+
+def test_conflicting_success_audit_survives_existing_inventory_error(pg_engine: Engine) -> None:
+    _, payment_id, _, _ = seed_payment(pg_engine, slot_status=SlotStatus.CLOSED)
+    service = convergence(pg_engine)
+    service.converge(
+        payment_id=payment_id,
+        provider="mock",
+        result=QueryPaymentResult(
+            QueryPaymentStatus.SUCCESS,
+            facts=success_facts(pg_engine, payment_id, transaction_no="first-transaction"),
+        ),
+    )
+    service.converge(
+        payment_id=payment_id,
+        provider="mock",
+        result=QueryPaymentResult(
+            QueryPaymentStatus.SUCCESS,
+            facts=success_facts(pg_engine, payment_id, transaction_no="conflicting-transaction"),
+        ),
+    )
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.provider_transaction_no == "first-transaction"
+        assert payment.last_error_code == "PAYMENT_INVENTORY_CONFLICT"
+        assert payment.notification_result == "SUCCESS"
+        assert payment.notification_code == "PAYMENT_TRANSACTION_MISMATCH"

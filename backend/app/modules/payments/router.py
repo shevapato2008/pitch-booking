@@ -37,6 +37,13 @@ def get_payment_provider(request: Request) -> PaymentProvider:
     return cast(PaymentProvider, provider)
 
 
+def get_reconciliation_provider(request: Request) -> PaymentProvider:
+    provider = request.app.state.payment_provider
+    if provider is None:
+        raise AppError(404, "ORDER_NOT_FOUND", "订单或支付不存在，或不可访问。")
+    return cast(PaymentProvider, provider)
+
+
 def get_payment_clock() -> datetime:
     return datetime.now(UTC)
 
@@ -122,7 +129,7 @@ def reconcile_payment(
     payment_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
     database: Annotated[Session, Depends(get_database)],
-    provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
+    provider: Annotated[PaymentProvider, Depends(get_reconciliation_provider)],
     phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
 ) -> Response:
     result = _reconciliation(_session_factory(database), provider).reconcile(

@@ -2,12 +2,14 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
 from backend.app.database import get_database
+from backend.app.errors import AppError
 from backend.app.main import create_app
 from backend.app.models import Order, Payment, PaymentState
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
@@ -110,3 +112,76 @@ def test_payment_http_routes_follow_frozen_201_202_200_and_401_matrix(
     assert terminal.status_code == 200
     assert terminal.json()["status"] == "CONFIRMED"
     assert terminal.json()["payment_state"] == "SUCCESS"
+
+    unbound = create_app(
+        settings=Settings(
+            app_env="test",
+            payment_provider="wechat",
+            wechat_provider="development",
+            phone_encryption_key_base64=KEY_BASE64,
+            phone_encryption_key_version=KEY_VERSION,
+        )
+    )
+    unbound.dependency_overrides[get_database] = database_override
+    with TestClient(unbound, raise_server_exceptions=False) as client:
+        hidden = client.post(
+            f"/api/v1/orders/{order_id}/payments/{payment_id}/reconcile",
+            headers=auth,
+        )
+    assert hidden.status_code == 404
+    assert hidden.json()["error"]["code"] == "ORDER_NOT_FOUND"
+
+
+class WrongPaymentProvider(MockPaymentProvider):
+    name = "wrong-provider"
+
+
+def test_reconcile_refuses_cross_provider_before_external_query(pg_engine: Engine) -> None:
+    order_id, payment_id, _, _ = seed_payment(pg_engine, status=PaymentState.PREPAY_CREATED)
+    provider = WrongPaymentProvider()
+    service = PaymentReconciliationService(
+        session_factory=session_factory(pg_engine),
+        provider=provider,
+        convergence=convergence(pg_engine),
+    )
+
+    with pytest.raises(AppError) as raised:
+        service.reconcile(
+            user_id=_owner_id(pg_engine, order_id),
+            order_id=order_id,
+            payment_id=payment_id,
+        )
+
+    assert raised.value.status_code == 404
+    assert provider.calls == ()
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, payment_id).status is PaymentState.PREPAY_CREATED
+
+
+class TimeoutPaymentProvider(MockPaymentProvider):
+    def query_payment(self, request):
+        raise TimeoutError("secret-provider-host:443 timed out")
+
+
+def test_unexpected_provider_query_failure_converges_to_safe_unknown_202(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, _, _ = seed_payment(pg_engine, status=PaymentState.PREPAY_CREATED)
+    service = PaymentReconciliationService(
+        session_factory=session_factory(pg_engine),
+        provider=TimeoutPaymentProvider(),
+        convergence=convergence(pg_engine),
+    )
+
+    result = service.reconcile(
+        user_id=_owner_id(pg_engine, order_id),
+        order_id=order_id,
+        payment_id=payment_id,
+    )
+
+    assert result.status_code == 202
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.UNKNOWN
+        assert payment.last_error_code == "PAYMENT_PROVIDER_QUERY_FAILED"
+        assert "secret-provider-host" not in str(payment.last_error_code)
