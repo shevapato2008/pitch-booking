@@ -206,19 +206,31 @@ class PaymentCreationService:
                 if (
                     isinstance(result, QueryPaymentResult)
                     and result.status is QueryPaymentStatus.SUCCESS
-                    and (
-                        payment.status is PaymentState.CLOSED
-                        or record.state is IdempotencyState.COMPLETED
-                        and record.response_status is not None
-                        and record.response_status >= 400
-                    )
+                    and payment.status is not PaymentState.SUCCESS
                 ):
-                    # A later authoritative success invalidates an earlier negative
-                    # creation conclusion. Task 8 will validate facts and settle all
-                    # three aggregates; Task 7 only reopens this operation as pending.
-                    record.state = IdempotencyState.PROCESSING
-                    record.response_status = None
-                    record.response_body = None
+                    # Task 8 validates the facts and settles payment/order/slot. Until
+                    # then, keep this authority visible to the worker and block expiry.
+                    other = repository.lock_other_nonterminal_payment(
+                        order_id=phase.order_id,
+                        payment_id=payment.id,
+                    )
+                    if other is None:
+                        payment.status = PaymentState.CONFIRMING
+                        payment.next_reconcile_at = now
+                        payment.last_error_code = None
+                        payment.last_error_at = None
+                    else:
+                        # A newer possibly accepted attempt cannot be closed safely.
+                        # Preserve both attempts and make the order explicitly unsafe
+                        # for expiry until Task 8 resolves the authoritative success.
+                        _order.status = OrderStatus.PAYMENT_EXCEPTION
+                        payment.last_error_code = "LATE_SUCCESS_ATTEMPT_COLLISION"
+                        payment.last_error_at = now
+
+                    for linked_record in repository.lock_payment_idempotencies(payment.id):
+                        linked_record.state = IdempotencyState.PROCESSING
+                        linked_record.response_status = None
+                        linked_record.response_body = None
                     session.commit()
                     return _confirming(phase)
 

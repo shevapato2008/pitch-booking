@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.models import IdempotencyRecord, IdempotencyState, Order, Payment
 from backend.app.modules.orders.locking import (
+    NONTERMINAL_PAYMENT_STATES,
     lock_current_payment,
     lock_order,
     lock_payment,
@@ -91,3 +92,33 @@ class PaymentRepository:
         if record is None:
             raise RuntimeError("idempotency record disappeared")
         return record
+
+    def lock_other_nonterminal_payment(
+        self, *, order_id: uuid.UUID, payment_id: uuid.UUID
+    ) -> Payment | None:
+        return self.session.scalar(
+            select(Payment)
+            .where(
+                Payment.order_id == order_id,
+                Payment.id != payment_id,
+                Payment.status.in_(NONTERMINAL_PAYMENT_STATES),
+            )
+            .order_by(Payment.created_at, Payment.id)
+            .limit(1)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def lock_payment_idempotencies(self, payment_id: uuid.UUID) -> list[IdempotencyRecord]:
+        return list(
+            self.session.scalars(
+                select(IdempotencyRecord)
+                .where(
+                    IdempotencyRecord.payment_id == payment_id,
+                    IdempotencyRecord.operation == "create_payment",
+                )
+                .order_by(IdempotencyRecord.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )

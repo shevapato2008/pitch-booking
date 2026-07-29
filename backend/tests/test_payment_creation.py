@@ -240,7 +240,8 @@ def test_provider_success_is_left_for_authoritative_convergence(pg_engine: Engin
     assert result.status_code == 202
     with Session(pg_engine) as session:
         payment = session.scalar(select(Payment))
-        assert payment is not None and payment.status is PaymentState.CREATING
+        assert payment is not None and payment.status is PaymentState.CONFIRMING
+        assert payment.next_reconcile_at is not None
         assert payment.provider_transaction_no is None
 
 

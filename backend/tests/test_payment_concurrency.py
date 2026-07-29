@@ -13,6 +13,7 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     Order,
+    OrderStatus,
     Payment,
     PaymentState,
     Slot,
@@ -163,16 +164,18 @@ def test_lock_probe_detects_a_deliberately_held_business_lock(pg_engine: Engine)
 
 
 @pytest.mark.parametrize(
-    ("recovered_status", "second_status"),
+    ("recovered_status", "second_status", "first_status", "payment_status"),
     [
-        (QueryPaymentStatus.NOT_PAID, 200),
-        (QueryPaymentStatus.SUCCESS, 202),
+        (QueryPaymentStatus.NOT_PAID, 200, 201, PaymentState.PREPAY_CREATED),
+        (QueryPaymentStatus.SUCCESS, 202, 202, PaymentState.CONFIRMING),
     ],
 )
 def test_rejected_duplicate_is_requeried_before_local_close(
     pg_engine: Engine,
     recovered_status: QueryPaymentStatus,
     second_status: int,
+    first_status: int,
+    payment_status: PaymentState,
 ) -> None:
     user_id, order_id = seed_order(pg_engine)
     provider = RejectionRaceProvider(recovered_status)
@@ -212,13 +215,13 @@ def test_rejected_duplicate_is_requeried_before_local_close(
 
     assert not first.is_alive()
     assert errors == {}
-    assert results["first"].status_code == 201  # type: ignore[union-attr]
+    assert results["first"].status_code == first_status  # type: ignore[union-attr]
     with Session(pg_engine) as session:
         assert session.scalar(select(func.count()).select_from(Payment)) == 1
         payment = session.scalar(select(Payment))
         assert payment is not None
         assert payment.merchant_order_no == merchant_order_no
-        assert payment.status is PaymentState.PREPAY_CREATED
+        assert payment.status is payment_status
 
 
 @pytest.mark.parametrize("same_key", [False, True])
@@ -233,9 +236,7 @@ def test_late_success_is_not_cut_off_by_stale_closed_result(
     stale = payments._phase_one(  # noqa: SLF001 - deterministic phase interleaving
         user_id=user_id,
         order_id=order_id,
-        idempotency_key=(
-            "payment-late-success" if same_key else "payment-stale-close"
-        ),
+        idempotency_key=("payment-late-success" if same_key else "payment-stale-close"),
     )
     assert isinstance(late, _PhaseOne) and isinstance(stale, _PhaseOne)
     with pytest.raises(AppError, match="PAYMENT_CREATE_FAILED"):
@@ -260,9 +261,92 @@ def test_late_success_is_not_cut_off_by_stale_closed_result(
     assert result.status_code == 202
     with Session(pg_engine) as session:
         payment = session.get_one(Payment, late.payment_id)
-        record = session.get_one(IdempotencyRecord, late.idempotency_id)
-        assert payment.status is PaymentState.CLOSED
-        assert record.state is IdempotencyState.PROCESSING
+        records = session.scalars(
+            select(IdempotencyRecord).where(IdempotencyRecord.payment_id == late.payment_id)
+        ).all()
+        assert payment.status is PaymentState.CONFIRMING
+        assert payment.next_reconcile_at is not None
+        assert payment.last_error_code is None
+        assert payment.last_error_at is None
+        assert payment.paid_at is None
+        assert payment.provider_transaction_no is None
+        assert {record.state for record in records} == {IdempotencyState.PROCESSING}
+        assert all(record.response_status is None for record in records)
+        merchant_order_no = payment.merchant_order_no
+
+    reused = payments.create_payment(
+        user_id=user_id,
+        order_id=order_id,
+        idempotency_key="payment-after-late-success",
+        payer_openid="openid",
+    )
+    assert reused.status_code == 202
+    assert reused.body["payment_id"] == str(late.payment_id)
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(Payment)) == 1
+        payment = session.get_one(Payment, late.payment_id)
+        assert payment.merchant_order_no == merchant_order_no
+        assert payment.status is PaymentState.CONFIRMING
+
+
+def test_late_success_collision_enters_order_exception_without_overwriting_attempts(
+    pg_engine: Engine,
+) -> None:
+    user_id, order_id = seed_order(pg_engine)
+    payments = service(pg_engine, MockPaymentProvider())
+    late = payments._phase_one(  # noqa: SLF001 - deterministic phase interleaving
+        user_id=user_id, order_id=order_id, idempotency_key="payment-old-success"
+    )
+    assert isinstance(late, _PhaseOne)
+    with pytest.raises(AppError, match="PAYMENT_CREATE_FAILED"):
+        payments._phase_three(  # noqa: SLF001
+            late, Rejected("DEFINITIVELY_NOT_CREATED")
+        )
+    newer = payments._phase_one(  # noqa: SLF001 - creates the collision safely
+        user_id=user_id, order_id=order_id, idempotency_key="payment-new-attempt"
+    )
+    assert isinstance(newer, _PhaseOne)
+    success = QueryPaymentResult(
+        QueryPaymentStatus.SUCCESS,
+        facts=AuthoritativePaymentFacts(
+            app_id="mock-app-id",
+            merchant_id="mock-merchant-id",
+            merchant_order_no=late.merchant_order_no,
+            provider_transaction_no="late-collision-success",
+            amount_cents=late.amount_cents,
+            currency="CNY",
+            paid_at=datetime.now(UTC),
+        ),
+    )
+
+    result = payments._phase_three(late, success)  # noqa: SLF001
+
+    assert result.status_code == 202
+    assert result.body["payment_id"] == str(late.payment_id)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        attempts = session.scalars(select(Payment).order_by(Payment.created_at)).all()
+        assert order.status is OrderStatus.PAYMENT_EXCEPTION
+        assert [attempt.status for attempt in attempts] == [
+            PaymentState.CLOSED,
+            PaymentState.CREATING,
+        ]
+        assert attempts[0].provider_transaction_no is None
+        assert attempts[0].last_error_code == "LATE_SUCCESS_ATTEMPT_COLLISION"
+        assert attempts[1].merchant_order_no == newer.merchant_order_no
+        assert session.get_one(Payment, late.payment_id).merchant_order_no == (
+            late.merchant_order_no
+        )
+
+    with pytest.raises(AppError, match="PAYMENT_EXCEPTION"):
+        payments.create_payment(
+            user_id=user_id,
+            order_id=order_id,
+            idempotency_key="payment-third-attempt-blocked",
+            payer_openid="openid",
+        )
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(Payment)) == 2
 
 
 def test_crash_before_provider_retries_same_merchant_number(pg_engine: Engine) -> None:
