@@ -21,6 +21,9 @@ for (const token of [
   "createDevelopmentPaymentDataSource",
   "createDevelopmentPaymentCapability",
   "模拟支付，不会扣款",
+  "createDevelopmentVenueDirectoryDataSource",
+  "createSimulatedLocationCapability",
+  "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();

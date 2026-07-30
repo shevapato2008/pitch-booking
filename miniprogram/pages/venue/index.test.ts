@@ -1,10 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- dynamic Mini Program Page harness */
 import { beforeEach, expect, jest, test } from "@jest/globals";
 
-import { createDevelopmentVenueDirectoryDataSource, VENUE_DIRECTORY_VISUAL_FIXTURE } from "../../dev/venue-directory-source";
+import { decodeVenueDetail, decodeVenueMap } from "../../domain/decoders";
 import { registerVenueDirectoryDataSource } from "../../services/venue-directory";
 
 let definition: Record<string, any> | undefined;
+const VENUE_DIRECTORY_VISUAL_FIXTURE = decodeVenueMap(
+  jest.requireActual("../../../contracts/examples/venue-map.json"),
+);
+const DIRECTORY_DETAIL = decodeVenueDetail(
+  jest.requireActual("../../../contracts/examples/venue-directory-detail.json"),
+);
 function page() {
   if (!definition) {
     (globalThis as any).Page = (value: Record<string, any>) => { definition = value; };
@@ -14,7 +20,10 @@ function page() {
 }
 
 beforeEach(() => {
-  registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource("ready"));
+  registerVenueDirectoryDataSource({
+    async getVenueDirectory() { return [...VENUE_DIRECTORY_VISUAL_FIXTURE]; },
+    async getVenueDetail() { return DIRECTORY_DETAIL; },
+  });
   (globalThis as any).wx = { navigateTo: jest.fn() };
 });
 

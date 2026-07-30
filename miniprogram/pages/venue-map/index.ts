@@ -18,7 +18,7 @@ Page({
     locating: false, showLocation: false, locationErrorText: "", locationPermissionDenied: false,
     userLocation: null as Gcj02Coordinate | null,
     venues: [] as VenueMapEntry[], markers: [] as RuntimeMapMarker[], cards: [] as VenueMapCardViewModel[], selectedVenueId: null as string | null,
-    viewport: null as VenueMapViewport | null, sheetSnap: "default" as "collapsed" | "default" | "expanded", scenario: "ready",
+    viewport: null as VenueMapViewport | null, sheetSnap: "default" as "collapsed" | "default" | "expanded",
   },
   requestGuard: createRequestGenerationGuard(),
   locationGuard: createRequestGenerationGuard(),
@@ -26,7 +26,6 @@ Page({
 
   async onLoad(query: Record<string, string | undefined>) {
     const token = this.requestGuard.begin();
-    this.data.scenario = query.scenario ?? "ready";
     this.startWatchdog();
     try {
       const venues = await getVenueDirectoryDataSource().getVenueDirectory();
@@ -63,9 +62,6 @@ Page({
     const token = this.locationGuard.begin();
     this.setData({ locating: true, locationErrorText: "", locationPermissionDenied: false });
     try {
-      if (this.data.scenario !== "ready" && this.data.scenario !== "location-success") {
-        throw Object.assign(new Error(this.data.scenario), { code: this.data.scenario });
-      }
       const location = await getLocationCapability().getLocation();
       if (!this.locationGuard.isCurrent(token)) return;
       this.applyPresentation(this.data.venues, this.data.selectedVenueId, location);
@@ -85,7 +81,7 @@ Page({
   },
   async onOpenLocationSetting() { await getLocationCapability().openSetting(); },
   onDismissLocationDenied() { this.setData({ locationPermissionDenied: false }); },
-  onMapUpdated() { if (this.data.scenario === "map-render-failure") return; this.clearWatchdog(); this.setData({ mapUpdated: true }); },
+  onMapUpdated() { this.clearWatchdog(); this.setData({ mapUpdated: true }); },
   onRetryMap() { this.clearWatchdog(); this.setData({ mapFailed: false, mapUpdated: false, mapKey: this.data.mapKey + 1 }); this.startWatchdog(); },
   startWatchdog() { this.clearWatchdog(); this.watchdog = setTimeout(() => this.setData({ mapFailed: true }), MAP_WATCHDOG_MS); },
   clearWatchdog() { if (this.watchdog !== undefined) clearTimeout(this.watchdog); this.watchdog = undefined; },

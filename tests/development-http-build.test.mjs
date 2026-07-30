@@ -100,6 +100,9 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.match(bootstrap, /registerVenueDirectoryDataSource/);
   assert.match(bootstrap, /registerLocationCapability/);
   assert.match(bootstrap, /productionLocation/);
+  assert.doesNotMatch(bootstrap, /createDevelopmentVenueDirectoryDataSource|createSimulatedLocationCapability|7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/);
+  assert.equal(existsSync(path.join(developmentOutput, "dev/venue-directory-source.js")), false);
+  assert.equal(existsSync(path.join(developmentOutput, "dev/venue-directory-scenarios.js")), false);
   assert.match(bootstrap, /createDevelopmentPaymentCapability/);
 });
 

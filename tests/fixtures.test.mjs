@@ -88,10 +88,11 @@ test("hand-written booking preview data has been removed", () => {
   assert.equal(existsSync("miniprogram/dev/booking-fixture.ts"), false);
 });
 
-test("pre-contract map visual data stays outside the canonical Artifact fixture inventory", async () => {
+test("map business fixtures are absent after real HTTP integration", async () => {
   const names = await readdir("artifacts/ui/fixtures");
 
   assert.equal(names.some((name) => /venue-(directory|map)/.test(name)), false);
   assert.equal(fixtureMappings.some(([, name]) => /venue-(directory|map)/.test(name)), false);
-  assert.equal(existsSync("miniprogram/dev/venue-directory-source.ts"), true);
+  assert.equal(existsSync("miniprogram/dev/venue-directory-source.ts"), false);
+  assert.equal(existsSync("miniprogram/dev/venue-directory-scenarios.ts"), false);
 });

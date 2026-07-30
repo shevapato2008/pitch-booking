@@ -4,13 +4,27 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 
-import { createDevelopmentVenueDirectoryDataSource, VENUE_DIRECTORY_VISUAL_FIXTURE } from "../../dev/venue-directory-source";
-import { createSimulatedLocationCapability } from "../../dev/venue-directory-scenarios";
+import { decodeVenueDetail, decodeVenueMap } from "../../domain/decoders";
 import { registerLocationCapability } from "../../services/location";
 import { registerVenueDirectoryDataSource } from "../../services/venue-directory";
 
 type RuntimePage = Record<string, any> & { data: Record<string, any>; setData(patch: Record<string, unknown>): void };
 let definition: Record<string, any> | undefined;
+const VENUE_DIRECTORY_VISUAL_FIXTURE = decodeVenueMap(
+  jest.requireActual("../../../contracts/examples/venue-map.json"),
+);
+const DIRECTORY_DETAIL = decodeVenueDetail(
+  jest.requireActual("../../../contracts/examples/venue-directory-detail.json"),
+);
+const directorySource = {
+  async getVenueDirectory() { return [...VENUE_DIRECTORY_VISUAL_FIXTURE]; },
+  async getVenueDetail(venueId: string) {
+    if (venueId === DIRECTORY_DETAIL.id) return DIRECTORY_DETAIL;
+    const venue = VENUE_DIRECTORY_VISUAL_FIXTURE.find(({ id }) => id === venueId);
+    if (!venue) throw new Error("VENUE_NOT_FOUND");
+    return venue;
+  },
+};
 
 function page(): RuntimePage {
   if (!definition) {
@@ -24,8 +38,11 @@ const call = (target: RuntimePage, method: string, ...args: unknown[]) => target
 
 beforeEach(() => {
   jest.useFakeTimers();
-  registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource("ready"));
-  registerLocationCapability(createSimulatedLocationCapability("location-success"));
+  registerVenueDirectoryDataSource(directorySource);
+  registerLocationCapability({
+    async getLocation() { return { coordinateSystem: "GCJ02", latitude: 39.0842, longitude: 117.2009 }; },
+    async openSetting() {},
+  });
   (globalThis as any).wx = { navigateTo: jest.fn(), showToast: jest.fn() };
 });
 
