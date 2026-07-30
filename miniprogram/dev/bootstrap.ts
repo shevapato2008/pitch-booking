@@ -1,4 +1,4 @@
-import { productionClock, productionSessionStorage } from "../runtime/production";
+import { productionClock, productionLocation, productionSessionStorage } from "../runtime/production";
 import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode } from "../services/booking";
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
@@ -33,6 +33,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerVenueDirectoryDataSource(sources.venues);
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
+    registerLocationCapability(productionLocation);
     return;
   }
   registerPaymentDataSource(createDevelopmentPaymentDataSource({

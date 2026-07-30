@@ -1,5 +1,6 @@
 import type {
   Clock,
+  LocationCapability,
   MediaSourceResolver,
   NativeCapabilities,
   StatusTransport,
@@ -143,6 +144,42 @@ export const productionNative: NativeCapabilities = {
   makePhoneCall(phoneNumber) {
     return new Promise((resolve, reject) => {
       wx.makePhoneCall({ phoneNumber, success: () => resolve(), fail: reject });
+    });
+  },
+};
+
+const locationFailure = (errMsg: string): Error & { code: string } => {
+  const normalized = errMsg.toLowerCase();
+  const code = normalized.includes("privacy")
+    ? "LOCATION_PRIVACY_DENIED"
+    : /auth deny|authorize.*deny|permission denied/.test(normalized)
+      ? "LOCATION_PERMISSION_DENIED"
+      : /service.*disabled|system location|location switch/.test(normalized)
+        ? "LOCATION_SERVICES_DISABLED"
+        : normalized.includes("timeout") ? "LOCATION_TIMEOUT" : "LOCATION_FAILED";
+  return Object.assign(new Error(code), { code });
+};
+
+export const productionLocation: LocationCapability = {
+  getLocation() {
+    return new Promise((resolve, reject) => {
+      wx.getLocation({
+        type: "gcj02",
+        success: ({ latitude, longitude }) => {
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+            || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            reject(locationFailure("invalid coordinate"));
+            return;
+          }
+          resolve({ coordinateSystem: "GCJ02", latitude, longitude });
+        },
+        fail: ({ errMsg }) => reject(locationFailure(errMsg)),
+      });
+    });
+  },
+  openSetting() {
+    return new Promise((resolve, reject) => {
+      wx.openSetting({ success: () => resolve(), fail: reject });
     });
   },
 };

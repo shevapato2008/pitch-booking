@@ -3,6 +3,7 @@ import { expect, jest, test } from "@jest/globals";
 import {
   createProductionIdentity,
   productionIdentity,
+  productionLocation,
   productionMedia,
   productionNative,
   productionPayment,
@@ -10,6 +11,27 @@ import {
   productionSessionStorage,
   productionTransport,
 } from "./production";
+
+test("maps native location success and distinct failure boundaries", async () => {
+  const getLocation = jest.fn((options: WechatMiniprogram.GetLocationOption) =>
+    options.success?.({ latitude: 39.08, longitude: 117.2 } as WechatMiniprogram.GetLocationSuccessCallbackResult));
+  const openSetting = jest.fn((options: WechatMiniprogram.OpenSettingOption) => options.success?.({} as WechatMiniprogram.OpenSettingSuccessCallbackResult));
+  setWx({ getLocation, openSetting });
+  await expect(productionLocation.getLocation()).resolves.toEqual({ coordinateSystem: "GCJ02", latitude: 39.08, longitude: 117.2 });
+  await expect(productionLocation.openSetting()).resolves.toBeUndefined();
+  expect(getLocation).toHaveBeenCalledWith(expect.objectContaining({ type: "gcj02" }));
+
+  for (const [errMsg, code] of [
+    ["getLocation:fail privacy permission is not authorized", "LOCATION_PRIVACY_DENIED"],
+    ["getLocation:fail auth deny", "LOCATION_PERMISSION_DENIED"],
+    ["getLocation:fail system location service disabled", "LOCATION_SERVICES_DISABLED"],
+    ["getLocation:fail timeout", "LOCATION_TIMEOUT"],
+    ["getLocation:fail unknown", "LOCATION_FAILED"],
+  ] as const) {
+    setWx({ getLocation: (options: WechatMiniprogram.GetLocationOption) => options.fail?.({ errMsg } as WechatMiniprogram.GeneralCallbackResult) });
+    await expect(productionLocation.getLocation()).rejects.toMatchObject({ code });
+  }
+});
 
 test("rejects a wx.login call that never invokes a callback", async () => {
   jest.useFakeTimers();

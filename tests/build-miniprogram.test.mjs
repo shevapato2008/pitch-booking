@@ -157,6 +157,8 @@ test("production app registers HTTP page, booking, and native payment before sou
   assert.match(app, /registerPageDataSource/);
   assert.match(app, /createHttpVenueDirectoryDataSource/);
   assert.match(app, /registerVenueDirectoryDataSource/);
+  assert.match(app, /registerLocationCapability/);
+  assert.match(app, /productionLocation/);
   assert.match(app, /createHttpBookingDataSource/);
   assert.match(app, /registerBookingDataSource/);
   assert.match(app, /createSessionStore/);

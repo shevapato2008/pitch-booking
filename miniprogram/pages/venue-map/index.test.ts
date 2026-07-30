@@ -153,3 +153,19 @@ test("drops a late directory response after unload", async () => {
 
   expect(target.data.cards).toEqual([]);
 });
+
+test("drops a late location response and clears page-memory coordinates after unload", async () => {
+  let resolve!: (coordinate: { coordinateSystem: "GCJ02"; latitude: number; longitude: number }) => void;
+  registerLocationCapability({
+    getLocation: () => new Promise((done) => { resolve = done; }),
+    async openSetting() {},
+  });
+  const target = page();
+  await call(target, "onLoad", {});
+  const locating = call(target, "onLocateTap");
+  call(target, "onUnload");
+  resolve({ coordinateSystem: "GCJ02", latitude: 39.08, longitude: 117.2 });
+  await locating;
+  expect(target.data.userLocation).toBeNull();
+  expect(target.data.showLocation).toBe(false);
+});

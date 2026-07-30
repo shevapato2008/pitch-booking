@@ -21,6 +21,7 @@ Page({
     viewport: null as VenueMapViewport | null, sheetSnap: "default" as "collapsed" | "default" | "expanded", scenario: "ready",
   },
   requestGuard: createRequestGenerationGuard(),
+  locationGuard: createRequestGenerationGuard(),
   watchdog: undefined as ReturnType<typeof setTimeout> | undefined,
 
   async onLoad(query: Record<string, string | undefined>) {
@@ -37,7 +38,13 @@ Page({
       if (this.requestGuard.isCurrent(token)) this.setData({ loading: false, errorText: "场馆目录暂时无法加载，请重试。" });
     }
   },
-  onUnload() { this.requestGuard.invalidate(); this.clearWatchdog(); },
+  onUnload() {
+    this.requestGuard.invalidate();
+    this.locationGuard.invalidate();
+    this.clearWatchdog();
+    this.data.userLocation = null;
+    this.data.showLocation = false;
+  },
   applyPresentation(venues: VenueMapEntry[], selectedVenueId: string | null, userLocation: Gcj02Coordinate | null) {
     const view = toVenueMapPresentation(venues, selectedVenueId, userLocation);
     this.setData({ venues, ...view, markers: view.markers.map((marker, index) => ({ ...marker, id: index + 1, width: marker.selected ? 36 : 32, height: marker.selected ? 44 : 40 })) });
@@ -53,15 +60,18 @@ Page({
   },
   async onLocateTap() {
     if (this.data.locating) return;
+    const token = this.locationGuard.begin();
     this.setData({ locating: true, locationErrorText: "", locationPermissionDenied: false });
     try {
       if (this.data.scenario !== "ready" && this.data.scenario !== "location-success") {
         throw Object.assign(new Error(this.data.scenario), { code: this.data.scenario });
       }
       const location = await getLocationCapability().getLocation();
+      if (!this.locationGuard.isCurrent(token)) return;
       this.applyPresentation(this.data.venues, this.data.selectedVenueId, location);
       this.setData({ locating: false, showLocation: true, userLocation: location, locationErrorText: "" });
     } catch (error) {
+      if (!this.locationGuard.isCurrent(token)) return;
       const code = (error as { code?: string }).code;
       const permissionDenied = code === "permission-denied" || code === "LOCATION_PERMISSION_DENIED";
       this.setData({

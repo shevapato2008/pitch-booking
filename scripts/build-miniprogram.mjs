@@ -173,7 +173,7 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
   const bootstrappedSource = [
     'import { API_BASE_URL } from "./config/runtime";',
-    'import { productionIdentity, productionPayment, productionPhone, productionRuntime, productionSessionStorage } from "./runtime/production";',
+    'import { productionIdentity, productionLocation, productionPayment, productionPhone, productionRuntime, productionSessionStorage } from "./runtime/production";',
     'import { registerBookingDataSource, registerCreateOrderAttemptStore } from "./services/booking";',
     'import { createCreateOrderAttemptStore } from "./services/create-order-attempt-store";',
     'import { createHttpBookingDataSource } from "./services/http-booking";',
@@ -181,6 +181,7 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { createHttpPageDataSource } from "./services/http-page-data";',
     'import { createHttpVenueDirectoryDataSource } from "./services/http-venue-directory";',
     'import { registerPageDataSource } from "./services/page-data";',
+    'import { registerLocationCapability } from "./services/location";',
     'import { registerVenueDirectoryDataSource } from "./services/venue-directory";',
     'import { registerPaymentCapability, registerPaymentDataSource } from "./services/payment";',
     'import { createSessionStore } from "./services/session-store";',
@@ -189,6 +190,7 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     "registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));",
     "registerPageDataSource(createHttpPageDataSource(runtime.transport, runtime.media));",
     "registerVenueDirectoryDataSource(createHttpVenueDirectoryDataSource(runtime.transport));",
+    "registerLocationCapability(productionLocation);",
     "registerBookingDataSource(createHttpBookingDataSource({",
     "  transport: runtime.transport,",
     "  identity: productionIdentity,",

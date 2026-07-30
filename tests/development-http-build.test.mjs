@@ -98,6 +98,8 @@ test("development HTTP build injects an explicit localhost API URL into the type
   const bootstrap = await readFile(path.join(developmentOutput, "dev/bootstrap.js"), "utf8");
   assert.match(bootstrap, /registerPaymentDataSource/);
   assert.match(bootstrap, /registerVenueDirectoryDataSource/);
+  assert.match(bootstrap, /registerLocationCapability/);
+  assert.match(bootstrap, /productionLocation/);
   assert.match(bootstrap, /createDevelopmentPaymentCapability/);
 });
 
