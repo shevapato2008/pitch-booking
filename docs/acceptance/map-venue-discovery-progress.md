@@ -40,7 +40,10 @@ surveyed entrance. `MANUAL_MAP_MATCH` is deliberately weaker and is called out b
 | 东丽体育中心足球场 | [Tianjin Sports Bureau directory](https://ty.tj.gov.cn/jmty/ggzq/tzgg2/202109/W020210907653765607943.pdf) | [Amap 东丽体育中心](https://ditu.amap.com/place/B0FFF5UMOU), `39.083772, 117.324276` | Same direct sports-center POI | None |
 
 Each field-level evidence object in `deploy/venue-directory.json` also records its verifier,
-timestamp, method, confidence, and any precision note.
+timestamp, method, confidence, and any precision note. It keeps exactly one primary locator
+(`source_url` or `internal_reference`); when a method relies on additional public sources, their
+deduplicated HTTPS URLs are retained in `supporting_source_urls` so the deployable manifest is
+self-auditing without relying on this progress document.
 
 ## Explicit evidence gaps and limitations
 

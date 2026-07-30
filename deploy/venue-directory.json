@@ -56,6 +56,10 @@
         },
         "navigation": {
           "internal_reference": "user-map-screenshot-2026-07-30",
+          "supporting_source_urls": [
+            "https://j.map.baidu.com/t/v9i23t",
+            "https://www.tjxq.gov.cn/zwgk/zfxxgk/zfgbm/zwfwbgs/fdzdgk/zdmsxx/hjbh/202405/P020240528627695842473.pdf"
+          ],
           "verifier": "Codex manual map match",
           "verified_at": "2026-07-30T18:15:00+08:00",
           "method": "South-gate POI name from the user screenshot; coordinate map-matched against the company POI and the government-documented adjacent southern site",
@@ -224,6 +228,9 @@
       "evidence": {
         "name_address": {
           "source_url": "https://ty.tj.gov.cn/zwgk_51582/jgxx/zsdw/202401/t20240110_6505553.html",
+          "supporting_source_urls": [
+            "https://ty.tj.gov.cn/sy2/gabsycs/sjdtgh/202108/t20210810_5529631.html"
+          ],
           "verifier": "Codex web verification",
           "verified_at": "2026-07-30T18:15:00+08:00",
           "method": "Tianjin Sports Bureau venue page; football capability cross-checked in its public-sports reporting",

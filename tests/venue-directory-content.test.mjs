@@ -67,6 +67,15 @@ function assertEvidence(evidence, label) {
   );
   if ('source_url' in evidence) assert.match(evidence.source_url, /^https:\/\//);
   if ('internal_reference' in evidence) assert.match(evidence.internal_reference, /\S/);
+  if ('supporting_source_urls' in evidence) {
+    assert.ok(evidence.supporting_source_urls.length > 0, `${label} supporting sources must be nonempty`);
+    assert.equal(
+      new Set(evidence.supporting_source_urls).size,
+      evidence.supporting_source_urls.length,
+      `${label} supporting sources must be unique`,
+    );
+    for (const sourceUrl of evidence.supporting_source_urls) assert.match(sourceUrl, /^https:\/\//);
+  }
 }
 
 test('venue directory satisfies its closed JSON schema', () => {
@@ -87,6 +96,37 @@ test('venue directory satisfies its closed JSON schema', () => {
   const legacyTransitKind = structuredClone(manifest);
   legacyTransitKind.venues[1].nearest_transit[0].kind = 'METRO';
   assert.equal(validate(legacyTransitKind), false, 'schema must reject the legacy METRO kind');
+
+  const transitTemplate = manifest.venues[1].nearest_transit[0];
+  const tooManySubways = structuredClone(manifest);
+  tooManySubways.venues[2].nearest_transit = Array.from({ length: 2 }, (_, index) => ({
+    ...structuredClone(transitTemplate),
+    id: `subway-overflow-${index}`,
+  }));
+  assert.equal(validate(tooManySubways), false, 'schema must reject two subway stops');
+
+  const tooManyBusStops = structuredClone(manifest);
+  tooManyBusStops.venues[2].nearest_transit = Array.from({ length: 4 }, (_, index) => ({
+    ...structuredClone(transitTemplate),
+    id: `bus-overflow-${index}`,
+    kind: 'BUS',
+  }));
+  assert.equal(validate(tooManyBusStops), false, 'schema must reject four bus stops');
+
+  const emptySupportingSources = structuredClone(manifest);
+  emptySupportingSources.venues[0].evidence.navigation.supporting_source_urls = [];
+  assert.equal(validate(emptySupportingSources), false, 'supporting evidence URLs must be nonempty');
+
+  const duplicateSupportingSources = structuredClone(manifest);
+  duplicateSupportingSources.venues[0].evidence.navigation.supporting_source_urls.push(
+    duplicateSupportingSources.venues[0].evidence.navigation.supporting_source_urls[0],
+  );
+  assert.equal(validate(duplicateSupportingSources), false, 'supporting evidence URLs must be unique');
+
+  const insecureSupportingSource = structuredClone(manifest);
+  insecureSupportingSource.venues[0].evidence.navigation.supporting_source_urls[0] =
+    'http://example.com/evidence';
+  assert.equal(validate(insecureSupportingSource), false, 'supporting evidence URLs must use HTTPS');
 });
 
 test('venue identities and booking modes are frozen', () => {
@@ -147,6 +187,21 @@ test('government name and address evidence uses authoritative-source confidence'
   for (const venue of manifest.venues.filter(({ id }) => GOVERNMENT_SOURCED_VENUE_IDS.has(id))) {
     assert.equal(venue.evidence.name_address.confidence, 'AUTHORITATIVE_SOURCE');
   }
+});
+
+test('multi-source evidence is self-auditing', () => {
+  const online = manifest.venues.find(({ booking_mode }) => booking_mode === 'ONLINE');
+  assert.deepEqual(online.evidence.navigation.supporting_source_urls, [
+    'https://j.map.baidu.com/t/v9i23t',
+    'https://www.tjxq.gov.cn/zwgk/zfxxgk/zfgbm/zwfwbgs/fdzdgk/zdmsxx/hjbh/202405/P020240528627695842473.pdf',
+  ]);
+
+  const peoplesGymnasium = manifest.venues.find(
+    ({ id }) => id === '80532433-8038-5ee5-9963-3e6282aa4abd',
+  );
+  assert.deepEqual(peoplesGymnasium.evidence.name_address.supporting_source_urls, [
+    'https://ty.tj.gov.cn/sy2/gabsycs/sjdtgh/202108/t20210810_5529631.html',
+  ]);
 });
 
 test('directory-only venues contain no commercial or booking promise fields', () => {
