@@ -582,3 +582,48 @@ test("payment confirmation artifact inventory freezes all three visual states", 
   assert.match(index, /flows\/payment-confirmation\.md/);
   assert.match(index, /reviews\/payment-confirmation\/README\.md/);
 });
+
+test("map ready reference matches the authoritative venue directory field for field", () => {
+  const directory = JSON.parse(readFileSync("deploy/venue-directory.json", "utf8"));
+  const html = readFileSync("artifacts/ui/references/venue-map-ready.html", "utf8");
+  const displayed = JSON.parse(html.match(
+    /<script type="application\/json" id="venue-display-data">([^<]+)<\/script>/,
+  )?.[1] ?? "null");
+  const authoritative = directory.venues
+    .sort((left, right) => left.sort_order - right.sort_order)
+    .map((venue) => ({
+      id: venue.id,
+      slug: venue.slug,
+      sort_order: venue.sort_order,
+      name: venue.name,
+      address: venue.address,
+      booking_mode: venue.booking_mode,
+      marker: venue.marker,
+      navigation: venue.navigation,
+      nearest_transit: venue.nearest_transit,
+    }));
+  assert.deepEqual(displayed, authoritative);
+  for (const venue of authoritative) {
+    assert.match(html, new RegExp(`data-venue-id="${venue.id}"`));
+    assert.match(html, new RegExp(`data-booking-mode="${venue.booking_mode}"`));
+    assert.match(html, new RegExp(venue.name));
+    assert.match(html, new RegExp(venue.address));
+  }
+});
+
+test("map references freeze booking, touch, sheet, safe-area, and fallback semantics", () => {
+  const sources = [
+    "venue-map-ready", "venue-map-online", "venue-map-directory", "venue-detail-map-button",
+    "venue-map-focused", "venue-map-location-denied", "venue-map-error",
+  ].map((name) => readFileSync(`artifacts/ui/references/${name}.html`, "utf8"));
+  const combined = sources.join("\n");
+  assert.match(combined, /ONLINE/);
+  assert.match(combined, /DIRECTORY_ONLY/);
+  assert.match(combined, /可预订/);
+  assert.match(combined, /暂未接入在线预订/);
+  assert.match(combined, /data-snap="(?:peek|half|expanded)"/);
+  assert.match(combined, /--target-min:\s*44px/);
+  assert.match(combined, /env\(safe-area-inset-(?:top|bottom)\)/);
+  assert.match(readFileSync("artifacts/ui/references/venue-map-error.html", "utf8"), /data-fallback="pure-list"/);
+  assert.doesNotMatch(readFileSync("artifacts/ui/references/venue-map-directory.html", "utf8"), />\s*(?:立即)?预订\s*</);
+});

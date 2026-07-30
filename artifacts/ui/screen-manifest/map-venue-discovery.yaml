@@ -1,0 +1,44 @@
+id: map-venue-discovery
+route: pages/venue-map/index
+target_viewport:
+  width: 375
+  height: 812
+authority: deploy/venue-directory.json
+layout: full-map-draggable-bottom-sheet
+sheet_snap_states:
+  - peek
+  - half
+  - expanded
+states:
+  - id: ready
+    reference: artifacts/ui/references/venue-map-ready.html
+    meaning: five-venue default map with no user-location request
+  - id: online
+    reference: artifacts/ui/references/venue-map-online.html
+    meaning: ONLINE venue selected with an explicit booking action
+  - id: directory
+    reference: artifacts/ui/references/venue-map-directory.html
+    meaning: DIRECTORY_ONLY venue selected without booking actions
+  - id: detail-map-button
+    reference: artifacts/ui/references/venue-detail-map-button.html
+    meaning: every venue detail exposes the map deep-link action
+  - id: focused
+    reference: artifacts/ui/references/venue-map-focused.html
+    meaning: detail deep-link focuses a venue without requesting user location
+  - id: location-denied
+    reference: artifacts/ui/references/venue-map-location-denied.html
+    meaning: explicit location request was refused and venue browsing remains available
+  - id: error
+    reference: artifacts/ui/references/venue-map-error.html
+    meaning: first-map-update failure falls back to a truthful pure venue list
+review_slots:
+  - reference
+  - implementation
+  - side-by-side
+  - overlay-50
+  - difference
+  - observations
+capture:
+  logical_width: 375
+  logical_height: 812
+  evidence_phase: task-4

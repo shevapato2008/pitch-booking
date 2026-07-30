@@ -4,6 +4,58 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "yaml";
 
+const mapArtifactStates = [
+  "ready",
+  "online",
+  "directory",
+  "detail-map-button",
+  "focused",
+  "location-denied",
+  "error",
+];
+
+test("map venue discovery artifact inventory is capture-ready at 375 by 812", () => {
+  const references = {
+    ready: "artifacts/ui/references/venue-map-ready.html",
+    online: "artifacts/ui/references/venue-map-online.html",
+    directory: "artifacts/ui/references/venue-map-directory.html",
+    "detail-map-button": "artifacts/ui/references/venue-detail-map-button.html",
+    focused: "artifacts/ui/references/venue-map-focused.html",
+    "location-denied": "artifacts/ui/references/venue-map-location-denied.html",
+    error: "artifacts/ui/references/venue-map-error.html",
+  };
+  for (const path of [
+    ...Object.values(references),
+    "artifacts/ui/flows/map-venue-discovery.md",
+    "artifacts/ui/screen-manifest/map-venue-discovery.yaml",
+    "artifacts/ui/reviews/map-venue-discovery/README.md",
+    "artifacts/ui/reviews/map-venue-discovery/review-board.html",
+  ]) assert.equal(existsSync(path), true, `missing ${path}`);
+
+  for (const [state, path] of Object.entries(references)) {
+    const html = readFileSync(path, "utf8");
+    assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1"/);
+    assert.match(html, new RegExp(`<main class="artifact" data-state="${state}"`));
+    assert.match(html, /\.artifact\s*\{[^}]*width:\s*375px;[^}]*height:\s*812px/s);
+  }
+
+  const manifest = parse(readFileSync("artifacts/ui/screen-manifest/map-venue-discovery.yaml", "utf8"));
+  assert.equal(manifest.target_viewport.width, 375);
+  assert.equal(manifest.target_viewport.height, 812);
+  assert.deepEqual(manifest.states.map(({ id }) => id), mapArtifactStates);
+  assert.deepEqual(manifest.states.map(({ reference }) => reference), Object.values(references));
+});
+
+test("map review board reserves all six evidence slots for every state", () => {
+  const board = readFileSync("artifacts/ui/reviews/map-venue-discovery/review-board.html", "utf8");
+  assert.match(board, /<!doctype html>/i);
+  for (const state of mapArtifactStates) {
+    for (const slot of ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"]) {
+      assert.match(board, new RegExp(`data-state="${state}"[^>]*data-slot="${slot}"`));
+    }
+  }
+});
+
 test("booking confirmation artifact set freezes the selected candidate screens", () => {
   const manifestPath = "artifacts/ui/screen-manifest/booking-confirmation.yaml";
   for (const path of [
