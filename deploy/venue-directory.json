@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "coordinate_system": "GCJ02",
+  "legacy_identity_mappings": [
+    {
+      "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+      "legacy_slug": "test-xingyue-football-park",
+      "slug": "bohai-yuanfeng-football-pitch"
+    }
+  ],
+  "venues": [
+    {
+      "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+      "slug": "bohai-yuanfeng-football-pitch",
+      "sort_order": 0,
+      "name": "渤海元丰足球场",
+      "description": "",
+      "address": "天津市西青区利达路",
+      "booking_mode": "ONLINE",
+      "marker": {
+        "coordinate_system": "GCJ02",
+        "latitude": 39.000867,
+        "longitude": 117.212396
+      },
+      "navigation": {
+        "poi_name": "天津市渤海元丰科技有限公司-南门",
+        "coordinate": {
+          "coordinate_system": "GCJ02",
+          "latitude": 39.000157,
+          "longitude": 117.212208
+        }
+      },
+      "pitch_types": [],
+      "cover_image": null,
+      "business_hours_text": null,
+      "parking_text": null,
+      "images": [],
+      "facilities": [],
+      "nearest_transit": [],
+      "content_verified_at": "2026-07-30T18:15:00+08:00",
+      "evidence": {
+        "name_address": {
+          "internal_reference": "user-map-screenshot-2026-07-30",
+          "verifier": "product owner",
+          "verified_at": "2026-07-30T00:00:00+08:00",
+          "method": "User-confirmed display name and map context",
+          "confidence": "MANUAL_MAP_MATCH"
+        },
+        "marker": {
+          "source_url": "https://j.map.baidu.com/t/v9i23t",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Baidu POI coordinate converted from BD09MC through BD09 to GCJ02",
+          "confidence": "SOURCE_CONVERSION",
+          "notes": "Company-center marker; not represented as an independently surveyed football-pitch centroid."
+        },
+        "navigation": {
+          "internal_reference": "user-map-screenshot-2026-07-30",
+          "verifier": "Codex manual map match",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "South-gate POI name from the user screenshot; coordinate map-matched against the company POI and the government-documented adjacent southern site",
+          "confidence": "MANUAL_MAP_MATCH",
+          "notes": "Requires independent entrance-coordinate confirmation before claiming survey-grade precision."
+        }
+      }
+    },
+    {
+      "id": "e03d801d-1254-5c62-9a16-9a8800280162",
+      "slug": "tianjin-olympic-center-five-a-side-football-pitch",
+      "sort_order": 1,
+      "name": "天津奥林匹克中心五人制足球场",
+      "description": "",
+      "address": "天津市南开区宾水西道1号",
+      "booking_mode": "DIRECTORY_ONLY",
+      "marker": {
+        "coordinate_system": "GCJ02",
+        "latitude": 39.074524,
+        "longitude": 117.176641
+      },
+      "navigation": {
+        "poi_name": "天津奥林匹克中心体育馆",
+        "coordinate": {
+          "coordinate_system": "GCJ02",
+          "latitude": 39.077539,
+          "longitude": 117.178054
+        }
+      },
+      "pitch_types": ["FIVE_A_SIDE"],
+      "cover_image": null,
+      "business_hours_text": null,
+      "parking_text": null,
+      "images": [],
+      "facilities": [],
+      "nearest_transit": [
+        {
+          "id": "metro-tiyuzhongxin-line-5",
+          "kind": "METRO",
+          "name": "体育中心站",
+          "coordinate": {
+            "coordinate_system": "GCJ02",
+            "latitude": 39.073861,
+            "longitude": 117.172379
+          },
+          "lines": ["5号线"],
+          "distance_meters": 420,
+          "distance_basis": "MAP_VERIFIED",
+          "evidence": {
+            "source_url": "https://mapcarta.com/N4699184873",
+            "verifier": "Codex web verification",
+            "verified_at": "2026-07-30T18:15:00+08:00",
+            "method": "OpenStreetMap station coordinate converted from WGS84 to GCJ02; distance cross-checked on the venue-area map",
+            "confidence": "SOURCE_CONVERSION"
+          }
+        }
+      ],
+      "content_verified_at": "2026-07-30T18:15:00+08:00",
+      "evidence": {
+        "name_address": {
+          "source_url": "https://ty.tj.gov.cn/sy2/gabsycs/tzgggh/202109/W020210907653765607943.pdf",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Tianjin Sports Bureau social-football-field directory",
+          "confidence": "DIRECT_POI"
+        },
+        "marker": {
+          "source_url": "https://mapcarta.com/W1231719534",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "OpenStreetMap recreation-ground centroid converted from WGS84 to GCJ02",
+          "confidence": "SOURCE_CONVERSION"
+        },
+        "navigation": {
+          "source_url": "https://ditu.amap.com/place/B001605232",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Direct Amap navigation POI and GCJ02 coordinate",
+          "confidence": "DIRECT_POI"
+        }
+      }
+    },
+    {
+      "id": "2a9640a5-f625-5ad8-9cb9-3440acb70967",
+      "slug": "tianjin-locomotive-stadium",
+      "sort_order": 2,
+      "name": "天津火车头体育场",
+      "description": "",
+      "address": "天津市河北区中山北路增1号",
+      "booking_mode": "DIRECTORY_ONLY",
+      "marker": {
+        "coordinate_system": "GCJ02",
+        "latitude": 39.17033,
+        "longitude": 117.210679
+      },
+      "navigation": {
+        "poi_name": "火车头体育场",
+        "coordinate": {
+          "coordinate_system": "GCJ02",
+          "latitude": 39.17033,
+          "longitude": 117.210679
+        }
+      },
+      "pitch_types": ["ELEVEN_A_SIDE"],
+      "cover_image": null,
+      "business_hours_text": null,
+      "parking_text": null,
+      "images": [],
+      "facilities": [],
+      "nearest_transit": [],
+      "content_verified_at": "2026-07-30T18:15:00+08:00",
+      "evidence": {
+        "name_address": {
+          "source_url": "https://ty.tj.gov.cn/sy2/gabsycs/tzgggh/202109/W020210907653765607943.pdf",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Tianjin Sports Bureau social-football-field directory",
+          "confidence": "DIRECT_POI"
+        },
+        "marker": {
+          "source_url": "https://latitude.to/map/cn/china/cities/tianjin/articles/347242/tianjin-locomotive-stadium",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Published stadium coordinate converted from WGS84 to GCJ02",
+          "confidence": "SOURCE_CONVERSION"
+        },
+        "navigation": {
+          "source_url": "https://latitude.to/map/cn/china/cities/tianjin/articles/347242/tianjin-locomotive-stadium",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Venue-level navigation POI; published coordinate converted from WGS84 to GCJ02",
+          "confidence": "SOURCE_CONVERSION",
+          "notes": "A separate entrance POI was not independently exposed by the available non-CAPTCHA sources."
+        }
+      }
+    },
+    {
+      "id": "80532433-8038-5ee5-9963-3e6282aa4abd",
+      "slug": "tianjin-peoples-gymnasium-football-pitch",
+      "sort_order": 3,
+      "name": "天津市人民体育馆足球场",
+      "description": "",
+      "address": "天津市和平区贵州路33号",
+      "booking_mode": "DIRECTORY_ONLY",
+      "marker": {
+        "coordinate_system": "GCJ02",
+        "latitude": 39.108701,
+        "longitude": 117.194873
+      },
+      "navigation": {
+        "poi_name": "天津市人民体育馆",
+        "coordinate": {
+          "coordinate_system": "GCJ02",
+          "latitude": 39.108701,
+          "longitude": 117.194873
+        }
+      },
+      "pitch_types": ["FIVE_A_SIDE"],
+      "cover_image": null,
+      "business_hours_text": null,
+      "parking_text": null,
+      "images": [],
+      "facilities": [],
+      "nearest_transit": [],
+      "content_verified_at": "2026-07-30T18:15:00+08:00",
+      "evidence": {
+        "name_address": {
+          "source_url": "https://ty.tj.gov.cn/zwgk_51582/jgxx/zsdw/202401/t20240110_6505553.html",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Tianjin Sports Bureau venue page; football capability cross-checked in its public-sports reporting",
+          "confidence": "DIRECT_POI"
+        },
+        "marker": {
+          "source_url": "https://ditu.amap.com/place/B0016054AF",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Direct Amap venue POI and GCJ02 coordinate",
+          "confidence": "DIRECT_POI"
+        },
+        "navigation": {
+          "source_url": "https://ditu.amap.com/place/B0016054AF",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Direct Amap venue navigation POI and GCJ02 coordinate",
+          "confidence": "DIRECT_POI",
+          "notes": "A separate entrance POI was not independently exposed."
+        }
+      }
+    },
+    {
+      "id": "c0372328-6fa4-585a-b951-3324925763d6",
+      "slug": "dongli-sports-center-football-pitch",
+      "sort_order": 4,
+      "name": "东丽体育中心足球场",
+      "description": "",
+      "address": "天津市东丽区先锋东路3号",
+      "booking_mode": "DIRECTORY_ONLY",
+      "marker": {
+        "coordinate_system": "GCJ02",
+        "latitude": 39.083772,
+        "longitude": 117.324276
+      },
+      "navigation": {
+        "poi_name": "东丽体育中心",
+        "coordinate": {
+          "coordinate_system": "GCJ02",
+          "latitude": 39.083772,
+          "longitude": 117.324276
+        }
+      },
+      "pitch_types": ["ELEVEN_A_SIDE"],
+      "cover_image": null,
+      "business_hours_text": null,
+      "parking_text": null,
+      "images": [],
+      "facilities": [],
+      "nearest_transit": [],
+      "content_verified_at": "2026-07-30T18:15:00+08:00",
+      "evidence": {
+        "name_address": {
+          "source_url": "https://ty.tj.gov.cn/jmty/ggzq/tzgg2/202109/W020210907653765607943.pdf",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Tianjin Sports Bureau social-football-field directory",
+          "confidence": "DIRECT_POI"
+        },
+        "marker": {
+          "source_url": "https://ditu.amap.com/place/B0FFF5UMOU",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Direct Amap sports-center POI and GCJ02 coordinate",
+          "confidence": "DIRECT_POI"
+        },
+        "navigation": {
+          "source_url": "https://ditu.amap.com/place/B0FFF5UMOU",
+          "verifier": "Codex web verification",
+          "verified_at": "2026-07-30T18:15:00+08:00",
+          "method": "Direct Amap sports-center navigation POI and GCJ02 coordinate",
+          "confidence": "DIRECT_POI",
+          "notes": "A separate entrance POI was not independently exposed."
+        }
+      }
+    }
+  ]
+}
