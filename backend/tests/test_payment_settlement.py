@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine
@@ -72,7 +73,12 @@ def seed_payment(
 
 
 def success_facts(
-    engine: Engine, payment_id: uuid.UUID, *, transaction_no: str = "tx-1", **changes: object
+    engine: Engine,
+    payment_id: uuid.UUID,
+    *,
+    transaction_no: str = "tx-1",
+    changes: dict[str, object] | None = None,
+    **overrides: Any,
 ) -> AuthoritativePaymentFacts:
     with Session(engine) as session:
         payment = session.get_one(Payment, payment_id)
@@ -85,7 +91,8 @@ def success_facts(
             "currency": "CNY",
             "paid_at": datetime.now(UTC),
         }
-    values.update(changes)
+    values.update(changes or {})
+    values.update(overrides)
     return AuthoritativePaymentFacts(**values)  # type: ignore[arg-type]
 
 
@@ -148,7 +155,8 @@ def test_success_fact_mismatch_is_searchable_but_never_confirms(
         payment_id=payment_id,
         provider="mock",
         result=QueryPaymentResult(
-            QueryPaymentStatus.SUCCESS, facts=success_facts(pg_engine, payment_id, **changes)
+            QueryPaymentStatus.SUCCESS,
+            facts=success_facts(pg_engine, payment_id, changes=changes),
         ),
     )
     with Session(pg_engine) as session:

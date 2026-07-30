@@ -1,3 +1,5 @@
+from fastapi import FastAPI
+
 from backend.app.config import Settings
 from backend.app.main import create_app
 from backend.app.modules.orders.dto import OrderDetailResponse
@@ -8,7 +10,7 @@ from backend.app.modules.payments.dto import (
 )
 
 
-def _route_paths(app) -> set[str | None]:
+def _route_paths(app: FastAPI) -> set[str | None]:
     paths: set[str | None] = set()
     for route in app.routes:
         paths.add(getattr(route, "path", None))

@@ -17,7 +17,7 @@ from backend.app.models import (
     User,
 )
 from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
-from backend.app.modules.payments.provider import CreatePrepayRequest
+from backend.app.modules.payments.provider import CreatePrepayRequest, PaymentProvider
 from backend.app.modules.payments.service import PaymentCreationService
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
 
@@ -63,7 +63,7 @@ def seed_order(
         return user.id, order.id
 
 
-def service(engine: Engine, provider: MockPaymentProvider) -> PaymentCreationService:
+def service(engine: Engine, provider: PaymentProvider) -> PaymentCreationService:
     return PaymentCreationService(
         session_factory=lambda: Session(engine),
         provider=provider,

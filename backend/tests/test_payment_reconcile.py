@@ -13,7 +13,11 @@ from backend.app.errors import AppError
 from backend.app.main import create_app
 from backend.app.models import Order, Payment, PaymentState
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
-from backend.app.modules.payments.provider import CreatePrepayRequest
+from backend.app.modules.payments.provider import (
+    CreatePrepayRequest,
+    QueryPaymentRequest,
+    QueryPaymentResult,
+)
 from backend.app.modules.payments.reconciliation import PaymentReconciliationService
 from backend.tests.test_order_detail import KEY_BASE64, KEY_VERSION, RAW_TOKEN, _seed_detail
 from backend.tests.test_payment_settlement import convergence, seed_payment, session_factory
@@ -51,7 +55,7 @@ def test_immediate_reconcile_returns_202_then_200_and_is_repeatable(pg_engine: E
     assert [call.method for call in provider.calls].count("query_payment") == 3
 
 
-def _owner_id(engine: Engine, order_id):
+def _owner_id(engine: Engine, order_id: uuid.UUID) -> uuid.UUID:
     with Session(engine) as session:
         return session.get_one(Order, order_id).user_id
 
@@ -159,7 +163,7 @@ def test_reconcile_refuses_cross_provider_before_external_query(pg_engine: Engin
 
 
 class TimeoutPaymentProvider(MockPaymentProvider):
-    def query_payment(self, request):
+    def query_payment(self, request: QueryPaymentRequest) -> QueryPaymentResult:
         raise TimeoutError("secret-provider-host:443 timed out")
 
 

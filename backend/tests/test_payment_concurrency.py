@@ -18,6 +18,7 @@ from backend.app.models import (
     PaymentState,
     Slot,
 )
+from backend.app.modules.payments.dto import CreatePaymentResult
 from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
 from backend.app.modules.payments.provider import (
     AuthoritativePaymentFacts,
@@ -79,6 +80,8 @@ class LockCheckingProvider(MockPaymentProvider):
 
 class RejectionRaceProvider:
     name = "mock"
+    app_id = "mock-app-id"
+    merchant_id = "mock-merchant-id"
 
     def __init__(self, recovered_status: QueryPaymentStatus) -> None:
         self.recovered_status = recovered_status
@@ -180,7 +183,7 @@ def test_rejected_duplicate_is_requeried_before_local_close(
     user_id, order_id = seed_order(pg_engine)
     provider = RejectionRaceProvider(recovered_status)
     payments = service(pg_engine, provider)
-    results: dict[str, object] = {}
+    results: dict[str, CreatePaymentResult] = {}
     errors: dict[str, BaseException] = {}
 
     def create(label: str, key: str) -> None:
@@ -203,7 +206,7 @@ def test_rejected_duplicate_is_requeried_before_local_close(
     try:
         assert not second.is_alive(), "rejected caller did not finish its authority recheck"
         assert errors == {}
-        assert results["second"].status_code == second_status  # type: ignore[union-attr]
+        assert results["second"].status_code == second_status
         with Session(pg_engine) as session:
             payment = session.scalar(select(Payment))
             assert payment is not None
@@ -215,7 +218,7 @@ def test_rejected_duplicate_is_requeried_before_local_close(
 
     assert not first.is_alive()
     assert errors == {}
-    assert results["first"].status_code == first_status  # type: ignore[union-attr]
+    assert results["first"].status_code == first_status
     with Session(pg_engine) as session:
         assert session.scalar(select(func.count()).select_from(Payment)) == 1
         payment = session.scalar(select(Payment))

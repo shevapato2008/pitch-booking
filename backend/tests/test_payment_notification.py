@@ -1,20 +1,26 @@
+import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import pytest
 
-from backend.app.modules.payments.provider import AuthoritativePaymentFacts
+from backend.app.modules.payments.provider import AuthoritativePaymentFacts, QueryPaymentResult
 from backend.app.modules.payments.reconciliation import PaymentNotificationService
 
 
 class RejectingAdapter:
-    def verify_and_decrypt(self, *, raw_body: bytes, headers: dict[str, str], now: datetime):
+    def verify_and_decrypt(
+        self, *, raw_body: bytes, headers: Mapping[str, str], now: datetime
+    ) -> AuthoritativePaymentFacts:
         raise ValueError("invalid notification")
 
 
 class RecordingConvergence:
     called = False
 
-    def converge(self, **kwargs: object):
+    def converge(
+        self, *, payment_id: uuid.UUID, provider: str, result: QueryPaymentResult
+    ) -> object:
         self.called = True
         raise AssertionError("unverified facts reached convergence")
 
@@ -42,7 +48,9 @@ class VerifiedAdapter:
     def __init__(self, facts: AuthoritativePaymentFacts) -> None:
         self.facts = facts
 
-    def verify_and_decrypt(self, **_kwargs: object) -> AuthoritativePaymentFacts:
+    def verify_and_decrypt(
+        self, *, raw_body: bytes, headers: Mapping[str, str], now: datetime
+    ) -> AuthoritativePaymentFacts:
         return self.facts
 
 
@@ -50,14 +58,14 @@ class CapturingConvergence:
     def __init__(self) -> None:
         self.kwargs: dict[str, object] | None = None
 
-    def converge(self, **kwargs: object):
-        self.kwargs = kwargs
+    def converge(
+        self, *, payment_id: uuid.UUID, provider: str, result: QueryPaymentResult
+    ) -> object:
+        self.kwargs = {"payment_id": payment_id, "provider": provider, "result": result}
         return "converged"
 
 
 def test_only_verified_sanitized_facts_enter_convergence() -> None:
-    import uuid
-
     payment_id = uuid.uuid4()
     facts = AuthoritativePaymentFacts(
         app_id="app",
@@ -89,4 +97,6 @@ def test_only_verified_sanitized_facts_enter_convergence() -> None:
     assert convergence.kwargs is not None
     assert convergence.kwargs["payment_id"] == payment_id
     assert convergence.kwargs["provider"] == "wechat"
-    assert convergence.kwargs["result"].facts is facts
+    result = convergence.kwargs["result"]
+    assert isinstance(result, QueryPaymentResult)
+    assert result.facts is facts
