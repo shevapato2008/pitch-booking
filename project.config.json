@@ -2,12 +2,16 @@
   "appid": "",
   "compileType": "miniprogram",
   "miniprogramRoot": "dist/miniprogram-development/",
+  "libVersion": "3.17.0",
   "setting": {
     "es6": true,
     "postcss": true,
     "minified": true,
     "enhance": true,
     "compileWorklet": false,
-    "useCompilerPlugins": ["typescript"]
+    "useCompilerPlugins": [
+      "typescript"
+    ],
+    "minifyWXML": true
   }
 }

@@ -113,7 +113,9 @@ test("venue identity is overlaid inside the hero", async () => {
 
 test("venue card shows exactly the three confirmed preview labels", async () => {
   const markup = await read("miniprogram/components/venue-card/index.wxml");
-  const chipGroup = markup.match(/<view class="chip-group"[^>]*>([\s\S]*?)<\/view>\s*<view class="price-panel/)?.[1] ?? "";
+  const chipGroup = markup.match(
+    /<view class="chip-group"[^>]*>([\s\S]*?)<\/view>\s*<view wx:if="\{\{venue\.bookingMode === 'DIRECTORY_ONLY'\}\}" class="directory-notice/,
+  )?.[1] ?? "";
   const chipNodes = chipGroup.match(/<view[^>]*class="[^"]*\bchip\b[^"]*"[^>]*>[\s\S]*?<\/view>/g) ?? [];
   const chipBindings = chipGroup.match(/\{\{venue\.(?:pitchTypes|facilities)\[\d\]\.label\}\}/g) ?? [];
 

@@ -25,6 +25,10 @@
   background: rgba(255, 255, 255, 0.96);
   border-top: 2rpx solid #DBE5EC;
 }
+.action-bar--split { display: flex; gap: 16rpx; }
+.action-bar--split button { flex: 1; }
+.map-action { margin: 0; color: #0369A1; background: #FFFFFF; border: 2rpx solid #0284C7; font-weight: 700; }
+.map-action::after { border: 0; }
 
 .primary-action {
   display: flex;

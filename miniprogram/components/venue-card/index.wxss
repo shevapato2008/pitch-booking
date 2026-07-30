@@ -70,6 +70,8 @@
 .chip--pitch { color: #0284C7; background: #F0F9FF; border-color: #BAE6FD; font-weight: 600; }
 
 .price-panel { margin-top: 32rpx; padding: 24rpx; background: #EFFBF6; border: 2rpx solid #BFEBD8; }
+.directory-notice { margin-top: 32rpx; padding: 24rpx; background: #F8FAFC; border: 2rpx solid #DBE5EC; }
+.directory-notice .price-kicker, .directory-notice .price-text { color: #475569; }
 .price-kicker { color: #059669; font-weight: 700; }
 .price-text { margin-top: 8rpx; color: #065F46; line-height: 1.45; font-weight: 700; }
 

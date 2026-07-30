@@ -2,6 +2,8 @@ import { productionClock, productionSessionStorage } from "../runtime/production
 import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode } from "../services/booking";
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
+import { registerLocationCapability } from "../services/location";
+import { registerVenueDirectoryDataSource } from "../services/venue-directory";
 import {
   registerPaymentCapability,
   registerPaymentClock,
@@ -13,6 +15,8 @@ import { developmentPageDataSource } from "./page-data";
 import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./payment-capability";
 import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
 import { createDevelopmentPaymentDataSource } from "./payment-source";
+import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
+import { createSimulatedLocationCapability } from "./venue-directory-scenarios";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -39,4 +43,6 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerPageDataSource(developmentPageDataSource);
   registerBookingDataSource(createDevelopmentBookingDataSource());
   registerNeutralPhoneTapCode(() => "dev-phone-code");
+  registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource("ready"));
+  registerLocationCapability(createSimulatedLocationCapability("location-success"));
 }

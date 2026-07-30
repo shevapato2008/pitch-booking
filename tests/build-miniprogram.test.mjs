@@ -171,12 +171,13 @@ test("production app registers HTTP page, booking, and native payment before sou
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
-test("real production build emits all four production routes as native artifacts", async (t) => {
+test("real production build emits all five production routes as native artifacts", async (t) => {
   await execFileAsync(process.execPath, [buildScript, "production"]);
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   const routes = [
+    "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",

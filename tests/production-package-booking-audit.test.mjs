@@ -9,6 +9,7 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const audit = path.resolve("scripts/audit-production-package.mjs");
 const productionRoutes = [
+  "pages/venue-map/index",
   "pages/venue/index",
   "pages/availability/index",
   "pages/booking-confirmation/index",

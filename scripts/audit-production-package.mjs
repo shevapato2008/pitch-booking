@@ -94,6 +94,7 @@ await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
 const productionRoutes = [
+  "pages/venue-map/index",
   "pages/venue/index",
   "pages/availability/index",
   "pages/booking-confirmation/index",

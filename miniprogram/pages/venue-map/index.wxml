@@ -1,0 +1,25 @@
+<view class="map-page">
+  <view wx:if="{{loading}}" class="state">正在加载场馆…</view>
+  <view wx:elif="{{errorText}}" class="state">{{errorText}}</view>
+  <block wx:else>
+    <map wx:if="{{!mapFailed}}" id="venue-map-{{mapKey}}" class="map" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" bindupdated="onMapUpdated" />
+    <view wx:else class="fallback-list">
+      <view class="fallback-head"><view><text class="fallback-title">△ 地图暂时无法加载</text><text class="fallback-copy">列表仍可使用。重试会重新挂载地图，不影响场馆列表。</text></view><button bindtap="onRetryMap">重试地图</button></view>
+      <view wx:for="{{cards}}" wx:key="venueId" class="fallback-card">
+        <text class="fallback-tag">{{item.statusText}}</text><text class="fallback-name">{{item.name}}</text><text class="fallback-address">{{item.address}}</text><text class="fallback-transit">{{item.distanceText || item.transitText}}</text>
+        <button data-venue-id="{{item.venueId}}" bindtap="onVenueAction">{{item.action === 'VIEW_AVAILABILITY' ? '查看可订时段' : '查看场馆详情'}}</button>
+      </view>
+    </view>
+    <view wx:if="{{!mapFailed}}" class="top"><button class="search">搜索球场名称</button><button class="locate" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我">◎</button></view>
+    <view wx:if="{{!mapFailed}}" class="legend"><text class="dot dot--online"></text>在线可预订 <text class="dot dot--directory"></text>场馆目录</view>
+    <view wx:if="{{locationErrorText && !mapFailed}}" class="location-error">{{locationErrorText}}</view>
+    <venue-map-sheet wx:if="{{!mapFailed && !locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
+    <view wx:if="{{locationPermissionDenied && !mapFailed}}" class="permission-sheet">
+      <view class="permission-handle"></view><view class="permission-icon">⌖</view>
+      <view class="permission-title">无法使用你的位置</view>
+      <view class="permission-copy">你仍可浏览全部 5 个天津球场。仅在你主动点按定位按钮时，我们才会申请位置权限。</view>
+      <button class="permission-primary" bindtap="onOpenLocationSetting">打开系统设置</button>
+      <button class="permission-secondary" bindtap="onDismissLocationDenied">继续浏览球场</button>
+    </view>
+  </block>
+</view>

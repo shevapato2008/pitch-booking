@@ -18,9 +18,10 @@ test("development preview manifest has exactly the two booking routes", async ()
   ]);
 });
 
-test("source production manifest contains the exact four production routes", async () => {
+test("source production manifest puts the map first across five production routes", async () => {
   const manifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(manifest.pages, [
+    "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",
@@ -28,7 +29,7 @@ test("source production manifest contains the exact four production routes", asy
   ]);
 });
 
-test("both builds expose four routes while only development activates Fixture bootstrap", async (t) => {
+test("both builds expose five routes while only development activates Fixture bootstrap", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -36,7 +37,7 @@ test("both builds expose four routes while only development activates Fixture bo
   await execFileAsync(process.execPath, [buildScript, "production"], { cwd: root });
   const development = JSON.parse(await readFile(path.join(root, "dist/miniprogram-development/app.json"), "utf8"));
   const production = JSON.parse(await readFile(path.join(root, "dist/miniprogram-production/app.json"), "utf8"));
-  const routes = ["pages/venue/index", "pages/availability/index", "pages/booking-confirmation/index", "pages/order-detail/index"];
+  const routes = ["pages/venue-map/index", "pages/venue/index", "pages/availability/index", "pages/booking-confirmation/index", "pages/order-detail/index"];
   assert.deepEqual(development.pages, routes);
   assert.deepEqual(production.pages, routes);
   const developmentApp = await readFile(path.join(root, "dist/miniprogram-development/app.js"), "utf8");

@@ -406,6 +406,9 @@ test("golden metadata schema requires reproducibility fields", () => {
   const bookingRoutes = readYaml(
     "artifacts/ui/screen-manifest/booking-confirmation.yaml",
   ).screens.map((screen) => screen.route);
+  const mapRoutes = [readYaml(
+    "artifacts/ui/screen-manifest/map-venue-discovery.yaml",
+  ).route];
   const scenarioIds = readdirSync(scenarioRoot)
     .filter((name) => name.endsWith(".yaml"))
     .map((name) => name.slice(0, -5))
@@ -413,10 +416,10 @@ test("golden metadata schema requires reproducibility fields", () => {
   assert.deepEqual(schema.properties.route.enum, goldenRoutes);
   assert.deepEqual(
     bookingRoutes,
-    appRoutes.filter((route) => !goldenRoutes.includes(route)),
-    "production routes outside the browsing golden matrix must be covered by the booking manifest",
+    appRoutes.filter((route) => !goldenRoutes.includes(route) && !mapRoutes.includes(route)),
+    "production routes outside browsing and map manifests must be covered by the booking manifest",
   );
-  assert.deepEqual([...new Set([...goldenRoutes, ...bookingRoutes])], appRoutes);
+  assert.deepEqual([...new Set([...mapRoutes, ...goldenRoutes, ...bookingRoutes])], appRoutes);
   assert.deepEqual([...schema.properties.scenario.enum].sort(), scenarioIds);
 
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);

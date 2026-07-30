@@ -1,4 +1,4 @@
-import type { VenueViewModel } from "../../presentation/venue";
+import type { AnyVenueViewModel } from "../../presentation/venue";
 
 Component({
   properties: {
@@ -10,6 +10,5 @@ Component({
 });
 
 export type VenueCardProperties = {
-  venue: VenueViewModel | null;
+  venue: AnyVenueViewModel | null;
 };
-

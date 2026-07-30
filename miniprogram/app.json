@@ -1,5 +1,6 @@
 {
   "pages": [
+    "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",
@@ -11,5 +12,7 @@
     "navigationBarTextStyle": "black",
     "backgroundColor": "#F8FAFC"
   },
-  "sitemapLocation": "sitemap.json"
+  "sitemapLocation": "sitemap.json",
+  "permission": {"scope.userLocation":{"desc":"在地图中显示你的位置并估算你与球场的距离"}},
+  "requiredPrivateInfos": ["getLocation"]
 }

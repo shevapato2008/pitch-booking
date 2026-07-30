@@ -1,21 +1,27 @@
 # 地图场馆发现视觉验收
 
-本目录冻结 375 × 812 的七态视觉验收结构。当前 Task 2 只交付浏览器可打开的参考 HTML 和 review-board shell；微信小程序真实实现、同尺寸截图、并排图、50% 叠加图、差异图与逐态 observations 在 Task 4 生成，因此本阶段不放置或伪造 35 张 PNG 证据。
+Task 4 已在真实微信开发者工具中完成七态视觉证据采集。目标设备为 iPhone X，logical viewport 为 375 × 812；工具版本 2.01.2510290，基础库 3.17.0。每态目录包含 `reference-375x812.png`、`implementation-375x812.png`、`side-by-side.png`、`overlay-50.png` 和 `difference.png`，共 35 张 PNG。
 
-## 七个状态
+## 证据目录与路径
 
-| State | Reference | 验收重点 |
+| 状态 | 目录 | 真实运行路径 / 操作 |
 | --- | --- | --- |
-| ready | `venue-map-ready.html` | 五标记、默认 peek sheet、定位为 opt-in |
-| online | `venue-map-online.html` | 蓝色异形标记与“可预订”文字、唯一 booking action |
-| directory | `venue-map-directory.html` | 中性标记与目录标签、无 booking action、仅核验交通 |
-| detail-map-button | `venue-detail-map-button.html` | 每个详情的“在地图中查看”入口 |
-| focused | `venue-map-focused.html` | 深链聚焦、不自动请求位置、可返回详情 |
-| location-denied | `venue-map-location-denied.html` | 拒绝说明、设置恢复与继续浏览 |
-| error | `venue-map-error.html` | pure-list fallback、重试 remount、场馆语义不降级 |
+| 默认 | `default` | `/pages/venue-map/index` |
+| 在线选中 | `online-selected` | 默认选中 `7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f` |
+| 目录选中 | `directory-selected` | 点按奥体中心标记/卡片 |
+| 详情地图按钮 | `venue-detail-map-button` | 目录卡片 → `pages/venue/index` |
+| 详情返回地图 | `focused-deep-link` | 详情页点按“在地图中查看” |
+| 位置拒绝 | `location-denied` | 主动点按定位，模拟权限拒绝 |
+| 地图降级 | `map-fallback` | 模拟地图不回报 ready，等待 10 秒看门狗 |
 
-## Task 4 证据约定
+## 人工核对结论
 
-每态在 `review-board.html` 中预留六个命名槽：`reference`、`implementation`、`side-by-side`、`overlay-50`、`difference`、`observations`。所有图像须使用相同 375 × 812 logical viewport；observations 逐项记录构图、几何间距、组件层级、字体色彩材质、图标素材、文案和状态语义差异。自动化布局通过不等于视觉通过，用户明确确认前不进入本切片后端阶段。
+- 构图与层级：搜索、图例、腾讯地图、可切换 sheet、卡片和降级列表均在目标 viewport 内成立；原生导航栏与真实地图信息密度是相对静态参考的主要像素差来源。
+- 几何与触控：主操作、定位、sheet handle、设置/继续按钮均满足至少 44px 目标；目录选中和详情返回后卡片会自动滚入视口。
+- 字体、色彩、材质、图标：沿用系统字体、品牌蓝、白色卡片和中性目录灰；地图 marker 使用确定性 PNG，定位拒绝图标使用轻量文本符号，未引入第三方素材。
+- 文案与状态：`ONLINE` 只有“查看可订时段”；`DIRECTORY_ONLY` 只有“查看场馆详情”，未知信息标记待核验。定位仅在用户主动点按时申请，权限拒绝才提供系统设置恢复。
+- 降级与恢复：地图 10 秒未 ready 后切为 pure-list，五个核验地点仍可浏览和进入详情/时段；重试 remount 地图且只有一个新看门狗。
 
-参考页中的底图是原创示意构图，不包含第三方地图瓦片。页面显示字段由测试与 `deploy/venue-directory.json` 逐字段比对。
+视觉实现与参考存在可解释差异：参考底图是原创示意构图，真实实现使用腾讯原生地图；详情参考展示东丽体育中心，而本次真实链路选择列表中首个目录场馆奥体中心。差异不改变字段权威、预订边界或交互语义。
+
+用户明确确认本视觉门之前，不进入契约和后端阶段。

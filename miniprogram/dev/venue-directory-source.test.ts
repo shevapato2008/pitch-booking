@@ -12,10 +12,23 @@ import {
   createSimulatedLocationCapability,
 } from "./venue-directory-scenarios";
 
+interface RawCoordinate { coordinate_system: "GCJ02"; latitude: number; longitude: number }
+interface RawTransit {
+  id: string; kind: "SUBWAY" | "BUS"; name: string; coordinate: RawCoordinate;
+  lines: string[]; distance_meters: number; distance_basis: "MAP_VERIFIED";
+}
+interface RawVenue {
+  id: string; slug: string; sort_order: number; name: string; address: string;
+  booking_mode: "ONLINE" | "DIRECTORY_ONLY"; marker: RawCoordinate;
+  navigation: { poi_name: string; coordinate: RawCoordinate };
+  pitch_types: string[]; cover_image: string | null; nearest_transit: RawTransit[];
+  content_verified_at: string;
+}
+
 describe("development venue directory source", () => {
   test("matches authoritative manifest identity, mode, coordinates, and transit field for field", () => {
-    const manifest = JSON.parse(readFileSync("deploy/venue-directory.json", "utf8"));
-    const expected = manifest.venues.map((venue: any) => ({
+    const manifest = JSON.parse(readFileSync("deploy/venue-directory.json", "utf8")) as { venues: RawVenue[] };
+    const expected = manifest.venues.map((venue) => ({
       id: venue.id,
       slug: venue.slug,
       sortOrder: venue.sort_order,
@@ -37,7 +50,7 @@ describe("development venue directory source", () => {
       },
       pitchTypes: venue.pitch_types,
       coverImage: venue.cover_image,
-      nearestTransit: venue.nearest_transit.map((stop: any) => ({
+      nearestTransit: venue.nearest_transit.map((stop) => ({
         id: stop.id,
         kind: stop.kind,
         name: stop.name,

@@ -13,6 +13,24 @@ const mapArtifactStates = [
   "location-denied",
   "error",
 ];
+const mapEvidenceDirectories = {
+  ready: "default",
+  online: "online-selected",
+  directory: "directory-selected",
+  "detail-map-button": "venue-detail-map-button",
+  focused: "focused-deep-link",
+  "location-denied": "location-denied",
+  error: "map-fallback",
+};
+const mapImageSlots = [
+  "reference-375x812.png", "implementation-375x812.png", "side-by-side.png", "overlay-50.png", "difference.png",
+];
+
+const pngDimensions = (path) => {
+  const bytes = readFileSync(path);
+  assert.equal(bytes.subarray(1, 4).toString("ascii"), "PNG", `${path} must be a PNG`);
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+};
 
 test("map venue discovery artifact inventory is capture-ready at 375 by 812", () => {
   const references = {
@@ -50,8 +68,16 @@ test("map review board reserves all six evidence slots for every state", () => {
   const board = readFileSync("artifacts/ui/reviews/map-venue-discovery/review-board.html", "utf8");
   assert.match(board, /<!doctype html>/i);
   for (const state of mapArtifactStates) {
+    const directory = mapEvidenceDirectories[state];
     for (const slot of ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"]) {
       assert.match(board, new RegExp(`data-state="${state}"[^>]*data-slot="${slot}"`));
+    }
+    for (const image of mapImageSlots) {
+      const path = `artifacts/ui/reviews/map-venue-discovery/${directory}/${image}`;
+      assert.equal(existsSync(path), true, `missing ${path}`);
+      const expected = image === "side-by-side.png" ? { width: 750, height: 812 } : { width: 375, height: 812 };
+      assert.deepEqual(pngDimensions(path), expected, `${path} must use the frozen logical viewport`);
+      assert.match(board, new RegExp(`${directory}/${image.replaceAll(".", "\\.")}`));
     }
   }
 });
@@ -356,6 +382,7 @@ test("payment review reserves the complete three-state evidence contract", () =>
 test("production app registers no development pages", () => {
   const app = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
   assert.deepEqual(app.pages, [
+    "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",
@@ -558,4 +585,17 @@ test("booking confirmation ready state preserves the frozen visual contract", ()
   assert.match(submitStyles, /position:\s*fixed/);
   assert.match(submitStyles, /bottom:\s*0/);
   assert.match(submitStyles, /env\(safe-area-inset-bottom\)/);
+});
+
+test("map venue experience pins its native runtime and component boundaries", () => {
+  const project = JSON.parse(readFileSync("project.config.json", "utf8"));
+  assert.equal(project.libVersion, "3.17.0");
+  for (const component of ["venue-map-sheet", "venue-map-card"]) {
+    const root = `miniprogram/components/${component}/index`;
+    for (const extension of ["ts", "json", "wxml", "wxss"])
+      assert.equal(existsSync(`${root}.${extension}`), true, `${component}.${extension}`);
+    assert.equal(JSON.parse(readFileSync(`${root}.json`, "utf8")).component, true);
+  }
+  const page = JSON.parse(readFileSync("miniprogram/pages/venue-map/index.json", "utf8"));
+  assert.deepEqual(page.usingComponents, { "venue-map-sheet": "/components/venue-map-sheet/index" });
 });

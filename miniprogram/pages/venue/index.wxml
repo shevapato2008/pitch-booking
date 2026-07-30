@@ -5,8 +5,9 @@
     <view class="content u-pad-page">
       <venue-card venue="{{venue}}" />
     </view>
-    <view class="action-bar">
-      <button class="primary-action u-control u-type-cta u-radius-md" bindtap="onViewAvailability" hover-class="primary-action--pressed">
+    <view class="action-bar action-bar--split">
+      <button class="map-action u-control u-type-cta u-radius-md" bindtap="onViewOnMap">在地图中查看</button>
+      <button wx:if="{{canBook}}" class="primary-action u-control u-type-cta u-radius-md" bindtap="onViewAvailability" hover-class="primary-action--pressed">
         查看可订时段
       </button>
     </view>

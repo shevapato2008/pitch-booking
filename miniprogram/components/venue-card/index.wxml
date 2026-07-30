@@ -30,7 +30,11 @@
       <view wx:if="{{venue.facilities[0]}}" class="chip u-type-caption u-radius-md">{{venue.facilities[0].label}}</view>
     </view>
 
-    <view class="price-panel u-radius-md">
+    <view wx:if="{{venue.bookingMode === 'DIRECTORY_ONLY'}}" class="directory-notice u-radius-md">
+      <view class="price-kicker u-type-caption">场馆目录</view>
+      <view class="price-text u-type-subtitle">{{venue.bookingStatusText}}</view>
+    </view>
+    <view wx:else class="price-panel u-radius-md">
       <view class="price-kicker u-type-caption">透明场地价</view>
       <view class="price-text u-type-subtitle">{{venue.priceAdvantageText}}</view>
     </view>
@@ -57,7 +61,7 @@
           <view class="info-value u-text u-type-body">{{venue.businessHoursText}}</view>
         </view>
       </view>
-      <view class="info-row info-row--last">
+      <view wx:if="{{venue.bookingMode === 'ONLINE'}}" class="info-row info-row--last">
         <view class="info-badge u-type-caption u-radius-sm" aria-hidden="true">话</view>
         <view class="info-copy">
           <view class="info-label u-muted u-type-caption">联系电话</view>
@@ -66,7 +70,11 @@
       </view>
     </view>
 
-    <view class="policy-note u-radius-sm">
+    <view wx:if="{{venue.bookingMode === 'DIRECTORY_ONLY'}}" class="policy-note u-radius-sm">
+      <view class="policy-title u-text u-type-caption">附近公共交通</view>
+      <view class="policy-text u-muted u-type-caption">{{venue.transitText}}</view>
+    </view>
+    <view wx:else class="policy-note u-radius-sm">
       <view class="policy-title u-text u-type-caption">取消规则</view>
       <view class="policy-text u-muted u-type-caption">{{venue.refundPolicySummary}}</view>
     </view>
