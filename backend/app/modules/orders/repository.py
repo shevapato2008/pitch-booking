@@ -6,13 +6,16 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from backend.app.models import (
+    BookingMode,
     IdempotencyRecord,
     IdempotencyState,
     Order,
     OrderStatus,
     Payment,
     PaymentState,
+    Pitch,
     Slot,
+    Venue,
 )
 
 
@@ -57,6 +60,15 @@ class OrderRepository:
         if record is None:
             raise RuntimeError("idempotency conflict did not resolve to a committed record")
         return record, False
+
+    def get_slot_booking_mode(self, slot_id: uuid.UUID) -> BookingMode | None:
+        return self.session.scalar(
+            select(Venue.booking_mode)
+            .select_from(Slot)
+            .join(Pitch, Pitch.id == Slot.pitch_id)
+            .join(Venue, Venue.id == Pitch.venue_id)
+            .where(Slot.id == slot_id)
+        )
 
     def get_slot_for_update(self, slot_id: uuid.UUID) -> Slot | None:
         return self.session.scalar(

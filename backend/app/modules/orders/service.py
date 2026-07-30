@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from backend.app.errors import AppError
 from backend.app.models import (
+    BookingMode,
     IdempotencyRecord,
     IdempotencyState,
     Order,
@@ -95,6 +96,11 @@ class OrderService:
                 checkout_version=request.checkout_version,
                 contact_name=normalized_contact,
             )
+            if (
+                self._repository.get_slot_booking_mode(request.slot_id)
+                is BookingMode.DIRECTORY_ONLY
+            ):
+                raise _venue_not_found()
             record, claimed = self._repository.claim_idempotency(
                 user_id=user.id,
                 operation=CREATE_ORDER_OPERATION,
@@ -502,6 +508,10 @@ def _request_sha256(
 
 def _slot_not_available() -> AppError:
     return AppError(409, "SLOT_NOT_AVAILABLE", "该时段已不可预订，请返回刷新。")
+
+
+def _venue_not_found() -> AppError:
+    return AppError(404, "VENUE_NOT_FOUND", "场馆不存在")
 
 
 def _order_not_found() -> AppError:

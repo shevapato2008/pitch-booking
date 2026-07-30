@@ -6,7 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql.elements import ColumnElement
 
 from backend.app.models import (
@@ -15,6 +15,7 @@ from backend.app.models import (
     Order,
     OrderStatus,
     Payment,
+    Pitch,
     Slot,
 )
 from backend.app.modules.orders.locking import (
@@ -38,7 +39,13 @@ class PaymentRepository:
 
     def locate_owned_order(self, *, order_id: uuid.UUID, user_id: uuid.UUID) -> Order | None:
         return self.session.scalar(
-            select(Order).where(Order.id == order_id, Order.user_id == user_id)
+            select(Order)
+            .where(Order.id == order_id, Order.user_id == user_id)
+            .options(
+                joinedload(Order.slot)
+                .joinedload(Slot.pitch)
+                .joinedload(Pitch.venue)
+            )
         )
 
     def locate_payment(self, payment_id: uuid.UUID) -> Payment | None:

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.errors import AppError
 from backend.app.models import (
+    BookingMode,
     IdempotencyRecord,
     IdempotencyState,
     OrderStatus,
@@ -104,6 +105,8 @@ class PaymentCreationService:
             located = repository.locate_owned_order(order_id=order_id, user_id=user_id)
             if located is None:
                 raise _order_not_found()
+            if located.slot.pitch.venue.booking_mode is not BookingMode.ONLINE:
+                raise _venue_not_found()
             slot_id = located.slot_id
             try:
                 order, current = repository.lock_order_graph(order_id=order_id, slot_id=slot_id)
@@ -422,3 +425,7 @@ def _confirming(phase: _PhaseOne) -> CreatePaymentResult:
 
 def _order_not_found() -> AppError:
     return AppError(404, "ORDER_NOT_FOUND", "订单不存在或不可访问。")
+
+
+def _venue_not_found() -> AppError:
+    return AppError(404, "VENUE_NOT_FOUND", "场馆不存在")

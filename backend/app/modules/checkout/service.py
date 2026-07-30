@@ -5,7 +5,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 from backend.app.errors import AppError
-from backend.app.models import Slot, SlotStatus, User
+from backend.app.models import BookingMode, Slot, SlotStatus, User
 from backend.app.modules.checkout.dto import (
     CheckoutContactResponse,
     CheckoutPitchResponse,
@@ -38,6 +38,8 @@ class CheckoutService:
         slot = self._repository.get_slot(slot_id)
         if slot is None:
             raise _slot_not_available()
+        if slot.pitch.venue.booking_mode is not BookingMode.ONLINE:
+            raise _venue_not_found()
 
         candidate_order_ids = self._candidate_order_ids(slot, now)
         if not candidate_order_ids:
@@ -137,6 +139,10 @@ class CheckoutService:
 
 def _slot_not_available() -> AppError:
     return AppError(409, "SLOT_NOT_AVAILABLE", "所选时段已不可预订，请重新选择。")
+
+
+def _venue_not_found() -> AppError:
+    return AppError(404, "VENUE_NOT_FOUND", "场馆不存在")
 
 
 def _internal_error() -> AppError:

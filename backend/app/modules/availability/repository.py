@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.models import Pitch, PitchType, Slot, Venue
+from backend.app.models import BookingMode, Pitch, PitchType, Slot, Venue
 
 
 class AvailabilityRepository:
@@ -13,7 +13,11 @@ class AvailabilityRepository:
 
     def get_active_venue(self, venue_id: uuid.UUID) -> Venue | None:
         return self.session.scalar(
-            select(Venue).where(Venue.id == venue_id, Venue.is_active.is_(True))
+            select(Venue).where(
+                Venue.id == venue_id,
+                Venue.is_active.is_(True),
+                Venue.booking_mode == BookingMode.ONLINE,
+            )
         )
 
     def list_pitches(self, venue_id: uuid.UUID, pitch_type: PitchType) -> list[Pitch]:
