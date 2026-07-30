@@ -1,7 +1,9 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.models import Venue
+from backend.app.models import BookingMode, Venue
 
 
 class VenueRepository:
@@ -11,7 +13,11 @@ class VenueRepository:
     def list_active_primaries(self) -> list[Venue]:
         statement = (
             select(Venue)
-            .where(Venue.is_primary.is_(True), Venue.is_active.is_(True))
+            .where(
+                Venue.is_primary.is_(True),
+                Venue.is_active.is_(True),
+                Venue.booking_mode == BookingMode.ONLINE,
+            )
             .options(
                 selectinload(Venue.images),
                 selectinload(Venue.facilities),
@@ -20,3 +26,34 @@ class VenueRepository:
             .order_by(Venue.id)
         )
         return list(self.session.scalars(statement).unique())
+
+    def list_public(self) -> list[Venue]:
+        statement = (
+            select(Venue)
+            .where(Venue.is_active.is_(True), Venue.is_listed.is_(True))
+            .options(
+                selectinload(Venue.images),
+                selectinload(Venue.facilities),
+                selectinload(Venue.pitches),
+                selectinload(Venue.transit_stops),
+            )
+            .order_by(Venue.sort_order, Venue.name, Venue.id)
+        )
+        return list(self.session.scalars(statement).unique())
+
+    def get_public(self, venue_id: uuid.UUID) -> Venue | None:
+        statement = (
+            select(Venue)
+            .where(
+                Venue.id == venue_id,
+                Venue.is_active.is_(True),
+                Venue.is_listed.is_(True),
+            )
+            .options(
+                selectinload(Venue.images),
+                selectinload(Venue.facilities),
+                selectinload(Venue.pitches),
+                selectinload(Venue.transit_stops),
+            )
+        )
+        return self.session.scalar(statement)
