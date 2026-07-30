@@ -24,6 +24,24 @@ const exampleMap = [
     attachments: [attachment('/api/v1/venues/primary', '200', 'PrimaryVenue')],
   },
   {
+    filename: 'venue-map.json',
+    reference: './examples/venue-map.json',
+    schema: 'VenueMapResponse',
+    attachments: [attachment('/api/v1/venues/map', '200', 'VenueMap')],
+  },
+  {
+    filename: 'venue-online-detail.json',
+    reference: './examples/venue-online-detail.json',
+    schema: 'OnlineVenueDetail',
+    attachments: [attachment('/api/v1/venues/{venue_id}', '200', 'OnlineVenueDetail')],
+  },
+  {
+    filename: 'venue-directory-detail.json',
+    reference: './examples/venue-directory-detail.json',
+    schema: 'DirectoryVenueDetail',
+    attachments: [attachment('/api/v1/venues/{venue_id}', '200', 'DirectoryVenueDetail')],
+  },
+  {
     filename: 'availability-ready.json',
     reference: './examples/availability-ready.json',
     schema: 'Availability',
@@ -61,7 +79,19 @@ const exampleMap = [
     filename: 'error-venue-not-found.json',
     reference: './examples/error-venue-not-found.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/venues/{venue_id}/availability', '404', 'VenueNotFound')],
+    attachments: [
+      attachment('/api/v1/venues/{venue_id}', '404', 'VenueNotFound'),
+      attachment('/api/v1/venues/{venue_id}/availability', '404', 'VenueNotFound'),
+      attachment('/api/v1/slots/{slot_id}/checkout', '404', 'VenueNotFound'),
+      attachment('/api/v1/orders', '404', 'VenueNotFound', 'post'),
+      attachment('/api/v1/orders/{order_id}/pay', '404', 'VenueNotFound', 'post'),
+    ],
+  },
+  {
+    filename: 'error-venue-directory-misconfigured.json',
+    reference: './examples/error-venue-directory-misconfigured.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venues/map', '500', 'VenueDirectoryMisconfigured')],
   },
   {
     filename: 'error-service-unavailable.json',
@@ -70,6 +100,8 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/health', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/primary', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venues/map', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venues/{venue_id}', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}/availability', '503', 'ServiceUnavailable'),
     ],
   },
@@ -79,6 +111,8 @@ const exampleMap = [
     schema: 'ErrorEnvelope',
     attachments: [
       attachment('/api/v1/venues/primary', '500', 'InternalError'),
+      attachment('/api/v1/venues/map', '500', 'InternalError'),
+      attachment('/api/v1/venues/{venue_id}', '500', 'InternalError'),
       attachment('/api/v1/venues/{venue_id}/availability', '500', 'InternalError'),
     ],
   },
@@ -279,6 +313,7 @@ const requiredErrorCodes = new Set([
   'SERVICE_UNAVAILABLE',
   'INTERNAL_ERROR',
   'PRIMARY_VENUE_MISCONFIGURED',
+  'VENUE_DIRECTORY_MISCONFIGURED',
   'AUTH_REQUIRED',
   'WECHAT_LOGIN_FAILED',
   'PHONE_AUTH_REQUIRED',
@@ -296,6 +331,8 @@ const requiredErrorCodes = new Set([
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
   ['/api/v1/venues/primary', new Set(['get'])],
+  ['/api/v1/venues/map', new Set(['get'])],
+  ['/api/v1/venues/{venue_id}', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/availability', new Set(['get'])],
   ['/api/v1/auth/wechat/session', new Set(['post'])],
   ['/api/v1/auth/wechat/phone', new Set(['post'])],
@@ -464,6 +501,16 @@ function collectSchemaObjects(contract) {
   return schemas;
 }
 
+function toJsonSchema(value) {
+  if (Array.isArray(value)) return value.map(toJsonSchema);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== 'discriminator')
+      .map(([key, child]) => [key, toJsonSchema(child)]),
+  );
+}
+
 function validateVenueBusinessRules(venue, filename) {
   if (venue.images.filter(({ role }) => role === 'COVER').length !== 1) {
     fail(`${filename}: images must contain exactly one COVER`);
@@ -488,6 +535,21 @@ const expectedReason = {
   CLOSED: 'VENUE_CLOSED',
   EXPIRED: 'TIME_PASSED',
 };
+
+const venueMapStableOrder = [
+  '7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f',
+  'e03d801d-1254-5c62-9a16-9a8800280162',
+  '2a9640a5-f625-5ad8-9cb9-3440acb70967',
+  '80532433-8038-5ee5-9963-3e6282aa4abd',
+  'c0372328-6fa4-585a-b951-3324925763d6',
+];
+
+function validateVenueMapBusinessRules(map, filename) {
+  const actualOrder = map.venues.map(({ id }) => id);
+  if (!isDeepStrictEqual(actualOrder, venueMapStableOrder)) {
+    fail(`${filename}: venues must preserve the frozen stable public order`);
+  }
+}
 
 function validateWindow(window, filename) {
   if (window.start_date > window.end_date) {
@@ -568,7 +630,7 @@ export async function validateContract(contractPath = defaultContractPath) {
 
   for (const { label, schema } of collectSchemaObjects(contract)) {
     try {
-      ajv.compile(schema);
+      ajv.compile(toJsonSchema(schema));
     } catch (error) {
       fail(`schema ${label}: ${error.message}`);
     }
@@ -578,7 +640,7 @@ export async function validateContract(contractPath = defaultContractPath) {
     const schemaAttachment = definition.attachments[0];
     const responseSchema = contract.paths[schemaAttachment.path][schemaAttachment.method]
       .responses[schemaAttachment.status].content?.['application/json']?.schema;
-    const validate = ajv.compile(responseSchema);
+    const validate = ajv.compile(toJsonSchema(responseSchema));
     if (!validate(definition.value)) {
       fail(`${definition.filename}: response schema failed: ${ajv.errorsText(validate.errors, { separator: '; ' })}`);
     }
@@ -594,13 +656,14 @@ export async function validateContract(contractPath = defaultContractPath) {
       if (!responseSchema) {
         fail(`${mapping.filename}: mapped response has no application/json schema at ${attachmentIdentity(schemaAttachment)}`);
       }
-      const validate = ajv.compile(responseSchema);
+      const validate = ajv.compile(toJsonSchema(responseSchema));
       if (!validate(mapping.value)) {
         fail(`${mapping.filename}: response schema failed at ${attachmentIdentity(schemaAttachment)}: ${ajv.errorsText(validate.errors, { separator: '; ' })}`);
       }
     }
 
     if (mapping.schema === 'Venue') validateVenueBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'VenueMapResponse') validateVenueMapBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {

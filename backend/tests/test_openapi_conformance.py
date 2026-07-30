@@ -109,8 +109,8 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
     expected_statuses = {
         ("/api/v1/auth/wechat/session", "post"): {"200", "422", "502"},
         ("/api/v1/auth/wechat/phone", "post"): {"200", "401", "422", "502", "503"},
-        ("/api/v1/slots/{slot_id}/checkout", "get"): {"200", "401", "409"},
-        ("/api/v1/orders", "post"): {"200", "201", "401", "409", "422"},
+        ("/api/v1/slots/{slot_id}/checkout", "get"): {"200", "401", "404", "409"},
+        ("/api/v1/orders", "post"): {"200", "201", "401", "404", "409", "422"},
         ("/api/v1/orders/{order_id}", "get"): {"200", "401", "404"},
         ("/api/v1/orders/{order_id}/pay", "post"): {
             "200", "201", "202", "401", "404", "409", "503"
@@ -136,6 +136,56 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "opaque",
+    }
+
+
+def test_contract_freezes_map_and_discriminated_venue_detail() -> None:
+    contract = _contract()
+    paths = contract["paths"]
+    schemas = contract["components"]["schemas"]
+
+    assert set(paths["/api/v1/venues/map"]) == {"get"}
+    assert set(paths["/api/v1/venues/{venue_id}"]) == {"get"}
+    assert paths["/api/v1/venues/map"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/VenueMapResponse"}
+    assert paths["/api/v1/venues/{venue_id}"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/VenueDetail"}
+
+    detail = schemas["VenueDetail"]
+    assert detail["oneOf"] == [
+        {"$ref": "#/components/schemas/OnlineVenueDetail"},
+        {"$ref": "#/components/schemas/DirectoryVenueDetail"},
+    ]
+    assert detail["discriminator"]["propertyName"] == "booking_mode"
+    for name, mode in (
+        ("OnlineVenueDetail", "ONLINE"),
+        ("DirectoryVenueDetail", "DIRECTORY_ONLY"),
+    ):
+        schema = schemas[name]
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["booking_mode"] == {"type": "string", "const": mode}
+
+
+def test_contract_freezes_non_disclosing_venue_guard_errors() -> None:
+    contract = _contract()
+    operations = (
+        ("/api/v1/venues/{venue_id}/availability", "get"),
+        ("/api/v1/slots/{slot_id}/checkout", "get"),
+        ("/api/v1/orders", "post"),
+        ("/api/v1/orders/{order_id}/pay", "post"),
+    )
+    for path, method in operations:
+        response = contract["paths"][path][method]["responses"]["404"]
+        assert "venue" in response["description"].lower()
+        assert response["content"]["application/json"]["examples"]["VenueNotFound"] == {
+            "externalValue": "./examples/error-venue-not-found.json"
+        }
+
+    order_detail = contract["paths"]["/api/v1/orders/{order_id}"]["get"]
+    assert set(order_detail["responses"]["404"]["content"]["application/json"]["examples"]) == {
+        "OrderNotFound"
     }
 
 
@@ -294,6 +344,7 @@ def test_every_booking_business_error_has_a_canonical_external_example() -> None
         "ORDER_EXPIRED": "error-order-expired.json",
         "PAYMENT_CREATE_FAILED": "error-payment-create-failed.json",
         "PAYMENT_EXCEPTION": "error-payment-exception.json",
+        "VENUE_DIRECTORY_MISCONFIGURED": "error-venue-directory-misconfigured.json",
     }
     attached_external_values = {
         example["externalValue"]

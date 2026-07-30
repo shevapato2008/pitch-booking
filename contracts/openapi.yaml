@@ -90,6 +90,149 @@ paths:
               examples:
                 ServiceUnavailable:
                   externalValue: './examples/error-service-unavailable.json'
+  /api/v1/venues/map:
+    get:
+      operationId: getVenueMap
+      responses:
+        '200':
+          description: Stable public map directory ordered by sort order, name, and venue ID.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueMapResponse'
+              examples:
+                VenueMap:
+                  externalValue: './examples/venue-map.json'
+        '500':
+          description: The public venue directory is empty, inconsistent, or failed internally.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            enum: [VENUE_DIRECTORY_MISCONFIGURED, INTERNAL_ERROR]
+              examples:
+                VenueDirectoryMisconfigured:
+                  externalValue: './examples/error-venue-directory-misconfigured.json'
+                InternalError:
+                  externalValue: './examples/error-internal.json'
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  externalValue: './examples/error-service-unavailable.json'
+  /api/v1/venues/{venue_id}:
+    get:
+      operationId: getVenueDetail
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Public venue detail discriminated by booking mode.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetail'
+              examples:
+                OnlineVenueDetail:
+                  externalValue: './examples/venue-online-detail.json'
+                DirectoryVenueDetail:
+                  externalValue: './examples/venue-directory-detail.json'
+        '404':
+          description: Venue does not exist or is not publicly listed.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: VENUE_NOT_FOUND
+              examples:
+                VenueNotFound:
+                  externalValue: './examples/error-venue-not-found.json'
+        '500':
+          description: Internal service failure.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INTERNAL_ERROR
+              examples:
+                InternalError:
+                  externalValue: './examples/error-internal.json'
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  externalValue: './examples/error-service-unavailable.json'
   /api/v1/venues/{venue_id}/availability:
     get:
       operationId: getVenueAvailability
@@ -127,7 +270,7 @@ paths:
                 AvailabilityEmpty:
                   externalValue: './examples/availability-empty.json'
         '404':
-          description: Venue does not exist.
+          description: Venue does not exist or is not enabled for online booking.
           content:
             application/json:
               schema:
@@ -410,6 +553,26 @@ paths:
               examples:
                 AuthRequired:
                   externalValue: './examples/error-auth-required.json'
+        '404':
+          description: Venue does not exist or is not enabled for online booking.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: VENUE_NOT_FOUND
+              examples:
+                VenueNotFound:
+                  externalValue: './examples/error-venue-not-found.json'
         '409':
           description: Slot is no longer available for checkout.
           headers:
@@ -494,6 +657,26 @@ paths:
               examples:
                 AuthRequired:
                   externalValue: './examples/error-auth-required.json'
+        '404':
+          description: Venue does not exist or is not enabled for online booking.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: VENUE_NOT_FOUND
+              examples:
+                VenueNotFound:
+                  externalValue: './examples/error-venue-not-found.json'
         '409':
           description: Slot, checkout version, or idempotency key conflicts with current state.
           headers:
@@ -688,7 +871,7 @@ paths:
                 AuthRequired:
                   externalValue: './examples/error-auth-required.json'
         '404':
-          description: Order does not exist or is not owned by this user.
+          description: Order is unavailable to this user, or its venue is not enabled for online booking.
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
@@ -703,10 +886,12 @@ paths:
                         type: object
                         properties:
                           code:
-                            const: ORDER_NOT_FOUND
+                            enum: [ORDER_NOT_FOUND, VENUE_NOT_FOUND]
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+                VenueNotFound:
+                  externalValue: './examples/error-venue-not-found.json'
         '409':
           description: The order cannot enter or resume payment in its current state.
           headers:
@@ -917,6 +1102,318 @@ components:
         sort_order:
           type: integer
           minimum: 0
+    PublicPitchTypeCode:
+      type: string
+      enum: [FIVE_A_SIDE, SEVEN_A_SIDE, ELEVEN_A_SIDE]
+    VenueTransitStop:
+      type: object
+      additionalProperties: false
+      required: [kind, name, lines, distance_meters, distance_basis]
+      properties:
+        kind:
+          type: string
+          enum: [SUBWAY, BUS]
+        name:
+          type: string
+          minLength: 1
+        lines:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+        distance_meters:
+          type: integer
+          minimum: 0
+        distance_basis:
+          type: string
+          enum: [STRAIGHT_LINE, MAP_VERIFIED]
+    VenueMapItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - address
+        - latitude
+        - longitude
+        - booking_mode
+        - pitch_types
+        - cover_image
+        - nearest_transit
+        - content_verified_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        booking_mode:
+          type: string
+          enum: [ONLINE, DIRECTORY_ONLY]
+        pitch_types:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PublicPitchTypeCode'
+        cover_image:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+        nearest_transit:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueTransitStop'
+        content_verified_at:
+          type: string
+          format: date-time
+    VenueMapResponse:
+      type: object
+      additionalProperties: false
+      required: [coordinate_system, venues]
+      properties:
+        coordinate_system:
+          type: string
+          const: GCJ02
+        venues:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/VenueMapItem'
+    OnlineVenueDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - address
+        - latitude
+        - longitude
+        - coordinate_system
+        - navigation_poi_name
+        - navigation_latitude
+        - navigation_longitude
+        - booking_mode
+        - pitch_types
+        - cover_image
+        - nearest_transit
+        - content_verified_at
+        - price_advantage_text
+        - timezone
+        - business_hours_text
+        - parking_text
+        - phone
+        - refund_policy_summary
+        - images
+        - facilities
+        - availability_window
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        coordinate_system:
+          type: string
+          const: GCJ02
+        navigation_poi_name:
+          type: string
+          minLength: 1
+        navigation_latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        navigation_longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        booking_mode:
+          type: string
+          const: ONLINE
+        pitch_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PublicPitchTypeCode'
+        cover_image:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+        nearest_transit:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueTransitStop'
+        content_verified_at:
+          type: string
+          format: date-time
+        price_advantage_text:
+          type: string
+          minLength: 1
+        timezone:
+          type: string
+          const: Asia/Shanghai
+        business_hours_text:
+          type: string
+          minLength: 1
+        parking_text:
+          type: string
+          minLength: 1
+        phone:
+          type: string
+          minLength: 1
+        refund_policy_summary:
+          type: string
+          minLength: 1
+        images:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/VenueImage'
+        facilities:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Facility'
+        availability_window:
+          $ref: '#/components/schemas/AvailabilityWindow'
+    DirectoryVenueDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - address
+        - latitude
+        - longitude
+        - coordinate_system
+        - navigation_poi_name
+        - navigation_latitude
+        - navigation_longitude
+        - booking_mode
+        - pitch_types
+        - cover_image
+        - nearest_transit
+        - content_verified_at
+        - business_hours_text
+        - parking_text
+        - images
+        - facilities
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        coordinate_system:
+          type: string
+          const: GCJ02
+        navigation_poi_name:
+          type: string
+          minLength: 1
+        navigation_latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        navigation_longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        booking_mode:
+          type: string
+          const: DIRECTORY_ONLY
+        pitch_types:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PublicPitchTypeCode'
+        cover_image:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+        nearest_transit:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueTransitStop'
+        content_verified_at:
+          type: string
+          format: date-time
+        business_hours_text:
+          type: [string, 'null']
+        parking_text:
+          type: [string, 'null']
+        images:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+            pattern: '^https://'
+        facilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+    VenueDetail:
+      oneOf:
+        - $ref: '#/components/schemas/OnlineVenueDetail'
+        - $ref: '#/components/schemas/DirectoryVenueDetail'
+      discriminator:
+        propertyName: booking_mode
+        mapping:
+          ONLINE: '#/components/schemas/OnlineVenueDetail'
+          DIRECTORY_ONLY: '#/components/schemas/DirectoryVenueDetail'
     Venue:
       type: object
       additionalProperties: false
@@ -1640,6 +2137,7 @@ components:
             - SERVICE_UNAVAILABLE
             - INTERNAL_ERROR
             - PRIMARY_VENUE_MISCONFIGURED
+            - VENUE_DIRECTORY_MISCONFIGURED
             - AUTH_REQUIRED
             - WECHAT_LOGIN_FAILED
             - PHONE_AUTH_REQUIRED

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VENUE_DIRECTORY_MISCONFIGURED",
+    "message": "场馆目录暂不可用",
+    "request_id": "req-contract-venue-directory",
+    "details": {}
+  }
+}

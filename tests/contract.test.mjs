@@ -93,7 +93,7 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen ten-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen twelve-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
@@ -105,10 +105,118 @@ test('OpenAPI document validates and exposes the frozen ten-path operation matri
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
     '/api/v1/slots/{slot_id}/checkout',
+    '/api/v1/venues/map',
     '/api/v1/venues/primary',
+    '/api/v1/venues/{venue_id}',
     '/api/v1/venues/{venue_id}/availability',
   ]);
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
+});
+
+test('map and venue detail schemas are closed, discriminated, and location-free', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const schemas = contract.components.schemas;
+  const map = schemas.VenueMapResponse;
+  const summary = schemas.VenueMapItem;
+  const detail = schemas.VenueDetail;
+  const online = schemas.OnlineVenueDetail;
+  const directory = schemas.DirectoryVenueDetail;
+
+  assert.equal(map.additionalProperties, false);
+  assert.deepEqual(new Set(map.required), new Set(['coordinate_system', 'venues']));
+  assert.equal(map.properties.coordinate_system.const, 'GCJ02');
+  assert.equal(map.properties.venues.items.$ref, '#/components/schemas/VenueMapItem');
+
+  assert.equal(summary.additionalProperties, false);
+  assert.deepEqual(new Set(summary.required), new Set([
+    'id', 'name', 'address', 'latitude', 'longitude', 'booking_mode', 'pitch_types',
+    'cover_image', 'nearest_transit', 'content_verified_at',
+  ]));
+  assert.equal(summary.properties.coordinate_system, undefined);
+  assert.equal(summary.properties.booking_mode.enum.length, 2);
+
+  assert.deepEqual(detail.oneOf, [
+    { $ref: '#/components/schemas/OnlineVenueDetail' },
+    { $ref: '#/components/schemas/DirectoryVenueDetail' },
+  ]);
+  assert.deepEqual(detail.discriminator, {
+    propertyName: 'booking_mode',
+    mapping: {
+      ONLINE: '#/components/schemas/OnlineVenueDetail',
+      DIRECTORY_ONLY: '#/components/schemas/DirectoryVenueDetail',
+    },
+  });
+
+  const commonFields = new Set([
+    'id', 'slug', 'name', 'description', 'address', 'latitude', 'longitude',
+    'coordinate_system', 'navigation_poi_name', 'navigation_latitude',
+    'navigation_longitude', 'booking_mode', 'pitch_types', 'cover_image',
+    'nearest_transit', 'content_verified_at',
+  ]);
+  assert.equal(online.additionalProperties, false);
+  assert.deepEqual(new Set(online.required), new Set([
+    ...commonFields, 'price_advantage_text', 'timezone', 'business_hours_text',
+    'parking_text', 'phone', 'refund_policy_summary', 'images', 'facilities',
+    'availability_window',
+  ]));
+  assert.equal(directory.additionalProperties, false);
+  assert.deepEqual(new Set(directory.required), new Set([
+    ...commonFields, 'business_hours_text', 'parking_text', 'images', 'facilities',
+  ]));
+  for (const forbidden of ['price_advantage_text', 'timezone', 'phone', 'refund_policy_summary', 'availability_window']) {
+    assert.equal(directory.properties[forbidden], undefined, forbidden);
+  }
+  assert.deepEqual(directory.properties.business_hours_text.type, ['string', 'null']);
+  assert.deepEqual(directory.properties.parking_text.type, ['string', 'null']);
+  assert.equal(directory.properties.images.type, 'array');
+  assert.equal(directory.properties.facilities.type, 'array');
+
+  const serializedContract = JSON.stringify({
+    paths: {
+      map: contract.paths['/api/v1/venues/map'],
+      detail: contract.paths['/api/v1/venues/{venue_id}'],
+    },
+    schemas: { map, summary, detail, online, directory },
+  });
+  for (const forbiddenLocationInput of ['user_latitude', 'user_longitude', 'user_location']) {
+    assert.equal(serializedContract.includes(forbiddenLocationInput), false);
+  }
+});
+
+test('booking boundaries freeze VENUE_NOT_FOUND without changing historical order detail', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operations = [
+    contract.paths['/api/v1/venues/{venue_id}/availability'].get,
+    contract.paths['/api/v1/slots/{slot_id}/checkout'].get,
+    contract.paths['/api/v1/orders'].post,
+    contract.paths['/api/v1/orders/{order_id}/pay'].post,
+  ];
+
+  for (const operation of operations) {
+    const response = operation.responses['404'];
+    assert.match(response.description, /venue/i);
+    assert.equal(
+      response.content['application/json'].examples.VenueNotFound.externalValue,
+      './examples/error-venue-not-found.json',
+    );
+    const code = response.content['application/json'].schema.allOf[1]
+      .properties.error.properties.code;
+    assert.equal(code.const === 'VENUE_NOT_FOUND' || code.enum.includes('VENUE_NOT_FOUND'), true);
+  }
+
+  const orderDetail404 = contract.paths['/api/v1/orders/{order_id}'].get.responses['404'];
+  assert.match(orderDetail404.description, /order/i);
+  assert.equal(
+    orderDetail404.content['application/json'].schema.allOf[1]
+      .properties.error.properties.code.const,
+    'ORDER_NOT_FOUND',
+  );
+});
+
+test('venue map example rejects unstable public ordering', async () => {
+  await assertMutatedExampleRejected('venue-map.json', (map) => {
+    [map.venues[0], map.venues[1]] = [map.venues[1], map.venues[0]];
+  }, /venue-map|stable|order/i);
 });
 
 test('payment creation and reconciliation expose exact authority-aware response matrices', async () => {
@@ -306,6 +414,7 @@ test('error examples have an exact envelope and cover every required code', asyn
     'error-service-unavailable.json',
     'error-internal.json',
     'error-primary-venue-misconfigured.json',
+    'error-venue-directory-misconfigured.json',
   ];
   const expectedCodes = [
     'INVALID_ARGUMENT',
@@ -315,6 +424,7 @@ test('error examples have an exact envelope and cover every required code', asyn
     'SERVICE_UNAVAILABLE',
     'INTERNAL_ERROR',
     'PRIMARY_VENUE_MISCONFIGURED',
+    'VENUE_DIRECTORY_MISCONFIGURED',
   ];
 
   const examples = await Promise.all(filenames.map(readExample));
@@ -341,7 +451,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 33 JSON examples/i);
+  assert.match(stdout, /validated 37 JSON examples/i);
   assert.equal(stderr, '');
 });
 
