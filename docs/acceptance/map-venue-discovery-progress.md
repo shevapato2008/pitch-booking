@@ -4,10 +4,10 @@ Last updated: 2026-07-30 (Asia/Shanghai)
 
 ## Current checkpoint
 
-Task 1 freezes the five public directory identities and the strongest presently supportable
-location evidence. The content gate is automated, but this is not final production content
-approval and it does not authorize starting the backend phase before the fixture UI is visually
-accepted.
+The 375×812 visual gate was explicitly approved on 2026-07-30. The map/detail OpenAPI contract,
+PostgreSQL revision `0006`, and transactional directory loader are now implemented locally. This
+is not final production content approval: production loading requires a short-lived approval file
+bound to the exact manifest bytes, literal `production` environment, and deployed app revision.
 
 ## Frozen identities
 
@@ -70,9 +70,29 @@ self-auditing without relying on this progress document.
   reasserted by this discovery manifest. Later loading must preserve separately approved online
   business content and inventory rather than replace it with empty discovery fields.
 
+## Loader authority and rollback
+
+- Development loading requires explicit `--environment development`; no environment defaults to
+  production.
+- Production loading additionally requires `--app-revision` and `--approval-file`. The approval
+  binds the exact manifest SHA-256 and expires within 24 hours.
+- Schema and whole-graph semantic validation complete before database access. Identity collisions,
+  a second online venue, directory inventory, or unsafe mode changes abort the transaction.
+- Normal reloads are idempotent. Missing directory identities are unlisted rather than deleted.
+- `--unload-directory` deletes only history-free `DIRECTORY_ONLY` rows and their transit records;
+  it never removes the canonical online venue. This explicit unload is required before migration
+  downgrade.
+
+Example local dry run:
+
+```bash
+DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
+  .venv/bin/python scripts/load_venue_directory.py \
+  --manifest deploy/venue-directory.json --environment development --dry-run
+```
+
 ## Next gate
 
-Use this manifest only for the temporary fixture-backed 375×812 map Artifact and front-end demo.
-Do not begin the backend slice until reference and implementation screenshots, side-by-side,
-overlay and difference views have been reviewed at the same viewport and the user explicitly
-accepts the visual result.
+Implement the public directory/detail services and enforce `ONLINE` before every booking-side
+mutation. Publication, public HTTPS, WeChat production privacy submission, real-device evidence,
+and final release remain deferred until the ICP boundary is cleared.

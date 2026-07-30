@@ -1,0 +1,7 @@
+{
+  "manifest_sha256": "replace-with-sha256-of-exact-manifest-bytes",
+  "environment": "production",
+  "app_revision": "replace-with-exact-deployed-revision",
+  "approved_at": "2026-07-30T00:00:00+00:00",
+  "expires_at": "2026-07-30T12:00:00+00:00"
+}
