@@ -93,8 +93,8 @@
       "facilities": [],
       "nearest_transit": [
         {
-          "id": "metro-tiyuzhongxin-line-5",
-          "kind": "METRO",
+          "id": "subway-tiyuzhongxin-line-5",
+          "kind": "SUBWAY",
           "name": "体育中心站",
           "coordinate": {
             "coordinate_system": "GCJ02",
@@ -120,7 +120,7 @@
           "verifier": "Codex web verification",
           "verified_at": "2026-07-30T18:15:00+08:00",
           "method": "Tianjin Sports Bureau social-football-field directory",
-          "confidence": "DIRECT_POI"
+          "confidence": "AUTHORITATIVE_SOURCE"
         },
         "marker": {
           "source_url": "https://mapcarta.com/W1231719534",
@@ -173,7 +173,7 @@
           "verifier": "Codex web verification",
           "verified_at": "2026-07-30T18:15:00+08:00",
           "method": "Tianjin Sports Bureau social-football-field directory",
-          "confidence": "DIRECT_POI"
+          "confidence": "AUTHORITATIVE_SOURCE"
         },
         "marker": {
           "source_url": "https://latitude.to/map/cn/china/cities/tianjin/articles/347242/tianjin-locomotive-stadium",
@@ -227,7 +227,7 @@
           "verifier": "Codex web verification",
           "verified_at": "2026-07-30T18:15:00+08:00",
           "method": "Tianjin Sports Bureau venue page; football capability cross-checked in its public-sports reporting",
-          "confidence": "DIRECT_POI"
+          "confidence": "AUTHORITATIVE_SOURCE"
         },
         "marker": {
           "source_url": "https://ditu.amap.com/place/B0016054AF",
@@ -281,7 +281,7 @@
           "verifier": "Codex web verification",
           "verified_at": "2026-07-30T18:15:00+08:00",
           "method": "Tianjin Sports Bureau social-football-field directory",
-          "confidence": "DIRECT_POI"
+          "confidence": "AUTHORITATIVE_SOURCE"
         },
         "marker": {
           "source_url": "https://ditu.amap.com/place/B0FFF5UMOU",

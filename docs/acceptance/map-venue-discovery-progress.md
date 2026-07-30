@@ -25,10 +25,11 @@ insert a second online or primary venue.
 
 ## Verification record
 
-All stored runtime coordinates are GCJ-02. `DIRECT_POI` means the provider exposed a China-map
-POI coordinate directly. `SOURCE_CONVERSION` means the source coordinate was converted with a
-deterministic WGS84→GCJ-02 or BD09MC→BD09→GCJ-02 transform and is not represented as a surveyed
-entrance. `MANUAL_MAP_MATCH` is deliberately weaker and is called out below.
+All stored runtime coordinates are GCJ-02. `AUTHORITATIVE_SOURCE` means a government directory or
+venue page directly establishes the public name/address. `DIRECT_POI` means a map provider exposed
+a China-map POI coordinate directly. `SOURCE_CONVERSION` means the source coordinate was converted
+with a deterministic WGS84→GCJ-02 or BD09MC→BD09→GCJ-02 transform and is not represented as a
+surveyed entrance. `MANUAL_MAP_MATCH` is deliberately weaker and is called out below.
 
 | Venue | Name/address source | Marker | Navigation POI | Transit retained |
 | --- | --- | --- | --- | --- |

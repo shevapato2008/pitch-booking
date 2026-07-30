@@ -29,6 +29,13 @@ const TIANJIN_BOUNDS = {
   longitude: [116.70, 118.10],
 };
 
+const GOVERNMENT_SOURCED_VENUE_IDS = new Set([
+  '2a9640a5-f625-5ad8-9cb9-3440acb70967',
+  '80532433-8038-5ee5-9963-3e6282aa4abd',
+  'c0372328-6fa4-585a-b951-3324925763d6',
+  'e03d801d-1254-5c62-9a16-9a8800280162',
+]);
+
 const repositoryUrl = new URL('../', import.meta.url);
 const schema = JSON.parse(
   await readFile(new URL('deploy/venue-directory.schema.json', repositoryUrl), 'utf8'),
@@ -76,6 +83,10 @@ test('venue directory satisfies its closed JSON schema', () => {
   const wrongCoordinateSystem = structuredClone(manifest);
   wrongCoordinateSystem.venues[0].marker.coordinate_system = 'WGS84';
   assert.equal(validate(wrongCoordinateSystem), false, 'schema must reject non-GCJ02 coordinates');
+
+  const legacyTransitKind = structuredClone(manifest);
+  legacyTransitKind.venues[1].nearest_transit[0].kind = 'METRO';
+  assert.equal(validate(legacyTransitKind), false, 'schema must reject the legacy METRO kind');
 });
 
 test('venue identities and booking modes are frozen', () => {
@@ -108,10 +119,10 @@ test('all coordinates, transit identities, lines, and evidence are verified', ()
   for (const venue of manifest.venues) {
     assertTianjinCoordinate(venue.marker, `${venue.slug} marker`);
     assertTianjinCoordinate(venue.navigation.coordinate, `${venue.slug} navigation`);
-    assert.ok(venue.nearest_transit.length <= 4, `${venue.slug} has at most one metro and three bus stops`);
+    assert.ok(venue.nearest_transit.length <= 4, `${venue.slug} has at most one subway and three bus stops`);
     assert.ok(
-      venue.nearest_transit.filter(({ kind }) => kind === 'METRO').length <= 1,
-      `${venue.slug} has at most one metro station`,
+      venue.nearest_transit.filter(({ kind }) => kind === 'SUBWAY').length <= 1,
+      `${venue.slug} has at most one subway station`,
     );
     assert.ok(
       venue.nearest_transit.filter(({ kind }) => kind === 'BUS').length <= 3,
@@ -123,12 +134,19 @@ test('all coordinates, transit identities, lines, and evidence are verified', ()
 
     for (const stop of venue.nearest_transit) {
       transitIds.push(stop.id);
+      assert.ok(['SUBWAY', 'BUS'].includes(stop.kind), `${stop.id} uses the accepted transit kind`);
       assertTianjinCoordinate(stop.coordinate, `${stop.id} coordinate`);
       assert.deepEqual(stop.lines, [...new Set(stop.lines)].sort(), `${stop.id} lines are sorted/deduplicated`);
       assertEvidence(stop.evidence, `${stop.id} evidence`);
     }
   }
   assert.equal(new Set(transitIds).size, transitIds.length, 'transit stop identities must be unique');
+});
+
+test('government name and address evidence uses authoritative-source confidence', () => {
+  for (const venue of manifest.venues.filter(({ id }) => GOVERNMENT_SOURCED_VENUE_IDS.has(id))) {
+    assert.equal(venue.evidence.name_address.confidence, 'AUTHORITATIVE_SOURCE');
+  }
 });
 
 test('directory-only venues contain no commercial or booking promise fields', () => {
