@@ -1,3 +1,5 @@
+import type { AvailabilityWindow, Facility, VenueImage } from "./contracts";
+
 export type VenueBookingMode = "ONLINE" | "DIRECTORY_ONLY";
 export type VenuePitchType = "FIVE_A_SIDE" | "SEVEN_A_SIDE" | "ELEVEN_A_SIDE";
 
@@ -45,3 +47,30 @@ export interface DirectoryVenueMapEntry extends VenueMapEntryBase {
 }
 
 export type VenueMapEntry = OnlineVenueMapEntry | DirectoryVenueMapEntry;
+
+interface VenueDetailFields {
+  readonly slug: string;
+  readonly description: string;
+  readonly navigation: VenueNavigation;
+}
+
+export type OnlineVenueDetail = Omit<OnlineVenueMapEntry, "slug" | "navigation"> & VenueDetailFields & {
+  readonly priceAdvantageText: string;
+  readonly timezone: "Asia/Shanghai";
+  readonly businessHoursText: string;
+  readonly parkingText: string;
+  readonly phone: string;
+  readonly refundPolicySummary: string;
+  readonly images: readonly VenueImage[];
+  readonly facilities: readonly Facility[];
+  readonly availabilityWindow: AvailabilityWindow;
+};
+
+export type DirectoryVenueDetail = Omit<DirectoryVenueMapEntry, "slug" | "navigation"> & VenueDetailFields & {
+  readonly businessHoursText: string | null;
+  readonly parkingText: string | null;
+  readonly images: readonly string[];
+  readonly facilities: readonly string[];
+};
+
+export type VenueDetail = OnlineVenueDetail | DirectoryVenueDetail;

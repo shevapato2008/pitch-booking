@@ -1,8 +1,8 @@
-import type { VenueMapEntry } from "../domain/venue-directory";
+import type { VenueDetail, VenueMapEntry } from "../domain/venue-directory";
 
 export interface VenueDirectoryDataSource {
   getVenueDirectory(): Promise<VenueMapEntry[]>;
-  getVenueDetail(venueId: string): Promise<VenueMapEntry>;
+  getVenueDetail(venueId: string): Promise<VenueDetail>;
 }
 
 let configuredVenueDirectorySource: VenueDirectoryDataSource | undefined;

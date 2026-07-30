@@ -4,7 +4,7 @@ import type {
   PitchType,
   Venue,
 } from "../domain/contracts";
-import type { DirectoryVenueMapEntry } from "../domain/venue-directory";
+import type { DirectoryVenueDetail, OnlineVenueDetail } from "../domain/venue-directory";
 
 export interface VenueImageViewModel {
   source: string;
@@ -100,7 +100,37 @@ export function toVenueViewModel(venue: Venue, coverSource: string): VenueViewMo
   };
 }
 
-export function toDirectoryVenueViewModel(venue: DirectoryVenueMapEntry): DirectoryVenueViewModel {
+export function toOnlineDirectoryVenueViewModel(venue: OnlineVenueDetail): VenueViewModel {
+  const coverSource = venue.coverImage ?? "";
+  return {
+    bookingMode: "ONLINE",
+    id: venue.id,
+    name: venue.name,
+    description: venue.description,
+    priceAdvantageText: venue.priceAdvantageText,
+    businessHoursText: venue.businessHoursText,
+    address: venue.address,
+    parkingText: venue.parkingText,
+    phone: venue.phone,
+    refundPolicySummary: venue.refundPolicySummary,
+    cover: {
+      alt: venue.name,
+      source: coverSource,
+      state: coverSource ? "image" : "fallback",
+      className: coverSource ? "venue-cover--image" : "venue-cover--fallback",
+      fallbackText: coverSource ? "" : "场馆图片待配置",
+    },
+    images: venue.images.map((image) => ({ source: image.url, alt: image.alt, role: image.role })),
+    facilities: venue.facilities.map((facility) => ({ code: facility.code, label: facility.name })),
+    pitchTypes: venue.pitchTypes.map((code) => ({
+      code: code as PitchType,
+      label: code === "FIVE_A_SIDE" ? "五人制" : "七人制",
+    })),
+    availabilityWindow: venue.availabilityWindow,
+  };
+}
+
+export function toDirectoryVenueViewModel(venue: DirectoryVenueDetail): DirectoryVenueViewModel {
   const stop = venue.nearestTransit[0];
   const transitText = stop
     ? `${stop.kind === "SUBWAY" ? "地铁" : "公交"} ${stop.lines.join("/")} · ${stop.name} · 约 ${stop.distanceMeters} 米`
@@ -110,12 +140,14 @@ export function toDirectoryVenueViewModel(venue: DirectoryVenueMapEntry): Direct
     bookingMode: "DIRECTORY_ONLY",
     bookingStatusText: "暂未接入在线预订",
     name: venue.name,
-    description: "这里仅展示已核验的场馆与位置资料。",
+    description: venue.description || "这里仅展示已核验的场馆与位置资料。",
     address: venue.address,
-    businessHoursText: "营业时间待核验",
-    parkingText: "停车信息待核验",
+    businessHoursText: venue.businessHoursText ?? "营业时间待核验",
+    parkingText: venue.parkingText ?? "停车信息待核验",
     transitText,
     pitchTypes: venue.pitchTypes.map((code) => ({ code, label: code === "FIVE_A_SIDE" ? "五人制" : code === "SEVEN_A_SIDE" ? "七人制" : "十一人制" })),
-    cover: { alt: venue.name, source: "", state: "fallback", className: "venue-cover--fallback", fallbackText: "场馆图片待配置" },
+    cover: venue.coverImage
+      ? { alt: venue.name, source: venue.coverImage, state: "image", className: "venue-cover--image", fallbackText: "" }
+      : { alt: venue.name, source: "", state: "fallback", className: "venue-cover--fallback", fallbackText: "场馆图片待配置" },
   };
 }

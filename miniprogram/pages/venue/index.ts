@@ -1,5 +1,5 @@
 import type { PitchType } from "../../domain/contracts";
-import { toDirectoryVenueViewModel, toVenueViewModel, type AnyVenueViewModel } from "../../presentation/venue";
+import { toDirectoryVenueViewModel, toOnlineDirectoryVenueViewModel, toVenueViewModel, type AnyVenueViewModel } from "../../presentation/venue";
 import { getPageDataSource } from "../../services/page-data";
 import { getVenueDirectoryDataSource } from "../../services/venue-directory";
 
@@ -20,6 +20,18 @@ Page({
         : null;
       if (directoryVenue?.bookingMode === "DIRECTORY_ONLY") {
         this.setData({ venue: toDirectoryVenueViewModel(directoryVenue), canBook: false, loading: false, errorText: "" });
+        return;
+      }
+      if (directoryVenue?.bookingMode === "ONLINE") {
+        const viewModel = toOnlineDirectoryVenueViewModel(directoryVenue);
+        this.setData({
+          venue: viewModel,
+          canBook: true,
+          initialPitchType: viewModel.pitchTypes[0]?.code ?? null,
+          initialDate: viewModel.availabilityWindow.startDate,
+          loading: false,
+          errorText: "",
+        });
         return;
       }
       const source = getPageDataSource();

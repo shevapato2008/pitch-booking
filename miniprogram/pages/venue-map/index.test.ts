@@ -16,13 +16,15 @@ const VENUE_DIRECTORY_VISUAL_FIXTURE = decodeVenueMap(
 const DIRECTORY_DETAIL = decodeVenueDetail(
   jest.requireActual("../../../contracts/examples/venue-directory-detail.json"),
 );
+const ONLINE_DETAIL = decodeVenueDetail(
+  jest.requireActual("../../../contracts/examples/venue-online-detail.json"),
+);
 const directorySource = {
   async getVenueDirectory() { return [...VENUE_DIRECTORY_VISUAL_FIXTURE]; },
   async getVenueDetail(venueId: string) {
     if (venueId === DIRECTORY_DETAIL.id) return DIRECTORY_DETAIL;
-    const venue = VENUE_DIRECTORY_VISUAL_FIXTURE.find(({ id }) => id === venueId);
-    if (!venue) throw new Error("VENUE_NOT_FOUND");
-    return venue;
+    if (venueId === ONLINE_DETAIL.id) return ONLINE_DETAIL;
+    throw new Error("VENUE_NOT_FOUND");
   },
 };
 
@@ -111,6 +113,23 @@ test("offers system settings only after location permission is denied", async ()
   await call(target, "onOpenLocationSetting");
   expect(openSetting).toHaveBeenCalledTimes(1);
   call(target, "onDismissLocationDenied");
+  expect(target.data.locationPermissionDenied).toBe(false);
+});
+
+test.each([
+  ["LOCATION_PRIVACY_DENIED", "请先同意位置隐私授权后重试。"],
+  ["LOCATION_SERVICES_DISABLED", "系统定位服务未开启，请开启后重试。"],
+  ["LOCATION_TIMEOUT", "定位超时，请重试。"],
+  ["LOCATION_FAILED", "暂时无法获取位置，请重试。"],
+])("shows a distinct recovery message for %s", async (code, message) => {
+  registerLocationCapability({
+    async getLocation() { throw Object.assign(new Error(code), { code }); },
+    async openSetting() {},
+  });
+  const target = page();
+  await call(target, "onLoad", {});
+  await call(target, "onLocateTap");
+  expect(target.data.locationErrorText).toBe(message);
   expect(target.data.locationPermissionDenied).toBe(false);
 });
 

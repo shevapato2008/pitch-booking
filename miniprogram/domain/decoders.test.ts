@@ -119,8 +119,16 @@ test("strictly decodes map and both discriminated venue detail variants", () => 
   expect(map).toHaveLength(5);
   expect(map[0]).toMatchObject({ bookingMode: "ONLINE", marker: { coordinateSystem: "GCJ02" } });
   expect(map[1]).toMatchObject({ bookingMode: "DIRECTORY_ONLY", coverImage: null });
-  expect(decodeVenueDetail(onlineVenueDetail)).toMatchObject({ bookingMode: "ONLINE", id: onlineVenueDetail.id });
-  expect(decodeVenueDetail(directoryVenueDetail)).toMatchObject({ bookingMode: "DIRECTORY_ONLY", id: directoryVenueDetail.id });
+  expect(decodeVenueDetail(onlineVenueDetail)).toMatchObject({
+    bookingMode: "ONLINE", id: onlineVenueDetail.id,
+    priceAdvantageText: onlineVenueDetail.price_advantage_text,
+    navigation: { poiName: onlineVenueDetail.navigation_poi_name },
+  });
+  expect(decodeVenueDetail(directoryVenueDetail)).toMatchObject({
+    bookingMode: "DIRECTORY_ONLY", id: directoryVenueDetail.id,
+    businessHoursText: null,
+    navigation: { poiName: directoryVenueDetail.navigation_poi_name },
+  });
 });
 
 test.each([

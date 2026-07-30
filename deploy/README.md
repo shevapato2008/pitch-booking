@@ -7,6 +7,9 @@ The first venue-browsing slice uses a staging-shaped local stack before any remo
 - PostgreSQL 17 stores venue and availability data in the `postgres_data` volume.
 - FastAPI migrates the database before starting and exposes its immutable revision header.
 - Caddy exposes only `/api/*` at `http://127.0.0.1:8080`.
+- The API image explicitly packages only `deploy/venue-directory.json` and
+  `deploy/venue-directory.schema.json` under `/app/deploy`; environment and approval files are not
+  copied into the image. Preflight tests pin the checked-in SHA-256 values.
 
 Copy `deploy/.env.example` to an ignored file and replace every validation sentinel. For a local run,
 `PUBLIC_API_BASE_URL=http://127.0.0.1:8080` is allowed; non-loopback environments must use HTTPS.
@@ -18,6 +21,9 @@ uv run python -m scripts.preflight_deploy --env-file deploy/.env.local
 docker compose --env-file deploy/.env.local config --quiet
 docker compose --env-file deploy/.env.local up -d --build
 docker compose --env-file deploy/.env.local exec api uv run python -m scripts.seed_demo --anchor-date today --days 31
+docker compose --env-file deploy/.env.local exec api uv run python scripts/load_venue_directory.py \
+  --manifest /app/deploy/venue-directory.json --schema /app/deploy/venue-directory.schema.json \
+  --environment development
 curl -fsS http://127.0.0.1:8080/api/v1/health
 uv run python -m scripts.verify_staging \
   --base-url http://127.0.0.1:8080 \

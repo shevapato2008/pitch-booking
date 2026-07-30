@@ -153,6 +153,37 @@ def test_unmapped_legacy_venue_aborts_the_upgrade_atomically(
 
 
 @pytest.mark.integration
+def test_directory_identity_with_inventory_aborts_before_mode_change(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0005")
+    _insert_legacy_venue(
+        migration_engine,
+        venue_id=DIRECTORY_ID,
+        slug="tianjin-olympic-center-five-a-side-football-pitch",
+        is_primary=False,
+        is_active=True,
+    )
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO pitches (id, venue_id, code, name, pitch_type, sort_order) "
+                "VALUES ('10000000-0000-0000-0000-000000000099', :venue_id, "
+                "'unsafe', 'Unsafe pitch', 'FIVE_A_SIDE', 0)"
+            ),
+            {"venue_id": DIRECTORY_ID},
+        )
+
+    with pytest.raises(RuntimeError, match="directory identity has booking inventory"):
+        command.upgrade(config, "head")
+
+    assert "booking_mode" not in {
+        column["name"] for column in inspect(migration_engine).get_columns("venues")
+    }
+
+
+@pytest.mark.integration
 def test_directory_rows_guard_downgrade_before_schema_mutation(
     migration_engine: Engine,
 ) -> None:

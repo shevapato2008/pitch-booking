@@ -112,6 +112,18 @@ def _validate_and_backfill_legacy_venues(bind: sa.Connection) -> None:
         mapping = _VENUE_BACKFILLS.get(str(venue_id))
         if mapping is None or str(slug) not in mapping["accepted_slugs"]:
             raise RuntimeError(f"unmapped legacy venue: {venue_id}/{slug}")
+        if mapping["booking_mode"] == "DIRECTORY_ONLY":
+            has_inventory = bind.execute(
+                sa.text(
+                    "SELECT EXISTS (SELECT 1 FROM pitches "
+                    "WHERE venue_id=CAST(:venue_id AS uuid))"
+                ),
+                {"venue_id": venue_id},
+            ).scalar_one()
+            if has_inventory:
+                raise RuntimeError(
+                    f"directory identity has booking inventory: {venue_id}/{slug}"
+                )
 
     for venue_id, _slug in rows:
         mapping = _VENUE_BACKFILLS[str(venue_id)]

@@ -11,6 +11,9 @@ const VENUE_DIRECTORY_VISUAL_FIXTURE = decodeVenueMap(
 const DIRECTORY_DETAIL = decodeVenueDetail(
   jest.requireActual("../../../contracts/examples/venue-directory-detail.json"),
 );
+const ONLINE_DETAIL = decodeVenueDetail(
+  jest.requireActual("../../../contracts/examples/venue-online-detail.json"),
+);
 function page() {
   if (!definition) {
     (globalThis as any).Page = (value: Record<string, any>) => { definition = value; };
@@ -33,6 +36,23 @@ test("renders a known directory detail without an availability action", async ()
 
   expect(target.data.venue).toMatchObject({ bookingMode: "DIRECTORY_ONLY", bookingStatusText: "暂未接入在线预订" });
   expect(target.data.canBook).toBe(false);
+});
+
+test("renders the online detail API as authority without falling back to primary", async () => {
+  registerVenueDirectoryDataSource({
+    async getVenueDirectory() { return []; },
+    async getVenueDetail() { return ONLINE_DETAIL; },
+  });
+  const target = page();
+  await target.onLoad({ venueId: ONLINE_DETAIL.id });
+
+  expect(target.data.venue).toMatchObject({
+    bookingMode: "ONLINE",
+    description: ONLINE_DETAIL.description,
+    priceAdvantageText: "在线价格透明，以可订时段显示为准。",
+    parkingText: "停车安排以场馆现场指引为准。",
+  });
+  expect(target.data.canBook).toBe(true);
 });
 
 test("opens the map focused on the current venue", async () => {

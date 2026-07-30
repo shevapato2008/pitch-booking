@@ -17,7 +17,7 @@ import type {
   SessionTokenView,
 } from "./contracts";
 import type { CheckoutView, OrderView, PaymentState } from "./booking";
-import type { VenueMapEntry, VenuePitchType as DirectoryPitchType } from "./venue-directory";
+import type { VenueDetail, VenueMapEntry, VenuePitchType as DirectoryPitchType } from "./venue-directory";
 import type {
   PaymentLaunchParams,
   PaymentLaunchResult,
@@ -468,7 +468,7 @@ const DETAIL_COMMON_KEYS = [
   "cover_image", "nearest_transit", "content_verified_at",
 ] as const;
 
-export function decodeVenueDetail(value: unknown): VenueMapEntry {
+export function decodeVenueDetail(value: unknown): VenueDetail {
   if (typeof value !== "object" || value === null || Array.isArray(value)) invalid("$");
   const mode = enumAt((value as Record<string, unknown>).booking_mode, ["ONLINE", "DIRECTORY_ONLY"] as const, "$.booking_mode");
   const variantKeys = mode === "ONLINE"
@@ -476,28 +476,45 @@ export function decodeVenueDetail(value: unknown): VenueMapEntry {
     : ["business_hours_text", "parking_text", "images", "facilities"];
   const object = exactObject(value, [...DETAIL_COMMON_KEYS, ...variantKeys], "$");
   const coordinateSystem = enumAt(object.coordinate_system, ["GCJ02"] as const, "$.coordinate_system");
-  stringAt(object.slug, "$.slug");
-  stringAt(object.description, "$.description", true);
-  stringAt(object.navigation_poi_name, "$.navigation_poi_name");
-  numberAt(object.navigation_latitude, "$.navigation_latitude", -90, 90);
-  numberAt(object.navigation_longitude, "$.navigation_longitude", -180, 180);
+  const base = directoryEntry(object, coordinateSystem, "$");
+  const detail = {
+    ...base,
+    slug: stringAt(object.slug, "$.slug"),
+    description: stringAt(object.description, "$.description", true),
+    navigation: {
+      poiName: stringAt(object.navigation_poi_name, "$.navigation_poi_name"),
+      coordinate: {
+        coordinateSystem,
+        latitude: numberAt(object.navigation_latitude, "$.navigation_latitude", -90, 90),
+        longitude: numberAt(object.navigation_longitude, "$.navigation_longitude", -180, 180),
+      },
+    },
+  };
   if (mode === "ONLINE") {
-    stringAt(object.price_advantage_text, "$.price_advantage_text");
-    enumAt(object.timezone, ["Asia/Shanghai"] as const, "$.timezone");
-    stringAt(object.business_hours_text, "$.business_hours_text");
-    stringAt(object.parking_text, "$.parking_text");
-    stringAt(object.phone, "$.phone");
-    stringAt(object.refund_policy_summary, "$.refund_policy_summary");
-    arrayAt(object.images, "$.images", 1).forEach((image, index) => decodeImage(image, `$.images[${index}]`));
-    arrayAt(object.facilities, "$.facilities", 1).forEach((facility, index) => decodeFacility(facility, `$.facilities[${index}]`));
-    decodeWindow(object.availability_window, "$.availability_window");
-  } else {
-    nullableString(object.business_hours_text, "$.business_hours_text");
-    nullableString(object.parking_text, "$.parking_text");
-    arrayAt(object.images, "$.images").forEach((image, index) => httpsUrlAt(image, `$.images[${index}]`));
-    arrayAt(object.facilities, "$.facilities").forEach((facility, index) => stringAt(facility, `$.facilities[${index}]`));
+    if (detail.bookingMode !== "ONLINE") invalid("$.booking_mode");
+    return {
+      ...detail,
+      bookingMode: "ONLINE",
+      priceAdvantageText: stringAt(object.price_advantage_text, "$.price_advantage_text"),
+      timezone: enumAt(object.timezone, ["Asia/Shanghai"] as const, "$.timezone"),
+      businessHoursText: stringAt(object.business_hours_text, "$.business_hours_text"),
+      parkingText: stringAt(object.parking_text, "$.parking_text"),
+      phone: stringAt(object.phone, "$.phone"),
+      refundPolicySummary: stringAt(object.refund_policy_summary, "$.refund_policy_summary"),
+      images: arrayAt(object.images, "$.images", 1).map((image, index) => decodeImage(image, `$.images[${index}]`)),
+      facilities: arrayAt(object.facilities, "$.facilities", 1).map((facility, index) => decodeFacility(facility, `$.facilities[${index}]`)),
+      availabilityWindow: decodeWindow(object.availability_window, "$.availability_window"),
+    };
   }
-  return directoryEntry(object, coordinateSystem, "$");
+  if (detail.bookingMode !== "DIRECTORY_ONLY") invalid("$.booking_mode");
+  return {
+    ...detail,
+    bookingMode: "DIRECTORY_ONLY",
+    businessHoursText: nullableString(object.business_hours_text, "$.business_hours_text"),
+    parkingText: nullableString(object.parking_text, "$.parking_text"),
+    images: arrayAt(object.images, "$.images").map((image, index) => httpsUrlAt(image, `$.images[${index}]`)),
+    facilities: arrayAt(object.facilities, "$.facilities").map((facility, index) => stringAt(facility, `$.facilities[${index}]`)),
+  };
 }
 
 function decodeSlot(value: unknown, path: string): Slot {

@@ -70,12 +70,19 @@ Page({
       if (!this.locationGuard.isCurrent(token)) return;
       const code = (error as { code?: string }).code;
       const permissionDenied = code === "permission-denied" || code === "LOCATION_PERMISSION_DENIED";
+      const message = code === "LOCATION_PRIVACY_DENIED"
+        ? "请先同意位置隐私授权后重试。"
+        : code === "LOCATION_SERVICES_DISABLED"
+          ? "系统定位服务未开启，请开启后重试。"
+          : code === "LOCATION_TIMEOUT"
+            ? "定位超时，请重试。"
+            : "暂时无法获取位置，请重试。";
       this.setData({
         locating: false,
         showLocation: false,
         userLocation: null,
         locationPermissionDenied: permissionDenied,
-        locationErrorText: permissionDenied ? "" : "暂时无法获取位置，请重试。",
+        locationErrorText: permissionDenied ? "" : message,
       });
     }
   },
