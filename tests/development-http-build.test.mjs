@@ -90,12 +90,14 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.match(source, /createHttpBookingDataSource/);
   assert.match(source, /createHttpPaymentDataSource/);
   assert.match(source, /createHttpPageDataSource/);
+  assert.match(source, /createHttpVenueDirectoryDataSource/);
   assert.match(source, /productionTransport/);
   assert.match(source, /createSessionStore/);
   assert.match(source, /dev-login-code/);
   assert.match(source, /dev-phone-code/);
   const bootstrap = await readFile(path.join(developmentOutput, "dev/bootstrap.js"), "utf8");
   assert.match(bootstrap, /registerPaymentDataSource/);
+  assert.match(bootstrap, /registerVenueDirectoryDataSource/);
   assert.match(bootstrap, /createDevelopmentPaymentCapability/);
 });
 

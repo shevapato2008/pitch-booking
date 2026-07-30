@@ -17,6 +17,7 @@ import type {
   SessionTokenView,
 } from "./contracts";
 import type { CheckoutView, OrderView, PaymentState } from "./booking";
+import type { VenueMapEntry, VenuePitchType as DirectoryPitchType } from "./venue-directory";
 import type {
   PaymentLaunchParams,
   PaymentLaunchResult,
@@ -38,6 +39,7 @@ import {
 } from "./decoder-primitives";
 
 const PITCH_TYPES = ["FIVE_A_SIDE", "SEVEN_A_SIDE"] as const;
+const DIRECTORY_PITCH_TYPES = ["FIVE_A_SIDE", "SEVEN_A_SIDE", "ELEVEN_A_SIDE"] as const;
 const IMAGE_ROLES = ["COVER", "GALLERY"] as const;
 const FACILITY_CODES = ["LIGHTING", "CHANGING_ROOM", "DRINKING_WATER", "PARKING"] as const;
 const SLOT_STATUSES = ["AVAILABLE", "TEMPORARILY_LOCKED", "BOOKED", "CLOSED", "EXPIRED"] as const;
@@ -55,6 +57,7 @@ const API_ERROR_CODES = [
   "WECHAT_LOGIN_FAILED", "PHONE_AUTH_REQUIRED", "PHONE_AUTH_UNAVAILABLE", "PHONE_AUTH_FAILED",
   "INVALID_CONTACT", "SLOT_NOT_AVAILABLE", "PRICE_CHANGED", "IDEMPOTENCY_KEY_REUSED",
   "ORDER_NOT_FOUND", "ORDER_EXPIRED", "PAYMENT_EXCEPTION", "PAYMENT_CREATE_FAILED",
+  "VENUE_DIRECTORY_MISCONFIGURED",
 ] as const;
 const PAYMENT_STATES = ["CREATING", "PREPAY_CREATED", "CONFIRMING", "SUCCESS", "CLOSED", "UNKNOWN"] as const;
 const MASKED_PHONE = /^1[0-9]{2}\*{4}[0-9]{4}$/;
@@ -404,6 +407,97 @@ export function decodeVenue(value: unknown): Venue {
   assertSorted(decoded.facilities, (facility) => facility.sortOrder, "$.facilities", "sort_order");
   assertSorted(decoded.pitchTypes, (pitchType) => pitchType.sortOrder, "$.pitch_types", "sort_order");
   return decoded;
+}
+
+function decodeDirectoryTransit(value: unknown, path: string) {
+  const object = exactObject(value, ["kind", "name", "lines", "distance_meters", "distance_basis"], path);
+  return {
+    kind: enumAt(object.kind, ["SUBWAY", "BUS"] as const, `${path}.kind`),
+    name: stringAt(object.name, `${path}.name`),
+    lines: arrayAt(object.lines, `${path}.lines`).map((line, index) => stringAt(line, `${path}.lines[${index}]`)),
+    distanceMeters: integerAt(object.distance_meters, `${path}.distance_meters`),
+    distanceBasis: enumAt(object.distance_basis, ["STRAIGHT_LINE", "MAP_VERIFIED"] as const, `${path}.distance_basis`),
+  };
+}
+
+function nullableHttps(value: unknown, path: string): string | null {
+  return value === null ? null : httpsUrlAt(value, path);
+}
+
+function decodeDirectoryPitchTypes(value: unknown, path: string): DirectoryPitchType[] {
+  return arrayAt(value, path).map((pitchType, index) =>
+    enumAt<DirectoryPitchType>(pitchType, DIRECTORY_PITCH_TYPES, `${path}[${index}]`));
+}
+
+function directoryEntry(object: Record<string, unknown>, coordinateSystem: "GCJ02", path: string): VenueMapEntry {
+  return {
+    id: uuidAt(object.id, `${path}.id`),
+    name: stringAt(object.name, `${path}.name`),
+    address: stringAt(object.address, `${path}.address`),
+    bookingMode: enumAt(object.booking_mode, ["ONLINE", "DIRECTORY_ONLY"] as const, `${path}.booking_mode`),
+    marker: {
+      coordinateSystem,
+      latitude: numberAt(object.latitude, `${path}.latitude`, -90, 90),
+      longitude: numberAt(object.longitude, `${path}.longitude`, -180, 180),
+    },
+    pitchTypes: decodeDirectoryPitchTypes(object.pitch_types, `${path}.pitch_types`),
+    coverImage: nullableHttps(object.cover_image, `${path}.cover_image`),
+    nearestTransit: arrayAt(object.nearest_transit, `${path}.nearest_transit`)
+      .map((stop, index) => decodeDirectoryTransit(stop, `${path}.nearest_transit[${index}]`)),
+    contentVerifiedAt: rfc3339At(object.content_verified_at, `${path}.content_verified_at`),
+  };
+}
+
+const MAP_ITEM_KEYS = [
+  "id", "name", "address", "latitude", "longitude", "booking_mode", "pitch_types",
+  "cover_image", "nearest_transit", "content_verified_at",
+] as const;
+
+export function decodeVenueMap(value: unknown): VenueMapEntry[] {
+  const object = exactObject(value, ["coordinate_system", "venues"], "$");
+  const coordinateSystem = enumAt(object.coordinate_system, ["GCJ02"] as const, "$.coordinate_system");
+  return arrayAt(object.venues, "$.venues", 1).map((venue, index) => {
+    const path = `$.venues[${index}]`;
+    return directoryEntry(exactObject(venue, MAP_ITEM_KEYS, path), coordinateSystem, path);
+  });
+}
+
+const DETAIL_COMMON_KEYS = [
+  "id", "slug", "name", "description", "address", "latitude", "longitude", "coordinate_system",
+  "navigation_poi_name", "navigation_latitude", "navigation_longitude", "booking_mode", "pitch_types",
+  "cover_image", "nearest_transit", "content_verified_at",
+] as const;
+
+export function decodeVenueDetail(value: unknown): VenueMapEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid("$");
+  const mode = enumAt((value as Record<string, unknown>).booking_mode, ["ONLINE", "DIRECTORY_ONLY"] as const, "$.booking_mode");
+  const variantKeys = mode === "ONLINE"
+    ? ["price_advantage_text", "timezone", "business_hours_text", "parking_text", "phone", "refund_policy_summary", "images", "facilities", "availability_window"]
+    : ["business_hours_text", "parking_text", "images", "facilities"];
+  const object = exactObject(value, [...DETAIL_COMMON_KEYS, ...variantKeys], "$");
+  const coordinateSystem = enumAt(object.coordinate_system, ["GCJ02"] as const, "$.coordinate_system");
+  stringAt(object.slug, "$.slug");
+  stringAt(object.description, "$.description", true);
+  stringAt(object.navigation_poi_name, "$.navigation_poi_name");
+  numberAt(object.navigation_latitude, "$.navigation_latitude", -90, 90);
+  numberAt(object.navigation_longitude, "$.navigation_longitude", -180, 180);
+  if (mode === "ONLINE") {
+    stringAt(object.price_advantage_text, "$.price_advantage_text");
+    enumAt(object.timezone, ["Asia/Shanghai"] as const, "$.timezone");
+    stringAt(object.business_hours_text, "$.business_hours_text");
+    stringAt(object.parking_text, "$.parking_text");
+    stringAt(object.phone, "$.phone");
+    stringAt(object.refund_policy_summary, "$.refund_policy_summary");
+    arrayAt(object.images, "$.images", 1).forEach((image, index) => decodeImage(image, `$.images[${index}]`));
+    arrayAt(object.facilities, "$.facilities", 1).forEach((facility, index) => decodeFacility(facility, `$.facilities[${index}]`));
+    decodeWindow(object.availability_window, "$.availability_window");
+  } else {
+    nullableString(object.business_hours_text, "$.business_hours_text");
+    nullableString(object.parking_text, "$.parking_text");
+    arrayAt(object.images, "$.images").forEach((image, index) => httpsUrlAt(image, `$.images[${index}]`));
+    arrayAt(object.facilities, "$.facilities").forEach((facility, index) => stringAt(facility, `$.facilities[${index}]`));
+  }
+  return directoryEntry(object, coordinateSystem, "$");
 }
 
 function decodeSlot(value: unknown, path: string): Slot {

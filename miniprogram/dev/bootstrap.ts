@@ -30,6 +30,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerPageDataSource(sources.pages);
     registerBookingDataSource(sources.booking);
     registerPaymentDataSource(sources.payment);
+    registerVenueDirectoryDataSource(sources.venues);
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     return;

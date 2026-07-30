@@ -4,8 +4,10 @@ import type { BookingDataSource } from "../services/booking";
 import { createHttpBookingDataSource } from "../services/http-booking";
 import { createHttpPaymentDataSource } from "../services/http-payment";
 import { createHttpPageDataSource } from "../services/http-page-data";
+import { createHttpVenueDirectoryDataSource } from "../services/http-venue-directory";
 import type { PageDataSource } from "../services/page-data";
 import type { PaymentDataSource } from "../services/payment";
+import type { VenueDirectoryDataSource } from "../services/venue-directory";
 import { createSessionStore, type SessionStorage } from "../services/session-store";
 
 const DEVELOPMENT_LOGIN_CODE = "dev-login-code";
@@ -15,6 +17,7 @@ export interface DevelopmentHttpSources {
   readonly booking: BookingDataSource;
   readonly payment: PaymentDataSource;
   readonly pages: PageDataSource;
+  readonly venues: VenueDirectoryDataSource;
   readonly neutralPhoneTapDetail: () => unknown;
 }
 
@@ -58,6 +61,7 @@ export function createDevelopmentHttpSources(apiBaseUrl: string): DevelopmentHtt
       sessionStore,
     }),
     pages: createHttpPageDataSource(transport, productionMedia),
+    venues: createHttpVenueDirectoryDataSource(transport),
     neutralPhoneTapDetail: () => DEVELOPMENT_PHONE_CODE,
   };
 }

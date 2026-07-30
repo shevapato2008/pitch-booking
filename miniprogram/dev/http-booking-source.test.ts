@@ -3,6 +3,7 @@ import { afterEach, expect, jest, test } from "@jest/globals";
 import { getBookingDataSource, getNeutralPhoneTapCode, resetBookingDataSourceForTesting } from "../services/booking";
 import { getPageDataSource } from "../services/page-data";
 import { getPaymentBindings, resetPaymentBindingsForTesting } from "../services/payment";
+import { getVenueDirectoryDataSource } from "../services/venue-directory";
 import { bootstrapDevelopment } from "./bootstrap";
 import { createDevelopmentHttpSources } from "./http-booking-source";
 
@@ -22,6 +23,8 @@ const venue = jest.requireActual<VenueExample>("../../contracts/examples/venue-p
 const payment = jest.requireActual<PaymentExample>("../../contracts/examples/payment-prepay-created.json");
 const confirming = jest.requireActual<PaymentExample>("../../contracts/examples/payment-confirming.json");
 const confirmed = jest.requireActual<OrderExample>("../../contracts/examples/order-confirmed.json");
+const venueMap = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-map.json");
+const venueDetail = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-directory-detail.json");
 
 interface RequestOptions {
   readonly url: string;
@@ -47,6 +50,8 @@ function installRequestRuntime(): void {
                 : path.endsWith(`/payments/${payment.payment_id}/reconcile`) ? { statusCode: 202, data: confirming }
                   : path === `/api/v1/orders/${confirmed.id}` ? { statusCode: 200, data: confirmed }
                     : path === "/api/v1/venues/primary" ? { statusCode: 200, data: venue }
+                      : path === "/api/v1/venues/map" ? { statusCode: 200, data: venueMap }
+                        : path === `/api/v1/venues/${venueDetail.id}` ? { statusCode: 200, data: venueDetail }
                       : undefined;
         const normalized = "statusCode" in (response ?? {})
           ? response as { statusCode: number; data: unknown }
@@ -69,6 +74,7 @@ test("development HTTP sources use the base URL, deterministic capabilities, and
   const first = createDevelopmentHttpSources("http://127.0.0.1:8000");
 
   await expect(first.pages.getVenue()).resolves.toMatchObject({ id: venue.id });
+  await expect(first.venues.getVenueDirectory()).resolves.toHaveLength(5);
   await expect(first.booking.login()).resolves.toMatchObject({ userId: session.user.id });
   await expect(first.booking.getCheckout(checkout.slot_id)).resolves.toMatchObject({ slotId: checkout.slot_id });
   await expect(first.booking.authorizePhone("dev-phone-code")).resolves.toEqual({ maskedPhone: phone.masked_phone });
@@ -102,6 +108,8 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
 
   expect(getNeutralPhoneTapCode()).toBe("dev-phone-code");
   await expect(getPageDataSource().getVenue()).resolves.toMatchObject({ id: venue.id });
+  await expect(getVenueDirectoryDataSource().getVenueDetail(String(venueDetail.id)))
+    .resolves.toMatchObject({ id: venueDetail.id });
   await expect(getBookingDataSource().login()).resolves.toMatchObject({ userId: session.user.id });
   await expect(getPaymentBindings()?.source.createPayment(confirmed.id, "bootstrap-attempt")).resolves.toMatchObject({
     outcome: "PREPAY_CREATED",

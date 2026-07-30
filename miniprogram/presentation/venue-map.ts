@@ -30,7 +30,7 @@ const markerPath = (venue: VenueMapEntry, selected: boolean): string => {
 };
 
 const stableVenues = (venues: readonly VenueMapEntry[]): VenueMapEntry[] => [...venues].sort((left, right) => (
-  left.sortOrder - right.sortOrder
+  (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
   || left.name.localeCompare(right.name, "zh-CN")
   || left.id.localeCompare(right.id)
 ));

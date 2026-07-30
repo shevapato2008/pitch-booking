@@ -13,10 +13,10 @@ export interface VenueNavigation {
 }
 
 export interface VenueTransitStop {
-  readonly id: string;
+  readonly id?: string;
   readonly kind: "SUBWAY" | "BUS";
   readonly name: string;
-  readonly coordinate: Gcj02Coordinate;
+  readonly coordinate?: Gcj02Coordinate;
   readonly lines: readonly string[];
   readonly distanceMeters: number;
   readonly distanceBasis: "STRAIGHT_LINE" | "MAP_VERIFIED";
@@ -24,12 +24,12 @@ export interface VenueTransitStop {
 
 interface VenueMapEntryBase {
   readonly id: string;
-  readonly slug: string;
-  readonly sortOrder: number;
+  readonly slug?: string;
+  readonly sortOrder?: number;
   readonly name: string;
   readonly address: string;
   readonly marker: Gcj02Coordinate;
-  readonly navigation: VenueNavigation;
+  readonly navigation?: VenueNavigation;
   readonly pitchTypes: readonly VenuePitchType[];
   readonly coverImage: string | null;
   readonly nearestTransit: readonly VenueTransitStop[];

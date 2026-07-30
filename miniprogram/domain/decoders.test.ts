@@ -11,6 +11,8 @@ import {
   decodePhoneVerification,
   decodeWeChatSession,
   decodeVenue,
+  decodeVenueDetail,
+  decodeVenueMap,
 } from "./decoders";
 
 interface SlotExample {
@@ -71,6 +73,9 @@ const paymentAlreadyConfirmed = jest.requireActual<Record<string, unknown>>("../
 const confirmedOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-confirmed.json");
 const paymentExceptionOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-payment-exception.json");
 const priceChanged = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-price-changed.json");
+const venueMap = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-map.json");
+const onlineVenueDetail = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-online-detail.json");
+const directoryVenueDetail = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-directory-detail.json");
 
 const firstSlot = ready.pitches[0].slots[0];
 const withSlot = (slot: object) => ({
@@ -107,6 +112,26 @@ test("decodes canonical responses to camel-case view DTOs", () => {
     priceCents: firstSlot.price_cents,
     unavailableReason: firstSlot.unavailable_reason,
   });
+});
+
+test("strictly decodes map and both discriminated venue detail variants", () => {
+  const map = decodeVenueMap(venueMap);
+  expect(map).toHaveLength(5);
+  expect(map[0]).toMatchObject({ bookingMode: "ONLINE", marker: { coordinateSystem: "GCJ02" } });
+  expect(map[1]).toMatchObject({ bookingMode: "DIRECTORY_ONLY", coverImage: null });
+  expect(decodeVenueDetail(onlineVenueDetail)).toMatchObject({ bookingMode: "ONLINE", id: onlineVenueDetail.id });
+  expect(decodeVenueDetail(directoryVenueDetail)).toMatchObject({ bookingMode: "DIRECTORY_ONLY", id: directoryVenueDetail.id });
+});
+
+test.each([
+  ["map unknown field", { ...venueMap, user_latitude: 39 }],
+  ["map invalid coordinate", { ...venueMap, venues: [{ ...(venueMap.venues as object[])[0], latitude: "39" }] }],
+  ["detail unknown field", { ...directoryVenueDetail, source_url: "https://internal.test" }],
+  ["detail wrong variant", { ...directoryVenueDetail, booking_mode: "ONLINE" }],
+  ["detail bad nullable cover", { ...directoryVenueDetail, cover_image: 0 }],
+])("rejects corrupt venue directory payload: %s", (_name, value) => {
+  expect(() => (String(_name).startsWith("map") ? decodeVenueMap(value) : decodeVenueDetail(value)))
+    .toThrow("INVALID_API_RESPONSE");
 });
 
 test.each([
