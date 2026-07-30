@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -86,4 +86,12 @@ test("order fixtures expose explicit payment authority instead of importing visu
 
 test("hand-written booking preview data has been removed", () => {
   assert.equal(existsSync("miniprogram/dev/booking-fixture.ts"), false);
+});
+
+test("pre-contract map visual data stays outside the canonical Artifact fixture inventory", async () => {
+  const names = await readdir("artifacts/ui/fixtures");
+
+  assert.equal(names.some((name) => /venue-(directory|map)/.test(name)), false);
+  assert.equal(fixtureMappings.some(([, name]) => /venue-(directory|map)/.test(name)), false);
+  assert.equal(existsSync("miniprogram/dev/venue-directory-source.ts"), true);
 });

@@ -59,6 +59,24 @@ export interface NativeCapabilities {
   makePhoneCall(phoneNumber: string): Promise<void>;
 }
 
+export interface LocationCoordinate {
+  readonly coordinateSystem: "GCJ02";
+  readonly latitude: number;
+  readonly longitude: number;
+}
+
+export type LocationFailureCode =
+  | "LOCATION_PRIVACY_DENIED"
+  | "LOCATION_PERMISSION_DENIED"
+  | "LOCATION_SERVICES_DISABLED"
+  | "LOCATION_TIMEOUT"
+  | "LOCATION_FAILED";
+
+export interface LocationCapability {
+  getLocation(): Promise<LocationCoordinate>;
+  openSetting(): Promise<void>;
+}
+
 export interface MediaSourceResolver {
   resolve(role: "COVER" | "GALLERY", source: string): string;
 }
