@@ -118,7 +118,7 @@ def test_fresh_migration_path_reaches_identity_repair_head(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0005"
+        ).scalar_one() == "0006"
     columns = {item["name"] for item in inspect(migration_engine).get_columns("users")}
     assert "wechat_app_id" in columns
     assert _identity_constraints(migration_engine)["uq_users_wechat_app_openid"] == [
@@ -221,7 +221,7 @@ def test_corrective_identity_downgrade_preserves_0004_identity_contract(
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.delenv("WECHAT_APP_ID", raising=False)
     config = _config(migration_engine)
-    command.upgrade(config, "head")
+    command.upgrade(config, "0005")
 
     command.downgrade(config, "0004")
 
@@ -237,7 +237,7 @@ def test_booking_migration_downgrades_and_reupgrades_cleanly(
     migration_engine: Engine,
 ) -> None:
     config = _config(migration_engine)
-    command.upgrade(config, "head")
+    command.upgrade(config, "0005")
 
     assert _circular_foreign_keys(migration_engine) == {
         ("fk_orders_slot_id_slots", "orders", "slots", "r"),
@@ -291,7 +291,7 @@ def test_booking_migration_downgrades_and_reupgrades_cleanly(
             {"slot_id": existing_slot_id},
         )
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "0005")
     assert _circular_foreign_keys(migration_engine) == {
         ("fk_orders_slot_id_slots", "orders", "slots", "r"),
         ("fk_slots_locked_by_order_id_orders", "slots", "orders", "r"),
@@ -373,7 +373,7 @@ def test_upgrade_releases_legacy_locked_slots_before_adding_order_fk(
             {"available_id": available_slot_id, "locked_id": locked_slot_id},
         )
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "0005")
 
     with migration_engine.connect() as connection:
         rows = connection.execute(
@@ -597,7 +597,7 @@ def test_payment_recovery_scheduling_migration_backfills_and_downgrades(
             )
         )
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "0005")
 
     with migration_engine.connect() as connection:
         row = connection.execute(

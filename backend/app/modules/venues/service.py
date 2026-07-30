@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import NoReturn
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from backend.app.errors import AppError
@@ -41,20 +42,36 @@ class PrimaryVenueService:
             self._misconfigured()
         if not facilities or not pitches:
             self._misconfigured()
-        required_text = (
-            venue.name,
-            venue.price_advantage_text,
-            venue.timezone,
-            venue.business_hours_text,
-            venue.address,
-            venue.parking_text,
-            venue.phone,
-            venue.refund_policy_text,
-        )
-        if any(not value.strip() for value in required_text):
+        price_advantage_text = venue.price_advantage_text
+        timezone_name = venue.timezone
+        business_hours_text = venue.business_hours_text
+        parking_text = venue.parking_text
+        phone = venue.phone
+        refund_policy_text = venue.refund_policy_text
+        if (
+            price_advantage_text is None
+            or timezone_name is None
+            or business_hours_text is None
+            or parking_text is None
+            or phone is None
+            or refund_policy_text is None
+            or any(
+                not value.strip()
+                for value in (
+                    venue.name,
+                    price_advantage_text,
+                    timezone_name,
+                    business_hours_text,
+                    venue.address,
+                    parking_text,
+                    phone,
+                    refund_policy_text,
+                )
+            )
+        ):
             self._misconfigured()
         try:
-            timezone = ZoneInfo(venue.timezone)
+            timezone = ZoneInfo(timezone_name)
         except ZoneInfoNotFoundError:
             self._misconfigured()
 
@@ -78,15 +95,15 @@ class PrimaryVenueService:
             id=venue.id,
             name=venue.name,
             description=venue.description,
-            price_advantage_text=venue.price_advantage_text,
-            timezone=venue.timezone,
-            business_hours_text=venue.business_hours_text,
+            price_advantage_text=price_advantage_text,
+            timezone=timezone_name,
+            business_hours_text=business_hours_text,
             address=venue.address,
             latitude=venue.latitude,
             longitude=venue.longitude,
-            parking_text=venue.parking_text,
-            phone=venue.phone,
-            refund_policy_summary=venue.refund_policy_text,
+            parking_text=parking_text,
+            phone=phone,
+            refund_policy_summary=refund_policy_text,
             images=[
                 VenueImageResponse(
                     url=image.url,
@@ -113,7 +130,7 @@ class PrimaryVenueService:
         )
 
     @staticmethod
-    def _misconfigured() -> None:
+    def _misconfigured() -> NoReturn:
         raise AppError(
             500,
             "PRIMARY_VENUE_MISCONFIGURED",

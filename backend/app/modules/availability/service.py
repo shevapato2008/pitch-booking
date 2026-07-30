@@ -2,6 +2,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from backend.app.errors import AppError
@@ -43,7 +44,8 @@ class AvailabilityService:
         venue = self.repository.get_active_venue(venue_id)
         if venue is None:
             raise AppError(404, "VENUE_NOT_FOUND", "场馆不存在")
-        timezone = ZoneInfo(venue.timezone)
+        timezone_name = cast(str, venue.timezone)
+        timezone = ZoneInfo(timezone_name)
         generated_at = self.now(timezone)
         window_start = generated_at.date()
         window_end = window_start + timedelta(days=13)
@@ -114,7 +116,7 @@ class AvailabilityService:
 
             response = AvailabilityResponse(
                 venue_id=venue.id,
-                timezone=venue.timezone,
+                timezone=timezone_name,
                 date=requested_date,
                 pitch_type=pitch_type.value,
                 availability_window=AvailabilityWindowResponse(

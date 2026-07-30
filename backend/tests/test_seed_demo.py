@@ -1,5 +1,7 @@
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
 import pytest
@@ -7,7 +9,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 import scripts.seed_demo as seed_demo
-from backend.app.models import Order, Slot, SlotStatus, User
+from backend.app.models import BookingMode, Order, Slot, SlotStatus, User, Venue
 from scripts.seed_demo import parse_anchor_date, run_seed
 
 
@@ -71,6 +73,54 @@ def test_seed_disposes_engine_when_session_setup_fails(
         )
 
     assert engine.disposed is True
+
+
+def test_seed_writes_all_directory_era_venue_fields_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[tuple[type[object], dict[str, object]]] = []
+
+    class RecordingSession:
+        def __enter__(self) -> "RecordingSession":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def commit(self) -> None:
+            return None
+
+    @contextmanager
+    def recording_engine(_database_url: str) -> Iterator[object]:
+        yield object()
+
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setattr(seed_demo, "_seed_engine", recording_engine)
+    monkeypatch.setattr(seed_demo, "Session", lambda _engine: RecordingSession())
+    monkeypatch.setattr(
+        seed_demo,
+        "_insert_missing",
+        lambda _session, model, values: captured.append((model, values)),
+    )
+
+    run_seed(
+        anchor="2026-07-30",
+        days=1,
+        database_url="postgresql+psycopg://unused/unused",
+        now=datetime(2026, 7, 30, tzinfo=UTC),
+    )
+
+    venue_values = next(values for model, values in captured if model is Venue)
+    assert venue_values["booking_mode"] == BookingMode.ONLINE
+    assert venue_values["navigation_poi_name"] == "天津市渤海元丰科技有限公司-南门"
+    assert venue_values["navigation_latitude"] == 39.000157
+    assert venue_values["navigation_longitude"] == 117.212208
+    assert venue_values["sort_order"] == 0
+    assert venue_values["content_verified_at"] == datetime.fromisoformat(
+        "2026-07-30T18:15:00+08:00"
+    )
+    assert venue_values["is_listed"] is True
+    assert venue_values["public_pitch_types"] == []
 
 
 @pytest.mark.integration

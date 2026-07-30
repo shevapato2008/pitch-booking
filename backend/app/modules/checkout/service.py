@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from backend.app.errors import AppError
@@ -82,7 +83,7 @@ class CheckoutService:
 
         pitch = slot.pitch
         venue = pitch.venue
-        timezone = ZoneInfo(venue.timezone)
+        timezone = ZoneInfo(cast(str, venue.timezone))
         starts_at = slot.starts_at.astimezone(timezone)
         ends_at = slot.ends_at.astimezone(timezone)
         return CheckoutResponse(
@@ -96,7 +97,7 @@ class CheckoutService:
             price_cents=slot.price_cents,
             currency="CNY",
             available=True,
-            cancellation_summary=venue.refund_policy_text,
+            cancellation_summary=cast(str, venue.refund_policy_text),
             lock_duration_seconds=CHECKOUT_LOCK_DURATION_SECONDS,
             contact=self._contact(user),
             checkout_version=slot.checkout_version,

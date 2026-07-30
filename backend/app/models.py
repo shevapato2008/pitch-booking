@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -38,6 +38,21 @@ class FacilityCode(StrEnum):
 class PitchType(StrEnum):
     FIVE_A_SIDE = "FIVE_A_SIDE"
     SEVEN_A_SIDE = "SEVEN_A_SIDE"
+
+
+class BookingMode(StrEnum):
+    ONLINE = "ONLINE"
+    DIRECTORY_ONLY = "DIRECTORY_ONLY"
+
+
+class TransitKind(StrEnum):
+    SUBWAY = "SUBWAY"
+    BUS = "BUS"
+
+
+class TransitDistanceBasis(StrEnum):
+    STRAIGHT_LINE = "STRAIGHT_LINE"
+    MAP_VERIFIED = "MAP_VERIFIED"
 
 
 class SlotStatus(StrEnum):
@@ -80,6 +95,30 @@ class Venue(Base):
         CheckConstraint("length(trim(name)) > 0", name="ck_venues_name_nonempty"),
         CheckConstraint("latitude BETWEEN -90 AND 90", name="ck_venues_latitude"),
         CheckConstraint("longitude BETWEEN -180 AND 180", name="ck_venues_longitude"),
+        CheckConstraint(
+            "navigation_latitude BETWEEN -90 AND 90",
+            name="ck_venues_navigation_latitude",
+        ),
+        CheckConstraint(
+            "navigation_longitude BETWEEN -180 AND 180",
+            name="ck_venues_navigation_longitude",
+        ),
+        CheckConstraint("sort_order >= 0", name="ck_venues_sort_order"),
+        CheckConstraint(
+            "jsonb_typeof(public_pitch_types) = 'array'",
+            name="ck_venues_public_pitch_types_array",
+        ),
+        CheckConstraint(
+            "NOT is_primary OR booking_mode = 'ONLINE'",
+            name="ck_venues_primary_online",
+        ),
+        CheckConstraint(
+            "booking_mode <> 'ONLINE' OR ("
+            "price_advantage_text IS NOT NULL AND timezone IS NOT NULL AND "
+            "business_hours_text IS NOT NULL AND parking_text IS NOT NULL AND "
+            "phone IS NOT NULL AND refund_policy_text IS NOT NULL)",
+            name="ck_venues_booking_content",
+        ),
         Index(
             "uq_one_active_primary_venue",
             text("(true)"),
@@ -92,15 +131,29 @@ class Venue(Base):
     slug: Mapped[str] = mapped_column(String(120), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
-    price_advantage_text: Mapped[str] = mapped_column(Text)
-    timezone: Mapped[str] = mapped_column(String(80))
-    business_hours_text: Mapped[str] = mapped_column(Text)
+    price_advantage_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    business_hours_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     address: Mapped[str] = mapped_column(Text)
-    parking_text: Mapped[str] = mapped_column(Text)
-    phone: Mapped[str] = mapped_column(String(40))
-    refund_policy_text: Mapped[str] = mapped_column(Text)
+    parking_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    refund_policy_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
+    booking_mode: Mapped[BookingMode] = mapped_column(
+        Enum(BookingMode, name="booking_mode"), default=BookingMode.ONLINE
+    )
+    navigation_poi_name: Mapped[str] = mapped_column(
+        Text, default="legacy navigation"
+    )
+    navigation_latitude: Mapped[float] = mapped_column(Float, default=0.0)
+    navigation_longitude: Mapped[float] = mapped_column(Float, default=0.0)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    content_verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    is_listed: Mapped[bool] = mapped_column(Boolean, default=True)
+    public_pitch_types: Mapped[list[str]] = mapped_column(JSONB, default=list)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -111,6 +164,74 @@ class Venue(Base):
         back_populates="venue", cascade="all, delete-orphan"
     )
     pitches: Mapped[list["Pitch"]] = relationship(back_populates="venue")
+    transit_stops: Mapped[list["VenueTransitStop"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
+
+
+class VenueTransitStop(Base):
+    __tablename__ = "venue_transit_stops"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(name)) > 0",
+            name="ck_venue_transit_stops_name_nonempty",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(lines) = 'array'",
+            name="ck_venue_transit_stops_lines_array",
+        ),
+        CheckConstraint(
+            "latitude BETWEEN -90 AND 90",
+            name="ck_venue_transit_stops_latitude",
+        ),
+        CheckConstraint(
+            "longitude BETWEEN -180 AND 180",
+            name="ck_venue_transit_stops_longitude",
+        ),
+        CheckConstraint(
+            "distance_meters >= 0",
+            name="ck_venue_transit_stops_distance_meters",
+        ),
+        CheckConstraint(
+            "length(trim(source_name)) > 0",
+            name="ck_venue_transit_stops_source_name_nonempty",
+        ),
+        CheckConstraint(
+            "sort_order >= 0",
+            name="ck_venue_transit_stops_sort_order",
+        ),
+        UniqueConstraint(
+            "venue_id",
+            "kind",
+            "name",
+            name="uq_venue_transit_stops_venue_kind_name",
+        ),
+        Index("ix_venue_transit_stops_venue_id", "venue_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    kind: Mapped[TransitKind] = mapped_column(
+        Enum(TransitKind, name="transit_kind")
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    lines: Mapped[list[str]] = mapped_column(JSONB)
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    distance_meters: Mapped[int] = mapped_column(Integer)
+    distance_basis: Mapped[TransitDistanceBasis] = mapped_column(
+        Enum(TransitDistanceBasis, name="transit_distance_basis")
+    )
+    source_name: Mapped[str] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sort_order: Mapped[int] = mapped_column(Integer)
+
+    venue: Mapped[Venue] = relationship(back_populates="transit_stops")
 
 
 class VenueImage(Base):

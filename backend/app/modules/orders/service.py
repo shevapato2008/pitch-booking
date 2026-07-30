@@ -4,7 +4,7 @@ import uuid
 from bisect import bisect_right
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, cast
 from zoneinfo import ZoneInfo
 
 from backend.app.errors import AppError
@@ -351,7 +351,7 @@ class OrderService:
             closing_payment = True
         pitch = slot.pitch
         venue = pitch.venue
-        timezone = ZoneInfo(venue.timezone)
+        timezone = ZoneInfo(cast(str, venue.timezone))
         return OrderDetailResponse(
             id=order.id,
             order_number=order.order_number,
@@ -363,7 +363,7 @@ class OrderService:
                 address=venue.address,
                 latitude=venue.latitude,
                 longitude=venue.longitude,
-                customer_service_phone=venue.phone,
+                customer_service_phone=cast(str, venue.phone),
             ),
             pitch=OrderPitchResponse(id=pitch.id, name=pitch.name),
             starts_at=slot.starts_at.astimezone(timezone),
@@ -382,7 +382,7 @@ class OrderService:
                 if order.expired_at is not None
                 else None
             ),
-            cancellation_summary=venue.refund_policy_text,
+            cancellation_summary=cast(str, venue.refund_policy_text),
             payment_state=payment_state,
             payment_confirming=payment_confirming,
             closing_payment=closing_payment,

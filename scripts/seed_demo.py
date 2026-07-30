@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
-from backend.app.models import Pitch, Slot, Venue, VenueFacility, VenueImage
+from backend.app.models import BookingMode, Pitch, Slot, Venue, VenueFacility, VenueImage
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 NAMESPACE = uuid.UUID("f290c9b8-b58b-4e6e-8dff-b738e9705cd2")
@@ -73,18 +73,28 @@ def run_seed(
             Venue,
             {
                 "id": VENUE_ID,
-                "slug": "test-xingyue-football-park",
-                "name": "测试环境·浦东星跃足球公园",
+                "slug": "bohai-yuanfeng-football-pitch",
+                "name": "测试环境·渤海元丰足球场",
                 "description": "测试环境场馆数据",
                 "price_advantage_text": "测试环境透明场地价",
                 "timezone": "Asia/Shanghai",
                 "business_hours_text": "每日 09:00–23:00",
-                "address": "上海市浦东新区测试地址",
+                "address": "天津市西青区利达路",
                 "parking_text": "测试停车信息",
                 "phone": "+86-21-5899-2608",
                 "refund_policy_text": "测试退款规则",
-                "latitude": 31.245621,
-                "longitude": 121.623847,
+                "latitude": 39.000867,
+                "longitude": 117.212396,
+                "booking_mode": BookingMode.ONLINE,
+                "navigation_poi_name": "天津市渤海元丰科技有限公司-南门",
+                "navigation_latitude": 39.000157,
+                "navigation_longitude": 117.212208,
+                "sort_order": 0,
+                "content_verified_at": datetime.fromisoformat(
+                    "2026-07-30T18:15:00+08:00"
+                ),
+                "is_listed": True,
+                "public_pitch_types": [],
                 "is_primary": True,
                 "is_active": True,
             },

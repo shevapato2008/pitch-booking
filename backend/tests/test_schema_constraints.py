@@ -166,7 +166,7 @@ def test_declared_indexes_and_overlap_constraint_exist(pg_engine: Engine) -> Non
     }
     assert {index["name"] for index in inspector.get_indexes("pitches")} >= {"ix_pitches_venue_id"}
     assert {index["name"] for index in inspector.get_indexes("slots")} >= {"ix_slots_pitch_id"}
-    assert Payment.__table__.name == "payments"
+    assert Payment.__tablename__ == "payments"
     assert {index["name"] for index in inspector.get_indexes("payments")} >= {
         "ix_payments_order_id",
         "ix_payments_reconciliation_due",
