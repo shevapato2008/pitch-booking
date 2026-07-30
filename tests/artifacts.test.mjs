@@ -583,13 +583,9 @@ test("payment confirmation artifact inventory freezes all three visual states", 
   assert.match(index, /reviews\/payment-confirmation\/README\.md/);
 });
 
-test("map ready reference matches the authoritative venue directory field for field", () => {
+test("every map reference declares authoritative venue facts field for field", () => {
   const directory = JSON.parse(readFileSync("deploy/venue-directory.json", "utf8"));
-  const html = readFileSync("artifacts/ui/references/venue-map-ready.html", "utf8");
-  const displayed = JSON.parse(html.match(
-    /<script type="application\/json" id="venue-display-data">([^<]+)<\/script>/,
-  )?.[1] ?? "null");
-  const authoritative = directory.venues
+  const authoritative = new Map(directory.venues
     .sort((left, right) => left.sort_order - right.sort_order)
     .map((venue) => ({
       id: venue.id,
@@ -601,14 +597,64 @@ test("map ready reference matches the authoritative venue directory field for fi
       marker: venue.marker,
       navigation: venue.navigation,
       nearest_transit: venue.nearest_transit,
-    }));
-  assert.deepEqual(displayed, authoritative);
-  for (const venue of authoritative) {
+    }))
+    .map((venue) => [venue.id, venue]));
+  const ids = [...authoritative.keys()];
+  const references = {
+    ready: { file: "venue-map-ready", venueIds: ids },
+    online: { file: "venue-map-online", venueIds: [ids[0]] },
+    directory: { file: "venue-map-directory", venueIds: [ids[1]] },
+    "detail-map-button": { file: "venue-detail-map-button", venueIds: [ids[4]] },
+    focused: { file: "venue-map-focused", venueIds: [ids[4]] },
+    "location-denied": { file: "venue-map-location-denied", venueIds: [] },
+    error: { file: "venue-map-error", venueIds: ids },
+  };
+
+  for (const [state, { file, venueIds }] of Object.entries(references)) {
+    const html = readFileSync(`artifacts/ui/references/${file}.html`, "utf8");
+    const stateData = html.match(
+      /<script type="application\/json" id="state-display-data">([^<]+)<\/script>/,
+    )?.[1];
+    const legacyReadyData = html.match(
+      /<script type="application\/json" id="venue-display-data">([^<]+)<\/script>/,
+    )?.[1];
+    const declaration = stateData
+      ? JSON.parse(stateData)
+      : { state: "ready", venues: JSON.parse(legacyReadyData ?? "null") };
+    assert.equal(declaration.state, state);
+    assert.deepEqual(declaration.venues, venueIds.map((id) => authoritative.get(id)));
+    assert.deepEqual(
+      [...html.matchAll(/data-venue-id="([a-f0-9-]+)"/g)].map((match) => match[1]),
+      venueIds,
+      `${state} visible venue facts must be fully declared once`,
+    );
+    for (const id of venueIds) {
+      const venue = authoritative.get(id);
+      assert.match(html, new RegExp(`data-venue-id="${venue.id}"`));
+      assert.match(html, new RegExp(`data-booking-mode="${venue.booking_mode}"`));
+      assert.match(html, new RegExp(venue.name));
+      assert.match(html, new RegExp(venue.address));
+      for (const transit of venue.nearest_transit) {
+        assert.match(html, new RegExp(transit.name));
+        assert.match(html, new RegExp(String(transit.distance_meters)));
+      }
+    }
+  }
+});
+
+test("detail map button and deep-link focus use the same first directory venue", () => {
+  const detail = readFileSync("artifacts/ui/references/venue-detail-map-button.html", "utf8");
+  const focused = readFileSync("artifacts/ui/references/venue-map-focused.html", "utf8");
+  const directory = JSON.parse(readFileSync("deploy/venue-directory.json", "utf8"));
+  const venue = directory.venues.find(({ slug }) => slug === "dongli-sports-center-football-pitch");
+  for (const html of [detail, focused]) {
     assert.match(html, new RegExp(`data-venue-id="${venue.id}"`));
-    assert.match(html, new RegExp(`data-booking-mode="${venue.booking_mode}"`));
     assert.match(html, new RegExp(venue.name));
     assert.match(html, new RegExp(venue.address));
+    assert.match(html, /暂未接入在线预订/);
+    assert.doesNotMatch(html, /查看可订时段|立即预订/);
   }
+  assert.match(detail, /在地图中查看/);
 });
 
 test("map references freeze booking, touch, sheet, safe-area, and fallback semantics", () => {
