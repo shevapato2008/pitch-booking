@@ -13,6 +13,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY alembic.ini ./
 COPY backend ./backend
 COPY scripts ./scripts
+COPY deploy/venue-directory.json /app/deploy/venue-directory.json
+COPY deploy/venue-directory.schema.json /app/deploy/venue-directory.schema.json
 
 RUN groupadd --system pitch \
     && useradd --system --gid pitch --home-dir /app pitch \

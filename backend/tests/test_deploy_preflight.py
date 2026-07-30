@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -106,3 +107,23 @@ def test_runtime_image_never_syncs_development_dependencies() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
 
     assert "UV_NO_DEV=1" in dockerfile
+
+
+def test_runtime_image_explicitly_packages_verified_directory_inputs() -> None:
+    dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
+    expected = {
+        "deploy/venue-directory.json": (
+            "8d07f396f668488485b2c2c28513c549"
+            "1c9c25c4a266c5c6e40c8bcbecab46cb"
+        ),
+        "deploy/venue-directory.schema.json": (
+            "2eff0b43d5a6cfbc13a55a99287c9a2b8"
+            "7a09dc6de55bff3233dd11780ef766d"
+        ),
+    }
+
+    for relative_path, digest in expected.items():
+        assert f"COPY {relative_path} /app/{relative_path}" in dockerfile
+        assert hashlib.sha256(Path(relative_path).read_bytes()).hexdigest() == digest
+    assert "COPY deploy/.env" not in dockerfile
+    assert "COPY deploy/*approval" not in dockerfile

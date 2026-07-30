@@ -5,9 +5,27 @@ Last updated: 2026-07-30 (Asia/Shanghai)
 ## Current checkpoint
 
 The 375×812 visual gate was explicitly approved on 2026-07-30. The map/detail OpenAPI contract,
-PostgreSQL revision `0006`, and transactional directory loader are now implemented locally. This
+PostgreSQL revision `0006`, transactional directory loader, public HTTP APIs, strict Mini Program
+HTTP source, native location boundary, and `ONLINE` booking guards are now implemented locally.
+The executable map business Fixture has been removed. This
 is not final production content approval: production loading requires a short-lived approval file
 bound to the exact manifest bytes, literal `production` environment, and deployed app revision.
+
+## Local integrated acceptance
+
+On 2026-07-30 the isolated PostgreSQL 17 stack was migrated to `0006`, seeded with a 31-day online
+inventory window, and loaded from the checked-in directory manifest. The loader reported
+`created=4`, `updated=1`, `deleted=0`, `unlisted=0`. A host FastAPI process at
+`http://127.0.0.1:8000` returned a healthy status, five ordered map entries, one `ONLINE` detail,
+and four `DIRECTORY_ONLY` details. The actual development-HTTP Mini Program composition was built
+against that process and exercised in WeChat DevTools 2.01.2510290 with base library 3.17.0.
+
+The four directory identities each returned zero pitches, slots, orders, and payments in a joined
+PostgreSQL audit. The production package audit reported zero forbidden paths/tokens. Integrated
+375×812 evidence refreshes the default/online selection, directory selection, directory detail,
+and focused deep-link states. The previously approved location-denial and map-fallback captures
+remain clearly identified as pre-removal capture-only evidence; deterministic native/lifecycle
+tests are the final authority for those no-longer-injectable failure states.
 
 ## Frozen identities
 
@@ -91,8 +109,9 @@ DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   --manifest deploy/venue-directory.json --environment development --dry-run
 ```
 
-## Next gate
+## Deferred production boundary
 
-Implement the public directory/detail services and enforce `ONLINE` before every booking-side
-mutation. Publication, public HTTPS, WeChat production privacy submission, real-device evidence,
-and final release remain deferred until the ICP boundary is cleared.
+Alibaba Cloud/PostgreSQL production deployment, public HTTPS/domain validation, WeChat production
+privacy submission, iOS/Android physical-device positioning evidence, reconfirmation of the partner
+south-gate coordinate, production content approval, and final release remain deferred until the ICP
+boundary is cleared. This slice is locally complete, not production-delivered.
