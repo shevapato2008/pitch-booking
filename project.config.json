@@ -1,5 +1,5 @@
 {
-  "appid": "",
+  "appid": "wxc6b988ca75ad753c",
   "compileType": "miniprogram",
   "miniprogramRoot": "dist/miniprogram-development/",
   "libVersion": "3.17.0",
@@ -12,6 +12,27 @@
     "useCompilerPlugins": [
       "typescript"
     ],
-    "minifyWXML": true
-  }
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {}
 }
