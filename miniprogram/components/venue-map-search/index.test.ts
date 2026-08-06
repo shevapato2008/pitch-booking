@@ -43,6 +43,8 @@ test("renders distinct platform and map-place groups with isolated async states"
   expect(template).toContain("没有匹配的地图地点");
   expect(template).toContain("地图地点暂时无法搜索");
   expect(template).toContain("{{item.city}} · {{item.district}}");
+  expect(template).not.toMatch(/<[^>]+\bwx:else\b[^>]+\bwx:for\b|<[^>]+\bwx:for\b[^>]+\bwx:else\b/);
+  expect(template).toMatch(/<block wx:else>\s*<button wx:for=/);
 });
 
 test("clear, cancel, venue, and POI selection emit narrow intents", () => {

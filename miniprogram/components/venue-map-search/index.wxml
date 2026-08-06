@@ -15,8 +15,10 @@
     <view wx:if="{{poiState === 'loading'}}" class="venue-search-message">正在搜索地图地点…</view>
     <view wx:elif="{{poiState === 'empty'}}" class="venue-search-message">没有匹配的地图地点</view>
     <view wx:elif="{{poiState === 'error'}}" class="venue-search-message venue-search-message--error">地图地点暂时无法搜索</view>
-    <button wx:else wx:for="{{poiResults}}" wx:key="id" class="venue-search-result" data-index="{{index}}" bindtap="onPoiSelect">
-      <text class="venue-search-name">{{item.name}}</text><text class="venue-search-address">{{item.city}} · {{item.district}} · {{item.address}}</text>
-    </button>
+    <block wx:else>
+      <button wx:for="{{poiResults}}" wx:key="id" class="venue-search-result" data-index="{{index}}" bindtap="onPoiSelect">
+        <text class="venue-search-name">{{item.name}}</text><text class="venue-search-address">{{item.city}} · {{item.district}} · {{item.address}}</text>
+      </button>
+    </block>
   </view>
 </view>
