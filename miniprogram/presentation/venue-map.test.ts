@@ -56,19 +56,20 @@ const directory: VenueMapEntry = {
 };
 
 describe("venue map presentation", () => {
-  test("sorts markers and cards stably without mutating source data", () => {
-    const source = [{ ...directory, sortOrder: 0 }, { ...online, sortOrder: 0 }];
+  test("preserves supplied order across cards, markers, and all-venue viewport points", () => {
+    const source = [{ ...directory, id: "zulu", name: "乙球场", sortOrder: undefined }, { ...online, id: "alpha", name: "甲球场", sortOrder: undefined }];
     const original = JSON.stringify(source);
 
-    const view = toVenueMapPresentation(source, null, null);
+    const view = toVenueMapPresentation(source, null, {}, null);
 
-    expect(view.markers.map(({ venueId }) => venueId)).toEqual(["online", "directory"]);
-    expect(view.cards.map(({ venueId }) => venueId)).toEqual(["online", "directory"]);
+    expect(view.markers.map(({ venueId }) => venueId)).toEqual(["zulu", "alpha"]);
+    expect(view.cards.map(({ venueId }) => venueId)).toEqual(["zulu", "alpha"]);
+    expect(view.viewport).toEqual({ mode: "ALL", includePoints: [source[0].marker, source[1].marker] });
     expect(JSON.stringify(source)).toBe(original);
   });
 
   test("maps booking modes to distinct marker assets, labels, and actions", () => {
-    const view = toVenueMapPresentation([online, directory], null, null);
+    const view = toVenueMapPresentation([online, directory], null, {}, null);
 
     expect(view.markers).toEqual(expect.arrayContaining([
       expect.objectContaining({ venueId: "online", label: "可订", iconPath: "/assets/map-marker-online.png" }),
@@ -81,7 +82,7 @@ describe("venue map presentation", () => {
   });
 
   test("keeps the selected marker and card synchronized", () => {
-    const view = toVenueMapPresentation([online, directory], directory.id, null);
+    const view = toVenueMapPresentation([online, directory], directory.id, {}, null);
 
     expect(view.selectedVenueId).toBe(directory.id);
     expect(view.markers.find(({ selected }) => selected)?.venueId).toBe(directory.id);
@@ -91,7 +92,7 @@ describe("venue map presentation", () => {
   });
 
   test("falls back from an invalid selection and exposes all-venue viewport points", () => {
-    const view = toVenueMapPresentation([online, directory], "missing", null);
+    const view = toVenueMapPresentation([online, directory], "missing", {}, null);
 
     expect(view.selectedVenueId).toBeNull();
     expect(view.viewport).toEqual(calculateMapViewport([online, directory], null));
@@ -118,11 +119,20 @@ describe("venue map presentation", () => {
   });
 
   test("uses an honest fallback when transit data is empty", () => {
-    const view = toVenueMapPresentation([online, directory], null, null);
+    const view = toVenueMapPresentation([online, directory], null, {}, null);
 
     expect(view.cards.find(({ venueId }) => venueId === online.id)?.transitText).toBe("交通信息待核验");
     expect(view.cards.find(({ venueId }) => venueId === directory.id)?.transitText)
       .toBe("地铁 5号线 · 体育中心站 · 约 420 米");
+  });
+
+  test("formats explicit user and POI distance bases and omits distance without a basis", () => {
+    expect(toVenueMapPresentation([online], null, { online: 1_250 }, { kind: "USER" }).cards[0].distanceText)
+      .toBe("距你 1.3 公里");
+    expect(toVenueMapPresentation([online], null, { online: 420 }, { kind: "POI", label: "天津站" }).cards[0].distanceText)
+      .toBe("距天津站 420 米");
+    expect(toVenueMapPresentation([online], null, { online: 420 }, null).cards[0].distanceText)
+      .toBeNull();
   });
 });
 
