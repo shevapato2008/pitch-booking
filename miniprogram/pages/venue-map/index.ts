@@ -277,8 +277,27 @@ Page({
 
   onSearchClear() {
     this.poiGuard.invalidate();
-    this.setData({ draftQuery: "", committedQuery: "", poiState: "idle", poiResults: [], locationActive: false });
-    this.applySearchPresentation({ kind: "CITY" }, this.data.filters, this.data.selectedVenueId);
+    if (this.data.draftQuery !== "") {
+      const snapshot = this.preEditSnapshot;
+      this.setData({
+        draftQuery: "",
+        committedQuery: snapshot?.committedQuery ?? this.data.committedQuery,
+        poiState: "idle",
+        poiResults: [],
+        searchResetToken: this.data.searchResetToken + 1,
+      });
+      if (snapshot) {
+        this.applySearchPresentation(snapshot.searchCenter, snapshot.filters, snapshot.selectedVenueId);
+        this.setData({ viewport: snapshot.viewport });
+      }
+      this.preEditSnapshot = null;
+      return;
+    }
+    if (this.data.searchCenter.kind === "POI" && this.data.committedQuery !== "") {
+      this.setData({ committedQuery: "", poiState: "idle", poiResults: [], locationActive: false });
+      this.applySearchPresentation({ kind: "CITY" }, this.data.filters, this.data.selectedVenueId);
+      this.preEditSnapshot = null;
+    }
   },
 
   onSearchCancel() {

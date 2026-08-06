@@ -121,6 +121,30 @@ test("clearing a committed POI returns to CITY while cancel restores the pre-edi
   expect(target.data.title).toBe("全部球场");
 });
 
+test.each(["USER_LOCATION", "POI"] as const)(
+  "clearing an uncommitted draft restores the pre-edit %s center",
+  async (kind) => {
+    const target = page();
+    await call(target, "onLoad", {});
+    if (kind === "USER_LOCATION") await call(target, "onLocateTap");
+    else call(target, "onSearchPoiSelect", { detail: { poi: station } });
+    const before = {
+      searchCenter: target.data.searchCenter,
+      committedQuery: target.data.committedQuery,
+      viewport: target.data.viewport,
+    };
+    call(target, "onSearchEditStart");
+    await call(target, "onSearchQueryChange", { detail: { query: "东丽" } });
+
+    call(target, "onSearchClear");
+
+    expect(target.data.searchCenter).toEqual(before.searchCenter);
+    expect(target.data.committedQuery).toBe(before.committedQuery);
+    expect(target.data.viewport).toEqual(before.viewport);
+    expect(target.data.draftQuery).toBe("");
+  },
+);
+
 test("projects exact approved center-note copy for all committed centers", async () => {
   const target = page();
   await call(target, "onLoad", {});
