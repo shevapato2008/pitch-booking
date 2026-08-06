@@ -32,6 +32,26 @@ const pngDimensions = (path) => {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 };
 
+test("scalable map directory freezes paired viewports and four reference states", () => {
+  const manifest = parse(
+    readFileSync("artifacts/ui/screen-manifest/map-venue-discovery.yaml", "utf8"),
+  );
+  const scalableStates = manifest.states.slice(-4);
+
+  assert.deepEqual(manifest.capture.viewports, [
+    { width: 375, height: 812 },
+    { width: 390, height: 844 },
+  ]);
+  assert.deepEqual(manifest.sheet_snap_states, ["collapsed", "half", "expanded"]);
+  assert.deepEqual(
+    scalableStates.map(({ id }) => id),
+    ["scalable-city", "scalable-nearby", "scalable-poi", "scalable-long-content"],
+  );
+  for (const { reference } of scalableStates) {
+    assert.equal(existsSync(reference), true, `missing ${reference}`);
+  }
+});
+
 test("map venue discovery artifact inventory is capture-ready at 375 by 812", () => {
   const references = {
     ready: "artifacts/ui/references/venue-map-ready.html",
@@ -60,8 +80,14 @@ test("map venue discovery artifact inventory is capture-ready at 375 by 812", ()
   const manifest = parse(readFileSync("artifacts/ui/screen-manifest/map-venue-discovery.yaml", "utf8"));
   assert.equal(manifest.target_viewport.width, 375);
   assert.equal(manifest.target_viewport.height, 812);
-  assert.deepEqual(manifest.states.map(({ id }) => id), mapArtifactStates);
-  assert.deepEqual(manifest.states.map(({ reference }) => reference), Object.values(references));
+  assert.deepEqual(
+    manifest.states.slice(0, mapArtifactStates.length).map(({ id }) => id),
+    mapArtifactStates,
+  );
+  assert.deepEqual(
+    manifest.states.slice(0, mapArtifactStates.length).map(({ reference }) => reference),
+    Object.values(references),
+  );
 });
 
 test("map review board reserves all six evidence slots for every state", () => {
