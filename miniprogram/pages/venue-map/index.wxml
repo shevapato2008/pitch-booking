@@ -4,15 +4,17 @@
   <block wx:else>
     <map wx:if="{{viewport.mode === 'ALL'}}" id="venue-map" class="map" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
     <map wx:else id="venue-map" class="map" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
-    <view class="top"><view class="search"><input value="{{searchQuery}}" placeholder="搜索球场名称或地址" confirm-type="search" bindinput="onSearchInput" aria-label="搜索球场名称或地址" /><button wx:if="{{searchQuery}}" class="search-clear" bindtap="onSearchClear">清除</button></view><button class="locate" bindtap="onLocateTap" loading="{{locating}}" aria-label="查找离我最近的球场">附近</button></view>
-    <view class="legend"><view><image src="/assets/map-marker-online.png" mode="aspectFit" />可在线订场</view><view><image src="/assets/map-marker-directory.png" mode="aspectFit" />仅提供场馆信息</view></view>
-    <view wx:if="{{searchEmpty}}" class="search-empty">没有匹配的球场，请尝试名称或区域。</view>
+    <view class="map-tools">
+      <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
+      <button class="locate {{locationActive ? 'locate--active' : ''}} {{locationErrorText ? 'locate--error' : ''}}" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我"><view wx:if="{{!locating}}" class="crosshair"><view class="crosshair-dot"></view></view></button>
+    </view>
+    <view class="center-note">{{searchCenter.kind === 'CITY' ? '全城范围' : searchCenter.kind === 'POI' ? searchCenter.poi.name : '我的位置'}}</view>
     <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
-    <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
+    <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
     <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">
-      <view class="permission-handle"></view><view class="permission-icon">⌖</view>
+      <view class="permission-handle"></view><view class="permission-icon"><view class="crosshair"><view class="crosshair-dot"></view></view></view>
       <view class="permission-title">无法使用你的位置</view>
-      <view class="permission-copy">你仍可浏览全部 5 个天津球场。仅在你主动点按定位按钮时，我们才会申请位置权限。</view>
+      <view class="permission-copy">你仍可浏览全部 {{venues.length}} 个天津球场。仅在你主动点按定位按钮时，我们才会申请位置权限。</view>
       <button class="permission-primary" bindtap="onOpenLocationSetting">打开系统设置</button>
       <button class="permission-secondary" bindtap="onDismissLocationDenied">继续浏览球场</button>
     </view>

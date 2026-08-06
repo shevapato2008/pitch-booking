@@ -3,7 +3,9 @@ import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeu
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
+import { registerPoiSearchCapability } from "../services/poi-search";
 import { registerVenueDirectoryDataSource } from "../services/venue-directory";
+import { registerVenueMapPreviewMetadata } from "../services/venue-map-preview";
 import {
   registerPaymentCapability,
   registerPaymentClock,
@@ -16,6 +18,8 @@ import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./pa
 import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
 import { createDevelopmentPaymentDataSource } from "./payment-source";
 import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
+import { previewPoiSearchCapability } from "./poi-search-preview";
+import { createVenueMapPreviewFixture } from "./venue-map-preview-fixture";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -44,6 +48,8 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerPageDataSource(developmentPageDataSource);
   registerBookingDataSource(createDevelopmentBookingDataSource());
   registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource());
+  registerVenueMapPreviewMetadata({ districtByVenueId: createVenueMapPreviewFixture().districtByVenueId });
+  registerPoiSearchCapability(previewPoiSearchCapability);
   registerLocationCapability(productionLocation);
   registerNeutralPhoneTapCode(() => "dev-phone-code");
 }

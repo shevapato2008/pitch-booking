@@ -1,12 +1,14 @@
 import { decodeVenue, decodeVenueDetail, decodeVenueMap } from "../domain/decoders";
 import type { VenueDirectoryDataSource } from "../services/venue-directory";
 import { packagedFixtureLoader, type FixtureLoader } from "./fixture-transport";
+import { createVenueMapPreviewFixture } from "./venue-map-preview-fixture";
 
 export function createDevelopmentVenueDirectoryDataSource(
   loader: FixtureLoader = packagedFixtureLoader,
 ): VenueDirectoryDataSource {
   return {
     async getVenueDirectory() {
+      if (loader === packagedFixtureLoader) return [...createVenueMapPreviewFixture().venues];
       return decodeVenueMap(loader.load("venue-map"));
     },
     async getVenueDetail(venueId) {

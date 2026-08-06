@@ -693,12 +693,15 @@ test("booking confirmation ready state preserves the frozen visual contract", ()
 test("map venue experience pins its native runtime and component boundaries", () => {
   const project = JSON.parse(readFileSync("project.config.json", "utf8"));
   assert.equal(project.libVersion, "3.17.0");
-  for (const component of ["venue-map-sheet", "venue-map-card"]) {
+  for (const component of ["venue-map-sheet", "venue-map-card", "venue-map-search"]) {
     const root = `miniprogram/components/${component}/index`;
     for (const extension of ["ts", "json", "wxml", "wxss"])
       assert.equal(existsSync(`${root}.${extension}`), true, `${component}.${extension}`);
     assert.equal(JSON.parse(readFileSync(`${root}.json`, "utf8")).component, true);
   }
   const page = JSON.parse(readFileSync("miniprogram/pages/venue-map/index.json", "utf8"));
-  assert.deepEqual(page.usingComponents, { "venue-map-sheet": "/components/venue-map-sheet/index" });
+  assert.deepEqual(page.usingComponents, {
+    "venue-map-search": "/components/venue-map-search/index",
+    "venue-map-sheet": "/components/venue-map-sheet/index",
+  });
 });

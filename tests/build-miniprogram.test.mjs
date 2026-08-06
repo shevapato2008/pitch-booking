@@ -175,6 +175,23 @@ test("production app registers HTTP page, booking, and native payment before sou
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
+test("preview directory and center asset are development-only", async (t) => {
+  await execFileAsync(process.execPath, [buildScript, "development"]);
+  await execFileAsync(process.execPath, [buildScript, "production"]);
+  const developmentRoot = path.resolve("dist/miniprogram-development");
+  const productionRoot = path.resolve("dist/miniprogram-production");
+  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+
+  assert.equal(existsSync(path.join(developmentRoot, "dev/venue-map-preview-fixture.js")), true);
+  assert.equal(existsSync(path.join(developmentRoot, "assets/map-search-center.png")), true);
+  assert.equal(existsSync(path.join(productionRoot, "assets/map-search-center.png")), true);
+  const productionText = (await Promise.all((await collectFiles(productionRoot))
+    .filter((file) => !file.endsWith(".png"))
+    .map((file) => readFile(file, "utf8")))).join("\n");
+  assert.doesNotMatch(productionText, /venue-map-preview-fixture|DEV_ONLY_/);
+  assert.equal(existsSync(path.join(productionRoot, "dev/venue-map-preview-fixture.js")), false);
+});
+
 test("real production build emits all five production routes as native artifacts", async (t) => {
   await execFileAsync(process.execPath, [buildScript, "production"]);
   const outputRoot = path.resolve("dist/miniprogram-production");

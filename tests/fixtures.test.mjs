@@ -101,3 +101,37 @@ test("map development data stays canonical and out of the visual Fixture invento
   assert.equal(existsSync("miniprogram/dev/venue-directory-source.ts"), true);
   assert.equal(existsSync("miniprogram/dev/venue-directory-scenarios.ts"), false);
 });
+
+test("temporary scalable map preview is deterministic, complete, and explicitly disposable", async (t) => {
+  assert.equal(existsSync("miniprogram/dev/venue-map-preview-fixture.ts"), true);
+  assert.equal(existsSync("miniprogram/dev/poi-search-preview.ts"), true);
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-map-preview-"));
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) {
+    await cp(entry, path.join(projectRoot, entry), { recursive: true });
+  }
+  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  const modulePath = path.join(projectRoot, "dist/miniprogram-development/dev/venue-map-preview-fixture.js");
+  const verification = `
+    const assert = require("node:assert/strict");
+    const { createVenueMapPreviewFixture } = require(${JSON.stringify(modulePath)});
+    const first = createVenueMapPreviewFixture();
+    const second = createVenueMapPreviewFixture();
+    assert.deepEqual(first, second);
+    assert.equal(first.venues.length, 100);
+    assert.equal(Object.keys(first.districtByVenueId).length, 100);
+    assert.equal(new Set(first.venues.map(({ id }) => id)).size, 100);
+    assert.equal(first.venues.every(({ id }) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)), true);
+    assert.equal(first.venues.every(({ id }) => first.districtByVenueId[id]), true);
+    assert.equal(first.venues.some(({ bookingMode }) => bookingMode === "ONLINE"), true);
+    assert.equal(first.venues.some(({ bookingMode }) => bookingMode === "DIRECTORY_ONLY"), true);
+    assert.equal(first.venues[99].name, "天津奥林匹克中心五人制足球场");
+    assert.equal(first.venues[99].address, "天津市河北区中山北路增1号");
+    assert.equal(first.venues.some((venue) => "districtCode" in venue || "districtName" in venue), false);
+  `;
+  await execFileAsync(process.execPath, ["--input-type=commonjs", "--eval", verification]);
+
+  // Deletion gate: after real HTTP directory responses include decoded districts and the
+  // production Tencent adapter passes loading/empty/error/retry integration, delete both
+  // dev sources, the metadata registry, registrations, and these existence assertions.
+});

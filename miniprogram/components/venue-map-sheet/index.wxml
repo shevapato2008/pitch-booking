@@ -1,1 +1,11 @@
-<view class="sheet sheet--{{snap}}"><button class="handle" bindtap="onToggle" aria-label="切换场馆卡片高度"></button><view class="sheet-head"><text class="title">天津球场</text><text class="count">{{cards.length}} 个已核验地点</text></view><scroll-view class="cards" scroll-x scroll-with-animation scroll-into-view="venue-{{selectedVenueId}}"><view class="track"><view wx:for="{{cards}}" wx:key="venueId" id="venue-{{item.venueId}}" class="card-slot"><venue-map-card card="{{item}}" bindselect="onSelect" bindaction="onAction" /></view></view></scroll-view></view>
+<view class="sheet sheet--{{snap}}">
+  <button class="handle" bindtap="onToggle" aria-label="切换场馆列表高度"></button>
+  <view class="sheet-head">
+    <view><text class="title">{{title}}</text><text class="subtitle">{{subtitle}}</text></view>
+    <button class="sheet-toggle" bindtap="onToggle">{{snap === 'expanded' ? '收起地图' : '展开列表'}}</button>
+  </view>
+  <view class="filters"><text class="filter filter--active">{{sortLabel}}</text><text class="filter">可在线预订</text><text class="filter">行政区</text></view>
+  <scroll-view class="cards" scroll-y scroll-with-animation scroll-top="{{listScrollTop}}" scroll-into-view="venue-{{selectedVenueId}}" bindscroll="onListScroll">
+    <view wx:for="{{cards}}" wx:key="venueId" id="venue-{{item.venueId}}" class="card-slot"><venue-map-card card="{{item}}" bindselect="onSelect" bindaction="onAction" /></view>
+  </scroll-view>
+</view>

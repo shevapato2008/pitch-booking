@@ -76,8 +76,8 @@ describe("venue map presentation", () => {
       expect.objectContaining({ venueId: "directory", label: "场馆", iconPath: "/assets/map-marker-directory.png" }),
     ]));
     expect(view.cards).toEqual(expect.arrayContaining([
-      expect.objectContaining({ venueId: "online", statusText: "可预订", action: "VIEW_AVAILABILITY" }),
-      expect.objectContaining({ venueId: "directory", statusText: "暂未接入在线预订", action: "VIEW_DETAIL" }),
+      expect.objectContaining({ venueId: "online", statusText: "可在线预订", action: "VIEW_AVAILABILITY" }),
+      expect.objectContaining({ venueId: "directory", statusText: "仅提供场馆信息", action: "VIEW_DETAIL" }),
     ]));
   });
 

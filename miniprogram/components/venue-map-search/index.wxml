@@ -1,0 +1,22 @@
+<view class="venue-search">
+  <view class="venue-search-bar">
+    <text class="venue-search-icon">⌕</text>
+    <input value="{{draftQuery}}" placeholder="搜索球场或地图地点" confirm-type="search" bindfocus="onFocus" bindinput="onInput" bindconfirm="onConfirm" aria-label="搜索球场或地图地点" />
+    <button wx:if="{{draftQuery}}" class="venue-search-clear" bindtap="onClear" aria-label="清除搜索">×</button>
+    <button wx:if="{{draftQuery}}" class="venue-search-cancel" bindtap="onCancel">取消</button>
+  </view>
+  <view wx:if="{{draftQuery}}" class="venue-search-panel">
+    <view class="venue-search-heading">平台球场</view>
+    <button wx:for="{{localMatches}}" wx:key="id" class="venue-search-result" data-venue-id="{{item.id}}" bindtap="onVenueSelect">
+      <text class="venue-search-name">{{item.name}}</text><text class="venue-search-address">{{item.address}}</text>
+    </button>
+    <view wx:if="{{localMatches.length === 0}}" class="venue-search-message">没有匹配的平台球场</view>
+    <view class="venue-search-heading venue-search-heading--map">地图地点</view>
+    <view wx:if="{{poiState === 'loading'}}" class="venue-search-message">正在搜索地图地点…</view>
+    <view wx:elif="{{poiState === 'empty'}}" class="venue-search-message">没有匹配的地图地点</view>
+    <view wx:elif="{{poiState === 'error'}}" class="venue-search-message venue-search-message--error">地图地点暂时无法搜索</view>
+    <button wx:else wx:for="{{poiResults}}" wx:key="id" class="venue-search-result" data-index="{{index}}" bindtap="onPoiSelect">
+      <text class="venue-search-name">{{item.name}}</text><text class="venue-search-address">{{item.city}} · {{item.district}} · {{item.address}}</text>
+    </button>
+  </view>
+</view>

@@ -41,7 +41,7 @@ describe("booking data source registry", () => {
   test("fixture development bootstrap registers the venue directory", async () => {
     bootstrapDevelopment();
     const source = getVenueDirectoryDataSource();
-    await expect(source.getVenueDirectory()).resolves.toHaveLength(5);
+    await expect(source.getVenueDirectory()).resolves.toHaveLength(100);
     await expect(source.getVenueDetail("7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f")).resolves.toMatchObject({
       bookingMode: "ONLINE",
       coverImage: null,

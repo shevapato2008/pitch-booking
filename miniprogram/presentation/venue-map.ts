@@ -23,7 +23,7 @@ export interface VenueMapCardViewModel {
   readonly name: string;
   readonly address: string;
   readonly selected: boolean;
-  readonly statusText: "可预订" | "暂未接入在线预订";
+  readonly statusText: "可在线预订" | "仅提供场馆信息";
   readonly action: "VIEW_AVAILABILITY" | "VIEW_DETAIL";
   readonly transitText: string;
   readonly distanceText: string | null;
@@ -93,35 +93,8 @@ export function toVenueMapPresentation(
   requestedVenueId: string | null,
   distanceMetersByVenueId: Readonly<Record<string, number>>,
   distanceLabelBasis: DistanceLabelBasis,
-): ReturnType<typeof projectVenueMap>;
-/** @deprecated Temporary compatibility for the page migration in Task 3. */
-export function toVenueMapPresentation(
-  venues: readonly VenueMapEntry[],
-  requestedVenueId: string | null,
-  userLocation: Gcj02Coordinate | null,
-): ReturnType<typeof projectVenueMap>;
-export function toVenueMapPresentation(
-  venues: readonly VenueMapEntry[],
-  requestedVenueId: string | null,
-  distanceData: Readonly<Record<string, number>> | Gcj02Coordinate | null,
-  distanceLabelBasis: DistanceLabelBasis = null,
-) {
-  const legacyLocation = isGcj02Coordinate(distanceData) ? distanceData : null;
-  const distanceMetersByVenueId = legacyLocation
-    ? Object.fromEntries(venues.map((venue) => [venue.id, calculateDistanceMeters(legacyLocation, venue.marker)]))
-    : (distanceData ?? {}) as Readonly<Record<string, number>>;
-  return projectVenueMap(
-    venues,
-    requestedVenueId,
-    distanceMetersByVenueId,
-    legacyLocation ? { kind: "USER" } : distanceLabelBasis,
-  );
-}
-
-function isGcj02Coordinate(
-  value: Readonly<Record<string, number>> | Gcj02Coordinate | null,
-): value is Gcj02Coordinate {
-  return value !== null && "coordinateSystem" in value && value.coordinateSystem === "GCJ02";
+): ReturnType<typeof projectVenueMap> {
+  return projectVenueMap(venues, requestedVenueId, distanceMetersByVenueId, distanceLabelBasis);
 }
 
 function projectVenueMap(
@@ -150,7 +123,7 @@ function projectVenueMap(
       name: venue.name,
       address: venue.address,
       selected: venue.id === selectedVenueId,
-      statusText: venue.bookingMode === "ONLINE" ? "可预订" : "暂未接入在线预订",
+      statusText: venue.bookingMode === "ONLINE" ? "可在线预订" : "仅提供场馆信息",
       action: venue.bookingMode === "ONLINE" ? "VIEW_AVAILABILITY" : "VIEW_DETAIL",
       transitText: formatTransit(venue.nearestTransit[0]),
       distanceText: formatDistance(
