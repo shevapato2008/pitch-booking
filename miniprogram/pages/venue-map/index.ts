@@ -40,6 +40,13 @@ interface PresentationSnapshot {
   readonly filters: VenueMapFilters;
   readonly selectedVenueId: string | null;
   readonly viewport: VenueMapViewport | null;
+  readonly committedQuery: string;
+}
+
+function centerNoteFor(center: SearchCenter): string {
+  if (center.kind === "CITY") return "全城范围 · 未使用你的位置";
+  if (center.kind === "USER_LOCATION") return "当前位置附近 · 距离用于排序";
+  return `${center.poi.name}附近 · 可更换搜索中心`;
 }
 
 Page({
@@ -55,6 +62,7 @@ Page({
     searchCenter: { kind: "CITY" } as SearchCenter,
     filters: EMPTY_FILTERS as VenueMapFilters,
     draftQuery: "",
+    committedQuery: "",
     searchResetToken: 0,
     poiState: "idle" as PoiSuggestionState,
     poiResults: [] as readonly PoiSearchResult[],
@@ -67,6 +75,7 @@ Page({
     title: "全部球场",
     subtitle: "",
     sortLabel: "综合排序",
+    centerNote: "全城范围 · 未使用你的位置",
     sheetSnap: "half" as SheetSnap,
   },
   requestGuard: createRequestGenerationGuard(),
@@ -137,6 +146,7 @@ Page({
       title: search.title,
       subtitle: search.subtitle,
       sortLabel: search.sortLabel,
+      centerNote: centerNoteFor(center),
     });
   },
 
@@ -173,6 +183,7 @@ Page({
       filters: this.data.filters,
       selectedVenueId: this.data.selectedVenueId,
       viewport: this.data.viewport,
+      committedQuery: this.data.committedQuery,
     };
     this.setData({ locating: true, locationErrorText: "", locationPermissionDenied: false });
     try {
@@ -185,6 +196,7 @@ Page({
         locationActive: true,
         userLocation: location,
         draftQuery: "",
+        committedQuery: "",
         searchResetToken: this.data.searchResetToken + 1,
         poiState: "idle",
         poiResults: [],
@@ -221,6 +233,7 @@ Page({
       filters: this.data.filters,
       selectedVenueId: this.data.selectedVenueId,
       viewport: this.data.viewport,
+      committedQuery: this.data.committedQuery,
     };
   },
 
@@ -253,6 +266,7 @@ Page({
     const center: SearchCenter = { kind: "POI", poi: event.detail.poi };
     this.setData({
       draftQuery: "",
+      committedQuery: event.detail.poi.name,
       searchResetToken: this.data.searchResetToken + 1,
       poiState: "idle",
       poiResults: [],
@@ -263,7 +277,8 @@ Page({
 
   onSearchClear() {
     this.poiGuard.invalidate();
-    this.setData({ draftQuery: "", poiState: "idle", poiResults: [] });
+    this.setData({ draftQuery: "", committedQuery: "", poiState: "idle", poiResults: [], locationActive: false });
+    this.applySearchPresentation({ kind: "CITY" }, this.data.filters, this.data.selectedVenueId);
   },
 
   onSearchCancel() {
@@ -271,6 +286,7 @@ Page({
     this.setData({ draftQuery: "", poiState: "idle", poiResults: [], searchResetToken: this.data.searchResetToken + 1 });
     if (this.preEditSnapshot) {
       const snapshot = this.preEditSnapshot;
+      this.setData({ committedQuery: snapshot.committedQuery });
       this.applySearchPresentation(snapshot.searchCenter, snapshot.filters, snapshot.selectedVenueId);
       this.setData({ viewport: snapshot.viewport });
       this.preEditSnapshot = null;

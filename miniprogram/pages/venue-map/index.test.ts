@@ -89,6 +89,7 @@ test("selecting 天津站 commits POI while retaining user location only as a re
   expect(target.data.userLocation).toEqual(retainedUserLocation);
   expect(target.data.locationActive).toBe(false);
   expect(target.data.draftQuery).toBe("");
+  expect(target.data.committedQuery).toBe("天津站");
   expect(target.data.viewport).toEqual(calculateSearchCenterViewport({ kind: "POI", poi: station }, "half"));
   expect(target.data.cards[0].distanceText).toMatch(/^距天津站/);
 });
@@ -100,7 +101,34 @@ test("platform suggestion changes selection and focus without changing committed
   const center = target.data.searchCenter;
   call(target, "onSearchVenueSelect", { detail: { venueId: venues[1].id } });
   expect(target.data.searchCenter).toEqual(center);
+  expect(target.data.committedQuery).toBe("天津站");
   expect(target.data.selectedVenueId).toBe(venues[1].id);
+});
+
+test("clearing a committed POI returns to CITY while cancel restores the pre-edit POI", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  call(target, "onSearchEditStart");
+  await call(target, "onSearchQueryChange", { detail: { query: "东丽" } });
+  call(target, "onSearchCancel");
+  expect(target.data.searchCenter).toEqual({ kind: "POI", poi: station });
+  expect(target.data.committedQuery).toBe("天津站");
+
+  call(target, "onSearchClear");
+  expect(target.data.searchCenter).toEqual({ kind: "CITY" });
+  expect(target.data.committedQuery).toBe("");
+  expect(target.data.title).toBe("全部球场");
+});
+
+test("projects exact approved center-note copy for all committed centers", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  expect(target.data.centerNote).toBe("全城范围 · 未使用你的位置");
+  await call(target, "onLocateTap");
+  expect(target.data.centerNote).toBe("当前位置附近 · 距离用于排序");
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  expect(target.data.centerNote).toBe("天津站附近 · 可更换搜索中心");
 });
 
 test("online and district filters use the sidecar and never auto-select the first result", async () => {
@@ -169,11 +197,13 @@ test("sheet snap uses exactly collapsed, half, and expanded", async () => {
 test("uses the search component, accessible crosshair, vertical sheet copy, and no permanent legend", () => {
   const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
   expect(template).toContain("<venue-map-search");
+  expect(template).toContain('committed-query="{{committedQuery}}"');
   expect(template).toContain('aria-label="定位到我"');
   expect(template).not.toMatch(/>附近<\/button>/);
   expect(template).not.toContain('class="legend"');
   expect(template).toContain('title="{{title}}"');
   expect(template).toContain('subtitle="{{subtitle}}"');
+  expect(template).toContain("{{centerNote}}");
 });
 
 test("page delegates all search projection to the pure presentation boundary", () => {

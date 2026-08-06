@@ -18,7 +18,7 @@ function component() {
   }
   return {
     ...definition,
-    data: { draftQuery: "", localMatches: [], venues, poiResults: [station], poiState: "ready" },
+    data: { draftQuery: "", committedQuery: "", localMatches: [], venues, poiResults: [station], poiState: "ready" },
     triggerEvent: jest.fn(),
     setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); },
   } as Record<string, any>;
@@ -64,4 +64,22 @@ test("keyboard submit without an explicitly selected suggestion does not commit"
   target.methods.onConfirm.call(target);
   expect(target.triggerEvent).not.toHaveBeenCalledWith("selectvenue", expect.anything());
   expect(target.triggerEvent).not.toHaveBeenCalledWith("selectpoi", expect.anything());
+});
+
+test("shows a committed POI name without reopening suggestions and restores it on reset", () => {
+  const target = component();
+  target.data.committedQuery = "天津站";
+  target.properties.committedQuery.observer.call(target, "天津站");
+  expect(target.data.draftQuery).toBe("天津站");
+  const template = readFileSync("miniprogram/components/venue-map-search/index.wxml", "utf8");
+  expect(template).toContain("draftQuery !== committedQuery");
+});
+
+test("draws the magnifier in WXSS without a font glyph", () => {
+  const template = readFileSync("miniprogram/components/venue-map-search/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/components/venue-map-search/index.wxss", "utf8");
+  expect(template).not.toContain("⌕");
+  expect(template).toContain('class="venue-search-icon"');
+  expect(styles).toMatch(/\.venue-search-icon\s*\{[^}]*border:/s);
+  expect(styles).toMatch(/\.venue-search-icon::after\s*\{/);
 });

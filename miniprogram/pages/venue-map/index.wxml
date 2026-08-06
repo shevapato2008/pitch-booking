@@ -5,10 +5,10 @@
     <map wx:if="{{viewport.mode === 'ALL'}}" id="venue-map" class="map" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
     <map wx:else id="venue-map" class="map" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
     <view class="map-tools">
-      <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
+      <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" committed-query="{{committedQuery}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
       <button class="locate {{locationActive ? 'locate--active' : ''}} {{locationErrorText ? 'locate--error' : ''}}" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我"><view wx:if="{{!locating}}" class="crosshair"><view class="crosshair-dot"></view></view></button>
     </view>
-    <view class="center-note">{{searchCenter.kind === 'CITY' ? '全城范围' : searchCenter.kind === 'POI' ? searchCenter.poi.name : '我的位置'}}</view>
+    <view class="center-note">{{centerNote}}</view>
     <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
     <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
     <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">

@@ -9,10 +9,15 @@ Component({
     venues: { type: Array, value: [] },
     poiResults: { type: Array, value: [] },
     poiState: { type: String, value: "idle" },
+    committedQuery: {
+      type: String,
+      value: "",
+      observer(value: string) { this.setData({ draftQuery: value, localMatches: [] }); },
+    },
     resetToken: {
       type: Number,
       value: 0,
-      observer() { this.setData({ draftQuery: "", localMatches: [] }); },
+      observer() { this.setData({ draftQuery: this.data.committedQuery, localMatches: [] }); },
     },
   },
   data: { draftQuery: "", localMatches: [] as readonly SearchableVenue[] },
