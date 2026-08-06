@@ -63,16 +63,30 @@ export function formatDistanceFromUser(
   venue: Gcj02Coordinate,
 ): string | null {
   if (!user) return null;
+  const meters = distanceMeters(user, venue);
+  if (meters < 50) return "距你不到 50 米";
+  if (meters < 1000) return `距你 ${Math.round(meters)} 米`;
+  return `距你 ${(meters / 1000).toFixed(1)} 公里`;
+}
+
+function distanceMeters(user: Gcj02Coordinate, venue: Gcj02Coordinate): number {
   const radians = (value: number): number => value * Math.PI / 180;
   const latitudeDelta = radians(venue.latitude - user.latitude);
   const longitudeDelta = radians(venue.longitude - user.longitude);
   const a = Math.sin(latitudeDelta / 2) ** 2
     + Math.cos(radians(user.latitude)) * Math.cos(radians(venue.latitude))
     * Math.sin(longitudeDelta / 2) ** 2;
-  const meters = 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  if (meters < 50) return "距你不到 50 米";
-  if (meters < 1000) return `距你 ${Math.round(meters)} 米`;
-  return `距你 ${(meters / 1000).toFixed(1)} 公里`;
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function findNearestVenueId(
+  venues: readonly VenueMapEntry[],
+  userLocation: Gcj02Coordinate,
+): string | null {
+  return venues.reduce<{ id: string; meters: number } | null>((nearest, venue) => {
+    const meters = distanceMeters(userLocation, venue.marker);
+    return nearest === null || meters < nearest.meters ? { id: venue.id, meters } : nearest;
+  }, null)?.id ?? null;
 }
 
 export function toVenueMapPresentation(

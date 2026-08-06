@@ -1,6 +1,8 @@
 import type { Gcj02Coordinate, VenueMapEntry } from "../../domain/venue-directory";
 import {
+  calculateMapViewport,
   createRequestGenerationGuard,
+  findNearestVenueId,
   toVenueMapPresentation,
   type VenueMapCardViewModel,
   type VenueMapMarkerViewModel,
@@ -9,29 +11,29 @@ import {
 import { getLocationCapability } from "../../services/location";
 import { getVenueDirectoryDataSource } from "../../services/venue-directory";
 
-const MAP_WATCHDOG_MS = 10_000;
 type RuntimeMapMarker = VenueMapMarkerViewModel & { readonly id: number; readonly width: number; readonly height: number };
 
 Page({
   data: {
-    loading: true, errorText: "", mapFailed: false, mapKey: 0, mapUpdated: false,
+    loading: true, errorText: "",
     locating: false, showLocation: false, locationErrorText: "", locationPermissionDenied: false,
+    searchQuery: "", searchEmpty: false,
     userLocation: null as Gcj02Coordinate | null,
-    venues: [] as VenueMapEntry[], markers: [] as RuntimeMapMarker[], cards: [] as VenueMapCardViewModel[], selectedVenueId: null as string | null,
+    venues: [] as VenueMapEntry[], visibleVenues: [] as VenueMapEntry[], markers: [] as RuntimeMapMarker[], cards: [] as VenueMapCardViewModel[], selectedVenueId: null as string | null,
     viewport: null as VenueMapViewport | null, sheetSnap: "default" as "collapsed" | "default" | "expanded",
   },
   requestGuard: createRequestGenerationGuard(),
   locationGuard: createRequestGenerationGuard(),
-  watchdog: undefined as ReturnType<typeof setTimeout> | undefined,
 
   async onLoad(query: Record<string, string | undefined>) {
     const token = this.requestGuard.begin();
-    this.startWatchdog();
     try {
       const venues = await getVenueDirectoryDataSource().getVenueDirectory();
       if (!this.requestGuard.isCurrent(token)) return;
-      const initialVenueId = query.venueId === undefined ? venues[0]?.id ?? null : query.venueId;
-      this.applyPresentation(venues, initialVenueId, null);
+      this.setData({ venues });
+      const ordinaryEntry = query.venueId === undefined;
+      const initialVenueId = ordinaryEntry ? venues[0]?.id ?? null : query.venueId ?? null;
+      this.applyPresentation(venues, initialVenueId, null, !ordinaryEntry);
       this.setData({ loading: false, errorText: "" });
     } catch {
       if (this.requestGuard.isCurrent(token)) this.setData({ loading: false, errorText: "场馆目录暂时无法加载，请重试。" });
@@ -40,16 +42,23 @@ Page({
   onUnload() {
     this.requestGuard.invalidate();
     this.locationGuard.invalidate();
-    this.clearWatchdog();
     this.data.userLocation = null;
     this.data.showLocation = false;
   },
-  applyPresentation(venues: VenueMapEntry[], selectedVenueId: string | null, userLocation: Gcj02Coordinate | null) {
+  applyPresentation(venues: VenueMapEntry[], selectedVenueId: string | null, userLocation: Gcj02Coordinate | null, focusSelection = true) {
     const view = toVenueMapPresentation(venues, selectedVenueId, userLocation);
-    this.setData({ venues, ...view, markers: view.markers.map((marker, index) => ({ ...marker, id: index + 1, width: marker.selected ? 36 : 32, height: marker.selected ? 44 : 40 })) });
+    this.setData({
+      visibleVenues: venues,
+      ...view,
+      viewport: focusSelection ? view.viewport : calculateMapViewport(venues, null),
+      markers: view.markers.map((marker, index) => ({ ...marker, id: index + 1, width: marker.selected ? 36 : 32, height: marker.selected ? 44 : 40 })),
+    });
   },
-  selectVenue(venueId: string) { this.applyPresentation(this.data.venues, venueId, this.data.userLocation); },
-  onMarkerTap(event: { markerId: number }) { const venue = this.data.venues[event.markerId - 1]; if (venue) this.selectVenue(venue.id); },
+  selectVenue(venueId: string) {
+    const venues = this.data.searchQuery.trim() === "" ? this.data.venues : this.data.visibleVenues;
+    this.applyPresentation(venues, venueId, this.data.userLocation);
+  },
+  onMarkerTap(event: { markerId: number }) { const venue = this.data.visibleVenues[event.markerId - 1]; if (venue) this.selectVenue(venue.id); },
   onCardSelect(event: { detail?: { venueId?: string }; currentTarget?: { dataset: { venueId?: string } } }) { const id = event.detail?.venueId ?? event.currentTarget?.dataset.venueId; if (id) this.selectVenue(id); },
   onSheetSnap(event: { detail: { snap: "collapsed" | "default" | "expanded" } }) { this.setData({ sheetSnap: event.detail.snap }); },
   async onVenueAction(event?: { detail?: { venueId?: string }; currentTarget?: { dataset?: { venueId?: string } } }) {
@@ -64,8 +73,11 @@ Page({
     try {
       const location = await getLocationCapability().getLocation();
       if (!this.locationGuard.isCurrent(token)) return;
-      this.applyPresentation(this.data.venues, this.data.selectedVenueId, location);
+      const nearestVenueId = findNearestVenueId(this.data.venues, location);
+      this.setData({ searchQuery: "", searchEmpty: false });
+      this.applyPresentation(this.data.venues, nearestVenueId, location);
       this.setData({ locating: false, showLocation: true, userLocation: location, locationErrorText: "" });
+      if (nearestVenueId) wx.showToast({ title: "已找到离你最近的球场", icon: "none" });
     } catch (error) {
       if (!this.locationGuard.isCurrent(token)) return;
       const code = (error as { code?: string }).code;
@@ -88,8 +100,22 @@ Page({
   },
   async onOpenLocationSetting() { await getLocationCapability().openSetting(); },
   onDismissLocationDenied() { this.setData({ locationPermissionDenied: false }); },
-  onMapUpdated() { this.clearWatchdog(); this.setData({ mapUpdated: true }); },
-  onRetryMap() { this.clearWatchdog(); this.setData({ mapFailed: false, mapUpdated: false, mapKey: this.data.mapKey + 1 }); this.startWatchdog(); },
-  startWatchdog() { this.clearWatchdog(); this.watchdog = setTimeout(() => this.setData({ mapFailed: true }), MAP_WATCHDOG_MS); },
-  clearWatchdog() { if (this.watchdog !== undefined) clearTimeout(this.watchdog); this.watchdog = undefined; },
+  onSearchInput(event: { detail: { value: string } }) {
+    const searchQuery = event.detail.value;
+    const normalized = searchQuery.trim().toLocaleLowerCase("zh-CN");
+    const visibleVenues = normalized === "" ? this.data.venues : this.data.venues.filter((venue) => (
+      venue.name.toLocaleLowerCase("zh-CN").includes(normalized)
+      || venue.address.toLocaleLowerCase("zh-CN").includes(normalized)
+    ));
+    if (visibleVenues.length === 0) {
+      this.setData({ searchQuery, searchEmpty: true, visibleVenues: [], cards: [], markers: [], selectedVenueId: null });
+      return;
+    }
+    this.setData({ searchQuery, searchEmpty: false });
+    this.applyPresentation(visibleVenues, visibleVenues[0].id, this.data.userLocation);
+  },
+  onSearchClear() {
+    this.setData({ searchQuery: "", searchEmpty: false });
+    this.applyPresentation(this.data.venues, this.data.venues[0]?.id ?? null, this.data.userLocation, false);
+  },
 });

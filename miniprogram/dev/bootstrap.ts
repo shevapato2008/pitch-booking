@@ -15,6 +15,7 @@ import { developmentPageDataSource } from "./page-data";
 import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./payment-capability";
 import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
 import { createDevelopmentPaymentDataSource } from "./payment-source";
+import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -42,5 +43,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerPaymentClock({ now: () => new Date(PAYMENT_PREVIEW_NOW) });
   registerPageDataSource(developmentPageDataSource);
   registerBookingDataSource(createDevelopmentBookingDataSource());
+  registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource());
+  registerLocationCapability(productionLocation);
   registerNeutralPhoneTapCode(() => "dev-phone-code");
 }

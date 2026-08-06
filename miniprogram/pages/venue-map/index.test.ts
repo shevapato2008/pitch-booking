@@ -61,6 +61,16 @@ test("loads five venues without requesting location and focuses a valid deep lin
   expect(target.data.viewport.mode).toBe("FOCUSED");
 });
 
+test("shows all five markers on ordinary entry while keeping the recommended card selected", async () => {
+  const target = page();
+
+  await call(target, "onLoad", {});
+
+  expect(target.data.selectedVenueId).toBe(VENUE_DIRECTORY_VISUAL_FIXTURE[0].id);
+  expect(target.data.viewport.mode).toBe("ALL");
+  expect(target.data.markers).toHaveLength(5);
+});
+
 test("synchronizes marker and card selection and never gives a directory venue a booking action", async () => {
   const target = page();
   await call(target, "onLoad", {});
@@ -95,6 +105,45 @@ test("requests location only from the explicit action and enables show-location 
   expect(target.data.showLocation).toBe(true);
   expect(target.data.locationErrorText).toBe("");
   expect(target.data.cards.some((card: any) => card.distanceText)).toBe(true);
+});
+
+test("selects the nearest venue after the user explicitly shares location", async () => {
+  const nearest = VENUE_DIRECTORY_VISUAL_FIXTURE[1];
+  registerLocationCapability({
+    async getLocation() { return nearest.marker; },
+    async openSetting() {},
+  });
+  const target = page();
+  await call(target, "onLoad", {});
+
+  await call(target, "onLocateTap");
+
+  expect(target.data.selectedVenueId).toBe(nearest.id);
+  expect(target.data.viewport).toMatchObject({
+    mode: "FOCUSED",
+    latitude: nearest.marker.latitude,
+    longitude: nearest.marker.longitude,
+  });
+  expect(target.data.cards.find((card: any) => card.venueId === nearest.id).distanceText)
+    .toBe("距你不到 50 米");
+});
+
+test("filters the local directory by venue name and restores all venues when cleared", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+
+  call(target, "onSearchInput", { detail: { value: "东丽" } });
+
+  expect(target.data.searchQuery).toBe("东丽");
+  expect(target.data.cards.map((card: any) => card.name)).toEqual(["东丽体育中心足球场"]);
+  expect(target.data.markers).toHaveLength(1);
+  expect(target.data.selectedVenueId).toBe(
+    VENUE_DIRECTORY_VISUAL_FIXTURE.find(({ name }) => name === "东丽体育中心足球场")?.id,
+  );
+
+  call(target, "onSearchClear");
+  expect(target.data.searchQuery).toBe("");
+  expect(target.data.cards).toHaveLength(5);
 });
 
 test("offers system settings only after location permission is denied", async () => {
@@ -135,9 +184,26 @@ test.each([
 
 test("binds the map camera to the presentation viewport", () => {
   const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
-  expect(template).toContain('latitude="{{viewport.latitude}}"');
-  expect(template).toContain('longitude="{{viewport.longitude}}"');
-  expect(template).toContain('scale="{{viewport.scale}}"');
+  const maps = template.match(/<map\b[^>]*\/>/g) ?? [];
+  expect(maps).toHaveLength(2);
+  expect(maps[0]).toContain("viewport.mode === 'ALL'");
+  expect(maps[0]).toContain('include-points="{{viewport.includePoints}}"');
+  expect(maps[1]).not.toContain("include-points");
+  expect(maps[1]).toContain('latitude="{{viewport.latitude}}"');
+  expect(maps[1]).toContain('longitude="{{viewport.longitude}}"');
+  expect(maps[1]).toContain('scale="{{viewport.scale}}"');
+});
+
+test("uses a real search input and explains marker types with the marker assets", () => {
+  const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
+
+  expect(template).toContain("<input");
+  expect(template).toContain('bindinput="onSearchInput"');
+  expect(template).toContain('bindtap="onSearchClear"');
+  expect(template).toContain('/assets/map-marker-online.png');
+  expect(template).toContain('/assets/map-marker-directory.png');
+  expect(template).toContain("可在线订场");
+  expect(template).toContain("仅提供场馆信息");
 });
 
 test("keeps the selected venue card in view when markers or deep links change selection", () => {
@@ -146,33 +212,27 @@ test("keeps the selected venue card in view when markers or deep links change se
   expect(template).toContain('id="venue-{{item.venueId}}"');
 });
 
-test("keeps every verified venue actionable in the map failure list", async () => {
+test("does not replace usable venue content with a speculative map failure list", async () => {
   const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
-  expect(template).toContain("列表仍可使用。重试会重新挂载地图，不影响场馆列表。");
-  expect(template).toContain('data-venue-id="{{item.venueId}}"');
-
-  const target = page();
-  await call(target, "onLoad", {});
-  await call(target, "onVenueAction", { currentTarget: { dataset: { venueId: VENUE_DIRECTORY_VISUAL_FIXTURE[1].id } } });
-  expect((globalThis as any).wx.navigateTo).toHaveBeenCalledWith({
-    url: `/pages/venue/index?venueId=${VENUE_DIRECTORY_VISUAL_FIXTURE[1].id}`,
-  });
+  expect(template).not.toContain("地图暂时无法加载");
+  expect(template).not.toContain("重试地图");
 });
 
-test("falls back after ten seconds and retry owns one new watchdog", async () => {
+test("does not infer map failure when the native updated event is absent", async () => {
+  let resolve!: (venues: any[]) => void;
+  registerVenueDirectoryDataSource({
+    getVenueDirectory: () => new Promise((done) => { resolve = done; }),
+    async getVenueDetail() { throw new Error("unused"); },
+  });
   const target = page();
-  await call(target, "onLoad", {});
-  expect(jest.getTimerCount()).toBe(1);
+  const loading = call(target, "onLoad", {});
 
-  jest.advanceTimersByTime(10_000);
-  expect(target.data.mapFailed).toBe(true);
-  call(target, "onRetryMap");
-
-  expect(target.data.mapKey).toBe(1);
-  expect(target.data.mapFailed).toBe(false);
-  expect(jest.getTimerCount()).toBe(1);
-  call(target, "onMapUpdated");
   expect(jest.getTimerCount()).toBe(0);
+  resolve([...VENUE_DIRECTORY_VISUAL_FIXTURE]);
+  await loading;
+  expect(jest.getTimerCount()).toBe(0);
+  jest.advanceTimersByTime(60_000);
+  expect(target.data).not.toHaveProperty("mapFailed");
 });
 
 test("drops a late directory response after unload", async () => {

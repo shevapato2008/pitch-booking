@@ -5,6 +5,10 @@ jest.mock("../dev/fixture-data", () => ({
     "booking-checkout-ready": jest.requireActual("../../contracts/examples/checkout-ready.json"),
     "order-pending": jest.requireActual("../../contracts/examples/order-pending.json"),
     "order-expired": jest.requireActual("../../contracts/examples/order-expired.json"),
+    "venue-map": jest.requireActual("../../contracts/examples/venue-map.json"),
+    "venue-ready": jest.requireActual("../../contracts/examples/venue-primary.json"),
+    "venue-online-detail": jest.requireActual("../../contracts/examples/venue-online-detail.json"),
+    "venue-directory-detail": jest.requireActual("../../contracts/examples/venue-directory-detail.json"),
   },
 }));
 
@@ -12,6 +16,7 @@ import type { BookingDataSource, CreateOrderAttempt } from "./booking";
 import { getBookingDataSource, registerBookingDataSource, resetBookingDataSourceForTesting } from "./booking";
 import { createDevelopmentBookingDataSource } from "../dev/booking-source";
 import { bootstrapDevelopment } from "../dev/bootstrap";
+import { getVenueDirectoryDataSource } from "./venue-directory";
 
 describe("booking data source registry", () => {
   test("fails closed before registration", () => {
@@ -31,6 +36,25 @@ describe("booking data source registry", () => {
     expect((await getBookingDataSource().login()).maskedPhone).toBe("138****5678");
     bootstrapDevelopment();
     expect((await getBookingDataSource().login()).maskedPhone).toBeNull();
+  });
+
+  test("fixture development bootstrap registers the venue directory", async () => {
+    bootstrapDevelopment();
+    const source = getVenueDirectoryDataSource();
+    await expect(source.getVenueDirectory()).resolves.toHaveLength(5);
+    await expect(source.getVenueDetail("7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f")).resolves.toMatchObject({
+      bookingMode: "ONLINE",
+      coverImage: null,
+      availabilityWindow: { startDate: "2026-07-22", endDate: "2026-08-04" },
+    });
+    await expect(source.getVenueDetail("e03d801d-1254-5c62-9a16-9a8800280162")).resolves.toMatchObject({
+      bookingMode: "DIRECTORY_ONLY",
+    });
+    await expect(source.getVenueDetail("c0372328-6fa4-585a-b951-3324925763d6")).resolves.toMatchObject({
+      id: "c0372328-6fa4-585a-b951-3324925763d6",
+      name: "东丽体育中心足球场",
+      bookingMode: "DIRECTORY_ONLY",
+    });
   });
 });
 
