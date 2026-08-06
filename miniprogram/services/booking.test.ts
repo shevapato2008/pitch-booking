@@ -41,7 +41,8 @@ describe("booking data source registry", () => {
   test("fixture development bootstrap registers the venue directory", async () => {
     bootstrapDevelopment();
     const source = getVenueDirectoryDataSource();
-    await expect(source.getVenueDirectory()).resolves.toHaveLength(100);
+    const previewDirectory = await source.getVenueDirectory();
+    expect(previewDirectory).toHaveLength(100);
     await expect(source.getVenueDetail("7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f")).resolves.toMatchObject({
       bookingMode: "ONLINE",
       coverImage: null,
@@ -55,6 +56,25 @@ describe("booking data source registry", () => {
       name: "东丽体育中心足球场",
       bookingMode: "DIRECTORY_ONLY",
     });
+
+    const previewOnline = previewDirectory.find(({ bookingMode }) => bookingMode === "ONLINE");
+    const previewInformationOnly = previewDirectory.find(({ bookingMode }) => bookingMode === "DIRECTORY_ONLY");
+    expect(previewOnline).toBeDefined();
+    expect(previewInformationOnly).toBeDefined();
+    await expect(source.getVenueDetail(previewOnline!.id)).resolves.toMatchObject({
+      id: previewOnline!.id,
+      name: previewOnline!.name,
+      bookingMode: "ONLINE",
+      pitchTypes: ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
+      availabilityWindow: { startDate: "2026-07-22", endDate: "2026-08-04" },
+    });
+    const directoryDetail = await source.getVenueDetail(previewInformationOnly!.id);
+    expect(directoryDetail).toMatchObject({
+      id: previewInformationOnly!.id,
+      name: previewInformationOnly!.name,
+      bookingMode: "DIRECTORY_ONLY",
+    });
+    expect(directoryDetail).not.toHaveProperty("availabilityWindow");
   });
 });
 
