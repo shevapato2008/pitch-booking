@@ -63,6 +63,30 @@ test("ordinary load commits CITY, preserves platform order, and emits no distanc
   expect(target.data.viewport.mode).toBe("ALL");
 });
 
+test("projects ordinary and selected venue marker assets at their approved dimensions", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+
+  const online = venues.find(({ bookingMode }) => bookingMode === "ONLINE")!;
+  const directory = venues.find(({ bookingMode }) => bookingMode === "DIRECTORY_ONLY")!;
+  expect(target.data.markers.find(({ venueId }: any) => venueId === online.id)).toMatchObject({
+    iconPath: "/assets/map-marker-online.png", width: 32, height: 40,
+  });
+  expect(target.data.markers.find(({ venueId }: any) => venueId === directory.id)).toMatchObject({
+    iconPath: "/assets/map-marker-directory.png", width: 32, height: 40,
+  });
+
+  call(target, "selectVenue", online.id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === online.id)).toMatchObject({
+    iconPath: "/assets/map-marker-online-selected.png", width: 36, height: 44,
+  });
+
+  call(target, "selectVenue", directory.id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === directory.id)).toMatchObject({
+    iconPath: "/assets/map-marker-directory-selected.png", width: 36, height: 44,
+  });
+});
+
 test("successful locate commits USER_LOCATION and clears POI editing state", async () => {
   const target = page();
   await call(target, "onLoad", {});

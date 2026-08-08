@@ -129,7 +129,12 @@ Page({
     const venueMarkers = map.markers.map((marker, index): RuntimeVenueMarker => {
       const id = index + 1;
       markerVenueIdByRuntimeId[id] = marker.venueId;
-      return { ...marker, id, width: 32, height: 40 };
+      return {
+        ...marker,
+        id,
+        width: marker.selected ? 36 : 32,
+        height: marker.selected ? 44 : 40,
+      };
     });
     const centerMarker: RuntimeCenterMarker[] = center.kind === "POI" && search.searchCenterMarker
       ? [{ ...search.searchCenterMarker, id: SEARCH_CENTER_MARKER_ID, width: 28, height: 28 }]

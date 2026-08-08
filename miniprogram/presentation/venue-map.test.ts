@@ -148,13 +148,21 @@ test("request generation guard rejects late responses and invalidates on unload"
 });
 
 test("packages four visually distinct local PNG marker states", () => {
-  const paths = [
-    "miniprogram/assets/map-marker-online.png",
-    "miniprogram/assets/map-marker-online-selected.png",
-    "miniprogram/assets/map-marker-directory.png",
-    "miniprogram/assets/map-marker-directory-selected.png",
+  const variants = [
+    { name: "map-marker-online", variant: "online-filled", selected: false, width: 64, height: 80 },
+    { name: "map-marker-online-selected", variant: "online-filled", selected: true, width: 72, height: 88 },
+    { name: "map-marker-directory", variant: "directory-outline", selected: false, width: 64, height: 80 },
+    { name: "map-marker-directory-selected", variant: "directory-outline", selected: true, width: 72, height: 88 },
   ];
-  const assets = paths.map((path) => readFileSync(path));
+  const assets = variants.map(({ name }) => readFileSync(`miniprogram/assets/${name}.png`));
+
+  variants.forEach(({ name, variant, selected, width, height }, index) => {
+    const source = readFileSync(`artifacts/ui/sources/map-markers/${name}.svg`, "utf8");
+    expect(source).toContain(`data-variant="${variant}"`);
+    expect(source).toContain(`data-selected="${selected}"`);
+    expect(assets[index].readUInt32BE(16)).toBe(width);
+    expect(assets[index].readUInt32BE(20)).toBe(height);
+  });
 
   expect(assets.map((asset) => asset.subarray(1, 4).toString("ascii")))
     .toEqual(["PNG", "PNG", "PNG", "PNG"]);
