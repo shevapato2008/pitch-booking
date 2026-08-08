@@ -20,7 +20,12 @@ import { getVenueMapPreviewMetadata } from "../../services/venue-map-preview";
 
 type SheetSnap = "collapsed" | "half" | "expanded";
 type PoiSuggestionState = "idle" | "loading" | "ready" | "empty" | "error";
-type RuntimeVenueMarker = VenueMapMarkerViewModel & { readonly id: number; readonly width: number; readonly height: number };
+type RuntimeVenueMarker = VenueMapMarkerViewModel & {
+  readonly id: number;
+  readonly joinCluster: boolean;
+  readonly width: number;
+  readonly height: number;
+};
 type RuntimeCenterMarker = {
   readonly id: number;
   readonly latitude: number;
@@ -84,6 +89,14 @@ Page({
   markerVenueIdByRuntimeId: {} as Record<number, string>,
   preEditSnapshot: null as PresentationSnapshot | null,
 
+  onReady() {
+    wx.createMapContext("venue-map", this).initMarkerCluster({
+      enableDefaultStyle: true,
+      zoomOnClick: true,
+      gridSize: 60,
+    });
+  },
+
   async onLoad(query: Record<string, string | undefined>) {
     const token = this.requestGuard.begin();
     try {
@@ -132,6 +145,7 @@ Page({
       return {
         ...marker,
         id,
+        joinCluster: !marker.selected,
         width: marker.selected ? 36 : 32,
         height: marker.selected ? 44 : 40,
       };

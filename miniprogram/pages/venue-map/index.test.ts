@@ -50,7 +50,24 @@ beforeEach(() => {
     async openSetting() {},
   });
   registerPoiSearchCapability({ async suggest(query) { return query.includes("天津站") ? [station] : []; } });
-  (globalThis as any).wx = { navigateTo: jest.fn(), showToast: jest.fn() };
+  (globalThis as any).wx = { navigateTo: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn() };
+});
+
+test("initializes the venue map marker cluster when the page is ready", () => {
+  const target = page();
+  const initMarkerCluster = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster });
+
+  call(target, "onReady");
+
+  expect((globalThis as any).wx.createMapContext).toHaveBeenCalledTimes(1);
+  expect((globalThis as any).wx.createMapContext).toHaveBeenCalledWith("venue-map", target);
+  expect(initMarkerCluster).toHaveBeenCalledTimes(1);
+  expect(initMarkerCluster).toHaveBeenCalledWith({
+    enableDefaultStyle: true,
+    zoomOnClick: true,
+    gridSize: 60,
+  });
 });
 
 test("ordinary load commits CITY, preserves platform order, and emits no distance", async () => {
@@ -85,6 +102,16 @@ test("projects ordinary and selected venue marker assets at their approved dimen
   expect(target.data.markers.find(({ venueId }: any) => venueId === directory.id)).toMatchObject({
     iconPath: "/assets/map-marker-directory-selected.png", width: 36, height: 44,
   });
+});
+
+test("clusters ordinary venue markers but keeps the selected venue marker independent", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  expect(target.data.markers.filter(({ venueId }: any) => venueId).every(({ joinCluster }: any) => joinCluster === true)).toBe(true);
+
+  call(target, "selectVenue", venues[0].id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id)).toMatchObject({ joinCluster: false });
+  expect(target.data.markers.filter(({ venueId }: any) => venueId !== venues[0].id).every(({ joinCluster }: any) => joinCluster === true)).toBe(true);
 });
 
 test("successful locate commits USER_LOCATION and clears POI editing state", async () => {
