@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { describe, expect, test } from "@jest/globals";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
 import type { VenueMapEntry } from "../domain/venue-directory";
@@ -236,4 +236,28 @@ test("shares one pin silhouette between booking variants in each marker state", 
     .toBe(pinShapePath(source("map-marker-directory")));
   expect(pinShapePath(source("map-marker-online-selected")))
     .toBe(pinShapePath(source("map-marker-directory-selected")));
+});
+
+test("packages a reproducible AppKit renderer for the authoritative marker SVGs", () => {
+  const rendererPath = "scripts/render-map-markers.swift";
+  expect(existsSync(rendererPath)).toBe(true);
+  const renderer = readFileSync(rendererPath, "utf8");
+
+  expect(renderer).toContain("import AppKit");
+  expect(renderer).toContain("artifacts/ui/sources/map-markers");
+  expect(renderer).toContain("miniprogram/assets");
+  expect(renderer).toContain("map-marker-online");
+  expect(renderer).toContain("map-marker-online-selected");
+  expect(renderer).toContain("map-marker-directory");
+  expect(renderer).toContain("map-marker-directory-selected");
+  expect(renderer).toContain("width: 64, height: 80");
+  expect(renderer).toContain("width: 72, height: 88");
+  expect(renderer).not.toContain("pin-shape");
+});
+
+test("exposes the exact marker rendering command through package scripts", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+
+  expect(packageJson.scripts["assets:map-markers"])
+    .toBe("swift scripts/render-map-markers.swift");
 });

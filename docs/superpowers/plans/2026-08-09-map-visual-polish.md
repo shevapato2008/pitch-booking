@@ -23,6 +23,8 @@
 - Modify: `miniprogram/assets/map-marker-online-selected.png`
 - Modify: `miniprogram/assets/map-marker-directory.png`
 - Modify: `miniprogram/assets/map-marker-directory-selected.png`
+- Create: `scripts/render-map-markers.swift`
+- Modify: `package.json`
 - Modify: `miniprogram/presentation/venue-map.test.ts`
 - Modify: `miniprogram/pages/venue-map/index.test.ts`
 - Modify: `miniprogram/pages/venue-map/index.ts`
@@ -47,15 +49,13 @@ return { ...marker, id, width: marker.selected ? 36 : 32, height: marker.selecte
 
 - [ ] **Step 4: Create and rasterize the four owned marker variants**
 
-Use one water-drop silhouette with restrained highlight/shadow. Online is filled blue; directory-only is white with blue outline; selected variants add a fixed halo. Rasterize each checked-in SVG with macOS Quick Look, then normalize the output with `sips`:
+Use one water-drop silhouette with restrained highlight/shadow. Online is filled blue; directory-only is white with blue outline; selected variants add a fixed halo. Rasterize the four checked-in SVG authorities directly into transparent RGBA bitmaps with the repository-owned AppKit renderer:
 
 ```bash
-mkdir -p /private/tmp/pitch-map-markers
-qlmanage -t -s 144 -o /private/tmp/pitch-map-markers artifacts/ui/sources/map-markers/map-marker-online.svg
-sips -z 80 64 /private/tmp/pitch-map-markers/map-marker-online.svg.png --out miniprogram/assets/map-marker-online.png
+npm run assets:map-markers
 ```
 
-Repeat with `-z 80 64` for both normal variants and `-z 88 72` for both selected variants. Expected: transparent PNG assets with exact `64×80` / `72×88` canvases. Delete the temporary render directory after verifying the checked-in assets.
+The renderer reads only `artifacts/ui/sources/map-markers/*.svg`, clears each destination canvas to transparent, and writes normal variants at `64×80` and selected variants at `72×88`. Expected: transparent PNG assets with exact canvases and transparent corners; no temporary Quick Look thumbnail is involved.
 
 - [ ] **Step 5: Run focused presentation/page tests and verify GREEN**
 
