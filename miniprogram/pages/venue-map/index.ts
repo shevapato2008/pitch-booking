@@ -96,11 +96,14 @@ Page({
   preEditSnapshot: null as PresentationSnapshot | null,
 
   initializeMarkerClustering() {
-    wx.createMapContext("venue-map", this).initMarkerCluster({
+    const map = wx.createMapContext("venue-map", this);
+    map.initMarkerCluster({
       enableDefaultStyle: true,
       zoomOnClick: true,
       gridSize: 60,
     });
+    // The cluster manager only owns markers added through MapContext.
+    map.addMarkers({ markers: [...this.data.markers], clear: true });
   },
 
   ensureMarkerClusteringInitialized() {

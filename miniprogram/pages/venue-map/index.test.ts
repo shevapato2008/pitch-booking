@@ -78,7 +78,8 @@ test("waits for a pending initial map render and initializes that native instanc
     if (callback) callbacks.push(() => callback.call(this));
   };
   const initMarkerCluster = jest.fn();
-  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster });
+  const addMarkers = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers });
 
   await call(target, "onLoad", {});
   expect(target.data.loading).toBe(false);
@@ -92,7 +93,8 @@ test("waits for a pending initial map render and initializes that native instanc
 test("onReady initializes an already rendered map that completed before the page became ready", async () => {
   const target = page();
   const initMarkerCluster = jest.fn();
-  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster });
+  const addMarkers = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers });
 
   await call(target, "onLoad", {});
   expect(initMarkerCluster).not.toHaveBeenCalled();
@@ -105,6 +107,7 @@ test("onReady initializes an already rendered map that completed before the page
     zoomOnClick: true,
     gridSize: 60,
   });
+  expect(addMarkers).toHaveBeenCalledWith({ markers: [...target.data.markers], clear: true });
 });
 
 test("initializes clustering once for each ALL and FOCUSED native map instance", async () => {
@@ -112,6 +115,7 @@ test("initializes clustering once for each ALL and FOCUSED native map instance",
   const initializedModes: string[] = [];
   (globalThis as any).wx.createMapContext.mockImplementation(() => ({
     initMarkerCluster() { initializedModes.push(target.data.viewport.mode); },
+    addMarkers() {},
   }));
 
   await call(target, "onLoad", {});
