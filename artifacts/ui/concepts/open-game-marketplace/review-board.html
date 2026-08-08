@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>开放球局产品概念稿</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #10243e;
+      --muted: #64748b;
+      --border: #dbe5ec;
+      --trust: #0284c7;
+      --trust-soft: #e7f5fc;
+      --available: #047857;
+      --available-soft: #ecfdf5;
+      --held: #b45309;
+      --held-soft: #fff7ed;
+      --danger: #b91c1c;
+      --shadow: 0 22px 60px rgba(15, 23, 42, 0.16);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: #e9f0f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button { font: inherit; }
+    .board-header {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 48px 28px 24px;
+    }
+    .board-header__eyebrow {
+      margin: 0 0 10px;
+      color: var(--trust);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .board-header h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 42px);
+      letter-spacing: -0.03em;
+    }
+    .board-header p {
+      max-width: 780px;
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .decision-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 28px 28px;
+    }
+    .decision-strip span {
+      padding: 8px 12px;
+      border: 1px solid #cbdbe5;
+      border-radius: 999px;
+      color: #334155;
+      background: rgba(255,255,255,.76);
+      font-size: 13px;
+    }
+    .screens {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(390px, 1fr));
+      gap: 44px 52px;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 16px 28px 80px;
+    }
+    .screen-case { min-width: 0; }
+    .screen-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      max-width: 390px;
+      margin: 0 auto 12px;
+    }
+    .screen-label strong { font-size: 15px; }
+    .screen-label span { color: var(--muted); font-size: 12px; }
+    .phone {
+      position: relative;
+      width: 390px;
+      height: 844px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 1px solid #b9c9d4;
+      border-radius: 38px;
+      background: var(--bg);
+      box-shadow: var(--shadow);
+    }
+    .phone::before {
+      position: absolute;
+      z-index: 20;
+      top: 9px;
+      left: 50%;
+      width: 106px;
+      height: 25px;
+      border-radius: 18px;
+      background: #0f172a;
+      content: "";
+      transform: translateX(-50%);
+    }
+    .statusbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 44px;
+      padding: 10px 22px 0;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .status-icons { display: flex; gap: 5px; color: #0f172a; }
+    .appbar {
+      display: grid;
+      grid-template-columns: 44px 1fr 44px;
+      align-items: center;
+      height: 48px;
+      padding: 0 12px;
+      background: rgba(248,250,252,.94);
+    }
+    .appbar h2 {
+      margin: 0;
+      text-align: center;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .icon-button {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 14px;
+      color: var(--text);
+      background: transparent;
+    }
+    .icon {
+      width: 21px;
+      height: 21px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+    }
+    .screen-body {
+      height: calc(100% - 92px);
+      overflow: hidden;
+    }
+    .scroll {
+      height: 100%;
+      overflow: hidden;
+      padding: 0 14px 108px;
+    }
+    .trust-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid #bae1f2;
+      border-radius: 14px;
+      color: #075985;
+      background: var(--trust-soft);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .trust-note .icon { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px; }
+    .venue-context {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 14px 0 10px;
+    }
+    .venue-context strong { font-size: 15px; }
+    .venue-context span { color: var(--muted); font-size: 12px; }
+    .date-strip {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .date-chip {
+      display: grid;
+      min-width: 58px;
+      min-height: 58px;
+      padding: 7px 10px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .date-chip strong { color: var(--text); font-size: 17px; }
+    .date-chip--active { border-color: var(--trust); color: #075985; background: var(--trust-soft); }
+    .filter-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .filter {
+      min-height: 38px;
+      padding: 0 13px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: #334155;
+      background: var(--surface);
+      font-size: 13px;
+    }
+    .filter--active { border-color: #94cce5; color: #075985; background: var(--trust-soft); }
+    .game-card {
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: 0 5px 16px rgba(15,23,42,.04);
+    }
+    .game-card + .game-card { margin-top: 10px; }
+    .game-card__top, .row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .time { font-size: 19px; font-weight: 750; letter-spacing: -0.02em; }
+    .badge {
+      display: inline-flex;
+      min-height: 26px;
+      align-items: center;
+      gap: 5px;
+      padding: 0 9px;
+      border-radius: 999px;
+      color: var(--available);
+      background: var(--available-soft);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .badge .icon { width: 14px; height: 14px; }
+    .game-card h3 { margin: 10px 0 4px; font-size: 17px; }
+    .subline { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; margin-top: 12px; }
+    .meta {
+      min-width: 0;
+      padding: 9px 8px;
+      border-radius: 12px;
+      background: #f6f9fb;
+      text-align: center;
+    }
+    .meta strong { display: block; font-size: 14px; }
+    .meta span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .availability {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 11px;
+      border-top: 1px solid #e8eef2;
+      font-size: 13px;
+    }
+    .availability strong { color: var(--trust); font-size: 15px; }
+    .host { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+    .host-mark {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 8px;
+      color: #075985;
+      background: var(--trust-soft);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .tabbar {
+      position: absolute;
+      z-index: 10;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      height: 82px;
+      padding: 7px 16px 18px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,.97);
+    }
+    .tab {
+      display: grid;
+      min-width: 72px;
+      min-height: 52px;
+      place-content: center;
+      justify-items: center;
+      gap: 3px;
+      border: 0;
+      color: #718096;
+      background: transparent;
+      font-size: 11px;
+    }
+    .tab .icon { width: 20px; height: 20px; }
+    .tab--active { color: var(--trust); font-weight: 700; }
+
+    .hero-card {
+      margin: 0 14px;
+      padding: 18px;
+      border-radius: 22px;
+      color: #fff;
+      background: linear-gradient(145deg, #0369a1, #0284c7 62%, #0ea5e9);
+      box-shadow: 0 14px 30px rgba(2,132,199,.24);
+    }
+    .hero-card .badge { color: #064e3b; background: #d1fae5; }
+    .hero-card h3 { margin: 18px 0 5px; font-size: 24px; letter-spacing: -0.035em; }
+    .hero-card p { margin: 0; color: rgba(255,255,255,.82); font-size: 14px; }
+    .hero-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 17px; }
+    .hero-stat { padding: 10px 8px; border-radius: 12px; background: rgba(255,255,255,.13); text-align: center; }
+    .hero-stat strong { display: block; font-size: 16px; }
+    .hero-stat span { display: block; margin-top: 2px; color: rgba(255,255,255,.75); font-size: 10px; }
+    .detail-scroll { height: calc(100% - 92px); overflow: hidden; padding-bottom: 84px; }
+    .section-card {
+      margin: 12px 14px 0;
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--surface);
+    }
+    .section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .section-title h4 { margin: 0; font-size: 16px; }
+    .section-title span { color: var(--muted); font-size: 12px; }
+    .fact-row { display: grid; grid-template-columns: 86px 1fr; gap: 12px; padding: 8px 0; font-size: 14px; line-height: 1.45; }
+    .fact-row + .fact-row { border-top: 1px solid #edf2f5; }
+    .fact-row span { color: var(--muted); }
+    .fact-row strong { font-weight: 600; }
+    .roster-bar { height: 8px; overflow: hidden; border-radius: 999px; background: #e8eef2; }
+    .roster-bar span { display: block; width: 79%; height: 100%; border-radius: inherit; background: var(--trust); }
+    .roster-copy { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .rule-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .rule-list li { position: relative; padding-left: 18px; color: #334155; font-size: 13px; line-height: 1.5; }
+    .rule-list li::before { position: absolute; top: 7px; left: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--trust); content: ""; }
+    .sticky-cta {
+      position: absolute;
+      z-index: 12;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 82px;
+      padding: 10px 14px 20px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,.98);
+    }
+    .sticky-cta__copy { min-width: 96px; }
+    .sticky-cta__copy strong { display: block; font-size: 15px; }
+    .sticky-cta__copy span { display: block; color: var(--muted); font-size: 11px; }
+    .primary {
+      flex: 1;
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      color: #fff;
+      background: var(--trust);
+      font-size: 15px;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(2,132,199,.18);
+    }
+    .secondary {
+      min-height: 44px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      color: #334155;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .manager-summary {
+      margin: 0 14px 12px;
+      padding: 16px;
+      border-radius: 18px;
+      color: #fff;
+      background: #12395b;
+    }
+    .manager-summary p { margin: 0; color: rgba(255,255,255,.72); font-size: 12px; }
+    .manager-summary h3 { margin: 6px 0 14px; font-size: 23px; }
+    .manager-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+    .manager-kpi { padding: 9px; border-radius: 11px; background: rgba(255,255,255,.1); }
+    .manager-kpi strong { display: block; font-size: 16px; }
+    .manager-kpi span { display: block; margin-top: 2px; color: rgba(255,255,255,.7); font-size: 10px; }
+    .candidate {
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #fff;
+    }
+    .candidate + .candidate { margin-top: 9px; }
+    .candidate__identity { display: flex; align-items: center; gap: 10px; }
+    .avatar {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      place-items: center;
+      border-radius: 14px;
+      color: #075985;
+      background: var(--trust-soft);
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .candidate h5 { margin: 0; font-size: 14px; }
+    .candidate p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .candidate__note { margin: 10px 0; padding: 9px 10px; border-radius: 11px; color: #334155; background: #f6f9fb; font-size: 12px; }
+    .candidate__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .candidate__actions button { min-height: 42px; border-radius: 12px; font-size: 13px; font-weight: 650; }
+    .reject { border: 1px solid var(--border); color: #475569; background: #fff; }
+    .accept { border: 1px solid var(--trust); color: #fff; background: var(--trust); }
+    .joined-row { display: flex; align-items: center; gap: 9px; padding: 9px 0; }
+    .joined-row + .joined-row { border-top: 1px solid #edf2f5; }
+    .joined-row .avatar { width: 34px; height: 34px; flex-basis: 34px; border-radius: 11px; font-size: 12px; }
+    .joined-row strong { display: block; font-size: 13px; }
+    .joined-row span { display: block; color: var(--muted); font-size: 11px; }
+    .joined-row .badge { margin-left: auto; min-height: 24px; }
+
+    .workbench-head { padding: 4px 14px 16px; }
+    .workbench-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .workbench-head h3 { margin: 4px 0 0; font-size: 22px; }
+    .metric-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0 14px 12px; }
+    .metric-tile { padding: 13px 10px; border: 1px solid var(--border); border-radius: 15px; background: #fff; }
+    .metric-tile strong { display: block; font-size: 19px; }
+    .metric-tile span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .quick-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0 14px 12px; }
+    .quick {
+      display: grid;
+      min-height: 78px;
+      padding: 10px;
+      place-content: center;
+      justify-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      color: #334155;
+      background: #fff;
+      font-size: 11px;
+    }
+    .quick .icon { color: var(--trust); }
+    .schedule-card { margin: 0 14px; padding: 14px; border: 1px solid var(--border); border-radius: 17px; background: #fff; }
+    .schedule-card + .schedule-card { margin-top: 9px; }
+    .schedule-time { display: flex; align-items: center; gap: 9px; }
+    .schedule-time strong { font-size: 16px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--available); }
+    .status-dot--held { background: var(--held); }
+    .schedule-card p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    .schedule-actions { display: flex; gap: 8px; margin-top: 11px; }
+    .schedule-actions button { flex: 1; min-height: 40px; border-radius: 12px; font-size: 12px; font-weight: 650; }
+    .workbench-nav { position: absolute; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3,1fr); height: 80px; padding: 7px 16px 18px; border-top: 1px solid var(--border); background: rgba(255,255,255,.98); }
+
+    .prototype-note {
+      max-width: 1240px;
+      margin: -34px auto 70px;
+      padding: 0 28px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    @media (max-width: 900px) {
+      .screens { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 450px) {
+      .board-header, .decision-strip, .screens, .prototype-note { padding-right: 0; padding-left: 0; }
+      .board-header, .decision-strip, .prototype-note { margin-right: 18px; margin-left: 18px; }
+      .phone { width: min(390px, 100vw); border-right: 0; border-left: 0; border-radius: 0; }
+      .screen-label { padding: 0 14px; }
+    }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.7 2.8 8 7 10 4.2-2 7-5.3 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></symbol>
+    <symbol id="i-pitch" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16M3 12h18" /><circle cx="12" cy="12" r="3" /></symbol>
+    <symbol id="i-game" viewBox="0 0 24 24"><circle cx="8" cy="9" r="3" /><circle cx="16" cy="9" r="3" /><path d="M3.5 19c.6-3.3 2.1-5 4.5-5s3.9 1.7 4.5 5M11.5 19c.6-3.3 2.1-5 4.5-5s3.9 1.7 4.5 5" /></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21c.9-4.4 3.5-6.5 8-6.5s7.1 2.1 8 6.5" /></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4M17 3v4M3 10h18" /></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><path d="M3 20c.5-4 2.5-6 6-6s5.5 2 6 6" /><path d="M15 5.3a3 3 0 0 1 0 5.4M16 14c2.9.4 4.6 2.4 5 6" /></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r=".8" /><circle cx="3.5" cy="12" r=".8" /><circle cx="3.5" cy="18" r=".8" /></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+  </svg>
+
+  <header class="board-header">
+    <p class="board-header__eyebrow">Product concept · 390 px</p>
+    <h1>开放球局：从真实订场到可信到场</h1>
+    <p>四个关键页面概念稿。沿用现有小程序的信任蓝、浅灰背景、白色卡片和 44 px 触控基线；新增的绿色只表达“场地已经确认”，不表达支付或散客费用已由平台担保。</p>
+  </header>
+  <div class="decision-strip" aria-label="已确认产品边界">
+    <span>真实已支付订单</span><span>单合作场馆灰度</span><span>18 岁以上</span><span>队长审核报名</span><span>费用线下结算</span><span>不开放陌生人私聊</span>
+  </div>
+
+  <main class="screens">
+    <section class="screen-case">
+      <div class="screen-label"><strong>01 · 找球局</strong><span>散客发现可信开放名额</span></div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="status-icons">● ◼</span></div>
+        <div class="appbar"><span></span><h2>找球局</h2><button class="icon-button" aria-label="更多选项"><svg class="icon"><use href="#i-more" /></svg></button></div>
+        <div class="screen-body">
+          <div class="scroll">
+            <div class="trust-note"><svg class="icon"><use href="#i-shield" /></svg><span>首期仅展示渤海元丰足球场内、已经确认场地的公开球局。</span></div>
+            <div class="venue-context"><strong>渤海元丰足球场</strong><span>西青区</span></div>
+            <div class="date-strip" aria-label="选择日期">
+              <button class="date-chip"><span>今天</span><strong>9</strong></button>
+              <button class="date-chip date-chip--active"><span>周六</span><strong>15</strong></button>
+              <button class="date-chip"><span>周日</span><strong>16</strong></button>
+              <button class="date-chip"><span>周二</span><strong>18</strong></button>
+              <button class="date-chip"><span>周四</span><strong>20</strong></button>
+            </div>
+            <div class="filter-row"><button class="filter filter--active">全部规格</button><button class="filter">仅看有名额</button></div>
+
+            <article class="game-card">
+              <div class="game-card__top"><span class="time">周六 19:00–21:00</span><span class="badge"><svg class="icon"><use href="#i-shield" /></svg>场地已确认</span></div>
+              <h3>西青星期六友好局</h3>
+              <p class="subline">7 人制 · 友好对抗 · 天然草 2 号场</p>
+              <div class="meta-grid">
+                <div class="meta"><strong>缺 3 人</strong><span>11 / 14</span></div>
+                <div class="meta"><strong>约 ¥40</strong><span>线下 AA</span></div>
+                <div class="meta"><strong>18:00</strong><span>报名截止</span></div>
+              </div>
+              <div class="availability"><span class="host"><span class="host-mark">西</span>已支付订单队长</span><strong>可申请</strong></div>
+            </article>
+
+            <article class="game-card">
+              <div class="game-card__top"><span class="time">周日 15:00–17:00</span><span class="badge"><svg class="icon"><use href="#i-shield" /></svg>场地已确认</span></div>
+              <h3>新手也能踢的五人局</h3>
+              <p class="subline">5 人制 · 轻松体验 · 需要 1 名门将</p>
+              <div class="meta-grid">
+                <div class="meta"><strong>缺 2 人</strong><span>8 / 10</span></div>
+                <div class="meta"><strong>约 ¥35</strong><span>线下 AA</span></div>
+                <div class="meta"><strong>12:00</strong><span>报名截止</span></div>
+              </div>
+              <div class="availability"><span class="host"><span class="host-mark">周</span>已支付订单队长</span><strong>可申请</strong></div>
+            </article>
+          </div>
+          <nav class="tabbar" aria-label="主导航">
+            <button class="tab"><svg class="icon"><use href="#i-pitch" /></svg><span>找球场</span></button>
+            <button class="tab tab--active"><svg class="icon"><use href="#i-game" /></svg><span>找球局</span></button>
+            <button class="tab"><svg class="icon"><use href="#i-user" /></svg><span>我的</span></button>
+          </nav>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen-case">
+      <div class="screen-label"><strong>02 · 球局详情</strong><span>先说明真实性，再推动申请</span></div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="status-icons">● ◼</span></div>
+        <div class="appbar"><button class="icon-button" aria-label="返回"><svg class="icon"><use href="#i-back" /></svg></button><h2>球局详情</h2><button class="icon-button" aria-label="更多选项"><svg class="icon"><use href="#i-more" /></svg></button></div>
+        <div class="detail-scroll">
+          <section class="hero-card">
+            <span class="badge"><svg class="icon"><use href="#i-shield" /></svg>真实订场已确认</span>
+            <h3>西青星期六友好局</h3>
+            <p>周六 19:00–21:00 · 渤海元丰足球场</p>
+            <div class="hero-stats">
+              <div class="hero-stat"><strong>11 / 14</strong><span>当前人数</span></div>
+              <div class="hero-stat"><strong>约 ¥40</strong><span>到场线下 AA</span></div>
+              <div class="hero-stat"><strong>友好</strong><span>对抗强度</span></div>
+            </div>
+          </section>
+          <section class="section-card">
+            <div class="section-title"><h4>报名进度</h4><span>还缺 3 人</span></div>
+            <div class="roster-bar" aria-label="已经确认 11 人，共需 14 人"><span></span></div>
+            <div class="roster-copy"><span>固定队员 9 · 散客 2</span><span>需队长审核</span></div>
+          </section>
+          <section class="section-card">
+            <div class="section-title"><h4>本场信息</h4><span>关键内容加入后冻结</span></div>
+            <div class="fact-row"><span>场地</span><strong>天然草 2 号场 · 7 人制</strong></div>
+            <div class="fact-row"><span>水平</span><strong>有基础即可，避免危险动作</strong></div>
+            <div class="fact-row"><span>位置</span><strong>门将优先，其他位置不限</strong></div>
+            <div class="fact-row"><span>组织者</span><strong>西青星期六 FC · 已履约 8 场</strong></div>
+          </section>
+          <section class="section-card">
+            <div class="section-title"><h4>参加规则</h4><span>18 岁以上</span></div>
+            <ul class="rule-list">
+              <li>费用由组织者到场线下收取，平台不代收或担保。</li>
+              <li>开场前 6 小时以外退出不记为临时退出。</li>
+              <li>申请前需登录，并确认已满 18 周岁和运动风险提示。</li>
+            </ul>
+          </section>
+        </div>
+        <div class="sticky-cta"><div class="sticky-cta__copy"><strong>还缺 3 人</strong><span>申请后由队长审核</span></div><button class="primary">申请加入</button></div>
+      </div>
+    </section>
+
+    <section class="screen-case">
+      <div class="screen-label"><strong>03 · 队长报名管理</strong><span>审批、候补与到场责任</span></div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="status-icons">● ◼</span></div>
+        <div class="appbar"><button class="icon-button" aria-label="返回"><svg class="icon"><use href="#i-back" /></svg></button><h2>报名管理</h2><button class="icon-button" aria-label="更多选项"><svg class="icon"><use href="#i-more" /></svg></button></div>
+        <div class="detail-scroll" style="padding-bottom:20px">
+          <section class="manager-summary">
+            <p>周六 19:00 · 西青星期六友好局</p>
+            <h3>招募中，还缺 3 人</h3>
+            <div class="manager-kpis">
+              <div class="manager-kpi"><strong>2</strong><span>待审核</span></div>
+              <div class="manager-kpi"><strong>2</strong><span>已加入散客</span></div>
+              <div class="manager-kpi"><strong>0</strong><span>候补</span></div>
+            </div>
+          </section>
+          <section class="section-card">
+            <div class="section-title"><h4>待审核申请</h4><span>按申请时间排列</span></div>
+            <article class="candidate">
+              <div class="candidate__identity"><span class="avatar">林</span><div><h5>林先生 · 中后场</h5><p>公开球局到场 5 / 5 · 已确认参加规则</p></div></div>
+              <div class="candidate__note">备注：可以踢中卫，也可以临时守门。</div>
+              <div class="candidate__actions"><button class="reject">婉拒</button><button class="accept">接受加入</button></div>
+            </article>
+            <article class="candidate">
+              <div class="candidate__identity"><span class="avatar">周</span><div><h5>周先生 · 位置不限</h5><p>首次参加公开球局 · 已确认参加规则</p></div></div>
+              <div class="candidate__note">备注：第一次参加，装备齐全。</div>
+              <div class="candidate__actions"><button class="reject">婉拒</button><button class="accept">接受加入</button></div>
+            </article>
+          </section>
+          <section class="section-card">
+            <div class="section-title"><h4>已加入散客</h4><span>结束后记录到场</span></div>
+            <div class="joined-row"><span class="avatar">高</span><div><strong>高先生</strong><span>边路 · 已确认规则</span></div><span class="badge">已加入</span></div>
+            <div class="joined-row"><span class="avatar">宋</span><div><strong>宋先生</strong><span>门将 · 已确认规则</span></div><span class="badge">已加入</span></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen-case">
+      <div class="screen-label"><strong>04 · 场馆工作台</strong><span>真实库存与当日履约</span></div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="status-icons">● ◼</span></div>
+        <div class="appbar"><span></span><h2>场馆工作台</h2><button class="icon-button" aria-label="更多选项"><svg class="icon"><use href="#i-more" /></svg></button></div>
+        <div class="screen-body">
+          <div class="scroll" style="padding-bottom:102px">
+            <div class="workbench-head"><p>渤海元丰足球场</p><h3>今天，8 月 9 日</h3></div>
+            <div class="metric-row">
+              <div class="metric-tile"><strong>6</strong><span>今日场次</span></div>
+              <div class="metric-tile"><strong>2</strong><span>待到场订单</span></div>
+              <div class="metric-tile"><strong>3</strong><span>已完成订单</span></div>
+            </div>
+            <div class="quick-row">
+              <button class="quick"><svg class="icon"><use href="#i-calendar" /></svg><span>批量开放时段</span></button>
+              <button class="quick"><svg class="icon"><use href="#i-list" /></svg><span>查看今日订单</span></button>
+              <button class="quick"><svg class="icon"><use href="#i-people" /></svg><span>到场订单</span></button>
+            </div>
+            <div class="venue-context" style="margin:16px 14px 10px"><strong>今日履约</strong><span>按开场时间</span></div>
+            <article class="schedule-card">
+              <div class="row-between"><div class="schedule-time"><span class="status-dot"></span><strong>15:00–17:00</strong></div><span class="badge">已支付</span></div>
+              <p>天然草 1 号场 · 订单联系人王先生</p>
+              <div class="schedule-actions"><button class="secondary">查看订单</button><button class="accept">确认到场</button></div>
+            </article>
+            <article class="schedule-card">
+              <div class="row-between"><div class="schedule-time"><span class="status-dot--held status-dot"></span><strong>19:00–21:00</strong></div><span class="badge">公开缺 3 人</span></div>
+              <p>天然草 2 号场 · 西青星期六友好局</p>
+              <div class="schedule-actions"><button class="secondary">报名情况</button><button class="accept">查看订单</button></div>
+            </article>
+            <article class="schedule-card">
+              <div class="row-between"><div class="schedule-time"><span class="status-dot"></span><strong>21:00–23:00</strong></div><span class="badge">可预订</span></div>
+              <p>天然草 2 号场 · ¥320 / 场</p>
+              <div class="schedule-actions"><button class="secondary">调整价格</button><button class="secondary">临时关闭</button></div>
+            </article>
+          </div>
+          <nav class="workbench-nav" aria-label="场馆工作台导航">
+            <button class="tab tab--active"><svg class="icon"><use href="#i-clock" /></svg><span>今日</span></button>
+            <button class="tab"><svg class="icon"><use href="#i-calendar" /></svg><span>库存</span></button>
+            <button class="tab"><svg class="icon"><use href="#i-list" /></svg><span>订单</span></button>
+          </nav>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <p class="prototype-note">说明：本页是产品概念 Artifact，所有球队、人数、费用和到场数据均为隔离的设计示例，不进入生产业务包。首个开放球局切片只允许已支付订单队长发布；场馆工作台只负责真实库存和整场订单履约。</p>
+</body>
+</html>
