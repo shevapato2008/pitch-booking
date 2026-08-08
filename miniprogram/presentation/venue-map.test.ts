@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 
 import type { VenueMapEntry } from "../domain/venue-directory";
 import {
@@ -10,6 +11,58 @@ import {
   formatDistanceFromUser,
   toVenueMapPresentation,
 } from "./venue-map";
+
+function decodeRgbaPng(asset: Buffer): { width: number; height: number; pixels: Buffer } {
+  const width = asset.readUInt32BE(16);
+  const height = asset.readUInt32BE(20);
+  expect(asset[24]).toBe(8);
+  expect(asset[25]).toBe(6);
+  expect(asset[28]).toBe(0);
+  const idat: Buffer[] = [];
+  for (let offset = 8; offset < asset.length;) {
+    const length = asset.readUInt32BE(offset);
+    const type = asset.subarray(offset + 4, offset + 8).toString("ascii");
+    if (type === "IDAT") idat.push(asset.subarray(offset + 8, offset + 8 + length));
+    offset += length + 12;
+  }
+  const source = inflateSync(Buffer.concat(idat));
+  const stride = width * 4;
+  const pixels = Buffer.alloc(stride * height);
+  const paeth = (left: number, above: number, upperLeft: number) => {
+    const estimate = left + above - upperLeft;
+    const leftDistance = Math.abs(estimate - left);
+    const aboveDistance = Math.abs(estimate - above);
+    const upperLeftDistance = Math.abs(estimate - upperLeft);
+    if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) return left;
+    return aboveDistance <= upperLeftDistance ? above : upperLeft;
+  };
+  for (let y = 0; y < height; y += 1) {
+    const sourceRow = y * (stride + 1);
+    const targetRow = y * stride;
+    const filter = source[sourceRow];
+    for (let x = 0; x < stride; x += 1) {
+      const raw = source[sourceRow + x + 1];
+      const left = x >= 4 ? pixels[targetRow + x - 4] : 0;
+      const above = y > 0 ? pixels[targetRow + x - stride] : 0;
+      const upperLeft = y > 0 && x >= 4 ? pixels[targetRow + x - stride - 4] : 0;
+      const predictor = filter === 0 ? 0
+        : filter === 1 ? left
+          : filter === 2 ? above
+            : filter === 3 ? Math.floor((left + above) / 2)
+              : paeth(left, above, upperLeft);
+      pixels[targetRow + x] = (raw + predictor) & 0xff;
+    }
+  }
+  return { width, height, pixels };
+}
+
+function pinShapePath(source: string): string {
+  const tag = source.match(/<path\b[^>]*\bid="pin-shape"[^>]*>/)?.[0];
+  expect(tag).toBeDefined();
+  const path = tag?.match(/\bd="([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  return path!;
+}
 
 const online: VenueMapEntry = {
   id: "online",
@@ -162,9 +215,25 @@ test("packages four visually distinct local PNG marker states", () => {
     expect(source).toContain(`data-selected="${selected}"`);
     expect(assets[index].readUInt32BE(16)).toBe(width);
     expect(assets[index].readUInt32BE(20)).toBe(height);
+    const decoded = decodeRgbaPng(assets[index]);
+    const alphaAt = (x: number, y: number) => decoded.pixels[(y * width + x) * 4 + 3];
+    expect(decoded.pixels.some((channel, channelIndex) => channelIndex % 4 === 3 && channel === 0)).toBe(true);
+    expect([
+      alphaAt(0, 0), alphaAt(width - 1, 0),
+      alphaAt(0, height - 1), alphaAt(width - 1, height - 1),
+    ]).toEqual([0, 0, 0, 0]);
   });
 
   expect(assets.map((asset) => asset.subarray(1, 4).toString("ascii")))
     .toEqual(["PNG", "PNG", "PNG", "PNG"]);
   expect(new Set(assets.map((asset) => asset.toString("base64"))).size).toBe(4);
+});
+
+test("shares one pin silhouette between booking variants in each marker state", () => {
+  const source = (name: string) => readFileSync(`artifacts/ui/sources/map-markers/${name}.svg`, "utf8");
+
+  expect(pinShapePath(source("map-marker-online")))
+    .toBe(pinShapePath(source("map-marker-directory")));
+  expect(pinShapePath(source("map-marker-online-selected")))
+    .toBe(pinShapePath(source("map-marker-directory-selected")));
 });

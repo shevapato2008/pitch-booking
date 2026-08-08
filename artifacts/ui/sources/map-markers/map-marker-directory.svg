@@ -9,7 +9,7 @@
     </filter>
   </defs>
   <g filter="url(#shadow)">
-    <path d="M32 6C18.3 6 9 15.8 9 29.1C9 43.8 23.8 57.9 32 70.4C40.2 57.9 55 43.8 55 29.1C55 15.8 45.7 6 32 6Z" fill="url(#body)" stroke="#2774ED" stroke-width="3" stroke-linejoin="round"/>
+    <path id="pin-shape" d="M32 5C17.7 5 8 15.3 8 29.1C8 44.6 23.6 59.2 32 72C40.4 59.2 56 44.6 56 29.1C56 15.3 46.3 5 32 5Z" fill="url(#body)" stroke="#2774ED" stroke-width="3" stroke-linejoin="round"/>
     <circle cx="32" cy="29" r="9" fill="#EAF2FF" stroke="#2774ED" stroke-width="2"/>
     <circle cx="32" cy="29" r="3.5" fill="#2774ED"/>
     <path d="M18.5 21.5C21 15.1 26.2 12 32 12" stroke="#FFF" stroke-width="3" stroke-linecap="round"/>
