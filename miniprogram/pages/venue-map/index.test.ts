@@ -254,6 +254,13 @@ test("uses the search component, accessible crosshair, vertical sheet copy, and 
   expect(template).toContain("{{centerNote}}");
 });
 
+test("lays out full-width search beside a fixed-size locate control", () => {
+  const styles = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
+  expect(styles).toMatch(/\.map-tools\s*\{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) 96rpx;[^}]*gap:16rpx/s);
+  expect(styles).toMatch(/\.locate\s*\{[^}]*flex:none;[^}]*width:96rpx;[^}]*height:96rpx;[^}]*min-width:96rpx;[^}]*min-height:96rpx/s);
+  expect(styles).not.toMatch(/\.locate--(?:active|error)\s*\{[^}]*(?:width|height|min-width|min-height):/s);
+});
+
 test("page delegates all search projection to the pure presentation boundary", () => {
   const sourceText = readFileSync("miniprogram/pages/venue-map/index.ts", "utf8");
   expect(sourceText).toMatch(/applySearchPresentation\(center[^)]*filters[^)]*selectedVenueId/);

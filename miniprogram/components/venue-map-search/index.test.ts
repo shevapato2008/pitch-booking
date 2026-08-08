@@ -85,3 +85,9 @@ test("draws the magnifier in WXSS without a font glyph", () => {
   expect(styles).toMatch(/\.venue-search-icon\s*\{[^}]*border:/s);
   expect(styles).toMatch(/\.venue-search-icon::after\s*\{/);
 });
+
+test("fills its grid cell at the approved control height and radius", () => {
+  const styles = readFileSync("miniprogram/components/venue-map-search/index.wxss", "utf8");
+  expect(styles).toMatch(/\.venue-search\s*\{[^}]*width:100%;[^}]*min-width:0/s);
+  expect(styles).toMatch(/\.venue-search-bar\s*\{[^}]*height:96rpx;[^}]*border-radius:32rpx/s);
+});
