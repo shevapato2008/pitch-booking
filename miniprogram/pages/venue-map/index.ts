@@ -87,14 +87,22 @@ Page({
   locationGuard: createRequestGenerationGuard(),
   poiGuard: createRequestGenerationGuard(),
   markerVenueIdByRuntimeId: {} as Record<number, string>,
+  venueMarkerRuntimeIdByVenueId: {} as Record<string, number>,
+  nextVenueMarkerRuntimeId: 1,
+  pageReady: false,
   preEditSnapshot: null as PresentationSnapshot | null,
 
-  onReady() {
+  initializeMarkerClustering() {
     wx.createMapContext("venue-map", this).initMarkerCluster({
       enableDefaultStyle: true,
       zoomOnClick: true,
       gridSize: 60,
     });
+  },
+
+  onReady() {
+    this.pageReady = true;
+    this.initializeMarkerClustering();
   },
 
   async onLoad(query: Record<string, string | undefined>) {
@@ -107,7 +115,9 @@ Page({
         ? query.venueId
         : null;
       this.applySearchPresentation({ kind: "CITY" }, EMPTY_FILTERS, requestedVenueId);
-      this.setData({ loading: false, errorText: "" });
+      this.setData({ loading: false, errorText: "" }, () => {
+        if (this.pageReady) this.initializeMarkerClustering();
+      });
     } catch {
       if (this.requestGuard.isCurrent(token)) {
         this.setData({ loading: false, errorText: "场馆目录暂时无法加载，请重试。" });
@@ -138,9 +148,19 @@ Page({
       search.distanceMetersByVenueId,
       search.distanceLabelBasis,
     );
+    const previousViewportMode = this.data.viewport?.mode;
+    const viewport = calculateSearchCenterViewport(center, this.data.sheetSnap) ?? map.viewport;
     const markerVenueIdByRuntimeId: Record<number, string> = {};
-    const venueMarkers = map.markers.map((marker, index): RuntimeVenueMarker => {
-      const id = index + 1;
+    const venueMarkers = map.markers.map((marker): RuntimeVenueMarker => {
+      let id = this.venueMarkerRuntimeIdByVenueId[marker.venueId];
+      if (id === undefined) {
+        if (this.nextVenueMarkerRuntimeId >= SEARCH_CENTER_MARKER_ID) {
+          throw new Error("Venue marker ID space exhausted");
+        }
+        id = this.nextVenueMarkerRuntimeId;
+        this.nextVenueMarkerRuntimeId += 1;
+        this.venueMarkerRuntimeIdByVenueId[marker.venueId] = id;
+      }
       markerVenueIdByRuntimeId[id] = marker.venueId;
       return {
         ...marker,
@@ -161,11 +181,15 @@ Page({
       selectedVenueId: map.selectedVenueId,
       cards: map.cards,
       markers: [...venueMarkers, ...centerMarker],
-      viewport: calculateSearchCenterViewport(center, this.data.sheetSnap) ?? map.viewport,
+      viewport,
       title: search.title,
       subtitle: search.subtitle,
       sortLabel: search.sortLabel,
       centerNote: centerNoteFor(center),
+    }, () => {
+      if (this.pageReady && !this.data.loading && previousViewportMode !== viewport.mode) {
+        this.initializeMarkerClustering();
+      }
     });
   },
 

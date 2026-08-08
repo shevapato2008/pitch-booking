@@ -11,7 +11,10 @@ import { registerPoiSearchCapability } from "../../services/poi-search";
 import { registerVenueDirectoryDataSource } from "../../services/venue-directory";
 import { registerVenueMapPreviewMetadata } from "../../services/venue-map-preview";
 
-type RuntimePage = Record<string, any> & { data: Record<string, any>; setData(patch: Record<string, unknown>): void };
+type RuntimePage = Record<string, any> & {
+  data: Record<string, any>;
+  setData(patch: Record<string, unknown>, callback?: () => void): void;
+};
 let definition: Record<string, any> | undefined;
 const venues = decodeVenueMap(jest.requireActual("../../../contracts/examples/venue-map.json"));
 const station: SearchCenterPoi = {
@@ -33,7 +36,10 @@ function page(): RuntimePage {
     ...definition,
     data: { ...definition!.data, filters: { ...definition!.data.filters }, searchCenter: { kind: "CITY" } },
     markerVenueIdByRuntimeId: {},
-    setData(patch) { Object.assign(this.data, patch); },
+    venueMarkerRuntimeIdByVenueId: {},
+    nextVenueMarkerRuntimeId: 1,
+    pageReady: false,
+    setData(patch, callback) { Object.assign(this.data, patch); callback?.call(this); },
   } as RuntimePage;
 }
 
@@ -68,6 +74,35 @@ test("initializes the venue map marker cluster when the page is ready", () => {
     zoomOnClick: true,
     gridSize: 60,
   });
+});
+
+test("reinitializes clustering after load renders the map and after native map branch replacements", async () => {
+  const target = page();
+  const initializationStates: Array<{ loading: boolean; mode: string | undefined }> = [];
+  (globalThis as any).wx.createMapContext.mockImplementation(() => ({
+    initMarkerCluster() {
+      initializationStates.push({ loading: target.data.loading, mode: target.data.viewport?.mode });
+    },
+  }));
+
+  call(target, "onReady");
+  expect(initializationStates).toEqual([{ loading: true, mode: undefined }]);
+
+  await call(target, "onLoad", {});
+  expect(initializationStates).toEqual([
+    { loading: true, mode: undefined },
+    { loading: false, mode: "ALL" },
+  ]);
+
+  call(target, "selectVenue", venues[0].id);
+  expect(initializationStates[initializationStates.length - 1]).toEqual({ loading: false, mode: "FOCUSED" });
+  const afterFocused = initializationStates.length;
+  call(target, "selectVenue", venues[1].id);
+  expect(initializationStates).toHaveLength(afterFocused);
+
+  call(target, "applySearchPresentation", { kind: "CITY" }, target.data.filters, null);
+  expect(initializationStates[initializationStates.length - 1]).toEqual({ loading: false, mode: "ALL" });
+  expect(initializationStates).toHaveLength(afterFocused + 1);
 });
 
 test("ordinary load commits CITY, preserves platform order, and emits no distance", async () => {
@@ -112,6 +147,34 @@ test("clusters ordinary venue markers but keeps the selected venue marker indepe
   call(target, "selectVenue", venues[0].id);
   expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id)).toMatchObject({ joinCluster: false });
   expect(target.data.markers.filter(({ venueId }: any) => venueId !== venues[0].id).every(({ joinCluster }: any) => joinCluster === true)).toBe(true);
+});
+
+test("keeps venue marker ids stable across selection, reordering, and filtering without reuse", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  const initialIds = new Map(target.data.markers.map(({ venueId, id }: any) => [venueId, id]));
+  expect(new Set(initialIds.values()).size).toBe(venues.length);
+
+  call(target, "selectVenue", venues[0].id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id)).toMatchObject({
+    id: initialIds.get(venues[0].id),
+    joinCluster: false,
+  });
+
+  target.data.venues = [...target.data.venues].reverse();
+  call(target, "applySearchPresentation", { kind: "CITY" }, target.data.filters, null);
+  expect(new Map(target.data.markers.map(({ venueId, id }: any) => [venueId, id]))).toEqual(initialIds);
+
+  call(target, "onDistrictFilter", { detail: { code: "120104" } });
+  expect(target.data.markers).toEqual([
+    expect.objectContaining({ venueId: venues[1].id, id: initialIds.get(venues[1].id) }),
+  ]);
+  expect(initialIds.get(venues[1].id)).not.toBe(initialIds.get(venues[0].id));
+
+  call(target, "onDistrictFilter", { detail: { code: null } });
+  call(target, "onMarkerTap", { markerId: initialIds.get(venues[0].id) });
+  expect(target.data.selectedVenueId).toBe(venues[0].id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id).id).toBe(initialIds.get(venues[0].id));
 });
 
 test("successful locate commits USER_LOCATION and clears POI editing state", async () => {
