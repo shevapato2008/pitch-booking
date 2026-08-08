@@ -39,6 +39,9 @@ function page(): RuntimePage {
     venueMarkerRuntimeIdByVenueId: {},
     nextVenueMarkerRuntimeId: 1,
     pageReady: false,
+    mapRenderPending: false,
+    mapRenderGeneration: 0,
+    initializedMapRenderGeneration: -1,
     setData(patch, callback) { Object.assign(this.data, patch); callback?.call(this); },
   } as RuntimePage;
 }
@@ -59,16 +62,44 @@ beforeEach(() => {
   (globalThis as any).wx = { navigateTo: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn() };
 });
 
-test("initializes the venue map marker cluster when the page is ready", () => {
+test("onReady does not initialize clustering while the map is absent during loading", () => {
+  const target = page();
+
+  call(target, "onReady");
+
+  expect((globalThis as any).wx.createMapContext).not.toHaveBeenCalled();
+});
+
+test("waits for a pending initial map render and initializes that native instance exactly once", async () => {
+  const target = page();
+  const callbacks: Array<() => void> = [];
+  target.setData = function setData(patch, callback) {
+    Object.assign(this.data, patch);
+    if (callback) callbacks.push(() => callback.call(this));
+  };
+  const initMarkerCluster = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster });
+
+  await call(target, "onLoad", {});
+  expect(target.data.loading).toBe(false);
+  call(target, "onReady");
+  expect(initMarkerCluster).not.toHaveBeenCalled();
+
+  callbacks.forEach((callback) => callback());
+  expect(initMarkerCluster).toHaveBeenCalledTimes(1);
+});
+
+test("onReady initializes an already rendered map that completed before the page became ready", async () => {
   const target = page();
   const initMarkerCluster = jest.fn();
   (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster });
 
+  await call(target, "onLoad", {});
+  expect(initMarkerCluster).not.toHaveBeenCalled();
   call(target, "onReady");
 
   expect((globalThis as any).wx.createMapContext).toHaveBeenCalledTimes(1);
   expect((globalThis as any).wx.createMapContext).toHaveBeenCalledWith("venue-map", target);
-  expect(initMarkerCluster).toHaveBeenCalledTimes(1);
   expect(initMarkerCluster).toHaveBeenCalledWith({
     enableDefaultStyle: true,
     zoomOnClick: true,
@@ -76,33 +107,26 @@ test("initializes the venue map marker cluster when the page is ready", () => {
   });
 });
 
-test("reinitializes clustering after load renders the map and after native map branch replacements", async () => {
+test("initializes clustering once for each ALL and FOCUSED native map instance", async () => {
   const target = page();
-  const initializationStates: Array<{ loading: boolean; mode: string | undefined }> = [];
+  const initializedModes: string[] = [];
   (globalThis as any).wx.createMapContext.mockImplementation(() => ({
-    initMarkerCluster() {
-      initializationStates.push({ loading: target.data.loading, mode: target.data.viewport?.mode });
-    },
+    initMarkerCluster() { initializedModes.push(target.data.viewport.mode); },
   }));
 
-  call(target, "onReady");
-  expect(initializationStates).toEqual([{ loading: true, mode: undefined }]);
-
   await call(target, "onLoad", {});
-  expect(initializationStates).toEqual([
-    { loading: true, mode: undefined },
-    { loading: false, mode: "ALL" },
-  ]);
+  call(target, "onReady");
+  expect(initializedModes).toEqual(["ALL"]);
+  call(target, "onReady");
+  expect(initializedModes).toEqual(["ALL"]);
 
   call(target, "selectVenue", venues[0].id);
-  expect(initializationStates[initializationStates.length - 1]).toEqual({ loading: false, mode: "FOCUSED" });
-  const afterFocused = initializationStates.length;
+  expect(initializedModes).toEqual(["ALL", "FOCUSED"]);
   call(target, "selectVenue", venues[1].id);
-  expect(initializationStates).toHaveLength(afterFocused);
+  expect(initializedModes).toEqual(["ALL", "FOCUSED"]);
 
   call(target, "applySearchPresentation", { kind: "CITY" }, target.data.filters, null);
-  expect(initializationStates[initializationStates.length - 1]).toEqual({ loading: false, mode: "ALL" });
-  expect(initializationStates).toHaveLength(afterFocused + 1);
+  expect(initializedModes).toEqual(["ALL", "FOCUSED", "ALL"]);
 });
 
 test("ordinary load commits CITY, preserves platform order, and emits no distance", async () => {

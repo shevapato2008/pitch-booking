@@ -90,6 +90,9 @@ Page({
   venueMarkerRuntimeIdByVenueId: {} as Record<string, number>,
   nextVenueMarkerRuntimeId: 1,
   pageReady: false,
+  mapRenderPending: false,
+  mapRenderGeneration: 0,
+  initializedMapRenderGeneration: -1,
   preEditSnapshot: null as PresentationSnapshot | null,
 
   initializeMarkerClustering() {
@@ -100,9 +103,22 @@ Page({
     });
   },
 
+  ensureMarkerClusteringInitialized() {
+    if (!this.pageReady || this.data.loading || this.mapRenderPending || !this.data.viewport) return;
+    if (this.initializedMapRenderGeneration === this.mapRenderGeneration) return;
+    this.initializeMarkerClustering();
+    this.initializedMapRenderGeneration = this.mapRenderGeneration;
+  },
+
+  completeMapRender() {
+    this.mapRenderGeneration += 1;
+    this.mapRenderPending = false;
+    this.ensureMarkerClusteringInitialized();
+  },
+
   onReady() {
     this.pageReady = true;
-    this.initializeMarkerClustering();
+    this.ensureMarkerClusteringInitialized();
   },
 
   async onLoad(query: Record<string, string | undefined>) {
@@ -115,9 +131,8 @@ Page({
         ? query.venueId
         : null;
       this.applySearchPresentation({ kind: "CITY" }, EMPTY_FILTERS, requestedVenueId);
-      this.setData({ loading: false, errorText: "" }, () => {
-        if (this.pageReady) this.initializeMarkerClustering();
-      });
+      this.mapRenderPending = true;
+      this.setData({ loading: false, errorText: "" }, () => this.completeMapRender());
     } catch {
       if (this.requestGuard.isCurrent(token)) {
         this.setData({ loading: false, errorText: "场馆目录暂时无法加载，请重试。" });
@@ -150,6 +165,7 @@ Page({
     );
     const previousViewportMode = this.data.viewport?.mode;
     const viewport = calculateSearchCenterViewport(center, this.data.sheetSnap) ?? map.viewport;
+    const replacesNativeMap = !this.data.loading && previousViewportMode !== viewport.mode;
     const markerVenueIdByRuntimeId: Record<number, string> = {};
     const venueMarkers = map.markers.map((marker): RuntimeVenueMarker => {
       let id = this.venueMarkerRuntimeIdByVenueId[marker.venueId];
@@ -174,7 +190,7 @@ Page({
       ? [{ ...search.searchCenterMarker, id: SEARCH_CENTER_MARKER_ID, width: 28, height: 28 }]
       : [];
     this.markerVenueIdByRuntimeId = markerVenueIdByRuntimeId;
-    this.setData({
+    const patch = {
       searchCenter: center,
       filters,
       visibleVenues: search.visibleVenues,
@@ -186,11 +202,13 @@ Page({
       subtitle: search.subtitle,
       sortLabel: search.sortLabel,
       centerNote: centerNoteFor(center),
-    }, () => {
-      if (this.pageReady && !this.data.loading && previousViewportMode !== viewport.mode) {
-        this.initializeMarkerClustering();
-      }
-    });
+    };
+    if (replacesNativeMap) {
+      this.mapRenderPending = true;
+      this.setData(patch, () => this.completeMapRender());
+    } else {
+      this.setData(patch);
+    }
   },
 
   selectVenue(venueId: string) {
