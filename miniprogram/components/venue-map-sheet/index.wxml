@@ -4,7 +4,13 @@
     <view><text class="title">{{title}}</text><text class="subtitle">{{subtitle}}</text></view>
     <button class="sheet-toggle" bindtap="onToggle">{{snap === 'expanded' ? '收起地图' : '展开列表'}}</button>
   </view>
-  <view class="filters"><text class="filter filter--active">{{sortLabel}}</text><text class="filter">可在线预订</text><text class="filter">行政区</text></view>
+  <view class="filters" role="group" aria-label="球场筛选">
+    <button class="filter {{!onlineOnly && !districtCode ? 'filter--active' : ''}}" bindtap="onResetFilters">{{sortLabel}}</button>
+    <button class="filter {{onlineOnly ? 'filter--active' : ''}}" bindtap="onOnlineTap">可在线预订</button>
+    <picker range="{{districtOptions}}" range-key="name" bindchange="onDistrictChange">
+      <button class="filter {{districtCode ? 'filter--active' : ''}}">{{districtLabel}}</button>
+    </picker>
+  </view>
   <scroll-view class="cards" scroll-y scroll-with-animation scroll-into-view="venue-{{selectedVenueId}}" enhanced show-scrollbar="false">
     <view wx:for="{{cards}}" wx:key="venueId" id="venue-{{item.venueId}}" class="card-slot"><venue-map-card card="{{item}}" bindselect="onSelect" bindaction="onAction" /></view>
   </scroll-view>

@@ -10,7 +10,7 @@
     </view>
     <view class="center-note">{{centerNote}}</view>
     <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
-    <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
+    <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" online-only="{{filters.onlineOnly}}" district-code="{{districtCode}}" district-label="{{districtLabel}}" district-options="{{districtOptions}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" bindresetfilters="onResetFilters" bindonlinechange="onOnlineOnlyChange" binddistrictchange="onDistrictFilter" />
     <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">
       <view class="permission-handle"></view><view class="permission-icon"><view class="crosshair"><view class="crosshair-dot"></view></view></view>
       <view class="permission-title">无法使用你的位置</view>

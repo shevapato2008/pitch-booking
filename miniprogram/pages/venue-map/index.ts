@@ -43,6 +43,7 @@ type MarkerClusterCreateEvent = {
     readonly markerIds: readonly number[];
   }[];
 };
+type DistrictOption = { readonly code: string; readonly name: string };
 
 const SEARCH_CENTER_MARKER_ID = 2_147_483_647;
 const EMPTY_FILTERS: VenueMapFilters = Object.freeze({ onlineOnly: false, districtCode: null });
@@ -87,6 +88,9 @@ Page({
     title: "全部球场",
     subtitle: "",
     sortLabel: "综合排序",
+    districtCode: "",
+    districtLabel: "行政区",
+    districtOptions: [{ code: "", name: "全部行政区" }] as readonly DistrictOption[],
     centerNote: "全城范围 · 未使用你的位置",
     sheetSnap: "half" as SheetSnap,
   },
@@ -103,6 +107,7 @@ Page({
   preEditSnapshot: null as PresentationSnapshot | null,
 
   initializeMarkerClustering() {
+    if (wx.getDeviceInfo().platform === "ios") return;
     const map = wx.createMapContext("venue-map", this);
     map.initMarkerCluster({
       enableDefaultStyle: false,
@@ -186,12 +191,13 @@ Page({
   },
 
   applySearchPresentation(center: SearchCenter, filters: VenueMapFilters, selectedVenueId: string | null) {
+    const districtByVenueId = getVenueMapPreviewMetadata().districtByVenueId;
     const search = presentVenueSearch({
       venues: this.data.venues,
       center,
       filters,
       selectedVenueId,
-      districtByVenueId: getVenueMapPreviewMetadata().districtByVenueId,
+      districtByVenueId,
     });
     const map = toVenueMapPresentation(
       search.visibleVenues,
@@ -225,6 +231,16 @@ Page({
     const centerMarker: RuntimeCenterMarker[] = center.kind === "POI" && search.searchCenterMarker
       ? [{ ...search.searchCenterMarker, id: SEARCH_CENTER_MARKER_ID, width: 28, height: 28 }]
       : [];
+    const districtOptions: DistrictOption[] = [{ code: "", name: "全部行政区" }];
+    const seenDistrictCodes = new Set<string>();
+    for (const venue of this.data.venues) {
+      const district = districtByVenueId[venue.id];
+      if (district && !seenDistrictCodes.has(district.code)) {
+        seenDistrictCodes.add(district.code);
+        districtOptions.push(district);
+      }
+    }
+    const selectedDistrict = districtOptions.find(({ code }) => code === filters.districtCode);
     this.markerVenueIdByRuntimeId = markerVenueIdByRuntimeId;
     const patch = {
       searchCenter: center,
@@ -237,6 +253,9 @@ Page({
       title: search.title,
       subtitle: search.subtitle,
       sortLabel: search.sortLabel,
+      districtCode: filters.districtCode ?? "",
+      districtLabel: selectedDistrict?.name ?? "行政区",
+      districtOptions,
       centerNote: centerNoteFor(center),
     };
     if (replacesNativeMap) {
@@ -415,7 +434,11 @@ Page({
   },
 
   onDistrictFilter(event: { detail: { code: string | null } }) {
-    const filters = { ...this.data.filters, districtCode: event.detail.code };
+    const filters = { ...this.data.filters, districtCode: event.detail.code || null };
     this.applySearchPresentation(this.data.searchCenter, filters, this.data.selectedVenueId);
+  },
+
+  onResetFilters() {
+    this.applySearchPresentation(this.data.searchCenter, EMPTY_FILTERS, this.data.selectedVenueId);
   },
 });

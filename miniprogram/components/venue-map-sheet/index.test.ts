@@ -13,7 +13,15 @@ function component() {
   }
   return {
     ...definition,
-    data: { snap: "half" },
+    data: {
+      snap: "half",
+      onlineOnly: false,
+      districtOptions: [
+        { code: "", name: "全部行政区" },
+        { code: "120111", name: "西青区" },
+        { code: "120105", name: "河北区" },
+      ],
+    },
     triggerEvent: jest.fn(),
     setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); },
   } as Record<string, any>;
@@ -49,4 +57,25 @@ test("only the handle and title controls request a snap change", () => {
   expect(template).toContain('class="handle" bindtap="onToggle"');
   expect(template).toContain('class="sheet-toggle" bindtap="onToggle"');
   expect(template).not.toMatch(/<scroll-view[^>]*bindtap="onToggle"/);
+});
+
+test("filter controls emit reset, online toggle, and selected district", () => {
+  const target = component();
+
+  target.methods.onResetFilters.call(target);
+  target.methods.onOnlineTap.call(target);
+  target.methods.onDistrictChange.call(target, { detail: { value: "2" } });
+
+  expect(target.triggerEvent).toHaveBeenNthCalledWith(1, "resetfilters");
+  expect(target.triggerEvent).toHaveBeenNthCalledWith(2, "onlinechange", { value: true });
+  expect(target.triggerEvent).toHaveBeenNthCalledWith(3, "districtchange", { code: "120105" });
+});
+
+test("renders real filter controls with stateful active styles", () => {
+  const template = readFileSync("miniprogram/components/venue-map-sheet/index.wxml", "utf8");
+  expect(template).toContain('bindtap="onResetFilters"');
+  expect(template).toContain('bindtap="onOnlineTap"');
+  expect(template).toContain('bindchange="onDistrictChange"');
+  expect(template).toContain("onlineOnly ? 'filter--active' : ''");
+  expect(template).toContain("districtCode ? 'filter--active' : ''");
 });

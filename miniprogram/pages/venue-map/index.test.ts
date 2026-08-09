@@ -59,7 +59,21 @@ beforeEach(() => {
     async openSetting() {},
   });
   registerPoiSearchCapability({ async suggest(query) { return query.includes("天津站") ? [station] : []; } });
-  (globalThis as any).wx = { navigateTo: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn() };
+  (globalThis as any).wx = {
+    navigateTo: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn(),
+    getDeviceInfo: jest.fn(() => ({ platform: "devtools" })),
+  };
+});
+
+test("uses bound WXML venue markers on iOS instead of the unreliable custom cluster layer", async () => {
+  const target = page();
+  (globalThis as any).wx.getDeviceInfo.mockReturnValue({ platform: "ios" });
+
+  await call(target, "onLoad", {});
+  call(target, "onReady");
+
+  expect(target.data.markers).toHaveLength(venues.length);
+  expect((globalThis as any).wx.createMapContext).not.toHaveBeenCalled();
 });
 
 test("onReady does not initialize clustering while the map is absent during loading", () => {
@@ -341,6 +355,21 @@ test("online and district filters use the sidecar and never auto-select the firs
   call(target, "onDistrictFilter", { detail: { code: "120104" } });
   expect(target.data.visibleVenues.map(({ id }: any) => id)).toEqual([venues[1].id]);
   expect(target.data.selectedVenueId).toBeNull();
+});
+
+test("sheet filter events toggle online, choose a district, and reset to the complete directory", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+
+  call(target, "onOnlineOnlyChange", { detail: { value: true } });
+  expect(target.data.filters.onlineOnly).toBe(true);
+  call(target, "onDistrictFilter", { detail: { code: "120104" } });
+  expect(target.data.filters.districtCode).toBe("120104");
+  expect(target.data.districtLabel).toBe("南开区");
+
+  call(target, "onResetFilters");
+  expect(target.data.filters).toEqual({ onlineOnly: false, districtCode: null });
+  expect(target.data.visibleVenues).toHaveLength(venues.length);
 });
 
 test("location failure restores the complete pre-request presentation snapshot", async () => {
