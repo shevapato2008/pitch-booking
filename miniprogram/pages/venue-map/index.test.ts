@@ -79,7 +79,7 @@ test("waits for a pending initial map render and initializes that native instanc
   };
   const initMarkerCluster = jest.fn();
   const addMarkers = jest.fn();
-  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers });
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers, on: jest.fn() });
 
   await call(target, "onLoad", {});
   expect(target.data.loading).toBe(false);
@@ -94,7 +94,8 @@ test("onReady initializes an already rendered map that completed before the page
   const target = page();
   const initMarkerCluster = jest.fn();
   const addMarkers = jest.fn();
-  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers });
+  const on = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers, on });
 
   await call(target, "onLoad", {});
   expect(initMarkerCluster).not.toHaveBeenCalled();
@@ -103,11 +104,43 @@ test("onReady initializes an already rendered map that completed before the page
   expect((globalThis as any).wx.createMapContext).toHaveBeenCalledTimes(1);
   expect((globalThis as any).wx.createMapContext).toHaveBeenCalledWith("venue-map", target);
   expect(initMarkerCluster).toHaveBeenCalledWith({
-    enableDefaultStyle: true,
+    enableDefaultStyle: false,
     zoomOnClick: true,
     gridSize: 60,
   });
+  expect(on).toHaveBeenCalledWith("markerClusterCreate", expect.any(Function));
   expect(addMarkers).toHaveBeenCalledWith({ markers: [...target.data.markers], clear: true });
+});
+
+test("renders each dense cluster as a numbered location pin", async () => {
+  const target = page();
+  const handlers: Record<string, (event: any) => void> = {};
+  const addMarkers = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({
+    initMarkerCluster: jest.fn(),
+    addMarkers,
+    on(event: string, handler: (payload: any) => void) { handlers[event] = handler; },
+  });
+
+  await call(target, "onLoad", {});
+  call(target, "onReady");
+  addMarkers.mockClear();
+  handlers.markerClusterCreate({
+    clusters: [{ clusterId: 17, center: { latitude: 39.12, longitude: 117.2 }, markerIds: [1, 2, 3] }],
+  });
+
+  expect(addMarkers).toHaveBeenCalledWith({
+    clear: false,
+    markers: [{
+      clusterId: 17,
+      latitude: 39.12,
+      longitude: 117.2,
+      iconPath: "/assets/map-marker-cluster.png",
+      width: 40,
+      height: 50,
+      label: expect.objectContaining({ content: "3" }),
+    }],
+  });
 });
 
 test("initializes clustering once for each ALL and FOCUSED native map instance", async () => {
@@ -116,6 +149,7 @@ test("initializes clustering once for each ALL and FOCUSED native map instance",
   (globalThis as any).wx.createMapContext.mockImplementation(() => ({
     initMarkerCluster() { initializedModes.push(target.data.viewport.mode); },
     addMarkers() {},
+    on() {},
   }));
 
   await call(target, "onLoad", {});

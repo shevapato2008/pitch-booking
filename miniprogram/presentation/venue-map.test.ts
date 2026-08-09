@@ -238,6 +238,18 @@ test("shares one pin silhouette between booking variants in each marker state", 
     .toBe(pinShapePath(source("map-marker-directory-selected")));
 });
 
+test("packages a transparent neutral cluster location pin", () => {
+  const source = readFileSync("artifacts/ui/sources/map-markers/map-marker-cluster.svg", "utf8");
+  const asset = readFileSync("miniprogram/assets/map-marker-cluster.png");
+
+  expect(source).toContain('data-variant="cluster"');
+  expect(asset.subarray(1, 4).toString("ascii")).toBe("PNG");
+  expect(asset.readUInt32BE(16)).toBe(80);
+  expect(asset.readUInt32BE(20)).toBe(100);
+  const decoded = decodeRgbaPng(asset);
+  expect(decoded.pixels.some((channel, channelIndex) => channelIndex % 4 === 3 && channel === 0)).toBe(true);
+});
+
 test("packages a reproducible AppKit renderer for the authoritative marker SVGs", () => {
   const rendererPath = "scripts/render-map-markers.swift";
   expect(existsSync(rendererPath)).toBe(true);
@@ -250,8 +262,10 @@ test("packages a reproducible AppKit renderer for the authoritative marker SVGs"
   expect(renderer).toContain("map-marker-online-selected");
   expect(renderer).toContain("map-marker-directory");
   expect(renderer).toContain("map-marker-directory-selected");
+  expect(renderer).toContain("map-marker-cluster");
   expect(renderer).toContain("width: 64, height: 80");
   expect(renderer).toContain("width: 72, height: 88");
+  expect(renderer).toContain("width: 80, height: 100");
   expect(renderer).not.toContain("pin-shape");
 });
 

@@ -11,6 +11,7 @@ let markers = [
   MarkerSpec(name: "map-marker-online-selected", width: 72, height: 88),
   MarkerSpec(name: "map-marker-directory", width: 64, height: 80),
   MarkerSpec(name: "map-marker-directory-selected", width: 72, height: 88),
+  MarkerSpec(name: "map-marker-cluster", width: 80, height: 100),
 ]
 let repository = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 let sourceDirectory = repository.appendingPathComponent("artifacts/ui/sources/map-markers", isDirectory: true)

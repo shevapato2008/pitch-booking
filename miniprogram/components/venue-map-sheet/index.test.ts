@@ -13,7 +13,7 @@ function component() {
   }
   return {
     ...definition,
-    data: { snap: "half", listScrollTop: 144 },
+    data: { snap: "half" },
     triggerEvent: jest.fn(),
     setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); },
   } as Record<string, any>;
@@ -25,7 +25,8 @@ test("owns a vertical list without horizontal scrolling", () => {
   const template = readFileSync("miniprogram/components/venue-map-sheet/index.wxml", "utf8");
   expect(template).toContain("scroll-y");
   expect(template).not.toContain("scroll-x");
-  expect(template).toContain('scroll-top="{{listScrollTop}}"');
+  expect(template).not.toContain("scroll-top");
+  expect(template).not.toContain("bindscroll");
 });
 
 test("uses exactly collapsed, half, and expanded snap states", () => {
@@ -35,22 +36,17 @@ test("uses exactly collapsed, half, and expanded snap states", () => {
   for (const snap of ["collapsed", "half", "expanded"]) expect(`${source}\n${template}`).toContain(snap);
 });
 
-test("snap controls preserve list scroll while list scroll emits no snap", () => {
+test("snap controls do not control the native list scroll position", () => {
   const target = component();
   target.methods.onToggle.call(target);
-  expect(target.data.listScrollTop).toBe(144);
   expect(target.triggerEvent).toHaveBeenCalledWith("snap", { snap: "expanded" });
-
-  target.triggerEvent.mockClear();
-  target.methods.onListScroll.call(target, { detail: { scrollTop: 288 } });
-  expect(target.data.listScrollTop).toBe(288);
-  expect(target.triggerEvent).not.toHaveBeenCalled();
+  expect(target.data).not.toHaveProperty("listScrollTop");
+  expect(target.methods).not.toHaveProperty("onListScroll");
 });
 
 test("only the handle and title controls request a snap change", () => {
   const template = readFileSync("miniprogram/components/venue-map-sheet/index.wxml", "utf8");
   expect(template).toContain('class="handle" bindtap="onToggle"');
   expect(template).toContain('class="sheet-toggle" bindtap="onToggle"');
-  expect(template).toContain('bindscroll="onListScroll"');
   expect(template).not.toMatch(/<scroll-view[^>]*bindtap="onToggle"/);
 });

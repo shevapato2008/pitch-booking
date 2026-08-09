@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100" viewBox="0 0 80 100" fill="none" data-variant="cluster">
+  <defs>
+    <linearGradient id="cluster-fill" x1="20" y1="10" x2="62" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4C8DFF"/>
+      <stop offset="1" stop-color="#1767A8"/>
+    </linearGradient>
+    <filter id="cluster-shadow" x="2" y="1" width="76" height="98" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#0F3F70" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+  <g filter="url(#cluster-shadow)">
+    <path d="M40 7C22 7 10 20 10 37.5C10 57 29.5 75 40 91C50.5 75 70 57 70 37.5C70 20 58 7 40 7Z" fill="url(#cluster-fill)"/>
+    <circle cx="40" cy="37.5" r="16" fill="white" stroke="#D9EAFE" stroke-width="2"/>
+    <circle cx="40" cy="37.5" r="5" fill="#1767A8"/>
+  </g>
+</svg>

@@ -5,7 +5,7 @@
     <button class="sheet-toggle" bindtap="onToggle">{{snap === 'expanded' ? '收起地图' : '展开列表'}}</button>
   </view>
   <view class="filters"><text class="filter filter--active">{{sortLabel}}</text><text class="filter">可在线预订</text><text class="filter">行政区</text></view>
-  <scroll-view class="cards" scroll-y scroll-with-animation scroll-top="{{listScrollTop}}" scroll-into-view="venue-{{selectedVenueId}}" bindscroll="onListScroll">
+  <scroll-view class="cards" scroll-y scroll-with-animation scroll-into-view="venue-{{selectedVenueId}}" enhanced show-scrollbar="false">
     <view wx:for="{{cards}}" wx:key="venueId" id="venue-{{item.venueId}}" class="card-slot"><venue-map-card card="{{item}}" bindselect="onSelect" bindaction="onAction" /></view>
   </scroll-view>
 </view>

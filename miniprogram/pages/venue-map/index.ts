@@ -36,6 +36,13 @@ type RuntimeCenterMarker = {
   readonly height: 28;
 };
 type RuntimeMapMarker = RuntimeVenueMarker | RuntimeCenterMarker;
+type MarkerClusterCreateEvent = {
+  readonly clusters: readonly {
+    readonly clusterId: number;
+    readonly center: { readonly latitude: number; readonly longitude: number };
+    readonly markerIds: readonly number[];
+  }[];
+};
 
 const SEARCH_CENTER_MARKER_ID = 2_147_483_647;
 const EMPTY_FILTERS: VenueMapFilters = Object.freeze({ onlineOnly: false, districtCode: null });
@@ -98,9 +105,35 @@ Page({
   initializeMarkerClustering() {
     const map = wx.createMapContext("venue-map", this);
     map.initMarkerCluster({
-      enableDefaultStyle: true,
+      enableDefaultStyle: false,
       zoomOnClick: true,
       gridSize: 60,
+    });
+    map.on("markerClusterCreate", (event: MarkerClusterCreateEvent) => {
+      map.addMarkers({
+        clear: false,
+        markers: event.clusters.map(({ clusterId, center, markerIds }) => ({
+          clusterId,
+          ...center,
+          iconPath: "/assets/map-marker-cluster.png",
+          width: 40,
+          height: 50,
+          label: {
+            content: String(markerIds.length),
+            color: "#075985",
+            fontSize: 12,
+            width: 40,
+            height: 22,
+            borderWidth: 1,
+            borderColor: "#7DD3FC",
+            borderRadius: 11,
+            bgColor: "#FFFFFF",
+            textAlign: "center",
+            anchorX: 12,
+            anchorY: -48,
+          },
+        })),
+      });
     });
     // The cluster manager only owns markers added through MapContext.
     map.addMarkers({ markers: [...this.data.markers], clear: true });
