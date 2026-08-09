@@ -1,31 +1,30 @@
 /// <reference types="node" />
-/* eslint-disable @typescript-eslint/no-explicit-any, prefer-spread -- dynamic Mini Program Page harness */
+/* eslint-disable @typescript-eslint/no-explicit-any, prefer-spread */
 
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 
-import { decodeVenueDetail, decodeVenueMap } from "../../domain/decoders";
+import { decodeVenueMap } from "../../domain/decoders";
+import { calculateSearchCenterViewport, type SearchCenterPoi } from "../../presentation/venue-map-search";
 import { registerLocationCapability } from "../../services/location";
+import { registerPoiSearchCapability } from "../../services/poi-search";
 import { registerVenueDirectoryDataSource } from "../../services/venue-directory";
+import { registerVenueMapPreviewMetadata } from "../../services/venue-map-preview";
 
-type RuntimePage = Record<string, any> & { data: Record<string, any>; setData(patch: Record<string, unknown>): void };
+type RuntimePage = Record<string, any> & {
+  data: Record<string, any>;
+  setData(patch: Record<string, unknown>, callback?: () => void): void;
+};
 let definition: Record<string, any> | undefined;
-const VENUE_DIRECTORY_VISUAL_FIXTURE = decodeVenueMap(
-  jest.requireActual("../../../contracts/examples/venue-map.json"),
-);
-const DIRECTORY_DETAIL = decodeVenueDetail(
-  jest.requireActual("../../../contracts/examples/venue-directory-detail.json"),
-);
-const ONLINE_DETAIL = decodeVenueDetail(
-  jest.requireActual("../../../contracts/examples/venue-online-detail.json"),
-);
-const directorySource = {
-  async getVenueDirectory() { return [...VENUE_DIRECTORY_VISUAL_FIXTURE]; },
-  async getVenueDetail(venueId: string) {
-    if (venueId === DIRECTORY_DETAIL.id) return DIRECTORY_DETAIL;
-    if (venueId === ONLINE_DETAIL.id) return ONLINE_DETAIL;
-    throw new Error("VENUE_NOT_FOUND");
-  },
+const venues = decodeVenueMap(jest.requireActual("../../../contracts/examples/venue-map.json"));
+const station: SearchCenterPoi = {
+  id: "preview-tianjin-station", name: "天津站", address: "天津市河北区新纬路1号",
+  city: "天津市", district: "河北区", adcode: "120105", latitude: 39.1365,
+  longitude: 117.2109, coordinateSystem: "GCJ02",
+};
+const source = {
+  async getVenueDirectory() { return [...venues]; },
+  async getVenueDetail() { throw new Error("unused"); },
 };
 
 function page(): RuntimePage {
@@ -33,235 +32,462 @@ function page(): RuntimePage {
     (globalThis as any).Page = (value: Record<string, any>) => { definition = value; };
     jest.requireActual("./index");
   }
-  return { ...definition, data: { ...definition!.data }, setData(patch) { Object.assign(this.data, patch); } } as RuntimePage;
+  return {
+    ...definition,
+    data: { ...definition!.data, filters: { ...definition!.data.filters }, searchCenter: { kind: "CITY" } },
+    markerVenueIdByRuntimeId: {},
+    venueMarkerRuntimeIdByVenueId: {},
+    nextVenueMarkerRuntimeId: 1,
+    pageReady: false,
+    mapRenderPending: false,
+    mapRenderGeneration: 0,
+    initializedMapRenderGeneration: -1,
+    setData(patch, callback) { Object.assign(this.data, patch); callback?.call(this); },
+  } as RuntimePage;
 }
 
 const call = (target: RuntimePage, method: string, ...args: unknown[]) => target[method].apply(target, args);
 
 beforeEach(() => {
-  jest.useFakeTimers();
-  registerVenueDirectoryDataSource(directorySource);
+  registerVenueDirectoryDataSource(source);
+  registerVenueMapPreviewMetadata({ districtByVenueId: {
+    [venues[0].id]: { code: "120111", name: "西青区" },
+    [venues[1].id]: { code: "120104", name: "南开区" },
+  } });
   registerLocationCapability({
     async getLocation() { return { coordinateSystem: "GCJ02", latitude: 39.0842, longitude: 117.2009 }; },
     async openSetting() {},
   });
-  (globalThis as any).wx = { navigateTo: jest.fn(), showToast: jest.fn() };
+  registerPoiSearchCapability({ async suggest(query) { return query.includes("天津站") ? [station] : []; } });
+  (globalThis as any).wx = {
+    navigateTo: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn(),
+    getDeviceInfo: jest.fn(() => ({ platform: "devtools" })),
+  };
 });
 
-test("loads five venues without requesting location and focuses a valid deep link", async () => {
-  const getLocation = jest.fn(async () => ({ coordinateSystem: "GCJ02" as const, latitude: 39.08, longitude: 117.2 }));
-  registerLocationCapability({ getLocation, async openSetting() {} });
+test("uses bound WXML venue markers on iOS instead of the unreliable custom cluster layer", async () => {
   const target = page();
-
-  await call(target, "onLoad", { venueId: VENUE_DIRECTORY_VISUAL_FIXTURE[1].id });
-
-  expect(getLocation).not.toHaveBeenCalled();
-  expect(target.data.cards).toHaveLength(5);
-  expect(target.data.selectedVenueId).toBe(VENUE_DIRECTORY_VISUAL_FIXTURE[1].id);
-  expect(target.data.viewport.mode).toBe("FOCUSED");
-});
-
-test("shows all five markers on ordinary entry while keeping the recommended card selected", async () => {
-  const target = page();
+  (globalThis as any).wx.getDeviceInfo.mockReturnValue({ platform: "ios" });
 
   await call(target, "onLoad", {});
+  call(target, "onReady");
 
-  expect(target.data.selectedVenueId).toBe(VENUE_DIRECTORY_VISUAL_FIXTURE[0].id);
+  expect(target.data.markers).toHaveLength(venues.length);
+  expect((globalThis as any).wx.createMapContext).not.toHaveBeenCalled();
+});
+
+test("centers a focused venue marker inside the map area left visible above the sheet", () => {
+  const wxml = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
+  const wxss = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
+
+  expect(wxml).toContain('class="map map--focused-{{sheetSnap}}"');
+  expect(wxss).toContain(".map--focused-collapsed{height:76vh}");
+  expect(wxss).toContain(".map--focused-half{height:48vh}");
+  expect(wxss).toContain(".map--focused-expanded{height:22vh}");
+});
+
+test("onReady does not initialize clustering while the map is absent during loading", () => {
+  const target = page();
+
+  call(target, "onReady");
+
+  expect((globalThis as any).wx.createMapContext).not.toHaveBeenCalled();
+});
+
+test("waits for a pending initial map render and initializes that native instance exactly once", async () => {
+  const target = page();
+  const callbacks: Array<() => void> = [];
+  target.setData = function setData(patch, callback) {
+    Object.assign(this.data, patch);
+    if (callback) callbacks.push(() => callback.call(this));
+  };
+  const initMarkerCluster = jest.fn();
+  const addMarkers = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers, on: jest.fn() });
+
+  await call(target, "onLoad", {});
+  expect(target.data.loading).toBe(false);
+  call(target, "onReady");
+  expect(initMarkerCluster).not.toHaveBeenCalled();
+
+  callbacks.forEach((callback) => callback());
+  expect(initMarkerCluster).toHaveBeenCalledTimes(1);
+});
+
+test("onReady initializes an already rendered map that completed before the page became ready", async () => {
+  const target = page();
+  const initMarkerCluster = jest.fn();
+  const addMarkers = jest.fn();
+  const on = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({ initMarkerCluster, addMarkers, on });
+
+  await call(target, "onLoad", {});
+  expect(initMarkerCluster).not.toHaveBeenCalled();
+  call(target, "onReady");
+
+  expect((globalThis as any).wx.createMapContext).toHaveBeenCalledTimes(1);
+  expect((globalThis as any).wx.createMapContext).toHaveBeenCalledWith("venue-map", target);
+  expect(initMarkerCluster).toHaveBeenCalledWith({
+    enableDefaultStyle: false,
+    zoomOnClick: true,
+    gridSize: 60,
+  });
+  expect(on).toHaveBeenCalledWith("markerClusterCreate", expect.any(Function));
+  expect(addMarkers).toHaveBeenCalledWith({ markers: [...target.data.markers], clear: true });
+});
+
+test("renders each dense cluster as a numbered location pin", async () => {
+  const target = page();
+  const handlers: Record<string, (event: any) => void> = {};
+  const addMarkers = jest.fn();
+  (globalThis as any).wx.createMapContext.mockReturnValue({
+    initMarkerCluster: jest.fn(),
+    addMarkers,
+    on(event: string, handler: (payload: any) => void) { handlers[event] = handler; },
+  });
+
+  await call(target, "onLoad", {});
+  call(target, "onReady");
+  addMarkers.mockClear();
+  handlers.markerClusterCreate({
+    clusters: [{ clusterId: 17, center: { latitude: 39.12, longitude: 117.2 }, markerIds: [1, 2, 3] }],
+  });
+
+  expect(addMarkers).toHaveBeenCalledWith({
+    clear: false,
+    markers: [{
+      clusterId: 17,
+      latitude: 39.12,
+      longitude: 117.2,
+      iconPath: "/assets/map-marker-cluster.png",
+      width: 40,
+      height: 50,
+      label: expect.objectContaining({ content: "3" }),
+    }],
+  });
+});
+
+test("initializes clustering once for each ALL and FOCUSED native map instance", async () => {
+  const target = page();
+  const initializedModes: string[] = [];
+  (globalThis as any).wx.createMapContext.mockImplementation(() => ({
+    initMarkerCluster() { initializedModes.push(target.data.viewport.mode); },
+    addMarkers() {},
+    on() {},
+  }));
+
+  await call(target, "onLoad", {});
+  call(target, "onReady");
+  expect(initializedModes).toEqual(["ALL"]);
+  call(target, "onReady");
+  expect(initializedModes).toEqual(["ALL"]);
+
+  call(target, "selectVenue", venues[0].id);
+  expect(initializedModes).toEqual(["ALL", "FOCUSED"]);
+  call(target, "selectVenue", venues[1].id);
+  expect(initializedModes).toEqual(["ALL", "FOCUSED"]);
+
+  call(target, "applySearchPresentation", { kind: "CITY" }, target.data.filters, null);
+  expect(initializedModes).toEqual(["ALL", "FOCUSED", "ALL"]);
+});
+
+test("ordinary load commits CITY, preserves platform order, and emits no distance", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  expect(target.data.searchCenter).toEqual({ kind: "CITY" });
+  expect(target.data.cards.map(({ venueId }: any) => venueId)).toEqual(venues.map(({ id }) => id));
+  expect(target.data.title).toBe("全部球场");
+  expect(target.data.cards.every(({ distanceText }: any) => distanceText === null)).toBe(true);
   expect(target.data.viewport.mode).toBe("ALL");
-  expect(target.data.markers).toHaveLength(5);
 });
 
-test("synchronizes marker and card selection and never gives a directory venue a booking action", async () => {
+test("projects ordinary and selected venue marker assets at their approved dimensions", async () => {
   const target = page();
   await call(target, "onLoad", {});
 
-  call(target, "onMarkerTap", { markerId: 2 });
-  const selected = target.data.cards.find((card: any) => card.selected);
-
-  expect(selected.venueId).toBe(VENUE_DIRECTORY_VISUAL_FIXTURE[1].id);
-  expect(selected.action).toBe("VIEW_DETAIL");
-  expect(target.data.markers.find((marker: any) => marker.selected).venueId).toBe(selected.venueId);
-});
-
-test("opens venue detail for both modes while directory cards expose no availability route", async () => {
-  const target = page();
-  await call(target, "onLoad", {});
-  target.data.selectedVenueId = VENUE_DIRECTORY_VISUAL_FIXTURE[1].id;
-  await call(target, "onVenueAction");
-
-  expect((globalThis as any).wx.navigateTo).toHaveBeenCalledWith({
-    url: `/pages/venue/index?venueId=${VENUE_DIRECTORY_VISUAL_FIXTURE[1].id}`,
+  const online = venues.find(({ bookingMode }) => bookingMode === "ONLINE")!;
+  const directory = venues.find(({ bookingMode }) => bookingMode === "DIRECTORY_ONLY")!;
+  expect(target.data.markers.find(({ venueId }: any) => venueId === online.id)).toMatchObject({
+    iconPath: "/assets/map-marker-online.png", width: 32, height: 40,
   });
-  expect(readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8"))
-    .not.toMatch(/VIEW_DETAIL[\s\S]*查看可订时段/);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === directory.id)).toMatchObject({
+    iconPath: "/assets/map-marker-directory.png", width: 32, height: 40,
+  });
+
+  call(target, "selectVenue", online.id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === online.id)).toMatchObject({
+    iconPath: "/assets/map-marker-online-selected.png", width: 36, height: 44,
+  });
+
+  call(target, "selectVenue", directory.id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === directory.id)).toMatchObject({
+    iconPath: "/assets/map-marker-directory-selected.png", width: 36, height: 44,
+  });
 });
 
-test("requests location only from the explicit action and enables show-location after success", async () => {
+test("does not pass the presentation-only string label into native map markers", async () => {
   const target = page();
   await call(target, "onLoad", {});
 
-  await call(target, "onLocateTap");
+  expect(target.data.markers).not.toHaveLength(0);
+  for (const marker of target.data.markers) {
+    expect(marker).not.toHaveProperty("label");
+  }
+});
 
+test("clusters ordinary venue markers but keeps the selected venue marker independent", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  expect(target.data.markers.filter(({ venueId }: any) => venueId).every(({ joinCluster }: any) => joinCluster === true)).toBe(true);
+
+  call(target, "selectVenue", venues[0].id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id)).toMatchObject({ joinCluster: false });
+  expect(target.data.markers.filter(({ venueId }: any) => venueId !== venues[0].id).every(({ joinCluster }: any) => joinCluster === true)).toBe(true);
+});
+
+test("keeps venue marker ids stable across selection, reordering, and filtering without reuse", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  const initialIds = new Map(target.data.markers.map(({ venueId, id }: any) => [venueId, id]));
+  expect(new Set(initialIds.values()).size).toBe(venues.length);
+
+  call(target, "selectVenue", venues[0].id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id)).toMatchObject({
+    id: initialIds.get(venues[0].id),
+    joinCluster: false,
+  });
+
+  target.data.venues = [...target.data.venues].reverse();
+  call(target, "applySearchPresentation", { kind: "CITY" }, target.data.filters, null);
+  expect(new Map(target.data.markers.map(({ venueId, id }: any) => [venueId, id]))).toEqual(initialIds);
+
+  call(target, "onDistrictFilter", { detail: { code: "120104" } });
+  expect(target.data.markers).toEqual([
+    expect.objectContaining({ venueId: venues[1].id, id: initialIds.get(venues[1].id) }),
+  ]);
+  expect(initialIds.get(venues[1].id)).not.toBe(initialIds.get(venues[0].id));
+
+  call(target, "onDistrictFilter", { detail: { code: null } });
+  call(target, "onMarkerTap", { markerId: initialIds.get(venues[0].id) });
+  expect(target.data.selectedVenueId).toBe(venues[0].id);
+  expect(target.data.markers.find(({ venueId }: any) => venueId === venues[0].id).id).toBe(initialIds.get(venues[0].id));
+});
+
+test("successful locate commits USER_LOCATION and clears POI editing state", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  target.data.draftQuery = "天津站";
+  target.data.poiResults = [station];
+  await call(target, "onLocateTap");
+  expect(target.data.searchCenter.kind).toBe("USER_LOCATION");
+  expect(target.data.draftQuery).toBe("");
+  expect(target.data.poiResults).toEqual([]);
+  expect(target.data.locationActive).toBe(true);
   expect(target.data.showLocation).toBe(true);
-  expect(target.data.locationErrorText).toBe("");
-  expect(target.data.cards.some((card: any) => card.distanceText)).toBe(true);
+  expect(target.data.viewport).toEqual(calculateSearchCenterViewport(target.data.searchCenter, "half"));
+  expect(target.data.cards[0].distanceText).toMatch(/^距你/);
+  expect(target.data.markers.every(({ iconPath }: any) => iconPath !== "/assets/map-search-center.png")).toBe(true);
 });
 
-test("selects the nearest venue after the user explicitly shares location", async () => {
-  const nearest = VENUE_DIRECTORY_VISUAL_FIXTURE[1];
-  registerLocationCapability({
-    async getLocation() { return nearest.marker; },
-    async openSetting() {},
-  });
+test("selecting 天津站 commits POI while retaining user location only as a reference", async () => {
   const target = page();
   await call(target, "onLoad", {});
-
   await call(target, "onLocateTap");
-
-  expect(target.data.selectedVenueId).toBe(nearest.id);
-  expect(target.data.viewport).toMatchObject({
-    mode: "FOCUSED",
-    latitude: nearest.marker.latitude,
-    longitude: nearest.marker.longitude,
-  });
-  expect(target.data.cards.find((card: any) => card.venueId === nearest.id).distanceText)
-    .toBe("距你不到 50 米");
+  const retainedUserLocation = target.data.userLocation;
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  expect(target.data.searchCenter).toEqual({ kind: "POI", poi: station });
+  expect(target.data.userLocation).toEqual(retainedUserLocation);
+  expect(target.data.locationActive).toBe(false);
+  expect(target.data.draftQuery).toBe("");
+  expect(target.data.committedQuery).toBe("天津站");
+  expect(target.data.viewport).toEqual(calculateSearchCenterViewport({ kind: "POI", poi: station }, "half"));
+  expect(target.data.cards[0].distanceText).toMatch(/^距天津站/);
 });
 
-test("filters the local directory by venue name and restores all venues when cleared", async () => {
+test("platform suggestion changes selection and focus without changing committed center", async () => {
   const target = page();
   await call(target, "onLoad", {});
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  const center = target.data.searchCenter;
+  call(target, "onSearchVenueSelect", { detail: { venueId: venues[1].id } });
+  expect(target.data.searchCenter).toEqual(center);
+  expect(target.data.committedQuery).toBe("天津站");
+  expect(target.data.selectedVenueId).toBe(venues[1].id);
+});
 
-  call(target, "onSearchInput", { detail: { value: "东丽" } });
-
-  expect(target.data.searchQuery).toBe("东丽");
-  expect(target.data.cards.map((card: any) => card.name)).toEqual(["东丽体育中心足球场"]);
-  expect(target.data.markers).toHaveLength(1);
-  expect(target.data.selectedVenueId).toBe(
-    VENUE_DIRECTORY_VISUAL_FIXTURE.find(({ name }) => name === "东丽体育中心足球场")?.id,
-  );
+test("clearing a committed POI returns to CITY while cancel restores the pre-edit POI", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  call(target, "onSearchEditStart");
+  await call(target, "onSearchQueryChange", { detail: { query: "东丽" } });
+  call(target, "onSearchCancel");
+  expect(target.data.searchCenter).toEqual({ kind: "POI", poi: station });
+  expect(target.data.committedQuery).toBe("天津站");
 
   call(target, "onSearchClear");
-  expect(target.data.searchQuery).toBe("");
+  expect(target.data.searchCenter).toEqual({ kind: "CITY" });
+  expect(target.data.committedQuery).toBe("");
+  expect(target.data.title).toBe("全部球场");
+});
+
+test.each(["USER_LOCATION", "POI"] as const)(
+  "clearing an uncommitted draft restores the pre-edit %s center",
+  async (kind) => {
+    const target = page();
+    await call(target, "onLoad", {});
+    if (kind === "USER_LOCATION") await call(target, "onLocateTap");
+    else call(target, "onSearchPoiSelect", { detail: { poi: station } });
+    const before = {
+      searchCenter: target.data.searchCenter,
+      committedQuery: target.data.committedQuery,
+      viewport: target.data.viewport,
+    };
+    call(target, "onSearchEditStart");
+    await call(target, "onSearchQueryChange", { detail: { query: "东丽" } });
+
+    call(target, "onSearchClear");
+
+    expect(target.data.searchCenter).toEqual(before.searchCenter);
+    expect(target.data.committedQuery).toBe(before.committedQuery);
+    expect(target.data.viewport).toEqual(before.viewport);
+    expect(target.data.draftQuery).toBe("");
+  },
+);
+
+test("projects exact approved center-note copy for all committed centers", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  expect(target.data.centerNote).toBe("全城范围 · 未使用你的位置");
+  await call(target, "onLocateTap");
+  expect(target.data.centerNote).toBe("当前位置附近 · 距离用于排序");
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  expect(target.data.centerNote).toBe("天津站附近 · 可更换搜索中心");
+});
+
+test("online and district filters use the sidecar and never auto-select the first result", async () => {
+  const target = page();
+  await call(target, "onLoad", { venueId: venues[1].id });
+  call(target, "onOnlineOnlyChange", { detail: { value: true } });
+  expect(target.data.visibleVenues.every(({ bookingMode }: any) => bookingMode === "ONLINE")).toBe(true);
+  expect(target.data.selectedVenueId).toBeNull();
+  call(target, "onOnlineOnlyChange", { detail: { value: false } });
+  call(target, "onDistrictFilter", { detail: { code: "120104" } });
+  expect(target.data.visibleVenues.map(({ id }: any) => id)).toEqual([venues[1].id]);
+  expect(target.data.selectedVenueId).toBeNull();
+});
+
+test("sheet filter events toggle online, choose a district, and reset to the complete directory", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+
+  call(target, "onOnlineOnlyChange", { detail: { value: true } });
+  expect(target.data.filters.onlineOnly).toBe(true);
+  call(target, "onDistrictFilter", { detail: { code: "120104" } });
+  expect(target.data.filters.districtCode).toBe("120104");
+  expect(target.data.districtLabel).toBe("南开区");
+
+  call(target, "onResetFilters");
+  expect(target.data.filters).toEqual({ onlineOnly: false, districtCode: null });
+  expect(target.data.visibleVenues).toHaveLength(venues.length);
+});
+
+test("location failure restores the complete pre-request presentation snapshot", async () => {
+  registerLocationCapability({
+    async getLocation() { throw Object.assign(new Error("failed"), { code: "LOCATION_TIMEOUT" }); },
+    async openSetting() {},
+  });
+  const target = page();
+  await call(target, "onLoad", { venueId: venues[1].id });
+  call(target, "onDistrictFilter", { detail: { code: "120104" } });
+  const before = JSON.parse(JSON.stringify({
+    searchCenter: target.data.searchCenter, filters: target.data.filters,
+    selectedVenueId: target.data.selectedVenueId, viewport: target.data.viewport,
+  }));
+  await call(target, "onLocateTap");
+  expect({ searchCenter: target.data.searchCenter, filters: target.data.filters,
+    selectedVenueId: target.data.selectedVenueId, viewport: target.data.viewport }).toEqual(before);
+  expect(target.data.locationErrorText).toBe("定位超时，请重试。");
+});
+
+test("POI appends one independent non-cluster marker that marker taps cannot resolve", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  call(target, "onSearchPoiSelect", { detail: { poi: station } });
+  const centerMarkers = target.data.markers.filter(({ iconPath }: any) => iconPath === "/assets/map-search-center.png");
+  expect(centerMarkers).toEqual([expect.objectContaining({ id: 2_147_483_647, joinCluster: false })]);
+  const before = target.data.selectedVenueId;
+  call(target, "onMarkerTap", { markerId: 2_147_483_647 });
+  expect(target.data.selectedVenueId).toBe(before);
+});
+
+test("search suggestions isolate loading, empty, and capability errors", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+  await call(target, "onSearchQueryChange", { detail: { query: "天津站" } });
+  expect(target.data.poiState).toBe("ready");
+  expect(target.data.poiResults).toEqual([station]);
+  await call(target, "onSearchQueryChange", { detail: { query: "不存在" } });
+  expect(target.data.poiState).toBe("empty");
+  registerPoiSearchCapability({ async suggest() { throw new Error("unavailable"); } });
+  await call(target, "onSearchQueryChange", { detail: { query: "天津站" } });
+  expect(target.data.poiState).toBe("error");
   expect(target.data.cards).toHaveLength(5);
 });
 
-test("offers system settings only after location permission is denied", async () => {
-  const openSetting = jest.fn(async () => {});
-  registerLocationCapability({
-    async getLocation() { throw Object.assign(new Error("denied"), { code: "LOCATION_PERMISSION_DENIED" }); },
-    openSetting,
-  });
+test("sheet snap uses exactly collapsed, half, and expanded", async () => {
   const target = page();
   await call(target, "onLoad", {});
-
-  await call(target, "onLocateTap");
-  expect(target.data.locationPermissionDenied).toBe(true);
-  expect(target.data.locationErrorText).toBe("");
-
-  await call(target, "onOpenLocationSetting");
-  expect(openSetting).toHaveBeenCalledTimes(1);
-  call(target, "onDismissLocationDenied");
-  expect(target.data.locationPermissionDenied).toBe(false);
+  call(target, "onSheetSnap", { detail: { snap: "expanded" } });
+  expect(target.data.sheetSnap).toBe("expanded");
+  expect(readFileSync("miniprogram/pages/venue-map/index.ts", "utf8")).not.toMatch(/\bdefault\b/);
 });
 
-test.each([
-  ["LOCATION_PRIVACY_DENIED", "请先同意位置隐私授权后重试。"],
-  ["LOCATION_SERVICES_DISABLED", "系统定位服务未开启，请开启后重试。"],
-  ["LOCATION_TIMEOUT", "定位超时，请重试。"],
-  ["LOCATION_FAILED", "暂时无法获取位置，请重试。"],
-])("shows a distinct recovery message for %s", async (code, message) => {
-  registerLocationCapability({
-    async getLocation() { throw Object.assign(new Error(code), { code }); },
-    async openSetting() {},
-  });
-  const target = page();
-  await call(target, "onLoad", {});
-  await call(target, "onLocateTap");
-  expect(target.data.locationErrorText).toBe(message);
-  expect(target.data.locationPermissionDenied).toBe(false);
-});
-
-test("binds the map camera to the presentation viewport", () => {
+test("uses the search component, accessible crosshair, vertical sheet copy, and no permanent legend", () => {
   const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
-  const maps = template.match(/<map\b[^>]*\/>/g) ?? [];
-  expect(maps).toHaveLength(2);
-  expect(maps[0]).toContain("viewport.mode === 'ALL'");
-  expect(maps[0]).toContain('include-points="{{viewport.includePoints}}"');
-  expect(maps[1]).not.toContain("include-points");
-  expect(maps[1]).toContain('latitude="{{viewport.latitude}}"');
-  expect(maps[1]).toContain('longitude="{{viewport.longitude}}"');
-  expect(maps[1]).toContain('scale="{{viewport.scale}}"');
+  expect(template).toContain("<venue-map-search");
+  expect(template).toContain('committed-query="{{committedQuery}}"');
+  expect(template).toContain('aria-label="定位到我"');
+  expect(template).not.toMatch(/>附近<\/button>/);
+  expect(template).not.toContain('class="legend"');
+  expect(template).toContain('title="{{title}}"');
+  expect(template).toContain('subtitle="{{subtitle}}"');
+  expect(template).toContain("{{centerNote}}");
 });
 
-test("uses a real search input and explains marker types with the marker assets", () => {
-  const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
-
-  expect(template).toContain("<input");
-  expect(template).toContain('bindinput="onSearchInput"');
-  expect(template).toContain('bindtap="onSearchClear"');
-  expect(template).toContain('/assets/map-marker-online.png');
-  expect(template).toContain('/assets/map-marker-directory.png');
-  expect(template).toContain("可在线订场");
-  expect(template).toContain("仅提供场馆信息");
+test("lays out full-width search beside a fixed-size locate control", () => {
+  const styles = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
+  expect(styles).toMatch(/\.map-tools\s*\{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) 96rpx;[^}]*gap:16rpx/s);
+  expect(styles).toMatch(/\.locate\s*\{[^}]*flex:none;[^}]*width:96rpx;[^}]*height:96rpx;[^}]*min-width:96rpx;[^}]*min-height:96rpx/s);
+  expect(styles).not.toMatch(/\.locate--(?:active|error)\s*\{[^}]*(?:width|height|min-width|min-height):/s);
 });
 
-test("keeps the selected venue card in view when markers or deep links change selection", () => {
-  const template = readFileSync("miniprogram/components/venue-map-sheet/index.wxml", "utf8");
-  expect(template).toContain('scroll-into-view="venue-{{selectedVenueId}}"');
-  expect(template).toContain('id="venue-{{item.venueId}}"');
+test("page delegates all search projection to the pure presentation boundary", () => {
+  const sourceText = readFileSync("miniprogram/pages/venue-map/index.ts", "utf8");
+  expect(sourceText).toMatch(/applySearchPresentation\(center[^)]*filters[^)]*selectedVenueId/);
+  expect(sourceText).toContain("presentVenueSearch({");
+  expect(sourceText).toContain("toVenueMapPresentation(");
 });
 
-test("does not replace usable venue content with a speculative map failure list", async () => {
-  const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
-  expect(template).not.toContain("地图暂时无法加载");
-  expect(template).not.toContain("重试地图");
-});
-
-test("does not infer map failure when the native updated event is absent", async () => {
-  let resolve!: (venues: any[]) => void;
-  registerVenueDirectoryDataSource({
-    getVenueDirectory: () => new Promise((done) => { resolve = done; }),
-    async getVenueDetail() { throw new Error("unused"); },
-  });
-  const target = page();
-  const loading = call(target, "onLoad", {});
-
-  expect(jest.getTimerCount()).toBe(0);
-  resolve([...VENUE_DIRECTORY_VISUAL_FIXTURE]);
-  await loading;
-  expect(jest.getTimerCount()).toBe(0);
-  jest.advanceTimersByTime(60_000);
-  expect(target.data).not.toHaveProperty("mapFailed");
-});
-
-test("drops a late directory response after unload", async () => {
-  let resolve!: (venues: any[]) => void;
-  registerVenueDirectoryDataSource({
-    getVenueDirectory: () => new Promise((done) => { resolve = done; }),
-    async getVenueDetail() { throw new Error("unused"); },
-  });
+test("drops late directory and location results and clears page-memory location on unload", async () => {
+  let resolveDirectory!: (value: any[]) => void;
+  registerVenueDirectoryDataSource({ getVenueDirectory: () => new Promise((done) => { resolveDirectory = done; }), async getVenueDetail() { throw new Error("unused"); } });
   const target = page();
   const loading = call(target, "onLoad", {});
   call(target, "onUnload");
-  resolve([...VENUE_DIRECTORY_VISUAL_FIXTURE]);
+  resolveDirectory([...venues]);
   await loading;
-
   expect(target.data.cards).toEqual([]);
-});
 
-test("drops a late location response and clears page-memory coordinates after unload", async () => {
-  let resolve!: (coordinate: { coordinateSystem: "GCJ02"; latitude: number; longitude: number }) => void;
-  registerLocationCapability({
-    getLocation: () => new Promise((done) => { resolve = done; }),
-    async openSetting() {},
-  });
-  const target = page();
-  await call(target, "onLoad", {});
-  const locating = call(target, "onLocateTap");
-  call(target, "onUnload");
-  resolve({ coordinateSystem: "GCJ02", latitude: 39.08, longitude: 117.2 });
+  let resolveLocation!: (value: any) => void;
+  registerVenueDirectoryDataSource(source);
+  registerLocationCapability({ getLocation: () => new Promise((done) => { resolveLocation = done; }), async openSetting() {} });
+  const second = page();
+  await call(second, "onLoad", {});
+  const locating = call(second, "onLocateTap");
+  call(second, "onUnload");
+  resolveLocation(venues[0].marker);
   await locating;
-  expect(target.data.userLocation).toBeNull();
-  expect(target.data.showLocation).toBe(false);
+  expect(second.data.userLocation).toBeNull();
+  expect(second.data.showLocation).toBe(false);
 });

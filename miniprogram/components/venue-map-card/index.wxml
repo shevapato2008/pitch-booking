@@ -1,1 +1,14 @@
-<view wx:if="{{card}}" class="card {{card.selected?'card--selected':''}}" bindtap="onSelect"><view class="tag tag--{{card.action}}">{{card.statusText}}</view><view class="name">{{card.name}}</view><view class="address">{{card.address}}</view><view class="transit">{{card.distanceText || card.transitText}}</view><button wx:if="{{card.selected}}" class="action" catchtap="onAction">{{card.action === 'VIEW_AVAILABILITY' ? '查看可订时段' : '查看场馆详情'}}</button></view>
+<view wx:if="{{card}}" class="venue-row {{card.selected?'venue-row--selected':''}}">
+  <button class="venue-row-body" bindtap="onSelect" aria-label="选择{{card.name}}">
+    <text class="venue-row-name">{{card.name}}</text>
+    <text class="venue-row-address">{{card.address}}</text>
+    <view class="venue-row-meta">
+      <text class="venue-row-summary">{{card.distanceText || card.transitText}}</text>
+      <text class="venue-row-separator">·</text>
+      <text class="venue-row-status venue-row-status--{{card.action}}">{{card.statusText}}</text>
+    </view>
+  </button>
+  <button class="venue-row-action" catchtap="onAction" aria-label="{{card.action === 'VIEW_AVAILABILITY' ? '查看可订时段' : '查看场馆详情'}}">
+    <text class="venue-row-chevron">›</text>
+  </button>
+</view>

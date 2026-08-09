@@ -1,12 +1,14 @@
 import { decodeVenue, decodeVenueDetail, decodeVenueMap } from "../domain/decoders";
 import type { VenueDirectoryDataSource } from "../services/venue-directory";
 import { packagedFixtureLoader, type FixtureLoader } from "./fixture-transport";
+import { createVenueMapPreviewFixture } from "./venue-map-preview-fixture";
 
 export function createDevelopmentVenueDirectoryDataSource(
   loader: FixtureLoader = packagedFixtureLoader,
 ): VenueDirectoryDataSource {
   return {
     async getVenueDirectory() {
+      if (loader === packagedFixtureLoader) return [...createVenueMapPreviewFixture().venues];
       return decodeVenueMap(loader.load("venue-map"));
     },
     async getVenueDetail(venueId) {
@@ -19,9 +21,29 @@ export function createDevelopmentVenueDirectoryDataSource(
           availabilityWindow: bookingVenue.availabilityWindow,
         };
       }
+      const previewEntry = loader === packagedFixtureLoader
+        ? createVenueMapPreviewFixture().venues.find((venue) => venue.id === venueId)
+        : undefined;
+      if (previewEntry?.bookingMode === "ONLINE" && online.bookingMode === "ONLINE") {
+        const bookingVenue = decodeVenue(loader.load("venue-ready"));
+        return {
+          ...online,
+          id: previewEntry.id,
+          slug: previewEntry.slug ?? `venue-${previewEntry.id}`,
+          sortOrder: previewEntry.sortOrder,
+          name: previewEntry.name,
+          address: previewEntry.address,
+          marker: previewEntry.marker,
+          navigation: previewEntry.navigation ?? online.navigation,
+          coverImage: null,
+          nearestTransit: previewEntry.nearestTransit,
+          contentVerifiedAt: previewEntry.contentVerifiedAt,
+          availabilityWindow: bookingVenue.availabilityWindow,
+        };
+      }
       const directory = decodeVenueDetail(loader.load("venue-directory-detail"));
       if (directory.id === venueId) return directory;
-      const mapEntry = decodeVenueMap(loader.load("venue-map"))
+      const mapEntry = previewEntry ?? decodeVenueMap(loader.load("venue-map"))
         .find((venue) => venue.id === venueId);
       if (mapEntry?.bookingMode === "DIRECTORY_ONLY") {
         return {

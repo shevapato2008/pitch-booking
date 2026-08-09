@@ -2,7 +2,12 @@ import type { Gcj02Coordinate, VenueMapEntry, VenueTransitStop } from "../domain
 
 export type VenueMapViewport =
   | { readonly mode: "ALL"; readonly includePoints: readonly Gcj02Coordinate[] }
-  | { readonly mode: "FOCUSED"; readonly latitude: number; readonly longitude: number; readonly scale: 16 };
+  | { readonly mode: "FOCUSED"; readonly latitude: number; readonly longitude: number; readonly scale: 14 | 16 };
+
+export type DistanceLabelBasis =
+  | null
+  | { readonly kind: "USER" }
+  | { readonly kind: "POI"; readonly label: string };
 
 export interface VenueMapMarkerViewModel {
   readonly venueId: string;
@@ -18,7 +23,7 @@ export interface VenueMapCardViewModel {
   readonly name: string;
   readonly address: string;
   readonly selected: boolean;
-  readonly statusText: "可预订" | "暂未接入在线预订";
+  readonly statusText: "可在线预订" | "仅提供场馆信息";
   readonly action: "VIEW_AVAILABILITY" | "VIEW_DETAIL";
   readonly transitText: string;
   readonly distanceText: string | null;
@@ -28,12 +33,6 @@ const markerPath = (venue: VenueMapEntry, selected: boolean): string => {
   const mode = venue.bookingMode === "ONLINE" ? "online" : "directory";
   return `/assets/map-marker-${mode}${selected ? "-selected" : ""}.png`;
 };
-
-const stableVenues = (venues: readonly VenueMapEntry[]): VenueMapEntry[] => [...venues].sort((left, right) => (
-  (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-  || left.name.localeCompare(right.name, "zh-CN")
-  || left.id.localeCompare(right.id)
-));
 
 function formatTransit(stop: VenueTransitStop | undefined): string {
   if (!stop) return "交通信息待核验";
@@ -55,7 +54,7 @@ export function calculateMapViewport(
       scale: 16,
     };
   }
-  return { mode: "ALL", includePoints: stableVenues(venues).map(({ marker }) => marker) };
+  return { mode: "ALL", includePoints: venues.map(({ marker }) => marker) };
 }
 
 export function formatDistanceFromUser(
@@ -63,13 +62,13 @@ export function formatDistanceFromUser(
   venue: Gcj02Coordinate,
 ): string | null {
   if (!user) return null;
-  const meters = distanceMeters(user, venue);
+  const meters = calculateDistanceMeters(user, venue);
   if (meters < 50) return "距你不到 50 米";
   if (meters < 1000) return `距你 ${Math.round(meters)} 米`;
   return `距你 ${(meters / 1000).toFixed(1)} 公里`;
 }
 
-function distanceMeters(user: Gcj02Coordinate, venue: Gcj02Coordinate): number {
+export function calculateDistanceMeters(user: Gcj02Coordinate, venue: Gcj02Coordinate): number {
   const radians = (value: number): number => value * Math.PI / 180;
   const latitudeDelta = radians(venue.latitude - user.latitude);
   const longitudeDelta = radians(venue.longitude - user.longitude);
@@ -84,7 +83,7 @@ export function findNearestVenueId(
   userLocation: Gcj02Coordinate,
 ): string | null {
   return venues.reduce<{ id: string; meters: number } | null>((nearest, venue) => {
-    const meters = distanceMeters(userLocation, venue.marker);
+    const meters = calculateDistanceMeters(userLocation, venue.marker);
     return nearest === null || meters < nearest.meters ? { id: venue.id, meters } : nearest;
   }, null)?.id ?? null;
 }
@@ -92,14 +91,23 @@ export function findNearestVenueId(
 export function toVenueMapPresentation(
   venues: readonly VenueMapEntry[],
   requestedVenueId: string | null,
-  userLocation: Gcj02Coordinate | null,
+  distanceMetersByVenueId: Readonly<Record<string, number>>,
+  distanceLabelBasis: DistanceLabelBasis,
+): ReturnType<typeof projectVenueMap> {
+  return projectVenueMap(venues, requestedVenueId, distanceMetersByVenueId, distanceLabelBasis);
+}
+
+function projectVenueMap(
+  venues: readonly VenueMapEntry[],
+  requestedVenueId: string | null,
+  distanceMetersByVenueId: Readonly<Record<string, number>>,
+  distanceLabelBasis: DistanceLabelBasis,
 ) {
-  const sorted = stableVenues(venues);
-  const selectedVenueId = sorted.some(({ id }) => id === requestedVenueId) ? requestedVenueId : null;
+  const selectedVenueId = venues.some(({ id }) => id === requestedVenueId) ? requestedVenueId : null;
   return {
     selectedVenueId,
-    viewport: calculateMapViewport(sorted, selectedVenueId),
-    markers: sorted.map((venue): VenueMapMarkerViewModel => {
+    viewport: calculateMapViewport(venues, selectedVenueId),
+    markers: venues.map((venue): VenueMapMarkerViewModel => {
       const selected = venue.id === selectedVenueId;
       return {
         venueId: venue.id,
@@ -110,17 +118,28 @@ export function toVenueMapPresentation(
         selected,
       };
     }),
-    cards: sorted.map((venue): VenueMapCardViewModel => ({
+    cards: venues.map((venue): VenueMapCardViewModel => ({
       venueId: venue.id,
       name: venue.name,
       address: venue.address,
       selected: venue.id === selectedVenueId,
-      statusText: venue.bookingMode === "ONLINE" ? "可预订" : "暂未接入在线预订",
+      statusText: venue.bookingMode === "ONLINE" ? "可在线预订" : "仅提供场馆信息",
       action: venue.bookingMode === "ONLINE" ? "VIEW_AVAILABILITY" : "VIEW_DETAIL",
       transitText: formatTransit(venue.nearestTransit[0]),
-      distanceText: formatDistanceFromUser(userLocation, venue.marker),
+      distanceText: formatDistance(
+        distanceMetersByVenueId[venue.id],
+        distanceLabelBasis,
+      ),
     })),
   };
+}
+
+function formatDistance(meters: number | undefined, basis: DistanceLabelBasis): string | null {
+  if (meters === undefined || basis === null) return null;
+  const prefix = basis.kind === "USER" ? "距你" : `距${basis.label}`;
+  if (meters < 50) return `${prefix}不到 50 米`;
+  if (meters < 1000) return `${prefix} ${Math.round(meters)} 米`;
+  return `${prefix} ${(meters / 1000).toFixed(1)} 公里`;
 }
 
 export function createRequestGenerationGuard() {

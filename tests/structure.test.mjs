@@ -32,6 +32,103 @@ const pngDimensions = (path) => {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 };
 
+test("scalable map directory freezes paired viewports and four reference states", () => {
+  const manifest = parse(
+    readFileSync("artifacts/ui/screen-manifest/map-venue-discovery.yaml", "utf8"),
+  );
+  const references = {
+    "scalable-city": "artifacts/ui/references/venue-map-scalable-city.html",
+    "scalable-nearby": "artifacts/ui/references/venue-map-scalable-nearby.html",
+    "scalable-poi": "artifacts/ui/references/venue-map-scalable-poi.html",
+    "scalable-long-content": "artifacts/ui/references/venue-map-scalable-long-content.html",
+  };
+  const scalableStates = Object.fromEntries(
+    manifest.states
+      .filter(({ id }) => Object.hasOwn(references, id))
+      .map(({ id, reference }) => [id, reference]),
+  );
+
+  assert.deepEqual(manifest.capture.viewports, [
+    { width: 375, height: 812 },
+    { width: 390, height: 844 },
+  ]);
+  assert.deepEqual(manifest.sheet_snap_states, ["collapsed", "half", "expanded"]);
+  assert.deepEqual(
+    manifest.states.slice(-4).map(({ id }) => id),
+    ["scalable-city", "scalable-nearby", "scalable-poi", "scalable-long-content"],
+  );
+  assert.deepEqual(scalableStates, references);
+  for (const reference of Object.values(references)) {
+    assert.equal(existsSync(reference), true, `missing ${reference}`);
+  }
+});
+
+test("scalable map references freeze accessible scrollable row semantics", () => {
+  const references = {
+    "scalable-city": {
+      path: "artifacts/ui/references/venue-map-scalable-city.html",
+      searchCenter: "CITY",
+    },
+    "scalable-nearby": {
+      path: "artifacts/ui/references/venue-map-scalable-nearby.html",
+      searchCenter: "USER_LOCATION",
+    },
+    "scalable-poi": {
+      path: "artifacts/ui/references/venue-map-scalable-poi.html",
+      searchCenter: "POI",
+    },
+    "scalable-long-content": {
+      path: "artifacts/ui/references/venue-map-scalable-long-content.html",
+      searchCenter: "CITY",
+    },
+  };
+
+  for (const [state, { path, searchCenter }] of Object.entries(references)) {
+    const html = readFileSync(path, "utf8");
+    assert.ok(html.trim().length > 1_000, `${path} must be non-empty`);
+    assert.match(html, /^<!doctype html>/i);
+    assert.match(
+      html,
+      new RegExp(`<main class="artifact" data-state="${state}" data-search-center="${searchCenter}">`),
+    );
+    assert.doesNotMatch(html, /https?:\/\/|<link\b|<script\b[^>]*\bsrc=/i);
+    assert.match(html, /\.venue-list\{[^}]*height:248px;[^}]*overflow-y:auto;[^}]*overflow-x:hidden/s);
+    assert.match(html, /\.venue-row\{[^}]*flex:0 0 116px;[^}]*height:116px;/s);
+    assert.match(html, /grid-template-columns:minmax\(0,1fr\) 44px/);
+    assert.match(html, /\.row-action\{[^}]*width:44px;[^}]*height:44px;[^}]*min-width:44px;[^}]*min-height:44px;/s);
+    assert.match(html, /\.locate\{[^}]*flex:0 0 48px;[^}]*width:48px;[^}]*min-width:48px;/s);
+    assert.match(html, /class="search"[^>]*>[\s\S]*?<svg\b/);
+    assert.match(html, /class="locate"[^>]*>[\s\S]*?<svg\b/);
+    assert.doesNotMatch(html, /class="legend"|\.legend\b/);
+
+    const rows = [...html.matchAll(
+      /<article class="venue-row(?: selected)?" data-booking-mode="(ONLINE|DIRECTORY_ONLY)">([\s\S]*?)<\/article>/g,
+    )];
+    assert.ok(rows.length >= 2, `${path} must show at least two rows`);
+    assert.equal((html.match(/class="row-select"/g) ?? []).length, rows.length);
+    assert.equal((html.match(/class="row-action"/g) ?? []).length, rows.length);
+    for (const [, bookingMode, row] of rows) {
+      assert.equal((row.match(/<button\b/g) ?? []).length, 2);
+      assert.match(row, /^<button class="row-select" type="button" aria-pressed="(?:true|false)">/);
+      assert.match(row, /<\/button><button class="row-action" type="button" aria-label="[^"]+">/);
+      if (bookingMode === "ONLINE") {
+        assert.match(row, /<span class="status online">可在线预订<\/span>/);
+      } else {
+        assert.match(row, /<span class="status directory">仅提供场馆信息<\/span>/);
+      }
+    }
+    assert.deepEqual(new Set(rows.map(([, bookingMode]) => bookingMode)), new Set([
+      "ONLINE",
+      "DIRECTORY_ONLY",
+    ]));
+  }
+
+  const nearby = readFileSync(references["scalable-nearby"].path, "utf8");
+  assert.match(nearby, /class="user-point" role="img" aria-label="我的位置"/);
+  const poi = readFileSync(references["scalable-poi"].path, "utf8");
+  assert.match(poi, /class="poi-center" role="img" aria-label="腾讯地图地点天津站"/);
+});
+
 test("map venue discovery artifact inventory is capture-ready at 375 by 812", () => {
   const references = {
     ready: "artifacts/ui/references/venue-map-ready.html",
@@ -60,8 +157,14 @@ test("map venue discovery artifact inventory is capture-ready at 375 by 812", ()
   const manifest = parse(readFileSync("artifacts/ui/screen-manifest/map-venue-discovery.yaml", "utf8"));
   assert.equal(manifest.target_viewport.width, 375);
   assert.equal(manifest.target_viewport.height, 812);
-  assert.deepEqual(manifest.states.map(({ id }) => id), mapArtifactStates);
-  assert.deepEqual(manifest.states.map(({ reference }) => reference), Object.values(references));
+  assert.deepEqual(
+    manifest.states.slice(0, mapArtifactStates.length).map(({ id }) => id),
+    mapArtifactStates,
+  );
+  assert.deepEqual(
+    manifest.states.slice(0, mapArtifactStates.length).map(({ reference }) => reference),
+    Object.values(references),
+  );
 });
 
 test("map review board reserves all six evidence slots for every state", () => {
@@ -590,12 +693,15 @@ test("booking confirmation ready state preserves the frozen visual contract", ()
 test("map venue experience pins its native runtime and component boundaries", () => {
   const project = JSON.parse(readFileSync("project.config.json", "utf8"));
   assert.equal(project.libVersion, "3.17.0");
-  for (const component of ["venue-map-sheet", "venue-map-card"]) {
+  for (const component of ["venue-map-sheet", "venue-map-card", "venue-map-search"]) {
     const root = `miniprogram/components/${component}/index`;
     for (const extension of ["ts", "json", "wxml", "wxss"])
       assert.equal(existsSync(`${root}.${extension}`), true, `${component}.${extension}`);
     assert.equal(JSON.parse(readFileSync(`${root}.json`, "utf8")).component, true);
   }
   const page = JSON.parse(readFileSync("miniprogram/pages/venue-map/index.json", "utf8"));
-  assert.deepEqual(page.usingComponents, { "venue-map-sheet": "/components/venue-map-sheet/index" });
+  assert.deepEqual(page.usingComponents, {
+    "venue-map-search": "/components/venue-map-search/index",
+    "venue-map-sheet": "/components/venue-map-sheet/index",
+  });
 });

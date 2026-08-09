@@ -6,7 +6,7 @@ target_viewport:
 authority: deploy/venue-directory.json
 layout: full-map-draggable-bottom-sheet
 sheet_snap_states:
-  - peek
+  - collapsed
   - half
   - expanded
 states:
@@ -31,6 +31,18 @@ states:
   - id: error
     reference: artifacts/ui/references/venue-map-error.html
     meaning: first-map-update failure falls back to a truthful pure venue list
+  - id: scalable-city
+    reference: artifacts/ui/references/venue-map-scalable-city.html
+    meaning: default full-city vertical directory without a location request
+  - id: scalable-nearby
+    reference: artifacts/ui/references/venue-map-scalable-nearby.html
+    meaning: explicit user location with nearest-first platform venues
+  - id: scalable-poi
+    reference: artifacts/ui/references/venue-map-scalable-poi.html
+    meaning: selected Tencent POI as center with platform-only distance ordering
+  - id: scalable-long-content
+    reference: artifacts/ui/references/venue-map-scalable-long-content.html
+    meaning: fixed-height extreme content and both booking modes
 review_slots:
   - reference
   - implementation
@@ -39,6 +51,9 @@ review_slots:
   - difference
   - observations
 capture:
-  logical_width: 375
-  logical_height: 812
-  evidence_phase: task-4
+  viewports:
+    - width: 375
+      height: 812
+    - width: 390
+      height: 844
+  evidence_phase: scalable-map-visual-gate

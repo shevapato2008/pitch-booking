@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "contract:validate": "node scripts/validate-contract.mjs",
     "fixtures:generate": "node scripts/generate-fixtures.mjs",
+    "assets:map-markers": "swift scripts/render-map-markers.swift",
     "build:miniprogram:production": "node scripts/build-miniprogram.mjs production",
     "build:miniprogram:development": "node scripts/build-miniprogram.mjs development",
     "audit:miniprogram-package": "node scripts/audit-production-package.mjs dist/miniprogram-production",

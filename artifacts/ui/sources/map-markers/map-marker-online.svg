@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800" viewBox="0 0 64 80" fill="none" data-variant="online-filled" data-selected="false">
+  <defs>
+    <linearGradient id="body" x1="18" y1="8" x2="48" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4C8DFF"/>
+      <stop offset="1" stop-color="#1767E8"/>
+    </linearGradient>
+    <filter id="shadow" x="1" y="1" width="62" height="78" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0A3D91" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path id="pin-shape" d="M32 5C17.7 5 8 15.3 8 29.1C8 44.6 23.6 59.2 32 72C40.4 59.2 56 44.6 56 29.1C56 15.3 46.3 5 32 5Z" fill="url(#body)"/>
+    <circle cx="32" cy="29" r="10" fill="#FFF" fill-opacity="0.96"/>
+    <circle cx="32" cy="29" r="4" fill="#2774ED"/>
+    <path d="M18 21.5C20.7 14.1 26.1 11 32 11" stroke="#FFF" stroke-opacity="0.48" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
