@@ -53,11 +53,11 @@ Out of scope:
 - Modify only if a state must be recaptured: the matching source under `artifacts/ui/references/` and matching evidence files under `artifacts/ui/reviews/map-venue-discovery-scalable/`
 - Modify after approval: `artifacts/ui/reviews/map-venue-discovery-scalable/README.md`
 
-- [ ] **Step 1: Present all six required visual states**
+- [x] **Step 1: Present all six required visual states**
 
 Present `city`, `online-selected`, `directory-selected`, and `long-content` side-by-side images at the exact latest `390×753` page-content viewport. Also present the existing paired `nearby` and `poi` comparisons at `375×812` and `390×844`. Explain that the latter two freeze search-center composition and semantics before the latest marker/card polish; the latest four states freeze the current component style. Approval must explicitly accept this combined evidence or request a targeted recapture. Link corresponding overlay and difference files; do not reinterpret automated layout tests as visual approval.
 
-- [ ] **Step 2: Obtain one explicit user decision**
+- [x] **Step 2: Obtain one explicit user decision**
 
 Ask whether all six states are visually approved as the Slice 0 baseline. If a visible correction or latest-style recapture is requested:
 
@@ -76,11 +76,11 @@ Ask whether all six states are visually approved as the Slice 0 baseline. If a v
 
 8. present the refreshed state and repeat this step.
 
-- [ ] **Step 3: Record the visual decision**
+- [x] **Step 3: Record the visual decision**
 
 Change the README status to include the approval date, approved viewports/evidence generations, all six approved states, and the boundary that real API/POI integration is still pending.
 
-- [ ] **Step 4: Verify the gate record**
+- [x] **Step 4: Verify the gate record**
 
 Run:
 
@@ -100,7 +100,7 @@ git diff --check
 
 Expected: the README names all six approved states, distinguishes their viewports/evidence generations, and still marks real district/POI integration as pending; `git diff --check` exits 0.
 
-- [ ] **Step 5: Commit the gate record**
+- [x] **Step 5: Commit the gate record**
 
 ```bash
 git add artifacts/ui/reviews/map-venue-discovery-scalable/README.md
