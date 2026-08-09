@@ -10,6 +10,7 @@ import { readDevelopmentPreviewRoutes } from "../scripts/build-miniprogram.mjs";
 
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
+const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
 
 test("development preview manifest has exactly the two booking routes", async () => {
   assert.deepEqual(await readDevelopmentPreviewRoutes("miniprogram"), [
@@ -34,7 +35,10 @@ test("both builds expose five routes while only development activates Fixture bo
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
   await execFileAsync(process.execPath, [buildScript, "development"], { cwd: root });
-  await execFileAsync(process.execPath, [buildScript, "production"], { cwd: root });
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: root,
+    env: { ...process.env, MINIPROGRAM_TENCENT_MAP_KEY: TEST_TENCENT_MAP_KEY },
+  });
   const development = JSON.parse(await readFile(path.join(root, "dist/miniprogram-development/app.json"), "utf8"));
   const production = JSON.parse(await readFile(path.join(root, "dist/miniprogram-production/app.json"), "utf8"));
   const routes = ["pages/venue-map/index", "pages/venue/index", "pages/availability/index", "pages/booking-confirmation/index", "pages/order-detail/index"];
@@ -44,6 +48,10 @@ test("both builds expose five routes while only development activates Fixture bo
   const productionApp = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
   assert.match(developmentApp, /dev\/bootstrap/);
   assert.match(developmentApp, /bootstrapDevelopment/);
+  assert.doesNotMatch(
+    await readFile(path.join(root, "dist/miniprogram-development/config/runtime.js"), "utf8"),
+    new RegExp(TEST_TENCENT_MAP_KEY),
+  );
   assert.doesNotMatch(productionApp, /dev\/|fixture/i);
 });
 

@@ -35,6 +35,10 @@ const forbiddenContentPatterns = [
   /\bshowDevelopmentCashier\b/,
   /\bcreateDevelopmentVenueDirectoryDataSource\b/,
   /\bcreateSimulatedLocationCapability\b/,
+  /\bpreviewPoiSearchCapability\b/,
+  /\bDEV_ONLY_POI_SEARCH_PREVIEW\b/,
+  /poi-search-preview/,
+  /TENCENT_MAP_KEY_REQUIRED/,
   /7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/,
   /开发态模拟收银台|模拟支付，不会扣款|模拟收银台处理中/,
   /["']dev\//,
@@ -95,6 +99,16 @@ for (const [specifier, pattern] of requiredPaymentImports) {
 for (const diagnostic of inspectPaymentRegistration(appContents)) forbidden.push(diagnostic);
 await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
+try {
+  const runtimeConfig = await readFile(path.join(target, "config/runtime.js"), "utf8");
+  const tencentMapKey = readTencentMapKeyExport(runtimeConfig);
+  if (!tencentMapKey || !/^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){5}$/.test(tencentMapKey)) {
+    forbidden.push("invalid Tencent map key config");
+  }
+} catch {
+  forbidden.push("missing Tencent map key config");
+}
+
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
 const productionRoutes = [
   "pages/venue-map/index",
@@ -128,6 +142,77 @@ if (forbidden.length > 0) {
   process.exitCode = 1;
 } else {
   console.log("Production package audit passed: 0 forbidden paths/tokens");
+}
+
+function readTencentMapKeyExport(source) {
+  const sourceFile = ts.createSourceFile("runtime.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (sourceFile.parseDiagnostics.length > 0) return undefined;
+
+  const assignments = sourceFile.statements.flatMap((statement) => {
+    if (!ts.isExpressionStatement(statement) || !ts.isBinaryExpression(statement.expression)
+      || statement.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken
+      || !isDirectTencentKeyAccess(statement.expression.left)
+      || !ts.isStringLiteral(statement.expression.right)) return [];
+    return [statement.expression];
+  });
+  if (assignments.length !== 1) return undefined;
+
+  const requiredAssignment = assignments[0];
+  let unsafeMutation = false;
+  const visit = (node) => {
+    if (node === requiredAssignment) return;
+    if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)
+      && (isTencentKeyAccess(node.left) || ts.isIdentifier(node.left) && node.left.text === "exports"
+        || isModuleExports(node.left))) {
+      unsafeMutation = true;
+      return;
+    }
+    if (ts.isDeleteExpression(node) && isTencentKeyAccess(node.expression)
+      || ts.isCallExpression(node) && isTencentDefinePropertyCall(node)) {
+      unsafeMutation = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return unsafeMutation ? undefined : requiredAssignment.right.text;
+}
+
+function isAssignmentOperator(kind) {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
+function isDirectTencentKeyAccess(node) {
+  return ts.isPropertyAccessExpression(node)
+    && ts.isIdentifier(node.expression) && node.expression.text === "exports"
+    && node.name.text === "MINIPROGRAM_TENCENT_MAP_KEY";
+}
+
+function isTencentKeyAccess(node) {
+  if (ts.isPropertyAccessExpression(node)) {
+    return isExportsObject(node.expression) && node.name.text === "MINIPROGRAM_TENCENT_MAP_KEY";
+  }
+  return ts.isElementAccessExpression(node) && isExportsObject(node.expression)
+    && ts.isStringLiteral(node.argumentExpression)
+    && node.argumentExpression.text === "MINIPROGRAM_TENCENT_MAP_KEY";
+}
+
+function isExportsObject(node) {
+  return ts.isIdentifier(node) && node.text === "exports" || isModuleExports(node);
+}
+
+function isModuleExports(node) {
+  return ts.isPropertyAccessExpression(node)
+    && ts.isIdentifier(node.expression) && node.expression.text === "module" && node.name.text === "exports";
+}
+
+function isTencentDefinePropertyCall(node) {
+  const callee = node.expression;
+  return ts.isPropertyAccessExpression(callee)
+    && ts.isIdentifier(callee.expression) && callee.expression.text === "Object"
+    && callee.name.text === "defineProperty" && isExportsObject(node.arguments[0])
+    && ts.isStringLiteral(node.arguments[1])
+    && node.arguments[1].text === "MINIPROGRAM_TENCENT_MAP_KEY";
 }
 
 async function collectFiles(directory) {

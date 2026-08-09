@@ -10,6 +10,18 @@ import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
+const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+
+function build(projectRoot, mode, environment = {}) {
+  return execFileAsync(process.execPath, [buildScript, mode], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      ...(mode === "production" ? { MINIPROGRAM_TENCENT_MAP_KEY: TEST_TENCENT_MAP_KEY } : {}),
+      ...environment,
+    },
+  });
+}
 
 for (const [description, source] of [
   ["syntactic", "const broken: = 1;\n"],
@@ -20,7 +32,7 @@ for (const [description, source] of [
     t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
     await assert.rejects(
-      execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot }),
+      build(projectRoot, "production"),
       (error) => error.code !== 0 && /TS\d+/.test(error.stderr),
     );
   });
@@ -53,7 +65,7 @@ test("build rejects a symlinked dist parent without deleting external output", a
 
   let rejected = false;
   try {
-    await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+    await build(projectRoot, "production");
   } catch {
     rejected = true;
   }
@@ -75,7 +87,7 @@ test("build rejects a symlinked output child without deleting its target", async
 
   let rejected = false;
   try {
-    await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+    await build(projectRoot, "production");
   } catch {
     rejected = true;
   }
@@ -97,7 +109,7 @@ test("production and development builds exclude test and spec TypeScript", async
   );
 
   for (const mode of ["production", "development"]) {
-    await execFileAsync(process.execPath, [buildScript, mode], { cwd: projectRoot });
+    await build(projectRoot, mode);
     const outputRoot = path.join(projectRoot, `dist/miniprogram-${mode}`);
     assert.equal(existsSync(path.join(outputRoot, "domain-boundary.test.js")), false);
     assert.equal(existsSync(path.join(outputRoot, "domain-boundary.test.ts")), false);
@@ -114,12 +126,12 @@ test("Scenario runtime is development-only", async (t) => {
   await writeFile(path.join(projectRoot, "miniprogram/runtime/scenario.ts"), "export const scenarioMarker = true;\n");
   await writeFile(path.join(projectRoot, "miniprogram/dev/fixture-transport.ts"), "export const fixtureMarker = true;\n");
 
-  await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+  await build(projectRoot, "production");
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-production/runtime/interfaces.js")), true);
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-production/runtime/scenario.js")), false);
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-production/dev/fixture-transport.js")), false);
 
-  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  await build(projectRoot, "development");
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/runtime/scenario.js")), true);
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-transport.js")), true);
 });
@@ -130,7 +142,7 @@ test("development app invokes its single composition root before source app code
   );
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
-  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  await build(projectRoot, "development");
   const app = await readFile(path.join(projectRoot, "dist/miniprogram-development/app.js"), "utf8");
   const devImport = app.indexOf('require("./dev/bootstrap")');
   const registration = app.indexOf("bootstrapDevelopment");
@@ -144,11 +156,11 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
-test("production app registers HTTP page, booking, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
-  await execFileAsync(process.execPath, [buildScript, "production"], { cwd: projectRoot });
+  await build(projectRoot, "production");
   const app = await readFile(path.join(projectRoot, "dist/miniprogram-production/app.js"), "utf8");
 
   assert.match(app, /venueFallbackUrl/);
@@ -168,16 +180,20 @@ test("production app registers HTTP page, booking, and native payment before sou
   assert.match(app, /registerPaymentCapability/);
   assert.match(app, /productionSessionStorage/);
   assert.match(app, /productionPhone/);
+  assert.match(app, /TencentPoiSearchCapability/);
+  assert.match(app, /productionTencentPoiRequest/);
+  assert.match(app, /registerPoiSearchCapability/);
   assert.equal(app.indexOf("registerPageDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
 test("preview directory and center asset are development-only", async (t) => {
-  await execFileAsync(process.execPath, [buildScript, "development"]);
-  await execFileAsync(process.execPath, [buildScript, "production"]);
+  await build(process.cwd(), "development");
+  await build(process.cwd(), "production");
   const developmentRoot = path.resolve("dist/miniprogram-development");
   const productionRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
@@ -193,7 +209,7 @@ test("preview directory and center asset are development-only", async (t) => {
 });
 
 test("real production build emits all five production routes as native artifacts", async (t) => {
-  await execFileAsync(process.execPath, [buildScript, "production"]);
+  await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
@@ -217,26 +233,43 @@ test("production API URL override changes generated production config only", asy
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await mkdir(path.join(projectRoot, "miniprogram/config"));
   const runtimePath = path.join(projectRoot, "miniprogram/config/runtime.ts");
-  await writeFile(runtimePath, 'export const API_BASE_URL = "https://placeholder.invalid";\n');
+  await writeFile(runtimePath, [
+    'export const API_BASE_URL = "https://placeholder.invalid";',
+    'export const MINIPROGRAM_TENCENT_MAP_KEY = "TENCENT_MAP_KEY_REQUIRED";',
+    "",
+  ].join("\n"));
 
-  await execFileAsync(process.execPath, [buildScript, "production"], {
-    cwd: projectRoot,
-    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com" },
-  });
-  await execFileAsync(process.execPath, [buildScript, "development"], {
-    cwd: projectRoot,
-    env: { ...process.env, MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com" },
-  });
+  await build(projectRoot, "production", { MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com" });
+  await build(projectRoot, "development", { MINIPROGRAM_API_BASE_URL: "https://api.modelstella.com" });
 
   assert.match(
     await readFile(path.join(projectRoot, "dist/miniprogram-production/config/runtime.js"), "utf8"),
     /https:\/\/api\.modelstella\.com/,
   );
   assert.match(
+    await readFile(path.join(projectRoot, "dist/miniprogram-production/config/runtime.js"), "utf8"),
+    new RegExp(TEST_TENCENT_MAP_KEY),
+  );
+  assert.match(
     await readFile(path.join(projectRoot, "dist/miniprogram-development/config/runtime.js"), "utf8"),
     /https:\/\/placeholder\.invalid/,
   );
   assert.match(await readFile(runtimePath, "utf8"), /https:\/\/placeholder\.invalid/);
+  assert.match(await readFile(runtimePath, "utf8"), /TENCENT_MAP_KEY_REQUIRED/);
+});
+
+test("production build requires a format-valid Tencent client key", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+
+  await assert.rejects(
+    build(projectRoot, "production", { MINIPROGRAM_TENCENT_MAP_KEY: "" }),
+    /MINIPROGRAM_TENCENT_MAP_KEY is required/,
+  );
+  await assert.rejects(
+    build(projectRoot, "production", { MINIPROGRAM_TENCENT_MAP_KEY: "TENCENT_MAP_KEY_REQUIRED" }),
+    /MINIPROGRAM_TENCENT_MAP_KEY must be a valid Tencent client key/,
+  );
 });
 
 test("production build rejects a non-HTTP API URL override", async (t) => {
@@ -244,10 +277,7 @@ test("production build rejects a non-HTTP API URL override", async (t) => {
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
   await assert.rejects(
-    execFileAsync(process.execPath, [buildScript, "production"], {
-      cwd: projectRoot,
-      env: { ...process.env, MINIPROGRAM_API_BASE_URL: "file:///tmp/api" },
-    }),
+    build(projectRoot, "production", { MINIPROGRAM_API_BASE_URL: "file:///tmp/api" }),
     /MINIPROGRAM_API_BASE_URL must use http or https/,
   );
 });
@@ -261,6 +291,10 @@ test("built development Scenario runtime is self-contained without URL", async (
     path.join(projectRoot, "miniprogram/services/session-store.ts"),
     "export interface SessionStorage { get(key: string): unknown; set(key: string, value: unknown): void; remove(key: string): void; }\n",
   );
+  await writeFile(
+    path.join(projectRoot, "miniprogram/services/tencent-poi-search.ts"),
+    "export type TencentPoiRequest = (input: { readonly url: string; readonly data: Readonly<Record<string, string>> }) => Promise<unknown>;\n",
+  );
   await mkdir(path.join(projectRoot, "miniprogram/domain"));
   await cp("miniprogram/domain/booking.ts", path.join(projectRoot, "miniprogram/domain/booking.ts"));
   await cp("miniprogram/domain/payment.ts", path.join(projectRoot, "miniprogram/domain/payment.ts"));
@@ -268,7 +302,7 @@ test("built development Scenario runtime is self-contained without URL", async (
   if (existsSync("miniprogram/dev/fixture-data.ts")) {
     await cp("miniprogram/dev/fixture-data.ts", path.join(projectRoot, "miniprogram/dev/fixture-data.ts"));
   }
-  await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot });
+  await build(projectRoot, "development");
   const outputRoot = path.join(projectRoot, "dist/miniprogram-development");
   for (const file of await collectFiles(outputRoot)) {
     const source = await readFile(file, "utf8");
@@ -328,7 +362,7 @@ test("development build rejects Fixture drift from canonical examples", async (t
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await assert.rejects(
-    execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+    build(projectRoot, "development"),
     /Fixture differs from canonical example/,
   );
 });
@@ -340,7 +374,7 @@ test("development build rejects non-normalized Fixture bytes", async (t) => {
   await writeFile(fixturePath, `${await readFile(fixturePath, "utf8")} `);
 
   await assert.rejects(
-    execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+    build(projectRoot, "development"),
     /Fixture is not normalized/,
   );
 });
@@ -351,7 +385,7 @@ test("development build runs full contract validation before generating Fixture 
   await writeFile(path.join(projectRoot, "contracts/openapi.yaml"), "openapi: 3.1.0\ninfo: {}\npaths: {}\n");
 
   await assert.rejects(
-    execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+    build(projectRoot, "development"),
     /Contract validation failed|operation matrix|must have required property/,
   );
   assert.equal(existsSync(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-data.js")), false);
@@ -369,7 +403,7 @@ for (const symlinkedComponent of ["artifacts", "artifacts/ui", "artifacts/ui/fix
     await symlink(externalRoot, componentPath);
 
     await assert.rejects(
-      execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot }),
+      build(projectRoot, "development"),
       /symlink/,
     );
   });

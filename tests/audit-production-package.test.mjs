@@ -23,6 +23,9 @@ for (const token of [
   "模拟支付，不会扣款",
   "createDevelopmentVenueDirectoryDataSource",
   "createSimulatedLocationCapability",
+  "previewPoiSearchCapability",
+  "DEV_ONLY_POI_SEARCH_PREVIEW",
+  "poi-search-preview",
   "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
@@ -165,6 +168,81 @@ test("production audit accepts ordinary production code", async (t) => {
 
   const result = await execFileAsync(process.execPath, [auditScript, packageRoot]);
   assert.match(result.stdout, /0 forbidden paths\/tokens/);
+});
+
+test("production audit rejects a missing Tencent map key config", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  await rm(path.join(packageRoot, "config/runtime.js"));
+
+  await assertAuditRejects(packageRoot, "missing Tencent map key config");
+});
+
+for (const value of ["TENCENT_MAP_KEY_REQUIRED", "invalid-key"]) {
+  test(`production audit rejects Tencent map key value ${value}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await installValidPaymentComposition(packageRoot);
+    await writeFile(
+      path.join(packageRoot, "config/runtime.js"),
+      `exports.MINIPROGRAM_TENCENT_MAP_KEY = ${JSON.stringify(value)};\n`,
+    );
+
+    await assertAuditRejects(packageRoot, "invalid Tencent map key config");
+  });
+}
+
+for (const [description, source] of [
+  ["commented assignment", '// exports.MINIPROGRAM_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";\n'],
+  ["unrelated string", 'const text = \'exports.MINIPROGRAM_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";\';\n'],
+  ["nested dead assignment", 'if (false) { exports.MINIPROGRAM_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF"; }\n'],
+]) {
+  test(`production audit rejects a Tencent key found only in ${description}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await installValidPaymentComposition(packageRoot);
+    await writeFile(path.join(packageRoot, "config/runtime.js"), source);
+
+    await assertAuditRejects(packageRoot, "invalid Tencent map key config");
+  });
+}
+
+const VALID_TENCENT_KEY_ASSIGNMENT = 'exports.MINIPROGRAM_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";';
+for (const [description, mutation] of [
+  ["a parse error", "const = ;"],
+  ["a second key assignment", VALID_TENCENT_KEY_ASSIGNMENT],
+  ["a module.exports replacement", "module.exports = {};"],
+  ["a later key deletion", "delete exports.MINIPROGRAM_TENCENT_MAP_KEY;"],
+  ["an exports rebind", "exports = {};"],
+  [
+    "a defineProperty mutation",
+    'Object.defineProperty(exports, "MINIPROGRAM_TENCENT_MAP_KEY", { value: "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF" });',
+  ],
+]) {
+  test(`production audit rejects a valid Tencent key followed by ${description}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await installValidPaymentComposition(packageRoot);
+    await writeFile(
+      path.join(packageRoot, "config/runtime.js"),
+      `${VALID_TENCENT_KEY_ASSIGNMENT}\n${mutation}\n`,
+    );
+
+    await assertAuditRejects(packageRoot, "invalid Tencent map key config");
+  });
+}
+
+test("production audit rejects a valid Tencent key followed by an invalid overwrite", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "config/runtime.js"),
+    `${VALID_TENCENT_KEY_ASSIGNMENT}\nexports.MINIPROGRAM_TENCENT_MAP_KEY = "invalid-key";\n`,
+  );
+
+  await assertAuditRejects(packageRoot, "invalid Tencent map key config");
 });
 
 test("production audit requires compiled native payment composition", async (t) => {
@@ -322,6 +400,11 @@ async function createProductionPackage() {
       await writeFile(path.join(packageRoot, `${route}.${extension}`), "\n");
     }
   }
+  await mkdir(path.join(packageRoot, "config"));
+  await writeFile(
+    path.join(packageRoot, "config/runtime.js"),
+    'exports.MINIPROGRAM_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";\n',
+  );
 
   return packageRoot;
 }

@@ -26,6 +26,12 @@ updated: 2026-07-22
 
 来源：[网络](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)
 
+## WX-NET-003：腾讯地点搜索发布前置条件
+
+发布前必须在腾讯位置服务控制台创建客户端 Key，并将该 Key 限制为本小程序可使用的应用；在微信公众平台将 `https://apis.map.qq.com` 添加到小程序 `request` 合法域名；同时发布与地点关键词及搜索结果用途相匹配的隐私保护说明。
+
+若没有相应账号或控制台权限，这三项均为外部发布阻塞项，不得回退到开发预览数据。
+
 ## WX-AUTH-001：登录边界
 
 小程序调用微信登录 API 获取临时凭证，发送到 FastAPI；FastAPI 使用服务端保存的 AppSecret 与微信接口交换用户标识，再签发项目自己的会话。客户端不得持有 AppSecret，也不能直接调用需要 AppSecret 的微信服务端接口。

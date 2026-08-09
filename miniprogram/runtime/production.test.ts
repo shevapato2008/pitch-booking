@@ -9,6 +9,7 @@ import {
   productionPayment,
   productionPhone,
   productionSessionStorage,
+  productionTencentPoiRequest,
   productionTransport,
 } from "./production";
 
@@ -97,6 +98,67 @@ test("uses an eight-second GET request and resolves only 2xx response data", asy
     method: "GET",
     timeout: 8000,
   }));
+});
+
+test("sends Tencent POI requests through wx.request without adding request data", async () => {
+  const request = captureRequest();
+  const response = productionTencentPoiRequest({
+    url: "https://apis.map.qq.com/ws/place/v1/suggestion",
+    data: {
+      keyword: "天津站",
+      key: "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF",
+      region: "天津市",
+      output: "json",
+    },
+  });
+  request.options.success?.(requestResult(200, { status: 0, data: [] }));
+
+  await expect(response).resolves.toEqual({ status: 0, data: [] });
+  expect(request.call).toHaveBeenCalledWith({
+    url: "https://apis.map.qq.com/ws/place/v1/suggestion",
+    method: "GET",
+    data: {
+      keyword: "天津站",
+      key: "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF",
+      region: "天津市",
+      output: "json",
+    },
+    timeout: 8000,
+    success: expect.any(Function),
+    fail: expect.any(Function),
+  });
+});
+
+test("rejects Tencent POI request failures for adapter normalization", async () => {
+  const request = captureRequest();
+  const response = productionTencentPoiRequest({
+    url: "https://apis.map.qq.com/ws/place/v1/suggestion",
+    data: {
+      keyword: "天津站",
+      key: "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF",
+      region: "天津市",
+      output: "json",
+    },
+  });
+  request.options.fail?.({ errMsg: "request:fail timeout" } as WechatMiniprogram.RequestFailCallbackErr);
+
+  await expect(response).rejects.toEqual(expect.objectContaining({ errMsg: "request:fail timeout" }));
+});
+
+test("rejects non-success Tencent HTTP responses for adapter normalization", async () => {
+  const request = captureRequest();
+  const response = productionTencentPoiRequest({
+    url: "https://apis.map.qq.com/ws/place/v1/suggestion",
+    data: {
+      keyword: "天津站",
+      key: "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF",
+      region: "天津市",
+      output: "json",
+    },
+  });
+  request.options.success?.(requestResult(503, { status: 0, data: [] }));
+
+  await expect(response).rejects.toEqual(expect.objectContaining({ statusCode: 503 }));
 });
 
 test("exposes successful HTTP status only through the payment-aware transport boundary", async () => {
