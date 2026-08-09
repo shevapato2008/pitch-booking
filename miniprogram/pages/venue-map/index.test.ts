@@ -76,6 +76,16 @@ test("uses bound WXML venue markers on iOS instead of the unreliable custom clus
   expect((globalThis as any).wx.createMapContext).not.toHaveBeenCalled();
 });
 
+test("centers a focused venue marker inside the map area left visible above the sheet", () => {
+  const wxml = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
+  const wxss = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
+
+  expect(wxml).toContain('class="map map--focused-{{sheetSnap}}"');
+  expect(wxss).toContain(".map--focused-collapsed{height:76vh}");
+  expect(wxss).toContain(".map--focused-half{height:48vh}");
+  expect(wxss).toContain(".map--focused-expanded{height:22vh}");
+});
+
 test("onReady does not initialize clustering while the map is absent during loading", () => {
   const target = page();
 

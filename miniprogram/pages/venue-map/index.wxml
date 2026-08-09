@@ -3,7 +3,7 @@
   <view wx:elif="{{errorText}}" class="state">{{errorText}}</view>
   <block wx:else>
     <map wx:if="{{viewport.mode === 'ALL'}}" id="venue-map" class="map" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
-    <map wx:else id="venue-map" class="map" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
+    <map wx:else id="venue-map" class="map map--focused-{{sheetSnap}}" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
     <view class="map-tools">
       <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" committed-query="{{committedQuery}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
       <button class="locate {{locationActive ? 'locate--active' : ''}} {{locationErrorText ? 'locate--error' : ''}}" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我"><view wx:if="{{!locating}}" class="crosshair"><view class="crosshair-dot"></view></view></button>
