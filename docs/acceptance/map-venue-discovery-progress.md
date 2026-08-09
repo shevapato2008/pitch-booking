@@ -20,6 +20,20 @@ no new device evidence is claimed by this integration.
 
 ## Local integrated acceptance
 
+On 2026-08-10 a fresh disposable PostgreSQL 17 instance was migrated through revision `0007` on
+`127.0.0.1:55433` because `55432` was already owned by the unrelated `lobby-ranked-pg` container.
+The standard seed plus reviewed directory load reported `created=4`, `updated=1`, `deleted=0`,
+`unlisted=0`. The live `GET /api/v1/venues/map` response returned the five frozen venues in order,
+exactly one `ONLINE` venue, and the reviewed `district_code` / `district_name` pair on every item.
+The development-HTTP Mini Program build also completed against `http://127.0.0.1:8000` using a
+format-valid test key solely to verify build-time composition; it is not Tencent runtime evidence.
+
+No 2026-08-10 native screenshot is claimed. WeChat DevTools accepted and opened the project, but
+its compiler reported internal `path`/`MaxCodeSize` errors before rendering; after the ignored local
+private configuration was restored, the official automator connection still did not complete within
+the bounded attempt. This local-tooling blocker is recorded without replacing evidence or weakening
+the separate real-key, request-domain, privacy, and physical-device acceptance requirements.
+
 On 2026-07-30 the isolated PostgreSQL 17 stack was migrated to `0006`, seeded with a 31-day online
 inventory window, and loaded from the checked-in directory manifest. The loader reported
 `created=4`, `updated=1`, `deleted=0`, `unlisted=0`. A host FastAPI process at

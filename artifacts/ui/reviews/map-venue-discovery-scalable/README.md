@@ -7,6 +7,8 @@
 - 地图筛选和行政区选项已直接读取解码后的 `districtCode` / `districtName`，不再依赖预览元数据 sidecar。
 - Fixture 开发目录已回落到 checked-in `venue-map` 契约中的 5 家规范场馆；100 家临时生成器、预览 POI 源和预览元数据注册表均已删除。
 - development-HTTP 继续注册真实腾讯 POI adapter；Fixture development 不注册伪造 POI 结果，保持无 key 的 unavailable 能力。
+- 2026-08-10 已用一次性 PostgreSQL 17 将真实 API 迁移至 `0007`：接口按顺序返回 5 家场馆、唯一一家 `ONLINE`，且每项均带审核后的行政区字段；development-HTTP 构建成功。
+- 本次未生成新的原生截图：微信开发者工具在渲染前出现内部 `path` / `MaxCodeSize` 编译错误，补齐忽略的本机私有配置后，官方 automator 仍在限定时间内无法连接。该环境阻塞不会被写成视觉或设备验收通过。
 - 下方使用 100 家临时 Fixture 与预览 POI 的截图和哈希是已确认视觉基线的**历史证据**，不是当前运行数据或真实腾讯真机验收证据。
 - 尚无真实受限腾讯 key、请求域名和微信隐私配置可用于本次提交的物理设备验收，因此不得将代码集成表述为真机验收完成。
 

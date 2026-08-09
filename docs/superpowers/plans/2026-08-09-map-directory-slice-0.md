@@ -353,7 +353,7 @@ Start the local integration stack explicitly:
 ```bash
 docker compose -f deploy/compose.test.yaml up -d --wait postgres
 APP_ENV=development DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test uv run alembic upgrade head
-APP_ENV=development DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test uv run python scripts/seed_demo.py --anchor-date today --days 31
+APP_ENV=development DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test uv run python -m scripts.seed_demo --anchor-date today --days 31
 APP_ENV=development DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test uv run python scripts/load_venue_directory.py --environment development
 APP_ENV=development DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
