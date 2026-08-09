@@ -375,6 +375,14 @@ async function prepareDevelopmentFixtureData(projectRoot) {
     if (fixtureText !== normalized) throw new Error(`Fixture is not normalized: ${name}`);
     data[name] = fixtureValue;
   }
+  const venueDirectoryFixtures = {
+    "venue-map": "venue-map.json",
+    "venue-online-detail": "venue-online-detail.json",
+    "venue-directory-detail": "venue-directory-detail.json",
+  };
+  for (const [name, fileName] of Object.entries(venueDirectoryFixtures)) {
+    data[name] = JSON.parse(await readFile(path.join(contractsDirectory, "examples", fileName), "utf8"));
+  }
   return data;
 }
 

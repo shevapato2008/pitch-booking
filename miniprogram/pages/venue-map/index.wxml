@@ -2,19 +2,14 @@
   <view wx:if="{{loading}}" class="state">正在加载场馆…</view>
   <view wx:elif="{{errorText}}" class="state">{{errorText}}</view>
   <block wx:else>
-    <map wx:if="{{!mapFailed}}" id="venue-map-{{mapKey}}" class="map" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" bindupdated="onMapUpdated" />
-    <view wx:else class="fallback-list">
-      <view class="fallback-head"><view><text class="fallback-title">△ 地图暂时无法加载</text><text class="fallback-copy">列表仍可使用。重试会重新挂载地图，不影响场馆列表。</text></view><button bindtap="onRetryMap">重试地图</button></view>
-      <view wx:for="{{cards}}" wx:key="venueId" class="fallback-card">
-        <text class="fallback-tag">{{item.statusText}}</text><text class="fallback-name">{{item.name}}</text><text class="fallback-address">{{item.address}}</text><text class="fallback-transit">{{item.distanceText || item.transitText}}</text>
-        <button data-venue-id="{{item.venueId}}" bindtap="onVenueAction">{{item.action === 'VIEW_AVAILABILITY' ? '查看可订时段' : '查看场馆详情'}}</button>
-      </view>
-    </view>
-    <view wx:if="{{!mapFailed}}" class="top"><button class="search">搜索球场名称</button><button class="locate" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我">◎</button></view>
-    <view wx:if="{{!mapFailed}}" class="legend"><text class="dot dot--online"></text>在线可预订 <text class="dot dot--directory"></text>场馆目录</view>
-    <view wx:if="{{locationErrorText && !mapFailed}}" class="location-error">{{locationErrorText}}</view>
-    <venue-map-sheet wx:if="{{!mapFailed && !locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
-    <view wx:if="{{locationPermissionDenied && !mapFailed}}" class="permission-sheet">
+    <map wx:if="{{viewport.mode === 'ALL'}}" id="venue-map" class="map" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
+    <map wx:else id="venue-map" class="map" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
+    <view class="top"><view class="search"><input value="{{searchQuery}}" placeholder="搜索球场名称或地址" confirm-type="search" bindinput="onSearchInput" aria-label="搜索球场名称或地址" /><button wx:if="{{searchQuery}}" class="search-clear" bindtap="onSearchClear">清除</button></view><button class="locate" bindtap="onLocateTap" loading="{{locating}}" aria-label="查找离我最近的球场">附近</button></view>
+    <view class="legend"><view><image src="/assets/map-marker-online.png" mode="aspectFit" />可在线订场</view><view><image src="/assets/map-marker-directory.png" mode="aspectFit" />仅提供场馆信息</view></view>
+    <view wx:if="{{searchEmpty}}" class="search-empty">没有匹配的球场，请尝试名称或区域。</view>
+    <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
+    <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" />
+    <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">
       <view class="permission-handle"></view><view class="permission-icon">⌖</view>
       <view class="permission-title">无法使用你的位置</view>
       <view class="permission-copy">你仍可浏览全部 5 个天津球场。仅在你主动点按定位按钮时，我们才会申请位置权限。</view>

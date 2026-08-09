@@ -20,6 +20,11 @@ const fixtureMappings = [
   ["order-payment-exception.json", "order-payment-exception.json"],
   ["order-expired.json", "order-expired.json"],
 ];
+const packagedVenueDirectoryFixtures = [
+  "venue-map",
+  "venue-online-detail",
+  "venue-directory-detail",
+];
 
 test("checked-in Artifact fixtures are normalized canonical contract examples", async () => {
   for (const [canonicalName, fixtureName] of fixtureMappings) {
@@ -47,7 +52,7 @@ test("development build packages the complete closed fixture inventory", async (
     const assert = require("node:assert/strict");
     const { FIXTURE_DATA } = require(${JSON.stringify(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-data.js"))});
     const { packagedFixtureLoader } = require(${JSON.stringify(path.join(projectRoot, "dist/miniprogram-development/dev/fixture-transport.js"))});
-    assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), ${JSON.stringify(fixtureMappings.map(([, name]) => name.slice(0, -5)).sort())});
+    assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), ${JSON.stringify([...fixtureMappings.map(([, name]) => name.slice(0, -5)), ...packagedVenueDirectoryFixtures].sort())});
     assert.equal(Object.isFrozen(FIXTURE_DATA["order-pending"]), true);
     assert.equal(Object.isFrozen(FIXTURE_DATA["order-pending"].contact), true);
     assert.equal(Object.isFrozen(FIXTURE_DATA["order-pending"].venue), true);
@@ -88,11 +93,11 @@ test("hand-written booking preview data has been removed", () => {
   assert.equal(existsSync("miniprogram/dev/booking-fixture.ts"), false);
 });
 
-test("map business fixtures are absent after real HTTP integration", async () => {
+test("map development data stays canonical and out of the visual Fixture inventory", async () => {
   const names = await readdir("artifacts/ui/fixtures");
 
   assert.equal(names.some((name) => /venue-(directory|map)/.test(name)), false);
   assert.equal(fixtureMappings.some(([, name]) => /venue-(directory|map)/.test(name)), false);
-  assert.equal(existsSync("miniprogram/dev/venue-directory-source.ts"), false);
+  assert.equal(existsSync("miniprogram/dev/venue-directory-source.ts"), true);
   assert.equal(existsSync("miniprogram/dev/venue-directory-scenarios.ts"), false);
 });

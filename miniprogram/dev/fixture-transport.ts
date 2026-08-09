@@ -10,6 +10,9 @@ const ALLOWED_FIXTURES = [
   "order-confirmed",
   "order-payment-confirming",
   "order-payment-exception",
+  "venue-map",
+  "venue-online-detail",
+  "venue-directory-detail",
 ] as const;
 export type FixtureName = typeof ALLOWED_FIXTURES[number];
 

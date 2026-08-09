@@ -268,6 +268,7 @@ test("built development Scenario runtime is self-contained without URL", async (
         "venue-ready", "slots-ready", "slots-empty",
         "booking-checkout-ready", "order-pending", "order-expired",
         "order-confirmed", "order-payment-confirming", "order-payment-exception",
+        "venue-map", "venue-online-detail", "venue-directory-detail",
       ];
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
