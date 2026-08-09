@@ -116,8 +116,9 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.match(bootstrap, /registerPoiSearchCapability/);
   assert.match(
     bootstrap,
-    /registerPoiSearchCapability\)\(new tencent_poi_search_1\.TencentPoiSearchCapability[\s\S]*return;[\s\S]*registerPoiSearchCapability\)\(poi_search_preview_1\.previewPoiSearchCapability\)/,
+    /registerPoiSearchCapability\)\(new tencent_poi_search_1\.TencentPoiSearchCapability[\s\S]*return;/,
   );
+  assert.doesNotMatch(bootstrap, /poi_search_preview|previewPoiSearchCapability|DEV_ONLY_POI_SEARCH_PREVIEW/);
   assert.match(
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
     new RegExp(TEST_TENCENT_MAP_KEY),

@@ -49,7 +49,6 @@ describe("venue search presentation", () => {
       center: { kind: "CITY" },
       filters: { onlineOnly: false, districtCode: null },
       selectedVenueId: zulu.id,
-      districtByVenueId: {},
     });
 
     expect(view.visibleVenues.map(({ id }) => id)).toEqual(["zulu", "alpha"]);
@@ -73,7 +72,6 @@ describe("venue search presentation", () => {
       center: { kind: "USER_LOCATION", coordinate: alpha.marker },
       filters: { onlineOnly: false, districtCode: null },
       selectedVenueId: samePlaceB.id,
-      districtByVenueId: {},
     });
 
     expect(view.visibleVenues.map(({ id }) => id)).toEqual(["alpha", "a", "b"]);
@@ -94,7 +92,6 @@ describe("venue search presentation", () => {
       center: { kind: "POI", poi: station },
       filters: { onlineOnly: false, districtCode: null },
       selectedVenueId: null,
-      districtByVenueId: {},
     });
 
     expect(view.visibleVenues.map(({ id }) => id)).toEqual(["zulu", "alpha"]);
@@ -117,7 +114,6 @@ describe("venue search presentation", () => {
       center,
       filters: { onlineOnly: false, districtCode: null },
       selectedVenueId: null,
-      districtByVenueId: {},
       nearbyThresholdMeters: 20_000,
     });
 
@@ -127,20 +123,20 @@ describe("venue search presentation", () => {
     expect(view.visibleVenues).toEqual([alpha]);
   });
 
-  test("filters only from booking mode and supplied district sidecar", () => {
-    const misleadingAddress = venue("address-only", "地址球场", "ONLINE", 39, 117, "天津市和平区测试路");
+  test("filters only from booking mode and decoded venue district fields", () => {
+    const misleadingAddress = {
+      ...venue("address-only", "地址球场", "ONLINE", 39, 117, "天津市和平区测试路"),
+      districtCode: "120103",
+      districtName: "河西区",
+    };
     const view = presentVenueSearch({
       venues: [misleadingAddress, alpha, zulu],
       center: { kind: "CITY" },
       filters: { onlineOnly: true, districtCode: "120103" },
       selectedVenueId: zulu.id,
-      districtByVenueId: {
-        alpha: { code: "120103", name: "河西区" },
-        zulu: { code: "120103", name: "河西区" },
-      },
     });
 
-    expect(view.visibleVenues.map(({ id }) => id)).toEqual(["alpha"]);
+    expect(view.visibleVenues.map(({ id }) => id)).toEqual(["address-only"]);
     expect(view.selectedVenueId).toBeNull();
   });
 });
@@ -168,7 +164,6 @@ describe("search-center viewport", () => {
       center,
       filters: { onlineOnly: false, districtCode: null },
       selectedVenueId: null,
-      districtByVenueId: {},
     }).searchCenterMarker).toMatchObject({ latitude: station.latitude, longitude: station.longitude, joinCluster: false });
   });
 });

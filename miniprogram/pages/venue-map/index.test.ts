@@ -9,7 +9,6 @@ import { calculateSearchCenterViewport, type SearchCenterPoi } from "../../prese
 import { registerLocationCapability } from "../../services/location";
 import { registerPoiSearchCapability } from "../../services/poi-search";
 import { registerVenueDirectoryDataSource } from "../../services/venue-directory";
-import { registerVenueMapPreviewMetadata } from "../../services/venue-map-preview";
 
 type RuntimePage = Record<string, any> & {
   data: Record<string, any>;
@@ -50,10 +49,6 @@ const call = (target: RuntimePage, method: string, ...args: unknown[]) => target
 
 beforeEach(() => {
   registerVenueDirectoryDataSource(source);
-  registerVenueMapPreviewMetadata({ districtByVenueId: {
-    [venues[0].id]: { code: "120111", name: "西青区" },
-    [venues[1].id]: { code: "120104", name: "南开区" },
-  } });
   registerLocationCapability({
     async getLocation() { return { coordinateSystem: "GCJ02", latitude: 39.0842, longitude: 117.2009 }; },
     async openSetting() {},
@@ -365,7 +360,7 @@ test("projects exact approved center-note copy for all committed centers", async
   expect(target.data.centerNote).toBe("天津站附近 · 可更换搜索中心");
 });
 
-test("online and district filters use the sidecar and never auto-select the first result", async () => {
+test("online and district filters use decoded venue fields and never auto-select the first result", async () => {
   const target = page();
   await call(target, "onLoad", { venueId: venues[1].id });
   call(target, "onOnlineOnlyChange", { detail: { value: true } });

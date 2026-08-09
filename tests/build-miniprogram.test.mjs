@@ -191,21 +191,32 @@ test("production app registers HTTP data, Tencent POI, and native payment before
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
-test("preview directory and center asset are development-only", async (t) => {
+test("temporary map previews are absent while the approved center asset remains", async (t) => {
   await build(process.cwd(), "development");
   await build(process.cwd(), "production");
   const developmentRoot = path.resolve("dist/miniprogram-development");
   const productionRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
 
-  assert.equal(existsSync(path.join(developmentRoot, "dev/venue-map-preview-fixture.js")), true);
+  for (const relativePath of [
+    "services/venue-map-preview.js",
+    "dev/venue-map-preview-fixture.js",
+    "dev/poi-search-preview.js",
+  ]) {
+    assert.equal(existsSync(path.join(developmentRoot, relativePath)), false, relativePath);
+    assert.equal(existsSync(path.join(productionRoot, relativePath)), false, relativePath);
+  }
   assert.equal(existsSync(path.join(developmentRoot, "assets/map-search-center.png")), true);
   assert.equal(existsSync(path.join(productionRoot, "assets/map-search-center.png")), true);
+  const developmentText = (await Promise.all((await collectFiles(developmentRoot))
+    .filter((file) => !file.endsWith(".png"))
+    .map((file) => readFile(file, "utf8")))).join("\n");
   const productionText = (await Promise.all((await collectFiles(productionRoot))
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");
-  assert.doesNotMatch(productionText, /venue-map-preview-fixture|DEV_ONLY_/);
-  assert.equal(existsSync(path.join(productionRoot, "dev/venue-map-preview-fixture.js")), false);
+  const previewSymbols = /VenueDistrictSidecar|venue-map-preview|poi-search-preview|DEV_ONLY_POI_SEARCH_PREVIEW|previewPoiSearchCapability/;
+  assert.doesNotMatch(developmentText, previewSymbols);
+  assert.doesNotMatch(productionText, previewSymbols);
 });
 
 test("real production build emits all five production routes as native artifacts", async (t) => {

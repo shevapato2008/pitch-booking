@@ -16,7 +16,6 @@ import {
 import { getLocationCapability } from "../../services/location";
 import { getPoiSearchCapability, type PoiSearchResult } from "../../services/poi-search";
 import { getVenueDirectoryDataSource } from "../../services/venue-directory";
-import { getVenueMapPreviewMetadata } from "../../services/venue-map-preview";
 
 type SheetSnap = "collapsed" | "half" | "expanded";
 type PoiSuggestionState = "idle" | "loading" | "ready" | "empty" | "error";
@@ -191,13 +190,11 @@ Page({
   },
 
   applySearchPresentation(center: SearchCenter, filters: VenueMapFilters, selectedVenueId: string | null) {
-    const districtByVenueId = getVenueMapPreviewMetadata().districtByVenueId;
     const search = presentVenueSearch({
       venues: this.data.venues,
       center,
       filters,
       selectedVenueId,
-      districtByVenueId,
     });
     const map = toVenueMapPresentation(
       search.visibleVenues,
@@ -238,10 +235,9 @@ Page({
     const districtOptions: DistrictOption[] = [{ code: "", name: "全部行政区" }];
     const seenDistrictCodes = new Set<string>();
     for (const venue of this.data.venues) {
-      const district = districtByVenueId[venue.id];
-      if (district && !seenDistrictCodes.has(district.code)) {
-        seenDistrictCodes.add(district.code);
-        districtOptions.push(district);
+      if (!seenDistrictCodes.has(venue.districtCode)) {
+        seenDistrictCodes.add(venue.districtCode);
+        districtOptions.push({ code: venue.districtCode, name: venue.districtName });
       }
     }
     const selectedDistrict = districtOptions.find(({ code }) => code === filters.districtCode);

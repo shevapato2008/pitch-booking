@@ -1,6 +1,14 @@
 # 可扩展地图场馆目录视觉证据
 
-状态：视觉已确认（2026-08-09）；真实行政区数据与腾讯 POI 集成仍待完成。
+状态：视觉已确认（2026-08-09）；真实行政区字段/腾讯 POI 代码集成及临时预览删除已完成（2026-08-10）。真实腾讯真机验收仍受外部配置阻塞。
+
+## 2026-08-10 集成状态
+
+- 地图筛选和行政区选项已直接读取解码后的 `districtCode` / `districtName`，不再依赖预览元数据 sidecar。
+- Fixture 开发目录已回落到 checked-in `venue-map` 契约中的 5 家规范场馆；100 家临时生成器、预览 POI 源和预览元数据注册表均已删除。
+- development-HTTP 继续注册真实腾讯 POI adapter；Fixture development 不注册伪造 POI 结果，保持无 key 的 unavailable 能力。
+- 下方使用 100 家临时 Fixture 与预览 POI 的截图和哈希是已确认视觉基线的**历史证据**，不是当前运行数据或真实腾讯真机验收证据。
+- 尚无真实受限腾讯 key、请求域名和微信隐私配置可用于本次提交的物理设备验收，因此不得将代码集成表述为真机验收完成。
 
 ## 用户确认与冻结边界
 
@@ -8,7 +16,7 @@
 - `city`、`online-selected`、`directory-selected`、`long-content` 以最新 **390×753** 微信页面内容区证据冻结当前组件样式。
 - `nearby`、`poi` 以既有 **375×812** 与 **390×844** 成对证据冻结搜索中心的构图和状态语义；它们采集于最新标记与卡片精修前，不据此回退现有组件样式。
 - 本次确认不授权新布局、新控件或视觉改版。后续前端仅做真实字段读取、腾讯 POI 能力注册及临时 Fixture 删除所需的最小集成改动。
-- 真实 API 行政区字段、腾讯 POI、开发者工具真机态和 Fixture 删除仍待完成，不能由本视觉确认替代。
+- 真实 API 行政区字段读取、腾讯 POI adapter 注册和临时 Fixture 删除已完成；开发者工具/物理设备上的真实腾讯验收仍待外部 key、域名和隐私配置就绪，不能由本视觉确认替代。
 
 ## 参考图采集元数据
 
@@ -42,7 +50,7 @@
 - 基础库：3.17.0
 - 操作系统：macOS 26.5.2（25F84）
 - 页面路由：`pages/venue-map/index`
-- 运行模式：development，使用 `DEV_ONLY_VENUE_MAP_PREVIEW_FIXTURE`（100 条）与 `DEV_ONLY_POI_SEARCH_PREVIEW`
+- 历史运行模式：development，当时使用 `DEV_ONLY_VENUE_MAP_PREVIEW_FIXTURE`（100 条）与 `DEV_ONLY_POI_SEARCH_PREVIEW`；两者现已删除
 - 生成基线：`a6ea3abf3d288d07e2576b1f24f0dc84b214a844`
 - 逻辑 viewport：375×812、390×844
 - 开发者工具原始导出：固定 DPR 2（750×1624、780×1688）

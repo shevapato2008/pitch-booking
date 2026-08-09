@@ -1,6 +1,6 @@
 # Map venue discovery delivery progress
 
-Last updated: 2026-07-30 (Asia/Shanghai)
+Last updated: 2026-08-10 (Asia/Shanghai)
 
 ## Current checkpoint
 
@@ -10,6 +10,13 @@ HTTP source, native location boundary, and `ONLINE` booking guards are now imple
 The executable map business Fixture has been removed. This
 is not final production content approval: production loading requires a short-lived approval file
 bound to the exact manifest bytes, literal `production` environment, and deployed app revision.
+
+The scalable map UI now reads administrative filters directly from decoded map-contract district
+fields. Fixture development uses the five canonical checked-in venues, and the temporary 100-venue
+generator, preview POI source, and preview metadata registry are deleted. Development-HTTP remains
+composed with the real Tencent adapter. Real Tencent physical-device acceptance is still externally
+blocked pending a real restricted key plus matching request-domain and WeChat privacy configuration;
+no new device evidence is claimed by this integration.
 
 ## Local integrated acceptance
 
