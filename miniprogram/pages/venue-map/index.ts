@@ -20,7 +20,7 @@ import { getVenueMapPreviewMetadata } from "../../services/venue-map-preview";
 
 type SheetSnap = "collapsed" | "half" | "expanded";
 type PoiSuggestionState = "idle" | "loading" | "ready" | "empty" | "error";
-type RuntimeVenueMarker = VenueMapMarkerViewModel & {
+type RuntimeVenueMarker = Omit<VenueMapMarkerViewModel, "label"> & {
   readonly id: number;
   readonly joinCluster: boolean;
   readonly width: number;
@@ -221,7 +221,11 @@ Page({
       }
       markerVenueIdByRuntimeId[id] = marker.venueId;
       return {
-        ...marker,
+        venueId: marker.venueId,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        iconPath: marker.iconPath,
+        selected: marker.selected,
         id,
         joinCluster: !marker.selected,
         width: marker.selected ? 36 : 32,

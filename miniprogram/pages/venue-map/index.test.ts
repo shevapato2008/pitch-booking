@@ -215,6 +215,16 @@ test("projects ordinary and selected venue marker assets at their approved dimen
   });
 });
 
+test("does not pass the presentation-only string label into native map markers", async () => {
+  const target = page();
+  await call(target, "onLoad", {});
+
+  expect(target.data.markers).not.toHaveLength(0);
+  for (const marker of target.data.markers) {
+    expect(marker).not.toHaveProperty("label");
+  }
+});
+
 test("clusters ordinary venue markers but keeps the selected venue marker independent", async () => {
   const target = page();
   await call(target, "onLoad", {});
