@@ -46,8 +46,15 @@ export function createDevelopmentVenueDirectoryDataSource(
       const mapEntry = previewEntry ?? decodeVenueMap(loader.load("venue-map"))
         .find((venue) => venue.id === venueId);
       if (mapEntry?.bookingMode === "DIRECTORY_ONLY") {
+        const {
+          districtCode: _districtCode,
+          districtName: _districtName,
+          ...detailEntry
+        } = mapEntry;
+        void _districtCode;
+        void _districtName;
         return {
-          ...mapEntry,
+          ...detailEntry,
           slug: mapEntry.slug ?? `venue-${mapEntry.id}`,
           description: "",
           navigation: mapEntry.navigation ?? {

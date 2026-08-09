@@ -25,6 +25,13 @@ EXPECTED_ORDER = [
     "80532433-8038-5ee5-9963-3e6282aa4abd",
     "c0372328-6fa4-585a-b951-3324925763d6",
 ]
+EXPECTED_DISTRICTS = [
+    ("120111", "西青区"),
+    ("120104", "南开区"),
+    ("120105", "河北区"),
+    ("120101", "和平区"),
+    ("120110", "东丽区"),
+]
 
 
 @pytest.fixture
@@ -79,10 +86,16 @@ def test_map_is_strict_stably_ordered_and_excludes_internal_evidence(
         "DIRECTORY_ONLY",
         "DIRECTORY_ONLY",
     ]
+    assert [
+        (venue["district_code"], venue["district_name"])
+        for venue in body["venues"]
+    ] == EXPECTED_DISTRICTS
     expected_fields = {
         "id",
         "name",
         "address",
+        "district_code",
+        "district_name",
         "latitude",
         "longitude",
         "booking_mode",
@@ -151,6 +164,10 @@ def test_online_and_directory_details_are_closed_discriminated_variants(
     assert directory_body["images"] == []
     assert directory_body["facilities"] == []
     assert directory_body["pitch_types"] == ["FIVE_A_SIDE"]
+    assert "district_code" not in online_body
+    assert "district_name" not in online_body
+    assert "district_code" not in directory_body
+    assert "district_name" not in directory_body
     assert set(directory_body["nearest_transit"][0]) == {
         "kind",
         "name",
@@ -195,6 +212,8 @@ def test_map_service_rejects_a_primary_that_is_not_online() -> None:
                     name="Invalid",
                     description="",
                     address="Invalid",
+                    district_code="120111",
+                    district_name="西青区",
                     latitude=39.0,
                     longitude=117.0,
                     booking_mode=BookingMode.DIRECTORY_ONLY,

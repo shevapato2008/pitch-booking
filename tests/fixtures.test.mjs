@@ -127,7 +127,11 @@ test("temporary scalable map preview is deterministic, complete, and explicitly 
     assert.equal(first.venues.some(({ bookingMode }) => bookingMode === "DIRECTORY_ONLY"), true);
     assert.equal(first.venues[99].name, "天津奥林匹克中心五人制足球场");
     assert.equal(first.venues[99].address, "天津市河北区中山北路增1号");
-    assert.equal(first.venues.some((venue) => "districtCode" in venue || "districtName" in venue), false);
+    assert.equal(first.venues.every(({ id, districtCode, districtName }) => {
+      const district = first.districtByVenueId[id];
+      return /^[0-9]{6}$/.test(districtCode) && districtName.length > 0
+        && districtCode === district.code && districtName === district.name;
+    }), true);
   `;
   await execFileAsync(process.execPath, ["--input-type=commonjs", "--eval", verification]);
 

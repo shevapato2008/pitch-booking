@@ -68,6 +68,8 @@ class VenueMapItemResponse(ClosedModel):
     id: uuid.UUID
     name: str = Field(min_length=1)
     address: str = Field(min_length=1)
+    district_code: str = Field(pattern=r"^[0-9]{6}$")
+    district_name: str = Field(min_length=1)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     booking_mode: Literal["ONLINE", "DIRECTORY_ONLY"]

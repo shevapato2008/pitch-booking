@@ -113,6 +113,8 @@ def test_seed_writes_all_directory_era_venue_fields_explicitly(
     venue_values = next(values for model, values in captured if model is Venue)
     assert venue_values["booking_mode"] == BookingMode.ONLINE
     assert venue_values["navigation_poi_name"] == "天津市渤海元丰科技有限公司-南门"
+    assert venue_values["district_code"] == "120111"
+    assert venue_values["district_name"] == "西青区"
     assert venue_values["navigation_latitude"] == 39.000157
     assert venue_values["navigation_longitude"] == 117.212208
     assert venue_values["sort_order"] == 0

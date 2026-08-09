@@ -70,6 +70,8 @@ const online: VenueMapEntry = {
   sortOrder: 0,
   name: "渤海元丰足球场",
   address: "天津市西青区利达路",
+  districtCode: "120111",
+  districtName: "西青区",
   bookingMode: "ONLINE",
   marker: { coordinateSystem: "GCJ02", latitude: 39.000867, longitude: 117.212396 },
   navigation: {
@@ -88,6 +90,8 @@ const directory: VenueMapEntry = {
   sortOrder: 1,
   name: "天津奥林匹克中心五人制足球场",
   address: "天津市南开区宾水西道1号",
+  districtCode: "120104",
+  districtName: "南开区",
   bookingMode: "DIRECTORY_ONLY",
   marker: { coordinateSystem: "GCJ02", latitude: 39.074524, longitude: 117.176641 },
   navigation: {

@@ -18,6 +18,8 @@ const venue = (
   id,
   name,
   address,
+  districtCode: bookingMode === "ONLINE" ? "120111" : "120104",
+  districtName: bookingMode === "ONLINE" ? "西青区" : "南开区",
   bookingMode,
   marker: { coordinateSystem: "GCJ02", latitude, longitude },
   pitchTypes: [],

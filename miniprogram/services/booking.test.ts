@@ -75,6 +75,8 @@ describe("booking data source registry", () => {
       bookingMode: "DIRECTORY_ONLY",
     });
     expect(directoryDetail).not.toHaveProperty("availabilityWindow");
+    expect(directoryDetail).not.toHaveProperty("districtCode");
+    expect(directoryDetail).not.toHaveProperty("districtName");
   });
 });
 

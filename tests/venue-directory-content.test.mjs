@@ -13,6 +13,14 @@ const EXPECTED_IDENTITIES = [
   ['e03d801d-1254-5c62-9a16-9a8800280162', 'tianjin-olympic-center-five-a-side-football-pitch'],
 ];
 
+const EXPECTED_DISTRICTS_IN_ORDER = [
+  ['7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f', '120111', '西青区'],
+  ['e03d801d-1254-5c62-9a16-9a8800280162', '120104', '南开区'],
+  ['2a9640a5-f625-5ad8-9cb9-3440acb70967', '120105', '河北区'],
+  ['80532433-8038-5ee5-9963-3e6282aa4abd', '120101', '和平区'],
+  ['c0372328-6fa4-585a-b951-3324925763d6', '120110', '东丽区'],
+];
+
 const FORBIDDEN_DIRECTORY_KEYS = [
   'availability_window',
   'bookable',
@@ -127,6 +135,14 @@ test('venue directory satisfies its closed JSON schema', () => {
   insecureSupportingSource.venues[0].evidence.navigation.supporting_source_urls[0] =
     'http://example.com/evidence';
   assert.equal(validate(insecureSupportingSource), false, 'supporting evidence URLs must use HTTPS');
+
+  const invalidDistrictCode = structuredClone(manifest);
+  invalidDistrictCode.venues[0].district_code = '12011';
+  assert.equal(validate(invalidDistrictCode), false, 'district code must be exactly six digits');
+
+  const emptyDistrictName = structuredClone(manifest);
+  emptyDistrictName.venues[0].district_name = '';
+  assert.equal(validate(emptyDistrictName), false, 'district name must be nonempty');
 });
 
 test('venue identities and booking modes are frozen', () => {
@@ -152,6 +168,13 @@ test('venue identities and booking modes are frozen', () => {
       slug: 'bohai-yuanfeng-football-pitch',
     },
   ]);
+});
+
+test('reviewed districts are frozen to immutable venue identities and API order', () => {
+  assert.deepEqual(
+    manifest.venues.map(({ id, district_code, district_name }) => [id, district_code, district_name]),
+    EXPECTED_DISTRICTS_IN_ORDER,
+  );
 });
 
 test('all coordinates, transit identities, lines, and evidence are verified', () => {

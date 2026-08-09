@@ -155,6 +155,8 @@ def _venue_values(item: dict[str, Any]) -> dict[str, Any]:
         "name": item["name"],
         "description": item["description"],
         "address": item["address"],
+        "district_code": item["district_code"],
+        "district_name": item["district_name"],
         "latitude": marker["latitude"],
         "longitude": marker["longitude"],
         "booking_mode": BookingMode(item["booking_mode"]),

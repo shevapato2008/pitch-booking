@@ -21,6 +21,8 @@ def venue(**overrides: object) -> Venue:
         "timezone": "Asia/Shanghai",
         "business_hours_text": "每日 09:00–23:00",
         "address": "上海市浦东新区锦绣东路 2777 弄 18 号",
+        "district_code": "120111",
+        "district_name": "西青区",
         "parking_text": "前 30 分钟免费",
         "phone": "+86-21-5899-2608",
         "refund_policy_text": "开场前 24 小时可取消",
@@ -140,6 +142,8 @@ def test_lock_fields_correlate_with_status(
     [
         lambda: venue(latitude=91),
         lambda: venue(longitude=181),
+        lambda: venue(district_code="12011"),
+        lambda: venue(district_name=""),
         lambda: VenueFacility(venue=venue(), code="LIGHTING", name="照明", sort_order=-1),
     ],
 )

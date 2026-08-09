@@ -80,6 +80,8 @@ def run_seed(
                 "timezone": "Asia/Shanghai",
                 "business_hours_text": "每日 09:00–23:00",
                 "address": "天津市西青区利达路",
+                "district_code": "120111",
+                "district_name": "西青区",
                 "parking_text": "测试停车信息",
                 "phone": "+86-21-5899-2608",
                 "refund_policy_text": "测试退款规则",

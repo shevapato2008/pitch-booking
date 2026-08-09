@@ -165,6 +165,8 @@ def _seed_online(session: Session) -> None:
             timezone="Asia/Shanghai",
             business_hours_text="09:00-23:00",
             address="天津市西青区利达路",
+            district_code="120111",
+            district_name="西青区",
             parking_text="测试停车信息",
             phone="+86-22-0000-0000",
             refund_policy_text="测试退款规则",
@@ -216,6 +218,17 @@ def test_load_is_transactional_idempotent_and_unlists_missing_entries(
         assert session.scalar(select(func.count()).select_from(Venue)) == 5
         assert session.scalar(select(func.count()).select_from(VenueTransitStop)) == 1
         assert session.scalar(select(func.count()).select_from(Pitch)) == 0
+        assert [
+            (venue.id, venue.district_code, venue.district_name)
+            for venue in session.scalars(select(Venue).order_by(Venue.sort_order))
+        ] == [
+            (
+                uuid.UUID(cast(str, item["id"])),
+                item["district_code"],
+                item["district_name"],
+            )
+            for item in cast(list[dict[str, object]], _manifest()["venues"])
+        ]
 
         reduced = _manifest()
         reduced_venues = cast(list[dict[str, object]], reduced["venues"])
@@ -247,6 +260,8 @@ def test_loader_rejects_identity_collision_and_rolls_back_all_changes(
             name="Collision",
             description="",
             address="Collision",
+            district_code="120105",
+            district_name="河北区",
             latitude=39.0,
             longitude=117.0,
             booking_mode=BookingMode.DIRECTORY_ONLY,

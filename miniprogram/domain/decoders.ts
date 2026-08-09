@@ -429,7 +429,7 @@ function decodeDirectoryPitchTypes(value: unknown, path: string): DirectoryPitch
     enumAt<DirectoryPitchType>(pitchType, DIRECTORY_PITCH_TYPES, `${path}[${index}]`));
 }
 
-function directoryEntry(object: Record<string, unknown>, coordinateSystem: "GCJ02", path: string): VenueMapEntry {
+function directoryEntryCore(object: Record<string, unknown>, coordinateSystem: "GCJ02", path: string) {
   return {
     id: uuidAt(object.id, `${path}.id`),
     name: stringAt(object.name, `${path}.name`),
@@ -448,9 +448,31 @@ function directoryEntry(object: Record<string, unknown>, coordinateSystem: "GCJ0
   };
 }
 
+const DISTRICT_CODE = /^[0-9]{6}$/;
+
+function districtCodeAt(value: unknown, path: string): string {
+  const decoded = stringAt(value, path);
+  if (!DISTRICT_CODE.test(decoded)) invalid(path);
+  return decoded;
+}
+
+function directoryMapEntry(
+  object: Record<string, unknown>,
+  coordinateSystem: "GCJ02",
+  path: string,
+): VenueMapEntry {
+  const core = directoryEntryCore(object, coordinateSystem, path);
+  return {
+    ...core,
+    bookingMode: core.bookingMode,
+    districtCode: districtCodeAt(object.district_code, `${path}.district_code`),
+    districtName: stringAt(object.district_name, `${path}.district_name`),
+  };
+}
+
 const MAP_ITEM_KEYS = [
-  "id", "name", "address", "latitude", "longitude", "booking_mode", "pitch_types",
-  "cover_image", "nearest_transit", "content_verified_at",
+  "id", "name", "address", "district_code", "district_name", "latitude", "longitude",
+  "booking_mode", "pitch_types", "cover_image", "nearest_transit", "content_verified_at",
 ] as const;
 
 export function decodeVenueMap(value: unknown): VenueMapEntry[] {
@@ -458,7 +480,7 @@ export function decodeVenueMap(value: unknown): VenueMapEntry[] {
   const coordinateSystem = enumAt(object.coordinate_system, ["GCJ02"] as const, "$.coordinate_system");
   return arrayAt(object.venues, "$.venues", 1).map((venue, index) => {
     const path = `$.venues[${index}]`;
-    return directoryEntry(exactObject(venue, MAP_ITEM_KEYS, path), coordinateSystem, path);
+    return directoryMapEntry(exactObject(venue, MAP_ITEM_KEYS, path), coordinateSystem, path);
   });
 }
 
@@ -476,7 +498,7 @@ export function decodeVenueDetail(value: unknown): VenueDetail {
     : ["business_hours_text", "parking_text", "images", "facilities"];
   const object = exactObject(value, [...DETAIL_COMMON_KEYS, ...variantKeys], "$");
   const coordinateSystem = enumAt(object.coordinate_system, ["GCJ02"] as const, "$.coordinate_system");
-  const base = directoryEntry(object, coordinateSystem, "$");
+  const base = directoryEntryCore(object, coordinateSystem, "$");
   const detail = {
     ...base,
     slug: stringAt(object.slug, "$.slug"),
