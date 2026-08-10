@@ -3,9 +3,9 @@
 ## Status
 
 - Target viewport: 375 × 812.
-- Reference Artifact visual approval: pending.
-- Native Fixture visual approval: not started.
-- Production disabled; this is a browser Reference only and has no production route, Fixture, contract, backend, migration, or real save.
+- Reference Artifact visual approval: approved on 2026-08-11.
+- Native Fixture visual approval: pending.
+- Production disabled; the isolated Native Fixture route has no production route, contract, backend, migration, or real save.
 - Fixture deletion condition: `delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit`.
 
 ## Capture record
@@ -54,7 +54,7 @@
 | `save-result-unknown` | [save-result-unknown-reference-375x812.png](save-result-unknown-reference-375x812.png) · [live](../../references/venue-pitch-setup.html?state=save-result-unknown) | not started | not started | not started | not started | pending |
 | `unsaved-leave-confirm` | [unsaved-leave-confirm-reference-375x812.png](unsaved-leave-confirm-reference-375x812.png) · [live](../../references/venue-pitch-setup.html?state=unsaved-leave-confirm) | not started | not started | not started | not started | pending |
 
-## Reference observations (visual approval pending)
+## Reference observations (visual approval approved)
 
 ### Composition
 
@@ -82,6 +82,6 @@ State copy distinguishes zero configuration, inactive-only recovery, local page 
 
 ### State semantics
 
-Loading and unknown-result states disable duplicate saves; load/save failures expose recovery without relabeling the state as empty; inactive-only exposes `恢复使用`; the custom player count appears inline in the same editor; delete/deactivate/reactivate outcomes remain page drafts; and all approval plus native/production gates remain pending or not started.
+Loading and unknown-result states disable duplicate saves; load/save failures expose recovery without relabeling the state as empty; inactive-only exposes `恢复使用`; the custom player count appears inline in the same editor; delete/deactivate/reactivate outcomes remain page drafts; and native/production gates remain pending or disabled.
 
-Reference screenshots are present, but no native implementation, side-by-side, overlay, or difference screenshots are claimed; user approval remains pending.
+Reference screenshots are approved; no Native Fixture visual approval, side-by-side, overlay, or difference screenshots are claimed yet.

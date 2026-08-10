@@ -77,7 +77,7 @@ const sharedFields = {
   target_viewport: { width: 375, height: 812 },
   production_enabled: false,
   entry: "authorized-deep-link-only",
-  reference_gate: "pending-user-visual-approval",
+  reference_gate: "reference-approved-native-pending",
   review_slots: ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"],
   venue_scope: sharedVenueScope,
   first_save_handoff: sharedFirstSaveHandoff,
@@ -102,7 +102,7 @@ const reviewObservationHeadings = [
   "Icon assets", "Copy", "State semantics",
 ];
 
-const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath }) => {
+const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath, nativeApproval }) => {
   mustExist(reviewPath);
   mustExist(boardPath);
   const review = read(reviewPath);
@@ -127,8 +127,8 @@ const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath }) 
     assert.notEqual(observation, null, `${reviewPath} must populate ${heading}`);
     assert.doesNotMatch(observation[1], /^Pending\b/i, `${heading} must contain an observation, not a placeholder`);
   }
-  assert.match(review, /Reference Artifact visual approval:\s*pending/);
-  assert.match(review, /Native Fixture visual approval:\s*not started/);
+  assert.match(review, /Reference Artifact visual approval:\s*approved on 2026-08-11/);
+  assert.match(review, new RegExp(`Native Fixture visual approval:\\s*${escape(nativeApproval)}`));
   assert.match(review, /Production disabled/);
 };
 
@@ -607,15 +607,15 @@ test("physical pitch setup source includes the complete required copy and live a
   assert.match(controller, /return violations;/);
 });
 
-test("physical pitch setup review reserves every same-viewport evidence slot without claiming implementation", () => {
+test("physical pitch setup review records Reference approval while Native Fixture approval remains pending", () => {
   mustExist(setupReviewPath);
   const review = read(setupReviewPath);
   const rows = [...review.matchAll(/^\| `([^`]+)` \|/gm)].map(([, state]) => state);
 
   assert.deepEqual(rows, setupStates);
   assert.match(review, /Target viewport:\s*375\s*[×x]\s*812/);
-  assert.match(review, /Reference Artifact visual approval:\s*pending/);
-  assert.match(review, /Native Fixture visual approval:\s*not started/);
+  assert.match(review, /Reference Artifact visual approval:\s*approved on 2026-08-11/);
+  assert.match(review, /Native Fixture visual approval:\s*pending/);
   assert.match(review, /Production disabled/);
   assert.match(review, /docs\/superpowers\/specs\/2026-08-10-venue-pitch-setup-and-inventory-revision-design\.md/);
   assert.match(review, /artifacts\/ui\/screen-manifest\/venue-pitch-setup\.yaml/);
@@ -866,14 +866,14 @@ test("inventory v2 live audit excludes nodes fully clipped by the canvas or a sc
   assert.match(iconAudit, /if \(!isVisible\(icon\)\) return;[\s\S]*icon-box-outside-control[\s\S]*icon-outside-canvas/);
 });
 
-test("inventory v2 review reserves all state evidence without claiming implementation or approval", () => {
+test("inventory v2 review records Reference approval without starting Native Fixture implementation", () => {
   mustExist(inventoryReviewPath);
   const review = read(inventoryReviewPath);
   const rows = [...review.matchAll(/^\| `([^`]+)` \|/gm)].map(([, state]) => state);
 
   assert.deepEqual(rows, inventoryStates);
   assert.match(review, /Target viewport:\s*375\s*[×x]\s*812/);
-  assert.match(review, /Reference Artifact visual approval:\s*pending/);
+  assert.match(review, /Reference Artifact visual approval:\s*approved on 2026-08-11/);
   assert.match(review, /Native Fixture visual approval:\s*not started/);
   assert.match(review, /Production disabled/);
   assert.match(review, /historical and superseded/);
@@ -900,12 +900,14 @@ test("venue operations reviews contain complete audited 375 by 812 Reference evi
     reviewRoot: "artifacts/ui/reviews/venue-pitch-setup",
     reviewPath: setupReviewPath,
     boardPath: setupReviewBoardPath,
+    nativeApproval: "pending",
   });
   assertReferenceEvidence({
     states: inventoryStates,
     reviewRoot: "artifacts/ui/reviews/venue-inventory-workbench-v2",
     reviewPath: inventoryReviewPath,
     boardPath: inventoryReviewBoardPath,
+    nativeApproval: "not started",
   });
 });
 

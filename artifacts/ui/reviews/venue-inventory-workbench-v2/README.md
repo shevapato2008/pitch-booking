@@ -3,7 +3,7 @@
 ## Status
 
 - Target viewport: 375 × 812.
-- Reference Artifact visual approval: pending.
+- Reference Artifact visual approval: approved on 2026-08-11.
 - Native Fixture visual approval: not started.
 - Production disabled; this is a browser Reference only and has no production route, Fixture, contract, backend, migration, or real save.
 - Fixture deletion condition: `delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit`.
@@ -52,7 +52,7 @@
 | `concurrent-change` | [concurrent-change-reference-375x812.png](concurrent-change-reference-375x812.png) · [live](../../references/venue-inventory-workbench-v2.html?state=concurrent-change) | not started | not started | not started | not started | pending |
 | `permission-expired` | [permission-expired-reference-375x812.png](permission-expired-reference-375x812.png) · [live](../../references/venue-inventory-workbench-v2.html?state=permission-expired) | not started | not started | not started | not started | pending |
 
-## Reference observations (visual approval pending)
+## Reference observations (visual approval approved)
 
 ### Composition
 
@@ -80,6 +80,6 @@ Copy names the selected date and physical pitch, keeps load failures distinct fr
 
 ### State semantics
 
-Pitch and date refresh states retain the complementary selection; their errors retain the attempted selection and expose retry. Calendar dates outside 2026-08-10 through 2026-08-23 are visibly disabled, `cross-week-ready` shows Aug 17–23, error sheets retain draft inputs, and `permission-expired` keeps readable context while disabling write controls. Approval, native, and production gates remain pending or not started.
+Pitch and date refresh states retain the complementary selection; their errors retain the attempted selection and expose retry. Calendar dates outside 2026-08-10 through 2026-08-23 are visibly disabled, `cross-week-ready` shows Aug 17–23, error sheets retain draft inputs, and `permission-expired` keeps readable context while disabling write controls. Native and production gates remain not started or disabled.
 
-Reference screenshots are present, but no native implementation, side-by-side, overlay, or difference screenshots are claimed; user approval remains pending.
+Reference screenshots are approved, but no native implementation, side-by-side, overlay, or difference screenshots are claimed; Native Fixture work has not started.

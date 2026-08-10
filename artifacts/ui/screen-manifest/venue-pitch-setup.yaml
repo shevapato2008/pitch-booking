@@ -2,7 +2,7 @@ id: venue-pitch-setup
 target_viewport: {width: 375, height: 812}
 production_enabled: false
 entry: authorized-deep-link-only
-reference_gate: pending-user-visual-approval
+reference_gate: reference-approved-native-pending
 venue_scope:
   venue_id: venue-bohai-yuanfeng
   name: 渤海元丰足球场

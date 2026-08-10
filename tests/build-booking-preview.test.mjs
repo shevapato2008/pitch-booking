@@ -30,7 +30,7 @@ test("source production manifest puts the map first across five production route
   ]);
 });
 
-test("development includes intent and venue inventory pages while production stays on five routes", async (t) => {
+test("development includes four deterministic native preview pages while production stays on five routes", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -53,6 +53,7 @@ test("development includes intent and venue inventory pages while production sta
     "dev/pages/intent-entry/index",
     "dev/pages/intent-home/index",
     "dev/pages/venue-inventory/index",
+    "dev/pages/venue-pitch-setup/index",
   ];
   assert.deepEqual(development.pages, developmentRoutes);
   assert.deepEqual(production.pages, productionRoutes);
@@ -60,12 +61,13 @@ test("development includes intent and venue inventory pages while production sta
     "dev/pages/intent-entry/index",
     "dev/pages/intent-home/index",
     "dev/pages/venue-inventory/index",
+    "dev/pages/venue-pitch-setup/index",
   ]) {
     for (const extension of [".js", ".json", ".wxml", ".wxss"]) {
       await readFile(path.join(root, "dist/miniprogram-development", `${route}${extension}`));
     }
   }
-  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/(?:intent-(?:entry|home)|venue-inventory)\/index/);
+  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/(?:intent-(?:entry|home)|venue-(?:inventory|pitch-setup))\/index/);
   await assert.rejects(access(path.join(root, "dist/miniprogram-production/dev")), /ENOENT/);
   const developmentApp = await readFile(path.join(root, "dist/miniprogram-development/app.js"), "utf8");
   const productionApp = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
@@ -76,6 +78,10 @@ test("development includes intent and venue inventory pages while production sta
     new RegExp(TEST_TENCENT_MAP_KEY),
   );
   assert.doesNotMatch(productionApp, /dev\/|fixture/i);
+  assert.doesNotMatch(
+    await readFile(path.join(root, "dist/miniprogram-production/app.json"), "utf8"),
+    /venue-pitch-setup|配置物理场地/,
+  );
 });
 
 for (const [label, route] of [

@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-10
 
-**状态：** 对话设计与书面规格已由用户确认，待 Reference Artifact 实现
+**状态：** Reference Artifacts 已由用户确认；物理场地配置原生 Fixture 待实现
 
 **修订对象：** [目的入口与场馆单日库存切片设计](./2026-08-10-intent-entry-and-venue-inventory-design.md)
 
