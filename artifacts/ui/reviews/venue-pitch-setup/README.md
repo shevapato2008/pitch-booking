@@ -13,11 +13,11 @@
 - Reference runtime: local Python static server on `127.0.0.1:8099`, rendered in the Playwright CLI Chromium runtime on 2026-08-11. All 22 states were captured at 375 × 812 and returned no Artifact audit or console errors.
 - Native runtime: WeChat DevTools Stable 2.01.2510290, base library 3.17.0, development Fixture route `dev/pages/venue-pitch-setup/index?state=<state>`.
 - Device: iPhone X, iOS 10.0.1 profile, DPR 3, logical screen 375 × 812, logical window 375 × 724, 44px status bar, and safe area `(0, 44)–(375, 778)`.
-- Native method: the existing official `miniprogram-automator` client connected to the DevTools automation endpoint and used `App.captureScreenshot` after a fresh `reLaunch` for each state. Every raw PNG was 750 × 1624 and was normalized only by a strict 50% resize to 375 × 812; there was no crop, padding, or recomposition.
-- Capture boundary: the official full-screen output retains the native top and bottom safe-area allocation. The automation API does not paint the desktop simulator's `9:41`, capsule outline, or Home Indicator glyphs, so those Reference-only glyph differences remain visible in overlays and are not manually synthesized.
-- Runtime reload: after the two focused visual fixes, DevTools was closed and reopened through its official CLI before all thirteen final captures, avoiding the stale compiler cache observed during the first recapture attempt.
-- Larger safe-area smoke: not captured. The DevTools simulator window remained detached from Computer Use (`cgWindowNotFound`), and the official automator exposes no device-switch method; no substitute viewport or fabricated evidence was used.
-- Scroll smoke: the six-pitch screenshot shows the final add action continuing below the fixed footer and the WXSS reserves 240–299rpx of list padding. Two official automator scroll attempts hung before returning evidence, so physical gesture reachability remains a device/user acceptance item rather than a claimed pass.
+- Native method: the official `miniprogram-automator` client held one connection to the DevTools automation endpoint and used a canonical leading-slash `reLaunch` for each state. Computer Use (`node_repl` + `@oai/sky`) then took a fresh screenshot of the visible, zoomed IDE for every state; the current page path and query were checked before capture, and the stale `dev/bootstrap.js` error was absent.
+- Sky source screenshot: 1290 × 768 JPEG. Simulator crop: `x=997, y=67, width=284, height=615`. This exact visible iPhone X boundary was resampled proportionally to 375 × 812 PNG with no padding, reconstruction, or synthesized pixels. The crop includes the real status bar, WeChat capsule, and Home Indicator rendered by DevTools.
+- Runtime reload: DevTools was reopened on this worktree root, whose `project.config.json` points at the latest `dist/miniprogram-development`; direct opening of the build directory was rejected because it lacks project AppID configuration. Official automation used `--trust-project`, and the route required its canonical leading slash.
+- Larger safe-area smoke: passed on the visible iPhone 15 Pro Max profile (430 × 932, DPR 3). The title, Dynamic Island/status region, page content, fixed CTA, bottom safe area, and Home Indicator were visible without overlap; the simulator was then returned to iPhone X.
+- Scroll reachability smoke: passed on `six-pitch-list`. A real Computer Use drag inside the simulator moved the list to its end; the complete `+ 添加一块场地` control sat above the fixed Fixture footer and `保存更改` CTA without clipping or overlap.
 - Board: [open the local comparison board](reference-board.html).
 
 ## Design sources
@@ -95,7 +95,7 @@ All thirteen native captures keep the approved journey order: custom header, ins
 
 ### Geometry / spacing
 
-The native header, two-line callout, and denser cards shift list geometry downward relative to Reference. Fixed bottom CTA placement and safe-area padding are stable across all thirteen captures. The corrected ordinary editor actions now form the Reference-aligned `取消 / 完成` two-column row; blocker lifecycle remains above that row. Physical scroll reachability still awaits device/user acceptance because the official scroll probe hung.
+The native header, two-line callout, and denser cards shift list geometry downward relative to Reference. Fixed bottom CTA placement and safe-area padding are stable across all thirteen captures. The corrected ordinary editor actions now form the Reference-aligned `取消 / 完成` two-column row; blocker lifecycle remains above that row. A real simulator drag verified that the final add action scrolls fully above the fixed footer and CTA.
 
 ### Component hierarchy
 
@@ -107,7 +107,7 @@ Native system font metrics are slightly heavier and more compact than Chromium R
 
 ### Icon assets
 
-Back, plus, info, chevron, spinner, and close icons remain local CSS shapes. The corrected close control is a complete contained X, chevrons stay within their padded bounds, and no emoji or remote image is introduced. The official capture API leaves native system-glyph regions unpainted; no system icon was manually added.
+Back, plus, info, chevron, spinner, and close icons remain local CSS shapes. The corrected close control is a complete contained X, chevrons stay within their padded bounds, and no emoji or remote image is introduced. The visible-simulator crops preserve DevTools' real status bar, WeChat capsule, device cutout, and Home Indicator.
 
 ### Copy
 

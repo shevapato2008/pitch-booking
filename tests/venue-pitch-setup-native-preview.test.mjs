@@ -166,6 +166,12 @@ test("native Fixture review records complete same-viewport evidence without clai
   assert.match(review, /Native Fixture visual approval:\s*pending/);
   assert.match(board, /Native Fixture visual approval:\s*pending/);
   assert.match(review, /Production disabled/);
+  assert.match(review, /Sky source screenshot: 1290 × 768/);
+  assert.match(review, /Simulator crop: `x=997, y=67, width=284, height=615`/);
+  assert.match(review, /status bar, WeChat capsule, and Home Indicator/);
+  assert.match(review, /Larger safe-area smoke: passed/);
+  assert.match(review, /Scroll reachability smoke: passed/);
+  assert.match(board, /complete visible-simulator capture/);
   assert.doesNotMatch(`${review}\n${board}`, /Native Fixture visual approval:\s*approved/i);
   assert.doesNotMatch(`${review}\n${board}`, /user native (?:visual )?approval|用户原生视觉批准/i);
 });
