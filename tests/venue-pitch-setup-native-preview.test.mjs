@@ -11,6 +11,21 @@ const stateIds = [
   "save-in-progress", "save-failed", "configuration-changed", "save-result-unknown",
   "unsaved-leave-confirm",
 ];
+const capturedEvidenceStates = [
+  "first-entry-empty", "add-first-open", "first-pitch-draft", "first-save-success",
+  "six-pitch-list", "edit-preset-open", "edit-custom-open", "deactivate-blocked",
+  "unused-deleted-draft", "deactivated-draft", "reactivated-draft", "save-failed",
+  "save-result-unknown",
+];
+const reviewRoot = "artifacts/ui/reviews/venue-pitch-setup";
+
+const pngDimensions = async (path) => {
+  const png = await readFile(path);
+  assert.equal(png.subarray(1, 4).toString("ascii"), "PNG", `${path} must be a PNG`);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+};
+
+const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test("native physical pitch preview exposes all approved states and honest visible semantics", async () => {
   const [fixture, template, config] = await Promise.all([
@@ -51,8 +66,15 @@ test("markup keeps one modal hierarchy, one scrollable pitch list, numeric input
 
 test("pitch cards expose affordance only when the current view provides a transition", async () => {
   const template = await readFile(`${pageRoot}.wxml`, "utf8");
-  assert.match(template, /disabled="{{!cardNextStates\[item\.id\] \|\| duplicateSaveDisabled}}"/);
-  assert.match(template, /wx:if="{{cardNextStates\[item\.id\]}}" class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron"/);
+  assert.match(template, /<button[\s\S]*?wx:if="{{cardNextStates\[item\.id\]}}"[\s\S]*?disabled="{{duplicateSaveDisabled}}"/);
+  assert.match(template, /<view wx:else class="venue-pitch-setup__pitch venue-pitch-setup__touch"/);
+  assert.match(template, /class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron"/);
+  assert.doesNotMatch(template, /disabled="{{!cardNextStates\[item\.id\]/);
+});
+
+test("ordinary editors keep lifecycle separate from Reference-aligned cancel and complete actions", async () => {
+  const template = await readFile(`${pageRoot}.wxml`, "utf8");
+  assert.match(template, /wx:else class="venue-pitch-setup__sheet-actions-shell"[\s\S]*?editor\.lifecycleLabel[\s\S]*?<view class="venue-pitch-setup__sheet-actions">[\s\S]*?bindtap="onCancelSheet">取消<\/button>[\s\S]*?bindtap="onCompleteEditor"/);
 });
 
 test("lifecycle controls bind descriptor, delete, and reactivate handlers without hardcoded deactivate routing", async () => {
@@ -115,4 +137,35 @@ test("native button reset precedes component material so labels stay centered", 
   const materialIndex = styles.indexOf(".venue-pitch-setup__primary {");
   assert.ok(resetIndex >= 0 && materialIndex > resetIndex);
   assert.match(styles.slice(resetIndex), /button\s*\{[^}]*background:\s*transparent;[^}]*margin:\s*0;/s);
+});
+
+test("native Fixture review records complete same-viewport evidence without claiming approval", async () => {
+  const [review, board] = await Promise.all([
+    readFile(`${reviewRoot}/README.md`, "utf8"),
+    readFile(`${reviewRoot}/reference-board.html`, "utf8"),
+  ]);
+  const expectedImages = [
+    ["reference-375x812.png", 375],
+    ["implementation-375x812.png", 375],
+    ["375x812-side-by-side.png", 750],
+    ["375x812-overlay-50.png", 375],
+    ["375x812-difference.png", 375],
+  ];
+
+  for (const state of capturedEvidenceStates) {
+    const figure = board.match(new RegExp(`<figure\\b[^>]*data-state="${escape(state)}"[^>]*>([\\s\\S]*?)<\\/figure>`));
+    assert.notEqual(figure, null, `board must identify ${state}`);
+    for (const [suffix, width] of expectedImages) {
+      const filename = `${state}-${suffix}`;
+      assert.deepEqual(await pngDimensions(`${reviewRoot}/${filename}`), { width, height: 812 });
+      assert.match(review, new RegExp(escape(filename)), `README must name ${filename}`);
+      assert.match(figure[1], new RegExp(`(?:href|src)="${escape(filename)}"`), `${state} board must link ${filename}`);
+    }
+  }
+
+  assert.match(review, /Native Fixture visual approval:\s*pending/);
+  assert.match(board, /Native Fixture visual approval:\s*pending/);
+  assert.match(review, /Production disabled/);
+  assert.doesNotMatch(`${review}\n${board}`, /Native Fixture visual approval:\s*approved/i);
+  assert.doesNotMatch(`${review}\n${board}`, /user native (?:visual )?approval|用户原生视觉批准/i);
 });

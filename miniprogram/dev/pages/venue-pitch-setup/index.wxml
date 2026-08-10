@@ -42,24 +42,34 @@
         <text>还没有已配置场地，请先添加第一块物理场地</text>
       </view>
 
-      <button
-        wx:for="{{pitches}}"
-        wx:key="id"
-        class="venue-pitch-setup__pitch venue-pitch-setup__touch"
-        data-pitch-id="{{item.id}}"
-        bindtap="onPitchTap"
-        disabled="{{!cardNextStates[item.id] || duplicateSaveDisabled}}"
-        aria-label="{{item.displayName}}，{{item.playersPerSide}}人制，{{item.status === 'ACTIVE' ? '使用中' : '已停用'}}"
-      >
-        <view class="venue-pitch-setup__pitch-copy">
-          <text class="venue-pitch-setup__pitch-title">{{item.displayName}}</text>
-          <text class="venue-pitch-setup__pitch-meta">{{item.nameSource || (item.customName ? '自定义名称' : '系统生成名称')}} · {{item.playersPerSide}}人制</text>
-          <text wx:if="{{item.draftStatus}}" class="venue-pitch-setup__status venue-pitch-setup__status--draft">{{item.draftStatus}}</text>
-          <text wx:elif="{{item.status === 'ACTIVE'}}" class="venue-pitch-setup__status venue-pitch-setup__status--active">ACTIVE · 使用中</text>
-          <text wx:else class="venue-pitch-setup__status venue-pitch-setup__status--inactive">INACTIVE · 已停用</text>
+      <block wx:for="{{pitches}}" wx:key="id">
+        <button
+          wx:if="{{cardNextStates[item.id]}}"
+          class="venue-pitch-setup__pitch venue-pitch-setup__touch"
+          data-pitch-id="{{item.id}}"
+          bindtap="onPitchTap"
+          disabled="{{duplicateSaveDisabled}}"
+          aria-label="{{item.displayName}}，{{item.playersPerSide}}人制，{{item.status === 'ACTIVE' ? '使用中' : '已停用'}}"
+        >
+          <view class="venue-pitch-setup__pitch-copy">
+            <text class="venue-pitch-setup__pitch-title">{{item.displayName}}</text>
+            <text class="venue-pitch-setup__pitch-meta">{{item.nameSource || (item.customName ? '自定义名称' : '系统生成名称')}} · {{item.playersPerSide}}人制</text>
+            <text wx:if="{{item.draftStatus}}" class="venue-pitch-setup__status venue-pitch-setup__status--draft">{{item.draftStatus}}</text>
+            <text wx:elif="{{item.status === 'ACTIVE'}}" class="venue-pitch-setup__status venue-pitch-setup__status--active">ACTIVE · 使用中</text>
+            <text wx:else class="venue-pitch-setup__status venue-pitch-setup__status--inactive">INACTIVE · 已停用</text>
+          </view>
+          <view class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron" aria-hidden="true"></view>
+        </button>
+        <view wx:else class="venue-pitch-setup__pitch venue-pitch-setup__touch" aria-label="{{item.displayName}}，{{item.playersPerSide}}人制，{{item.status === 'ACTIVE' ? '使用中' : '已停用'}}">
+          <view class="venue-pitch-setup__pitch-copy">
+            <text class="venue-pitch-setup__pitch-title">{{item.displayName}}</text>
+            <text class="venue-pitch-setup__pitch-meta">{{item.nameSource || (item.customName ? '自定义名称' : '系统生成名称')}} · {{item.playersPerSide}}人制</text>
+            <text wx:if="{{item.draftStatus}}" class="venue-pitch-setup__status venue-pitch-setup__status--draft">{{item.draftStatus}}</text>
+            <text wx:elif="{{item.status === 'ACTIVE'}}" class="venue-pitch-setup__status venue-pitch-setup__status--active">ACTIVE · 使用中</text>
+            <text wx:else class="venue-pitch-setup__status venue-pitch-setup__status--inactive">INACTIVE · 已停用</text>
+          </view>
         </view>
-        <view wx:if="{{cardNextStates[item.id]}}" class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron" aria-hidden="true"></view>
-      </button>
+      </block>
 
       <button wx:if="{{mode !== 'loading' && mode !== 'error'}}" class="venue-pitch-setup__add venue-pitch-setup__touch" bindtap="onOpenAdd">
         <view class="venue-pitch-setup-icon venue-pitch-setup-icon--plus" aria-hidden="true"></view>
@@ -136,9 +146,12 @@
           </view>
         </view>
 
-        <view wx:else class="venue-pitch-setup__sheet-actions">
+        <view wx:else class="venue-pitch-setup__sheet-actions-shell">
           <button wx:if="{{editor.lifecycleLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch" disabled="{{editor.lifecycleDisabled}}" bindtap="onLifecycleAction">{{editor.lifecycleLabel}}</button>
-          <button class="venue-pitch-setup__primary venue-pitch-setup__touch" disabled="{{editor.completeDisabled || !isDraftPlayersValid}}" bindtap="onCompleteEditor">{{editor.completeLabel}}</button>
+          <view class="venue-pitch-setup__sheet-actions">
+            <button class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onCancelSheet">取消</button>
+            <button class="venue-pitch-setup__primary venue-pitch-setup__touch" disabled="{{editor.completeDisabled || !isDraftPlayersValid}}" bindtap="onCompleteEditor">{{editor.completeLabel}}</button>
+          </view>
         </view>
       </view>
     </view>

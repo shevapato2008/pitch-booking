@@ -92,6 +92,12 @@ const setupStates = [
   "deactivate-blocked", "unused-delete-confirm", "unused-deleted-draft", "deactivated-draft", "reactivated-draft", "save-in-progress",
   "save-failed", "configuration-changed", "save-result-unknown", "unsaved-leave-confirm",
 ];
+const setupCapturedEvidenceStates = new Set([
+  "first-entry-empty", "add-first-open", "first-pitch-draft", "first-save-success",
+  "six-pitch-list", "edit-preset-open", "edit-custom-open", "deactivate-blocked",
+  "unused-deleted-draft", "deactivated-draft", "reactivated-draft", "save-failed",
+  "save-result-unknown",
+]);
 const inventoryStates = [
   "initial-loading", "load-error", "day-empty", "day-ready", "pitch-picker-open", "pitch-refreshing", "pitch-load-error",
   "calendar-open", "date-refreshing", "date-load-error", "cross-week-ready", "long-list-end", "create-slot-open", "edit-slot-open",
@@ -102,7 +108,7 @@ const reviewObservationHeadings = [
   "Icon assets", "Copy", "State semantics",
 ];
 
-const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath, nativeApproval }) => {
+const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath, nativeApproval, capturedStates }) => {
   mustExist(reviewPath);
   mustExist(boardPath);
   const review = read(reviewPath);
@@ -119,7 +125,13 @@ const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath, na
     assert.notEqual(figure, null, `${boardPath} must identify ${state}`);
     assert.match(figure[1], new RegExp(`<a\\b[^>]*href="${escape(filename)}"`), `${state} must link its Reference`);
     assert.match(figure[1], new RegExp(`<img\\b[^>]*src="${escape(filename)}"`), `${state} must show its Reference`);
-    assert.equal((figure[1].match(/not started/g) ?? []).length, 4, `${state} future evidence slots must be not started`);
+    if (capturedStates?.has(state)) {
+      assert.doesNotMatch(figure[1], /not started/, `${state} captured evidence must not remain not started`);
+    } else if (capturedStates) {
+      assert.match(figure[1], /Reference-only \/ not captured/, `${state} must stay Reference-only / not captured`);
+    } else {
+      assert.equal((figure[1].match(/not started/g) ?? []).length, 4, `${state} future evidence slots must be not started`);
+    }
   }
 
   for (const heading of reviewObservationHeadings) {
@@ -629,8 +641,9 @@ test("physical pitch setup review records Reference approval while Native Fixtur
     assert.match(review, new RegExp(`### ${escape(heading)}\\n\\n(?!\\s*###)[^\\n]+`));
   }
   for (const line of review.split(/\r?\n/).filter((line) => /^\| `/.test(line))) {
-    assert.equal((line.match(/not started/g) ?? []).length, 4);
-    assert.match(line, /\| pending \|$/);
+    const state = line.match(/^\| `([^`]+)`/)?.[1];
+    if (setupCapturedEvidenceStates.has(state)) assert.match(line, /\.png/);
+    else assert.match(line, /Reference-only \/ not captured/);
   }
 });
 
@@ -901,6 +914,7 @@ test("venue operations reviews contain complete audited 375 by 812 Reference evi
     reviewPath: setupReviewPath,
     boardPath: setupReviewBoardPath,
     nativeApproval: "pending",
+    capturedStates: setupCapturedEvidenceStates,
   });
   assertReferenceEvidence({
     states: inventoryStates,

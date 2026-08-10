@@ -295,6 +295,7 @@ button::after { border: 0; }
 .venue-pitch-setup__blocker-counts { display: grid; grid-template-columns: repeat(3, 1fr); color: var(--muted); text-align: center; }
 .venue-pitch-setup__actions,
 .venue-pitch-setup__sheet-actions { display: grid; grid-template-columns: 1fr 1.45fr; gap: 20rpx; margin-top: 24rpx; }
+.venue-pitch-setup__sheet-actions-shell { display: flex; flex-direction: column; }
 .venue-pitch-setup__danger { min-height: 88rpx; border: 2rpx solid #FECACA; border-radius: 24rpx; color: var(--error); font-weight: 700; }
 .venue-pitch-setup__dialog { display: flex; flex-direction: column; gap: 16rpx; margin-top: 24rpx; font-size: 28rpx; line-height: 42rpx; }
 
