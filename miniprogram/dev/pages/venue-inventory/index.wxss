@@ -1,0 +1,5 @@
+@import "../../../styles/tokens.wxss";
+
+.venue-inventory {
+  min-height: 100vh;
+}

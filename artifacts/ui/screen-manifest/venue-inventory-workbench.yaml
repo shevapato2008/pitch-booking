@@ -27,4 +27,4 @@ review_slots:
 fixture:
   planned_path: miniprogram/dev/venue-inventory-fixture.ts
   deletion_condition: delete after real inventory backend integration
-gate: reference-artifact-user-approval-pending
+gate: reference-artifact-approved-native-fixture-pending

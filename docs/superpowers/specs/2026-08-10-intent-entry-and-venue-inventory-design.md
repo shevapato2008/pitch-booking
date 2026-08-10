@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-10
 
-**状态：** 共享入口视觉已确认；场馆库存交互方案已确认，待独立 Artifact、Fixture Demo 和同 viewport 对比确认
+**状态：** 共享入口视觉已确认；场馆库存 Reference Artifact 已确认，待原生 Fixture Demo 和同 viewport 对比确认
 
 **前序决策：** [三类用户与开放球局产品设计](./2026-08-09-three-sided-football-product-design.md)
 

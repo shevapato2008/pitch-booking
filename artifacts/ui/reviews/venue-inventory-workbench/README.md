@@ -3,7 +3,9 @@
 ## 状态
 
 - Target viewport: 375 × 812。
-- 产品与交互方案 approved；reference Artifact complete；用户视觉批准 pending。
+- 产品与交互方案 approved；Reference Artifact complete。
+- Reference Artifact visual approval: approved on 2026-08-10。
+- Native Fixture visual approval: pending。
 - 当前仅有浏览器 reference，不得把它描述为微信原生实现证据。
 - Production disabled；未创建库存 Fixture、生产路由、契约、membership 或后端写入。
 - Planned Fixture deletion condition: `delete after real inventory backend integration`。
@@ -52,4 +54,4 @@
 | `save-result-unknown` | `3da6eeaf3fc7f4d9988c06bf1dbd5f8332b0f51e4d0291fe88e5fbd82eeb190c` |
 | `create-slot-overlap` | `362d9161f34e54c8f9811af50e413fd1109fd9de8cd77c2093e005014afe115f` |
 
-原生 Fixture Demo 及同尺寸 implementation/side-by-side/overlay/difference 证据必须等待用户确认本 Reference Artifact 后再开始。
+Reference Artifact 已获用户明确确认。下一步仅进入原生 Fixture Demo 与同尺寸 implementation/side-by-side/overlay/difference 证据；在原生视觉再次获批前不得进入契约或后端。

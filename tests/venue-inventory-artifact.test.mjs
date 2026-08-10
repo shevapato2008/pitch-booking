@@ -6,6 +6,7 @@ import { parseDocument } from "yaml";
 const manifestPath = "artifacts/ui/screen-manifest/venue-inventory-workbench.yaml";
 const flowPath = "artifacts/ui/flows/venue-inventory-workbench.md";
 const referencePath = "artifacts/ui/references/venue-inventory-workbench.html";
+const reviewPath = "artifacts/ui/reviews/venue-inventory-workbench/README.md";
 const stateIds = [
   "day-ready",
   "create-slot-open",
@@ -18,7 +19,7 @@ const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-test("venue inventory manifest freezes the reference-only visual gate", () => {
+test("venue inventory manifest records reference approval while native approval remains pending", () => {
   mustExist(manifestPath);
 
   const document = parseDocument(read(manifestPath), { uniqueKeys: true });
@@ -42,8 +43,12 @@ test("venue inventory manifest freezes the reference-only visual gate", () => {
       planned_path: "miniprogram/dev/venue-inventory-fixture.ts",
       deletion_condition: "delete after real inventory backend integration",
     },
-    gate: "reference-artifact-user-approval-pending",
+    gate: "reference-artifact-approved-native-fixture-pending",
   });
+
+  const review = read(reviewPath);
+  assert.match(review, /Reference Artifact visual approval: approved on 2026-08-10/);
+  assert.match(review, /Native Fixture visual approval: pending/);
 });
 
 test("venue inventory flow keeps writes behind authorization and server authority", () => {

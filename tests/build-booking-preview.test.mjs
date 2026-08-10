@@ -30,7 +30,7 @@ test("source production manifest puts the map first across five production route
   ]);
 });
 
-test("development includes intent pages while production stays on five routes", async (t) => {
+test("development includes intent and venue inventory pages while production stays on five routes", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -52,15 +52,20 @@ test("development includes intent pages while production stays on five routes", 
     ...productionRoutes,
     "dev/pages/intent-entry/index",
     "dev/pages/intent-home/index",
+    "dev/pages/venue-inventory/index",
   ];
   assert.deepEqual(development.pages, developmentRoutes);
   assert.deepEqual(production.pages, productionRoutes);
-  for (const route of ["dev/pages/intent-entry/index", "dev/pages/intent-home/index"]) {
+  for (const route of [
+    "dev/pages/intent-entry/index",
+    "dev/pages/intent-home/index",
+    "dev/pages/venue-inventory/index",
+  ]) {
     for (const extension of [".js", ".json", ".wxml", ".wxss"]) {
       await readFile(path.join(root, "dist/miniprogram-development", `${route}${extension}`));
     }
   }
-  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/intent-(?:entry|home)\/index/);
+  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/(?:intent-(?:entry|home)|venue-inventory)\/index/);
   await assert.rejects(access(path.join(root, "dist/miniprogram-production/dev")), /ENOENT/);
   const developmentApp = await readFile(path.join(root, "dist/miniprogram-development/app.js"), "utf8");
   const productionApp = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
