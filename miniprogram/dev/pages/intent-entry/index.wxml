@@ -1,0 +1,62 @@
+<view class="intent-entry u-page">
+  <view class="intent-entry__header">
+    <view class="intent-entry__header-row">
+      <text class="intent-entry__brand">天津足球</text>
+    </view>
+  </view>
+
+  <view class="intent-entry__content">
+    <view class="intent-entry__intro">
+      <text class="intent-entry__title">你今天想做什么？</text>
+      <text class="intent-entry__subtitle">选择一个目的开始，之后可以随时切换。</text>
+    </view>
+
+    <view class="intent-entry__list" aria-label="选择当下目的">
+      <button
+        wx:for="{{intents}}"
+        wx:key="id"
+        class="intent-entry__card"
+        hover-class="intent-entry__card--pressed"
+        bindtap="onChooseIntent"
+        data-intent-id="{{item.id}}"
+        aria-label="{{item.title}}，{{item.subtitle}}"
+      >
+        <view class="intent-entry__icon" aria-hidden="true">
+          <block wx:if="{{item.icon === 'venue'}}">
+            <view class="intent-icon-venue">
+              <view class="intent-icon-venue__side intent-icon-venue__side--left"></view>
+              <view class="intent-icon-venue__side intent-icon-venue__side--right"></view>
+              <view class="intent-icon-venue__divider intent-icon-venue__divider--first"></view>
+              <view class="intent-icon-venue__divider intent-icon-venue__divider--second"></view>
+              <view class="intent-icon-venue__door"></view>
+            </view>
+          </block>
+          <block wx:elif="{{item.icon === 'calendar'}}">
+            <view class="intent-icon-calendar">
+              <view class="intent-icon-calendar__ring intent-icon-calendar__ring--left"></view>
+              <view class="intent-icon-calendar__ring intent-icon-calendar__ring--right"></view>
+              <view class="intent-icon-calendar__bar"></view>
+              <view class="intent-icon-calendar__dot intent-icon-calendar__dot--one"></view>
+              <view class="intent-icon-calendar__dot intent-icon-calendar__dot--two"></view>
+              <view class="intent-icon-calendar__dot intent-icon-calendar__dot--three"></view>
+            </view>
+          </block>
+          <block wx:else>
+            <view class="intent-icon-football">
+              <view class="intent-icon-football__seam intent-icon-football__seam--one"></view>
+              <view class="intent-icon-football__seam intent-icon-football__seam--two"></view>
+              <view class="intent-icon-football__seam intent-icon-football__seam--three"></view>
+            </view>
+          </block>
+        </view>
+        <view class="intent-entry__copy">
+          <text class="intent-entry__card-title">{{item.title}}</text>
+          <text class="intent-entry__card-subtitle">{{item.subtitle}}</text>
+        </view>
+        <view class="intent-entry__chevron" aria-hidden="true"></view>
+      </button>
+    </view>
+
+    <text class="intent-entry__note">{{note}}</text>
+  </view>
+</view>

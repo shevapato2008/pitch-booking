@@ -1,0 +1,225 @@
+@import "../../../styles/tokens.wxss";
+
+.intent-entry {
+  min-height: 100vh;
+}
+
+.intent-entry__header {
+  padding-top: env(safe-area-inset-top);
+  background: #FFFFFF;
+  border-bottom: 2rpx solid #DBE5EC;
+}
+
+.intent-entry__header-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 96rpx;
+  padding: 0 200rpx 0 40rpx;
+}
+
+.intent-entry__brand {
+  color: #10243E;
+  font-size: 36rpx;
+  font-weight: 700;
+  letter-spacing: 0.4rpx;
+  line-height: 48rpx;
+}
+
+.intent-entry__content {
+  padding: 56rpx 40rpx 48rpx;
+}
+
+.intent-entry__intro {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 48rpx;
+}
+
+.intent-entry__title {
+  color: #10243E;
+  font-size: 52rpx;
+  font-weight: 700;
+  letter-spacing: -1rpx;
+  line-height: 72rpx;
+}
+
+.intent-entry__subtitle {
+  margin-top: 16rpx;
+  color: #64748B;
+  font-size: 28rpx;
+  line-height: 40rpx;
+}
+
+.intent-entry__list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.intent-entry__card {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 240rpx;
+  padding: 32rpx;
+  border: 2rpx solid #DBE5EC;
+  border-radius: 32rpx;
+  background: #FFFFFF;
+  color: #10243E;
+  text-align: left;
+}
+
+.intent-entry__card::after {
+  border: 0;
+}
+
+.intent-entry__card--pressed {
+  background: #EFFBF6;
+}
+
+.intent-entry__icon {
+  position: relative;
+  flex: 0 0 56rpx;
+  width: 56rpx;
+  height: 56rpx;
+  margin-right: 32rpx;
+}
+
+.intent-entry__copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.intent-entry__card-title {
+  color: #10243E;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+}
+
+.intent-entry__card-subtitle {
+  margin-top: 8rpx;
+  color: #64748B;
+  font-size: 26rpx;
+  line-height: 40rpx;
+}
+
+.intent-entry__chevron {
+  box-sizing: border-box;
+  flex: 0 0 18rpx;
+  width: 18rpx;
+  height: 18rpx;
+  margin-left: 20rpx;
+  border-top: 3rpx solid #64748B;
+  border-right: 3rpx solid #64748B;
+  transform: rotate(45deg);
+}
+
+.intent-entry__note {
+  display: block;
+  margin: 40rpx 8rpx 0;
+  color: #64748B;
+  font-size: 24rpx;
+  line-height: 36rpx;
+}
+
+.intent-icon-venue,
+.intent-icon-calendar,
+.intent-icon-football {
+  box-sizing: border-box;
+  position: relative;
+  width: 56rpx;
+  height: 56rpx;
+  border: 3rpx solid #0284C7;
+}
+
+.intent-icon-venue__side,
+.intent-icon-venue__divider,
+.intent-icon-venue__door,
+.intent-icon-calendar__bar,
+.intent-icon-calendar__ring,
+.intent-icon-calendar__dot,
+.intent-icon-football__seam {
+  position: absolute;
+  box-sizing: border-box;
+  background: #0284C7;
+}
+
+.intent-icon-venue__side {
+  top: 0;
+  width: 3rpx;
+  height: 56rpx;
+}
+
+.intent-icon-venue__side--left { left: 16rpx; }
+.intent-icon-venue__side--right { right: 16rpx; }
+
+.intent-icon-venue__divider {
+  left: 0;
+  width: 56rpx;
+  height: 3rpx;
+}
+
+.intent-icon-venue__divider--first { top: 18rpx; }
+.intent-icon-venue__divider--second { top: 36rpx; }
+
+.intent-icon-venue__door {
+  bottom: 0;
+  left: 22rpx;
+  width: 10rpx;
+  height: 14rpx;
+  background: #FFFFFF;
+  border: 3rpx solid #0284C7;
+  border-bottom: 0;
+}
+
+.intent-icon-calendar {
+  border-radius: 8rpx;
+}
+
+.intent-icon-calendar__ring {
+  top: -7rpx;
+  width: 4rpx;
+  height: 14rpx;
+  border-radius: 4rpx;
+}
+
+.intent-icon-calendar__ring--left { left: 13rpx; }
+.intent-icon-calendar__ring--right { right: 13rpx; }
+
+.intent-icon-calendar__bar {
+  top: 14rpx;
+  left: 0;
+  width: 56rpx;
+  height: 3rpx;
+}
+
+.intent-icon-calendar__dot {
+  width: 6rpx;
+  height: 6rpx;
+  border-radius: 50%;
+}
+
+.intent-icon-calendar__dot--one { top: 29rpx; left: 13rpx; }
+.intent-icon-calendar__dot--two { top: 29rpx; left: 25rpx; }
+.intent-icon-calendar__dot--three { top: 29rpx; right: 13rpx; }
+
+.intent-icon-football {
+  border-radius: 50%;
+}
+
+.intent-icon-football__seam {
+  top: 25rpx;
+  left: 8rpx;
+  width: 34rpx;
+  height: 3rpx;
+  transform-origin: center;
+}
+
+.intent-icon-football__seam--one { transform: rotate(0deg); }
+.intent-icon-football__seam--two { transform: rotate(60deg); }
+.intent-icon-football__seam--three { transform: rotate(120deg); }
