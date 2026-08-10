@@ -12,6 +12,27 @@ const sharedReferenceCssPath = "artifacts/ui/references/venue-operations-referen
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const declarations = (css, selector) => {
+  const match = css.match(new RegExp(`${escape(selector)}\\s*\\{([^}]*)\\}`, "s"));
+  assert.notEqual(match, null, `missing ${selector} rule`);
+  return match[1];
+};
+const property = (rule, name) => {
+  const match = rule.match(new RegExp(`${escape(name)}\\s*:\\s*([^;]+);`));
+  assert.notEqual(match, null, `missing ${name} declaration`);
+  return match[1].trim();
+};
+const relativeLuminance = (hex) => {
+  const channels = hex.slice(1).match(/../g).map((channel) => Number.parseInt(channel, 16) / 255);
+  const linear = channels.map((channel) => channel <= 0.04045
+    ? channel / 12.92
+    : ((channel + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+};
+const contrastRatio = (first, second) => {
+  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+};
 const loadManifest = (path) => {
   mustExist(path);
   const document = parseDocument(read(path), { uniqueKeys: true });
@@ -240,4 +261,20 @@ test("venue operations reference foundation supplies only reusable mobile canvas
   const componentStart = css.indexOf(".primary-action");
   assert.notEqual(componentStart, -1);
   assert.doesNotMatch(css.slice(componentStart), /}\s*(?:button|input|select|textarea)\s*(?:,|\{)/);
+});
+
+test("venue operations primary action keeps white text on a normal-material token pair with AA contrast", () => {
+  const css = read(sharedReferenceCssPath);
+  const tokens = Object.fromEntries([...css.matchAll(/(--[a-z-]+)\s*:\s*(#[0-9A-F]{6})\s*;/g)].map(([, name, value]) => [name, value]));
+  const primaryAction = declarations(css, ".primary-action");
+  const foreground = property(primaryAction, "color").match(/^var\((--[a-z-]+)\)$/)?.[1];
+  const background = property(primaryAction, "background").match(/^var\((--[a-z-]+)\)$/)?.[1];
+
+  assert.equal(foreground, "--surface");
+  assert.equal(background, "--primary-strong");
+  assert.ok(contrastRatio(tokens[foreground], tokens[background]) >= 4.5);
+});
+
+test("venue operations shared reference foundation stays under 300 lines", () => {
+  assert.ok(read(sharedReferenceCssPath).split(/\r?\n/).length < 300);
 });
