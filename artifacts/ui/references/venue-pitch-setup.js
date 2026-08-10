@@ -3,6 +3,7 @@ import { DEFAULT_SETUP_STATE, SETUP_STATES, VENUE } from "./venue-pitch-setup-da
 const app = document.querySelector("#setup-app");
 const requestedState = new URLSearchParams(window.location.search).get("state");
 let currentStateId = Object.hasOwn(SETUP_STATES, requestedState) ? requestedState : DEFAULT_SETUP_STATE;
+let renderedState = SETUP_STATES[currentStateId];
 
 const element = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -56,8 +57,13 @@ const renderHeader = () => {
 };
 
 const renderPitchCard = (pitch, state) => {
-  const card = element("button", "pitch-card touch-target");
-  card.type = "button";
+  const nextState = state.cardNextStates?.[pitch.id]
+    ?? (state.id === "inactive-only" ? state.recoveryNextState : null);
+  const card = element(nextState ? "button" : "article", "pitch-card touch-target");
+  if (nextState) {
+    card.type = "button";
+    card.dataset.nextState = nextState;
+  }
   card.dataset.pitchId = pitch.id ?? pitch.client_ref;
   const copy = element("span", "pitch-card__copy");
   const source = pitch.name_source ?? (pitch.custom_name ? "自定义名称" : "系统生成名称");
@@ -67,8 +73,8 @@ const renderPitchCard = (pitch, state) => {
     element("span", "pitch-card__meta muted", `${source} · ${pitch.players_per_side}人制`),
     element("span", "pitch-card__status", status),
   );
-  card.append(copy, svgIcon("chevron"));
-  if (state.id === "inactive-only") card.dataset.nextState = state.recoveryNextState;
+  card.append(copy);
+  if (nextState) card.append(svgIcon("chevron"));
   return card;
 };
 
@@ -77,7 +83,7 @@ const renderStateBody = (state, list) => {
     const panel = element("section", `state-panel state-panel--${state.mode}`);
     if (state.mode === "loading") panel.append(element("span", "loading-mark"));
     panel.append(element("p", "type-body", state.statusMessage));
-    if (state.mode === "error") panel.append(action(state.recoveryLabel, "secondary-action", { nextState: "six-pitch-list" }));
+    if (state.mode === "error") panel.append(action(state.recoveryLabel, "secondary-action", { nextState: state.recoveryNextState }));
     list.append(panel);
   } else {
     state.pitches.forEach((pitch) => list.append(renderPitchCard(pitch, state)));
@@ -110,7 +116,7 @@ const renderEditor = (editor) => {
   const close = element("button", "sheet-close");
   close.type = "button";
   close.setAttribute("aria-label", "关闭编辑面板");
-  close.dataset.nextState = "six-pitch-list";
+  close.dataset.nextState = editor.kind === "unsaved-leave" ? editor.cancelNextState : "six-pitch-list";
   close.append(svgIcon("back"));
   heading.append(headingCopy, close);
 
@@ -118,8 +124,8 @@ const renderEditor = (editor) => {
     const message = element("p", "type-body", editor.message);
     const dialogActions = element("div", "sheet-actions");
     dialogActions.append(
-      action(editor.cancelLabel, "secondary-action", { nextState: "six-pitch-list" }),
-      action(editor.confirmLabel, "primary-action"),
+      action(editor.cancelLabel, "secondary-action", { nextState: editor.cancelNextState }),
+      action(editor.confirmLabel, "primary-action", { href: editor.confirmHref }),
     );
     sheet.append(heading, message, dialogActions);
     fragment.append(sheet);
@@ -205,9 +211,10 @@ const renderEditor = (editor) => {
   return fragment;
 };
 
-const render = (stateId) => {
+const render = (stateId, stateOverride) => {
   currentStateId = Object.hasOwn(SETUP_STATES, stateId) ? stateId : DEFAULT_SETUP_STATE;
-  const state = SETUP_STATES[currentStateId];
+  const state = stateOverride ?? SETUP_STATES[currentStateId];
+  renderedState = state;
   app.dataset.state = currentStateId;
   app.replaceChildren(renderHeader());
 
@@ -229,6 +236,7 @@ const render = (stateId) => {
   const footer = element("footer", "fixed-action page-action safe-area-bottom");
   const save = action(state.pageAction.label, "primary-action type-cta", {
     disabled: state.pageAction.disabled,
+    nextState: state.pageAction.nextState,
     href: state.pageAction.href,
   });
   save.dataset.saveAction = "true";
@@ -245,8 +253,13 @@ app.addEventListener("click", (event) => {
     window.location.assign(control.dataset.href);
     return;
   }
-  window.history.replaceState(null, "", `?state=${control.dataset.nextState}`);
-  render(control.dataset.nextState);
+  const nextState = control.dataset.nextState;
+  window.history.replaceState(null, "", `?state=${nextState}`);
+  if (nextState === "save-in-progress") {
+    render(nextState, { ...SETUP_STATES[nextState], configuredCount: renderedState.configuredCount, pitches: renderedState.pitches });
+    return;
+  }
+  render(nextState);
 });
 
 render(currentStateId);

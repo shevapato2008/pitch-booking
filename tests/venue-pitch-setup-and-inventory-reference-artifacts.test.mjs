@@ -443,6 +443,11 @@ test("physical pitch setup controls use deterministic page-draft and local hando
   assert.equal(SETUP_STATES["edit-preset-open"].editor.lifecycleAction.nextState, "deactivated-draft");
   assert.equal(SETUP_STATES["unused-delete-confirm"].editor.confirmation.nextState, "unused-deleted-draft");
   assert.equal(SETUP_STATES["inactive-only"].recoveryNextState, "reactivated-draft");
+  assert.equal(SETUP_STATES["load-error"].recoveryNextState, "six-pitch-list");
+  for (const stateId of ["first-pitch-draft", "unnamed-pitch-draft", "six-pitch-list", "unused-deleted-draft", "deactivated-draft", "reactivated-draft", "save-failed"]) {
+    assert.equal(SETUP_STATES[stateId].pageAction.nextState, "save-in-progress", `${stateId} must enter save-in-progress`);
+  }
+  assert.deepEqual(SETUP_STATES["six-pitch-list"].cardNextStates, { "pitch-7-001": "edit-preset-open" });
 
   const controller = read(setupReferenceControllerPath);
   assert.match(controller, /dataset\.nextState/);
@@ -451,6 +456,21 @@ test("physical pitch setup controls use deterministic page-draft and local hando
   assert.match(controller, /editor\.completeNextState/);
   assert.match(controller, /editor\.lifecycleAction\.nextState/);
   assert.match(controller, /editor\.confirmation\.nextState/);
+  assert.match(controller, /action\("添加一块场地",\s*"add-pitch touch-target",\s*\{ nextState: "add-first-open" \}\)/);
+  assert.match(controller, /state\.pageAction\.nextState/);
+  assert.match(controller, /state\.cardNextStates\?\.\[pitch\.id\]/);
+  assert.match(controller, /nextState\s*\?\s*"button"\s*:\s*"article"/);
+  assert.match(controller, /if \(nextState\) card\.append\(svgIcon\("chevron"\)\)/);
+});
+
+test("inactive-only recovery retains its single configured pitch in the local draft", async () => {
+  const { SETUP_STATES } = await import(`../${setupReferenceDataPath}?inactive-recovery=${Date.now()}`);
+  const recovered = SETUP_STATES[SETUP_STATES["inactive-only"].recoveryNextState];
+
+  assert.equal(recovered.configuredCount, 1);
+  assert.deepEqual(recovered.pitches.map(({ id }) => id), ["pitch-7-004"]);
+  assert.equal(recovered.pitches[0].draft_status, "ACTIVE · 使用中 · 待保存");
+  assert.equal(recovered.pageAction.nextState, "save-in-progress");
 });
 
 test("physical pitch setup lifecycle states use frozen capability semantics and keep destructive actions in the editor", async () => {
@@ -509,8 +529,14 @@ test("physical pitch setup save and exit states retain drafts and prevent duplic
   assert.equal(unknown.pageAction.disabled, true);
   assert.equal(leave.editor, undefined);
   assert.deepEqual(leave.dialog, {
-    kind: "unsaved-leave", title: "放弃本次修改？", message: "离开后，本次修改不会保存", confirmLabel: "确认离开", cancelLabel: "继续编辑",
+    kind: "unsaved-leave", title: "放弃本次修改？", message: "离开后，本次修改不会保存",
+    confirmLabel: "确认离开", confirmHref: "venue-inventory-workbench-v2.html?state=day-ready",
+    cancelLabel: "继续编辑", cancelNextState: "deactivated-draft",
   });
+
+  const controller = read(setupReferenceControllerPath);
+  assert.match(controller, /editor\.cancelNextState/);
+  assert.match(controller, /editor\.confirmHref/);
 });
 
 test("physical pitch setup source includes the complete required copy and live audit contract", () => {
