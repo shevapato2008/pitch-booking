@@ -16,6 +16,8 @@
       "name": "渤海元丰足球场",
       "description": "",
       "address": "天津市西青区利达路",
+      "district_code": "120111",
+      "district_name": "西青区",
       "booking_mode": "ONLINE",
       "marker": {
         "coordinate_system": "GCJ02",
@@ -75,6 +77,8 @@
       "name": "天津奥林匹克中心五人制足球场",
       "description": "",
       "address": "天津市南开区宾水西道1号",
+      "district_code": "120104",
+      "district_name": "南开区",
       "booking_mode": "DIRECTORY_ONLY",
       "marker": {
         "coordinate_system": "GCJ02",
@@ -149,6 +153,8 @@
       "name": "天津火车头体育场",
       "description": "",
       "address": "天津市河北区中山北路增1号",
+      "district_code": "120105",
+      "district_name": "河北区",
       "booking_mode": "DIRECTORY_ONLY",
       "marker": {
         "coordinate_system": "GCJ02",
@@ -203,6 +209,8 @@
       "name": "天津市人民体育馆足球场",
       "description": "",
       "address": "天津市和平区贵州路33号",
+      "district_code": "120101",
+      "district_name": "和平区",
       "booking_mode": "DIRECTORY_ONLY",
       "marker": {
         "coordinate_system": "GCJ02",
@@ -260,6 +268,8 @@
       "name": "东丽体育中心足球场",
       "description": "",
       "address": "天津市东丽区先锋东路3号",
+      "district_code": "120110",
+      "district_name": "东丽区",
       "booking_mode": "DIRECTORY_ONLY",
       "marker": {
         "coordinate_system": "GCJ02",

@@ -117,7 +117,12 @@ test("decodes canonical responses to camel-case view DTOs", () => {
 test("strictly decodes map and both discriminated venue detail variants", () => {
   const map = decodeVenueMap(venueMap);
   expect(map).toHaveLength(5);
-  expect(map[0]).toMatchObject({ bookingMode: "ONLINE", marker: { coordinateSystem: "GCJ02" } });
+  expect(map[0]).toMatchObject({
+    bookingMode: "ONLINE",
+    districtCode: "120111",
+    districtName: "西青区",
+    marker: { coordinateSystem: "GCJ02" },
+  });
   expect(map[1]).toMatchObject({ bookingMode: "DIRECTORY_ONLY", coverImage: null });
   expect(decodeVenueDetail(onlineVenueDetail)).toMatchObject({
     bookingMode: "ONLINE", id: onlineVenueDetail.id,
@@ -134,7 +139,12 @@ test("strictly decodes map and both discriminated venue detail variants", () => 
 test.each([
   ["map unknown field", { ...venueMap, user_latitude: 39 }],
   ["map invalid coordinate", { ...venueMap, venues: [{ ...(venueMap.venues as object[])[0], latitude: "39" }] }],
+  ["map missing district code", { ...venueMap, venues: [withoutKey((venueMap.venues as Record<string, unknown>[])[0], "district_code")] }],
+  ["map missing district name", { ...venueMap, venues: [withoutKey((venueMap.venues as Record<string, unknown>[])[0], "district_name")] }],
+  ["map invalid district code", { ...venueMap, venues: [{ ...(venueMap.venues as object[])[0], district_code: "12011" }] }],
+  ["map empty district name", { ...venueMap, venues: [{ ...(venueMap.venues as object[])[0], district_name: "" }] }],
   ["detail unknown field", { ...directoryVenueDetail, source_url: "https://internal.test" }],
+  ["detail rejects map-only district fields", { ...directoryVenueDetail, district_code: "120104", district_name: "南开区" }],
   ["detail wrong variant", { ...directoryVenueDetail, booking_mode: "ONLINE" }],
   ["detail bad nullable cover", { ...directoryVenueDetail, cover_image: 0 }],
 ])("rejects corrupt venue directory payload: %s", (_name, value) => {

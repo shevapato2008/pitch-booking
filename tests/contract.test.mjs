@@ -129,9 +129,11 @@ test('map and venue detail schemas are closed, discriminated, and location-free'
 
   assert.equal(summary.additionalProperties, false);
   assert.deepEqual(new Set(summary.required), new Set([
-    'id', 'name', 'address', 'latitude', 'longitude', 'booking_mode', 'pitch_types',
-    'cover_image', 'nearest_transit', 'content_verified_at',
+    'id', 'name', 'address', 'district_code', 'district_name', 'latitude', 'longitude',
+    'booking_mode', 'pitch_types', 'cover_image', 'nearest_transit', 'content_verified_at',
   ]));
+  assert.equal(summary.properties.district_code.pattern, '^[0-9]{6}$');
+  assert.equal(summary.properties.district_name.minLength, 1);
   assert.equal(summary.properties.coordinate_system, undefined);
   assert.equal(summary.properties.booking_mode.enum.length, 2);
 
@@ -170,6 +172,10 @@ test('map and venue detail schemas are closed, discriminated, and location-free'
   assert.deepEqual(directory.properties.parking_text.type, ['string', 'null']);
   assert.equal(directory.properties.images.type, 'array');
   assert.equal(directory.properties.facilities.type, 'array');
+  for (const mapOnlyField of ['district_code', 'district_name']) {
+    assert.equal(online.properties[mapOnlyField], undefined, mapOnlyField);
+    assert.equal(directory.properties[mapOnlyField], undefined, mapOnlyField);
+  }
 
   const serializedContract = JSON.stringify({
     paths: {

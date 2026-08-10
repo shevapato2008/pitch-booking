@@ -10,6 +10,7 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const auditScript = path.resolve("scripts/audit-production-package.mjs");
+const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
 
 async function createBuildProject(t) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-development-http-build-"));
@@ -28,6 +29,7 @@ async function build(projectRoot, mode, environment = {}) {
       ...process.env,
       MINIPROGRAM_DEV_BOOKING_SOURCE: "",
       MINIPROGRAM_API_BASE_URL: "",
+      MINIPROGRAM_TENCENT_MAP_KEY: TEST_TENCENT_MAP_KEY,
       ...environment,
     },
   });
@@ -48,6 +50,10 @@ test("development booking source defaults to the existing Fixture composition", 
   assert.match(bootstrap, /registerPaymentCapability/);
   assert.match(bootstrap, /PAYMENT_PREVIEW_NOW/);
   assert.match(cashier, /模拟支付，不会扣款/);
+  assert.doesNotMatch(
+    await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
+    new RegExp(TEST_TENCENT_MAP_KEY),
+  );
 });
 
 test("development native order detail contains all three payment state semantics", async (t) => {
@@ -105,6 +111,18 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.equal(existsSync(path.join(developmentOutput, "dev/venue-directory-source.js")), true);
   assert.equal(existsSync(path.join(developmentOutput, "dev/venue-directory-scenarios.js")), false);
   assert.match(bootstrap, /createDevelopmentPaymentCapability/);
+  assert.match(bootstrap, /TencentPoiSearchCapability/);
+  assert.match(bootstrap, /productionTencentPoiRequest/);
+  assert.match(bootstrap, /registerPoiSearchCapability/);
+  assert.match(
+    bootstrap,
+    /registerPoiSearchCapability\)\(new tencent_poi_search_1\.TencentPoiSearchCapability[\s\S]*return;/,
+  );
+  assert.doesNotMatch(bootstrap, /poi_search_preview|previewPoiSearchCapability|DEV_ONLY_POI_SEARCH_PREVIEW/);
+  assert.match(
+    await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
+    new RegExp(TEST_TENCENT_MAP_KEY),
+  );
 });
 
 test("development HTTP mode requires its explicit API base URL", async (t) => {
@@ -112,6 +130,23 @@ test("development HTTP mode requires its explicit API base URL", async (t) => {
   await assert.rejects(
     build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "http" }),
     /MINIPROGRAM_API_BASE_URL is required for development HTTP mode/,
+  );
+});
+
+test("development HTTP mode requires a format-valid Tencent client key", async (t) => {
+  const projectRoot = await createBuildProject(t);
+  const input = {
+    MINIPROGRAM_DEV_BOOKING_SOURCE: "http",
+    MINIPROGRAM_API_BASE_URL: "http://127.0.0.1:8000",
+  };
+
+  await assert.rejects(
+    build(projectRoot, "development", { ...input, MINIPROGRAM_TENCENT_MAP_KEY: "" }),
+    /MINIPROGRAM_TENCENT_MAP_KEY is required/,
+  );
+  await assert.rejects(
+    build(projectRoot, "development", { ...input, MINIPROGRAM_TENCENT_MAP_KEY: "TENCENT_MAP_KEY_REQUIRED" }),
+    /MINIPROGRAM_TENCENT_MAP_KEY must be a valid Tencent client key/,
   );
 });
 

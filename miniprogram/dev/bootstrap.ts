@@ -1,11 +1,17 @@
-import { productionClock, productionLocation, productionSessionStorage } from "../runtime/production";
+import { MINIPROGRAM_TENCENT_MAP_KEY } from "../config/runtime";
+import {
+  productionClock,
+  productionLocation,
+  productionSessionStorage,
+  productionTencentPoiRequest,
+} from "../runtime/production";
 import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode } from "../services/booking";
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
+import { TencentPoiSearchCapability } from "../services/tencent-poi-search";
 import { registerVenueDirectoryDataSource } from "../services/venue-directory";
-import { registerVenueMapPreviewMetadata } from "../services/venue-map-preview";
 import {
   registerPaymentCapability,
   registerPaymentClock,
@@ -18,8 +24,6 @@ import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./pa
 import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
 import { createDevelopmentPaymentDataSource } from "./payment-source";
 import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
-import { previewPoiSearchCapability } from "./poi-search-preview";
-import { createVenueMapPreviewFixture } from "./venue-map-preview-fixture";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -37,6 +41,10 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);
+    registerPoiSearchCapability(new TencentPoiSearchCapability(
+      productionTencentPoiRequest,
+      MINIPROGRAM_TENCENT_MAP_KEY,
+    ));
     return;
   }
   registerPaymentDataSource(createDevelopmentPaymentDataSource({
@@ -48,8 +56,6 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerPageDataSource(developmentPageDataSource);
   registerBookingDataSource(createDevelopmentBookingDataSource());
   registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource());
-  registerVenueMapPreviewMetadata({ districtByVenueId: createVenueMapPreviewFixture().districtByVenueId });
-  registerPoiSearchCapability(previewPoiSearchCapability);
   registerLocationCapability(productionLocation);
   registerNeutralPhoneTapCode(() => "dev-phone-code");
 }

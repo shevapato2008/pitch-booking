@@ -1135,6 +1135,8 @@ components:
         - id
         - name
         - address
+        - district_code
+        - district_name
         - latitude
         - longitude
         - booking_mode
@@ -1150,6 +1152,12 @@ components:
           type: string
           minLength: 1
         address:
+          type: string
+          minLength: 1
+        district_code:
+          type: string
+          pattern: '^[0-9]{6}$'
+        district_name:
           type: string
           minLength: 1
         latitude:

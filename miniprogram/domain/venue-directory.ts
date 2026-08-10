@@ -24,18 +24,23 @@ export interface VenueTransitStop {
   readonly distanceBasis: "STRAIGHT_LINE" | "MAP_VERIFIED";
 }
 
-interface VenueMapEntryBase {
+interface VenueEntryBase {
   readonly id: string;
-  readonly slug?: string;
-  readonly sortOrder?: number;
   readonly name: string;
   readonly address: string;
   readonly marker: Gcj02Coordinate;
-  readonly navigation?: VenueNavigation;
   readonly pitchTypes: readonly VenuePitchType[];
   readonly coverImage: string | null;
   readonly nearestTransit: readonly VenueTransitStop[];
   readonly contentVerifiedAt: string;
+}
+
+interface VenueMapEntryBase extends VenueEntryBase {
+  readonly slug?: string;
+  readonly sortOrder?: number;
+  readonly districtCode: string;
+  readonly districtName: string;
+  readonly navigation?: VenueNavigation;
 }
 
 export interface OnlineVenueMapEntry extends VenueMapEntryBase {
@@ -48,13 +53,14 @@ export interface DirectoryVenueMapEntry extends VenueMapEntryBase {
 
 export type VenueMapEntry = OnlineVenueMapEntry | DirectoryVenueMapEntry;
 
-interface VenueDetailFields {
+interface VenueDetailFields extends VenueEntryBase {
   readonly slug: string;
   readonly description: string;
   readonly navigation: VenueNavigation;
 }
 
-export type OnlineVenueDetail = Omit<OnlineVenueMapEntry, "slug" | "navigation"> & VenueDetailFields & {
+export type OnlineVenueDetail = VenueDetailFields & {
+  readonly bookingMode: "ONLINE";
   readonly priceAdvantageText: string;
   readonly timezone: "Asia/Shanghai";
   readonly businessHoursText: string;
@@ -66,7 +72,8 @@ export type OnlineVenueDetail = Omit<OnlineVenueMapEntry, "slug" | "navigation">
   readonly availabilityWindow: AvailabilityWindow;
 };
 
-export type DirectoryVenueDetail = Omit<DirectoryVenueMapEntry, "slug" | "navigation"> & VenueDetailFields & {
+export type DirectoryVenueDetail = VenueDetailFields & {
+  readonly bookingMode: "DIRECTORY_ONLY";
   readonly businessHoursText: string | null;
   readonly parkingText: string | null;
   readonly images: readonly string[];

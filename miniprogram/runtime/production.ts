@@ -9,6 +9,7 @@ import type {
 } from "./interfaces";
 import type { SessionStorage } from "../services/session-store";
 import type { PaymentCapability } from "../domain/payment";
+import type { TencentPoiRequest } from "../services/tencent-poi-search";
 
 export const productionClock: Clock = {
   now: () => new Date(),
@@ -83,6 +84,19 @@ export const productionPayment: PaymentCapability = {
     });
   },
 };
+
+export const productionTencentPoiRequest: TencentPoiRequest = ({ url, data }) => new Promise((resolve, reject) => {
+  wx.request({
+    url,
+    method: "GET",
+    data,
+    timeout: 8000,
+    success: (response) => response.statusCode >= 200 && response.statusCode < 300
+      ? resolve(response.data)
+      : reject({ statusCode: response.statusCode }),
+    fail: reject,
+  });
+});
 
 export function productionTransport(baseUrl: string): StatusTransport {
   const requestWithStatus = <T>(

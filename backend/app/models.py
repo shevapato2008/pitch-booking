@@ -93,6 +93,13 @@ class Venue(Base):
     __table_args__ = (
         CheckConstraint("length(trim(slug)) > 0", name="ck_venues_slug_nonempty"),
         CheckConstraint("length(trim(name)) > 0", name="ck_venues_name_nonempty"),
+        CheckConstraint(
+            "district_code ~ '^[0-9]{6}$'", name="ck_venues_district_code"
+        ),
+        CheckConstraint(
+            "length(trim(district_name)) > 0",
+            name="ck_venues_district_name_nonempty",
+        ),
         CheckConstraint("latitude BETWEEN -90 AND 90", name="ck_venues_latitude"),
         CheckConstraint("longitude BETWEEN -180 AND 180", name="ck_venues_longitude"),
         CheckConstraint(
@@ -135,6 +142,8 @@ class Venue(Base):
     timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
     business_hours_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     address: Mapped[str] = mapped_column(Text)
+    district_code: Mapped[str] = mapped_column(String(6))
+    district_name: Mapped[str] = mapped_column(Text)
     parking_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     refund_policy_text: Mapped[str | None] = mapped_column(Text, nullable=True)

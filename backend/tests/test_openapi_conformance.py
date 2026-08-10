@@ -153,6 +153,17 @@ def test_contract_freezes_map_and_discriminated_venue_detail() -> None:
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/VenueDetail"}
 
+    map_item = schemas["VenueMapItem"]
+    assert {"district_code", "district_name"} <= set(map_item["required"])
+    assert map_item["properties"]["district_code"] == {
+        "type": "string",
+        "pattern": "^[0-9]{6}$",
+    }
+    assert map_item["properties"]["district_name"] == {
+        "type": "string",
+        "minLength": 1,
+    }
+
     detail = schemas["VenueDetail"]
     assert detail["oneOf"] == [
         {"$ref": "#/components/schemas/OnlineVenueDetail"},
@@ -166,6 +177,20 @@ def test_contract_freezes_map_and_discriminated_venue_detail() -> None:
         schema = schemas[name]
         assert schema["additionalProperties"] is False
         assert schema["properties"]["booking_mode"] == {"type": "string", "const": mode}
+        assert "district_code" not in schema["properties"]
+        assert "district_name" not in schema["properties"]
+
+
+def test_runtime_openapi_exposes_districts_only_on_map_items() -> None:
+    schemas = create_app().openapi()["components"]["schemas"]
+    map_item = schemas["VenueMapItemResponse"]
+
+    assert {"district_code", "district_name"} <= set(map_item["required"])
+    assert map_item["properties"]["district_code"]["pattern"] == "^[0-9]{6}$"
+    assert map_item["properties"]["district_name"]["minLength"] == 1
+    for detail_name in ("OnlineVenueDetailResponse", "DirectoryVenueDetailResponse"):
+        assert "district_code" not in schemas[detail_name]["properties"]
+        assert "district_name" not in schemas[detail_name]["properties"]
 
 
 def test_contract_freezes_non_disclosing_venue_guard_errors() -> None:

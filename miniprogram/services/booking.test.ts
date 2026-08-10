@@ -41,40 +41,28 @@ describe("booking data source registry", () => {
   test("fixture development bootstrap registers the venue directory", async () => {
     bootstrapDevelopment();
     const source = getVenueDirectoryDataSource();
-    const previewDirectory = await source.getVenueDirectory();
-    expect(previewDirectory).toHaveLength(100);
-    await expect(source.getVenueDetail("7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f")).resolves.toMatchObject({
+    const directory = await source.getVenueDirectory();
+    expect(directory.map(({ id, name, bookingMode }) => ({ id, name, bookingMode }))).toEqual([
+      { id: "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f", name: "渤海元丰足球场", bookingMode: "ONLINE" },
+      { id: "e03d801d-1254-5c62-9a16-9a8800280162", name: "天津奥林匹克中心五人制足球场", bookingMode: "DIRECTORY_ONLY" },
+      { id: "2a9640a5-f625-5ad8-9cb9-3440acb70967", name: "天津火车头体育场", bookingMode: "DIRECTORY_ONLY" },
+      { id: "80532433-8038-5ee5-9963-3e6282aa4abd", name: "天津市人民体育馆足球场", bookingMode: "DIRECTORY_ONLY" },
+      { id: "c0372328-6fa4-585a-b951-3324925763d6", name: "东丽体育中心足球场", bookingMode: "DIRECTORY_ONLY" },
+    ]);
+    await expect(source.getVenueDetail(directory[0].id)).resolves.toMatchObject({
+      id: directory[0].id,
+      name: directory[0].name,
       bookingMode: "ONLINE",
       coverImage: null,
       availabilityWindow: { startDate: "2026-07-22", endDate: "2026-08-04" },
     });
-    await expect(source.getVenueDetail("e03d801d-1254-5c62-9a16-9a8800280162")).resolves.toMatchObject({
-      bookingMode: "DIRECTORY_ONLY",
-    });
-    await expect(source.getVenueDetail("c0372328-6fa4-585a-b951-3324925763d6")).resolves.toMatchObject({
-      id: "c0372328-6fa4-585a-b951-3324925763d6",
-      name: "东丽体育中心足球场",
-      bookingMode: "DIRECTORY_ONLY",
-    });
-
-    const previewOnline = previewDirectory.find(({ bookingMode }) => bookingMode === "ONLINE");
-    const previewInformationOnly = previewDirectory.find(({ bookingMode }) => bookingMode === "DIRECTORY_ONLY");
-    expect(previewOnline).toBeDefined();
-    expect(previewInformationOnly).toBeDefined();
-    await expect(source.getVenueDetail(previewOnline!.id)).resolves.toMatchObject({
-      id: previewOnline!.id,
-      name: previewOnline!.name,
-      bookingMode: "ONLINE",
-      pitchTypes: ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
-      availabilityWindow: { startDate: "2026-07-22", endDate: "2026-08-04" },
-    });
-    const directoryDetail = await source.getVenueDetail(previewInformationOnly!.id);
-    expect(directoryDetail).toMatchObject({
-      id: previewInformationOnly!.id,
-      name: previewInformationOnly!.name,
-      bookingMode: "DIRECTORY_ONLY",
-    });
-    expect(directoryDetail).not.toHaveProperty("availabilityWindow");
+    for (const entry of directory.slice(1)) {
+      const detail = await source.getVenueDetail(entry.id);
+      expect(detail).toMatchObject({ id: entry.id, name: entry.name, bookingMode: "DIRECTORY_ONLY" });
+      expect(detail).not.toHaveProperty("availabilityWindow");
+      expect(detail).not.toHaveProperty("districtCode");
+      expect(detail).not.toHaveProperty("districtName");
+    }
   });
 });
 

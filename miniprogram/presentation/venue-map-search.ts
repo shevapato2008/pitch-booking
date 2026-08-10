@@ -27,16 +27,11 @@ export interface VenueMapFilters {
   readonly districtCode: string | null;
 }
 
-export interface VenueDistrictSidecar {
-  readonly [venueId: string]: { readonly code: string; readonly name: string };
-}
-
 export interface VenueSearchInput {
   readonly venues: readonly VenueMapEntry[];
   readonly center: SearchCenter;
   readonly filters: VenueMapFilters;
   readonly selectedVenueId: string | null;
-  readonly districtByVenueId: VenueDistrictSidecar;
   readonly nearbyThresholdMeters?: number;
 }
 
@@ -72,7 +67,7 @@ export function presentVenueSearch(input: VenueSearchInput): VenueSearchPresenta
   const filtered = input.venues.filter((venue) => (
     (!input.filters.onlineOnly || venue.bookingMode === "ONLINE")
     && (input.filters.districtCode === null
-      || input.districtByVenueId[venue.id]?.code === input.filters.districtCode)
+      || venue.districtCode === input.filters.districtCode)
   ));
 
   if (input.center.kind === "CITY") {

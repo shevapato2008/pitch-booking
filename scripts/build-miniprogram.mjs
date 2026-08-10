@@ -34,6 +34,9 @@ async function build(selectedMode) {
   const productionApiBaseUrl = selectedMode === "production"
     ? resolveProductionApiBaseUrl(process.env.MINIPROGRAM_API_BASE_URL)
     : undefined;
+  const tencentMapKey = selectedMode === "production" || developmentConfig?.source === "http"
+    ? resolveTencentMapKey(process.env.MINIPROGRAM_TENCENT_MAP_KEY)
+    : undefined;
 
   await ensureSafeOutputBoundary(projectRoot, outputRoot);
   const developmentFixtureData = developmentConfig?.source === "fixture"
@@ -43,8 +46,8 @@ async function build(selectedMode) {
   await rm(outputRoot, { recursive: true, force: true });
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
-  if (productionApiBaseUrl !== undefined) {
-    await writeProductionRuntimeConfig(outputRoot, productionApiBaseUrl);
+  if (tencentMapKey !== undefined) {
+    await writeRuntimeConfig(sourceRoot, outputRoot, productionApiBaseUrl, tencentMapKey);
   }
   if (developmentConfig) {
     if (developmentFixtureData) await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
@@ -65,13 +68,42 @@ async function build(selectedMode) {
   console.log(`Built ${selectedMode} mini program at ${path.relative(process.cwd(), outputRoot)}`);
 }
 
-async function writeProductionRuntimeConfig(outputRoot, apiBaseUrl) {
-  const source = `export const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};\n`;
+async function writeRuntimeConfig(sourceRoot, outputRoot, apiBaseUrl, tencentMapKey) {
+  let source;
+  try {
+    source = await readFile(path.join(sourceRoot, "config/runtime.ts"), "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    source = 'export const API_BASE_URL = "https://staging-api.pitch-booking.example";\n'
+      + 'export const MINIPROGRAM_TENCENT_MAP_KEY = "TENCENT_MAP_KEY_REQUIRED";\n';
+  }
+  if (apiBaseUrl !== undefined) {
+    source = replaceRuntimeExport(source, "API_BASE_URL", apiBaseUrl);
+  }
+  source = source.replace(
+    /export\s+const\s+MINIPROGRAM_TENCENT_MAP_KEY\s*=\s*["'][^"']*["']\s*;/,
+    "",
+  );
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 },
     fileName: "runtime.ts",
-  }).outputText;
+  }).outputText + `exports.MINIPROGRAM_TENCENT_MAP_KEY = ${JSON.stringify(tencentMapKey)};\n`;
+  await mkdir(path.join(outputRoot, "config"), { recursive: true });
   await writeFile(path.join(outputRoot, "config/runtime.js"), output);
+}
+
+function replaceRuntimeExport(source, name, value) {
+  const pattern = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*["'][^"']*["']\\s*;`);
+  const replacement = `export const ${name} = ${JSON.stringify(value)};`;
+  return pattern.test(source) ? source.replace(pattern, replacement) : `${source.trimEnd()}\n${replacement}\n`;
+}
+
+export function resolveTencentMapKey(value) {
+  if (!value) throw new Error("MINIPROGRAM_TENCENT_MAP_KEY is required");
+  if (!/^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){5}$/.test(value)) {
+    throw new Error("MINIPROGRAM_TENCENT_MAP_KEY must be a valid Tencent client key");
+  }
+  return value;
 }
 
 export function resolveProductionApiBaseUrl(apiBaseUrl) {
@@ -172,8 +204,8 @@ export async function readDevelopmentPreviewRoutes(sourceRoot) {
 async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
   const bootstrappedSource = [
-    'import { API_BASE_URL } from "./config/runtime";',
-    'import { productionIdentity, productionLocation, productionPayment, productionPhone, productionRuntime, productionSessionStorage } from "./runtime/production";',
+    'import { API_BASE_URL, MINIPROGRAM_TENCENT_MAP_KEY } from "./config/runtime";',
+    'import { productionIdentity, productionLocation, productionPayment, productionPhone, productionRuntime, productionSessionStorage, productionTencentPoiRequest } from "./runtime/production";',
     'import { registerBookingDataSource, registerCreateOrderAttemptStore } from "./services/booking";',
     'import { createCreateOrderAttemptStore } from "./services/create-order-attempt-store";',
     'import { createHttpBookingDataSource } from "./services/http-booking";',
@@ -182,6 +214,8 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { createHttpVenueDirectoryDataSource } from "./services/http-venue-directory";',
     'import { registerPageDataSource } from "./services/page-data";',
     'import { registerLocationCapability } from "./services/location";',
+    'import { registerPoiSearchCapability } from "./services/poi-search";',
+    'import { TencentPoiSearchCapability } from "./services/tencent-poi-search";',
     'import { registerVenueDirectoryDataSource } from "./services/venue-directory";',
     'import { registerPaymentCapability, registerPaymentDataSource } from "./services/payment";',
     'import { createSessionStore } from "./services/session-store";',
@@ -191,6 +225,7 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     "registerPageDataSource(createHttpPageDataSource(runtime.transport, runtime.media));",
     "registerVenueDirectoryDataSource(createHttpVenueDirectoryDataSource(runtime.transport));",
     "registerLocationCapability(productionLocation);",
+    "registerPoiSearchCapability(new TencentPoiSearchCapability(productionTencentPoiRequest, MINIPROGRAM_TENCENT_MAP_KEY));",
     "registerBookingDataSource(createHttpBookingDataSource({",
     "  transport: runtime.transport,",
     "  identity: productionIdentity,",

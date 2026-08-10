@@ -198,6 +198,8 @@ class VenueDirectoryService:
             id=venue.id,
             name=venue.name,
             address=venue.address,
+            district_code=venue.district_code,
+            district_name=venue.district_name,
             latitude=venue.latitude,
             longitude=venue.longitude,
             booking_mode=venue.booking_mode.value,
