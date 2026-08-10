@@ -14,13 +14,20 @@ const setupReferenceCssPath = "artifacts/ui/references/venue-pitch-setup.css";
 const setupReferenceDataPath = "artifacts/ui/references/venue-pitch-setup-data.js";
 const setupReferenceControllerPath = "artifacts/ui/references/venue-pitch-setup.js";
 const setupReviewPath = "artifacts/ui/reviews/venue-pitch-setup/README.md";
+const setupReviewBoardPath = "artifacts/ui/reviews/venue-pitch-setup/reference-board.html";
 const inventoryReferenceHtmlPath = "artifacts/ui/references/venue-inventory-workbench-v2.html";
 const inventoryReferenceCssPath = "artifacts/ui/references/venue-inventory-workbench-v2.css";
 const inventoryReferenceDataPath = "artifacts/ui/references/venue-inventory-workbench-v2-data.js";
 const inventoryReferenceControllerPath = "artifacts/ui/references/venue-inventory-workbench-v2.js";
 const inventoryReviewPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/README.md";
+const inventoryReviewBoardPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/reference-board.html";
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
+const pngDimensions = (path) => {
+  const png = readFileSync(path);
+  assert.equal(png.subarray(1, 4).toString("ascii"), "PNG", `${path} must be a PNG`);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+};
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const declarations = (css, selector) => {
   const match = css.match(new RegExp(`${escape(selector)}\\s*\\{([^}]*)\\}`, "s"));
@@ -90,6 +97,40 @@ const inventoryStates = [
   "calendar-open", "date-refreshing", "date-load-error", "cross-week-ready", "long-list-end", "create-slot-open", "edit-slot-open",
   "save-in-progress", "save-result-unknown", "create-slot-overlap", "concurrent-change", "permission-expired",
 ];
+const reviewObservationHeadings = [
+  "Composition", "Geometry / spacing", "Component hierarchy", "Typography / color / material",
+  "Icon assets", "Copy", "State semantics",
+];
+
+const assertReferenceEvidence = ({ states, reviewRoot, reviewPath, boardPath }) => {
+  mustExist(reviewPath);
+  mustExist(boardPath);
+  const review = read(reviewPath);
+  const board = read(boardPath);
+
+  for (const state of states) {
+    const filename = `${state}-reference-375x812.png`;
+    const screenshotPath = `${reviewRoot}/${filename}`;
+    mustExist(screenshotPath);
+    assert.deepEqual(pngDimensions(screenshotPath), { width: 375, height: 812 }, `${filename} dimensions`);
+    assert.match(review, new RegExp(escape(filename)), `${reviewPath} must name ${filename}`);
+
+    const figure = board.match(new RegExp(`<figure\\b[^>]*data-state="${escape(state)}"[^>]*>([\\s\\S]*?)<\\/figure>`));
+    assert.notEqual(figure, null, `${boardPath} must identify ${state}`);
+    assert.match(figure[1], new RegExp(`<a\\b[^>]*href="${escape(filename)}"`), `${state} must link its Reference`);
+    assert.match(figure[1], new RegExp(`<img\\b[^>]*src="${escape(filename)}"`), `${state} must show its Reference`);
+    assert.equal((figure[1].match(/not started/g) ?? []).length, 4, `${state} future evidence slots must be not started`);
+  }
+
+  for (const heading of reviewObservationHeadings) {
+    const observation = review.match(new RegExp(`### ${escape(heading)}\\n\\n([^\\n]+)`));
+    assert.notEqual(observation, null, `${reviewPath} must populate ${heading}`);
+    assert.doesNotMatch(observation[1], /^Pending\b/i, `${heading} must contain an observation, not a placeholder`);
+  }
+  assert.match(review, /Reference Artifact visual approval:\s*pending/);
+  assert.match(review, /Native Fixture visual approval:\s*not started/);
+  assert.match(review, /Production disabled/);
+};
 
 test("venue pitch setup and inventory v2 manifests freeze shared identity, entry, review, fixture, and reference state contracts", () => {
   const setup = loadManifest(setupManifestPath);
@@ -851,6 +892,21 @@ test("inventory v2 review reserves all state evidence without claiming implement
     assert.equal((line.match(/not started/g) ?? []).length, 4);
     assert.match(line, /\| pending \|$/);
   }
+});
+
+test("venue operations reviews contain complete audited 375 by 812 Reference evidence", () => {
+  assertReferenceEvidence({
+    states: setupStates,
+    reviewRoot: "artifacts/ui/reviews/venue-pitch-setup",
+    reviewPath: setupReviewPath,
+    boardPath: setupReviewBoardPath,
+  });
+  assertReferenceEvidence({
+    states: inventoryStates,
+    reviewRoot: "artifacts/ui/reviews/venue-inventory-workbench-v2",
+    reviewPath: inventoryReviewPath,
+    boardPath: inventoryReviewBoardPath,
+  });
 });
 
 test("inventory v2 reference files stay within focused line budgets", () => {
