@@ -7,6 +7,7 @@ const setupManifestPath = "artifacts/ui/screen-manifest/venue-pitch-setup.yaml";
 const inventoryManifestPath = "artifacts/ui/screen-manifest/venue-inventory-workbench-v2.yaml";
 const setupFlowPath = "artifacts/ui/flows/venue-pitch-setup.md";
 const inventoryFlowPath = "artifacts/ui/flows/venue-inventory-workbench-v2.md";
+const artifactReadmePath = "artifacts/ui/README.md";
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -181,4 +182,13 @@ test("venue pitch setup and inventory v2 flows preserve stated transitions and u
     "long-list-end → final slot visible above fixed bottom action",
     "production home → disabled",
   ]) assert.match(inventoryFlow, new RegExp(escape(line)));
+});
+
+test("venue operations revision README cites its exact design spec and historical v1 status-material baseline", () => {
+  const artifactReadme = read(artifactReadmePath);
+
+  assert.match(artifactReadme, /docs\/superpowers\/specs\/2026-08-10-venue-pitch-setup-and-inventory-revision-design\.md/);
+  assert.match(artifactReadme, /spec sections 11–13/);
+  assert.match(artifactReadme, /artifacts\/ui\/references\/venue-inventory-workbench\.html/);
+  assert.match(artifactReadme, /v1\s+inventory reference remains historical and is used only as a slot-status material baseline/);
 });

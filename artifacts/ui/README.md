@@ -56,9 +56,9 @@ inventory API, or backend write. Native implementation starts only after user vi
 ## Venue pitch setup and inventory revision
 
 This revision freezes reference-only contracts for physical pitch configuration and the v2
-inventory workbench at the `375 × 812` target viewport. Its sources are spec sections 11–13,
-`miniprogram/styles/tokens.wxss`, and `artifacts/ui/design-system/README.md`. The v1 inventory
-reference remains historical and is used only as a slot-status material baseline.
+inventory workbench at the `375 × 812` target viewport. Its sources are `docs/superpowers/specs/2026-08-10-venue-pitch-setup-and-inventory-revision-design.md`, spec sections 11–13, `miniprogram/styles/tokens.wxss`, and `artifacts/ui/design-system/README.md`. The v1
+inventory reference remains historical and is used only as a slot-status material baseline:
+`artifacts/ui/references/venue-inventory-workbench.html`.
 
 - `screen-manifest/venue-pitch-setup.yaml`
 - `flows/venue-pitch-setup.md`
