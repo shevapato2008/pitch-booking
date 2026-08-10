@@ -5,8 +5,6 @@ type IntentId = "HOST" | "BOOK" | "PLAY";
 interface Intent {
   id: IntentId;
   title: string;
-  subtitle: string;
-  icon: string;
 }
 
 interface PageDefinition {
@@ -55,6 +53,16 @@ beforeEach(() => {
     reLaunch: jest.fn(),
     showToast: jest.fn(),
   };
+});
+
+test("keeps only shortcut rendering fields in page data", () => {
+  const page = loadPage();
+
+  expect(page.data.intents).toEqual([
+    { id: "HOST", title: "出租场地" },
+    { id: "BOOK", title: "租赁场地" },
+    { id: "PLAY", title: "找球踢" },
+  ]);
 });
 
 test("uses the valid PLAY query as the returning home active intent", () => {

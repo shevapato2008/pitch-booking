@@ -109,7 +109,7 @@
 .intent-home__shortcuts {
   display: flex;
   gap: 16rpx;
-  margin-bottom: 40rpx;
+  margin-bottom: 48rpx;
 }
 
 .intent-home__shortcut {

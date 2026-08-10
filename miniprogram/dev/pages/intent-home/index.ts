@@ -28,7 +28,7 @@ function previewToast() {
 Page({
   data: {
     intents: INTENT_ENTRY_VISUAL_FIXTURE.intents.map((intent) => ({
-      ...intent,
+      id: intent.id,
       title: intent.title.replace("我要", ""),
     })),
     activeIntent: "BOOK" as IntentId,
