@@ -387,15 +387,18 @@ test("physical pitch setup reuses one editor and expands only the custom format 
   const invalid = SETUP_STATES["field-validation"].editor;
 
   assert.deepEqual(add, {
-    title: "添加一块场地", nameValue: "A场", selectedFormat: 7, customInput: false,
-    completeLabel: "完成", lifecycleAction: null,
+    title: "添加一块场地", nameValue: "A场", selectedFormat: 7, customInput: false, formatEditable: true,
+    completeLabel: "完成", completeNextState: "first-pitch-draft", lifecycleAction: null,
   });
+  assert.equal(preset.pitchId, "pitch-7-001");
   assert.equal(preset.nameValue, "A场");
   assert.equal(preset.selectedFormat, 7);
+  assert.equal(preset.formatEditable, false);
+  assert.match(preset.formatReason, /业务记录/);
   assert.equal(preset.lifecycleAction.label, "停用场地");
   assert.deepEqual(custom, {
-    title: "编辑物理场地", nameValue: "自定义场", selectedFormat: "其他", customInput: true,
-    playersPerSide: 6, preview: "预览：6人制", completeLabel: "完成", lifecycleAction: null,
+    title: "编辑物理场地", nameValue: "自定义场", selectedFormat: "其他", customInput: true, formatEditable: true,
+    playersPerSide: 6, preview: "预览：6人制", completeLabel: "完成", completeNextState: "six-pitch-list", lifecycleAction: null,
   });
   assert.equal(invalid.nameValue, "A场");
   assert.equal(invalid.selectedFormat, 7);
@@ -404,6 +407,7 @@ test("physical pitch setup reuses one editor and expands only the custom format 
 
   const controller = read(setupReferenceControllerPath);
   assert.equal((controller.match(/setAttribute\("role",\s*"dialog"\)/g) ?? []).length, 1);
+  assert.match(controller, /numberInput\.type\s*=\s*"number"/);
   assert.match(controller, /inputMode\s*=\s*"numeric"/);
   assert.match(controller, /\.min\s*=\s*"1"/);
   assert.match(controller, /\.max\s*=\s*"99"/);
@@ -411,6 +415,42 @@ test("physical pitch setup reuses one editor and expands only the custom format 
   for (const label of ["场地名称（可选）", "5人制", "7人制", "8人制", "11人制", "其他", "每队人数", "人制", "完成"]) {
     assert.match(controller, new RegExp(escape(label)));
   }
+});
+
+test("physical pitch setup format controls reflect the selected pitch capability", async () => {
+  const { SETUP_STATES } = await import(`../${setupReferenceDataPath}?format-capabilities=${Date.now()}`);
+
+  assert.equal(SETUP_STATES["edit-preset-open"].editor.formatEditable, false);
+  assert.equal(SETUP_STATES["deactivate-blocked"].editor.formatEditable, false);
+  assert.equal(SETUP_STATES["add-first-open"].editor.formatEditable, true);
+  assert.equal(SETUP_STATES["edit-custom-open"].editor.formatEditable, true);
+  assert.equal(SETUP_STATES["unused-delete-confirm"].editor.formatEditable, true);
+
+  const controller = read(setupReferenceControllerPath);
+  const css = read(setupReferenceCssPath);
+  assert.match(controller, /disabled:\s*!editor\.formatEditable/);
+  assert.match(controller, /setAttribute\("aria-disabled",\s*String\(!editor\.formatEditable\)\)/);
+  assert.match(controller, /editor\.formatReason/);
+  assert.match(css, /\.format-option:disabled\s*\{[^}]*cursor:\s*not-allowed;[^}]*opacity:/s);
+});
+
+test("physical pitch setup controls use deterministic page-draft and local handoff transitions", async () => {
+  const { SETUP_STATES } = await import(`../${setupReferenceDataPath}?transitions=${Date.now()}`);
+
+  assert.equal(SETUP_STATES["first-save-success"].pageAction.href, "venue-inventory-workbench-v2.html?state=day-ready");
+  assert.equal(SETUP_STATES["add-first-open"].editor.completeNextState, "first-pitch-draft");
+  assert.equal(SETUP_STATES["edit-preset-open"].editor.completeNextState, "six-pitch-list");
+  assert.equal(SETUP_STATES["edit-preset-open"].editor.lifecycleAction.nextState, "deactivated-draft");
+  assert.equal(SETUP_STATES["unused-delete-confirm"].editor.confirmation.nextState, "unused-deleted-draft");
+  assert.equal(SETUP_STATES["inactive-only"].recoveryNextState, "reactivated-draft");
+
+  const controller = read(setupReferenceControllerPath);
+  assert.match(controller, /dataset\.nextState/);
+  assert.match(controller, /dataset\.href/);
+  assert.match(controller, /window\.location\.assign\(control\.dataset\.href\)/);
+  assert.match(controller, /editor\.completeNextState/);
+  assert.match(controller, /editor\.lifecycleAction\.nextState/);
+  assert.match(controller, /editor\.confirmation\.nextState/);
 });
 
 test("physical pitch setup lifecycle states use frozen capability semantics and keep destructive actions in the editor", async () => {
@@ -427,12 +467,13 @@ test("physical pitch setup lifecycle states use frozen capability semantics and 
   assert.equal(blocked.editor.blockerMessage, "未来库存尚未处理，暂不能停用");
   assert.equal(confirming.editor.pitchId, "pitch-5-002");
   assert.deepEqual(confirming.editor.confirmation, {
-    kind: "delete", title: "确认删除这块场地？", message: "删除会先写入页面草稿，保存更改后才提交。", confirmLabel: "确认删除",
+    kind: "delete", title: "确认删除这块场地？", message: "删除会先写入页面草稿，保存更改后才提交。",
+    confirmLabel: "确认删除", nextState: "unused-deleted-draft",
   });
   assert.equal(confirming.dialog, undefined);
   assert.equal(deleted.pitches.some(({ id }) => id === "pitch-5-002"), false);
   assert.match(deleted.statusMessage, /待保存/);
-  assert.equal(deactivated.pitches.find(({ id }) => id === "pitch-7-003").draft_status, "INACTIVE · 已停用 · 待保存");
+  assert.equal(deactivated.pitches.find(({ id }) => id === "pitch-7-001").draft_status, "INACTIVE · 已停用 · 待保存");
   assert.equal(reactivated.pitches.find(({ id }) => id === "pitch-7-004").draft_status, "ACTIVE · 使用中 · 待保存");
 
   const controller = read(setupReferenceControllerPath);

@@ -250,6 +250,11 @@
   font-weight: 700;
 }
 
+.format-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .custom-number-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

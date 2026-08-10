@@ -32,7 +32,8 @@ const action = (label, className, options = {}) => {
   const button = element("button", className);
   button.type = "button";
   button.disabled = Boolean(options.disabled);
-  if (options.nextState) button.dataset.state = options.nextState;
+  if (options.nextState) button.dataset.nextState = options.nextState;
+  if (options.href) button.dataset.href = options.href;
   const text = element("span", "action-label", label);
   button.append(text);
   return button;
@@ -67,7 +68,7 @@ const renderPitchCard = (pitch, state) => {
     element("span", "pitch-card__status", status),
   );
   card.append(copy, svgIcon("chevron"));
-  if (state.id === "inactive-only") card.dataset.state = "reactivated-draft";
+  if (state.id === "inactive-only") card.dataset.nextState = state.recoveryNextState;
   return card;
 };
 
@@ -83,7 +84,7 @@ const renderStateBody = (state, list) => {
   }
   if (state.id === "inactive-only") {
     const recovery = element("div", "recovery-row");
-    recovery.append(action(state.recoveryLabel, "secondary-action", { nextState: "reactivated-draft" }));
+    recovery.append(action(state.recoveryLabel, "secondary-action", { nextState: state.recoveryNextState }));
     list.append(recovery);
   }
   if (state.mode !== "loading" && state.mode !== "error") {
@@ -109,7 +110,7 @@ const renderEditor = (editor) => {
   const close = element("button", "sheet-close");
   close.type = "button";
   close.setAttribute("aria-label", "关闭编辑面板");
-  close.dataset.state = "six-pitch-list";
+  close.dataset.nextState = "six-pitch-list";
   close.append(svgIcon("back"));
   heading.append(headingCopy, close);
 
@@ -141,11 +142,13 @@ const renderEditor = (editor) => {
   const options = element("div", "format-options");
   ["5人制", "7人制", "8人制", "11人制", "其他"].forEach((label) => {
     const format = label === "其他" ? label : Number.parseInt(label, 10);
-    const option = action(label, "format-option");
+    const option = action(label, "format-option", { disabled: !editor.formatEditable });
     option.setAttribute("aria-pressed", String(editor.selectedFormat === format));
+    option.setAttribute("aria-disabled", String(!editor.formatEditable));
     options.append(option);
   });
   formatField.append(legend, options);
+  if (editor.formatReason) formatField.append(element("span", "type-caption muted", editor.formatReason));
 
   fields.append(nameField, formatField);
   if (editor.customInput) {
@@ -155,6 +158,7 @@ const renderEditor = (editor) => {
     const numberRow = element("div", "custom-number-row");
     const numberInput = element("input", "numeric-input");
     numberInput.id = "players-per-side";
+    numberInput.type = "number";
     numberInput.inputMode = "numeric";
     numberInput.min = "1";
     numberInput.max = "99";
@@ -165,7 +169,10 @@ const renderEditor = (editor) => {
   }
 
   if (editor.lifecycleAction) {
-    const lifecycle = action(editor.lifecycleAction.label, "secondary-action", { disabled: editor.lifecycleAction.disabled });
+    const lifecycle = action(editor.lifecycleAction.label, "secondary-action", {
+      disabled: editor.lifecycleAction.disabled,
+      nextState: editor.lifecycleAction.nextState,
+    });
     fields.append(lifecycle);
   }
   if (editor.futureBlockers) {
@@ -184,14 +191,14 @@ const renderEditor = (editor) => {
     confirmation.append(
       element("strong", "type-body", editor.confirmation.title),
       element("span", "type-caption muted", editor.confirmation.message),
-      action(editor.confirmation.confirmLabel, "secondary-action", { nextState: "unused-deleted-draft" }),
+      action(editor.confirmation.confirmLabel, "secondary-action", { nextState: editor.confirmation.nextState }),
     );
     fields.append(confirmation);
   }
   const sheetActions = element("div", "sheet-actions");
   sheetActions.append(
     action("取消", "secondary-action", { nextState: "six-pitch-list" }),
-    action(editor.completeLabel, "primary-action", { nextState: "first-pitch-draft" }),
+    action(editor.completeLabel, "primary-action", { nextState: editor.completeNextState }),
   );
   sheet.append(heading, fields, sheetActions);
   fragment.append(sheet);
@@ -220,7 +227,10 @@ const render = (stateId) => {
   screen.append(summary, list);
 
   const footer = element("footer", "fixed-action page-action safe-area-bottom");
-  const save = action(state.pageAction.label, "primary-action type-cta", { disabled: state.pageAction.disabled });
+  const save = action(state.pageAction.label, "primary-action type-cta", {
+    disabled: state.pageAction.disabled,
+    href: state.pageAction.href,
+  });
   save.dataset.saveAction = "true";
   footer.append(save);
   app.append(screen, footer);
@@ -229,10 +239,14 @@ const render = (stateId) => {
 };
 
 app.addEventListener("click", (event) => {
-  const control = event.target.closest("[data-state]");
+  const control = event.target.closest("[data-next-state], [data-href]");
   if (!control || control.disabled) return;
-  window.history.replaceState(null, "", `?state=${control.dataset.state}`);
-  render(control.dataset.state);
+  if (control.dataset.href) {
+    window.location.assign(control.dataset.href);
+    return;
+  }
+  window.history.replaceState(null, "", `?state=${control.dataset.nextState}`);
+  render(control.dataset.nextState);
 });
 
 render(currentStateId);
