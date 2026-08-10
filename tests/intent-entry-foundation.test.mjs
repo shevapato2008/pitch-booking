@@ -77,6 +77,11 @@ test("both self-contained 375 by 812 references preserve the intent hierarchy", 
   ]) assert.match(first, new RegExp(copy));
 
   assert.match(returning, /<main class="artifact" data-state="returning-home">/);
+  assert.match(
+    returning,
+    /<div class="greeting">\s*<h1 id="page-title">早上好<\/h1>\s*<p>今天想从哪里开始？<\/p>\s*<\/div>/,
+    "returning home leads with the greeting heading and follows with weaker supporting copy",
+  );
   for (const copy of [
     "早上好", "今天想从哪里开始？", "出租场地", "租赁场地", "找球踢",
     "渤海元丰足球场", "查看未来 14 天可订时段", "1 个待支付订单", "请在剩余时间内完成支付",
