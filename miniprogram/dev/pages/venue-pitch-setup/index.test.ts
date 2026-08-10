@@ -28,16 +28,19 @@ interface PageDefinition {
   onLoad(options?: { state?: unknown }): void;
   onOpenAdd(): void;
   onPitchTap(event: { currentTarget?: { dataset?: { pitchId?: unknown } } }): void;
+  onNameInput(event: { detail?: { value?: unknown } }): void;
+  onSelectFormat(event: { currentTarget?: { dataset?: { format?: unknown } } }): void;
   onPlayersInput(event: { detail?: { value?: unknown } }): void;
   onCompleteEditor(): void;
   onDeletePitch(): void;
   onConfirmDelete(): void;
-  onDeactivatePitch(): void;
   onReactivatePitch(): void;
+  onLifecycleAction(): void;
   onCloseSheet(): void;
   onCancelSheet(): void;
   onBack(): void;
   onPageAction(): void;
+  transition(state: VenuePitchSetupVisualState): void;
 }
 
 interface RuntimePage extends PageDefinition {
@@ -131,17 +134,56 @@ test("editor completion changes only the page draft visual state", () => {
   expect(page.data.visualState).toBe("six-pitch-list");
 });
 
-test("delete, deactivate, and reactivate use only approved local draft states", () => {
+test("add keeps its editor origin and typed fields through other format completion", () => {
+  const page = loadPage();
+  page.onLoad({ state: "first-entry-empty" });
+  page.onOpenAdd();
+  page.onNameInput({ detail: { value: "六人场" } });
+  page.onSelectFormat({ currentTarget: { dataset: { format: "other" } } });
+  page.onPlayersInput({ detail: { value: "6" } });
+
+  expect(page.data).toMatchObject({ visualState: "add-first-open", underlyingState: "first-entry-empty", draftName: "六人场", draftPlayersInput: "6" });
+  expect(page.data.editor).toMatchObject({ title: "添加一块场地", selectedFormat: "其他", customInput: true });
+  page.onCompleteEditor();
+  expect(page.data).toMatchObject({ visualState: "first-pitch-draft", configuredCount: 1 });
+  expect(page.data.pitches[0]).toMatchObject({ clientRef: "draft-pitch-1", customName: "六人场", displayName: "六人场", playersPerSide: 6 });
+});
+
+test("preset selection updates the add draft, empty name creates unnamed draft, and edit returns to its underlying list", () => {
+  const page = loadPage();
+  page.onLoad({ state: "first-entry-empty" });
+  page.onOpenAdd();
+  page.onNameInput({ detail: { value: "" } });
+  page.onSelectFormat({ currentTarget: { dataset: { format: 5 } } });
+  expect(page.data.editor?.formatOptions.filter(({ selected }) => selected).map(({ value }) => value)).toEqual([5]);
+  page.onCompleteEditor();
+  expect(page.data.visualState).toBe("unnamed-pitch-draft");
+  expect(page.data.pitches[0]).toMatchObject({ clientRef: "draft-pitch-unnamed-1", customName: null, displayName: "新建的 5 人制场地 1", playersPerSide: 5 });
+
+  page.onLoad({ state: "edit-custom-open" });
+  page.onNameInput({ detail: { value: "保留于编辑草稿" } });
+  page.onSelectFormat({ currentTarget: { dataset: { format: 5 } } });
+  page.onCompleteEditor();
+  expect(page.data.visualState).toBe("six-pitch-list");
+});
+
+test("delete and reactivate use only approved local draft states", () => {
   const page = loadPage();
   page.onLoad();
   page.onDeletePitch();
   expect(page.data.visualState).toBe("unused-delete-confirm");
   page.onConfirmDelete();
   expect(page.data.visualState).toBe("unused-deleted-draft");
-  page.onDeactivatePitch();
-  expect(page.data.visualState).toBe("deactivated-draft");
   page.onReactivatePitch();
   expect(page.data.visualState).toBe("reactivated-draft");
+});
+
+test("lifecycle action consumes the current editor descriptor target", () => {
+  const page = loadPage();
+  page.onLoad({ state: "edit-preset-open" });
+  expect(page.data.editor?.lifecycleNextState).toBe("deactivated-draft");
+  page.onLifecycleAction();
+  expect(page.data.visualState).toBe("deactivated-draft");
 });
 
 test.each(["save-in-progress", "save-result-unknown"] as const)("%s ignores duplicate page saves and cannot be dismissed", (state) => {
@@ -150,6 +192,29 @@ test.each(["save-in-progress", "save-result-unknown"] as const)("%s ignores dupl
   page.onPageAction();
   page.onCloseSheet();
   expect(page.data.visualState).toBe(state);
+});
+
+test.each([
+  ["first-pitch-draft", 1, "draft-pitch-1", "ACTIVE"],
+  ["unused-deleted-draft", 5, "pitch-5-001", "ACTIVE"],
+  ["deactivated-draft", 6, "pitch-5-001", "ACTIVE"],
+] as const)("preserves %s through saving, failure, retry, and unknown result", (source, count, firstId, firstStatus) => {
+  const page = loadPage();
+  page.onLoad({ state: source });
+  const expectedPitches = page.data.pitches;
+
+  page.onPageAction();
+  expect(page.data).toMatchObject({ visualState: "save-in-progress", configuredCount: count });
+  expect(page.data.pitches).toEqual(expectedPitches);
+  expect(page.data.pitches[0].clientRef ?? page.data.pitches[0].id).toBe(firstId);
+  expect(page.data.pitches[0].status).toBe(firstStatus);
+  page.transition("save-failed");
+  expect(page.data.pitches).toEqual(expectedPitches);
+  page.onPageAction();
+  expect(page.data.pitches).toEqual(expectedPitches);
+  page.transition("save-result-unknown");
+  expect(page.data).toMatchObject({ visualState: "save-result-unknown", configuredCount: count });
+  expect(page.data.pitches).toEqual(expectedPitches);
 });
 
 test("back from a page draft opens leave confirmation and cancel restores that draft", () => {

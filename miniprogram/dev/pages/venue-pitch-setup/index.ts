@@ -2,6 +2,7 @@ import {
   VENUE_PITCH_SETUP_FIXTURE,
   buildVenuePitchSetupView,
   resolveVenuePitchSetupVisualState,
+  type VenuePitch,
   type VenuePitchSetupVisualState,
 } from "../../venue-pitch-setup-fixture";
 import { readIntentHeaderLayout } from "../../intent-header-layout";
@@ -9,6 +10,17 @@ import { readIntentHeaderLayout } from "../../intent-header-layout";
 interface SetupOptions { state?: unknown }
 interface DatasetEvent { currentTarget?: { dataset?: { pitchId?: unknown; state?: unknown; format?: unknown } } }
 interface InputEvent { detail?: { value?: unknown } }
+interface DraftSnapshot { readonly pitches: readonly VenuePitch[]; readonly configuredCount: number | null }
+type EditorOrigin = "add" | "edit" | null;
+
+const saveStates = new Set<VenuePitchSetupVisualState>([
+  "save-in-progress", "save-failed", "configuration-changed", "save-result-unknown",
+]);
+
+const editorOriginFor = (state: VenuePitchSetupVisualState): EditorOrigin => {
+  if (state === "add-first-open") return "add";
+  return buildVenuePitchSetupView(state).editor ? "edit" : null;
+};
 
 const underlyingFor = (state: VenuePitchSetupVisualState): VenuePitchSetupVisualState => {
   if (state === "add-first-open") return "first-entry-empty";
@@ -33,26 +45,38 @@ Page({
     ...buildVenuePitchSetupView("six-pitch-list"),
     ...inputPatch("six-pitch-list"),
     underlyingState: "six-pitch-list" as VenuePitchSetupVisualState,
+    editorOrigin: null as EditorOrigin,
+    draftSnapshot: null as DraftSnapshot | null,
     headerTopPx: 0,
     headerRowHeightPx: 44,
     headerRightInsetPx: 0,
   },
 
-  transition(state: VenuePitchSetupVisualState, underlyingState?: VenuePitchSetupVisualState) {
+  transition(state: VenuePitchSetupVisualState, underlyingState?: VenuePitchSetupVisualState, suppliedSnapshot?: DraftSnapshot) {
+    const built = buildVenuePitchSetupView(state);
+    const renderedSnapshot = suppliedSnapshot ?? (saveStates.has(state)
+      ? this.data.draftSnapshot ?? { pitches: this.data.pitches, configuredCount: this.data.configuredCount }
+      : null);
     this.setData({
-      ...buildVenuePitchSetupView(state),
+      ...built,
+      ...(renderedSnapshot ? { pitches: renderedSnapshot.pitches, configuredCount: renderedSnapshot.configuredCount } : {}),
       ...inputPatch(state),
       underlyingState: underlyingState ?? underlyingFor(state),
+      editorOrigin: editorOriginFor(state),
+      draftSnapshot: saveStates.has(state) ? renderedSnapshot : null,
     });
   },
 
   onLoad(options: SetupOptions = {}) {
     const layout = readIntentHeaderLayout();
     const state = resolveVenuePitchSetupVisualState(options.state);
+    const built = buildVenuePitchSetupView(state);
     this.setData({
-      ...buildVenuePitchSetupView(state),
+      ...built,
       ...inputPatch(state),
       underlyingState: underlyingFor(state),
+      editorOrigin: editorOriginFor(state),
+      draftSnapshot: saveStates.has(state) ? { pitches: built.pitches, configuredCount: built.configuredCount } : null,
       headerTopPx: layout.topPx,
       headerRowHeightPx: layout.rowHeightPx,
       headerRightInsetPx: layout.rightInsetPx,
@@ -76,8 +100,23 @@ Page({
   },
 
   onSelectFormat(event: DatasetEvent) {
-    const format = event.currentTarget?.dataset?.format;
-    if (format === "other") this.transition("edit-custom-open", this.data.underlyingState);
+    if (!this.data.editor?.formatEditable) return;
+    const raw = event.currentTarget?.dataset?.format;
+    const format = raw === "other" || raw === "其他" ? "其他" : Number(raw);
+    if (format !== "其他" && ![5, 7, 8, 11].includes(format)) return;
+    const customInput = format === "其他";
+    const players = customInput ? this.data.draftPlayersInput : String(format);
+    this.setData({
+      editor: {
+        ...this.data.editor,
+        selectedFormat: format,
+        customInput,
+        formatOptions: this.data.editor.formatOptions.map((option) => ({ ...option, selected: option.value === format })),
+      },
+      draftPlayersInput: players,
+      draftPlayersPreview: `预览：${players}人制`,
+      isDraftPlayersValid: /^\d+$/.test(players) && Number(players) >= 1 && Number(players) <= 99,
+    });
   },
 
   onPlayersInput(event: InputEvent) {
@@ -92,16 +131,32 @@ Page({
   },
 
   onCompleteEditor() {
-    if (this.data.visualState === "add-first-open") return this.transition("first-pitch-draft");
-    if (this.data.visualState === "edit-custom-open" && !this.data.isDraftPlayersValid) return this.transition("field-validation", this.data.underlyingState);
-    const next = this.data.editor?.completeNextState;
-    if (next) this.transition(next);
+    if (!this.data.editor) return;
+    if (this.data.editor.customInput && !this.data.isDraftPlayersValid) {
+      if (this.data.editorOrigin === "edit") this.transition("field-validation", this.data.underlyingState);
+      return;
+    }
+    if (this.data.editorOrigin === "add") {
+      const name = this.data.draftName.trim();
+      const playersPerSide = this.data.editor.selectedFormat === "其他"
+        ? Number(this.data.draftPlayersInput)
+        : Number(this.data.editor.selectedFormat);
+      const pitch: VenuePitch = name
+        ? { clientRef: "draft-pitch-1", customName: name, systemName: null, displayName: name, playersPerSide, sequence: null, status: "ACTIVE", nameSource: "自定义名称", draftStatus: "ACTIVE · 待保存" }
+        : { clientRef: "draft-pitch-unnamed-1", customName: null, systemName: null, displayName: `新建的 ${playersPerSide} 人制场地 1`, playersPerSide, sequence: null, status: "ACTIVE", nameSource: "保存后生成正式名称", draftStatus: "ACTIVE · 待保存" };
+      this.transition(name ? "first-pitch-draft" : "unnamed-pitch-draft", undefined, { pitches: [pitch], configuredCount: 1 });
+      return;
+    }
+    this.transition(this.data.underlyingState);
   },
 
   onDeletePitch() { this.transition("unused-delete-confirm", "six-pitch-list"); },
   onConfirmDelete() { this.transition("unused-deleted-draft"); },
-  onDeactivatePitch() { this.transition("deactivated-draft"); },
   onReactivatePitch() { this.transition("reactivated-draft"); },
+  onLifecycleAction() {
+    const next = this.data.editor?.lifecycleNextState;
+    if (next) this.transition(next);
+  },
 
   onCloseSheet() {
     if (this.data.duplicateSaveDisabled || !this.data.isSheetOpen) return;

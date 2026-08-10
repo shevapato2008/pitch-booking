@@ -55,6 +55,15 @@ test("pitch cards expose affordance only when the current view provides a transi
   assert.match(template, /wx:if="{{cardNextStates\[item\.id\]}}" class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron"/);
 });
 
+test("lifecycle controls bind descriptor, delete, and reactivate handlers without hardcoded deactivate routing", async () => {
+  const template = await readFile(`${pageRoot}.wxml`, "utf8");
+  assert.match(template, /mode === 'inactive-only'[^>]*bindtap="onReactivatePitch"/);
+  assert.match(template, /editor\.lifecycleLabel[^>]*bindtap="onLifecycleAction"/);
+  assert.match(template, /editor\.lifecycleLabel === '删除场地'[^>]*bindtap="onDeletePitch"/);
+  assert.match(template, /bindtap="onConfirmDelete"/);
+  assert.doesNotMatch(template, /bindtap="onDeactivatePitch"/);
+});
+
 test("load error exposes one local reload affordance instead of a second generic recovery action", async () => {
   const template = await readFile(`${pageRoot}.wxml`, "utf8");
   assert.match(template, /wx:elif="{{mode === 'error'}}"[\s\S]*?>重新加载<\/button>/);

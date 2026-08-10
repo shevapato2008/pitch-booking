@@ -65,7 +65,7 @@
         <view class="venue-pitch-setup-icon venue-pitch-setup-icon--plus" aria-hidden="true"></view>
         <text>添加一块场地</text>
       </button>
-      <button wx:if="{{mode === 'inactive-only'}}" class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onRecovery">恢复使用</button>
+      <button wx:if="{{mode === 'inactive-only'}}" class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onReactivatePitch">恢复使用</button>
     </scroll-view>
   </view>
 
@@ -126,6 +126,7 @@
           </view>
         </view>
 
+        <button wx:if="{{editor.lifecycleLabel === '删除场地'}}" class="venue-pitch-setup__danger venue-pitch-setup__touch" disabled="{{editor.lifecycleDisabled}}" bindtap="onDeletePitch">{{editor.lifecycleLabel}}</button>
         <view wx:if="{{editor.confirmation}}" class="venue-pitch-setup__confirmation">
           <text class="venue-pitch-setup__sheet-title">确认删除这块场地？</text>
           <text>{{editor.confirmation.message}}</text>
@@ -136,7 +137,7 @@
         </view>
 
         <view wx:else class="venue-pitch-setup__sheet-actions">
-          <button wx:if="{{editor.lifecycleLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch" disabled="{{editor.lifecycleDisabled}}" bindtap="onDeactivatePitch">{{editor.lifecycleLabel}}</button>
+          <button wx:if="{{editor.lifecycleLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch" disabled="{{editor.lifecycleDisabled}}" bindtap="onLifecycleAction">{{editor.lifecycleLabel}}</button>
           <button class="venue-pitch-setup__primary venue-pitch-setup__touch" disabled="{{editor.completeDisabled || !isDraftPlayersValid}}" bindtap="onCompleteEditor">{{editor.completeLabel}}</button>
         </view>
       </view>
