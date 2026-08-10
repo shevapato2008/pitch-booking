@@ -3,7 +3,8 @@
 ## 状态
 
 - Target viewport: 375 × 812。
-- 产品/IA approved；visual evidence complete；用户视觉批准 pending。
+- 产品/IA approved；visual evidence complete；用户视觉批准 approved。
+- 用户于 2026-08-10 明确确认三态视觉通过。
 - 三个状态均为 production disabled 的独立 visual Artifact。
 - reference/implementation same logical viewport；自动化布局检查不能替代用户视觉确认。
 - Fixture deletion condition: `delete before production intent home integration`。

@@ -127,7 +127,7 @@ test("three self-contained 375 by 812 references preserve the intent hierarchy a
   ]) assert.match(returning, new RegExp(copy));
 });
 
-test("review board links the complete three-state evidence matrix and keeps user approval pending", () => {
+test("review board links the complete three-state evidence matrix and records user approval", () => {
   const readmePath = `${reviewRoot}/README.md`;
   const boardPath = `${reviewRoot}/review-board.html`;
   mustExist(readmePath);
@@ -139,7 +139,8 @@ test("review board links the complete three-state evidence matrix and keeps user
     for (const label of reviewStates) assert.match(source, new RegExp(label));
   }
   for (const text of [
-    "375 × 812", "产品/IA approved；visual evidence complete；用户视觉批准 pending", "production disabled",
+    "375 × 812", "产品/IA approved；visual evidence complete；用户视觉批准 approved", "production disabled",
+    "用户于 2026-08-10 明确确认三态视觉通过",
     "reference/implementation same logical viewport", "delete before production intent home integration",
     "不授权 inventory/backend",
     "user-supplied full-window DevTools screenshot is diagnostic evidence of safe-area bug only, not same-viewport implementation evidence",
@@ -147,6 +148,8 @@ test("review board links the complete three-state evidence matrix and keeps user
     "App.captureScreenshot timeout", "user-approved fallback", "detached simulator window",
     "dev/pages/intent-entry/index?cityPicker=open", "dev/pages/intent-home/index?intent=BOOK",
   ]) assert.match(readme, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(readme, /用户视觉批准 pending/);
+  assert.doesNotMatch(board, /用户视觉批准仍为 pending/);
   for (const category of ["composition", "geometry/spacing", "component hierarchy", "typography/color/material", "icon assets", "copy", "state semantics"]) {
     assert.match(readme, new RegExp(category));
   }
