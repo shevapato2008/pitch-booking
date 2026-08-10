@@ -82,6 +82,11 @@ test("both self-contained 375 by 812 references preserve the intent hierarchy", 
     /<div class="greeting">\s*<h1 id="page-title">早上好<\/h1>\s*<p>今天想从哪里开始？<\/p>\s*<\/div>/,
     "returning home leads with the greeting heading and follows with weaker supporting copy",
   );
+  assert.match(
+    returning,
+    /\.custom-header\s*\{[^}]*padding:\s*0\s+100px\s+0\s+20px;/,
+    "returning home reserves the header's rightmost 100px for the WeChat capsule",
+  );
   for (const copy of [
     "早上好", "今天想从哪里开始？", "出租场地", "租赁场地", "找球踢",
     "渤海元丰足球场", "查看未来 14 天可订时段", "1 个待支付订单", "请在剩余时间内完成支付",
