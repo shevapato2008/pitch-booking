@@ -84,4 +84,4 @@ State copy distinguishes zero configuration, inactive-only recovery, local page 
 
 Loading and unknown-result states disable duplicate saves; load/save failures expose recovery without relabeling the state as empty; inactive-only exposes `恢复使用`; the custom player count appears inline in the same editor; delete/deactivate/reactivate outcomes remain page drafts; and all approval plus native/production gates remain pending or not started.
 
-No screenshots, side-by-side composites, overlays, differences, implementation evidence, or visual approval are claimed in this task.
+Reference screenshots are present, but no native implementation, side-by-side, overlay, or difference screenshots are claimed; user approval remains pending.

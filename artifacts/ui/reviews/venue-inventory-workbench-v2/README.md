@@ -82,4 +82,4 @@ Copy names the selected date and physical pitch, keeps load failures distinct fr
 
 Pitch and date refresh states retain the complementary selection; their errors retain the attempted selection and expose retry. Calendar dates outside 2026-08-10 through 2026-08-23 are visibly disabled, `cross-week-ready` shows Aug 17–23, error sheets retain draft inputs, and `permission-expired` keeps readable context while disabling write controls. Approval, native, and production gates remain pending or not started.
 
-No screenshots, side-by-side composites, overlays, differences, implementation evidence, or visual approval are claimed in this task.
+Reference screenshots are present, but no native implementation, side-by-side, overlay, or difference screenshots are claimed; user approval remains pending.
