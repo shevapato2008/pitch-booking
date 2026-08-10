@@ -1,9 +1,11 @@
 import {
+  CITY_ENTRY_VISUAL_FIXTURE,
   DEV_LAST_INTENT_KEY,
   INTENT_ENTRY_VISUAL_FIXTURE,
   RETURNING_HOME_VISUAL_FIXTURE,
   type IntentId,
 } from "../../intent-entry-fixture";
+import { readIntentHeaderLayout } from "../../intent-header-layout";
 
 interface IntentOpenEvent {
   currentTarget?: {
@@ -36,9 +38,18 @@ Page({
     recentSummary: RETURNING_HOME_VISUAL_FIXTURE.recentSummary,
     pendingOrderSummary: RETURNING_HOME_VISUAL_FIXTURE.pendingOrderSummary,
     pendingOrderDetail: RETURNING_HOME_VISUAL_FIXTURE.pendingOrderDetail,
+    headerTopPx: 0,
+    headerRowHeightPx: 44,
+    headerRightInsetPx: 0,
+    isCityPickerOpen: false,
+    currentCityName: CITY_ENTRY_VISUAL_FIXTURE.currentCityName,
+    currentStatus: CITY_ENTRY_VISUAL_FIXTURE.currentStatus,
+    otherCityName: CITY_ENTRY_VISUAL_FIXTURE.otherCityName,
+    otherStatus: CITY_ENTRY_VISUAL_FIXTURE.otherStatus,
   },
 
   onLoad(query: IntentQuery = {}) {
+    const headerLayout = readIntentHeaderLayout();
     const queryIntent = query.intent;
     const storedIntent = isIntentId(queryIntent)
       ? undefined
@@ -49,7 +60,24 @@ Page({
         ? storedIntent
         : "BOOK";
 
-    this.setData({ activeIntent });
+    this.setData({
+      activeIntent,
+      headerTopPx: headerLayout.topPx,
+      headerRowHeightPx: headerLayout.rowHeightPx,
+      headerRightInsetPx: headerLayout.rightInsetPx,
+    });
+  },
+
+  onOpenCityPicker() {
+    this.setData({ isCityPickerOpen: true });
+  },
+
+  onCloseCityPicker() {
+    this.setData({ isCityPickerOpen: false });
+  },
+
+  onSelectCurrentCity() {
+    this.setData({ isCityPickerOpen: false });
   },
 
   onOpenIntent(event: IntentOpenEvent) {

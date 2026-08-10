@@ -1,7 +1,9 @@
 <view class="intent-entry u-page">
-  <view class="intent-entry__header">
-    <view class="intent-entry__header-row">
-      <text class="intent-entry__brand">天津足球</text>
+  <view class="intent-entry__header" style="padding-top: {{headerTopPx}}px;">
+    <view class="intent-entry__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <button class="intent-city-button" hover-class="intent-city-button--pressed" bindtap="onOpenCityPicker" aria-label="当前城市天津，点击切换">
+        <text>{{currentCityName}}</text><view class="intent-city-chevron" aria-hidden="true"></view>
+      </button>
     </view>
   </view>
 
@@ -59,4 +61,23 @@
 
     <text class="intent-entry__note">{{note}}</text>
   </view>
+
+  <block wx:if="{{isCityPickerOpen}}">
+    <view class="intent-entry__city-scrim" bindtap="onCloseCityPicker" aria-label="关闭城市选择"></view>
+    <view class="intent-entry__city-sheet" role="dialog" aria-label="选择城市">
+      <view class="intent-entry__city-sheet-header">
+        <text class="intent-entry__city-sheet-title">选择城市</text>
+        <button class="intent-entry__city-close" hover-class="intent-entry__city-close--pressed" bindtap="onCloseCityPicker" aria-label="关闭城市选择">
+          <view class="intent-entry__city-close-icon" aria-hidden="true"></view>
+        </button>
+      </view>
+      <button class="intent-entry__city-row" hover-class="intent-entry__city-row--pressed" bindtap="onSelectCurrentCity" aria-label="天津，当前已开放">
+        <view class="intent-entry__city-copy"><text class="intent-entry__city-name">{{currentCityName}}</text><text class="intent-entry__city-status">{{currentStatus}}</text></view>
+        <view class="intent-entry__city-selected" aria-hidden="true"></view>
+      </button>
+      <button class="intent-entry__city-row intent-entry__city-row--disabled" disabled aria-label="其他城市，敬请期待">
+        <view class="intent-entry__city-copy"><text class="intent-entry__city-name">{{otherCityName}}</text><text class="intent-entry__city-status">{{otherStatus}}</text></view>
+      </button>
+    </view>
+  </block>
 </view>

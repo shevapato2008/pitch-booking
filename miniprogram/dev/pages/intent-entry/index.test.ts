@@ -13,8 +13,20 @@ interface PageDefinition {
   data: {
     intents: readonly Intent[];
     note: string;
+    headerTopPx: number;
+    headerRowHeightPx: number;
+    headerRightInsetPx: number;
+    isCityPickerOpen: boolean;
+    currentCityName: string;
+    currentStatus: string;
+    otherCityName: string;
+    otherStatus: string;
   };
+  onLoad(options?: { cityPicker?: unknown }): void;
   onChooseIntent(event: { currentTarget?: { dataset?: { intentId?: unknown } } }): void;
+  onOpenCityPicker(): void;
+  onCloseCityPicker(): void;
+  onSelectCurrentCity(): void;
 }
 
 interface RuntimePage extends PageDefinition {
@@ -44,10 +56,42 @@ function choose(page: RuntimePage, intentId: unknown) {
 
 beforeEach(() => {
   (globalThis as unknown as { wx: unknown }).wx = {
+    getWindowInfo: jest.fn(() => ({ windowWidth: 393, statusBarHeight: 59 })),
+    getMenuButtonBoundingClientRect: jest.fn(() => ({
+      top: 63,
+      bottom: 95,
+      left: 295,
+      right: 382,
+      width: 87,
+      height: 32,
+    })),
     setStorageSync: jest.fn(),
     reLaunch: jest.fn(),
     showToast: jest.fn(),
   };
+});
+
+test("reads the safe header layout and opens the city sheet only from the exact first-entry option", () => {
+  const page = loadPage();
+
+  page.onLoad({ cityPicker: "open" });
+
+  expect(page.data.headerTopPx).toBe(59);
+  expect(page.data.headerRowHeightPx).toBe(44);
+  expect(page.data.headerRightInsetPx).toBe(106);
+  expect(page.data.isCityPickerOpen).toBe(true);
+});
+
+test("opens, closes, and selects the current city without leaving the fixture", () => {
+  const page = loadPage();
+
+  page.onOpenCityPicker();
+  expect(page.data.isCityPickerOpen).toBe(true);
+  page.onCloseCityPicker();
+  expect(page.data.isCityPickerOpen).toBe(false);
+  page.onOpenCityPicker();
+  page.onSelectCurrentCity();
+  expect(page.data.isCityPickerOpen).toBe(false);
 });
 
 test("exposes the three equal first-entry intents in HOST, BOOK, PLAY order", () => {

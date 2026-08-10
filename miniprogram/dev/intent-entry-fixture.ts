@@ -32,3 +32,10 @@ export const RETURNING_HOME_VISUAL_FIXTURE = Object.freeze({
   pendingOrderSummary: "1 个待支付订单",
   pendingOrderDetail: "请在剩余时间内完成支付",
 });
+
+export const CITY_ENTRY_VISUAL_FIXTURE = Object.freeze({
+  currentCityName: "天津",
+  currentStatus: "当前 · 已开放",
+  otherCityName: "其他城市",
+  otherStatus: "敬请期待",
+});

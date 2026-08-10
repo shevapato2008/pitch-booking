@@ -1,7 +1,9 @@
 <view class="intent-home u-page">
-  <view class="intent-home__header">
-    <view class="intent-home__header-row">
-      <text class="intent-home__brand">天津足球</text>
+  <view class="intent-home__header" style="padding-top: {{headerTopPx}}px;">
+    <view class="intent-home__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <button class="intent-city-button" hover-class="intent-city-button--pressed" bindtap="onOpenCityPicker" aria-label="当前城市天津，点击切换">
+        <text>{{currentCityName}}</text><view class="intent-city-chevron" aria-hidden="true"></view>
+      </button>
       <button
         class="intent-home__my-button"
         hover-class="intent-home__my-button--pressed"
@@ -61,4 +63,23 @@
 
     <text class="intent-home__fixture-note">recent/pending 均为 development visual Fixture data。</text>
   </view>
+
+  <block wx:if="{{isCityPickerOpen}}">
+    <view class="intent-home__city-scrim" bindtap="onCloseCityPicker" aria-label="关闭城市选择"></view>
+    <view class="intent-home__city-sheet" role="dialog" aria-label="选择城市">
+      <view class="intent-home__city-sheet-header">
+        <text class="intent-home__city-sheet-title">选择城市</text>
+        <button class="intent-home__city-close" hover-class="intent-home__city-close--pressed" bindtap="onCloseCityPicker" aria-label="关闭城市选择">
+          <view class="intent-home__city-close-icon" aria-hidden="true"></view>
+        </button>
+      </view>
+      <button class="intent-home__city-row" hover-class="intent-home__city-row--pressed" bindtap="onSelectCurrentCity" aria-label="天津，当前已开放">
+        <view class="intent-home__city-copy"><text class="intent-home__city-name">{{currentCityName}}</text><text class="intent-home__city-status">{{currentStatus}}</text></view>
+        <view class="intent-home__city-selected" aria-hidden="true"></view>
+      </button>
+      <button class="intent-home__city-row intent-home__city-row--disabled" disabled aria-label="其他城市，敬请期待">
+        <view class="intent-home__city-copy"><text class="intent-home__city-name">{{otherCityName}}</text><text class="intent-home__city-status">{{otherStatus}}</text></view>
+      </button>
+    </view>
+  </block>
 </view>

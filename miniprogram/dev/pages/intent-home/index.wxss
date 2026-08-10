@@ -5,7 +5,6 @@
 }
 
 .intent-home__header {
-  padding-top: env(safe-area-inset-top);
   background: #FFFFFF;
   border-bottom: 2rpx solid #DBE5EC;
 }
@@ -14,17 +13,45 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 96rpx;
-  padding: 0 200rpx 0 40rpx;
+  padding-left: 40rpx;
 }
 
-.intent-home__brand {
+.intent-city-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 128rpx;
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  border: 0;
+  border-radius: 44rpx;
+  background: #EFFBF6;
   color: #10243E;
-  font-size: 36rpx;
+  font-size: 30rpx;
   font-weight: 700;
-  letter-spacing: 0.4rpx;
-  line-height: 48rpx;
+  line-height: 40rpx;
+}
+
+.intent-city-button::after,
+.intent-home__city-close::after,
+.intent-home__city-row::after {
+  border: 0;
+}
+
+.intent-city-button--pressed {
+  background: #DBE5EC;
+}
+
+.intent-city-chevron {
+  box-sizing: border-box;
+  width: 14rpx;
+  height: 14rpx;
+  margin-top: -6rpx;
+  margin-left: 12rpx;
+  border-right: 3rpx solid #0284C7;
+  border-bottom: 3rpx solid #0284C7;
+  transform: rotate(45deg);
 }
 
 .intent-home__my-button {
@@ -37,6 +64,7 @@
   padding: 0;
   border: 0;
   background: #FFFFFF;
+  margin-left: 16rpx;
 }
 
 .intent-home__my-button::after,
@@ -185,4 +213,119 @@
   color: #64748B;
   font-size: 24rpx;
   line-height: 36rpx;
+}
+
+.intent-home__city-scrim {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  background: rgba(16, 36, 62, 0.52);
+}
+
+.intent-home__city-sheet {
+  position: fixed;
+  z-index: 11;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  padding: 32rpx 40rpx 48rpx;
+  border-radius: 32rpx 32rpx 0 0;
+  background: #FFFFFF;
+}
+
+.intent-home__city-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 88rpx;
+  margin-bottom: 16rpx;
+}
+
+.intent-home__city-sheet-title {
+  color: #10243E;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+}
+
+.intent-home__city-close {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  min-height: 88rpx;
+  padding: 0;
+  border: 0;
+  border-radius: 44rpx;
+  background: #FFFFFF;
+}
+
+.intent-home__city-close--pressed {
+  background: #EFFBF6;
+}
+
+.intent-home__city-close-icon {
+  position: relative;
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.intent-home__city-close-icon::before,
+.intent-home__city-close-icon::after {
+  position: absolute;
+  top: 14rpx;
+  left: 0;
+  width: 32rpx;
+  height: 3rpx;
+  background: #10243E;
+  content: "";
+}
+
+.intent-home__city-close-icon::before { transform: rotate(45deg); }
+.intent-home__city-close-icon::after { transform: rotate(-45deg); }
+
+.intent-home__city-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 120rpx;
+  padding: 24rpx 28rpx;
+  border: 2rpx solid #DBE5EC;
+  border-radius: 24rpx;
+  background: #FFFFFF;
+  text-align: left;
+}
+
+.intent-home__city-row + .intent-home__city-row { margin-top: 16rpx; }
+.intent-home__city-row--pressed { background: #EFFBF6; }
+.intent-home__city-row--disabled { opacity: 0.56; }
+
+.intent-home__city-copy { display: flex; flex-direction: column; }
+
+.intent-home__city-name {
+  color: #10243E;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 40rpx;
+}
+
+.intent-home__city-status {
+  margin-top: 4rpx;
+  color: #64748B;
+  font-size: 24rpx;
+  line-height: 36rpx;
+}
+
+.intent-home__city-selected {
+  box-sizing: border-box;
+  width: 24rpx;
+  height: 14rpx;
+  margin: 0 4rpx 8rpx 16rpx;
+  border-bottom: 4rpx solid #0284C7;
+  border-left: 4rpx solid #0284C7;
+  transform: rotate(-45deg);
 }

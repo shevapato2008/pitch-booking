@@ -15,11 +15,22 @@ interface PageDefinition {
     recentSummary: string;
     pendingOrderSummary: string;
     pendingOrderDetail: string;
+    headerTopPx: number;
+    headerRowHeightPx: number;
+    headerRightInsetPx: number;
+    isCityPickerOpen: boolean;
+    currentCityName: string;
+    currentStatus: string;
+    otherCityName: string;
+    otherStatus: string;
   };
   onLoad(query?: { intent?: unknown }): void;
   onOpenIntent(event: { currentTarget?: { dataset?: { intentId?: unknown } } }): void;
   onContinueLast(): void;
   onOpenMy(): void;
+  onOpenCityPicker(): void;
+  onCloseCityPicker(): void;
+  onSelectCurrentCity(): void;
 }
 
 interface RuntimePage extends PageDefinition {
@@ -49,10 +60,42 @@ function openIntent(page: RuntimePage, intentId: unknown) {
 
 beforeEach(() => {
   (globalThis as unknown as { wx: unknown }).wx = {
+    getWindowInfo: jest.fn(() => ({ windowWidth: 393, statusBarHeight: 59 })),
+    getMenuButtonBoundingClientRect: jest.fn(() => ({
+      top: 63,
+      bottom: 95,
+      left: 295,
+      right: 382,
+      width: 87,
+      height: 32,
+    })),
     getStorageSync: jest.fn(),
     reLaunch: jest.fn(),
     showToast: jest.fn(),
   };
+});
+
+test("reads the safe header layout while preserving returning-home initialization", () => {
+  const page = loadPage();
+
+  page.onLoad({ intent: "PLAY" });
+
+  expect(page.data.headerTopPx).toBe(59);
+  expect(page.data.headerRowHeightPx).toBe(44);
+  expect(page.data.headerRightInsetPx).toBe(106);
+  expect(page.data.activeIntent).toBe("PLAY");
+});
+
+test("opens, closes, and selects the current city without leaving the fixture", () => {
+  const page = loadPage();
+
+  page.onOpenCityPicker();
+  expect(page.data.isCityPickerOpen).toBe(true);
+  page.onCloseCityPicker();
+  expect(page.data.isCityPickerOpen).toBe(false);
+  page.onOpenCityPicker();
+  page.onSelectCurrentCity();
+  expect(page.data.isCityPickerOpen).toBe(false);
 });
 
 test("keeps only shortcut rendering fields in page data", () => {
