@@ -82,7 +82,9 @@ Page({
     const built = buildVenuePitchSetupView(state);
     const inputs = inputPatch(state);
     const returnsToUnderlying = this.data.isSheetOpen && state === this.data.underlyingState;
-    const preservesDraft = saveStates.has(state) || state === "unsaved-leave-confirm" || returnsToUnderlying;
+    const preservesDraft = saveStates.has(state)
+      || state === "unsaved-leave-confirm"
+      || (returnsToUnderlying && Boolean(this.data.draftSnapshot));
     const renderedSnapshot = suppliedSnapshot
       ?? (preservesDraft ? this.data.draftSnapshot ?? snapshotOf(this.data) : null)
       ?? (pageDraftStates.has(state) ? snapshotOf({ ...built, ...inputs }) : null);

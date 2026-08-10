@@ -110,6 +110,26 @@ test("opens add and follows only the card transitions approved by each view stat
   expect(page.data.visualState).toBe("reactivated-draft");
 });
 
+test("canceling an untouched add editor keeps the empty page clean", () => {
+  const page = loadPage();
+  page.onLoad({ state: "first-entry-empty" });
+  page.onOpenAdd();
+  page.onCancelSheet();
+  expect(page.data.visualState).toBe("first-entry-empty");
+  page.onBack();
+  expect(page.data.visualState).toBe("first-entry-empty");
+});
+
+test("canceling an unchanged A pitch editor keeps the six-pitch list clean", () => {
+  const page = loadPage();
+  page.onLoad();
+  page.onPitchTap({ currentTarget: { dataset: { pitchId: "pitch-7-001" } } });
+  page.onCancelSheet();
+  expect(page.data.visualState).toBe("six-pitch-list");
+  page.onBack();
+  expect(page.data.visualState).toBe("six-pitch-list");
+});
+
 test.each([
   ["6", "预览：6人制", true], ["6.5", "预览：6.5人制", false], ["0", "预览：0人制", false],
   ["99", "预览：99人制", true], ["100", "预览：100人制", false], ["abc", "请输入 1–99 的整数", false],
