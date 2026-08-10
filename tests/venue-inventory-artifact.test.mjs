@@ -18,6 +18,11 @@ const stateIds = [
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const pngDimensions = (path) => {
+  const png = readFileSync(path);
+  assert.equal(png.subarray(1, 4).toString("ascii"), "PNG", `${path} must be a PNG`);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+};
 
 test("venue inventory manifest records reference approval while native approval remains pending", () => {
   mustExist(manifestPath);
@@ -113,4 +118,35 @@ test("one self-contained 375 by 812 reference renders all approved inventory sta
   assert.doesNotMatch(reference, /(?:linear|radial)-gradient\s*\(|\banimation\s*:/i);
   assert.doesNotMatch(reference, /DIRECTORY_ONLY|production_enabled:\s*true/i);
   assert.doesNotMatch(reference, /5 个真实时段/, "reference data must not be presented as real inventory");
+});
+
+test("native Fixture review evidence covers every state at the target viewport", () => {
+  const reviewRoot = "artifacts/ui/reviews/venue-inventory-workbench";
+  const review = read(reviewPath);
+  const expectedImages = [
+    ["reference-375x812.png", 375],
+    ["implementation-375x812.png", 375],
+    ["375x812-side-by-side.png", 750],
+    ["375x812-overlay-50.png", 375],
+    ["375x812-difference.png", 375],
+  ];
+
+  for (const state of stateIds) {
+    for (const [suffix, width] of expectedImages) {
+      const path = `${reviewRoot}/${state}-${suffix}`;
+      mustExist(path);
+      assert.deepEqual(pngDimensions(path), { width, height: 812 });
+      assert.match(review, new RegExp(escape(path.split("/").at(-1))));
+    }
+  }
+
+  for (const evidence of [
+    "WeChat DevTools Stable 2.01.2510290",
+    "base library 3.17.0",
+    "captureVisibleRegion",
+    "iPhone X",
+    "iPhone 14 Pro Max",
+    "Native Fixture visual approval: pending",
+    "Production disabled",
+  ]) assert.match(review, new RegExp(escape(evidence)));
 });
