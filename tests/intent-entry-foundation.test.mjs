@@ -95,11 +95,18 @@ test("three self-contained 375 by 812 references preserve the intent hierarchy a
   ]) assert.match(first, new RegExp(copy));
 
   assert.match(cityOpen, /<main class="artifact" data-state="city-picker-open">/);
-  assert.match(cityOpen, /<section[^>]*aria-label="选择城市"/);
-  assert.match(cityOpen, /<h[1-6][^>]*>选择城市<\/h[1-6]>/);
-  assert.match(cityOpen, /<button[^>]*aria-label="关闭城市选择"/);
-  for (const copy of ["天津", "当前 · 已开放", "其他城市", "敬请期待"]) assert.match(cityOpen, new RegExp(copy));
-  assert.match(cityOpen, /disabled/);
+  assert.match(cityOpen, /<div class="city-background" inert(?:\s+aria-hidden="true")?>/);
+  assert.match(cityOpen, /<\/div>\s*<div class="scrim" aria-hidden="true"><\/div>\s*<section class="city-sheet"/);
+  const cityDialog = cityOpen.match(/<section class="city-sheet"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*>([\s\S]*?)<\/section>/);
+  assert.ok(cityDialog, "city sheet must be a modal dialog");
+  assert.match(cityDialog[0], /aria-label="选择城市"/);
+  assert.match(cityDialog[0], /<h[1-6][^>]*>选择城市<\/h[1-6]>/);
+  assert.match(cityDialog[0], /<button class="close-button"[^>]*aria-label="关闭城市选择"/);
+  assert.match(cityDialog[0], /<button class="city-row" type="button" aria-label="天津，当前且已开放">\s*<strong>天津<\/strong><span>当前 · 已开放<\/span>/);
+  assert.match(cityDialog[0], /<button class="city-row" type="button" disabled>\s*<strong>其他城市<\/strong><span>敬请期待<\/span>/);
+  assert.match(cityOpen, /\.city-button\s*\{[^}]*min-height:\s*44px;/s);
+  assert.match(cityOpen, /\.close-button\s*\{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
+  assert.match(cityOpen, /\.city-row\s*\{[^}]*min-height:\s*64px;/s);
   assert.match(cityOpen, /#10243E/);
 
   assert.match(returning, /<main class="artifact" data-state="returning-home">/);

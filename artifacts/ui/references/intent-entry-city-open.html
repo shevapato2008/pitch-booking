@@ -40,29 +40,31 @@
   </head>
   <body>
     <main class="artifact" data-state="city-picker-open">
-      <div class="system-row" aria-hidden="true"><div class="capsule-safe"></div></div>
-      <header class="custom-header"><button class="city-button" type="button" aria-label="选择城市，当前天津">天津⌄</button></header>
-      <section class="content" aria-labelledby="page-title">
-        <div class="intro">
-          <h1 id="page-title">你今天想做什么？</h1>
-          <p>选择一个目的开始，之后可以随时切换。</p>
-        </div>
-        <div class="intent-list" aria-label="选择当下目的">
-          <button class="intent-card" type="button" aria-label="我要出租场地，申请合作，或进入已授权的场馆工作台">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5h16v14M8 5v14M16 5v14M4 10h16M4 15h16" /><path d="M11 19v-3h2v3" /></svg>
-            <span><strong>我要出租场地</strong>申请合作，或进入已授权的场馆工作台</span>
-          </button>
-          <button class="intent-card" type="button" aria-label="我要租赁场地，为球队查找时间、价格和可订整场">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.4 6.4l2.1 2.1M15.5 15.5l2.1 2.1M17.6 6.4l-2.1 2.1M8.5 15.5l-2.1 2.1" /></svg>
-            <span><strong>我要租赁场地</strong>为球队查找时间、价格和可订整场</span>
-          </button>
-          <button class="intent-card" type="button" aria-label="我要找球踢，没有球队，也能加入已锁定场地的开放球局">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" /><circle cx="17" cy="10" r="2" /><path d="M4 20c0-4 2-6 5-6s5 2 5 6M14 19c.4-2.6 1.5-4 3-4 1.8 0 3 1.5 3 4" /></svg>
-            <span><strong>我要找球踢</strong>没有球队，也能加入已锁定场地的开放球局</span>
-          </button>
-        </div>
-        <p class="footnote">这里选择的是当下目的，不是永久身份。</p>
-      </section>
+      <div class="city-background" inert aria-hidden="true">
+        <div class="system-row" aria-hidden="true"><div class="capsule-safe"></div></div>
+        <header class="custom-header"><button class="city-button" type="button" aria-label="选择城市，当前天津">天津⌄</button></header>
+        <section class="content" aria-labelledby="page-title">
+          <div class="intro">
+            <h1 id="page-title">你今天想做什么？</h1>
+            <p>选择一个目的开始，之后可以随时切换。</p>
+          </div>
+          <div class="intent-list" aria-label="选择当下目的">
+            <button class="intent-card" type="button" aria-label="我要出租场地，申请合作，或进入已授权的场馆工作台">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5h16v14M8 5v14M16 5v14M4 10h16M4 15h16" /><path d="M11 19v-3h2v3" /></svg>
+              <span><strong>我要出租场地</strong>申请合作，或进入已授权的场馆工作台</span>
+            </button>
+            <button class="intent-card" type="button" aria-label="我要租赁场地，为球队查找时间、价格和可订整场">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.4 6.4l2.1 2.1M15.5 15.5l2.1 2.1M17.6 6.4l-2.1 2.1M8.5 15.5l-2.1 2.1" /></svg>
+              <span><strong>我要租赁场地</strong>为球队查找时间、价格和可订整场</span>
+            </button>
+            <button class="intent-card" type="button" aria-label="我要找球踢，没有球队，也能加入已锁定场地的开放球局">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" /><circle cx="17" cy="10" r="2" /><path d="M4 20c0-4 2-6 5-6s5 2 5 6M14 19c.4-2.6 1.5-4 3-4 1.8 0 3 1.5 3 4" /></svg>
+              <span><strong>我要找球踢</strong>没有球队，也能加入已锁定场地的开放球局</span>
+            </button>
+          </div>
+          <p class="footnote">这里选择的是当下目的，不是永久身份。</p>
+        </section>
+      </div>
       <div class="scrim" aria-hidden="true"></div>
       <section class="city-sheet" aria-label="选择城市" aria-labelledby="city-sheet-title" role="dialog" aria-modal="true">
         <div class="sheet-header">
