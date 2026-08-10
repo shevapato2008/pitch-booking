@@ -1,0 +1,188 @@
+@import "../../../styles/tokens.wxss";
+
+.intent-home {
+  min-height: 100vh;
+}
+
+.intent-home__header {
+  padding-top: env(safe-area-inset-top);
+  background: #FFFFFF;
+  border-bottom: 2rpx solid #DBE5EC;
+}
+
+.intent-home__header-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 96rpx;
+  padding: 0 200rpx 0 40rpx;
+}
+
+.intent-home__brand {
+  color: #10243E;
+  font-size: 36rpx;
+  font-weight: 700;
+  letter-spacing: 0.4rpx;
+  line-height: 48rpx;
+}
+
+.intent-home__my-button {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  min-height: 88rpx;
+  padding: 0;
+  border: 0;
+  background: #FFFFFF;
+}
+
+.intent-home__my-button::after,
+.intent-home__shortcut::after,
+.intent-home__card::after {
+  border: 0;
+}
+
+.intent-home__my-button--pressed,
+.intent-home__shortcut--pressed,
+.intent-home__card--pressed {
+  background: #EFFBF6;
+}
+
+.intent-home__my-icon {
+  position: relative;
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.intent-home__my-head,
+.intent-home__my-shoulders {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3rpx solid #10243E;
+}
+
+.intent-home__my-head {
+  top: 0;
+  left: 13rpx;
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+}
+
+.intent-home__my-shoulders {
+  right: 1rpx;
+  bottom: 0;
+  left: 1rpx;
+  height: 24rpx;
+  border-bottom: 0;
+  border-radius: 24rpx 24rpx 0 0;
+}
+
+.intent-home__content {
+  padding: 48rpx 40rpx 48rpx;
+}
+
+.intent-home__greeting {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 40rpx;
+}
+
+.intent-home__title {
+  color: #10243E;
+  font-size: 52rpx;
+  font-weight: 700;
+  letter-spacing: -1rpx;
+  line-height: 72rpx;
+}
+
+.intent-home__subtitle {
+  margin-top: 8rpx;
+  color: #64748B;
+  font-size: 28rpx;
+  line-height: 40rpx;
+}
+
+.intent-home__shortcuts {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 40rpx;
+}
+
+.intent-home__shortcut {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  min-height: 112rpx;
+  padding: 16rpx 8rpx;
+  border: 2rpx solid #DBE5EC;
+  border-radius: 24rpx;
+  background: #FFFFFF;
+  color: #10243E;
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+}
+
+.intent-home__shortcut--active {
+  border-color: #0284C7;
+  background: #EFFBF6;
+  color: #0284C7;
+}
+
+.intent-home__section-label {
+  display: block;
+  margin: 0 0 16rpx;
+  color: #64748B;
+  font-size: 26rpx;
+  line-height: 40rpx;
+}
+
+.intent-home__card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 160rpx;
+  margin: 0 0 32rpx;
+  padding: 32rpx;
+  border: 2rpx solid #DBE5EC;
+  border-radius: 32rpx;
+  background: #FFFFFF;
+  color: #10243E;
+  text-align: left;
+}
+
+.intent-home__card-kicker {
+  margin-bottom: 8rpx;
+  color: #0284C7;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 40rpx;
+}
+
+.intent-home__card-title {
+  color: #10243E;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+}
+
+.intent-home__card-detail {
+  margin-top: 8rpx;
+  color: #64748B;
+  font-size: 28rpx;
+  line-height: 40rpx;
+}
+
+.intent-home__fixture-note {
+  display: block;
+  margin: 8rpx 8rpx 0;
+  color: #64748B;
+  font-size: 24rpx;
+  line-height: 36rpx;
+}

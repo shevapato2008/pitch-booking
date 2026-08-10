@@ -1,0 +1,64 @@
+<view class="intent-home u-page">
+  <view class="intent-home__header">
+    <view class="intent-home__header-row">
+      <text class="intent-home__brand">天津足球</text>
+      <button
+        class="intent-home__my-button"
+        hover-class="intent-home__my-button--pressed"
+        bindtap="onOpenMy"
+        aria-label="我的，当前仅视觉预览"
+      >
+        <view class="intent-home__my-icon" aria-hidden="true">
+          <view class="intent-home__my-head"></view>
+          <view class="intent-home__my-shoulders"></view>
+        </view>
+      </button>
+    </view>
+  </view>
+
+  <view class="intent-home__content">
+    <view class="intent-home__greeting">
+      <view class="intent-home__title"><text>早上好</text></view>
+      <text class="intent-home__subtitle">今天想从哪里开始？</text>
+    </view>
+
+    <view class="intent-home__shortcuts" aria-label="快速入口">
+      <button
+        wx:for="{{intents}}"
+        wx:key="id"
+        class="intent-home__shortcut {{activeIntent === item.id ? 'intent-home__shortcut--active' : ''}}"
+        hover-class="intent-home__shortcut--pressed"
+        bindtap="onOpenIntent"
+        data-intent-id="{{item.id}}"
+        aria-label="{{item.title}}"
+      >
+        <text>{{item.title}}</text>
+      </button>
+    </view>
+
+    <text class="intent-home__section-label">继续上次</text>
+    <button
+      class="intent-home__card intent-home__card--recent"
+      hover-class="intent-home__card--pressed"
+      bindtap="onContinueLast"
+      aria-label="继续上次租赁场地，{{recentVenueName}}"
+    >
+      <text class="intent-home__card-kicker">租赁场地</text>
+      <text class="intent-home__card-title">{{recentVenueName}}</text>
+      <text class="intent-home__card-detail">{{recentSummary}}</text>
+    </button>
+
+    <text class="intent-home__section-label">需要处理</text>
+    <button
+      class="intent-home__card"
+      hover-class="intent-home__card--pressed"
+      bindtap="onOpenMy"
+      aria-label="{{pendingOrderSummary}}，当前仅视觉预览"
+    >
+      <text class="intent-home__card-title">{{pendingOrderSummary}}</text>
+      <text class="intent-home__card-detail">{{pendingOrderDetail}}</text>
+    </button>
+
+    <text class="intent-home__fixture-note">recent/pending 均为 development visual Fixture data。</text>
+  </view>
+</view>
