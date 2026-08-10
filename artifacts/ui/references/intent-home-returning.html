@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>天津足球 · 返回首页</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #10243E; background: #F8FAFC; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #F8FAFC; }
+      .artifact { width: 375px; height: 812px; overflow: hidden; background: #F8FAFC; }
+      .system-row { height: 44px; position: relative; }
+      .capsule-safe { position: absolute; top: 0; right: 0; width: 100px; height: 44px; }
+      .custom-header { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px 0 20px; background: #FFFFFF; border-bottom: 1px solid #DBE5EC; }
+      .brand { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: 0.2px; }
+      .my-button { width: 44px; min-height: 44px; display: grid; place-items: center; border: 0; background: #FFFFFF; color: #10243E; touch-action: manipulation; }
+      .my-button:focus-visible, .shortcut:focus-visible { outline: 3px solid #0284C7; outline-offset: 2px; }
+      .my-button svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .content { padding: 24px 20px 0; }
+      .greeting { margin: 0 0 20px; }
+      .greeting p { margin: 0 0 4px; color: #64748B; font-size: 14px; line-height: 20px; }
+      .greeting h1 { margin: 0; font-size: 26px; line-height: 36px; letter-spacing: -0.5px; }
+      .shortcut-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 24px; }
+      .shortcut { min-height: 56px; padding: 8px; border: 1px solid #DBE5EC; border-radius: 12px; background: #FFFFFF; color: #10243E; font: inherit; font-size: 14px; font-weight: 600; line-height: 20px; touch-action: manipulation; }
+      .section-label { margin: 0 0 8px; color: #64748B; font-size: 13px; line-height: 20px; }
+      .card { margin-bottom: 16px; padding: 16px; border: 1px solid #DBE5EC; border-radius: 16px; background: #FFFFFF; }
+      .card-kicker { margin: 0 0 6px; color: #0284C7; font-size: 13px; line-height: 20px; font-weight: 700; }
+      .card h2 { margin: 0 0 4px; font-size: 17px; line-height: 24px; }
+      .card p { margin: 0; color: #64748B; font-size: 14px; line-height: 20px; }
+      .fixture-note { margin: 20px 4px 0; color: #64748B; font-size: 12px; line-height: 18px; }
+    </style>
+  </head>
+  <body>
+    <!-- recent and pending cards below are visual Fixture data only, not production data. -->
+    <main class="artifact" data-state="returning-home">
+      <div class="system-row" aria-hidden="true"><div class="capsule-safe"></div></div>
+      <header class="custom-header">
+        <p class="brand">天津足球</p>
+        <button class="my-button" type="button" aria-label="我的">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c0-4 2.8-6.5 7-6.5s7 2.5 7 6.5" /></svg>
+        </button>
+      </header>
+      <section class="content" aria-labelledby="page-title">
+        <div class="greeting"><p>早上好</p><h1 id="page-title">今天想从哪里开始？</h1></div>
+        <div class="shortcut-list" aria-label="快速入口">
+          <button class="shortcut" type="button">出租场地</button>
+          <button class="shortcut" type="button">租赁场地</button>
+          <button class="shortcut" type="button">找球踢</button>
+        </div>
+        <p class="section-label">继续上次</p>
+        <article class="card" aria-label="继续上次租赁场地">
+          <p class="card-kicker">租赁场地</p>
+          <h2>渤海元丰足球场</h2>
+          <p>查看未来 14 天可订时段</p>
+        </article>
+        <p class="section-label">需要处理</p>
+        <article class="card" aria-label="待支付订单">
+          <h2>1 个待支付订单</h2>
+          <p>请在剩余时间内完成支付</p>
+        </article>
+        <p class="fixture-note">recent/pending 均为 visual Fixture data。</p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>目的入口视觉基础 · Review Board</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #10243E; background: #F8FAFC; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 32px; background: #F8FAFC; }
+      header, section { max-width: 1560px; margin: 0 auto 40px; }
+      h1, h2 { margin: 0 0 8px; }
+      p { color: #64748B; line-height: 1.5; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+      .slot { min-height: 180px; margin: 0; padding: 16px; border: 1px solid #DBE5EC; border-radius: 12px; background: #FFFFFF; }
+      .slot figcaption, .slot h3 { margin: 0 0 12px; color: #10243E; font-size: 16px; }
+      .image-placeholder { min-height: 120px; display: grid; place-items: center; border: 1px dashed #DBE5EC; border-radius: 8px; color: #64748B; text-align: center; }
+      .observations { grid-column: 1 / -1; min-height: auto; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 10px; border-top: 1px solid #DBE5EC; text-align: left; color: #64748B; }
+      th { color: #10243E; }
+      @media (max-width: 640px) { body { padding: 20px 12px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>目的入口视觉基础 · Review Board</h1>
+      <p>375 × 812 logical viewport；production disabled。每一状态均须完成同尺寸 reference、implementation、side-by-side、overlay-50、difference 与 observations 后，才可申请 native visual approval。</p>
+    </header>
+    <section data-state="first-entry">
+      <h2>first-entry</h2>
+      <div class="grid">
+        <figure class="slot" data-review-slot="reference"><figcaption>Reference</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="implementation"><figcaption>Implementation</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="side-by-side"><figcaption>Side-by-side</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="overlay-50"><figcaption>Overlay 50%</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="difference"><figcaption>Difference</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <div class="slot observations" data-review-slot="observations"><h3>Observations</h3><table><tr><th>composition</th><td>待记录</td></tr><tr><th>geometry/spacing</th><td>待记录</td></tr><tr><th>component hierarchy</th><td>待记录</td></tr><tr><th>typography/color/material</th><td>待记录</td></tr><tr><th>icon assets</th><td>待记录</td></tr><tr><th>copy</th><td>待记录</td></tr><tr><th>state semantics</th><td>待记录</td></tr></table></div>
+      </div>
+    </section>
+    <section data-state="returning-home">
+      <h2>returning-home</h2>
+      <div class="grid">
+        <figure class="slot" data-review-slot="reference"><figcaption>Reference</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="implementation"><figcaption>Implementation</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="side-by-side"><figcaption>Side-by-side</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="overlay-50"><figcaption>Overlay 50%</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <figure class="slot" data-review-slot="difference"><figcaption>Difference</figcaption><div class="image-placeholder">等待视觉取证</div></figure>
+        <div class="slot observations" data-review-slot="observations"><h3>Observations</h3><table><tr><th>composition</th><td>待记录</td></tr><tr><th>geometry/spacing</th><td>待记录</td></tr><tr><th>component hierarchy</th><td>待记录</td></tr><tr><th>typography/color/material</th><td>待记录</td></tr><tr><th>icon assets</th><td>待记录</td></tr><tr><th>copy</th><td>待记录</td></tr><tr><th>state semantics</th><td>待记录</td></tr></table></div>
+      </div>
+    </section>
+  </body>
+</html>
