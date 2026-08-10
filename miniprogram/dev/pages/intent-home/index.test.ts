@@ -1,4 +1,7 @@
+/// <reference types="node" />
+
 import { beforeEach, expect, jest, test } from "@jest/globals";
+import { readFileSync } from "node:fs";
 
 type IntentId = "HOST" | "BOOK" | "PLAY";
 
@@ -84,6 +87,12 @@ test("reads the safe header layout while preserving returning-home initializatio
   expect(page.data.headerRowHeightPx).toBe(44);
   expect(page.data.headerRightInsetPx).toBe(106);
   expect(page.data.activeIntent).toBe("PLAY");
+});
+
+test("keeps the my action at the right edge before the capsule reserve", () => {
+  const styles = readFileSync("miniprogram/dev/pages/intent-home/index.wxss", "utf8");
+
+  expect(styles).toMatch(/\.intent-home__header-row\s*\{[^}]*justify-content:\s*space-between;/s);
 });
 
 test("opens, closes, and selects the current city without leaving the fixture", () => {
