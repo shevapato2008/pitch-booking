@@ -14,6 +14,11 @@ const setupReferenceCssPath = "artifacts/ui/references/venue-pitch-setup.css";
 const setupReferenceDataPath = "artifacts/ui/references/venue-pitch-setup-data.js";
 const setupReferenceControllerPath = "artifacts/ui/references/venue-pitch-setup.js";
 const setupReviewPath = "artifacts/ui/reviews/venue-pitch-setup/README.md";
+const inventoryReferenceHtmlPath = "artifacts/ui/references/venue-inventory-workbench-v2.html";
+const inventoryReferenceCssPath = "artifacts/ui/references/venue-inventory-workbench-v2.css";
+const inventoryReferenceDataPath = "artifacts/ui/references/venue-inventory-workbench-v2-data.js";
+const inventoryReferenceControllerPath = "artifacts/ui/references/venue-inventory-workbench-v2.js";
+const inventoryReviewPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/README.md";
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -593,4 +598,249 @@ test("physical pitch setup planned files stay within focused line budgets", () =
   assert.ok(read(setupReferenceCssPath).split(/\r?\n/).length < 500);
   assert.ok(read(setupReferenceDataPath).split(/\r?\n/).length < 450);
   assert.ok(read(setupReferenceControllerPath).split(/\r?\n/).length < 500);
+});
+
+test("inventory v2 reference has a local production-disabled shell and focused mobile layout", () => {
+  for (const path of [inventoryReferenceHtmlPath, inventoryReferenceCssPath, inventoryReferenceDataPath, inventoryReferenceControllerPath]) mustExist(path);
+  const html = read(inventoryReferenceHtmlPath);
+  const css = read(inventoryReferenceCssPath);
+  const data = read(inventoryReferenceDataPath);
+  const controller = read(inventoryReferenceControllerPath);
+  const resourcePaths = [...html.matchAll(/<(?:link|script)\b[^>]*(?:href|src)="([^"]+)"/g)].map(([, path]) => path);
+
+  assert.deepEqual(resourcePaths, [
+    "data:,", "venue-operations-reference.css", "venue-inventory-workbench-v2.css",
+    "venue-inventory-workbench-v2-data.js", "venue-inventory-workbench-v2.js",
+  ]);
+  assert.match(html, /<main\s+class="artifact"\s+data-production-enabled="false"[^>]*>/);
+  assert.equal((html.match(/<main\b/g) ?? []).length, 1);
+  assert.equal((html.match(/<script\b/g) ?? []).length, 2);
+  assert.match(html, /type="module"/);
+  for (const source of [html, css, data, controller]) {
+    assert.doesNotMatch(source.replaceAll("http://www.w3.org/2000/svg", ""), /(?:linear|radial)-gradient\s*\(|https?:\/\//i);
+    assert.doesNotMatch(source, /\p{Extended_Pictographic}/u);
+  }
+  const headerRenderer = controller.slice(controller.indexOf("const renderHeader"), controller.indexOf("const renderWeek"));
+  assert.doesNotMatch(headerRenderer, /新增时段/);
+  assert.match(css, /\.inventory-shell\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.slot-list\s*\{[^}]*flex:\s*1;[^}]*overflow-y:\s*auto;[^}]*padding-bottom:\s*(?:8[0-9]|9[0-9]|[1-9][0-9]{2,})px;/s);
+  assert.match(css, /\.inventory-action\s*\{[^}]*z-index:/s);
+  assert.match(css, /\.trailing-icon\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*padding:\s*2px;[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.status-available\s*\{[^}]*color:\s*#059669;/s);
+  assert.match(css, /\.status-locked\s*\{[^}]*color:\s*#B45309;/s);
+  assert.match(css, /\.status-closed\s*\{[^}]*color:\s*#475569;/s);
+  assert.match(css, /\.status-booked\s*\{[^}]*color:\s*#4338CA;/s);
+  assert.doesNotMatch(controller, /\bfetch\s*\(|XMLHttpRequest|innerHTML|insertAdjacentHTML/);
+});
+
+test("inventory v2 data is deterministic, deeply immutable, and matches the frozen manifest", async () => {
+  const inventory = loadManifest(inventoryManifestPath);
+  const data = await import(`../${inventoryReferenceDataPath}?contract=${Date.now()}`);
+
+  assert.equal(data.DEFAULT_INVENTORY_STATE, "day-ready");
+  assert.deepEqual(data.INVENTORY_STATE_IDS, inventoryStates);
+  assert.deepEqual(data.VENUE, inventory.venue_scope);
+  assert.deepEqual(data.PITCH_GROUPS, inventory.picker_pitches);
+  assert.deepEqual(data.DEFAULT_SELECTION, inventory.default_selection);
+  assert.deepEqual(data.DATE_WINDOW, inventory.date_window);
+  assert.deepEqual(data.PITCHES.map(({ id }) => id), ["pitch-5-001", "pitch-5-002", "pitch-7-001", "pitch-7-002", "pitch-7-003"]);
+  assert.deepEqual(data.SLOTS, [
+    { id: "slot-1400", start: "14:00", end: "16:00", price: 260, status: "AVAILABLE", statusLabel: "开放", detail: "可修改价格或临时关闭", editable: true },
+    { id: "slot-1600", start: "16:00", end: "18:00", price: 280, status: "AVAILABLE", statusLabel: "开放", detail: "可修改价格或临时关闭", editable: true },
+    { id: "slot-1800", start: "18:00", end: "20:00", price: 320, status: "LOCKED", statusLabel: "锁定", detail: "用户下单中 · 只读", editable: false },
+    { id: "slot-2000", start: "20:00", end: "22:00", price: 360, status: "CLOSED", statusLabel: "已关闭", detail: "可调整价格并重新开放", editable: true },
+    { id: "slot-2200", start: "22:00", end: "23:00", price: 220, status: "BOOKED", statusLabel: "已售出", detail: "订单已确认 · 只读", editable: false },
+  ]);
+  assert.equal(data.MANAGEABLE_DATES.length, 14);
+  assert.equal(data.MANAGEABLE_DATES[0].iso, "2026-08-10");
+  assert.equal(data.MANAGEABLE_DATES.at(-1).iso, "2026-08-23");
+  assert.equal(data.AUGUST_CALENDAR.length, 42);
+  assert.equal(data.AUGUST_CALENDAR[0].iso, "2026-07-27");
+  assert.equal(data.AUGUST_CALENDAR.at(-1).iso, "2026-09-06");
+  assert.equal(Object.isFrozen(data.INVENTORY_STATES), true);
+  assert.equal(Object.isFrozen(data.INVENTORY_STATES["day-ready"]), true);
+  assert.equal(Object.isFrozen(data.PITCHES[0]), true);
+  assert.equal(Object.isFrozen(data.SLOTS[0]), true);
+  assert.equal(Object.isFrozen(data.AUGUST_CALENDAR[0]), true);
+});
+
+test("inventory v2 initial and list states separate loading, failure, empty, and five-slot readiness", async () => {
+  const { INVENTORY_STATES } = await import(`../${inventoryReferenceDataPath}?initial=${Date.now()}`);
+  const loading = INVENTORY_STATES["initial-loading"];
+  const failed = INVENTORY_STATES["load-error"];
+  const empty = INVENTORY_STATES["day-empty"];
+  const ready = INVENTORY_STATES["day-ready"];
+
+  assert.equal(loading.mode, "initial-loading");
+  assert.equal(loading.slotCount, null);
+  assert.equal(loading.pageAction.disabled, true);
+  assert.equal(failed.mode, "load-error");
+  assert.equal(failed.recoveryLabel, "重新加载");
+  assert.equal(failed.slotCount, null);
+  assert.notEqual(failed.mode, "empty");
+  assert.equal(empty.mode, "empty");
+  assert.equal(empty.slotCount, 0);
+  assert.equal(empty.pageAction.label, "新增时段");
+  assert.equal(empty.pageAction.nextState, "create-slot-open");
+  assert.equal(ready.selectedPitch.id, "pitch-7-001");
+  assert.equal(ready.selectedDate, "2026-08-11");
+  assert.equal(ready.request_sequence, 1);
+  assert.equal(ready.slotCount, 5);
+  assert.equal(ready.slots.length, 5);
+  assert.equal(ready.pageAction.fixed, true);
+});
+
+test("inventory v2 switching states retain the complementary selection and never relabel failures as empty", async () => {
+  const { INVENTORY_STATES } = await import(`../${inventoryReferenceDataPath}?switching=${Date.now()}`);
+  const pitchLoading = INVENTORY_STATES["pitch-refreshing"];
+  const pitchFailed = INVENTORY_STATES["pitch-load-error"];
+  const dateLoading = INVENTORY_STATES["date-refreshing"];
+  const dateFailed = INVENTORY_STATES["date-load-error"];
+  const crossWeek = INVENTORY_STATES["cross-week-ready"];
+  const longList = INVENTORY_STATES["long-list-end"];
+
+  for (const state of [pitchLoading, pitchFailed]) {
+    assert.equal(state.selectedPitch.id, "pitch-5-001");
+    assert.equal(state.selectedDate, "2026-08-11");
+    assert.deepEqual(state.slots, []);
+    assert.equal(state.staleSlotsVisible, false);
+  }
+  assert.equal(pitchLoading.mode, "partial-loading");
+  assert.equal(pitchFailed.mode, "partial-error");
+  assert.equal(pitchFailed.recoveryNextState, "pitch-refreshing");
+  for (const state of [dateLoading, dateFailed]) {
+    assert.equal(state.selectedPitch.id, "pitch-7-001");
+    assert.equal(state.selectedDate, "2026-08-23");
+    assert.deepEqual(state.slots, []);
+    assert.equal(state.staleSlotsVisible, false);
+  }
+  assert.equal(dateFailed.recoveryNextState, "date-refreshing");
+  assert.deepEqual(crossWeek.week.map(({ iso }) => iso), [
+    "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23",
+  ]);
+  assert.equal(crossWeek.selectedDate, "2026-08-23");
+  assert.equal(longList.initializeAtEnd, true);
+  assert.ok(longList.slots.length > 5);
+});
+
+test("inventory v2 pitch and calendar sheets expose one truthful selection path", async () => {
+  const { INVENTORY_STATES } = await import(`../${inventoryReferenceDataPath}?sheets=${Date.now()}`);
+  const picker = INVENTORY_STATES["pitch-picker-open"];
+  const calendar = INVENTORY_STATES["calendar-open"];
+  const controller = read(inventoryReferenceControllerPath);
+
+  assert.equal(picker.sheet.kind, "pitch-picker");
+  assert.equal(picker.sheet.selectedPitchId, "pitch-7-001");
+  assert.deepEqual(picker.sheet.groups.map(({ players_per_side }) => players_per_side), [5, 7]);
+  assert.deepEqual(picker.sheet.groups.flatMap(({ pitches }) => pitches.map(({ id }) => id)), [
+    "pitch-5-001", "pitch-5-002", "pitch-7-001", "pitch-7-002", "pitch-7-003",
+  ]);
+  assert.equal(calendar.sheet.kind, "calendar");
+  assert.equal(calendar.sheet.pendingDate, "2026-08-23");
+  assert.equal(calendar.sheet.confirmLabel, "确认日期");
+  assert.equal(calendar.sheet.confirmNextState, "date-refreshing");
+  assert.equal(calendar.sheet.days.filter(({ manageable }) => manageable).length, 14);
+  assert.equal(calendar.sheet.days.filter(({ selected }) => selected).map(({ iso }) => iso).join(), "2026-08-23");
+  assert.equal((controller.match(/setAttribute\("role",\s*"dialog"\)/g) ?? []).length, 1);
+  assert.match(controller, /button\.disabled\s*=\s*!day\.manageable/);
+  assert.match(controller, /button\.tabIndex\s*=\s*day\.manageable\s*\?\s*0\s*:\s*-1/);
+  assert.match(controller, /dataset\.pitchId/);
+  assert.match(controller, /dataset\.date/);
+  assert.match(controller, /dataset\.confirmDate/);
+  assert.match(controller, /request_sequence:\s*renderedState\.request_sequence\s*\+\s*1/);
+});
+
+test("inventory v2 editor and authority-error states retain context and disable unsafe writes", async () => {
+  const { INVENTORY_STATES } = await import(`../${inventoryReferenceDataPath}?editors=${Date.now()}`);
+  const create = INVENTORY_STATES["create-slot-open"];
+  const edit = INVENTORY_STATES["edit-slot-open"];
+  const saving = INVENTORY_STATES["save-in-progress"];
+  const unknown = INVENTORY_STATES["save-result-unknown"];
+  const overlap = INVENTORY_STATES["create-slot-overlap"];
+  const concurrent = INVENTORY_STATES["concurrent-change"];
+  const expired = INVENTORY_STATES["permission-expired"];
+
+  assert.deepEqual(create.editor.contextChips, ["8月11日 周二", "A场", "7人制", "09:30–11:00"]);
+  assert.deepEqual(create.editor.draft, { start: "09:30", end: "11:00", price: "260" });
+  assert.equal(edit.editor.mode, "edit");
+  assert.equal(edit.editor.timeReadOnly, true);
+  assert.equal(edit.editor.slotId, "slot-1400");
+  for (const state of [saving, unknown]) {
+    assert.deepEqual(state.editor.draft, create.editor.draft);
+    assert.equal(state.editor.closeDisabled, true);
+    assert.equal(state.editor.saveDisabled, true);
+    assert.equal(state.duplicateSaveDisabled, true);
+  }
+  assert.equal(unknown.statusMessage, "正在确认保存结果");
+  assert.deepEqual(overlap.editor.draft, create.editor.draft);
+  assert.equal(overlap.editor.inlineError, "与已有时段冲突，请调整时间");
+  assert.equal(overlap.editor.conflictingTime, "10:30–12:00");
+  assert.equal(concurrent.selectedDate, "2026-08-11");
+  assert.equal(concurrent.selectedPitch.id, "pitch-7-001");
+  assert.equal(concurrent.draftPreserved, true);
+  assert.match(concurrent.statusMessage, /库存已发生变化，请重新核对/);
+  assert.equal(expired.contextReadable, true);
+  assert.equal(expired.writeControlsDisabled, true);
+  assert.equal(expired.pageAction.disabled, true);
+  assert.match(expired.statusMessage, /权限已失效，请重新进入/);
+});
+
+test("inventory v2 source includes required copy, honest transitions, and a live-DOM audit", () => {
+  const sources = [inventoryReferenceHtmlPath, inventoryReferenceDataPath, inventoryReferenceControllerPath].map(read).join("\n");
+  for (const copy of [
+    "渤海元丰足球场", "库存工作台 · 仅授权工作人员", "更多日期", "当前场地", "A场 · 7人制", "选择物理场地",
+    "未来 14 天", "确认日期", "8月23日 周日", "新增时段", "正在确认保存结果", "与已有时段冲突，请调整时间",
+    "库存已发生变化，请重新核对", "权限已失效，请重新进入",
+  ]) assert.match(sources, new RegExp(escape(copy)));
+
+  const controller = read(inventoryReferenceControllerPath);
+  for (const label of ["更多日期", "重新加载", "重试", "取消", "保存时段", "确认日期"]) {
+    assert.match(sources, new RegExp(escape(label)));
+  }
+  assert.match(controller, /window\.__artifactAudit__\s*=\s*\(\)\s*=>/);
+  assert.match(controller, /getBoundingClientRect\(\)/);
+  assert.match(controller, /getComputedStyle\(/);
+  for (const violation of [
+    "canvas-size", "document-horizontal-overflow", "canvas-horizontal-overflow", "touch-target-too-small",
+    "fixed-action-outside-canvas", "primary-label-off-center", "icon-box-outside-control", "too-many-visible-dialogs",
+    "sheet-outside-canvas", "list-bottom-padding-too-small", "header-cta-present", "selected-pitch-count",
+    "disabled-date-focusable", "selected-date-outside-window", "picker-order-mismatch", "pitch-switch-date-not-preserved",
+    "date-switch-pitch-not-preserved", "slot-list-not-independent", "fixed-action-not-centered", "long-list-final-row-obscured",
+  ]) assert.match(controller, new RegExp(escape(violation)));
+  assert.match(controller, /return violations;/);
+});
+
+test("inventory v2 review reserves all state evidence without claiming implementation or approval", () => {
+  mustExist(inventoryReviewPath);
+  const review = read(inventoryReviewPath);
+  const rows = [...review.matchAll(/^\| `([^`]+)` \|/gm)].map(([, state]) => state);
+
+  assert.deepEqual(rows, inventoryStates);
+  assert.match(review, /Target viewport:\s*375\s*[×x]\s*812/);
+  assert.match(review, /Reference Artifact visual approval:\s*pending/);
+  assert.match(review, /Native Fixture visual approval:\s*not started/);
+  assert.match(review, /Production disabled/);
+  assert.match(review, /historical and superseded/);
+  assert.match(review, /docs\/superpowers\/specs\/2026-08-10-venue-pitch-setup-and-inventory-revision-design\.md/);
+  assert.match(review, /artifacts\/ui\/screen-manifest\/venue-inventory-workbench-v2\.yaml/);
+  assert.match(review, /artifacts\/ui\/flows\/venue-inventory-workbench-v2\.md/);
+  assert.match(review, /artifacts\/ui\/references\/venue-operations-reference\.css/);
+  assert.match(review, /miniprogram\/styles\/tokens\.wxss/);
+  assert.match(review, /artifacts\/ui\/design-system\/README\.md/);
+  assert.match(review, /artifacts\/ui\/references\/venue-inventory-workbench\.html/);
+  assert.match(review, /delete after physical-pitch configuration and real inventory backend integration, device\/user acceptance, and production package audit/);
+  for (const heading of ["Composition", "Geometry / spacing", "Component hierarchy", "Typography / color / material", "Icon assets", "Copy", "State semantics"]) {
+    assert.match(review, new RegExp(`### ${escape(heading)}\\n\\n(?!\\s*###)[^\\n]+`));
+  }
+  for (const line of review.split(/\r?\n/).filter((line) => /^\| `/.test(line))) {
+    assert.equal((line.match(/not started/g) ?? []).length, 4);
+    assert.match(line, /\| pending \|$/);
+  }
+});
+
+test("inventory v2 reference files stay within focused line budgets", () => {
+  assert.ok(read(inventoryReferenceHtmlPath).split(/\r?\n/).length < 120);
+  assert.ok(read(inventoryReferenceCssPath).split(/\r?\n/).length < 500);
+  assert.ok(read(inventoryReferenceDataPath).split(/\r?\n/).length < 450);
+  assert.ok(read(inventoryReferenceControllerPath).split(/\r?\n/).length < 500);
 });
