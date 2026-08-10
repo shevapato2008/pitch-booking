@@ -14,6 +14,11 @@ const reviewStates = ["first-entry", "city-picker-open", "returning-home"];
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const count = (source, pattern) => [...source.matchAll(pattern)].length;
+const pngDimensions = (path) => {
+  const png = readFileSync(path);
+  assert.equal(png.subarray(1, 4).toString("ascii"), "PNG", `${path} must be a PNG`);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+};
 
 test("intent entry manifest and flow freeze the preview-only route contract", () => {
   mustExist(manifestPath);
@@ -122,7 +127,7 @@ test("three self-contained 375 by 812 references preserve the intent hierarchy a
   ]) assert.match(returning, new RegExp(copy));
 });
 
-test("review board reserves all evidence and records the visual approval boundary", () => {
+test("review board links the complete three-state evidence matrix and keeps user approval pending", () => {
   const readmePath = `${reviewRoot}/README.md`;
   const boardPath = `${reviewRoot}/review-board.html`;
   mustExist(readmePath);
@@ -134,10 +139,13 @@ test("review board reserves all evidence and records the visual approval boundar
     for (const label of reviewStates) assert.match(source, new RegExp(label));
   }
   for (const text of [
-    "375 × 812", "产品/IA approved，但 native visual not approved", "production disabled",
+    "375 × 812", "产品/IA approved；visual evidence complete；用户视觉批准 pending", "production disabled",
     "reference/implementation same logical viewport", "delete before production intent home integration",
     "不授权 inventory/backend",
     "user-supplied full-window DevTools screenshot is diagnostic evidence of safe-area bug only, not same-viewport implementation evidence",
+    "Stable 2.01.2510290", "base library 3.17.0", "iPhone X", "DPR 3",
+    "App.captureScreenshot timeout", "user-approved fallback", "detached simulator window",
+    "dev/pages/intent-entry/index?cityPicker=open", "dev/pages/intent-home/index?intent=BOOK",
   ]) assert.match(readme, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   for (const category of ["composition", "geometry/spacing", "component hierarchy", "typography/color/material", "icon assets", "copy", "state semantics"]) {
     assert.match(readme, new RegExp(category));
@@ -151,6 +159,23 @@ test("review board reserves all evidence and records the visual approval boundar
     const stateBoard = board.match(new RegExp(`<section[^>]*data-state="${state}"[\\s\\S]*?<\\/section>`));
     assert.ok(stateBoard, `missing ${state} review section`);
     assert.equal(count(stateBoard[0], /data-review-slot=/g), 6, `${state} must reserve six review slots`);
-    assert.equal(count(stateBoard[0], /等待视觉取证/g), 5, `${state} must mark all image slots pending`);
+    assert.equal(count(stateBoard[0], /<img\b/g), 5, `${state} must link five image artifacts`);
+    assert.doesNotMatch(stateBoard[0], /等待视觉取证/);
+  }
+
+  const expectedImages = [
+    ["reference-375x812.png", 375],
+    ["implementation-375x812.png", 375],
+    ["side-by-side.png", 750],
+    ["overlay-50.png", 375],
+    ["difference.png", 375],
+  ];
+  for (const state of reviewStates) {
+    for (const [suffix, width] of expectedImages) {
+      const path = `${reviewRoot}/${state}-${suffix}`;
+      mustExist(path);
+      assert.deepEqual(pngDimensions(path), { width, height: 812 });
+      assert.match(board, new RegExp(path.split("/").at(-1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
   }
 });
