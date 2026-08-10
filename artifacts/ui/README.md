@@ -52,3 +52,21 @@ page with five explicit query states:
 
 This checkpoint is production disabled and contains no native Fixture, contract, membership,
 inventory API, or backend write. Native implementation starts only after user visual approval.
+
+## Venue pitch setup and inventory revision
+
+This revision freezes reference-only contracts for physical pitch configuration and the v2
+inventory workbench at the `375 × 812` target viewport. Its sources are spec sections 11–13,
+`miniprogram/styles/tokens.wxss`, and `artifacts/ui/design-system/README.md`. The v1 inventory
+reference remains historical and is used only as a slot-status material baseline.
+
+- `screen-manifest/venue-pitch-setup.yaml`
+- `flows/venue-pitch-setup.md`
+- `references/venue-pitch-setup.html?state=<id>`
+- `screen-manifest/venue-inventory-workbench-v2.yaml`
+- `flows/venue-inventory-workbench-v2.md`
+- `references/venue-inventory-workbench-v2.html?state=<id>`
+
+Both revisions are `pending-user-visual-approval`. They do not claim native readiness or
+production readiness; no native Fixture, production route, contract, or backend integration is
+created by this checkpoint.

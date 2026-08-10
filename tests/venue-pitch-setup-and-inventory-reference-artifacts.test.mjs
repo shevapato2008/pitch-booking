@@ -1,0 +1,184 @@
+import { existsSync, readFileSync } from "node:fs";
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseDocument } from "yaml";
+
+const setupManifestPath = "artifacts/ui/screen-manifest/venue-pitch-setup.yaml";
+const inventoryManifestPath = "artifacts/ui/screen-manifest/venue-inventory-workbench-v2.yaml";
+const setupFlowPath = "artifacts/ui/flows/venue-pitch-setup.md";
+const inventoryFlowPath = "artifacts/ui/flows/venue-inventory-workbench-v2.md";
+const read = (path) => readFileSync(path, "utf8");
+const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
+const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const loadManifest = (path) => {
+  mustExist(path);
+  const document = parseDocument(read(path), { uniqueKeys: true });
+  assert.deepEqual(document.errors, [], `${path} must be valid YAML with unique keys`);
+  return document.toJS();
+};
+
+const sharedVenueScope = {
+  venue_id: "venue-bohai-yuanfeng",
+  name: "渤海元丰足球场",
+  booking_mode: "ONLINE",
+  permission: "VenueMembership.can_manage_inventory",
+};
+const sharedFirstSaveHandoff = {
+  client_ref: "draft-pitch-1",
+  pitch_id: "pitch-7-001",
+  custom_name: "A场",
+  system_name: "7人场 · 1号场",
+  display_name: "A场",
+  players_per_side: 7,
+  sequence: 1,
+  status: "ACTIVE",
+};
+const sharedFields = {
+  target_viewport: { width: 375, height: 812 },
+  production_enabled: false,
+  entry: "authorized-deep-link-only",
+  reference_gate: "pending-user-visual-approval",
+  review_slots: ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"],
+  venue_scope: sharedVenueScope,
+  first_save_handoff: sharedFirstSaveHandoff,
+  fixture: {
+    planned_path: null,
+    deletion_condition: "delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit",
+  },
+};
+const setupStates = [
+  "initial-loading", "load-error", "first-entry-empty", "inactive-only", "add-first-open", "first-pitch-draft",
+  "unnamed-pitch-draft", "first-save-success", "six-pitch-list", "edit-preset-open", "edit-custom-open", "field-validation",
+  "deactivate-blocked", "unused-delete-confirm", "unused-deleted-draft", "deactivated-draft", "reactivated-draft", "save-in-progress",
+  "save-failed", "configuration-changed", "save-result-unknown", "unsaved-leave-confirm",
+];
+const inventoryStates = [
+  "initial-loading", "load-error", "day-empty", "day-ready", "pitch-picker-open", "pitch-refreshing", "pitch-load-error",
+  "calendar-open", "date-refreshing", "date-load-error", "cross-week-ready", "long-list-end", "create-slot-open", "edit-slot-open",
+  "save-in-progress", "save-result-unknown", "create-slot-overlap", "concurrent-change", "permission-expired",
+];
+
+test("venue pitch setup and inventory v2 manifests freeze shared identity, entry, review, fixture, and reference state contracts", () => {
+  const setup = loadManifest(setupManifestPath);
+  const inventory = loadManifest(inventoryManifestPath);
+
+  assert.equal(setup.id, "venue-pitch-setup");
+  assert.equal(inventory.id, "venue-inventory-workbench-v2");
+  assert.deepEqual({ ...setup, id: undefined, states: undefined, authority: undefined, pitches: undefined, capabilities: undefined }, {
+    ...sharedFields,
+    fixture: { ...sharedFields.fixture, planned_path: "miniprogram/dev/venue-pitch-setup-fixture.ts" },
+    id: undefined,
+    states: undefined,
+    authority: undefined,
+    pitches: undefined,
+    capabilities: undefined,
+  });
+  assert.deepEqual({ ...inventory, id: undefined, states: undefined, authority: undefined, default_selection: undefined, date_window: undefined, picker_pitches: undefined }, {
+    ...sharedFields,
+    fixture: { ...sharedFields.fixture, planned_path: "miniprogram/dev/venue-inventory-fixture.ts" },
+    id: undefined,
+    states: undefined,
+    authority: undefined,
+    default_selection: undefined,
+    date_window: undefined,
+    picker_pitches: undefined,
+  });
+  assert.deepEqual(setup.states, setupStates.map((id) => ({ id, reference: `artifacts/ui/references/venue-pitch-setup.html?state=${id}` })));
+  assert.deepEqual(inventory.states, inventoryStates.map((id) => ({ id, reference: `artifacts/ui/references/venue-inventory-workbench-v2.html?state=${id}` })));
+});
+
+test("venue pitch setup freezes canonical pitches, capabilities, and page-draft authority", () => {
+  const setup = loadManifest(setupManifestPath);
+
+  assert.deepEqual(setup.authority, {
+    identity: "immutable pitch_id",
+    display_name: "custom_name ?? system_name",
+    format: "players_per_side integer 1..99",
+    ordering: "players_per_side, sequence, id",
+    editor_commit: "page draft only",
+    page_commit: "atomic future server save",
+  });
+  assert.deepEqual(setup.pitches, [
+    { id: "pitch-5-001", custom_name: "滨河场", system_name: "5人场 · 1号场", display_name: "滨河场", players_per_side: 5, sequence: 1, status: "ACTIVE" },
+    { id: "pitch-5-002", custom_name: null, system_name: "5人场 · 2号场", display_name: "5人场 · 2号场", players_per_side: 5, sequence: 2, status: "ACTIVE" },
+    { id: "pitch-7-001", custom_name: "A场", system_name: "7人场 · 1号场", display_name: "A场", players_per_side: 7, sequence: 1, status: "ACTIVE" },
+    { id: "pitch-7-002", custom_name: null, system_name: "7人场 · 2号场", display_name: "7人场 · 2号场", players_per_side: 7, sequence: 2, status: "ACTIVE" },
+    { id: "pitch-7-003", custom_name: null, system_name: "7人场 · 3号场", display_name: "7人场 · 3号场", players_per_side: 7, sequence: 3, status: "ACTIVE" },
+    { id: "pitch-7-004", custom_name: "训练场", system_name: "7人场 · 4号场", display_name: "训练场", players_per_side: 7, sequence: 4, status: "INACTIVE" },
+  ]);
+  assert.deepEqual(setup.capabilities, {
+    "pitch-5-001": { edit_format: { allowed: false, reason: "BUSINESS_HISTORY" }, delete: { allowed: false, reason: "BUSINESS_HISTORY" }, deactivate: { allowed: true, reason: null }, reactivate: { allowed: false, reason: "ALREADY_ACTIVE" }, future_blockers: { AVAILABLE: 0, LOCKED: 0, BOOKED: 0 } },
+    "pitch-5-002": { edit_format: { allowed: true, reason: null }, delete: { allowed: true, reason: null }, deactivate: { allowed: true, reason: null }, reactivate: { allowed: false, reason: "ALREADY_ACTIVE" }, future_blockers: { AVAILABLE: 0, LOCKED: 0, BOOKED: 0 } },
+    "pitch-7-001": { edit_format: { allowed: false, reason: "BUSINESS_HISTORY" }, delete: { allowed: false, reason: "BUSINESS_HISTORY" }, deactivate: { allowed: true, reason: null }, reactivate: { allowed: false, reason: "ALREADY_ACTIVE" }, future_blockers: { AVAILABLE: 0, LOCKED: 0, BOOKED: 0 } },
+    "pitch-7-002": { edit_format: { allowed: false, reason: "BUSINESS_HISTORY" }, delete: { allowed: false, reason: "BUSINESS_HISTORY" }, deactivate: { allowed: false, reason: "FUTURE_INVENTORY_BLOCKS" }, reactivate: { allowed: false, reason: "ALREADY_ACTIVE" }, future_blockers: { AVAILABLE: 2, LOCKED: 1, BOOKED: 1 } },
+    "pitch-7-003": { edit_format: { allowed: false, reason: "BUSINESS_HISTORY" }, delete: { allowed: false, reason: "BUSINESS_HISTORY" }, deactivate: { allowed: true, reason: null }, reactivate: { allowed: false, reason: "ALREADY_ACTIVE" }, future_blockers: { AVAILABLE: 0, LOCKED: 0, BOOKED: 0 } },
+    "pitch-7-004": { edit_format: { allowed: false, reason: "BUSINESS_HISTORY" }, delete: { allowed: false, reason: "BUSINESS_HISTORY" }, deactivate: { allowed: false, reason: "ALREADY_INACTIVE" }, reactivate: { allowed: true, reason: null }, future_blockers: { AVAILABLE: 0, LOCKED: 0, BOOKED: 0 } },
+  });
+});
+
+test("venue inventory v2 freezes selection, date window, active picker ordering, and request authority", () => {
+  const inventory = loadManifest(inventoryManifestPath);
+
+  assert.deepEqual(inventory.authority, {
+    query_key: "venue_id + pitch_id + local_date",
+    selected_pitch: "preserved while date changes",
+    selected_date: "preserved while pitch changes",
+    response_policy: "latest request_sequence only",
+    date_window: "2026-08-10 through 2026-08-23 inclusive",
+  });
+  assert.deepEqual(inventory.default_selection, { pitch_id: "pitch-7-001", local_date: "2026-08-11", request_sequence: 1 });
+  assert.deepEqual(inventory.date_window, { start: "2026-08-10", end: "2026-08-23", inclusive: true });
+  assert.deepEqual(inventory.picker_pitches, [
+    { players_per_side: 5, pitches: [
+      { id: "pitch-5-001", custom_name: "滨河场", system_name: "5人场 · 1号场", display_name: "滨河场", players_per_side: 5, sequence: 1, status: "ACTIVE" },
+      { id: "pitch-5-002", custom_name: null, system_name: "5人场 · 2号场", display_name: "5人场 · 2号场", players_per_side: 5, sequence: 2, status: "ACTIVE" },
+    ] },
+    { players_per_side: 7, pitches: [
+      { id: "pitch-7-001", custom_name: "A场", system_name: "7人场 · 1号场", display_name: "A场", players_per_side: 7, sequence: 1, status: "ACTIVE" },
+      { id: "pitch-7-002", custom_name: null, system_name: "7人场 · 2号场", display_name: "7人场 · 2号场", players_per_side: 7, sequence: 2, status: "ACTIVE" },
+      { id: "pitch-7-003", custom_name: null, system_name: "7人场 · 3号场", display_name: "7人场 · 3号场", players_per_side: 7, sequence: 3, status: "ACTIVE" },
+    ] },
+  ]);
+});
+
+test("venue pitch setup and inventory v2 flows preserve stated transitions and unsupported production boundary", () => {
+  mustExist(setupFlowPath);
+  mustExist(inventoryFlowPath);
+  const setupFlow = read(setupFlowPath);
+  const inventoryFlow = read(inventoryFlowPath);
+
+  for (const line of [
+    "authorized worker + zero configured pitches → first-entry-empty",
+    "authorized worker + configured pitches but zero ACTIVE pitches → inactive-only",
+    "first-entry-empty → add-first-open → first-pitch-draft",
+    "first-pitch-draft uses client_ref draft-pitch-1 and custom name A场",
+    "unnamed-pitch-draft uses a separate client_ref and temporary local label only",
+    "editor 完成 → page draft only",
+    "edit-custom-open → inline players_per_side input; no nested sheet",
+    "unused pitch delete confirmation → unused-deleted-draft",
+    "ACTIVE pitch with future blockers → deactivate-blocked",
+    "eligible ACTIVE pitch → deactivated-draft",
+    "INACTIVE pitch → reactivated-draft",
+    "save-in-progress → first-save-success or save-failed or save-result-unknown",
+    "first-save-success maps draft-pitch-1 → pitch-7-001 and then opens inventory v2 day-ready",
+    "configuration-changed → draft retained for manual reconciliation",
+    "unsaved page exit → unsaved-leave-confirm",
+    "production home → disabled",
+  ]) assert.match(setupFlow, new RegExp(escape(line)));
+
+  for (const line of [
+    "day-ready → pitch-picker-open → pitch-refreshing → same date + new pitch_id",
+    "pitch-refreshing → pitch-load-error keeps the new selection and exposes retry",
+    "day-ready → calendar-open → date-refreshing → confirmed date in same page",
+    "date-refreshing → date-load-error keeps the new date and current pitch and exposes retry",
+    "calendar confirm 2026-08-23 → cross-week-ready showing 2026-08-17..2026-08-23",
+    "week-strip managed date → immediate same-page refresh",
+    "day-empty → create-slot-open",
+    "day-ready → edit-slot-open for editable slot",
+    "create-slot-open → save-in-progress → save-result-unknown or create-slot-overlap",
+    "concurrent-change → authoritative day retained and draft retained for review",
+    "permission-expired → write controls disabled",
+    "long-list-end → final slot visible above fixed bottom action",
+    "production home → disabled",
+  ]) assert.match(inventoryFlow, new RegExp(escape(line)));
+});
