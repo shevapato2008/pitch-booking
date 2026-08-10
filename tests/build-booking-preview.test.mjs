@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -30,7 +30,7 @@ test("source production manifest puts the map first across five production route
   ]);
 });
 
-test("both builds expose five routes while only development activates Fixture bootstrap", async (t) => {
+test("development includes intent pages while production stays on five routes", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -41,9 +41,27 @@ test("both builds expose five routes while only development activates Fixture bo
   });
   const development = JSON.parse(await readFile(path.join(root, "dist/miniprogram-development/app.json"), "utf8"));
   const production = JSON.parse(await readFile(path.join(root, "dist/miniprogram-production/app.json"), "utf8"));
-  const routes = ["pages/venue-map/index", "pages/venue/index", "pages/availability/index", "pages/booking-confirmation/index", "pages/order-detail/index"];
-  assert.deepEqual(development.pages, routes);
-  assert.deepEqual(production.pages, routes);
+  const productionRoutes = [
+    "pages/venue-map/index",
+    "pages/venue/index",
+    "pages/availability/index",
+    "pages/booking-confirmation/index",
+    "pages/order-detail/index",
+  ];
+  const developmentRoutes = [
+    ...productionRoutes,
+    "dev/pages/intent-entry/index",
+    "dev/pages/intent-home/index",
+  ];
+  assert.deepEqual(development.pages, developmentRoutes);
+  assert.deepEqual(production.pages, productionRoutes);
+  for (const route of ["dev/pages/intent-entry/index", "dev/pages/intent-home/index"]) {
+    for (const extension of [".js", ".json", ".wxml", ".wxss"]) {
+      await readFile(path.join(root, "dist/miniprogram-development", `${route}${extension}`));
+    }
+  }
+  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/intent-(?:entry|home)\/index/);
+  await assert.rejects(access(path.join(root, "dist/miniprogram-production/dev")), /ENOENT/);
   const developmentApp = await readFile(path.join(root, "dist/miniprogram-development/app.js"), "utf8");
   const productionApp = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
   assert.match(developmentApp, /dev\/bootstrap/);
