@@ -145,8 +145,16 @@ test("add keeps its editor origin and typed fields through other format completi
   expect(page.data).toMatchObject({ visualState: "add-first-open", underlyingState: "first-entry-empty", draftName: "六人场", draftPlayersInput: "6" });
   expect(page.data.editor).toMatchObject({ title: "添加一块场地", selectedFormat: "其他", customInput: true });
   page.onCompleteEditor();
-  expect(page.data).toMatchObject({ visualState: "first-pitch-draft", configuredCount: 1 });
+  expect(page.data).toMatchObject({ visualState: "first-pitch-draft", configuredCount: 1, draftName: "六人场", draftPlayersInput: "6" });
   expect(page.data.pitches[0]).toMatchObject({ clientRef: "draft-pitch-1", customName: "六人场", displayName: "六人场", playersPerSide: 6 });
+
+  const expectedPitches = page.data.pitches;
+  page.onBack();
+  expect(page.data).toMatchObject({ visualState: "unsaved-leave-confirm", underlyingState: "first-pitch-draft", configuredCount: 1, draftName: "六人场", draftPlayersInput: "6" });
+  expect(page.data.pitches).toEqual(expectedPitches);
+  page.onCancelSheet();
+  expect(page.data).toMatchObject({ visualState: "first-pitch-draft", configuredCount: 1, draftName: "六人场", draftPlayersInput: "6" });
+  expect(page.data.pitches).toEqual(expectedPitches);
 });
 
 test("preset selection updates the add draft, empty name creates unnamed draft, and edit returns to its underlying list", () => {
@@ -164,16 +172,45 @@ test("preset selection updates the add draft, empty name creates unnamed draft, 
   page.onNameInput({ detail: { value: "保留于编辑草稿" } });
   page.onSelectFormat({ currentTarget: { dataset: { format: 5 } } });
   page.onCompleteEditor();
+  expect(page.data).toMatchObject({ visualState: "six-pitch-list", draftName: "保留于编辑草稿", draftPlayersInput: "5" });
+  page.onBack();
+  expect(page.data).toMatchObject({ visualState: "unsaved-leave-confirm", draftName: "保留于编辑草稿", draftPlayersInput: "5" });
+  page.onCancelSheet();
+  expect(page.data).toMatchObject({ visualState: "six-pitch-list", draftName: "保留于编辑草稿", draftPlayersInput: "5" });
+});
+
+test("A pitch edit keeps format read-only and retains its renamed local draft through leave and save overlays", () => {
+  const page = loadPage();
+  page.onLoad();
+  page.onPitchTap({ currentTarget: { dataset: { pitchId: "pitch-7-001" } } });
+  expect(page.data.editor).toMatchObject({ pitchId: "pitch-7-001", selectedFormat: 7, formatEditable: false });
+  page.onNameInput({ detail: { value: "北场" } });
+  page.onSelectFormat({ currentTarget: { dataset: { format: "other" } } });
+  expect(page.data.editor).toMatchObject({ selectedFormat: 7, customInput: false });
+  page.onCompleteEditor();
+
   expect(page.data.visualState).toBe("six-pitch-list");
+  expect(page.data.pitches.find(({ id }) => id === "pitch-7-001")).toMatchObject({ displayName: "北场", customName: "北场", playersPerSide: 7 });
+  const expectedPitches = page.data.pitches;
+  page.onBack();
+  expect(page.data).toMatchObject({ visualState: "unsaved-leave-confirm", underlyingState: "six-pitch-list", draftName: "北场" });
+  expect(page.data.pitches).toEqual(expectedPitches);
+  page.onCancelSheet();
+  expect(page.data).toMatchObject({ visualState: "six-pitch-list", draftName: "北场" });
+  expect(page.data.pitches).toEqual(expectedPitches);
+  page.onPageAction();
+  expect(page.data.visualState).toBe("save-in-progress");
+  expect(page.data.pitches).toEqual(expectedPitches);
 });
 
 test("delete and reactivate use only approved local draft states", () => {
   const page = loadPage();
-  page.onLoad();
+  page.onLoad({ state: "unused-delete-confirm" });
   page.onDeletePitch();
   expect(page.data.visualState).toBe("unused-delete-confirm");
   page.onConfirmDelete();
   expect(page.data.visualState).toBe("unused-deleted-draft");
+  page.onLoad({ state: "inactive-only" });
   page.onReactivatePitch();
   expect(page.data.visualState).toBe("reactivated-draft");
 });
@@ -186,11 +223,25 @@ test("lifecycle action consumes the current editor descriptor target", () => {
   expect(page.data.visualState).toBe("deactivated-draft");
 });
 
+test("delete and inactive recovery consume descriptor targets instead of hardcoded states", () => {
+  const page = loadPage();
+  page.onLoad({ state: "unused-delete-confirm" });
+  page.setData({ editor: { ...page.data.editor!, lifecycleNextState: "deactivated-draft" } });
+  page.onDeletePitch();
+  expect(page.data.visualState).toBe("deactivated-draft");
+
+  page.onLoad({ state: "inactive-only" });
+  page.setData({ recoveryNextState: "six-pitch-list" });
+  page.onReactivatePitch();
+  expect(page.data.visualState).toBe("six-pitch-list");
+});
+
 test.each(["save-in-progress", "save-result-unknown"] as const)("%s ignores duplicate page saves and cannot be dismissed", (state) => {
   const page = loadPage();
   page.onLoad({ state });
   page.onPageAction();
   page.onCloseSheet();
+  page.onBack();
   expect(page.data.visualState).toBe(state);
 });
 

@@ -10,11 +10,21 @@ import { readIntentHeaderLayout } from "../../intent-header-layout";
 interface SetupOptions { state?: unknown }
 interface DatasetEvent { currentTarget?: { dataset?: { pitchId?: unknown; state?: unknown; format?: unknown } } }
 interface InputEvent { detail?: { value?: unknown } }
-interface DraftSnapshot { readonly pitches: readonly VenuePitch[]; readonly configuredCount: number | null }
+interface DraftSnapshot {
+  readonly pitches: readonly VenuePitch[];
+  readonly configuredCount: number | null;
+  readonly draftName: string;
+  readonly draftPlayersInput: string;
+  readonly draftPlayersPreview: string;
+  readonly isDraftPlayersValid: boolean;
+}
 type EditorOrigin = "add" | "edit" | null;
 
 const saveStates = new Set<VenuePitchSetupVisualState>([
   "save-in-progress", "save-failed", "configuration-changed", "save-result-unknown",
+]);
+const pageDraftStates = new Set<VenuePitchSetupVisualState>([
+  "first-pitch-draft", "unnamed-pitch-draft", "unused-deleted-draft", "deactivated-draft", "reactivated-draft",
 ]);
 
 const editorOriginFor = (state: VenuePitchSetupVisualState): EditorOrigin => {
@@ -39,6 +49,22 @@ const inputPatch = (state: VenuePitchSetupVisualState) => {
   };
 };
 
+const snapshotOf = (source: {
+  pitches: readonly VenuePitch[];
+  configuredCount: number | null;
+  draftName: string;
+  draftPlayersInput: string;
+  draftPlayersPreview: string;
+  isDraftPlayersValid: boolean;
+}): DraftSnapshot => ({
+  pitches: source.pitches,
+  configuredCount: source.configuredCount,
+  draftName: source.draftName,
+  draftPlayersInput: source.draftPlayersInput,
+  draftPlayersPreview: source.draftPlayersPreview,
+  isDraftPlayersValid: source.isDraftPlayersValid,
+});
+
 Page({
   data: {
     ...VENUE_PITCH_SETUP_FIXTURE,
@@ -54,16 +80,19 @@ Page({
 
   transition(state: VenuePitchSetupVisualState, underlyingState?: VenuePitchSetupVisualState, suppliedSnapshot?: DraftSnapshot) {
     const built = buildVenuePitchSetupView(state);
-    const renderedSnapshot = suppliedSnapshot ?? (saveStates.has(state)
-      ? this.data.draftSnapshot ?? { pitches: this.data.pitches, configuredCount: this.data.configuredCount }
-      : null);
+    const inputs = inputPatch(state);
+    const returnsToUnderlying = this.data.isSheetOpen && state === this.data.underlyingState;
+    const preservesDraft = saveStates.has(state) || state === "unsaved-leave-confirm" || returnsToUnderlying;
+    const renderedSnapshot = suppliedSnapshot
+      ?? (preservesDraft ? this.data.draftSnapshot ?? snapshotOf(this.data) : null)
+      ?? (pageDraftStates.has(state) ? snapshotOf({ ...built, ...inputs }) : null);
     this.setData({
       ...built,
-      ...(renderedSnapshot ? { pitches: renderedSnapshot.pitches, configuredCount: renderedSnapshot.configuredCount } : {}),
-      ...inputPatch(state),
+      ...inputs,
+      ...(renderedSnapshot ?? {}),
       underlyingState: underlyingState ?? underlyingFor(state),
       editorOrigin: editorOriginFor(state),
-      draftSnapshot: saveStates.has(state) ? renderedSnapshot : null,
+      draftSnapshot: renderedSnapshot,
     });
   },
 
@@ -71,12 +100,13 @@ Page({
     const layout = readIntentHeaderLayout();
     const state = resolveVenuePitchSetupVisualState(options.state);
     const built = buildVenuePitchSetupView(state);
+    const inputs = inputPatch(state);
     this.setData({
       ...built,
-      ...inputPatch(state),
+      ...inputs,
       underlyingState: underlyingFor(state),
       editorOrigin: editorOriginFor(state),
-      draftSnapshot: saveStates.has(state) ? { pitches: built.pitches, configuredCount: built.configuredCount } : null,
+      draftSnapshot: saveStates.has(state) || pageDraftStates.has(state) ? snapshotOf({ ...built, ...inputs }) : null,
       headerTopPx: layout.topPx,
       headerRowHeightPx: layout.rowHeightPx,
       headerRightInsetPx: layout.rightInsetPx,
@@ -144,15 +174,40 @@ Page({
       const pitch: VenuePitch = name
         ? { clientRef: "draft-pitch-1", customName: name, systemName: null, displayName: name, playersPerSide, sequence: null, status: "ACTIVE", nameSource: "自定义名称", draftStatus: "ACTIVE · 待保存" }
         : { clientRef: "draft-pitch-unnamed-1", customName: null, systemName: null, displayName: `新建的 ${playersPerSide} 人制场地 1`, playersPerSide, sequence: null, status: "ACTIVE", nameSource: "保存后生成正式名称", draftStatus: "ACTIVE · 待保存" };
-      this.transition(name ? "first-pitch-draft" : "unnamed-pitch-draft", undefined, { pitches: [pitch], configuredCount: 1 });
+      this.transition(name ? "first-pitch-draft" : "unnamed-pitch-draft", undefined, snapshotOf({
+        ...this.data,
+        pitches: [pitch],
+        configuredCount: 1,
+      }));
       return;
     }
-    this.transition(this.data.underlyingState);
+    const pitchId = this.data.editor.pitchId;
+    const name = this.data.draftName.trim();
+    const playersPerSide = this.data.editor.formatEditable
+      ? this.data.editor.selectedFormat === "其他" ? Number(this.data.draftPlayersInput) : Number(this.data.editor.selectedFormat)
+      : null;
+    const pitches = this.data.pitches.map((pitch: VenuePitch) => pitch.id === pitchId ? {
+      ...pitch,
+      customName: name || null,
+      displayName: name || pitch.systemName || pitch.displayName,
+      playersPerSide: playersPerSide ?? pitch.playersPerSide,
+      draftStatus: `${pitch.status} · 待保存`,
+    } : pitch);
+    this.transition(this.data.underlyingState, undefined, snapshotOf({ ...this.data, pitches }));
   },
 
-  onDeletePitch() { this.transition("unused-delete-confirm", "six-pitch-list"); },
-  onConfirmDelete() { this.transition("unused-deleted-draft"); },
-  onReactivatePitch() { this.transition("reactivated-draft"); },
+  onDeletePitch() {
+    const next = this.data.editor?.lifecycleNextState;
+    if (next) this.transition(next, this.data.underlyingState);
+  },
+  onConfirmDelete() {
+    const next = this.data.editor?.confirmation?.nextState;
+    if (next) this.transition(next);
+  },
+  onReactivatePitch() {
+    const next = this.data.recoveryNextState;
+    if (next) this.transition(next);
+  },
   onLifecycleAction() {
     const next = this.data.editor?.lifecycleNextState;
     if (next) this.transition(next);
@@ -166,7 +221,7 @@ Page({
   onCancelSheet() { this.onCloseSheet(); },
 
   onBack() {
-    if (this.data.mode === "draft" && this.data.visualState !== "unsaved-leave-confirm") {
+    if (!this.data.duplicateSaveDisabled && (this.data.mode === "draft" || this.data.draftSnapshot) && this.data.visualState !== "unsaved-leave-confirm") {
       this.transition("unsaved-leave-confirm", this.data.visualState);
     }
   },

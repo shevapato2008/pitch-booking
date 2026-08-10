@@ -59,8 +59,9 @@ test("lifecycle controls bind descriptor, delete, and reactivate handlers withou
   const template = await readFile(`${pageRoot}.wxml`, "utf8");
   assert.match(template, /mode === 'inactive-only'[^>]*bindtap="onReactivatePitch"/);
   assert.match(template, /editor\.lifecycleLabel[^>]*bindtap="onLifecycleAction"/);
-  assert.match(template, /editor\.lifecycleLabel === '删除场地'[^>]*bindtap="onDeletePitch"/);
+  assert.match(template, /editor\.confirmation[^>]*bindtap="onDeletePitch"/);
   assert.match(template, /bindtap="onConfirmDelete"/);
+  assert.doesNotMatch(template, /editor\.lifecycleLabel === '删除场地'/);
   assert.doesNotMatch(template, /bindtap="onDeactivatePitch"/);
 });
 
