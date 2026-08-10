@@ -38,13 +38,39 @@ test("markup keeps one modal hierarchy, one scrollable pitch list, numeric input
   assert.match(template, /<view class="venue-pitch-setup__sheet"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(template, /<scroll-view class="venue-pitch-setup__list"[^>]*scroll-y="true"/);
   assert.match(template, /<input[^>]*type="number"[^>]*bindinput="onPlayersInput"/);
-  assert.match(template, /disabled="{{!editor\.formatEditable}}"/);
+  assert.match(template, /wx:for="{{editor\.formatOptions}}"/);
+  assert.match(template, /item\.selected \? 'venue-pitch-setup__format--selected'/);
+  assert.match(template, /disabled="{{item\.disabled}}"/);
   assert.match(template, /disabled="{{editor\.completeDisabled \|\| !isDraftPlayersValid}}"/);
   assert.match(template, /disabled="{{pageAction\.disabled}}"/);
   assert.match(template, /role="alert"/);
   assert.match(template, /aria-busy="{{duplicateSaveDisabled}}"/);
   assert.match(template, /wx:if="{{editor\.customInput}}"[\s\S]*type="number"/);
   assert.equal((template.match(/venue-pitch-setup__custom-field/g) ?? []).length, 1);
+});
+
+test("pitch cards expose affordance only when the current view provides a transition", async () => {
+  const template = await readFile(`${pageRoot}.wxml`, "utf8");
+  assert.match(template, /disabled="{{!cardNextStates\[item\.id\] \|\| duplicateSaveDisabled}}"/);
+  assert.match(template, /wx:if="{{cardNextStates\[item\.id\]}}" class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron"/);
+});
+
+test("load error exposes one local reload affordance instead of a second generic recovery action", async () => {
+  const template = await readFile(`${pageRoot}.wxml`, "utf8");
+  assert.match(template, /wx:elif="{{mode === 'error'}}"[\s\S]*?>重新加载<\/button>/);
+  assert.doesNotMatch(template, /wx:if="{{recoveryLabel}}"/);
+});
+
+test("initial loading is static while the only continuous spinner belongs to saving", async () => {
+  const [template, styles] = await Promise.all([
+    readFile(`${pageRoot}.wxml`, "utf8"),
+    readFile(`${pageRoot}.wxss`, "utf8"),
+  ]);
+  const initial = template.match(/wx:if="{{mode === 'loading'}}"[\s\S]*?<\/view>\s*<view wx:elif/)?.[0] ?? "";
+  assert.match(initial, /venue-pitch-setup__loading-material/);
+  assert.doesNotMatch(initial, /venue-pitch-setup__spinner/);
+  assert.match(template, /wx:if="{{duplicateSaveDisabled}}" class="venue-pitch-setup__spinner/);
+  assert.equal((styles.match(/\banimation\s*:/g) ?? []).length, 1);
 });
 
 test("styles preserve 375px reference geometry, touch spacing, safe CTA, and local CSS icons", async () => {

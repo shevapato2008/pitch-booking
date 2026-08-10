@@ -85,7 +85,7 @@ test("missing and invalid state queries fall back to six-pitch-list", () => {
   expect(page.data.visualState).toBe("six-pitch-list");
 });
 
-test("opens add, A场 preset editor, and other canonical pitches in the inline custom editor", () => {
+test("opens add and follows only the card transitions approved by each view state", () => {
   const page = loadPage();
   page.onLoad({ state: "first-entry-empty" });
   page.onOpenAdd();
@@ -98,10 +98,13 @@ test("opens add, A场 preset editor, and other canonical pitches in the inline c
   expect(page.data).toMatchObject({ visualState: "edit-preset-open", underlyingState: "six-pitch-list" });
   page.onCancelSheet();
   page.onPitchTap({ currentTarget: { dataset: { pitchId: "pitch-5-002" } } });
-  expect(page.data.visualState).toBe("edit-custom-open");
-  page.onCloseSheet();
+  expect(page.data.visualState).toBe("six-pitch-list");
   page.onPitchTap({ currentTarget: { dataset: { pitchId: "missing" } } });
   expect(page.data.visualState).toBe("six-pitch-list");
+
+  page.onLoad({ state: "inactive-only" });
+  page.onPitchTap({ currentTarget: { dataset: { pitchId: "pitch-7-004" } } });
+  expect(page.data.visualState).toBe("reactivated-draft");
 });
 
 test.each([

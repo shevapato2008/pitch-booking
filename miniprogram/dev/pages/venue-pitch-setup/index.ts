@@ -66,8 +66,9 @@ Page({
 
   onPitchTap(event: DatasetEvent) {
     const pitchId = event.currentTarget?.dataset?.pitchId;
-    if (!VENUE_PITCH_SETUP_FIXTURE.pitches.some(({ id }) => id === pitchId)) return;
-    this.transition(pitchId === "pitch-7-001" ? "edit-preset-open" : "edit-custom-open", this.data.visualState);
+    if (typeof pitchId !== "string") return;
+    const next = this.data.cardNextStates[pitchId];
+    if (next) this.transition(next, this.data.visualState);
   },
 
   onNameInput(event: InputEvent) {

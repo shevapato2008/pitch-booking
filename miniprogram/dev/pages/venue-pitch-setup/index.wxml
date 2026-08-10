@@ -31,7 +31,7 @@
 
     <scroll-view class="venue-pitch-setup__list" scroll-y="true" enhanced="true" show-scrollbar="false">
       <view wx:if="{{mode === 'loading'}}" class="venue-pitch-setup__state">
-        <view class="venue-pitch-setup__spinner" aria-hidden="true"></view>
+        <view class="venue-pitch-setup__loading-material" aria-hidden="true"></view>
         <text>正在读取场地配置</text>
       </view>
       <view wx:elif="{{mode === 'error'}}" class="venue-pitch-setup__state">
@@ -48,7 +48,7 @@
         class="venue-pitch-setup__pitch venue-pitch-setup__touch"
         data-pitch-id="{{item.id}}"
         bindtap="onPitchTap"
-        disabled="{{duplicateSaveDisabled}}"
+        disabled="{{!cardNextStates[item.id] || duplicateSaveDisabled}}"
         aria-label="{{item.displayName}}，{{item.playersPerSide}}人制，{{item.status === 'ACTIVE' ? '使用中' : '已停用'}}"
       >
         <view class="venue-pitch-setup__pitch-copy">
@@ -58,14 +58,14 @@
           <text wx:elif="{{item.status === 'ACTIVE'}}" class="venue-pitch-setup__status venue-pitch-setup__status--active">ACTIVE · 使用中</text>
           <text wx:else class="venue-pitch-setup__status venue-pitch-setup__status--inactive">INACTIVE · 已停用</text>
         </view>
-        <view class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron" aria-hidden="true"></view>
+        <view wx:if="{{cardNextStates[item.id]}}" class="venue-pitch-setup-icon venue-pitch-setup-icon--chevron" aria-hidden="true"></view>
       </button>
 
       <button wx:if="{{mode !== 'loading' && mode !== 'error'}}" class="venue-pitch-setup__add venue-pitch-setup__touch" bindtap="onOpenAdd">
         <view class="venue-pitch-setup-icon venue-pitch-setup-icon--plus" aria-hidden="true"></view>
         <text>添加一块场地</text>
       </button>
-      <button wx:if="{{recoveryLabel}}" class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onRecovery">{{recoveryLabel}}</button>
+      <button wx:if="{{mode === 'inactive-only'}}" class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onRecovery">恢复使用</button>
     </scroll-view>
   </view>
 
@@ -106,9 +106,7 @@
 
         <text class="venue-pitch-setup__label">可选制式</text>
         <view class="venue-pitch-setup__formats">
-          <button class="venue-pitch-setup__format venue-pitch-setup__touch" disabled="{{!editor.formatEditable}}">5 人制</button>
-          <button class="venue-pitch-setup__format venue-pitch-setup__touch venue-pitch-setup__format--selected" disabled="{{!editor.formatEditable}}">7 人制</button>
-          <button class="venue-pitch-setup__format venue-pitch-setup__touch" disabled="{{!editor.formatEditable}}" data-format="other" bindtap="onSelectFormat">其他</button>
+          <button wx:for="{{editor.formatOptions}}" wx:key="value" class="venue-pitch-setup__format venue-pitch-setup__touch {{item.selected ? 'venue-pitch-setup__format--selected' : ''}}" disabled="{{item.disabled}}" data-format="{{item.value === '其他' ? 'other' : item.value}}" bindtap="onSelectFormat" aria-pressed="{{item.selected}}">{{item.label}}</button>
         </view>
         <text wx:if="{{editor.formatReason}}" class="venue-pitch-setup__helper">已有业务记录，场地制式不可修改</text>
 

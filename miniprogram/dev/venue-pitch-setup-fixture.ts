@@ -37,6 +37,7 @@ export interface VenuePitchEditor {
   readonly pitchId?: string;
   readonly nameValue: string;
   readonly selectedFormat: number | "其他";
+  readonly formatOptions: readonly Readonly<{ value: number | "其他"; label: string; selected: boolean; disabled: boolean }>[];
   readonly customInput: boolean;
   readonly playersPerSide?: number;
   readonly preview?: string;
@@ -66,6 +67,7 @@ export interface VenuePitchSetupView {
   readonly pageAction: Readonly<{ label: string; disabled: boolean; nextState?: VenuePitchSetupVisualState; previewOnly?: boolean }>;
   readonly recoveryLabel?: string;
   readonly recoveryNextState?: VenuePitchSetupVisualState;
+  readonly cardNextStates: Readonly<Record<string, VenuePitchSetupVisualState>>;
   readonly isSheetOpen: boolean;
   readonly duplicateSaveDisabled: boolean;
   readonly fixtureNotice: string;
@@ -127,18 +129,19 @@ interface StateDescriptor {
   readonly recovery?: readonly [string, VenuePitchSetupVisualState];
   readonly duplicateSaveDisabled?: boolean;
   readonly dialog?: boolean;
+  readonly cardNextStates?: Readonly<Record<string, VenuePitchSetupVisualState>>;
 }
 
 const descriptors = deepFreeze<Record<VenuePitchSetupVisualState, StateDescriptor>>({
   "initial-loading": { mode: "loading", count: null, status: "正在读取场地配置", list: "empty", actionDisabled: true },
   "load-error": { mode: "error", count: null, status: "场地配置加载失败，请重新加载", banner: "error", list: "empty", actionDisabled: true, recovery: ["重新加载", "six-pitch-list"] },
   "first-entry-empty": { mode: "empty", count: 0, status: "还没有已配置场地，请先添加第一块物理场地", list: "empty", actionLabel: "保存并设置时段", actionDisabled: true },
-  "inactive-only": { mode: "inactive-only", count: 1, status: "当前没有使用中的场地，可恢复已停用场地", list: "inactive", actionDisabled: true, recovery: ["恢复使用", "reactivated-draft"] },
+  "inactive-only": { mode: "inactive-only", count: 1, status: "当前没有使用中的场地，可恢复已停用场地", list: "inactive", actionDisabled: true, recovery: ["恢复使用", "reactivated-draft"], cardNextStates: { "pitch-7-004": "reactivated-draft" } },
   "add-first-open": { mode: "empty", count: 0, status: "还没有已配置场地，请先添加第一块物理场地", list: "empty", editor: "preset", actionLabel: "保存并设置时段", actionDisabled: true },
   "first-pitch-draft": { mode: "draft", count: 1, status: "已加入页面草稿，保存前不会写入服务端", banner: "info", list: "first", actionLabel: "保存并设置时段", actionNext: "save-in-progress" },
   "unnamed-pitch-draft": { mode: "draft", count: 1, status: "临时名称仅用于本页草稿，不作为保存请求权威", banner: "info", list: "unnamed", actionLabel: "保存并设置时段", actionNext: "save-in-progress" },
   "first-save-success": { mode: "success", count: 1, status: "权威映射 draft-pitch-1 → pitch-7-001；保存成功后打开 A场的时段设置", banner: "success", list: "handoff", actionLabel: "打开 A场时段设置" },
-  "six-pitch-list": { actionNext: "save-in-progress" },
+  "six-pitch-list": { actionNext: "save-in-progress", cardNextStates: { "pitch-7-001": "edit-preset-open" } },
   "edit-preset-open": { editor: "preset" },
   "edit-custom-open": { editor: "custom" },
   "field-validation": { editor: "validation" },
@@ -174,21 +177,34 @@ function visiblePitches(kind?: StateDescriptor["list"]): readonly VenuePitch[] {
   return pitches;
 }
 
+function finalizeEditor(editor: Omit<VenuePitchEditor, "formatOptions">): VenuePitchEditor {
+  const values = [5, 7, 8, 11, "其他"] as const;
+  return deepFreeze({
+    ...editor,
+    formatOptions: values.map((value) => ({
+      value,
+      label: typeof value === "number" ? `${value} 人制` : value,
+      selected: value === editor.selectedFormat,
+      disabled: !editor.formatEditable,
+    })),
+  });
+}
+
 function editorFor(mode?: VenuePitchEditor["mode"]): VenuePitchEditor | undefined {
   if (!mode) return undefined;
   const common = { title: "编辑物理场地", nameValue: "A场", selectedFormat: 7 as number | "其他", customInput: false, formatEditable: true, completeLabel: "完成", completeNextState: "six-pitch-list" as VenuePitchSetupVisualState, completeDisabled: false };
-  if (mode === "custom") return deepFreeze({ ...common, mode, nameValue: "自定义场", selectedFormat: "其他", customInput: true, playersPerSide: 6, preview: "预览：6人制" });
-  if (mode === "validation") return deepFreeze({ ...common, mode, fieldError: "场地名称已被使用，请换一个名称", completeNextState: "field-validation", completeDisabled: true });
-  if (mode === "blocked") return deepFreeze({ ...common, mode, pitchId: "pitch-7-002", nameValue: "", formatEditable: false, formatReason: "已有业务记录，场地制式不可修改", blockerMessage: "未来库存尚未处理，暂不能停用", futureBlockers: capabilities["pitch-7-002"].futureBlockers, lifecycleLabel: "停用场地", lifecycleDisabled: true });
-  if (mode === "delete") return deepFreeze({ ...common, mode, pitchId: "pitch-5-002", nameValue: "", selectedFormat: 5, lifecycleLabel: "删除场地", lifecycleDisabled: false, lifecycleNextState: "unused-delete-confirm", confirmation: { title: "确认删除这块场地？", message: "删除会先写入页面草稿，保存更改后才提交。", confirmLabel: "确认删除", nextState: "unused-deleted-draft" } });
-  return deepFreeze({ ...common, mode, title: "编辑物理场地", pitchId: "pitch-7-001", formatEditable: false, formatReason: "已有业务记录，场地制式不可修改", lifecycleLabel: "停用场地", lifecycleDisabled: false, lifecycleNextState: "deactivated-draft" });
+  if (mode === "custom") return finalizeEditor({ ...common, mode, nameValue: "自定义场", selectedFormat: "其他", customInput: true, playersPerSide: 6, preview: "预览：6人制" });
+  if (mode === "validation") return finalizeEditor({ ...common, mode, fieldError: "场地名称已被使用，请换一个名称", completeNextState: "field-validation", completeDisabled: true });
+  if (mode === "blocked") return finalizeEditor({ ...common, mode, pitchId: "pitch-7-002", nameValue: "", formatEditable: false, formatReason: "已有业务记录，场地制式不可修改", blockerMessage: "未来库存尚未处理，暂不能停用", futureBlockers: capabilities["pitch-7-002"].futureBlockers, lifecycleLabel: "停用场地", lifecycleDisabled: true });
+  if (mode === "delete") return finalizeEditor({ ...common, mode, pitchId: "pitch-5-002", nameValue: "", selectedFormat: 5, lifecycleLabel: "删除场地", lifecycleDisabled: false, lifecycleNextState: "unused-delete-confirm", confirmation: { title: "确认删除这块场地？", message: "删除会先写入页面草稿，保存更改后才提交。", confirmLabel: "确认删除", nextState: "unused-deleted-draft" } });
+  return finalizeEditor({ ...common, mode, title: "编辑物理场地", pitchId: "pitch-7-001", formatEditable: false, formatReason: "已有业务记录，场地制式不可修改", lifecycleLabel: "停用场地", lifecycleDisabled: false, lifecycleNextState: "deactivated-draft" });
 }
 
 export function buildVenuePitchSetupView(state: VenuePitchSetupVisualState): VenuePitchSetupView {
   const descriptor = descriptors[state];
   const isAdd = state === "add-first-open";
   const editor = isAdd
-    ? deepFreeze<VenuePitchEditor>({ mode: "preset", title: "添加一块场地", nameValue: "A场", selectedFormat: 7, customInput: false, formatEditable: true, completeLabel: "完成", completeNextState: "first-pitch-draft", completeDisabled: false })
+    ? finalizeEditor({ mode: "preset", title: "添加一块场地", nameValue: "A场", selectedFormat: 7, customInput: false, formatEditable: true, completeLabel: "完成", completeNextState: "first-pitch-draft", completeDisabled: false })
     : editorFor(descriptor.editor);
   const dialog = descriptor.dialog ? deepFreeze({ title: "放弃本次修改？", message: "离开后，本次修改不会保存", confirmLabel: "确认离开", cancelLabel: "继续编辑", cancelNextState: "deactivated-draft" as VenuePitchSetupVisualState }) : undefined;
   return deepFreeze({
@@ -203,6 +219,7 @@ export function buildVenuePitchSetupView(state: VenuePitchSetupVisualState): Ven
     pageAction: { label: descriptor.actionLabel ?? "保存更改", disabled: descriptor.actionDisabled ?? false, nextState: descriptor.actionNext, previewOnly: state === "first-save-success" },
     recoveryLabel: descriptor.recovery?.[0],
     recoveryNextState: descriptor.recovery?.[1],
+    cardNextStates: descriptor.cardNextStates ?? {},
     isSheetOpen: Boolean(editor || dialog),
     duplicateSaveDisabled: descriptor.duplicateSaveDisabled ?? false,
     fixtureNotice: VENUE_PITCH_SETUP_FIXTURE.fixtureNotice,

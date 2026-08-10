@@ -85,3 +85,13 @@ test("derives loading, empty, validation, blocker, duplicate-save and leave sema
     title: "放弃本次修改？", cancelNextState: "deactivated-draft",
   });
 });
+
+test.each([
+  ["edit-preset-open", 7],
+  ["edit-custom-open", "其他"],
+  ["unused-delete-confirm", 5],
+] as const)("derives the selected format option for %s", (state, selected) => {
+  const options = buildVenuePitchSetupView(state).editor?.formatOptions;
+  expect(options?.filter(({ selected: isSelected }) => isSelected).map(({ value }) => value)).toEqual([selected]);
+  expect(options?.map(({ value }) => value)).toEqual([5, 7, 8, 11, "其他"]);
+});
