@@ -36,3 +36,19 @@ The lightweight map venue discovery Artifact is frozen at the 375 × 812 target 
 The browser-openable review board reserves the complete Task 4 visual evidence matrix.
 Reference display fields are checked field-for-field against `deploy/venue-directory.json`;
 no canonical contract fixture is introduced by this Artifact.
+
+## Venue inventory workbench
+
+The reference-only venue inventory workbench visual gate uses one self-contained `375 × 812`
+page with five explicit query states:
+
+- `references/venue-inventory-workbench.html?state=day-ready`
+- `references/venue-inventory-workbench.html?state=create-slot-open`
+- `references/venue-inventory-workbench.html?state=edit-slot-open`
+- `references/venue-inventory-workbench.html?state=save-result-unknown`
+- `references/venue-inventory-workbench.html?state=create-slot-overlap`
+- `flows/venue-inventory-workbench.md`
+- `screen-manifest/venue-inventory-workbench.yaml`
+
+This checkpoint is production disabled and contains no native Fixture, contract, membership,
+inventory API, or backend write. Native implementation starts only after user visual approval.

@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=375, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>渤海元丰足球场 · 库存工作台</title>
+    <style>
+      :root {
+        color: #10243E;
+        background: #F8FAFC;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --background: #F8FAFC;
+        --surface: #FFFFFF;
+        --text: #10243E;
+        --muted: #64748B;
+        --border: #DBE5EC;
+        --brand: #0284C7;
+        --brand-strong: #0369A1;
+        --available: #059669;
+        --available-ink: #047857;
+        --available-surface: #ECFDF5;
+        --attention-ink: #92400E;
+        --attention-surface: #FFF7ED;
+        --danger: #B91C1C;
+        --danger-surface: #FEF2F2;
+      }
+
+      * { box-sizing: border-box; }
+
+      html,
+      body {
+        width: 375px;
+        height: 812px;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body { background: var(--background); }
+
+      button,
+      input { font: inherit; }
+
+      button { touch-action: manipulation; }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid var(--brand);
+        outline-offset: 2px;
+      }
+
+      .artifact {
+        position: relative;
+        width: 375px;
+        height: 812px;
+        overflow: hidden;
+        background: var(--background);
+      }
+
+      .system-row {
+        position: relative;
+        height: 44px;
+        background: var(--surface);
+      }
+
+      .status-time {
+        position: absolute;
+        top: 15px;
+        left: 20px;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 700;
+      }
+
+      .capsule-safe {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        width: 88px;
+        height: 30px;
+        border: 1px solid #D3DCE3;
+        border-radius: 16px;
+      }
+
+      .workbench-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        height: 68px;
+        padding: 8px 16px 10px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .venue-title {
+        min-width: 0;
+      }
+
+      .venue-title h1 {
+        margin: 0;
+        overflow: hidden;
+        color: var(--text);
+        font-size: 18px;
+        line-height: 26px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .venue-title p {
+        margin: 1px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .touch-target { min-height: 44px; }
+
+      .add-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-width: 112px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--brand-strong);
+        color: var(--surface);
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 750;
+      }
+
+      .add-button svg,
+      .date-more svg,
+      .row-chevron svg,
+      .close-button svg,
+      .callout svg {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .screen {
+        height: calc(812px - 112px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding-bottom: 24px;
+      }
+
+      .calendar-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 52px;
+        padding: 6px 16px 2px 20px;
+      }
+
+      .calendar-toolbar strong {
+        font-size: 15px;
+        line-height: 22px;
+      }
+
+      .date-more {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        padding: 0 10px;
+        border: 1px solid #BAE6FD;
+        border-radius: 11px;
+        background: var(--surface);
+        color: var(--brand-strong);
+        font-size: 13px;
+        line-height: 18px;
+        font-weight: 650;
+      }
+
+      .week-strip {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 4px;
+        padding: 4px 12px 12px;
+      }
+
+      .day-button {
+        min-width: 0;
+        height: 62px;
+        padding: 6px 1px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text);
+        text-align: center;
+      }
+
+      .day-button span,
+      .day-button strong {
+        display: block;
+      }
+
+      .day-button span {
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 16px;
+      }
+
+      .day-button strong {
+        font-size: 16px;
+        line-height: 22px;
+      }
+
+      .day-button[aria-pressed="true"] {
+        border-color: var(--brand-strong);
+        background: var(--brand-strong);
+        color: var(--surface);
+      }
+
+      .day-button[aria-pressed="true"] span { color: var(--surface); }
+
+      .pitch-tabs {
+        display: flex;
+        gap: 8px;
+        padding: 0 16px 12px;
+      }
+
+      .pitch-tab {
+        min-width: 92px;
+        padding: 0 14px;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: var(--surface);
+        color: #475569;
+        font-size: 13px;
+        line-height: 18px;
+        font-weight: 650;
+      }
+
+      .pitch-tab[aria-pressed="true"] {
+        border-color: #7DD3FC;
+        background: #F0F9FF;
+        color: var(--brand-strong);
+      }
+
+      .inventory-summary {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 18px 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .inventory-summary strong {
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      .slot-list {
+        display: grid;
+        gap: 9px;
+        padding: 0 14px;
+      }
+
+      .slot-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto 28px;
+        align-items: center;
+        gap: 8px;
+        min-height: 76px;
+        padding: 11px 10px 11px 14px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        color: var(--text);
+        text-align: left;
+      }
+
+      .slot-row[disabled] {
+        opacity: 1;
+        cursor: default;
+      }
+
+      .slot-main strong {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 15px;
+        line-height: 21px;
+      }
+
+      .slot-main span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 16px;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        line-height: 16px;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+
+      .status-available {
+        background: var(--available-surface);
+        color: var(--available-ink);
+      }
+
+      .status-locked {
+        background: var(--attention-surface);
+        color: var(--attention-ink);
+      }
+
+      .status-closed {
+        background: #F1F5F9;
+        color: #475569;
+      }
+
+      .status-booked {
+        background: #EEF2FF;
+        color: #4338CA;
+      }
+
+      .row-chevron {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #94A3B8;
+      }
+
+      .row-chevron.is-readonly { color: #CBD5E1; }
+
+      .overlay-root:empty { display: none; }
+
+      .scrim {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.34);
+      }
+
+      .sheet {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        max-height: 620px;
+        padding: 8px 20px 24px;
+        overflow-y: auto;
+        border-radius: 22px 22px 0 0;
+        background: var(--surface);
+        box-shadow: 0 -12px 36px rgba(15, 23, 42, 0.16);
+      }
+
+      .sheet-handle {
+        width: 42px;
+        height: 4px;
+        margin: 0 auto 6px;
+        border-radius: 999px;
+        background: #CBD5E1;
+      }
+
+      .sheet-heading {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 44px;
+        align-items: start;
+        gap: 8px;
+      }
+
+      .sheet-heading h2 {
+        margin: 6px 0 2px;
+        font-size: 20px;
+        line-height: 28px;
+      }
+
+      .sheet-heading p {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .close-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: #475569;
+      }
+
+      .close-button[disabled] { color: #CBD5E1; }
+
+      .context-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin: 2px 0 8px;
+      }
+
+      .context-chip {
+        padding: 6px 9px;
+        border-radius: 9px;
+        background: #F0F9FF;
+        color: var(--brand-strong);
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 650;
+      }
+
+      .field-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        min-height: 52px;
+        border-top: 1px solid #E7EEF3;
+      }
+
+      .field-row label {
+        color: #475569;
+        font-size: 13px;
+        line-height: 19px;
+        font-weight: 650;
+      }
+
+      .field-value {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 5px;
+        min-width: 132px;
+        min-height: 44px;
+        padding: 0 2px 0 10px;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        font-size: 15px;
+        line-height: 22px;
+        font-weight: 750;
+      }
+
+      .field-value svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: #94A3B8;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .field-value.readonly {
+        color: var(--muted);
+        font-weight: 650;
+      }
+
+      .callout {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
+        margin: 8px 0 12px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .callout-success {
+        background: var(--available-surface);
+        color: var(--available-ink);
+      }
+
+      .callout-info {
+        background: #F0F9FF;
+        color: #075985;
+      }
+
+      .callout-error {
+        border: 1px solid #FECACA;
+        background: var(--danger-surface);
+        color: var(--danger);
+      }
+
+      .sheet-actions {
+        display: grid;
+        grid-template-columns: 1fr 1.45fr;
+        gap: 10px;
+      }
+
+      .secondary-button,
+      .primary-button {
+        min-height: 48px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 750;
+      }
+
+      .secondary-button {
+        border: 1px solid var(--brand);
+        background: var(--surface);
+        color: var(--brand-strong);
+      }
+
+      .secondary-button.neutral {
+        border-color: #CBD5E1;
+        color: #475569;
+      }
+
+      .primary-button {
+        border: 0;
+        background: var(--brand-strong);
+        color: var(--surface);
+      }
+
+      .primary-button[disabled] {
+        background: #94A3B8;
+        color: var(--surface);
+      }
+
+      .spinner {
+        width: 15px;
+        height: 15px;
+        display: inline-block;
+        margin-right: 7px;
+        vertical-align: -2px;
+        border: 2px solid rgba(255, 255, 255, 0.55);
+        border-top-color: var(--surface);
+        border-radius: 50%;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="artifact" data-production-enabled="false" data-state="day-ready">
+      <div class="system-row" aria-hidden="true">
+        <span class="status-time">9:41</span>
+        <span class="capsule-safe"></span>
+      </div>
+      <header class="workbench-header">
+        <div class="venue-title">
+          <h1>渤海元丰足球场</h1>
+          <p>库存工作台 · 仅授权工作人员</p>
+        </div>
+        <button class="add-button touch-target" type="button" aria-label="新增未来时段">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          <span>新增时段</span>
+        </button>
+      </header>
+
+      <section class="screen" aria-label="单日库存">
+        <div class="calendar-toolbar">
+          <strong>2026年8月</strong>
+          <button class="date-more touch-target" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></svg>
+            <span>更多日期</span>
+          </button>
+        </div>
+
+        <div class="week-strip" role="group" aria-label="选择日期">
+          <button class="day-button touch-target" type="button" aria-pressed="false"><span>一</span><strong>10</strong></button>
+          <button class="day-button touch-target" type="button" aria-pressed="true"><span>二</span><strong>11</strong></button>
+          <button class="day-button touch-target" type="button" aria-pressed="false"><span>三</span><strong>12</strong></button>
+          <button class="day-button touch-target" type="button" aria-pressed="false"><span>四</span><strong>13</strong></button>
+          <button class="day-button touch-target" type="button" aria-pressed="false"><span>五</span><strong>14</strong></button>
+          <button class="day-button touch-target" type="button" aria-pressed="false"><span>六</span><strong>15</strong></button>
+          <button class="day-button touch-target" type="button" aria-pressed="false"><span>日</span><strong>16</strong></button>
+        </div>
+
+        <div class="pitch-tabs" role="group" aria-label="选择物理场地">
+          <button class="pitch-tab touch-target" type="button" aria-pressed="true">7人场</button>
+          <button class="pitch-tab touch-target" type="button" aria-pressed="false">5人场</button>
+        </div>
+
+        <div class="inventory-summary">
+          <strong>8月11日 周二</strong>
+          <span>5 个时段</span>
+        </div>
+
+        <div class="slot-list" aria-label="当日时段列表">
+          <button class="slot-row touch-target" type="button">
+            <span class="slot-main"><strong>14:00–16:00 · ¥260</strong><span>可修改价格或临时关闭</span></span>
+            <span class="status-badge status-available">开放</span>
+            <span class="row-chevron"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></span>
+          </button>
+          <button class="slot-row touch-target" type="button">
+            <span class="slot-main"><strong>16:00–18:00 · ¥280</strong><span>可修改价格或临时关闭</span></span>
+            <span class="status-badge status-available">开放</span>
+            <span class="row-chevron"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></span>
+          </button>
+          <button class="slot-row touch-target" type="button" disabled aria-label="18点到20点，用户下单中，只读">
+            <span class="slot-main"><strong>18:00–20:00 · ¥320</strong><span>用户下单中 · 只读</span></span>
+            <span class="status-badge status-locked">锁定</span>
+            <span class="row-chevron is-readonly"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V8a4 4 0 0 1 8 0v3M6 11h12v9H6z" /></svg></span>
+          </button>
+          <button class="slot-row touch-target" type="button">
+            <span class="slot-main"><strong>20:00–22:00 · ¥360</strong><span>可调整价格并重新开放</span></span>
+            <span class="status-badge status-closed">已关闭</span>
+            <span class="row-chevron"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></span>
+          </button>
+          <button class="slot-row touch-target" type="button" disabled aria-label="22点到23点，已售出，只读">
+            <span class="slot-main"><strong>22:00–23:00 · ¥220</strong><span>订单已确认 · 只读</span></span>
+            <span class="status-badge status-booked">已售出</span>
+            <span class="row-chevron is-readonly"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7.5" /></svg></span>
+          </button>
+        </div>
+      </section>
+
+      <div class="overlay-root" id="overlay-root"></div>
+    </main>
+
+    <template data-state-template="day-ready"></template>
+
+    <template data-state-template="create-slot-open">
+      <div class="scrim" aria-hidden="true"></div>
+      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-heading">
+          <div><h2 id="create-title">新增时段</h2><p>时间按 30 分钟递增，保存后立即开放预订。</p></div>
+          <button class="close-button touch-target" type="button" aria-label="关闭新增时段面板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+        </div>
+        <div class="context-chips"><span class="context-chip">8月11日 周二</span><span class="context-chip">7人场</span><span class="context-chip">09:30–11:00</span></div>
+        <div class="field-row"><label for="create-start">开始时间</label><button id="create-start" class="field-value touch-target" type="button">09:30 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div class="field-row"><label for="create-end">结束时间</label><button id="create-end" class="field-value touch-target" type="button">11:00 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div class="field-row"><label for="create-price">价格</label><button id="create-price" class="field-value touch-target" type="button">¥ 200 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div class="callout callout-success" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7.5" /></svg><span>共 1 小时 30 分钟 · 当前列表未发现重叠</span></div>
+        <div class="sheet-actions"><button class="secondary-button touch-target" type="button">取消</button><button class="primary-button touch-target" type="button">新增并开放</button></div>
+      </section>
+    </template>
+
+    <template data-state-template="edit-slot-open">
+      <div class="scrim" aria-hidden="true"></div>
+      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-heading">
+          <div><h2 id="edit-title">编辑时段</h2><p>8月11日 周二 · 7人场 · 当前开放</p></div>
+          <button class="close-button touch-target" type="button" aria-label="关闭编辑时段面板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+        </div>
+        <div class="field-row"><label>时段时间</label><span class="field-value readonly">16:00–18:00</span></div>
+        <div class="field-row"><label for="edit-price">价格</label><button id="edit-price" class="field-value touch-target" type="button">¥ 280 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div class="field-row"><label>当前状态</label><span class="field-value readonly">开放预订</span></div>
+        <div class="callout callout-info" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg><span>已有时段不修改时间；首期只调整价格或开放状态。</span></div>
+        <div class="sheet-actions"><button class="secondary-button neutral touch-target" type="button">临时关闭</button><button class="primary-button touch-target" type="button">保存价格</button></div>
+      </section>
+    </template>
+
+    <template data-state-template="save-result-unknown">
+      <div class="scrim" aria-hidden="true"></div>
+      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="unknown-title">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-heading">
+          <div><h2 id="unknown-title">新增时段</h2><p>8月11日 周二 · 7人场</p></div>
+          <button class="close-button touch-target" type="button" aria-label="关闭面板" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+        </div>
+        <div class="field-row"><label>开始时间</label><span class="field-value readonly">09:30</span></div>
+        <div class="field-row"><label>结束时间</label><span class="field-value readonly">11:00</span></div>
+        <div class="field-row"><label>价格</label><span class="field-value readonly">¥ 200</span></div>
+        <div class="callout callout-info" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><span><strong>正在确认保存结果</strong><br />输入已保留，将使用原请求继续确认。</span></div>
+        <div class="sheet-actions"><button class="secondary-button touch-target" type="button" disabled>暂不可取消</button><button class="primary-button touch-target" type="button" disabled aria-busy="true"><span class="spinner" aria-hidden="true"></span>确认中</button></div>
+      </section>
+    </template>
+
+    <template data-state-template="create-slot-overlap">
+      <div class="scrim" aria-hidden="true"></div>
+      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="overlap-title">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-heading">
+          <div><h2 id="overlap-title">新增时段</h2><p>输入已保留，后台已刷新当天权威库存。</p></div>
+          <button class="close-button touch-target" type="button" aria-label="关闭新增时段面板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+        </div>
+        <div class="context-chips"><span class="context-chip">8月11日 周二</span><span class="context-chip">7人场</span><span class="context-chip">09:30–11:00</span></div>
+        <div class="field-row"><label for="overlap-start">开始时间</label><button id="overlap-start" class="field-value touch-target" type="button" aria-describedby="overlap-error">09:30 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div class="field-row"><label for="overlap-end">结束时间</label><button id="overlap-end" class="field-value touch-target" type="button" aria-describedby="overlap-error">11:00 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div class="field-row"><label for="overlap-price">价格</label><button id="overlap-price" class="field-value touch-target" type="button">¥ 200 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button></div>
+        <div id="overlap-error" class="callout callout-error" role="alert"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 17h.01" /></svg><span><strong>与已有时段冲突，请调整时间</strong><br />最新库存中 10:30–12:00 已被占用。</span></div>
+        <div class="sheet-actions"><button class="secondary-button touch-target" type="button">取消</button><button class="primary-button touch-target" type="button">重新校验</button></div>
+      </section>
+    </template>
+
+    <script>
+      const allowedStates = new Set([
+        "day-ready",
+        "create-slot-open",
+        "edit-slot-open",
+        "save-result-unknown",
+        "create-slot-overlap",
+      ]);
+      const requestedState = new URLSearchParams(window.location.search).get("state") || "day-ready";
+      const currentState = allowedStates.has(requestedState) ? requestedState : "day-ready";
+      const artifact = document.querySelector(".artifact");
+      const template = document.querySelector(`[data-state-template="${currentState}"]`);
+      artifact.dataset.state = currentState;
+      document.title = `${artifact.querySelector("h1").textContent} · ${currentState}`;
+      document.querySelector("#overlay-root").append(template.content.cloneNode(true));
+    </script>
+  </body>
+</html>
