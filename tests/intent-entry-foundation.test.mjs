@@ -6,8 +6,10 @@ import { parseDocument } from "yaml";
 const manifestPath = "artifacts/ui/screen-manifest/intent-entry-foundation.yaml";
 const flowPath = "artifacts/ui/flows/intent-entry-foundation.md";
 const firstReferencePath = "artifacts/ui/references/intent-entry-first.html";
+const cityOpenReferencePath = "artifacts/ui/references/intent-entry-city-open.html";
 const returningReferencePath = "artifacts/ui/references/intent-home-returning.html";
 const reviewRoot = "artifacts/ui/reviews/intent-entry-foundation";
+const reviewStates = ["first-entry", "city-picker-open", "returning-home"];
 
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
@@ -30,6 +32,11 @@ test("intent entry manifest and flow freeze the preview-only route contract", ()
         reference: "artifacts/ui/references/intent-entry-first.html",
       },
       {
+        id: "city-picker-open",
+        route: "dev/pages/intent-entry/index?cityPicker=open",
+        reference: "artifacts/ui/references/intent-entry-city-open.html",
+      },
+      {
         id: "returning-home",
         route: "dev/pages/intent-home/index",
         reference: "artifacts/ui/references/intent-home-returning.html",
@@ -47,23 +54,34 @@ test("intent entry manifest and flow freeze the preview-only route contract", ()
     "returning-home 同 mapping",
     "returning-home 是下次启动的独立预览，不是首次选择中间页",
     "两页 production disabled，直到所有入口有真实 destination",
+    "first-entry/returning-home 点击 天津⌄ → city-picker-open",
+    "city-picker-open 点击关闭或天津 → 返回来源页",
+    "天津 → 当前且已开放",
+    "其他城市 → 敬请期待，不导航、不请求定位",
   ]) assert.match(flow, new RegExp(sentence.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-test("both self-contained 375 by 812 references preserve the intent hierarchy", () => {
-  for (const path of [firstReferencePath, returningReferencePath]) mustExist(path);
+test("three self-contained 375 by 812 references preserve the intent hierarchy and city-picker state", () => {
+  for (const path of [firstReferencePath, cityOpenReferencePath, returningReferencePath]) mustExist(path);
   const first = read(firstReferencePath);
+  const cityOpen = read(cityOpenReferencePath);
   const returning = read(returningReferencePath);
 
-  for (const source of [first, returning]) {
+  for (const source of [first, cityOpen, returning]) {
     assert.match(source, /^<!doctype html>/i);
     assert.match(source, /\.artifact\s*\{[^}]*width:\s*375px;[^}]*height:\s*812px;/s);
-    assert.match(source, /天津足球/);
+    assert.match(source, /天津/);
+    assert.match(source, /天津⌄/);
+    assert.match(source, /class="city-button"[^>]*>天津⌄<\/button>/);
     assert.match(source, /class="capsule-safe"/);
     assert.match(source, /<svg\b/);
     assert.doesNotMatch(source, /<(?:script|img)\b[^>]*\bsrc\s*=|\b(?:src|href)\s*=\s*["']https?:\/\//i);
     assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u, "emoji must not be used as an icon");
+    assert.doesNotMatch(source, /天津足球/);
+    assert.doesNotMatch(source, /(?:linear|radial)-gradient\s*\(|\banimation\s*:/i);
     assert.match(source, /min-height:\s*44px/);
+    assert.match(source, /\.custom-header\s*\{[^}]*height:\s*44px;/s);
+    assert.match(source, /\.custom-header\s*\{[^}]*padding:\s*0\s+100px\s+0\s+20px;/s);
   }
 
   assert.match(first, /<main class="artifact" data-state="first-entry">/);
@@ -76,16 +94,19 @@ test("both self-contained 375 by 812 references preserve the intent hierarchy", 
     "这里选择的是当下目的，不是永久身份。",
   ]) assert.match(first, new RegExp(copy));
 
+  assert.match(cityOpen, /<main class="artifact" data-state="city-picker-open">/);
+  assert.match(cityOpen, /<section[^>]*aria-label="选择城市"/);
+  assert.match(cityOpen, /<h[1-6][^>]*>选择城市<\/h[1-6]>/);
+  assert.match(cityOpen, /<button[^>]*aria-label="关闭城市选择"/);
+  for (const copy of ["天津", "当前 · 已开放", "其他城市", "敬请期待"]) assert.match(cityOpen, new RegExp(copy));
+  assert.match(cityOpen, /disabled/);
+  assert.match(cityOpen, /#10243E/);
+
   assert.match(returning, /<main class="artifact" data-state="returning-home">/);
   assert.match(
     returning,
     /<div class="greeting">\s*<h1 id="page-title">早上好<\/h1>\s*<p>今天想从哪里开始？<\/p>\s*<\/div>/,
     "returning home leads with the greeting heading and follows with weaker supporting copy",
-  );
-  assert.match(
-    returning,
-    /\.custom-header\s*\{[^}]*padding:\s*0\s+100px\s+0\s+20px;/,
-    "returning home reserves the header's rightmost 100px for the WeChat capsule",
   );
   for (const copy of [
     "早上好", "今天想从哪里开始？", "出租场地", "租赁场地", "找球踢",
@@ -103,17 +124,23 @@ test("review board reserves all evidence and records the visual approval boundar
   const board = read(boardPath);
 
   for (const source of [readme, board]) {
-    for (const label of ["first-entry", "returning-home"]) assert.match(source, new RegExp(label));
+    for (const label of reviewStates) assert.match(source, new RegExp(label));
   }
   for (const text of [
     "375 × 812", "产品/IA approved，但 native visual not approved", "production disabled",
     "reference/implementation same logical viewport", "delete before production intent home integration",
     "不授权 inventory/backend",
+    "user-supplied full-window DevTools screenshot is diagnostic evidence of safe-area bug only, not same-viewport implementation evidence",
   ]) assert.match(readme, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   for (const category of ["composition", "geometry/spacing", "component hierarchy", "typography/color/material", "icon assets", "copy", "state semantics"]) {
     assert.match(readme, new RegExp(category));
   }
-  for (const state of ["first-entry", "returning-home"]) {
+  assert.deepEqual(
+    [...board.matchAll(/<section[^>]*data-state="([^"]+)"/g)].map((match) => match[1]),
+    reviewStates,
+    "review board must use the exact three-state list",
+  );
+  for (const state of reviewStates) {
     const stateBoard = board.match(new RegExp(`<section[^>]*data-state="${state}"[\\s\\S]*?<\\/section>`));
     assert.ok(stateBoard, `missing ${state} review section`);
     assert.equal(count(stateBoard[0], /data-review-slot=/g), 6, `${state} must reserve six review slots`);

@@ -3,32 +3,43 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>天津 · 目的入口</title>
+    <title>天津 · 选择城市</title>
     <style>
       :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #10243E; background: #F8FAFC; }
       * { box-sizing: border-box; }
       body { margin: 0; background: #F8FAFC; }
-      .artifact { width: 375px; height: 812px; overflow: hidden; background: #F8FAFC; }
+      .artifact { position: relative; width: 375px; height: 812px; overflow: hidden; background: #F8FAFC; }
       .system-row { height: 44px; position: relative; }
       .capsule-safe { position: absolute; top: 0; right: 0; width: 100px; height: 44px; }
       .custom-header { height: 44px; display: flex; align-items: center; padding: 0 100px 0 20px; background: #FFFFFF; border-bottom: 1px solid #DBE5EC; }
       .city-button { min-width: 72px; min-height: 44px; display: inline-flex; align-items: center; gap: 4px; margin: 0; padding: 0; border: 0; background: #FFFFFF; color: #10243E; font: inherit; font-size: 16px; line-height: 24px; font-weight: 700; touch-action: manipulation; }
-      .city-button:focus-visible { outline: 3px solid #0284C7; outline-offset: 2px; }
+      .city-button:focus-visible, .intent-card:focus-visible, .close-button:focus-visible, .city-row:focus-visible { outline: 3px solid #0284C7; outline-offset: 2px; }
       .content { padding: 28px 20px 0; }
       .intro { margin: 0 0 24px; }
       .intro h1 { margin: 0 0 8px; font-size: 26px; line-height: 36px; letter-spacing: -0.5px; }
       .intro p { margin: 0; color: #64748B; font-size: 14px; line-height: 20px; }
       .intent-list { display: grid; gap: 12px; }
       .intent-card { width: 100%; min-height: 44px; height: 120px; display: grid; grid-template-columns: 44px 1fr; gap: 16px; align-items: center; padding: 16px; border: 1px solid #DBE5EC; border-radius: 16px; background: #FFFFFF; color: #10243E; text-align: left; font: inherit; touch-action: manipulation; }
-      .intent-card:focus-visible { outline: 3px solid #0284C7; outline-offset: 2px; }
       .intent-card svg { width: 28px; height: 28px; stroke: #0284C7; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
       .intent-card strong { display: block; margin-bottom: 4px; font-size: 17px; line-height: 24px; }
       .intent-card span { display: block; color: #64748B; font-size: 13px; line-height: 20px; }
       .footnote { margin: 20px 4px 0; color: #64748B; font-size: 12px; line-height: 18px; }
+      .scrim { position: absolute; inset: 0; background: rgba(16, 36, 62, 0.52); }
+      .city-sheet { position: absolute; right: 0; bottom: 0; left: 0; padding: 20px 20px 32px; border-radius: 20px 20px 0 0; background: #FFFFFF; }
+      .sheet-header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .sheet-header h2 { margin: 0; font-size: 20px; line-height: 28px; }
+      .close-button { width: 44px; min-height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: #FFFFFF; color: #10243E; touch-action: manipulation; }
+      .close-button svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; }
+      .city-list { display: grid; gap: 8px; }
+      .city-row { width: 100%; min-height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border: 1px solid #DBE5EC; border-radius: 16px; background: #FFFFFF; color: #10243E; font: inherit; text-align: left; touch-action: manipulation; }
+      .city-row strong, .city-row span { display: block; }
+      .city-row strong { font-size: 16px; line-height: 24px; }
+      .city-row span { color: #64748B; font-size: 13px; line-height: 20px; }
+      .city-row[disabled] { color: #64748B; cursor: not-allowed; opacity: 1; }
     </style>
   </head>
   <body>
-    <main class="artifact" data-state="first-entry">
+    <main class="artifact" data-state="city-picker-open">
       <div class="system-row" aria-hidden="true"><div class="capsule-safe"></div></div>
       <header class="custom-header"><button class="city-button" type="button" aria-label="选择城市，当前天津">天津⌄</button></header>
       <section class="content" aria-labelledby="page-title">
@@ -51,6 +62,17 @@
           </button>
         </div>
         <p class="footnote">这里选择的是当下目的，不是永久身份。</p>
+      </section>
+      <div class="scrim" aria-hidden="true"></div>
+      <section class="city-sheet" aria-label="选择城市" aria-labelledby="city-sheet-title" role="dialog" aria-modal="true">
+        <div class="sheet-header">
+          <h2 id="city-sheet-title">选择城市</h2>
+          <button class="close-button" type="button" aria-label="关闭城市选择"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+        </div>
+        <div class="city-list">
+          <button class="city-row" type="button" aria-label="天津，当前且已开放"><strong>天津</strong><span>当前 · 已开放</span></button>
+          <button class="city-row" type="button" disabled><strong>其他城市</strong><span>敬请期待</span></button>
+        </div>
       </section>
     </main>
   </body>

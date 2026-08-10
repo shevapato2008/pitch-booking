@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>天津足球 · 返回首页</title>
+    <title>天津 · 返回首页</title>
     <style>
       :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #10243E; background: #F8FAFC; }
       * { box-sizing: border-box; }
@@ -11,8 +11,9 @@
       .artifact { width: 375px; height: 812px; overflow: hidden; background: #F8FAFC; }
       .system-row { height: 44px; position: relative; }
       .capsule-safe { position: absolute; top: 0; right: 0; width: 100px; height: 44px; }
-      .custom-header { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 100px 0 20px; background: #FFFFFF; border-bottom: 1px solid #DBE5EC; }
-      .brand { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: 0.2px; }
+      .custom-header { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 100px 0 20px; background: #FFFFFF; border-bottom: 1px solid #DBE5EC; }
+      .city-button { min-width: 72px; min-height: 44px; display: inline-flex; align-items: center; gap: 4px; margin: 0; padding: 0; border: 0; background: #FFFFFF; color: #10243E; font: inherit; font-size: 16px; line-height: 24px; font-weight: 700; touch-action: manipulation; }
+      .city-button:focus-visible { outline: 3px solid #0284C7; outline-offset: 2px; }
       .my-button { width: 44px; min-height: 44px; display: grid; place-items: center; border: 0; background: #FFFFFF; color: #10243E; touch-action: manipulation; }
       .my-button:focus-visible, .shortcut:focus-visible { outline: 3px solid #0284C7; outline-offset: 2px; }
       .my-button svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
@@ -35,7 +36,7 @@
     <main class="artifact" data-state="returning-home">
       <div class="system-row" aria-hidden="true"><div class="capsule-safe"></div></div>
       <header class="custom-header">
-        <p class="brand">天津足球</p>
+        <button class="city-button" type="button" aria-label="选择城市，当前天津">天津⌄</button>
         <button class="my-button" type="button" aria-label="我的">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c0-4 2.8-6.5 7-6.5s7 2.5 7 6.5" /></svg>
         </button>

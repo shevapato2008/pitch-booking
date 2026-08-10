@@ -5,6 +5,9 @@ states:
   - id: first-entry
     route: dev/pages/intent-entry/index
     reference: artifacts/ui/references/intent-entry-first.html
+  - id: city-picker-open
+    route: dev/pages/intent-entry/index?cityPicker=open
+    reference: artifacts/ui/references/intent-entry-city-open.html
   - id: returning-home
     route: dev/pages/intent-home/index
     reference: artifacts/ui/references/intent-home-returning.html
