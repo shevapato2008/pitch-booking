@@ -8,6 +8,7 @@ const inventoryManifestPath = "artifacts/ui/screen-manifest/venue-inventory-work
 const setupFlowPath = "artifacts/ui/flows/venue-pitch-setup.md";
 const inventoryFlowPath = "artifacts/ui/flows/venue-inventory-workbench-v2.md";
 const artifactReadmePath = "artifacts/ui/README.md";
+const sharedReferenceCssPath = "artifacts/ui/references/venue-operations-reference.css";
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -191,4 +192,52 @@ test("venue operations revision README cites its exact design spec and historica
   assert.match(artifactReadme, /spec sections 11–13/);
   assert.match(artifactReadme, /artifacts\/ui\/references\/venue-inventory-workbench\.html/);
   assert.match(artifactReadme, /v1\s+inventory reference remains historical and is used only as a slot-status material baseline/);
+});
+
+test("venue operations reference foundation supplies only reusable mobile canvas and sheet material", () => {
+  mustExist(sharedReferenceCssPath);
+  const css = read(sharedReferenceCssPath);
+  const tokens = Object.fromEntries([...css.matchAll(/(--[a-z-]+)\s*:\s*(#[0-9A-F]{6})\s*;/g)].map(([, name, value]) => [name, value]));
+
+  assert.deepEqual(tokens, {
+    "--page": "#F8FAFC",
+    "--surface": "#FFFFFF",
+    "--text": "#10243E",
+    "--muted": "#64748B",
+    "--border": "#DBE5EC",
+    "--primary": "#0284C7",
+    "--primary-strong": "#0369A1",
+    "--success": "#059669",
+    "--warning": "#B45309",
+    "--error": "#DC2626",
+  });
+  assert.deepEqual(
+    [...new Set([...css.matchAll(/(--[a-z-]+)\s*:/g)].map(([, name]) => name))].sort(),
+    Object.keys(tokens).sort(),
+  );
+  assert.deepEqual(
+    [...new Set([...css.matchAll(/#[0-9A-F]{6}/gi)].map(([value]) => value.toUpperCase()))].sort(),
+    Object.values(tokens).sort(),
+  );
+  assert.match(css, /font-family:\s*-apple-system,\s*BlinkMacSystemFont,\s*"Segoe UI",\s*sans-serif/);
+  assert.match(css, /\*[^\{]*\{[^}]*box-sizing:\s*border-box;/s);
+  assert.match(css, /\.artifact\s*\{[^}]*width:\s*375px;[^}]*height:\s*812px;/s);
+  assert.match(css, /\.touch-target\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s);
+  assert.match(css, /:focus-visible\s*\{[^}]*outline:/s);
+  assert.match(css, /\.fixed-action\s*\{[^}]*env\(safe-area-inset-bottom,\s*0px\)/s);
+  assert.match(css, /\.primary-action,\s*\.secondary-action\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+  assert.match(css, /\.icon-box\s*\{[^}]*padding:[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.sheet-scrim\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;/s);
+  assert.match(css, /\.sheet\s*\{[^}]*position:\s*absolute;[^}]*border-radius:\s*22px\s+22px\s+0\s+0;[^}]*env\(safe-area-inset-bottom,\s*0px\)/s);
+  assert.match(css, /\.sheet-handle\s*\{[^}]*background:/s);
+  assert.match(css, /\.sheet-close\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s);
+  assert.match(css, /\.primary-action:disabled[^\{]*\{[^}]*cursor:\s*not-allowed;/s);
+  assert.match(css, /\.primary-action:active[^\{]*\{[^}]*background:/s);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.doesNotMatch(css, /(?:linear|radial)-gradient\s*\(|\burl\s*\(/i);
+  assert.doesNotMatch(css, /(?:pitch-card|calendar|week-strip|pitch-picker|slot-row)/i);
+
+  const componentStart = css.indexOf(".primary-action");
+  assert.notEqual(componentStart, -1);
+  assert.doesNotMatch(css.slice(componentStart), /}\s*(?:button|input|select|textarea)\s*(?:,|\{)/);
 });
