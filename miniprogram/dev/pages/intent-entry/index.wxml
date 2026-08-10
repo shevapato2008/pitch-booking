@@ -1,5 +1,5 @@
 <view class="intent-entry u-page">
-  <view class="intent-entry__header" style="padding-top: {{headerTopPx}}px;">
+  <view class="intent-entry__header" style="padding-top: {{headerTopPx}}px;" aria-hidden="{{isCityPickerOpen}}">
     <view class="intent-entry__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
       <button class="intent-city-button" hover-class="intent-city-button--pressed" bindtap="onOpenCityPicker" aria-label="当前城市天津，点击切换">
         <text>{{currentCityName}}</text><view class="intent-city-chevron" aria-hidden="true"></view>
@@ -7,7 +7,7 @@
     </view>
   </view>
 
-  <view class="intent-entry__content">
+  <view class="intent-entry__content" aria-hidden="{{isCityPickerOpen}}">
     <view class="intent-entry__intro">
       <text class="intent-entry__title">你今天想做什么？</text>
       <text class="intent-entry__subtitle">选择一个目的开始，之后可以随时切换。</text>
@@ -63,8 +63,8 @@
   </view>
 
   <block wx:if="{{isCityPickerOpen}}">
-    <view class="intent-entry__city-scrim" bindtap="onCloseCityPicker" aria-label="关闭城市选择"></view>
-    <view class="intent-entry__city-sheet" role="dialog" aria-label="选择城市">
+    <view class="intent-entry__city-scrim" bindtap="onCloseCityPicker" aria-hidden="true"></view>
+    <view class="intent-entry__city-sheet" role="dialog" aria-modal="true" aria-label="选择城市">
       <view class="intent-entry__city-sheet-header">
         <text class="intent-entry__city-sheet-title">选择城市</text>
         <button class="intent-entry__city-close" hover-class="intent-entry__city-close--pressed" bindtap="onCloseCityPicker" aria-label="关闭城市选择">

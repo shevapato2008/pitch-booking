@@ -95,6 +95,22 @@ test("keeps the my action at the right edge before the capsule reserve", () => {
   expect(styles).toMatch(/\.intent-home__header-row\s*\{[^}]*justify-content:\s*space-between;/s);
 });
 
+test("keeps city sheet buttons reset, safe above the home indicator, and modal-only to assistive technology", () => {
+  const template = readFileSync("miniprogram/dev/pages/intent-home/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/dev/pages/intent-home/index.wxss", "utf8");
+  const scrim = template.match(/<view class="intent-home__city-scrim"[^>]*>/)?.[0] ?? "";
+
+  expect(styles).toMatch(/\.intent-city-button\s*\{[^}]*margin:\s*0;/s);
+  expect(styles).toMatch(/\.intent-home__city-close\s*\{[^}]*margin:\s*0;/s);
+  expect(styles).toMatch(/\.intent-home__my-button\s*\{[^}]*margin:\s*0;/s);
+  expect(styles).toMatch(/\.intent-home__city-sheet\s*\{[^}]*padding:\s*32rpx 40rpx calc\(48rpx \+ env\(safe-area-inset-bottom, 0px\)\);/s);
+  expect(template).toMatch(/<view class="intent-home__header"[^>]*aria-hidden="{{isCityPickerOpen}}"/);
+  expect(template).toMatch(/<view class="intent-home__content"[^>]*aria-hidden="{{isCityPickerOpen}}"/);
+  expect(scrim).toContain('aria-hidden="true"');
+  expect(scrim).not.toContain("aria-label");
+  expect(template).toMatch(/<view class="intent-home__city-sheet"[^>]*role="dialog"[^>]*aria-modal="true"/);
+});
+
 test("opens, closes, and selects the current city without leaving the fixture", () => {
   const page = loadPage();
 

@@ -24,6 +24,7 @@
   justify-content: center;
   min-width: 128rpx;
   min-height: 88rpx;
+  margin: 0;
   padding: 0 24rpx;
   border: 0;
   border-radius: 44rpx;
@@ -65,7 +66,7 @@
   padding: 0;
   border: 0;
   background: #FFFFFF;
-  margin-left: 16rpx;
+  margin: 0;
 }
 
 .intent-home__my-button::after,
@@ -230,7 +231,7 @@
   bottom: 0;
   left: 0;
   box-sizing: border-box;
-  padding: 32rpx 40rpx 48rpx;
+  padding: 32rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px));
   border-radius: 32rpx 32rpx 0 0;
   background: #FFFFFF;
 }
@@ -257,6 +258,7 @@
   justify-content: center;
   width: 88rpx;
   min-height: 88rpx;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 44rpx;

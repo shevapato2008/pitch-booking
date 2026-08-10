@@ -1,4 +1,7 @@
+/// <reference types="node" />
+
 import { beforeEach, expect, jest, test } from "@jest/globals";
+import { readFileSync } from "node:fs";
 
 type IntentId = "HOST" | "BOOK" | "PLAY";
 
@@ -92,6 +95,21 @@ test("opens, closes, and selects the current city without leaving the fixture", 
   page.onOpenCityPicker();
   page.onSelectCurrentCity();
   expect(page.data.isCityPickerOpen).toBe(false);
+});
+
+test("keeps city sheet buttons reset, safe above the home indicator, and modal-only to assistive technology", () => {
+  const template = readFileSync("miniprogram/dev/pages/intent-entry/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/dev/pages/intent-entry/index.wxss", "utf8");
+  const scrim = template.match(/<view class="intent-entry__city-scrim"[^>]*>/)?.[0] ?? "";
+
+  expect(styles).toMatch(/\.intent-city-button\s*\{[^}]*margin:\s*0;/s);
+  expect(styles).toMatch(/\.intent-entry__city-close\s*\{[^}]*margin:\s*0;/s);
+  expect(styles).toMatch(/\.intent-entry__city-sheet\s*\{[^}]*padding:\s*32rpx 40rpx calc\(48rpx \+ env\(safe-area-inset-bottom, 0px\)\);/s);
+  expect(template).toMatch(/<view class="intent-entry__header"[^>]*aria-hidden="{{isCityPickerOpen}}"/);
+  expect(template).toMatch(/<view class="intent-entry__content"[^>]*aria-hidden="{{isCityPickerOpen}}"/);
+  expect(scrim).toContain('aria-hidden="true"');
+  expect(scrim).not.toContain("aria-label");
+  expect(template).toMatch(/<view class="intent-entry__city-sheet"[^>]*role="dialog"[^>]*aria-modal="true"/);
 });
 
 test("exposes the three equal first-entry intents in HOST, BOOK, PLAY order", () => {
