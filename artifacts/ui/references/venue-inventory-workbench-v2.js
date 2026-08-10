@@ -387,9 +387,23 @@ app.addEventListener("click", (event) => {
 
 render(currentStateId);
 
+const overlaps = (start, end, clipStart, clipEnd) => end > clipStart && start < clipEnd;
+const intersects = (first, second) => overlaps(first.left, first.right, second.left, second.right)
+  && overlaps(first.top, first.bottom, second.top, second.bottom);
 const isVisible = (node) => {
   const style = window.getComputedStyle(node);
-  return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
+  if (style.display === "none" || style.visibility === "hidden" || node.getClientRects().length === 0) return false;
+  const rect = node.getBoundingClientRect();
+  if (!intersects(rect, app.getBoundingClientRect())) return false;
+  for (let ancestor = node.parentElement; ancestor && ancestor !== app; ancestor = ancestor.parentElement) {
+    const ancestorStyle = window.getComputedStyle(ancestor);
+    const bounds = ancestor.getBoundingClientRect();
+    const clipsX = /^(?:auto|scroll|hidden|clip)$/.test(ancestorStyle.overflowX);
+    const clipsY = /^(?:auto|scroll|hidden|clip)$/.test(ancestorStyle.overflowY);
+    if ((clipsX && !overlaps(rect.left, rect.right, bounds.left, bounds.right))
+      || (clipsY && !overlaps(rect.top, rect.bottom, bounds.top, bounds.bottom))) return false;
+  }
+  return true;
 };
 const isContained = (inner, outer, tolerance = 0.5) => inner.left >= outer.left - tolerance
   && inner.right <= outer.right + tolerance && inner.top >= outer.top - tolerance && inner.bottom <= outer.bottom + tolerance;

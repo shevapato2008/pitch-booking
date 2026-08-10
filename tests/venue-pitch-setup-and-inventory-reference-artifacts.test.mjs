@@ -810,6 +810,21 @@ test("inventory v2 source includes required copy, honest transitions, and a live
   assert.match(controller, /return violations;/);
 });
 
+test("inventory v2 live audit excludes nodes fully clipped by the canvas or a scroll viewport", () => {
+  const controller = read(inventoryReferenceControllerPath);
+  const visibility = controller.slice(controller.indexOf("const overlaps"), controller.indexOf("window.__artifactAudit__"));
+  const iconAudit = controller.slice(controller.indexOf('app.querySelectorAll(".icon-box")'), controller.indexOf("const dialogs"));
+
+  assert.match(visibility, /const overlaps\s*=.*end\s*>\s*clipStart.*start\s*<\s*clipEnd/s);
+  assert.match(visibility, /!intersects\(rect,\s*app\.getBoundingClientRect\(\)\)/s);
+  assert.match(visibility, /for \(let ancestor = node\.parentElement; ancestor && ancestor !== app; ancestor = ancestor\.parentElement\)/);
+  assert.match(visibility, /overflowX/);
+  assert.match(visibility, /overflowY/);
+  assert.match(visibility, /clipsX\s*&&\s*!overlaps\(rect\.left,\s*rect\.right,\s*bounds\.left,\s*bounds\.right\)/s);
+  assert.match(visibility, /clipsY\s*&&\s*!overlaps\(rect\.top,\s*rect\.bottom,\s*bounds\.top,\s*bounds\.bottom\)/s);
+  assert.match(iconAudit, /if \(!isVisible\(icon\)\) return;[\s\S]*icon-box-outside-control[\s\S]*icon-outside-canvas/);
+});
+
 test("inventory v2 review reserves all state evidence without claiming implementation or approval", () => {
   mustExist(inventoryReviewPath);
   const review = read(inventoryReviewPath);
