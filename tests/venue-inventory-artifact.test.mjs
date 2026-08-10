@@ -143,10 +143,13 @@ test("native Fixture review evidence covers every state at the target viewport",
   for (const evidence of [
     "WeChat DevTools Stable 2.01.2510290",
     "base library 3.17.0",
-    "captureVisibleRegion",
+    "设备边界裁取可见 surface",
+    "状态栏、刘海、微信胶囊和 Home Indicator",
     "iPhone X",
     "iPhone 14 Pro Max",
     "Native Fixture visual approval: pending",
     "Production disabled",
   ]) assert.match(review, new RegExp(escape(evidence)));
+
+  assert.doesNotMatch(review, /原生 guest 截图顶部不含模拟器系统 UI/);
 });

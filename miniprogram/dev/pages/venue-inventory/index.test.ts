@@ -172,3 +172,59 @@ test("native markup and styles preserve the approved hierarchy and accessible st
   expect(styles.match(/\banimation\s*:/g)).toHaveLength(1);
   expect(styles).toMatch(/@keyframes venue-inventory-spin/);
 });
+
+test("component button styles outrank the page reset and keep labels centered", () => {
+  const styles = readFileSync("miniprogram/dev/pages/venue-inventory/index.wxss", "utf8");
+
+  expect(styles).not.toMatch(/\.venue-inventory button\s*\{/);
+  expect(styles).toMatch(/(?:^|\n)button\s*\{[^}]*background:\s*transparent;/s);
+  for (const selector of [
+    ".venue-inventory__add",
+    ".venue-inventory__more",
+    ".venue-inventory__pitch",
+    ".venue-inventory__secondary",
+    ".venue-inventory__primary",
+  ]) {
+    const declarations = [...styles.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter(([, selectors]) => selectors.split(",").some((candidate) => candidate.trim() === selector))
+      .map(([, , body]) => body)
+      .join("\n");
+    expect(declarations).not.toBe("");
+    expect(declarations).toMatch(/(?:display:\s*(?:inline-)?flex;[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*center;|align-items:\s*center;[\s\S]*justify-content:\s*center;[\s\S]*display:\s*(?:inline-)?flex;)/);
+  }
+});
+
+test("header actions lock their approved button material against native defaults", () => {
+  const styles = readFileSync("miniprogram/dev/pages/venue-inventory/index.wxss", "utf8");
+  const add = styles.match(/\.venue-inventory__add\s*\{([^}]*)\}/)?.[1];
+  const more = styles.match(/\.venue-inventory__more\s*\{([^}]*)\}/)?.[1];
+
+  expect(add).toMatch(/padding:\s*0 28rpx !important;/);
+  expect(add).toMatch(/background:\s*#0369A1 !important;/i);
+  expect(add).toMatch(/color:\s*#FFFFFF !important;/i);
+  expect(add).toMatch(/font-size:\s*28rpx !important;/);
+  expect(add).toMatch(/font-weight:\s*700 !important;/);
+  expect(add).toMatch(/line-height:\s*40rpx !important;/);
+  expect(more).toMatch(/padding:\s*0 20rpx !important;/);
+  expect(more).toMatch(/font-size:\s*26rpx !important;/);
+  expect(more).toMatch(/font-weight:\s*650 !important;/);
+  expect(more).toMatch(/line-height:\s*36rpx !important;/);
+  expect(styles).toMatch(/\.venue-inventory__add--pressed,[^{]*\{[^}]*background:\s*#075985 !important;/s);
+});
+
+test("field and row chevrons remain inside a padded icon box", () => {
+  const styles = readFileSync("miniprogram/dev/pages/venue-inventory/index.wxss", "utf8");
+  const chevron = styles.match(/\.venue-inventory-icon--chevron\s*\{([^}]*)\}/)?.[1];
+
+  expect(chevron).toBeDefined();
+  expect(chevron).toMatch(/overflow:\s*hidden;/);
+  expect(chevron).not.toMatch(/transform:/);
+  expect(styles).toMatch(/\.venue-inventory-icon--chevron::before\s*\{[^}]*transform:\s*rotate\(45deg\);/s);
+  expect(styles).toMatch(/\.venue-inventory__value\s*\{[^}]*padding:\s*0 8rpx 0 20rpx !important;/s);
+});
+
+test("bottom sheet adds a compact safe-area gap instead of double padding", () => {
+  const styles = readFileSync("miniprogram/dev/pages/venue-inventory/index.wxss", "utf8");
+
+  expect(styles).toMatch(/\.venue-inventory__sheet\s*\{[^}]*padding:\s*16rpx 40rpx calc\(16rpx \+ env\(safe-area-inset-bottom, 0px\)\);/s);
+});
