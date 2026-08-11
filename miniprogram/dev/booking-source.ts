@@ -24,7 +24,7 @@ interface OrderFixture {
   order_number: string;
   status: "PENDING_PAYMENT" | "EXPIRED";
   slot_id: string;
-  venue: { id: string; name: string; address: string; latitude: number; longitude: number; customer_service_phone: string };
+  venue: { id: string; name: string; address: string; latitude: number; longitude: number };
   pitch: { id: string; name: string };
   contact: { name: string; masked_phone: string };
   starts_at: string;
@@ -77,7 +77,7 @@ function orderFixture(name: "order-pending" | "order-expired"): PendingOrderView
     orderId: fixture.id,
     orderNumber: fixture.order_number,
     slotId: fixture.slot_id,
-    venue: { id: fixture.venue.id, name: fixture.venue.name, address: fixture.venue.address, latitude: fixture.venue.latitude, longitude: fixture.venue.longitude, customerServicePhone: fixture.venue.customer_service_phone },
+    venue: { id: fixture.venue.id, name: fixture.venue.name, address: fixture.venue.address, latitude: fixture.venue.latitude, longitude: fixture.venue.longitude },
     pitch: { ...fixture.pitch },
     contact: { name: fixture.contact.name, maskedPhone: fixture.contact.masked_phone },
     priceCents: fixture.price_cents,

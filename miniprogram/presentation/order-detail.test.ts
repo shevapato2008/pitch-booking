@@ -100,7 +100,6 @@ const pending: PendingOrderView = {
     address: "上海市浦东新区",
     latitude: 31,
     longitude: 121,
-    customerServicePhone: "021-12345678",
   },
   pitch: { id: "pitch-1", name: "5号场" },
   contact: { name: "张三", maskedPhone: "138****0000" },

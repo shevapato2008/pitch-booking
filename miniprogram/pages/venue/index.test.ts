@@ -1,5 +1,7 @@
+/// <reference types="node" />
 /* eslint-disable @typescript-eslint/no-explicit-any -- dynamic Mini Program Page harness */
 import { beforeEach, expect, jest, test } from "@jest/globals";
+import { readFileSync } from "node:fs";
 
 import { decodeVenueDetail, decodeVenueMap } from "../../domain/decoders";
 import { registerVenueDirectoryDataSource } from "../../services/venue-directory";
@@ -48,7 +50,7 @@ test("renders the online detail API as authority without falling back to primary
 
   expect(target.data.venue).toMatchObject({
     bookingMode: "ONLINE",
-    description: ONLINE_DETAIL.description,
+    description: ONLINE_DETAIL.profile.description,
     priceAdvantageText: "在线价格透明，以可订时段显示为准。",
     parkingText: "停车安排以场馆现场指引为准。",
   });
@@ -63,4 +65,11 @@ test("opens the map focused on the current venue", async () => {
   expect((globalThis as any).wx.navigateTo).toHaveBeenCalledWith({
     url: `/pages/venue-map/index?venueId=${VENUE_DIRECTORY_VISUAL_FIXTURE[4].id}`,
   });
+});
+
+test("public venue template exposes published facilities and no contact shortcut", () => {
+  const card = readFileSync("miniprogram/components/venue-card/index.wxml", "utf8");
+  expect(card).toContain('wx:for="{{venue.facilities}}"');
+  expect(card).toContain("venue.livePriceText");
+  expect(card).not.toMatch(/联系电话|venue\.phone|拨打|客服/);
 });

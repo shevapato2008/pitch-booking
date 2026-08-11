@@ -1,4 +1,5 @@
 import { decodeVenue, decodeVenueDetail, decodeVenueMap } from "../domain/decoders";
+import type { PublishedVenueProfile } from "../domain/contracts";
 import type { VenueDirectoryDataSource } from "../services/venue-directory";
 import { packagedFixtureLoader, type FixtureLoader } from "./fixture-transport";
 
@@ -15,7 +16,7 @@ export function createDevelopmentVenueDirectoryDataSource(
         const bookingVenue = decodeVenue(loader.load("venue-ready"));
         return {
           ...online,
-          coverImage: null,
+          profile: { ...online.profile, coverImage: null, images: [] },
           availabilityWindow: bookingVenue.availabilityWindow,
         };
       }
@@ -34,15 +35,18 @@ export function createDevelopmentVenueDirectoryDataSource(
         return {
           ...detailEntry,
           slug: mapEntry.slug ?? `venue-${mapEntry.id}`,
-          description: "",
+          profile: {
+            publicationState: "PUBLISHED", publishedVersion: 1, description: "", coverImage: null,
+            images: [], facilities: [], pitchSizes: mapEntry.pitchTypes,
+            livePrice: { available: false, fromPriceCents: null, currency: "CNY", unit: "HOUR" },
+            availabilityTarget: { enabled: false, label: "查看可订时段", path: null },
+          } satisfies PublishedVenueProfile,
           navigation: mapEntry.navigation ?? {
             poiName: mapEntry.name,
             coordinate: mapEntry.marker,
           },
           businessHoursText: null,
           parkingText: null,
-          images: [],
-          facilities: [],
         };
       }
       throw new Error("VENUE_NOT_FOUND");

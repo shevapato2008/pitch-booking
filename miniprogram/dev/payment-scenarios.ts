@@ -21,7 +21,6 @@ const bookingSnapshot = () => ({
     address: "上海市浦东新区锦绣东路 2777 弄 18 号",
     latitude: 31.245621,
     longitude: 121.623847,
-    customerServicePhone: "+86-21-5899-2608",
   },
   pitch: {
     id: "59c91a73-b893-4c91-9084-4f43ab16d00a",

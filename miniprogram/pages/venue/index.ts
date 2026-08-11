@@ -3,6 +3,11 @@ import { toDirectoryVenueViewModel, toOnlineDirectoryVenueViewModel, toVenueView
 import { getPageDataSource } from "../../services/page-data";
 import { getVenueDirectoryDataSource } from "../../services/venue-directory";
 
+const bookablePitchType = (codes: readonly { code: string }[]): PitchType | null => {
+  const selected = codes.find(({ code }) => code === "FIVE_A_SIDE" || code === "SEVEN_A_SIDE");
+  return selected ? selected.code as PitchType : null;
+};
+
 Page({
   data: {
     venue: null as AnyVenueViewModel | null,
@@ -26,8 +31,8 @@ Page({
         const viewModel = toOnlineDirectoryVenueViewModel(directoryVenue);
         this.setData({
           venue: viewModel,
-          canBook: true,
-          initialPitchType: viewModel.pitchTypes[0]?.code ?? null,
+          canBook: viewModel.availabilityEnabled,
+          initialPitchType: bookablePitchType(viewModel.pitchTypes),
           initialDate: viewModel.availabilityWindow.startDate,
           loading: false,
           errorText: "",
@@ -41,8 +46,8 @@ Page({
 
       this.setData({
         venue: viewModel,
-        canBook: true,
-        initialPitchType: viewModel.pitchTypes[0]?.code ?? null,
+        canBook: viewModel.availabilityEnabled,
+        initialPitchType: bookablePitchType(viewModel.pitchTypes),
         initialDate: viewModel.availabilityWindow.startDate,
         loading: false,
         errorText: "",

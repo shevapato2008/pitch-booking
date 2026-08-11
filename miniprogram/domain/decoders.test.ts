@@ -43,7 +43,17 @@ interface ReadyExample {
 interface VenueExample {
   id: string;
   name: string;
-  description: string;
+  profile: {
+    publication_state: string;
+    published_version: number;
+    description: string;
+    cover_image: string | null;
+    images: Array<{ url: string; alt: string; role: string; sort_order: number }>;
+    facilities: Array<{ code: string; name: string; sort_order: number }>;
+    pitch_sizes: string[];
+    live_price: { available: boolean; from_price_cents: number | null; currency: string; unit: string };
+    availability_target: { enabled: boolean; label: string; path: string | null };
+  };
   price_advantage_text: string;
   timezone: string;
   business_hours_text: string;
@@ -51,10 +61,7 @@ interface VenueExample {
   latitude: number;
   longitude: number;
   parking_text: string;
-  phone: string;
   refund_policy_summary: string;
-  images: Array<{ url: string; alt: string; role: string; sort_order: number }>;
-  facilities: Array<{ code: string; name: string; sort_order: number }>;
   pitch_types: Array<{ code: string; name: string; sort_order: number }>;
   availability_window: { start_date: string; end_date: string };
   generated_at: string;
@@ -87,6 +94,10 @@ const withoutKey = <T extends object>(value: T, key: keyof T): object => {
   Reflect.deleteProperty(copy, key);
   return copy;
 };
+const venueWithProfile = (patch: Partial<VenueExample["profile"]>) => ({
+  ...venue,
+  profile: { ...venue.profile, ...patch },
+});
 
 test("decodes canonical responses to camel-case view DTOs", () => {
   const decodedVenue = decodeVenue(venue);
@@ -174,26 +185,25 @@ test.each([
 
 test.each([
   ["unknown venue key", { ...venue, unexpected: true }],
-  ["missing cover", { ...venue, images: venue.images.filter((image) => image.role !== "COVER") }],
-  ["duplicate cover", { ...venue, images: [...venue.images, venue.images[0]] }],
-  ["non-HTTPS image", { ...venue, images: [{ ...venue.images[0], url: "http://unsafe.test/a.jpg" }] }],
-  ["uppercase HTTPS scheme", { ...venue, images: [{ ...venue.images[0], url: "HTTPS://example.test/a.jpg" }] }],
-  ["relative image", { ...venue, images: [{ ...venue.images[0], url: "/cover.jpg" }] }],
-  ["image credentials", { ...venue, images: [{ ...venue.images[0], url: "https://user:pass@example.test/a.jpg" }] }],
-  ["malformed image host", { ...venue, images: [{ ...venue.images[0], url: "https://[bad]/a.jpg" }] }],
-  ["whitespace in image URL", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/a b.jpg" }] }],
-  ["bare percent in image URL", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/%.jpg" }] }],
-  ["invalid percent escape", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/%2G.jpg" }] }],
-  ["raw Unicode host", { ...venue, images: [{ ...venue.images[0], url: "https://例子.test/a.jpg" }] }],
-  ["raw Unicode path", { ...venue, images: [{ ...venue.images[0], url: "https://example.test/主图.jpg" }] }],
-  ["unsupported port", { ...venue, images: [{ ...venue.images[0], url: "https://example.test:443/a.jpg" }] }],
-  ["single-label host", { ...venue, images: [{ ...venue.images[0], url: "https://localhost/a.jpg" }] }],
-  ["bad image role", { ...venue, images: [{ ...venue.images[0], role: "THUMBNAIL" }] }],
-  ["fractional sort order", { ...venue, facilities: [{ ...venue.facilities[0], sort_order: 0.5 }] }],
+  ["duplicate cover", venueWithProfile({ images: [...venue.profile.images, venue.profile.images[0]] })],
+  ["non-HTTPS image", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "http://unsafe.test/a.jpg" }] })],
+  ["uppercase HTTPS scheme", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "HTTPS://example.test/a.jpg" }] })],
+  ["relative image", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "/cover.jpg" }] })],
+  ["image credentials", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://user:pass@example.test/a.jpg" }] })],
+  ["malformed image host", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://[bad]/a.jpg" }] })],
+  ["whitespace in image URL", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://example.test/a b.jpg" }] })],
+  ["bare percent in image URL", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://example.test/%.jpg" }] })],
+  ["invalid percent escape", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://example.test/%2G.jpg" }] })],
+  ["raw Unicode host", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://例子.test/a.jpg" }] })],
+  ["raw Unicode path", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://example.test/主图.jpg" }] })],
+  ["unsupported port", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://example.test:443/a.jpg" }] })],
+  ["single-label host", venueWithProfile({ images: [{ ...venue.profile.images[0], url: "https://localhost/a.jpg" }] })],
+  ["bad image role", venueWithProfile({ images: [{ ...venue.profile.images[0], role: "THUMBNAIL" }] })],
+  ["fractional sort order", venueWithProfile({ facilities: [{ ...venue.profile.facilities[0], sort_order: 0.5 }] })],
   ["empty required text", { ...venue, name: "" }],
   ["bad latitude", { ...venue, latitude: 91 }],
   ["bad generated timestamp", { ...venue, generated_at: "22 July" }],
-  ["missing nested field", { ...venue, images: [withoutKey(venue.images[0], "alt")] }],
+  ["missing nested field", venueWithProfile({ images: [withoutKey(venue.profile.images[0], "alt") as VenueExample["profile"]["images"][number]] })],
 ])("rejects corrupt venue: %s", (_name, value) => {
   expect(() => decodeVenue(value)).toThrow("INVALID_API_RESPONSE");
 });
@@ -482,8 +492,7 @@ test("rejects a raw image URL containing backslashes", () => {
   expect(backslashUrl).toContain("\\");
 
   expect(() => decodeVenue({
-    ...venue,
-    images: [{ ...venue.images[0], url: backslashUrl }],
+    ...venueWithProfile({ images: [{ ...venue.profile.images[0], url: backslashUrl }] }),
   })).toThrow("INVALID_API_RESPONSE");
 });
 
@@ -491,7 +500,7 @@ test("validates media URLs without a global URL implementation", () => {
   const originalUrl = globalThis.URL;
   Object.defineProperty(globalThis, "URL", { configurable: true, value: undefined });
   try {
-    expect(decodeVenue(venue).images[0].url).toBe(venue.images[0].url);
+    expect(decodeVenue(venue).profile.images[0].url).toBe(venue.profile.images[0].url);
   } finally {
     Object.defineProperty(globalThis, "URL", { configurable: true, value: originalUrl });
   }
@@ -500,18 +509,40 @@ test("validates media URLs without a global URL implementation", () => {
 test("accepts the documented ASCII media URL grammar", () => {
   const url = "https://cdn.example.com/a%20b.jpg?size=large#cover";
   const decoded = decodeVenue({
-    ...venue,
-    images: [{ ...venue.images[0], url }],
+    ...venueWithProfile({ images: [{ ...venue.profile.images[0], url }] }),
   });
 
-  expect(decoded.images[0].url).toBe(url);
+  expect(decoded.profile.images[0].url).toBe(url);
 });
 
 test("canonical venue DTO is exactly camelCase and view-safe", () => {
   expect(decodeVenue(venue)).toStrictEqual({
     id: venue.id,
     name: venue.name,
-    description: venue.description,
+    profile: {
+      publicationState: "PUBLISHED",
+      publishedVersion: venue.profile.published_version,
+      description: venue.profile.description,
+      coverImage: venue.profile.cover_image,
+      images: venue.profile.images.map((image) => ({
+        url: image.url, alt: image.alt, role: image.role, sortOrder: image.sort_order,
+      })),
+      facilities: venue.profile.facilities.map((facility) => ({
+        code: facility.code, name: facility.name, sortOrder: facility.sort_order,
+      })),
+      pitchSizes: venue.profile.pitch_sizes,
+      livePrice: {
+        available: venue.profile.live_price.available,
+        fromPriceCents: venue.profile.live_price.from_price_cents,
+        currency: "CNY",
+        unit: "HOUR",
+      },
+      availabilityTarget: {
+        enabled: venue.profile.availability_target.enabled,
+        label: "查看可订时段",
+        path: venue.profile.availability_target.path,
+      },
+    },
     priceAdvantageText: venue.price_advantage_text,
     timezone: venue.timezone,
     businessHoursText: venue.business_hours_text,
@@ -519,14 +550,7 @@ test("canonical venue DTO is exactly camelCase and view-safe", () => {
     latitude: venue.latitude,
     longitude: venue.longitude,
     parkingText: venue.parking_text,
-    phone: venue.phone,
     refundPolicySummary: venue.refund_policy_summary,
-    images: venue.images.map((image) => ({
-      url: image.url, alt: image.alt, role: image.role, sortOrder: image.sort_order,
-    })),
-    facilities: venue.facilities.map((facility) => ({
-      code: facility.code, name: facility.name, sortOrder: facility.sort_order,
-    })),
     pitchTypes: venue.pitch_types.map((pitchType) => ({
       code: pitchType.code, name: pitchType.name, sortOrder: pitchType.sort_order,
     })),
@@ -577,8 +601,8 @@ const expectApiPath = (decode: () => unknown, path: string) => {
 };
 
 test.each([
-  ["images", { ...venue, images: [venue.images[1], venue.images[0], venue.images[2]] }, "$.images[1].sort_order"],
-  ["facilities", { ...venue, facilities: [venue.facilities[1], venue.facilities[0], ...venue.facilities.slice(2)] }, "$.facilities[1].sort_order"],
+  ["images", venueWithProfile({ images: [venue.profile.images[1], venue.profile.images[0], venue.profile.images[2]] }), "$.profile.images[1].sort_order"],
+  ["facilities", venueWithProfile({ facilities: [venue.profile.facilities[1], venue.profile.facilities[0], ...venue.profile.facilities.slice(2)] }), "$.profile.facilities[1].sort_order"],
   ["pitch types", { ...venue, pitch_types: [venue.pitch_types[1], venue.pitch_types[0]] }, "$.pitch_types[1].sort_order"],
 ])("rejects unsorted venue %s at its exact path", (_name, value, path) => {
   expectApiPath(() => decodeVenue(value), path);
@@ -632,10 +656,9 @@ test.each([
 test.each([
   ["unknown top-level field", () => decodeVenue({ ...venue, unexpected: true }), "$.unexpected"],
   ["missing top-level field", () => decodeVenue(withoutKey(venue, "generated_at")), "$.generated_at"],
-  ["invalid cover count", () => decodeVenue({
-    ...venue,
-    images: venue.images.filter((image) => image.role !== "COVER"),
-  }), "$.images"],
+  ["duplicate cover", () => decodeVenue(venueWithProfile({
+    images: [...venue.profile.images, venue.profile.images[0]],
+  })), "$.profile.images"],
 ])("reports exact path for %s", (_name, decode, path) => {
   expectApiPath(decode, path);
 });

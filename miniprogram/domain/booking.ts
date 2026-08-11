@@ -35,7 +35,6 @@ export interface OrderVenueView {
   readonly address: string;
   readonly latitude: number;
   readonly longitude: number;
-  readonly customerServicePhone: string;
 }
 
 export interface OrderPitchView {

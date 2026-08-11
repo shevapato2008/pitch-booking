@@ -5,7 +5,7 @@ import { createHttpPageDataSource } from "./http-page-data";
 
 interface VenuePayload {
   name: string;
-  images: Array<{ url: string }>;
+  profile: { images: Array<{ url: string }> };
 }
 interface AvailabilityPayload { pitches: unknown[] }
 
@@ -44,7 +44,7 @@ test("loads and decodes the primary venue and its availability over HTTP", async
   ]);
   expect(venue.name).toBe(venuePayload.name);
   expect(availability.pitchGroups).toHaveLength(availabilityPayload.pitches.length);
-  expect(source.coverSource(venue)).toBe(`COVER:${venuePayload.images[0].url}`);
+  expect(source.coverSource(venue)).toBe(`COVER:${venuePayload.profile.images[0].url}`);
 });
 
 test("rejects malformed API data at the HTTP boundary", async () => {

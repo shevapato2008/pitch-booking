@@ -68,6 +68,8 @@
 .chip-group { display: flex; flex-wrap: wrap; gap: 16rpx; margin-top: 16rpx; }
 .chip { padding: 10rpx 18rpx; color: #64748B; background: #F8FAFC; border: 2rpx solid #DBE5EC; }
 .chip--pitch { color: #0284C7; background: #F0F9FF; border-color: #BAE6FD; font-weight: 600; }
+.venue-gallery { width: 100%; margin-top: 24rpx; white-space: nowrap; }
+.venue-gallery__image { width: 184rpx; height: 120rpx; margin-right: 16rpx; border-radius: 16rpx; vertical-align: top; }
 
 .price-panel { margin-top: 32rpx; padding: 24rpx; background: #EFFBF6; border: 2rpx solid #BFEBD8; }
 .directory-notice { margin-top: 32rpx; padding: 24rpx; background: #F8FAFC; border: 2rpx solid #DBE5EC; }

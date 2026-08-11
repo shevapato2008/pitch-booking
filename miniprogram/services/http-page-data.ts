@@ -27,7 +27,7 @@ export function createHttpPageDataSource(
     },
 
     coverSource(venue: Venue): string {
-      const cover = venue.images.find((image) => image.role === "COVER");
+      const cover = venue.profile.images.find((image) => image.role === "COVER");
       return cover ? media.resolve("COVER", cover.url) : "";
     },
   };
