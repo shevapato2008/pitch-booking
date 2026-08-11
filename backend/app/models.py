@@ -574,9 +574,7 @@ class ContentModerationJob(Base):
         Enum(ModerationJobStatus, name="moderation_job_status")
     )
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
-    next_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fixed_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(

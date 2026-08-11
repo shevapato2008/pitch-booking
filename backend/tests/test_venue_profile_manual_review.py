@@ -218,6 +218,6 @@ def test_manual_decision_atomically_completes_job_and_replay_does_not_duplicate(
         assert job.completed_at is not None
         assert job.claim_token is None
         assert job.lease_until is None
-        assert job.next_run_at is None
+        assert job.next_run_at is not None
         assert job.fixed_reason_code is expected_reason
         assert len(list(session.scalars(select(ContentModerationDecision)))) == 1
