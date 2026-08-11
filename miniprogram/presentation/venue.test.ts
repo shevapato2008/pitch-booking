@@ -60,6 +60,19 @@ test("preserves the server-authored price advantage text exactly", () => {
     .toBe("工作日白天低至 ¥360/小时");
 });
 
+test("preserves fractional yuan in the live hourly price", () => {
+  const fractionalPriceVenue: Venue = {
+    ...venue,
+    profile: {
+      ...venue.profile,
+      livePrice: { ...venue.profile.livePrice, fromPriceCents: 26050 },
+    },
+  };
+
+  expect(toVenueViewModel(fractionalPriceVenue, "/cover.png").livePriceText)
+    .toBe("¥260.50 起/小时");
+});
+
 test("derives deterministic image and fallback cover states from the injected source", () => {
   expect(toVenueViewModel(venue, "/dev/assets/venue-cover.png").cover).toEqual({
     alt: "主场地",

@@ -66,6 +66,12 @@ export interface DirectoryVenueViewModel {
 
 export type AnyVenueViewModel = VenueViewModel | DirectoryVenueViewModel;
 
+function formatLivePrice(livePrice: Venue["profile"]["livePrice"]): string {
+  if (!livePrice.available || livePrice.fromPriceCents === null) return "暂无可订时段";
+  const yuan = livePrice.fromPriceCents / 100;
+  return `¥${yuan.toFixed(Number.isInteger(yuan) ? 0 : 2)} 起/小时`;
+}
+
 export function toVenueViewModel(venue: Venue, coverSource: string): VenueViewModel {
   const sortedImages = [...venue.profile.images].sort((left, right) => left.sortOrder - right.sortOrder);
   const cover = sortedImages.find((image) => image.role === "COVER");
@@ -104,9 +110,7 @@ export function toVenueViewModel(venue: Venue, coverSource: string): VenueViewMo
       startDate: venue.availabilityWindow.startDate,
       endDate: venue.availabilityWindow.endDate,
     },
-    livePriceText: venue.profile.livePrice.available && venue.profile.livePrice.fromPriceCents !== null
-      ? `¥${(venue.profile.livePrice.fromPriceCents / 100).toFixed(0)} 起/小时`
-      : "暂无可订时段",
+    livePriceText: formatLivePrice(venue.profile.livePrice),
     availabilityLabel: venue.profile.availabilityTarget.label,
     availabilityEnabled: venue.profile.availabilityTarget.enabled,
   };
@@ -138,9 +142,7 @@ export function toOnlineDirectoryVenueViewModel(venue: OnlineVenueDetail): Venue
       label: code === "FIVE_A_SIDE" ? "五人制" : code === "SEVEN_A_SIDE" ? "七人制" : "十一人制",
     })),
     availabilityWindow: venue.availabilityWindow,
-    livePriceText: venue.profile.livePrice.available && venue.profile.livePrice.fromPriceCents !== null
-      ? `¥${(venue.profile.livePrice.fromPriceCents / 100).toFixed(0)} 起/小时`
-      : "暂无可订时段",
+    livePriceText: formatLivePrice(venue.profile.livePrice),
     availabilityLabel: venue.profile.availabilityTarget.label,
     availabilityEnabled: venue.profile.availabilityTarget.enabled,
   };
