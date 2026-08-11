@@ -5,8 +5,8 @@
 - Target viewport: 375 × 812.
 - Reference Artifact: approved local design source.
 - Same-size evidence: 10 approved states × 5 PNGs = 50 PNGs.
-- Native Fixture user visual approval: pending.
-- user visual approval: pending.
+- Native Fixture user visual approval: approved by the user on 2026-08-11.
+- Approval scope: all 10 approved states (`ready`, `uploading`, `image-reviewing`, `image-rejected`, `description-reviewing`, `description-rejected`, `pending-manual`, `load-error`, `save-unknown`, and `public-published`).
 - Production disabled; no contract, backend, service, database, or production route work was started.
 - Fixture deletion condition: remove after visual approval and real service integration replace the development Fixture.
 
@@ -91,9 +91,9 @@ The remaining visible clicks were not completed before the UI pass was stopped. 
 <!-- pending:public-published:SELECT_GALLERY=>public-published -->
 <!-- pending:public-published:NATIVE_BACK=>navigate-back -->
 
-## Tool limitation and remaining gate
+## Tool limitations and approval record
 
 - The in-app automation socket could not be enabled in the sandbox (`EPERM`). Visible Computer Use remained sufficient for real simulator capture and the completed clicks above.
 - Sky did not reliably route non-ASCII keyboard input to the Mini Program textarea; attempts either preserved the old value, passed only ASCII, or focused the IDE editor. The accidental editor buffer input was immediately undone. The existing focused Jest test verifies `Array.from(value).slice(0, 300)` with a non-BMP character, but a visible 300-code-point textarea run remains pending.
 - No contact button/action was present in the public accessibility tree or source contract.
-- Automated layout/source tests do not grant visual approval. The user must review this board and explicitly approve before Chunk 2, contracts, backend, or service integration begins.
+- Automated layout/source tests did not grant visual approval; the user explicitly approved the board and all 10 approved states on 2026-08-11.
