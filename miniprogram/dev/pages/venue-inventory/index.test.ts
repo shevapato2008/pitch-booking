@@ -108,6 +108,8 @@ test("native source uses the approved v2 hierarchy", () => {
   expect(template).not.toMatch(/class="venue-inventory__add/);
   expect(template).toMatch(/scroll-view[^>]*class="inventory-list"[^>]*scroll-y/);
   expect(template).toMatch(/class="inventory-footer"/);
+  expect(template).toMatch(/<view class="status-badge status-badge--\{\{item\.status\}\}"><text>\{\{item\.statusLabel\}\}<\/text><\/view>/);
+  expect(template).not.toMatch(/<text class="status-badge/);
   expect(template).toMatch(/class="icon-chevron \{\{item\.editable && !writeControlsDisabled \? '' : 'icon-chevron--placeholder'\}\}"/);
   expect(template).toMatch(/wx:if="{{sheet}}"[\s\S]*role="dialog"/);
   expect(styles).toMatch(/\.inventory-footer\s*\{[^}]*position:\s*fixed;/s);
