@@ -24,3 +24,11 @@ export interface VenueProfileDataSource {
 
 export interface ChosenVenueProfileImage { readonly filename: string; readonly mimeType: VenueProfileMimeType; readonly byteSize: number; readonly bytes: ArrayBuffer }
 export interface VenueProfileMediaCapability { chooseImage(): Promise<ChosenVenueProfileImage>; upload(signedPutUrl: string, bytes: ArrayBuffer, requiredHeaders: Readonly<Record<string, string>>): Promise<void> }
+
+let configuredSource: VenueProfileDataSource | undefined;
+let configuredMedia: VenueProfileMediaCapability | undefined;
+export function registerVenueProfileDataSource(source: VenueProfileDataSource): void { configuredSource = source; }
+export function getVenueProfileDataSource(): VenueProfileDataSource { if (!configuredSource) throw new Error("VENUE_PROFILE_DATA_SOURCE_NOT_CONFIGURED"); return configuredSource; }
+export function registerVenueProfileMediaCapability(media: VenueProfileMediaCapability): void { configuredMedia = media; }
+export function getVenueProfileMediaCapability(): VenueProfileMediaCapability { if (!configuredMedia) throw new Error("VENUE_PROFILE_MEDIA_NOT_CONFIGURED"); return configuredMedia; }
+export function resetVenueProfileBindingsForTesting(): void { configuredSource = undefined; configuredMedia = undefined; }

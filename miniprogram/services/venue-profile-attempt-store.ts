@@ -67,3 +67,8 @@ export function createVenueProfileAttemptStore(storage: SessionStorage): VenuePr
     clear,
   };
 }
+
+let configured: VenueProfileAttemptStore | undefined;
+export function registerVenueProfileAttemptStore(store: VenueProfileAttemptStore): void { configured = store; }
+export function getVenueProfileAttemptStore(): VenueProfileAttemptStore | undefined { return configured; }
+export function resetVenueProfileAttemptStoreForTesting(): void { configured = undefined; }

@@ -1,15 +1,22 @@
 import { MINIPROGRAM_TENCENT_MAP_KEY } from "../config/runtime";
 import {
   productionClock,
+  productionIdentity,
   productionLocation,
   productionSessionStorage,
   productionTencentPoiRequest,
+  productionTransport,
+  productionVenueProfileMedia,
 } from "../runtime/production";
 import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode } from "../services/booking";
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { createInventoryMutationAttemptStore, registerInventoryMutationAttemptStore } from "../services/inventory-attempt-store";
 import { registerInventoryDataSource } from "../services/inventory";
 import { registerPitchConfigurationDataSource } from "../services/pitch-configuration";
+import { createVenueProfileAttemptStore, registerVenueProfileAttemptStore } from "../services/venue-profile-attempt-store";
+import { registerVenueProfileDataSource, registerVenueProfileMediaCapability } from "../services/venue-profile";
+import { createHttpVenueProfileDataSource } from "../services/http-venue-profile";
+import { createSessionStore } from "../services/session-store";
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
@@ -38,6 +45,9 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));
   registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));
   registerPitchConfigurationAttemptStore(createPitchConfigurationAttemptStore(productionSessionStorage));
+  const venueProfileAttemptStore = createVenueProfileAttemptStore(productionSessionStorage);
+  registerVenueProfileAttemptStore(venueProfileAttemptStore);
+  registerVenueProfileMediaCapability(productionVenueProfileMedia);
   registerPaymentCapability(createDevelopmentPaymentCapability("success", showDevelopmentCashier));
   if (options.source === "http") {
     const sources = createDevelopmentHttpSources(options.apiBaseUrl);
@@ -47,6 +57,8 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerVenueDirectoryDataSource(sources.venues);
     registerInventoryDataSource(sources.inventory);
     registerPitchConfigurationDataSource(sources.pitchConfiguration);
+    const transport = productionTransport(options.apiBaseUrl);
+    registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: productionIdentity, sessionStore: createSessionStore(productionSessionStorage), attemptStore: venueProfileAttemptStore }));
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);

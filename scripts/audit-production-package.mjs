@@ -116,6 +116,7 @@ const productionRoutes = [
   "pages/availability/index",
   "pages/booking-confirmation/index",
   "pages/order-detail/index",
+  "pages/venue-profile/index",
   "pages/venue-inventory/index",
   "pages/venue-pitch-setup/index",
 ];
