@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -50,6 +51,12 @@ const rejectionReasons = [
   ["UNSAFE_CONTENT", "内容不符合平台发布要求"],
 ];
 const lines = (value) => value.trimEnd().split("\n").length;
+const reviewRoot = "artifacts/ui/reviews/venue-profile-workbench";
+const pngSize = (path) => {
+  const image = readFileSync(rel(path));
+  assert.deepEqual([...image.subarray(1, 4)], [80, 78, 71], `${path} must be a PNG`);
+  return { width: image.readUInt32BE(16), height: image.readUInt32BE(20), image };
+};
 
 test("venue profile reference source files exist", () => {
   assert.deepEqual(missing, [], `missing source files: ${missing.join(", ")}`);
@@ -223,4 +230,43 @@ test("local renderer keeps the approved light system and excludes contact contro
   assert.doesNotMatch(controller, /\bfetch\s*\(/);
   assert.doesNotMatch(html + css + controller, /<a\b|href=["'](?:tel:|sms:)|data-(?:phone|chat|link)/i);
   assert.doesNotMatch(html + css + controller, /[\u{1F300}-\u{1FAFF}]/u, "emoji must not be used as icons");
+});
+
+test("visual review evidence covers every approved state at the exact native viewport", { skip: missing.length > 0 }, () => {
+  const manifest = JSON.parse(read(paths.manifest));
+  const evidenceKinds = ["reference", "implementation", "side-by-side", "overlay-50", "difference"];
+  const expected = stateIds.flatMap((state) => evidenceKinds.map((kind) => `${reviewRoot}/${state}-${kind}.png`));
+  const missingEvidence = expected.filter((path) => !existsSync(rel(path)));
+  assert.deepEqual(missingEvidence, [], `missing visual evidence: ${missingEvidence.join(", ")}`);
+  assert.equal(expected.length, 50);
+
+  const implementations = [];
+  for (const state of stateIds) {
+    for (const kind of evidenceKinds) {
+      const path = `${reviewRoot}/${state}-${kind}.png`;
+      const { width, height, image } = pngSize(path);
+      assert.deepEqual({ width, height }, { width: kind === "side-by-side" ? 750 : 375, height: 812 }, path);
+      if (kind === "implementation") implementations.push(createHash("sha256").update(image).digest("hex"));
+    }
+  }
+  assert.equal(new Set(implementations).size, 10, "all ten native implementation captures must be distinct");
+
+  for (const path of [`${reviewRoot}/README.md`, `${reviewRoot}/review-board.html`]) {
+    assert.ok(existsSync(rel(path)), `${path} must exist`);
+  }
+  const readme = read(`${reviewRoot}/README.md`);
+  for (const phrase of [
+    "WeChat DevTools", "iPhone X", "375 × 812", "user visual approval: pending",
+    "composition", "geometry/spacing", "hierarchy", "typography/colors/materials",
+    "icons/assets", "copy", "state semantics", "larger iPhone safe-area/scroll smoke",
+  ]) assert.match(readme, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  for (const state of manifest.states) {
+    for (const button of state.buttons) {
+      const result = button.disabled ? `disabled:${state.id}` : button.reference_next_state;
+      assert.match(readme, new RegExp(`(?:exercised|pending):${state.id}:${button.operation}=>${result}`));
+    }
+  }
+  for (const interaction of ["ready:NATIVE_BACK=>navigate-back", "ready:TOGGLE_FACILITY=>ready", "public-published:SELECT_GALLERY=>public-published", "public-published:NATIVE_BACK=>navigate-back"]) {
+    assert.match(readme, new RegExp(`(?:exercised|pending):${interaction}`));
+  }
 });

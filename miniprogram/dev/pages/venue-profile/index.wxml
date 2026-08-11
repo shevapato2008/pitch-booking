@@ -19,6 +19,14 @@
         </view>
       </view>
 
+      <view wx:if="{{rejectionLabels.length}}" class="venue-profile__card" role="alert">
+        <text class="venue-profile__label">审核原因</text>
+        <view wx:for="{{rejectionLabels}}" wx:key="*this" class="venue-profile__reason">
+          <view class="venue-profile__reason-dot" aria-hidden="true"></view>
+          <text>{{item}}</text>
+        </view>
+      </view>
+
       <view wx:if="{{workingProfile}}">
         <view class="venue-profile__card">
           <view class="venue-profile__section-heading">
@@ -70,14 +78,6 @@
           ></textarea>
           <text id="description-help" class="venue-profile__field-help">请勿填写联系方式、二维码、外链或站外交易信息。</text>
           <text id="description-counter" class="venue-profile__counter">{{descriptionCount}} / {{descriptionMax}}</text>
-        </view>
-
-        <view wx:if="{{rejectionLabels.length}}" class="venue-profile__card" role="alert">
-          <text class="venue-profile__label">审核原因</text>
-          <view wx:for="{{rejectionLabels}}" wx:key="*this" class="venue-profile__reason">
-            <view class="venue-profile__reason-dot" aria-hidden="true"></view>
-            <text>{{item}}</text>
-          </view>
         </view>
 
         <view class="venue-profile__card">

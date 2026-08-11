@@ -47,6 +47,10 @@ test("admin source exposes exact approved states, copy, handlers, and Unicode-sa
   assert.match(styles, /position:\s*fixed;/);
   assert.match(styles, /env\(safe-area-inset-bottom,\s*0px\)/);
   assert.match(styles, /padding-bottom:\s*2[4-9][0-9]rpx;/);
+  const statusAt = template.indexOf('class="venue-profile__status');
+  const reasonsAt = template.indexOf('wx:if="{{rejectionLabels.length}}"');
+  const profileAt = template.indexOf('wx:if="{{workingProfile}}"');
+  assert.ok(statusAt < reasonsAt && reasonsAt < profileAt, "rejection reasons must follow status before editable sections");
 });
 
 test("every visible enabled button has a real Fixture binding and disabled controls use native semantics", async () => {
