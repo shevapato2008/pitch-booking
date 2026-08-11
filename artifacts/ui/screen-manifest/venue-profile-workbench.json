@@ -34,18 +34,28 @@
   },
   "facilities": [
     {
-      "group": "到场服务",
+      "group": "基础设施",
       "items": [
-        { "code": "PARKING", "label": "停车位" },
+        { "code": "PARKING", "label": "停车场" },
         { "code": "TOILET", "label": "卫生间" },
         { "code": "CHANGING_ROOM", "label": "更衣室" },
         { "code": "SHOWER", "label": "淋浴" },
-        { "code": "LOCKERS", "label": "储物柜" },
-        { "code": "DRINKING_WATER", "label": "饮用水" },
+        { "code": "LOCKERS", "label": "储物柜" }
+      ]
+    },
+    {
+      "group": "补给服务",
+      "items": [
+        { "code": "DRINKING_WATER", "label": "饮水设施" },
         { "code": "BEVERAGE_SALES", "label": "饮料售卖" },
-        { "code": "EQUIPMENT_RENTAL", "label": "装备租赁" },
+        { "code": "EQUIPMENT_RENTAL", "label": "器材租赁" }
+      ]
+    },
+    {
+      "group": "观赛与安全",
+      "items": [
         { "code": "REST_AREA", "label": "休息区" },
-        { "code": "FIRST_AID", "label": "急救用品" },
+        { "code": "FIRST_AID", "label": "急救设施" },
         { "code": "AED", "label": "AED" }
       ]
     },
@@ -55,27 +65,33 @@
         { "code": "INDOOR", "label": "室内" },
         { "code": "OUTDOOR", "label": "室外" },
         { "code": "COVERED", "label": "有顶棚" },
-        { "code": "LIGHTING", "label": "灯光" },
-        { "code": "ARTIFICIAL_TURF", "label": "人造草" },
+        { "code": "LIGHTING", "label": "夜场照明" }
+      ]
+    },
+    {
+      "group": "草皮类型",
+      "items": [
+        { "code": "ARTIFICIAL_TURF", "label": "人工草" },
         { "code": "NATURAL_GRASS", "label": "天然草" }
       ]
     }
   ],
   "rejection_reasons": [
-    { "code": "CONTACT_INFO", "label": "包含联系方式" },
-    { "code": "QR_OR_PAYMENT_CODE", "label": "包含二维码或收付款码" },
-    { "code": "OFF_PLATFORM_TRADE", "label": "引导站外交易" },
-    { "code": "EXTERNAL_LINK", "label": "包含外部链接" },
-    { "code": "UNRELATED_CONTENT", "label": "内容与场馆无关" },
-    { "code": "IMAGE_NOT_VENUE", "label": "图片并非本场馆" },
-    { "code": "IMAGE_QUALITY", "label": "图片模糊、遮挡或质量过低" },
-    { "code": "PERSONAL_PRIVACY", "label": "包含个人隐私" },
-    { "code": "UNSAFE_CONTENT", "label": "包含不安全或违规内容" }
+    { "code": "CONTACT_INFO", "label": "请删除电话、微信号等联系方式" },
+    { "code": "QR_OR_PAYMENT_CODE", "label": "图片中不能包含二维码或收款码" },
+    { "code": "OFF_PLATFORM_TRADE", "label": "请删除线下交易或绕过平台付款的引导" },
+    { "code": "EXTERNAL_LINK", "label": "请删除外部网站或其他平台链接" },
+    { "code": "UNRELATED_CONTENT", "label": "内容需与当前场馆有关" },
+    { "code": "IMAGE_NOT_VENUE", "label": "请上传真实的场馆环境照片" },
+    { "code": "IMAGE_QUALITY", "label": "图片过于模糊或无法辨认" },
+    { "code": "PERSONAL_PRIVACY", "label": "图片包含清晰人物面部或其他隐私信息" },
+    { "code": "UNSAFE_CONTENT", "label": "内容不符合平台发布要求" }
   ],
   "operations": [
     { "id": "UPLOAD_IMAGE", "service_operation": "POST /admin/venues/{venue_id}/profile/images", "authority": "immediate-image-write" },
     { "id": "SET_COVER", "service_operation": "PATCH /admin/venues/{venue_id}/profile/images/{image_id}/cover", "authority": "immediate-image-write" },
     { "id": "REMOVE_IMAGE", "service_operation": "DELETE /admin/venues/{venue_id}/profile/images/{image_id}", "authority": "immediate-image-write" },
+    { "id": "REORDER_IMAGE", "service_operation": "PATCH /admin/venues/{venue_id}/profile/images/order", "authority": "immediate-image-write" },
     { "id": "GET_IMAGE_UPLOAD", "service_operation": "GET /admin/venues/{venue_id}/profile/images/{upload_id}", "authority": "server" },
     { "id": "CANCEL_IMAGE_UPLOAD", "service_operation": "DELETE /admin/venues/{venue_id}/profile/images/{upload_id}", "authority": "server" },
     { "id": "GET_IMAGE_REVIEW", "service_operation": "GET /admin/venues/{venue_id}/profile/images/{image_id}/moderation", "authority": "server" },
@@ -98,7 +114,8 @@
         { "label": "添加图片", "operation": "UPLOAD_IMAGE", "reference_next_state": "uploading" },
         { "label": "设为封面", "operation": "SET_COVER", "reference_next_state": "ready" },
         { "label": "移除", "operation": "REMOVE_IMAGE", "reference_next_state": "ready" },
-        { "label": "保存场馆资料", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown" }
+        { "label": "前移", "operation": "REORDER_IMAGE", "reference_next_state": "ready" },
+        { "label": "保存场馆资料", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown", "slot": "footer" }
       ]
     },
     {
@@ -107,7 +124,8 @@
       "visible_copy": ["图片正在上传，请勿重复提交", "已为图片区域预留空间，上传完成前不可保存", "图片上传中"],
       "buttons": [
         { "label": "刷新上传状态", "operation": "GET_IMAGE_UPLOAD", "reference_next_state": "image-reviewing" },
-        { "label": "取消上传", "operation": "CANCEL_IMAGE_UPLOAD", "reference_next_state": "ready" }
+        { "label": "取消上传", "operation": "CANCEL_IMAGE_UPLOAD", "reference_next_state": "ready" },
+        { "label": "图片上传中", "operation": "SAVE_PROFILE", "reference_next_state": "uploading", "slot": "footer", "disabled": true }
       ]
     },
     {
@@ -116,14 +134,18 @@
       "visible_copy": ["图片已上传，正在审核", "审核期间，公开页继续显示上一版已通过图片", "图片审核中"],
       "buttons": [
         { "label": "刷新审核状态", "operation": "GET_IMAGE_REVIEW", "reference_next_state": "image-reviewing" },
-        { "label": "返回继续编辑", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" }
+        { "label": "返回继续编辑", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" },
+        { "label": "图片审核中", "operation": "SAVE_PROFILE", "reference_next_state": "image-reviewing", "slot": "footer", "disabled": true }
       ]
     },
     {
       "id": "image-rejected",
       "reference": "artifacts/ui/references/venue-profile-workbench.html?state=image-rejected",
-      "visible_copy": ["图片未通过审核", "请按固定原因处理后重新上传", "图片模糊、遮挡或质量过低", "请先处理图片"],
-      "buttons": [{ "label": "重新上传", "operation": "RETRY_IMAGE", "reference_next_state": "uploading" }]
+      "visible_copy": ["图片未通过审核", "请按固定原因处理后重新上传", "图片过于模糊或无法辨认", "请先处理图片"],
+      "buttons": [
+        { "label": "重新上传", "operation": "RETRY_IMAGE", "reference_next_state": "uploading" },
+        { "label": "请先处理图片", "operation": "SAVE_PROFILE", "reference_next_state": "image-rejected", "slot": "footer", "disabled": true }
+      ]
     },
     {
       "id": "description-reviewing",
@@ -131,38 +153,47 @@
       "visible_copy": ["资料已提交，正在审核", "整版通过前，公开页继续显示上一版已通过资料", "资料审核中"],
       "buttons": [
         { "label": "查看当前公开页", "operation": "VIEW_PUBLIC_PROFILE", "reference_next_state": "public-published" },
-        { "label": "返回继续编辑", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" }
+        { "label": "返回继续编辑", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" },
+        { "label": "资料审核中", "operation": "SAVE_PROFILE", "reference_next_state": "description-reviewing", "slot": "footer", "disabled": true }
       ]
     },
     {
       "id": "description-rejected",
       "reference": "artifacts/ui/references/venue-profile-workbench.html?state=description-rejected",
-      "visible_copy": ["场馆介绍未通过审核", "草稿已保留，请修改后重新保存", "包含联系方式", "包含外部链接", "保存修改"],
+      "visible_copy": ["场馆介绍未通过审核", "草稿已保留，请修改后重新保存", "请删除电话、微信号等联系方式", "请删除外部网站或其他平台链接", "保存修改"],
       "buttons": [
         { "label": "修改场馆介绍", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" },
-        { "label": "保存修改", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown" }
+        { "label": "保存修改", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown", "slot": "footer" }
       ]
     },
     {
       "id": "pending-manual",
       "reference": "artifacts/ui/references/venue-profile-workbench.html?state=pending-manual",
-      "visible_copy": ["资料进入人工复核", "复核完成前不会发布本次修改", "包含个人隐私", "人工复核中"],
+      "trigger": "moderation-result-uncertain-after-retry-exhausted",
+      "visible_copy": ["等待人工审核", "系统暂时无法确认审核结果，已转人工处理", "人工审核中"],
       "buttons": [
         { "label": "刷新复核状态", "operation": "GET_PROFILE_REVIEW", "reference_next_state": "pending-manual" },
-        { "label": "查看当前公开页", "operation": "VIEW_PUBLIC_PROFILE", "reference_next_state": "public-published" }
+        { "label": "查看当前公开页", "operation": "VIEW_PUBLIC_PROFILE", "reference_next_state": "public-published" },
+        { "label": "人工审核中", "operation": "SAVE_PROFILE", "reference_next_state": "pending-manual", "slot": "footer", "disabled": true }
       ]
     },
     {
       "id": "load-error",
       "reference": "artifacts/ui/references/venue-profile-workbench.html?state=load-error",
       "visible_copy": ["场馆资料加载失败", "未读取到编辑数据，请重新加载", "无法显示编辑内容", "上一版公开资料不受影响"],
-      "buttons": [{ "label": "重新加载", "operation": "RELOAD_PROFILE", "reference_next_state": "ready" }]
+      "buttons": [
+        { "label": "重新加载", "operation": "RELOAD_PROFILE", "reference_next_state": "ready" },
+        { "label": "暂时无法保存", "operation": "SAVE_PROFILE", "reference_next_state": "load-error", "slot": "footer", "disabled": true }
+      ]
     },
     {
       "id": "save-unknown",
       "reference": "artifacts/ui/references/venue-profile-workbench.html?state=save-unknown",
       "visible_copy": ["正在核对保存结果", "不要重复保存，先核对同一次提交", "正在核对"],
-      "buttons": [{ "label": "核对保存结果", "operation": "CHECK_SAVE_RESULT", "reference_next_state": "description-reviewing" }]
+      "buttons": [
+        { "label": "核对保存结果", "operation": "CHECK_SAVE_RESULT", "reference_next_state": "description-reviewing" },
+        { "label": "正在核对", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown", "slot": "footer", "disabled": true }
+      ]
     },
     {
       "id": "public-published",

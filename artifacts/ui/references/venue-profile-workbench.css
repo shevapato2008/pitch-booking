@@ -153,16 +153,20 @@ button:active:not(:disabled) { background-color: var(--pressed); }
   font-size: 12px;
   font-weight: 700;
 }
-.image-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
+.image-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); }
 .image-actions button {
+  display: flex;
   min-width: 0;
   min-height: 44px;
-  padding: 0 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
   border: 0;
   background: var(--surface);
   color: var(--primary-strong);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 .image-actions .danger { color: var(--error); }
 .add-image {

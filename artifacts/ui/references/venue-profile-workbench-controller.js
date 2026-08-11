@@ -1,13 +1,13 @@
 import {
-  DEFAULT_PROFILE_STATE, FACILITY_GROUPS, PROFILE_RULES, PROFILE_STATES, REJECTION_REASONS,
-  countCodePoints, truncateCodePoints,
+  DEFAULT_PROFILE_STATE, DRAFT_PROFILE, FACILITY_GROUPS, PROFILE_RULES, PROFILE_STATES, REJECTION_REASONS,
+  countCodePoints, createWorkingProfile, preserveOrResetWorkingProfile, removeWorkingImage,
+  reorderWorkingImage, setWorkingCover, toggleWorkingFacility, updateWorkingDescription,
 } from "./venue-profile-workbench-data.js";
 
 const app = document.querySelector("#venue-profile-app");
 const requestedState = new URLSearchParams(window.location.search).get("state");
 let currentStateId = Object.hasOwn(PROFILE_STATES, requestedState) ? requestedState : DEFAULT_PROFILE_STATE;
-let liveDescription = "";
-let liveFacilities = new Set();
+let workingProfile = createWorkingProfile(DRAFT_PROFILE);
 let auditMessage = "本地 Artifact：所有操作仅切换参考状态，不会写入线上数据。";
 
 const element = (tag, className, text) => {
@@ -65,11 +65,6 @@ const actionButton = (config, className = "primary-action") => {
   return button;
 };
 
-const resetLiveDraft = (state) => {
-  liveDescription = state.profile?.description ?? "";
-  liveFacilities = new Set(state.profile?.facilities ?? []);
-};
-
 const renderHeader = (state) => {
   const fragment = document.createDocumentFragment();
   const system = element("div", "system-row");
@@ -103,9 +98,10 @@ const renderReasons = (state) => {
   return card;
 };
 
-const imageControl = (config, imageId, danger = false) => {
+const imageControl = (config, imageId, danger = false, disabled = false) => {
   const button = actionButton(config, danger ? "danger" : "");
   button.dataset.imageId = imageId;
+  button.disabled = disabled;
   return button;
 };
 
@@ -116,7 +112,7 @@ const renderImages = (state) => {
   copy.append(element("h2", "", "场馆图片"), element("p", "", "1 张必选封面，最多 8 张；图片操作立即提交"));
   heading.append(copy, element("span", "count", `${state.profile.images.length} / ${PROFILE_RULES.maxImages}`));
   const grid = element("div", "image-grid");
-  state.profile.images.forEach((image) => {
+  state.profile.images.forEach((image, index) => {
     const tile = element("article", `image-tile${image.cover ? " image-tile--cover" : ""}`);
     tile.append(scene(image));
     if (image.cover) tile.append(element("span", "image-label", "封面"));
@@ -125,7 +121,9 @@ const renderImages = (state) => {
       controls.append(
         imageControl(state.imageActions.setCover, image.id),
         imageControl(state.imageActions.remove, image.id, true),
+        imageControl(state.imageActions.reorder, image.id, false, index <= 1),
       );
+      controls.lastElementChild.dataset.imageDirection = "-1";
       tile.append(controls);
     }
     grid.append(tile);
@@ -148,12 +146,12 @@ const renderDescription = (state) => {
   label.htmlFor = "venue-description";
   const input = element("textarea", "description");
   input.id = "venue-description";
-  input.value = liveDescription;
+  input.value = state.profile.description;
   input.disabled = !state.editable;
   input.setAttribute("aria-describedby", "description-help description-counter");
   const help = element("p", "field-help", "请勿填写联系方式、二维码、外链或站外交易信息。");
   help.id = "description-help";
-  const counter = element("div", "counter", `${countCodePoints(liveDescription)} / ${PROFILE_RULES.descriptionMaxCodePoints}`);
+  const counter = element("div", "counter", `${countCodePoints(state.profile.description)} / ${PROFILE_RULES.descriptionMaxCodePoints}`);
   counter.id = "description-counter";
   card.append(heading, label, input, help, counter);
   return card;
@@ -162,7 +160,7 @@ const renderDescription = (state) => {
 const renderFacilities = (state) => {
   const card = element("section", "card");
   const heading = element("div", "section-heading");
-  heading.append(element("h2", "", "场馆设施"), element("span", "count", `${liveFacilities.size} 项已选`));
+  heading.append(element("h2", "", "场馆设施"), element("span", "count", `${state.profile.facilities.length} 项已选`));
   card.append(heading);
   FACILITY_GROUPS.forEach((group) => {
     const section = element("section", "facility-group");
@@ -175,7 +173,7 @@ const renderFacilities = (state) => {
       button.dataset.facilityCode = item.code;
       button.dataset.operation = "EDIT_LOCAL_PROFILE";
       button.dataset.nextState = state.id;
-      button.setAttribute("aria-pressed", String(liveFacilities.has(item.code)));
+      button.setAttribute("aria-pressed", String(state.profile.facilities.includes(item.code)));
       chips.append(button);
     });
     section.append(chips);
@@ -243,7 +241,10 @@ const renderFooter = (state) => {
 };
 
 const render = () => {
-  const state = PROFILE_STATES[currentStateId];
+  const fixtureState = PROFILE_STATES[currentStateId];
+  const state = fixtureState.journey === "admin" && fixtureState.profile
+    ? { ...fixtureState, profile: workingProfile }
+    : fixtureState;
   app.replaceChildren(renderHeader(state));
   const content = element("div", "content");
   content.append(element("h2", "venue-heading", state.profile?.name ?? state.publicProfile.name), renderStatus(state));
@@ -257,9 +258,9 @@ const render = () => {
 
 const transition = (operation, nextState, detail = "") => {
   auditMessage = `参考操作 ${operation}${detail ? `（${detail}）` : ""} 已记录；本地 Artifact 未调用服务。`;
+  workingProfile = preserveOrResetWorkingProfile(workingProfile, operation);
   if (Object.hasOwn(PROFILE_STATES, nextState)) {
     currentStateId = nextState;
-    resetLiveDraft(PROFILE_STATES[currentStateId]);
     const url = new URL(window.location.href);
     url.searchParams.set("state", currentStateId);
     window.history.replaceState({}, "", url);
@@ -271,26 +272,30 @@ app.addEventListener("click", (event) => {
   const facility = event.target.closest("button[data-facility-code]");
   if (facility && !facility.disabled) {
     const code = facility.dataset.facilityCode;
-    if (liveFacilities.has(code)) liveFacilities.delete(code);
-    else liveFacilities.add(code);
+    workingProfile = toggleWorkingFacility(workingProfile, code);
     auditMessage = `本地草稿已更新：${facilityLabel(code)}；尚未保存或发布。`;
     render();
     return;
   }
   const button = event.target.closest("button[data-operation]");
   if (!button || button.disabled) return;
+  const imageId = button.dataset.imageId;
+  if (button.dataset.operation === "SET_COVER") workingProfile = setWorkingCover(workingProfile, imageId);
+  if (button.dataset.operation === "REMOVE_IMAGE") workingProfile = removeWorkingImage(workingProfile, imageId);
+  if (button.dataset.operation === "REORDER_IMAGE") {
+    workingProfile = reorderWorkingImage(workingProfile, imageId, Number(button.dataset.imageDirection));
+  }
   transition(button.dataset.operation, button.dataset.nextState, button.dataset.imageId ?? "");
 });
 
 app.addEventListener("input", (event) => {
   if (event.target.id !== "venue-description") return;
-  liveDescription = truncateCodePoints(event.target.value, PROFILE_RULES.descriptionMaxCodePoints);
-  if (event.target.value !== liveDescription) event.target.value = liveDescription;
+  workingProfile = updateWorkingDescription(workingProfile, event.target.value);
+  if (event.target.value !== workingProfile.description) event.target.value = workingProfile.description;
   const counter = app.querySelector("#description-counter");
-  counter.textContent = `${countCodePoints(liveDescription)} / ${PROFILE_RULES.descriptionMaxCodePoints}`;
+  counter.textContent = `${countCodePoints(workingProfile.description)} / ${PROFILE_RULES.descriptionMaxCodePoints}`;
   auditMessage = "本地介绍草稿已更新；尚未保存或发布。";
   app.querySelector(".audit").textContent = auditMessage;
 });
 
-resetLiveDraft(PROFILE_STATES[currentStateId]);
 render();

@@ -23,39 +23,38 @@ export const PROFILE_RULES = deepFreeze({
 });
 
 export const FACILITY_GROUPS = deepFreeze([
-  { title: "到场服务", items: [
-    { code: "PARKING", label: "停车位" },
-    { code: "TOILET", label: "卫生间" },
-    { code: "CHANGING_ROOM", label: "更衣室" },
-    { code: "SHOWER", label: "淋浴" },
+  { title: "基础设施", items: [
+    { code: "PARKING", label: "停车场" }, { code: "TOILET", label: "卫生间" },
+    { code: "CHANGING_ROOM", label: "更衣室" }, { code: "SHOWER", label: "淋浴" },
     { code: "LOCKERS", label: "储物柜" },
-    { code: "DRINKING_WATER", label: "饮用水" },
-    { code: "BEVERAGE_SALES", label: "饮料售卖" },
-    { code: "EQUIPMENT_RENTAL", label: "装备租赁" },
-    { code: "REST_AREA", label: "休息区" },
-    { code: "FIRST_AID", label: "急救用品" },
+  ] },
+  { title: "补给服务", items: [
+    { code: "DRINKING_WATER", label: "饮水设施" }, { code: "BEVERAGE_SALES", label: "饮料售卖" },
+    { code: "EQUIPMENT_RENTAL", label: "器材租赁" },
+  ] },
+  { title: "观赛与安全", items: [
+    { code: "REST_AREA", label: "休息区" }, { code: "FIRST_AID", label: "急救设施" },
     { code: "AED", label: "AED" },
   ] },
   { title: "场地环境", items: [
-    { code: "INDOOR", label: "室内" },
-    { code: "OUTDOOR", label: "室外" },
-    { code: "COVERED", label: "有顶棚" },
-    { code: "LIGHTING", label: "灯光" },
-    { code: "ARTIFICIAL_TURF", label: "人造草" },
-    { code: "NATURAL_GRASS", label: "天然草" },
+    { code: "INDOOR", label: "室内" }, { code: "OUTDOOR", label: "室外" },
+    { code: "COVERED", label: "有顶棚" }, { code: "LIGHTING", label: "夜场照明" },
+  ] },
+  { title: "草皮类型", items: [
+    { code: "ARTIFICIAL_TURF", label: "人工草" }, { code: "NATURAL_GRASS", label: "天然草" },
   ] },
 ]);
 
 export const REJECTION_REASONS = deepFreeze([
-  { code: "CONTACT_INFO", label: "包含联系方式" },
-  { code: "QR_OR_PAYMENT_CODE", label: "包含二维码或收付款码" },
-  { code: "OFF_PLATFORM_TRADE", label: "引导站外交易" },
-  { code: "EXTERNAL_LINK", label: "包含外部链接" },
-  { code: "UNRELATED_CONTENT", label: "内容与场馆无关" },
-  { code: "IMAGE_NOT_VENUE", label: "图片并非本场馆" },
-  { code: "IMAGE_QUALITY", label: "图片模糊、遮挡或质量过低" },
-  { code: "PERSONAL_PRIVACY", label: "包含个人隐私" },
-  { code: "UNSAFE_CONTENT", label: "包含不安全或违规内容" },
+  { code: "CONTACT_INFO", label: "请删除电话、微信号等联系方式" },
+  { code: "QR_OR_PAYMENT_CODE", label: "图片中不能包含二维码或收款码" },
+  { code: "OFF_PLATFORM_TRADE", label: "请删除线下交易或绕过平台付款的引导" },
+  { code: "EXTERNAL_LINK", label: "请删除外部网站或其他平台链接" },
+  { code: "UNRELATED_CONTENT", label: "内容需与当前场馆有关" },
+  { code: "IMAGE_NOT_VENUE", label: "请上传真实的场馆环境照片" },
+  { code: "IMAGE_QUALITY", label: "图片过于模糊或无法辨认" },
+  { code: "PERSONAL_PRIVACY", label: "图片包含清晰人物面部或其他隐私信息" },
+  { code: "UNSAFE_CONTENT", label: "内容不符合平台发布要求" },
 ]);
 
 const images = {
@@ -83,6 +82,57 @@ export const DRAFT_PROFILE = deepFreeze({
   priceSummary: "¥160 起 / 小时",
 });
 
+export const createWorkingProfile = (profile = DRAFT_PROFILE) => ({
+  ...profile,
+  facilities: [...profile.facilities],
+  images: profile.images.map((image) => ({ ...image })),
+});
+
+export const updateWorkingDescription = (profile, description) => ({
+  ...profile,
+  description: truncateCodePoints(description, PROFILE_RULES.descriptionMaxCodePoints),
+});
+
+export const toggleWorkingFacility = (profile, code) => ({
+  ...profile,
+  facilities: profile.facilities.includes(code)
+    ? profile.facilities.filter((item) => item !== code)
+    : [...profile.facilities, code],
+});
+
+export const setWorkingCover = (profile, imageId) => {
+  const selected = profile.images.find(({ id }) => id === imageId);
+  if (!selected) return profile;
+  return {
+    ...profile,
+    images: [
+      { ...selected, cover: true },
+      ...profile.images.filter(({ id }) => id !== imageId).map((image) => ({ ...image, cover: false })),
+    ],
+  };
+};
+
+export const removeWorkingImage = (profile, imageId) => {
+  const selected = profile.images.find(({ id }) => id === imageId);
+  if (!selected || selected.cover) return profile;
+  return { ...profile, images: profile.images.filter(({ id }) => id !== imageId) };
+};
+
+export const reorderWorkingImage = (profile, imageId, direction) => {
+  const from = profile.images.findIndex(({ id }) => id === imageId);
+  if (from < 1) return profile;
+  const to = Math.max(1, Math.min(profile.images.length - 1, from + direction));
+  if (from === to) return profile;
+  const nextImages = [...profile.images];
+  [nextImages[from], nextImages[to]] = [nextImages[to], nextImages[from]];
+  return { ...profile, images: nextImages };
+};
+
+export const WORKING_PROFILE_RESET_OPERATIONS = deepFreeze(["RELOAD_PROFILE"]);
+export const preserveOrResetWorkingProfile = (profile, operation) => (
+  WORKING_PROFILE_RESET_OPERATIONS.includes(operation) ? createWorkingProfile(DRAFT_PROFILE) : profile
+);
+
 const action = (id, label, operation, nextState, changes = {}) => ({ id, label, operation, nextState, ...changes });
 const save = (changes = {}) => action("save-profile", "保存场馆资料", "SAVE_PROFILE", "save-unknown", { slot: "footer", ...changes });
 const admin = (id, status, changes = {}) => ({
@@ -109,6 +159,7 @@ const states = {
     imageActions: {
       setCover: action("set-cover", "设为封面", "SET_COVER", "ready"),
       remove: action("remove-image", "移除", "REMOVE_IMAGE", "ready"),
+      reorder: action("reorder-image", "前移", "REORDER_IMAGE", "ready"),
     },
     footerAction: save(),
   }),
@@ -155,15 +206,15 @@ const states = {
     actions: [action("edit-description", "修改场馆介绍", "RESTORE_LOCAL_DRAFT", "ready", { secondary: true })],
     footerAction: save({ label: "保存修改" }),
   }),
-  "pending-manual": admin("pending-manual", "资料进入人工复核", {
-    statusDetail: "复核完成前不会发布本次修改",
+  "pending-manual": admin("pending-manual", "等待人工审核", {
+    statusDetail: "系统暂时无法确认审核结果，已转人工处理",
+    trigger: "moderation-result-uncertain-after-retry-exhausted",
     tone: "warning",
-    rejectionCodes: ["PERSONAL_PRIVACY"],
     actions: [
       action("refresh-manual", "刷新复核状态", "GET_PROFILE_REVIEW", "pending-manual"),
       action("view-public", "查看当前公开页", "VIEW_PUBLIC_PROFILE", "public-published", { secondary: true }),
     ],
-    footerAction: save({ label: "人工复核中", nextState: "pending-manual", disabled: true }),
+    footerAction: save({ label: "人工审核中", nextState: "pending-manual", disabled: true }),
   }),
   "load-error": admin("load-error", "场馆资料加载失败", {
     statusDetail: "未读取到编辑数据，请重新加载",
