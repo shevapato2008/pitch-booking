@@ -1,7 +1,7 @@
-import { FACILITY_CODES, FACILITY_LABELS, REASON_LABELS, type AdminVenueProfile, type VenueProfileFacilityCode, type VenueProfileItemState } from "../../domain/venue-profile";
+import { FACILITY_CODES, FACILITY_LABELS, REASON_LABELS, type AdminVenueProfile, type VenueProfileFacilityCode, type VenueProfileItemState, type VenueProfileUploadIntent } from "../../domain/venue-profile";
 import { readInventoryHeaderLayout } from "../../presentation/inventory-layout";
 import { getVenueProfileAttemptStore } from "../../services/venue-profile-attempt-store";
-import { getVenueProfileDataSource, getVenueProfileMediaCapability, type VenueProfileMutationAttempt } from "../../services/venue-profile";
+import { getVenueProfileDataSource, getVenueProfileMediaCapability, type ChosenVenueProfileImage, type VenueProfileMutationAttempt } from "../../services/venue-profile";
 
 type DatasetEvent = { currentTarget?: { dataset?: Record<string, unknown> } };
 type InputEvent = { detail?: { value?: unknown } };
@@ -80,17 +80,30 @@ Page({
       this.setData({ operationBusy: true, mode: "uploading", status: "图片正在上传", statusDetail: "上传完成后将自动提交审核", tone: "loading", message: "" });
       const image = await getVenueProfileMediaCapability().chooseImage();
       const intentAttempt = { kind: "uploadIntent" as const, venueId: this.data.venueId, body: { expectedRevisionVersion: this.data.profile.revisionVersion, filename: image.filename, mimeType: image.mimeType, byteSize: image.byteSize }, idempotencyKey: key("upload") };
-      const intent = await getVenueProfileDataSource().createUploadIntent(intentAttempt); await getVenueProfileMediaCapability().upload(intent.signedPutUrl, image.bytes, intent.requiredHeaders);
-      const complete = { kind: "complete" as const, venueId: this.data.venueId, imageId: intent.imageId, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("complete") };
-      this.applyProfile(await getVenueProfileDataSource().completeUpload(complete), true);
-    } catch (caught) { if (errorCode(caught) === "MEDIA_PICK_CANCELLED") { this.applyProfile(this.data.profile, true); return; } this.handleError(caught, false, "图片上传失败，请重试"); this.setData({ mode: "upload-error" }); }
+      const stable = getVenueProfileAttemptStore()?.begin(intentAttempt) as typeof intentAttempt | undefined ?? intentAttempt;
+      const intent = await getVenueProfileDataSource().createUploadIntent(stable); await this.finishUpload(stable, intent, image);
+    } catch (caught) { this.handleUploadError(caught); }
   },
-  onRetryUpload() { return this.onChooseImage(); },
+  onRetryUpload() { return getVenueProfileAttemptStore()?.load()?.kind === "uploadIntent" ? this.onRetryUnknown() : this.onChooseImage(); },
+  async finishUpload(attempt: Extract<VenueProfileMutationAttempt, { kind: "uploadIntent" }>, intent: VenueProfileUploadIntent, selected?: ChosenVenueProfileImage) {
+    const store = getVenueProfileAttemptStore(); store?.clear(); store?.begin(attempt);
+    const image = selected ?? await getVenueProfileMediaCapability().chooseImage();
+    if (image.filename !== attempt.body.filename || image.mimeType !== attempt.body.mimeType || image.byteSize !== attempt.body.byteSize) throw Object.assign(new Error("MEDIA_FILE_MISMATCH"), { code: "MEDIA_FILE_MISMATCH" });
+    await getVenueProfileMediaCapability().upload(intent.signedPutUrl, image.bytes, intent.requiredHeaders); store?.clear();
+    const complete = { kind: "complete" as const, venueId: this.data.venueId, imageId: intent.imageId, expectedRevisionVersion: attempt.body.expectedRevisionVersion, idempotencyKey: key("complete") };
+    const stableComplete = store?.begin(complete) as typeof complete | undefined ?? complete;
+    const profile = await getVenueProfileDataSource().completeUpload(stableComplete); store?.clear(); this.applyProfile(profile, true);
+  },
+  handleUploadError(caught: unknown) {
+    const code = errorCode(caught); if (code === "VENUE_PROFILE_RESULT_UNKNOWN") { this.handleError(caught, false); return; }
+    if (this.data.profile) this.applyProfile(this.data.profile, true);
+    this.setData({ mode: "upload-error", message: code === "MEDIA_FILE_MISMATCH" ? "请选择与原上传一致的图片" : code === "MEDIA_PICK_CANCELLED" ? "已取消选择，可稍后继续上传" : "图片上传失败，请重试" });
+  },
   async onSetCover(event: DatasetEvent) { const imageId = this.imageId(event); if (!imageId) return; return this.runImage(imageId, "cover", (attempt) => getVenueProfileDataSource().setCover(attempt as Extract<VenueProfileMutationAttempt, { kind: "cover" }>)); },
   async onRemoveImage(event: DatasetEvent) { const imageId = this.imageId(event); if (!imageId || this.data.images.find((item) => item.id === imageId)?.cover) return; return this.runImage(imageId, "delete", (attempt) => getVenueProfileDataSource().deleteImage(attempt as Extract<VenueProfileMutationAttempt, { kind: "delete" }>)); },
   async onReorderImage(event: DatasetEvent) {
     const imageId = this.imageId(event); const direction = Number(event.currentTarget?.dataset?.direction); if (!imageId || !this.data.profile || !Number.isInteger(direction)) return;
-    const ids = this.data.images.map((image) => image.id); const from = ids.indexOf(imageId); const to = Math.max(0, Math.min(ids.length - 1, from + direction)); if (from < 0 || from === to) return; [ids[from], ids[to]] = [ids[to], ids[from]];
+    const ids = this.data.images.map((image) => image.id); const from = ids.indexOf(imageId); const to = Math.max(1, Math.min(ids.length - 1, from + direction)); if (from < 1 || from === to) return; [ids[from], ids[to]] = [ids[to], ids[from]];
     const attempt = { kind: "reorder" as const, venueId: this.data.venueId, imageIds: ids, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("reorder") }; return this.runAttempt(attempt, (stable) => getVenueProfileDataSource().reorderImages(stable as typeof attempt), imageId);
   },
   async onRetryModeration(event: DatasetEvent) { const itemId = event.currentTarget?.dataset?.itemId; if (typeof itemId !== "string" || !this.data.profile) return; const attempt = { kind: "retry" as const, venueId: this.data.venueId, itemId, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("retry") }; return this.runAttempt(attempt, (stable) => getVenueProfileDataSource().retryModeration(stable as typeof attempt), itemId); },
@@ -104,7 +117,11 @@ Page({
   async onRetryUnknown() {
     const attempt = getVenueProfileAttemptStore()?.load(); if (!attempt || attempt.venueId !== this.data.venueId) { await this.loadProfile(true); return; }
     const source = getVenueProfileDataSource(); const calls = { save: source.save, complete: source.completeUpload, delete: source.deleteImage, cover: source.setCover, reorder: source.reorderImages, retry: source.retryModeration };
-    if (attempt.kind === "uploadIntent") { getVenueProfileAttemptStore()?.clear(); await this.loadProfile(true); return; }
+    if (attempt.kind === "uploadIntent") {
+      this.setData({ operationBusy: true, mode: "uploading", status: "正在核对图片上传", statusDetail: "请重新选择同一张图片以继续上传", tone: "warning", message: "" });
+      try { const intent = await source.createUploadIntent(attempt); await this.finishUpload(attempt, intent); } catch (caught) { this.handleUploadError(caught); }
+      return;
+    }
     return this.runAttempt(attempt, (stable) => (calls[stable.kind as keyof typeof calls] as (value: never) => Promise<AdminVenueProfile>)(stable as never));
   },
   async onReload() { try { await this.loadProfile(false); } catch (caught) { this.handleError(caught, true); } },

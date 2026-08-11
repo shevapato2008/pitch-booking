@@ -46,8 +46,17 @@ test("edits 300 code points and saves facilities plus description atomically", a
 test("uploads to the signed URL then completes, and image controls call their matching endpoints", async () => {
   const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onChooseImage();
   expect(api.createUploadIntent).toHaveBeenCalledTimes(1); expect(media.upload).toHaveBeenCalledWith("https://oss.example.com/image", expect.any(ArrayBuffer), { "Content-Type": "image/webp", "Content-Length": "3" }); expect(api.completeUpload).toHaveBeenCalledTimes(1);
-  const gallery = ready.currentRevision.images[1].id; await page.onSetCover({ currentTarget: { dataset: { imageId: gallery } } }); await page.onReorderImage({ currentTarget: { dataset: { imageId: gallery, direction: -1 } } }); await page.onRemoveImage({ currentTarget: { dataset: { imageId: gallery } } }); await page.onRetryModeration({ currentTarget: { dataset: { itemId: gallery } } });
+  const gallery = ready.currentRevision.images[1].id; await page.onSetCover({ currentTarget: { dataset: { imageId: gallery } } }); const third = { ...page.data.images[1], id: "c3195309-183b-46cc-81e6-2c0977223003" }; page.setData({ images: [...page.data.images, third], imageCount: 3 }); await page.onReorderImage({ currentTarget: { dataset: { imageId: third.id, direction: -1 } } }); await page.onRemoveImage({ currentTarget: { dataset: { imageId: gallery } } }); await page.onRetryModeration({ currentTarget: { dataset: { itemId: gallery } } });
   expect(api.setCover).toHaveBeenCalledTimes(1); expect(api.reorderImages).toHaveBeenCalledTimes(1); expect(api.deleteImage).toHaveBeenCalledTimes(1); expect(api.retryModeration).toHaveBeenCalledTimes(1);
+  expect(api.reorderImages.mock.calls[0][0].imageIds[0]).toBe(ready.currentRevision.images[0].id);
+});
+
+test("replays an unknown upload intent with its original key and metadata before completing", async () => {
+  const api = source(); api.createUploadIntent.mockRejectedValueOnce(Object.assign(new Error(), { code: "VENUE_PROFILE_RESULT_UNKNOWN" })); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onChooseImage();
+  const original = api.createUploadIntent.mock.calls[0][0]; expect(page.data.mode).toBe("save-unknown");
+  await page.onRetryUnknown();
+  expect(api.createUploadIntent.mock.calls[1][0]).toEqual(original); expect(media.chooseImage).toHaveBeenCalledTimes(2); expect(media.upload).toHaveBeenCalledTimes(1); expect(api.completeUpload).toHaveBeenCalledTimes(1); expect(stored).toBeNull();
 });
 
 test("keeps an unknown write for an exact same-key retry and reloads version conflicts", async () => {

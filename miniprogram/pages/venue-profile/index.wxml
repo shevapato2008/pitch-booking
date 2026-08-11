@@ -37,7 +37,7 @@
               <view wx:if="{{imageActionsEnabled && !item.cover}}" class="venue-profile__image-actions">
                 <button class="venue-profile__image-action" data-image-id="{{item.id}}" bindtap="onSetCover">设为封面</button>
                 <button class="venue-profile__image-action venue-profile__image-action--danger" data-image-id="{{item.id}}" bindtap="onRemoveImage">移除</button>
-                <button class="venue-profile__image-action" data-image-id="{{item.id}}" data-direction="-1" disabled="{{imageIndex === 0 || busyItemId === item.id}}" bindtap="onReorderImage">前移</button>
+                <button class="venue-profile__image-action" data-image-id="{{item.id}}" data-direction="-1" disabled="{{imageIndex <= 1 || busyItemId === item.id}}" bindtap="onReorderImage">前移</button>
               </view>
               <button wx:if="{{item.state === 'REJECTED'}}" class="venue-profile__retry-item venue-profile__touch" data-item-id="{{item.id}}" disabled="{{operationBusy}}" bindtap="onRetryModeration">重新审核</button>
             </view>
