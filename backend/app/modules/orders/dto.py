@@ -26,7 +26,6 @@ class OrderVenueResponse(ClosedModel):
     address: str = Field(min_length=1)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    customer_service_phone: str = Field(min_length=1)
 
 
 class OrderPitchResponse(ClosedModel):

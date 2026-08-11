@@ -369,7 +369,6 @@ class OrderService:
                 address=venue.address,
                 latitude=venue.latitude,
                 longitude=venue.longitude,
-                customer_service_phone=cast(str, venue.phone),
             ),
             pitch=OrderPitchResponse(id=pitch.id, name=pitch.name),
             starts_at=slot.starts_at.astimezone(timezone),

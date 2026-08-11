@@ -153,7 +153,6 @@ def test_online_and_directory_details_are_closed_discriminated_variants(
     for required in (
         "price_advantage_text",
         "timezone",
-        "phone",
         "refund_policy_summary",
         "availability_window",
     ):
@@ -161,9 +160,52 @@ def test_online_and_directory_details_are_closed_discriminated_variants(
         assert required not in directory_body
     assert directory_body["business_hours_text"] is None
     assert directory_body["parking_text"] is None
-    assert directory_body["images"] == []
-    assert directory_body["facilities"] == []
     assert directory_body["pitch_types"] == ["FIVE_A_SIDE"]
+    for body in (online_body, directory_body):
+        assert body["profile"]["publication_state"] == "PUBLISHED"
+        assert set(body["profile"]) == {
+            "publication_state",
+            "published_version",
+            "description",
+            "cover_image",
+            "images",
+            "facilities",
+            "pitch_sizes",
+            "live_price",
+            "availability_target",
+        }
+        assert not {
+            "description",
+            "cover_image",
+            "images",
+            "facilities",
+            "current_revision",
+            "object_key",
+            "signed_put_url",
+        } & set(body)
+    for serialized in (online.text, directory.text):
+        for forbidden in ("phone", "current_revision", "object_key", "signed_put_url"):
+            assert forbidden not in serialized
+    assert online_body["profile"]["pitch_sizes"] == [
+        "FIVE_A_SIDE",
+        "SEVEN_A_SIDE",
+    ]
+    assert online_body["profile"]["live_price"] == {
+        "available": True,
+        "from_price_cents": 32000,
+        "currency": "CNY",
+        "unit": "HOUR",
+    }
+    assert online_body["profile"]["availability_target"]["path"] == (
+        f"/api/v1/venues/{ONLINE_ID}/availability"
+    )
+    assert directory_body["profile"]["pitch_sizes"] == ["FIVE_A_SIDE"]
+    assert directory_body["profile"]["live_price"]["from_price_cents"] is None
+    assert directory_body["profile"]["availability_target"] == {
+        "enabled": False,
+        "label": "查看可订时段",
+        "path": None,
+    }
     assert "district_code" not in online_body
     assert "district_name" not in online_body
     assert "district_code" not in directory_body
@@ -230,6 +272,9 @@ def test_map_service_rejects_a_primary_that_is_not_online() -> None:
             ]
 
         def get_public(self, venue_id: uuid.UUID) -> Venue | None:
+            return None
+
+        def minimum_available_price(self, venue_id: uuid.UUID, now: object) -> int | None:
             return None
 
     from backend.app.modules.venues.service import VenueDirectoryService

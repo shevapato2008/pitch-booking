@@ -397,6 +397,7 @@ class VenueProfileService:
             facility_version=venue.facility_version,
             revision_version=revision.revision_version,
             published=PublishedProfileResponse(
+                publication_state="PUBLISHED",
                 published_version=venue.profile_version,
                 description=venue.description,
                 cover_image=next(
@@ -419,10 +420,14 @@ class VenueProfileService:
                 ],
                 pitch_sizes=cast(Any, venue.public_pitch_types),
                 live_price=LivePriceResponse(
-                    available=minimum is not None, from_price_cents=minimum
+                    available=minimum is not None,
+                    from_price_cents=minimum,
+                    currency="CNY",
+                    unit="HOUR",
                 ),
                 availability_target=AvailabilityTargetResponse(
                     enabled=venue.booking_mode is BookingMode.ONLINE,
+                    label="查看可订时段",
                     path=(
                         f"/api/v1/venues/{venue.id}/availability"
                         if venue.booking_mode is BookingMode.ONLINE

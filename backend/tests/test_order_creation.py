@@ -742,7 +742,6 @@ def test_success_creates_server_authoritative_snapshots_and_lock(pg_engine: Engi
         "address": "上海市浦东新区锦绣东路 2777 弄 18 号",
         "latitude": 31.2304,
         "longitude": 121.4737,
-        "customer_service_phone": "+86-21-5899-2608",
     }
     assert payload["pitch"] == {"id": str(seeded.pitch_id), "name": "五人制 A 场"}
     assert payload["starts_at"] == seeded.starts_at.astimezone(SHANGHAI).isoformat()

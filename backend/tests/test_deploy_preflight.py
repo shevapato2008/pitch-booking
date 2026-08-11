@@ -215,12 +215,12 @@ def test_runtime_image_explicitly_packages_verified_directory_inputs() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
     expected = {
         "deploy/venue-directory.json": (
-            "8d07f396f668488485b2c2c28513c549"
-            "1c9c25c4a266c5c6e40c8bcbecab46cb"
+            "dd6bf001243aa48d8d1e0ccf84894f3d"
+            "d3924eb051fbb2c9e77391e1e5a67199"
         ),
         "deploy/venue-directory.schema.json": (
-            "2eff0b43d5a6cfbc13a55a99287c9a2b8"
-            "7a09dc6de55bff3233dd11780ef766d"
+            "a0f1c0145ccff73a1699fa84efaadd36a"
+            "cfc60c4637a815ce382a3213567ee45"
         ),
     }
 

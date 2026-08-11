@@ -233,6 +233,14 @@ def test_pending_detail_before_deadline_keeps_lock(pg_engine: Engine) -> None:
         "name": "张三",
         "masked_phone": "138****5678",
     }
+    assert set(response.json()["venue"]) == {
+        "id",
+        "name",
+        "address",
+        "latitude",
+        "longitude",
+    }
+    assert "customer_service_phone" not in response.text
     with Session(pg_engine) as session:
         order = session.get_one(Order, order_id)
         slot = session.get_one(Slot, order.slot_id)

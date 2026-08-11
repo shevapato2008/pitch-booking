@@ -119,18 +119,18 @@ class PublishedFacilityResponse(ClosedModel):
 class LivePriceResponse(ClosedModel):
     available: bool
     from_price_cents: int | None = Field(ge=0)
-    currency: Literal["CNY"] = "CNY"
-    unit: Literal["HOUR"] = "HOUR"
+    currency: Literal["CNY"]
+    unit: Literal["HOUR"]
 
 
 class AvailabilityTargetResponse(ClosedModel):
     enabled: bool
-    label: Literal["查看可订时段"] = "查看可订时段"
+    label: Literal["查看可订时段"]
     path: str | None
 
 
 class PublishedProfileResponse(ClosedModel):
-    publication_state: Literal["PUBLISHED"] = "PUBLISHED"
+    publication_state: Literal["PUBLISHED"]
     published_version: int = Field(ge=1)
     description: str = Field(max_length=300)
     cover_image: str | None

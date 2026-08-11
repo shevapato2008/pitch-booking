@@ -332,14 +332,14 @@ def test_order_detail_and_price_changed_contract_are_complete() -> None:
         "type": ["string", "null"], "format": "date-time"
     }
     venue = _resolve_schema(contract, order["properties"]["venue"])
-    assert set(venue["required"]) >= {
+    assert set(venue["required"]) == {
         "id",
         "name",
         "address",
         "latitude",
         "longitude",
-        "customer_service_phone",
     }
+    assert set(venue["properties"]) == set(venue["required"])
     pitch = _resolve_schema(contract, order["properties"]["pitch"])
     assert set(pitch["required"]) == {"id", "name"}
     contact = _resolve_schema(contract, order["properties"]["contact"])
@@ -401,12 +401,49 @@ def test_primary_response_schema_is_closed_and_requires_contract_fields() -> Non
     assert set(component["required"]) >= {
         "id",
         "name",
-        "images",
-        "facilities",
+        "profile",
         "pitch_types",
         "availability_window",
         "generated_at",
     }
+    assert not {"phone", "description", "images", "facilities"} & set(
+        component["properties"]
+    )
+    assert component["properties"]["timezone"]["const"] == "Asia/Shanghai"
+    profile_name = component["properties"]["profile"]["$ref"].rsplit("/", 1)[-1]
+    profile = schema["components"]["schemas"][profile_name]
+    assert profile["additionalProperties"] is False
+    assert set(profile["required"]) == {
+        "publication_state",
+        "published_version",
+        "description",
+        "cover_image",
+        "images",
+        "facilities",
+        "pitch_sizes",
+        "live_price",
+        "availability_target",
+    }
+
+
+def test_runtime_online_and_directory_profiles_are_closed_and_phone_free() -> None:
+    schemas = create_app().openapi()["components"]["schemas"]
+
+    for name in ("OnlineVenueDetailResponse", "DirectoryVenueDetailResponse"):
+        schema = schemas[name]
+        assert schema["additionalProperties"] is False
+        assert {"profile", "booking_mode", "coordinate_system"} <= set(
+            schema["required"]
+        )
+        assert not {"phone", "description", "cover_image", "images", "facilities"} & set(
+            schema["properties"]
+        )
+
+    order_venue = schemas["OrderVenueResponse"]
+    assert "customer_service_phone" not in order_venue["properties"]
+
+    map_response = schemas["VenueMapResponse"]
+    assert "coordinate_system" in map_response["required"]
 
 
 def test_availability_response_schema_is_closed() -> None:
