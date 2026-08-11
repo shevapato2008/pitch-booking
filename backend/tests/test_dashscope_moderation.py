@@ -91,6 +91,12 @@ def test_dashscope_image_payload_uses_review_url_and_raw_json_mode() -> None:
     assert "JSON" in str(body["messages"])
     user_content = body["messages"][-1]["content"]
     assert isinstance(user_content, list)
+    prompt = user_content[0]["text"]
+    assert '{"decision":"PASS"}' in prompt
+    assert '{"decision":"UNCERTAIN"}' in prompt
+    assert '{"decision":"REJECT","reason_code":"<CODE>"}' in prompt
+    assert "screenshots, app interfaces, advertisements, or illustrations" in prompt
+    assert "REJECT with IMAGE_NOT_VENUE" in prompt
     assert user_content[-1] == {
         "type": "image_url",
         "image_url": {"url": "https://review.example/private.jpg?signature=sensitive"},

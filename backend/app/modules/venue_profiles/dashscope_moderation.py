@@ -17,10 +17,13 @@ DEFAULT_DASHSCOPE_MODEL = "qwen3-vl-flash"
 DEFAULT_TIMEOUT_SECONDS = 20.0
 
 _POLICY = (
-    "Return JSON only. Classify venue profile content as PASS, UNCERTAIN, or REJECT. "
-    "For REJECT include exactly one reason_code from: CONTACT_INFO, QR_OR_PAYMENT_CODE, "
+    'Return JSON only, using exactly one shape: {"decision":"PASS"}, '
+    '{"decision":"UNCERTAIN"}, or {"decision":"REJECT","reason_code":"<CODE>"}. '
+    "For <CODE> use exactly one of: CONTACT_INFO, QR_OR_PAYMENT_CODE, "
     "OFF_PLATFORM_TRADE, EXTERNAL_LINK, UNRELATED_CONTENT, IMAGE_NOT_VENUE, IMAGE_QUALITY, "
-    "PERSONAL_PRIVACY, UNSAFE_CONTENT. Never add explanations."
+    "PERSONAL_PRIVACY, UNSAFE_CONTENT. Never add fields, markdown, or explanations."
+    " Accept only real photos of the venue or its facilities. For screenshots, app interfaces, "
+    "advertisements, or illustrations, REJECT with IMAGE_NOT_VENUE."
 )
 
 
