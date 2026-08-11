@@ -9,6 +9,7 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     Pitch,
+    PitchStatus,
     Slot,
     User,
     Venue,
@@ -41,14 +42,18 @@ class InventoryRepository:
         return list(
             self.session.scalars(
                 select(Pitch)
-                .where(Pitch.venue_id == venue_id)
-                .order_by(Pitch.sort_order, Pitch.id)
+                .where(Pitch.venue_id == venue_id, Pitch.status == PitchStatus.ACTIVE)
+                .order_by(Pitch.players_per_side, Pitch.sequence, Pitch.id)
             )
         )
 
     def get_pitch(self, venue_id: uuid.UUID, pitch_id: uuid.UUID) -> Pitch | None:
         return self.session.scalar(
-            select(Pitch).where(Pitch.id == pitch_id, Pitch.venue_id == venue_id)
+            select(Pitch).where(
+                Pitch.id == pitch_id,
+                Pitch.venue_id == venue_id,
+                Pitch.status == PitchStatus.ACTIVE,
+            )
         )
 
     def list_slots(

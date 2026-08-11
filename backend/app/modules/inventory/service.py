@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.errors import AppError
-from backend.app.models import IdempotencyState, Pitch, PitchType, Slot, SlotStatus, User, Venue
+from backend.app.models import IdempotencyState, Pitch, Slot, SlotStatus, User, Venue
 from backend.app.modules.inventory.dto import (
     CreateInventorySlotRequest,
     InventoryPitchResponse,
@@ -192,15 +192,12 @@ class InventoryService:
 
     @staticmethod
     def _pitch_response(pitch: Pitch) -> InventoryPitchResponse:
-        players: Literal[5, 7] = (
-            5 if pitch.pitch_type is PitchType.FIVE_A_SIDE else 7
-        )
         return InventoryPitchResponse(
             id=pitch.id,
             name=pitch.name,
             display_name=pitch.name,
-            pitch_type=pitch.pitch_type.value,
-            players_per_side=players,
+            pitch_type=pitch.pitch_type.value if pitch.pitch_type is not None else None,
+            players_per_side=pitch.players_per_side,
         )
 
     @staticmethod

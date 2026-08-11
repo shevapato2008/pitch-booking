@@ -128,22 +128,22 @@ def test_inventory_requires_active_manage_membership_and_bootstraps_pitch_picker
         "name": "渤海元丰足球场",
         "timezone": "Asia/Shanghai",
     }
-    assert body["selected_pitch_id"] == str(seven.id)
+    assert body["selected_pitch_id"] == str(five.id)
     assert body["local_date"] == local_date
     assert body["pitches"] == [
-        {
-            "id": str(seven.id),
-            "name": "A场",
-            "display_name": "A场",
-            "pitch_type": "SEVEN_A_SIDE",
-            "players_per_side": 7,
-        },
         {
             "id": str(five.id),
             "name": "滨河场",
             "display_name": "滨河场",
             "pitch_type": "FIVE_A_SIDE",
             "players_per_side": 5,
+        },
+        {
+            "id": str(seven.id),
+            "name": "A场",
+            "display_name": "A场",
+            "pitch_type": "SEVEN_A_SIDE",
+            "players_per_side": 7,
         },
     ]
     assert body["slots"] == []

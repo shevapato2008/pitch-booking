@@ -25,6 +25,7 @@ from backend.app.modules.orders.router import router as orders_router
 from backend.app.modules.payments.development_router import router as development_payment_router
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
+from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
 from backend.app.modules.venues.router import router as venues_router
 from backend.app.request_id import RequestIdMiddleware
 from backend.app.security.phone_vault import PhoneVault
@@ -76,6 +77,7 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
         application.include_router(inventory_router)
         application.include_router(orders_router)
         application.include_router(payments_router)
+        application.include_router(pitch_configuration_router)
         if resolved_settings.mock_payment_provider_enabled:
             application.include_router(development_payment_router)
         application.include_router(venues_router)

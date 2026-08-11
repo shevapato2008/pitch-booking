@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -38,6 +39,11 @@ class FacilityCode(StrEnum):
 class PitchType(StrEnum):
     FIVE_A_SIDE = "FIVE_A_SIDE"
     SEVEN_A_SIDE = "SEVEN_A_SIDE"
+
+
+class PitchStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
 
 
 class BookingMode(StrEnum):
@@ -165,6 +171,9 @@ class Venue(Base):
     public_pitch_types: Mapped[list[str]] = mapped_column(JSONB, default=list)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    configuration_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
 
     images: Mapped[list["VenueImage"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
@@ -324,7 +333,17 @@ class Pitch(Base):
         CheckConstraint("length(trim(code)) > 0", name="ck_pitches_code_nonempty"),
         CheckConstraint("length(trim(name)) > 0", name="ck_pitches_name_nonempty"),
         CheckConstraint("sort_order >= 0", name="ck_pitches_sort_order"),
+        CheckConstraint(
+            "players_per_side BETWEEN 1 AND 99", name="ck_pitches_players_per_side"
+        ),
+        CheckConstraint("sequence > 0", name="ck_pitches_sequence"),
         UniqueConstraint("venue_id", "code", name="uq_pitches_venue_code"),
+        UniqueConstraint(
+            "venue_id",
+            "players_per_side",
+            "sequence",
+            name="uq_pitches_venue_format_sequence",
+        ),
         Index("ix_pitches_venue_id", "venue_id"),
     )
 
@@ -334,11 +353,54 @@ class Pitch(Base):
     )
     code: Mapped[str] = mapped_column(String(80))
     name: Mapped[str] = mapped_column(String(120))
-    pitch_type: Mapped[PitchType] = mapped_column(Enum(PitchType, name="pitch_type"))
+    pitch_type: Mapped[PitchType | None] = mapped_column(
+        Enum(PitchType, name="pitch_type"), nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    players_per_side: Mapped[int] = mapped_column(Integer)
+    system_name: Mapped[str] = mapped_column(String(120))
+    custom_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    status: Mapped[PitchStatus] = mapped_column(
+        Enum(PitchStatus, name="pitch_status"), default=PitchStatus.ACTIVE
+    )
 
     venue: Mapped[Venue] = relationship(back_populates="pitches")
     slots: Mapped[list["Slot"]] = relationship(back_populates="pitch")
+
+
+class VenuePitchSequenceCounter(Base):
+    __tablename__ = "venue_pitch_sequence_counters"
+    __table_args__ = (
+        CheckConstraint(
+            "players_per_side BETWEEN 1 AND 99",
+            name="ck_venue_pitch_sequence_counters_players",
+        ),
+        CheckConstraint(
+            "last_sequence >= 0", name="ck_venue_pitch_sequence_counters_last_sequence"
+        ),
+    )
+
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE"), primary_key=True
+    )
+    players_per_side: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_sequence: Mapped[int] = mapped_column(Integer, default=0)
+
+
+@event.listens_for(Pitch, "before_insert")
+def _populate_legacy_pitch_configuration(
+    _mapper: object, _connection: object, pitch: Pitch
+) -> None:
+    """Keep legacy seed/load paths compatible during the numeric-format migration."""
+    if pitch.players_per_side is None:
+        pitch.players_per_side = 5 if pitch.pitch_type is PitchType.FIVE_A_SIDE else 7
+    if pitch.system_name is None:
+        pitch.system_name = pitch.name
+    if pitch.sequence is None:
+        pitch.sequence = pitch.sort_order + 1
+    if pitch.status is None:
+        pitch.status = PitchStatus.ACTIVE
 
 
 class Slot(Base):

@@ -294,6 +294,68 @@ const exampleMap = [
     schema: 'ErrorEnvelope',
     attachments: [attachment('/api/v1/orders/{order_id}/pay', '409', 'PaymentException', 'post')],
   },
+  {
+    filename: 'admin-inventory-ready.json',
+    reference: './examples/admin-inventory-ready.json',
+    schema: 'AdminInventory',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory', '200', 'Ready')],
+  },
+  {
+    filename: 'admin-inventory-slot.json',
+    reference: './examples/admin-inventory-slot.json',
+    schema: 'AdminInventorySlot',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/inventory/slots', '201', 'Created', 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', '200', 'Updated', 'put'),
+    ],
+  },
+  {
+    filename: 'pitch-configuration-ready.json',
+    reference: './examples/pitch-configuration-ready.json',
+    schema: 'PitchConfiguration',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', '200', 'Ready')],
+  },
+  {
+    filename: 'pitch-configuration-saved.json',
+    reference: './examples/pitch-configuration-saved.json',
+    schema: 'PitchConfiguration',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', '200', 'Saved', 'put')],
+  },
+  ...[
+    ['error-inventory-forbidden.json', 'InventoryForbidden', '403', 'INVENTORY_FORBIDDEN'],
+    ['error-pitch-not-found.json', 'PitchNotFound', '404', 'PITCH_NOT_FOUND'],
+    ['error-configuration-changed.json', 'ConfigurationChanged', '409', 'CONFIGURATION_CHANGED'],
+    ['error-pitch-name-conflict.json', 'PitchNameConflict', '409', 'PITCH_NAME_CONFLICT'],
+    ['error-pitch-format-immutable.json', 'PitchFormatImmutable', '409', 'PITCH_FORMAT_IMMUTABLE'],
+    ['error-pitch-has-business-history.json', 'PitchHasBusinessHistory', '409', 'PITCH_HAS_BUSINESS_HISTORY'],
+    ['error-pitch-deactivate-blocked.json', 'PitchDeactivateBlocked', '409', 'PITCH_DEACTIVATE_BLOCKED'],
+    ['error-last-active-pitch-required.json', 'LastActivePitchRequired', '409', 'LAST_ACTIVE_PITCH_REQUIRED'],
+    ['error-request-in-progress.json', 'RequestInProgress', '409', 'REQUEST_IN_PROGRESS'],
+    ['error-invalid-players-per-side.json', 'InvalidPlayersPerSide', '422', 'INVALID_PLAYERS_PER_SIDE'],
+    ['error-invalid-custom-name.json', 'InvalidCustomName', '422', 'INVALID_CUSTOM_NAME'],
+    ['error-duplicate-pitch-change.json', 'DuplicatePitchChange', '422', 'DUPLICATE_PITCH_CHANGE'],
+  ].map(([filename, key, status]) => ({
+    filename,
+    reference: `./examples/${filename}`,
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', status, key, 'put')],
+  })),
+  ...[
+    ['error-slot-not-found.json', 'SlotNotFound', '404'],
+    ['error-inventory-version-conflict.json', 'InventoryVersionConflict', '409'],
+    ['error-inventory-slot-read-only.json', 'InventorySlotReadOnly', '409'],
+  ].map(([filename, key, status]) => ({
+    filename,
+    reference: `./examples/${filename}`,
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', status, key, 'put')],
+  })),
+  {
+    filename: 'error-slot-time-conflict.json',
+    reference: './examples/error-slot-time-conflict.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory/slots', '409', 'SlotTimeConflict', 'post')],
+  },
 ];
 
 const inlineExampleMap = [
@@ -327,6 +389,22 @@ const requiredErrorCodes = new Set([
   'ORDER_EXPIRED',
   'PAYMENT_CREATE_FAILED',
   'PAYMENT_EXCEPTION',
+  'INVENTORY_FORBIDDEN',
+  'PITCH_NOT_FOUND',
+  'SLOT_NOT_FOUND',
+  'SLOT_TIME_CONFLICT',
+  'INVENTORY_VERSION_CONFLICT',
+  'INVENTORY_SLOT_READ_ONLY',
+  'REQUEST_IN_PROGRESS',
+  'CONFIGURATION_CHANGED',
+  'PITCH_NAME_CONFLICT',
+  'PITCH_FORMAT_IMMUTABLE',
+  'PITCH_HAS_BUSINESS_HISTORY',
+  'PITCH_DEACTIVATE_BLOCKED',
+  'LAST_ACTIVE_PITCH_REQUIRED',
+  'INVALID_PLAYERS_PER_SIDE',
+  'INVALID_CUSTOM_NAME',
+  'DUPLICATE_PITCH_CHANGE',
 ]);
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
@@ -341,6 +419,10 @@ const expectedOperations = new Map([
   ['/api/v1/orders/{order_id}', new Set(['get'])],
   ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
   ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
+  ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],
+  ['/api/v1/admin/venues/{venue_id}/inventory/slots', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', new Set(['put'])],
 ]);
 const httpMethods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 

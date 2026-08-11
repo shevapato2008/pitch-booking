@@ -1019,6 +1019,92 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/admin/venues/{venue_id}/pitch-configuration:
+    get:
+      operationId: getAdminVenuePitchConfiguration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authoritative physical pitch configuration and capability snapshot.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PitchConfiguration'}
+              examples:
+                Ready:
+                  externalValue: './examples/pitch-configuration-ready.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    put:
+      operationId: saveAdminVenuePitchConfiguration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 16, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SavePitchConfiguration'}
+      responses:
+        '200':
+          description: Atomic change set applied or replayed with the full authoritative result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PitchConfiguration'}
+              examples:
+                Saved:
+                  externalValue: './examples/pitch-configuration-saved.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403':
+          description: Inventory permission required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InventoryForbidden: {externalValue: './examples/error-inventory-forbidden.json'}
+        '404':
+          description: Venue or pitch not found.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                PitchNotFound: {externalValue: './examples/error-pitch-not-found.json'}
+        '409':
+          description: Version, idempotency, name, history, or lifecycle conflict.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ConfigurationChanged: {externalValue: './examples/error-configuration-changed.json'}
+                PitchNameConflict: {externalValue: './examples/error-pitch-name-conflict.json'}
+                PitchFormatImmutable: {externalValue: './examples/error-pitch-format-immutable.json'}
+                PitchHasBusinessHistory: {externalValue: './examples/error-pitch-has-business-history.json'}
+                PitchDeactivateBlocked: {externalValue: './examples/error-pitch-deactivate-blocked.json'}
+                LastActivePitchRequired: {externalValue: './examples/error-last-active-pitch-required.json'}
+                RequestInProgress: {externalValue: './examples/error-request-in-progress.json'}
+        '422':
+          description: Change set invalid.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InvalidPlayersPerSide: {externalValue: './examples/error-invalid-players-per-side.json'}
+                InvalidCustomName: {externalValue: './examples/error-invalid-custom-name.json'}
+                DuplicatePitchChange: {externalValue: './examples/error-duplicate-pitch-change.json'}
   /api/v1/admin/venues/{venue_id}/inventory:
     get:
       operationId: getAdminVenueInventory
@@ -1083,7 +1169,13 @@ paths:
         '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
         '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
         '404': {description: Venue or pitch not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
-        '409': {description: Idempotency or time conflict, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409':
+          description: Idempotency or time conflict.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                SlotTimeConflict: {externalValue: './examples/error-slot-time-conflict.json'}
         '422': {description: Slot input invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
   /api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}:
     put:
@@ -1115,8 +1207,21 @@ paths:
                   externalValue: './examples/admin-inventory-slot.json'
         '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
         '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
-        '404': {description: Venue or slot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
-        '409': {description: Version conflict or immutable slot, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404':
+          description: Venue or slot not found.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                SlotNotFound: {externalValue: './examples/error-slot-not-found.json'}
+        '409':
+          description: Version conflict or immutable slot.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InventoryVersionConflict: {externalValue: './examples/error-inventory-version-conflict.json'}
+                InventorySlotReadOnly: {externalValue: './examples/error-inventory-slot-read-only.json'}
         '422': {description: Slot update invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
 components:
   securitySchemes:
@@ -1132,6 +1237,120 @@ components:
         type: string
         minLength: 1
   schemas:
+    PitchConfigurationVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        timezone: {type: string, minLength: 1}
+    PitchCapability:
+      type: object
+      additionalProperties: false
+      required: [allowed, reason]
+      properties:
+        allowed: {type: boolean}
+        reason: {type: [string, 'null']}
+    PitchFutureBlockers:
+      type: object
+      additionalProperties: false
+      required: [AVAILABLE, LOCKED, BOOKED]
+      properties:
+        AVAILABLE: {type: integer, minimum: 0}
+        LOCKED: {type: integer, minimum: 0}
+        BOOKED: {type: integer, minimum: 0}
+    PitchCapabilities:
+      type: object
+      additionalProperties: false
+      required: [edit_format, delete, deactivate, reactivate, future_blockers]
+      properties:
+        edit_format: {$ref: '#/components/schemas/PitchCapability'}
+        delete: {$ref: '#/components/schemas/PitchCapability'}
+        deactivate: {$ref: '#/components/schemas/PitchCapability'}
+        reactivate: {$ref: '#/components/schemas/PitchCapability'}
+        future_blockers: {$ref: '#/components/schemas/PitchFutureBlockers'}
+    ConfiguredPitch:
+      type: object
+      additionalProperties: false
+      required: [id, custom_name, system_name, display_name, players_per_side, sequence, status, capabilities]
+      properties:
+        id: {type: string, format: uuid}
+        custom_name: {type: [string, 'null'], maxLength: 30}
+        system_name: {type: string, minLength: 1}
+        display_name: {type: string, minLength: 1}
+        players_per_side: {type: integer, minimum: 1, maximum: 99}
+        sequence: {type: integer, minimum: 1}
+        status: {type: string, enum: [ACTIVE, INACTIVE]}
+        capabilities: {$ref: '#/components/schemas/PitchCapabilities'}
+    CreatedPitchMapping:
+      type: object
+      additionalProperties: false
+      required: [client_ref, pitch_id, sequence, system_name]
+      properties:
+        client_ref: {type: string, minLength: 1, maxLength: 100}
+        pitch_id: {type: string, format: uuid}
+        sequence: {type: integer, minimum: 1}
+        system_name: {type: string, minLength: 1}
+    PitchConfiguration:
+      type: object
+      additionalProperties: false
+      required: [venue, configuration_version, pitches, created_pitch_mappings]
+      properties:
+        venue: {$ref: '#/components/schemas/PitchConfigurationVenue'}
+        configuration_version: {type: integer, minimum: 1}
+        pitches:
+          type: array
+          items: {$ref: '#/components/schemas/ConfiguredPitch'}
+        created_pitch_mappings:
+          type: array
+          items: {$ref: '#/components/schemas/CreatedPitchMapping'}
+    CreatePitchConfigurationChange:
+      type: object
+      additionalProperties: false
+      required: [operation, client_ref, custom_name, players_per_side]
+      properties:
+        operation: {const: CREATE}
+        client_ref: {type: string, minLength: 1, maxLength: 100}
+        custom_name: {type: [string, 'null']}
+        players_per_side: {type: integer}
+    UpdatePitchConfigurationChange:
+      type: object
+      additionalProperties: false
+      required: [operation, pitch_id, custom_name, players_per_side, status]
+      properties:
+        operation: {const: UPDATE}
+        pitch_id: {type: string, format: uuid}
+        custom_name: {type: [string, 'null']}
+        players_per_side: {type: integer}
+        status: {type: string, enum: [ACTIVE, INACTIVE]}
+    DeletePitchConfigurationChange:
+      type: object
+      additionalProperties: false
+      required: [operation, pitch_id]
+      properties:
+        operation: {const: DELETE}
+        pitch_id: {type: string, format: uuid}
+    PitchConfigurationChange:
+      oneOf:
+        - $ref: '#/components/schemas/CreatePitchConfigurationChange'
+        - $ref: '#/components/schemas/UpdatePitchConfigurationChange'
+        - $ref: '#/components/schemas/DeletePitchConfigurationChange'
+      discriminator:
+        propertyName: operation
+        mapping:
+          CREATE: '#/components/schemas/CreatePitchConfigurationChange'
+          UPDATE: '#/components/schemas/UpdatePitchConfigurationChange'
+          DELETE: '#/components/schemas/DeletePitchConfigurationChange'
+    SavePitchConfiguration:
+      type: object
+      additionalProperties: false
+      required: [expected_version, changes]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        changes:
+          type: array
+          items: {$ref: '#/components/schemas/PitchConfigurationChange'}
     AdminInventoryVenue:
       type: object
       additionalProperties: false
@@ -1148,8 +1367,10 @@ components:
         id: {type: string, format: uuid}
         name: {type: string, minLength: 1}
         display_name: {type: string, minLength: 1}
-        pitch_type: {type: string, enum: [FIVE_A_SIDE, SEVEN_A_SIDE]}
-        players_per_side: {type: integer, enum: [5, 7]}
+        pitch_type:
+          type: [string, 'null']
+          enum: [FIVE_A_SIDE, SEVEN_A_SIDE, null]
+        players_per_side: {type: integer, minimum: 1, maximum: 99}
     AdminInventoryWindow:
       type: object
       additionalProperties: false
@@ -2306,6 +2527,10 @@ components:
           format: date
         current_checkout:
           $ref: '#/components/schemas/Checkout'
+        future_blockers:
+          $ref: '#/components/schemas/PitchFutureBlockers'
+        latest_configuration:
+          $ref: '#/components/schemas/PitchConfiguration'
     Error:
       type: object
       additionalProperties: false
@@ -2342,6 +2567,15 @@ components:
             - INVENTORY_VERSION_CONFLICT
             - INVENTORY_SLOT_READ_ONLY
             - REQUEST_IN_PROGRESS
+            - CONFIGURATION_CHANGED
+            - PITCH_NAME_CONFLICT
+            - PITCH_FORMAT_IMMUTABLE
+            - PITCH_HAS_BUSINESS_HISTORY
+            - PITCH_DEACTIVATE_BLOCKED
+            - LAST_ACTIVE_PITCH_REQUIRED
+            - INVALID_PLAYERS_PER_SIDE
+            - INVALID_CUSTOM_NAME
+            - DUPLICATE_PITCH_CHANGE
         message:
           type: string
           minLength: 1

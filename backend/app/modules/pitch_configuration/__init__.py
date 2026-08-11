@@ -1,0 +1,1 @@
+"""Physical pitch configuration module."""

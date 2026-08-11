@@ -19,8 +19,8 @@ class InventoryPitchResponse(ClosedModel):
     id: uuid.UUID
     name: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
-    pitch_type: Literal["FIVE_A_SIDE", "SEVEN_A_SIDE"]
-    players_per_side: Literal[5, 7]
+    pitch_type: Literal["FIVE_A_SIDE", "SEVEN_A_SIDE"] | None
+    players_per_side: int = Field(ge=1, le=99)
 
 
 class InventoryWindowResponse(ClosedModel):

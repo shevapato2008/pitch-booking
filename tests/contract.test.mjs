@@ -93,10 +93,14 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen twelve-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen sixteen-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
+    '/api/v1/admin/venues/{venue_id}/inventory',
+    '/api/v1/admin/venues/{venue_id}/inventory/slots',
+    '/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}',
+    '/api/v1/admin/venues/{venue_id}/pitch-configuration',
     '/api/v1/auth/wechat/phone',
     '/api/v1/auth/wechat/session',
     '/api/v1/health',
@@ -457,7 +461,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 37 JSON examples/i);
+  assert.match(stdout, /validated 57 JSON examples/i);
   assert.equal(stderr, '');
 });
 

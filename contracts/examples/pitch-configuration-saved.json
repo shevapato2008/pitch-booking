@@ -1,0 +1,34 @@
+{
+  "venue": {
+    "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+    "name": "渤海元丰足球场",
+    "timezone": "Asia/Shanghai"
+  },
+  "configuration_version": 2,
+  "pitches": [
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "custom_name": "训练场",
+      "system_name": "8人场 · 1号场",
+      "display_name": "训练场",
+      "players_per_side": 8,
+      "sequence": 1,
+      "status": "ACTIVE",
+      "capabilities": {
+        "edit_format": {"allowed": true, "reason": null},
+        "delete": {"allowed": true, "reason": null},
+        "deactivate": {"allowed": false, "reason": "LAST_ACTIVE_PITCH_REQUIRED"},
+        "reactivate": {"allowed": false, "reason": "PITCH_ALREADY_ACTIVE"},
+        "future_blockers": {"AVAILABLE": 0, "LOCKED": 0, "BOOKED": 0}
+      }
+    }
+  ],
+  "created_pitch_mappings": [
+    {
+      "client_ref": "draft-eight-1",
+      "pitch_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 1,
+      "system_name": "8人场 · 1号场"
+    }
+  ]
+}

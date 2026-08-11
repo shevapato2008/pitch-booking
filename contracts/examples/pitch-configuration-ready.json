@@ -1,0 +1,27 @@
+{
+  "venue": {
+    "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+    "name": "渤海元丰足球场",
+    "timezone": "Asia/Shanghai"
+  },
+  "configuration_version": 1,
+  "pitches": [
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "custom_name": "滨河场",
+      "system_name": "5人场 · 1号场",
+      "display_name": "滨河场",
+      "players_per_side": 5,
+      "sequence": 1,
+      "status": "ACTIVE",
+      "capabilities": {
+        "edit_format": {"allowed": true, "reason": null},
+        "delete": {"allowed": true, "reason": null},
+        "deactivate": {"allowed": false, "reason": "LAST_ACTIVE_PITCH_REQUIRED"},
+        "reactivate": {"allowed": false, "reason": "PITCH_ALREADY_ACTIVE"},
+        "future_blockers": {"AVAILABLE": 0, "LOCKED": 0, "BOOKED": 0}
+      }
+    }
+  ],
+  "created_pitch_mappings": []
+}
