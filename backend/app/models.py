@@ -30,10 +30,23 @@ class ImageRole(StrEnum):
 
 
 class FacilityCode(StrEnum):
-    LIGHTING = "LIGHTING"
-    CHANGING_ROOM = "CHANGING_ROOM"
-    DRINKING_WATER = "DRINKING_WATER"
     PARKING = "PARKING"
+    TOILET = "TOILET"
+    CHANGING_ROOM = "CHANGING_ROOM"
+    SHOWER = "SHOWER"
+    LOCKERS = "LOCKERS"
+    DRINKING_WATER = "DRINKING_WATER"
+    BEVERAGE_SALES = "BEVERAGE_SALES"
+    EQUIPMENT_RENTAL = "EQUIPMENT_RENTAL"
+    REST_AREA = "REST_AREA"
+    FIRST_AID = "FIRST_AID"
+    AED = "AED"
+    INDOOR = "INDOOR"
+    OUTDOOR = "OUTDOOR"
+    COVERED = "COVERED"
+    LIGHTING = "LIGHTING"
+    ARTIFICIAL_TURF = "ARTIFICIAL_TURF"
+    NATURAL_GRASS = "NATURAL_GRASS"
 
 
 class PitchType(StrEnum):
@@ -90,6 +103,62 @@ class IdempotencyState(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class ModerationReasonCode(StrEnum):
+    CONTACT_INFO = "CONTACT_INFO"
+    QR_OR_PAYMENT_CODE = "QR_OR_PAYMENT_CODE"
+    OFF_PLATFORM_TRADE = "OFF_PLATFORM_TRADE"
+    EXTERNAL_LINK = "EXTERNAL_LINK"
+    UNRELATED_CONTENT = "UNRELATED_CONTENT"
+    IMAGE_NOT_VENUE = "IMAGE_NOT_VENUE"
+    IMAGE_QUALITY = "IMAGE_QUALITY"
+    PERSONAL_PRIVACY = "PERSONAL_PRIVACY"
+    UNSAFE_CONTENT = "UNSAFE_CONTENT"
+
+
+class VenueProfileItemStatus(StrEnum):
+    UPLOADING = "UPLOADING"
+    REVIEWING = "REVIEWING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    PENDING_MANUAL = "PENDING_MANUAL"
+
+
+class VenueProfileRevisionStatus(StrEnum):
+    READY = "READY"
+    REVIEWING = "REVIEWING"
+    REJECTED = "REJECTED"
+    PENDING_MANUAL = "PENDING_MANUAL"
+    PUBLISHED = "PUBLISHED"
+
+
+class ModerationItemType(StrEnum):
+    DESCRIPTION = "DESCRIPTION"
+    IMAGE = "IMAGE"
+
+
+class ModerationJobStatus(StrEnum):
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ModerationDecisionOutcome(StrEnum):
+    PASS = "PASS"
+    REJECT = "REJECT"
+    UNCERTAIN = "UNCERTAIN"
+
+
+class ModerationDecisionSource(StrEnum):
+    PROVIDER = "PROVIDER"
+    MANUAL = "MANUAL"
+
+
+class ProfileMutationState(StrEnum):
+    CLAIMED = "CLAIMED"
+    COMPLETED = "COMPLETED"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -117,6 +186,8 @@ class Venue(Base):
             name="ck_venues_navigation_longitude",
         ),
         CheckConstraint("sort_order >= 0", name="ck_venues_sort_order"),
+        CheckConstraint("profile_version > 0", name="ck_venues_profile_version"),
+        CheckConstraint("facility_version > 0", name="ck_venues_facility_version"),
         CheckConstraint(
             "jsonb_typeof(public_pitch_types) = 'array'",
             name="ck_venues_public_pitch_types_array",
@@ -172,6 +243,12 @@ class Venue(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     configuration_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
+    profile_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
+    facility_version: Mapped[int] = mapped_column(
         BigInteger, default=1, server_default=text("1")
     )
 
@@ -325,6 +402,276 @@ class VenueFacility(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     venue: Mapped[Venue] = relationship(back_populates="facilities")
+
+
+class VenueProfileRevision(Base):
+    __tablename__ = "venue_profile_revisions"
+    __table_args__ = (
+        CheckConstraint(
+            "base_published_version > 0", name="ck_venue_profile_revisions_base_version"
+        ),
+        CheckConstraint("revision_version > 0", name="ck_venue_profile_revisions_revision_version"),
+        CheckConstraint(
+            "char_length(target_description) <= 300",
+            name="ck_venue_profile_revisions_description_length",
+        ),
+        CheckConstraint(
+            "(description_status = 'REJECTED' AND description_reason_code IS NOT NULL) OR "
+            "(description_status <> 'REJECTED' AND description_reason_code IS NULL)",
+            name="ck_venue_profile_revisions_description_reason",
+        ),
+        UniqueConstraint(
+            "venue_id", "revision_version", name="uq_venue_profile_revisions_venue_version"
+        ),
+        Index(
+            "uq_venue_profile_revisions_current_editable",
+            "venue_id",
+            unique=True,
+            postgresql_where=text("is_current_editable"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    base_published_version: Mapped[int] = mapped_column(BigInteger)
+    revision_version: Mapped[int] = mapped_column(BigInteger)
+    target_description: Mapped[str] = mapped_column(Text)
+    status: Mapped[VenueProfileRevisionStatus] = mapped_column(
+        Enum(VenueProfileRevisionStatus, name="venue_profile_revision_status")
+    )
+    description_status: Mapped[VenueProfileItemStatus] = mapped_column(
+        Enum(VenueProfileItemStatus, name="venue_profile_item_status")
+    )
+    description_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    is_current_editable: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    venue: Mapped[Venue] = relationship()
+    created_by: Mapped["User"] = relationship(foreign_keys=[created_by_user_id])
+
+
+class VenueProfileImageDraft(Base):
+    __tablename__ = "venue_profile_image_drafts"
+    __table_args__ = (
+        CheckConstraint(
+            "(published_image_id IS NOT NULL) <> (original_object_key IS NOT NULL)",
+            name="ck_venue_profile_image_drafts_exactly_one_source",
+        ),
+        CheckConstraint("sort_order >= 0", name="ck_venue_profile_image_drafts_sort_order"),
+        CheckConstraint("item_version > 0", name="ck_venue_profile_image_drafts_item_version"),
+        CheckConstraint(
+            "byte_size IS NULL OR byte_size > 0", name="ck_venue_profile_image_drafts_byte_size"
+        ),
+        CheckConstraint(
+            "content_sha256 IS NULL OR content_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_venue_profile_image_drafts_sha256",
+        ),
+        CheckConstraint(
+            "(moderation_status = 'REJECTED' AND moderation_reason_code IS NOT NULL) OR "
+            "(moderation_status <> 'REJECTED' AND moderation_reason_code IS NULL)",
+            name="ck_venue_profile_image_drafts_reason",
+        ),
+        UniqueConstraint(
+            "revision_id", "sort_order", name="uq_venue_profile_image_drafts_revision_sort"
+        ),
+        Index("ix_venue_profile_image_drafts_revision_id", "revision_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_profile_revisions.id", ondelete="CASCADE")
+    )
+    published_image_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_images.id", ondelete="RESTRICT"), nullable=True
+    )
+    original_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[ImageRole] = mapped_column(Enum(ImageRole, name="image_role"))
+    sort_order: Mapped[int] = mapped_column(Integer)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actual_mime_type: Mapped[str | None] = mapped_column(
+        Enum("image/jpeg", "image/png", "image/webp", name="venue_profile_mime_type"),
+        nullable=True,
+    )
+    byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    moderation_status: Mapped[VenueProfileItemStatus] = mapped_column(
+        Enum(VenueProfileItemStatus, name="venue_profile_item_status")
+    )
+    moderation_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    item_version: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    revision: Mapped[VenueProfileRevision] = relationship()
+
+
+class ContentModerationJob(Base):
+    __tablename__ = "content_moderation_jobs"
+    __table_args__ = (
+        CheckConstraint("item_version > 0", name="ck_content_moderation_jobs_item_version"),
+        CheckConstraint("attempt_count >= 0", name="ck_content_moderation_jobs_attempt_count"),
+        CheckConstraint(
+            "(item_type = 'DESCRIPTION' AND image_draft_id IS NULL) OR "
+            "(item_type = 'IMAGE' AND image_draft_id IS NOT NULL)",
+            name="ck_content_moderation_jobs_item_target",
+        ),
+        CheckConstraint(
+            "(claim_token IS NULL) = (lease_until IS NULL)",
+            name="ck_content_moderation_jobs_lease_pair",
+        ),
+        Index("ix_content_moderation_jobs_due", "status", "next_run_at", "lease_until", "id"),
+        Index("ix_content_moderation_jobs_revision_id", "revision_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_profile_revisions.id", ondelete="CASCADE")
+    )
+    image_draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("venue_profile_image_drafts.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    item_type: Mapped[ModerationItemType] = mapped_column(
+        Enum(ModerationItemType, name="moderation_item_type")
+    )
+    item_version: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[ModerationJobStatus] = mapped_column(
+        Enum(ModerationJobStatus, name="moderation_job_status")
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fixed_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    revision: Mapped[VenueProfileRevision] = relationship()
+    image_draft: Mapped[VenueProfileImageDraft | None] = relationship()
+
+
+class ContentModerationDecision(Base):
+    __tablename__ = "content_moderation_decisions"
+    __table_args__ = (
+        CheckConstraint("item_version > 0", name="ck_content_moderation_decisions_item_version"),
+        CheckConstraint(
+            "(outcome = 'REJECT' AND reason_code IS NOT NULL) OR "
+            "(outcome <> 'REJECT' AND reason_code IS NULL)",
+            name="ck_content_moderation_decisions_reason",
+        ),
+        CheckConstraint(
+            "(source = 'PROVIDER' AND reviewer_user_id IS NULL AND provider IS NOT NULL "
+            "AND provider_model IS NOT NULL) OR "
+            "(source = 'MANUAL' AND reviewer_user_id IS NOT NULL)",
+            name="ck_content_moderation_decisions_source",
+        ),
+        CheckConstraint(
+            "provider_confidence IS NULL OR provider_confidence BETWEEN 0 AND 1",
+            name="ck_content_moderation_decisions_confidence",
+        ),
+        UniqueConstraint(
+            "job_id", "idempotency_key", name="uq_content_moderation_decisions_job_key"
+        ),
+        Index("ix_content_moderation_decisions_job_id", "job_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("content_moderation_jobs.id", ondelete="CASCADE")
+    )
+    item_type: Mapped[ModerationItemType] = mapped_column(
+        Enum(ModerationItemType, name="moderation_item_type")
+    )
+    item_version: Mapped[int] = mapped_column(BigInteger)
+    source: Mapped[ModerationDecisionSource] = mapped_column(
+        Enum(ModerationDecisionSource, name="moderation_decision_source")
+    )
+    outcome: Mapped[ModerationDecisionOutcome] = mapped_column(
+        Enum(ModerationDecisionOutcome, name="moderation_decision_outcome")
+    )
+    reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw_response_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class ProfileMutationIdempotencyRecord(Base):
+    __tablename__ = "profile_mutation_idempotency_records"
+    __table_args__ = (
+        CheckConstraint("length(trim(scope)) > 0", name="ck_profile_mutations_scope"),
+        CheckConstraint("length(key) > 0", name="ck_profile_mutations_key"),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'", name="ck_profile_mutations_request_sha256"
+        ),
+        CheckConstraint(
+            "(state = 'CLAIMED' AND response_status IS NULL AND response_body IS NULL) OR "
+            "(state = 'COMPLETED' AND response_status IS NOT NULL AND response_body IS NOT NULL)",
+            name="ck_profile_mutations_state_response",
+        ),
+        CheckConstraint(
+            "response_status IS NULL OR response_status BETWEEN 100 AND 599",
+            name="ck_profile_mutations_response_status",
+        ),
+        UniqueConstraint("scope", "key", name="uq_profile_mutations_scope_key"),
+        Index("ix_profile_mutations_venue_id", "venue_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    scope: Mapped[str] = mapped_column(String(255))
+    key: Mapped[str] = mapped_column(String(255))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[ProfileMutationState] = mapped_column(
+        Enum(ProfileMutationState, name="profile_mutation_state")
+    )
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    venue: Mapped[Venue] = relationship()
+    actor: Mapped["User"] = relationship(foreign_keys=[actor_user_id])
 
 
 class Pitch(Base):
