@@ -73,7 +73,7 @@ class PublishedImage:
 
 class VenueMediaStore(Protocol):
     def create_upload_intent(
-        self, venue_id: UUID, image_id: UUID, content_type: str
+        self, venue_id: UUID, image_id: UUID, content_type: str, byte_size: int
     ) -> UploadIntent: ...
 
     def read_bounded(
@@ -100,6 +100,12 @@ class VenueMediaStore(Protocol):
 def require_content_type(value: str) -> ImageContentType:
     if value not in SUPPORTED_IMAGE_TYPES:
         raise InvalidMediaError("content type must be JPEG, PNG, or WebP")
+    return value
+
+
+def require_byte_size(value: int) -> int:
+    if type(value) is not int or not 1 <= value <= MAX_IMAGE_BYTES:
+        raise InvalidMediaError("declared byte size must be between 1 byte and 10 MiB")
     return value
 
 

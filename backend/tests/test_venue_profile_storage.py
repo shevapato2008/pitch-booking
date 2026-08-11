@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 from PIL import Image
-from pydantic import SecretStr, ValidationError
+from pydantic import ValidationError
 
 from backend.app.config import Settings
 from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
@@ -17,6 +17,7 @@ from backend.app.modules.venue_profiles.storage import (
     MAX_IMAGE_BYTES,
     InvalidMediaError,
     StorageBoundaryError,
+    UploadIntent,
 )
 
 VENUE_ID = UUID("0558e728-af58-4572-8680-656516cb76ad")
@@ -31,6 +32,18 @@ def image_bytes(image_format: str, *, size: tuple[int, int] = (32, 24)) -> bytes
     return output.getvalue()
 
 
+def uploaded_local(
+    storage: LocalMediaStorage,
+    content_type: str,
+    image_format: str,
+    size: tuple[int, int] = (32, 24),
+) -> tuple[UploadIntent, bytes]:
+    payload = image_bytes(image_format, size=size)
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, content_type, len(payload))
+    storage.accept_upload(intent.object_key, payload, intent.required_headers)
+    return intent, payload
+
+
 @pytest.mark.parametrize(
     ("content_type", "image_format", "extension"),
     [
@@ -43,9 +56,7 @@ def test_local_upload_intents_validate_real_jpeg_png_and_webp(
     content_type: str, image_format: str, extension: str
 ) -> None:
     storage = LocalMediaStorage()
-
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, content_type)
-    storage.accept_upload(intent.object_key, image_bytes(image_format), intent.required_headers)
+    intent, payload = uploaded_local(storage, content_type, image_format)
     validated = storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
 
     assert intent.object_key == (
@@ -55,6 +66,7 @@ def test_local_upload_intents_validate_real_jpeg_png_and_webp(
     assert intent.max_bytes == MAX_IMAGE_BYTES
     assert intent.required_headers == {
         "Content-Type": content_type,
+        "Content-Length": str(len(payload)),
         "x-oss-forbid-overwrite": "true",
         "x-oss-object-acl": "private",
     }
@@ -65,9 +77,10 @@ def test_local_upload_intents_validate_real_jpeg_png_and_webp(
 
 def test_local_keys_are_immutable_and_isolated_by_venue() -> None:
     storage = LocalMediaStorage()
-    first = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg")
-    second = storage.create_upload_intent(VENUE_ID, OTHER_IMAGE_ID, "image/jpeg")
-    storage.accept_upload(first.object_key, image_bytes("JPEG"), first.required_headers)
+    first, payload = uploaded_local(storage, "image/jpeg", "JPEG")
+    second = storage.create_upload_intent(
+        VENUE_ID, OTHER_IMAGE_ID, "image/jpeg", len(payload)
+    )
 
     assert first.object_key != second.object_key
     with pytest.raises(StorageBoundaryError):
@@ -80,8 +93,7 @@ def test_local_keys_are_immutable_and_isolated_by_venue() -> None:
 
 def test_local_upload_object_cannot_be_overwritten() -> None:
     storage = LocalMediaStorage()
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg")
-    storage.accept_upload(intent.object_key, image_bytes("JPEG"), intent.required_headers)
+    intent, _ = uploaded_local(storage, "image/jpeg", "JPEG")
 
     with pytest.raises(FileExistsError):
         storage.accept_upload(intent.object_key, image_bytes("JPEG"), intent.required_headers)
@@ -95,8 +107,7 @@ def test_local_rejects_spoofed_mime_and_deletes_invalid_upload(
     claimed_type: str, actual_format: str
 ) -> None:
     storage = LocalMediaStorage()
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, claimed_type)
-    storage.accept_upload(intent.object_key, image_bytes(actual_format), intent.required_headers)
+    intent, _ = uploaded_local(storage, claimed_type, actual_format)
 
     with pytest.raises(InvalidMediaError, match="signature"):
         storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
@@ -106,8 +117,9 @@ def test_local_rejects_spoofed_mime_and_deletes_invalid_upload(
 
 def test_local_rejects_truncated_image_and_deletes_it() -> None:
     storage = LocalMediaStorage()
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg")
-    storage.accept_upload(intent.object_key, image_bytes("JPEG")[:20], intent.required_headers)
+    payload = image_bytes("JPEG")[:20]
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg", len(payload))
+    storage.accept_upload(intent.object_key, payload, intent.required_headers)
 
     with pytest.raises(InvalidMediaError, match="decode"):
         storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
@@ -119,12 +131,7 @@ def test_local_rejects_decompression_bomb_warning_and_deletes_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     storage = LocalMediaStorage()
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png")
-    storage.accept_upload(
-        intent.object_key,
-        image_bytes("PNG", size=(20, 20)),
-        intent.required_headers,
-    )
+    intent, _ = uploaded_local(storage, "image/png", "PNG", (20, 20))
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 300)
 
     with pytest.raises(InvalidMediaError, match="pixel limit"):
@@ -135,12 +142,7 @@ def test_local_rejects_decompression_bomb_warning_and_deletes_it(
 
 def test_local_review_copy_is_private_compressed_and_signed_for_five_minutes() -> None:
     storage = LocalMediaStorage()
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png")
-    storage.accept_upload(
-        intent.object_key,
-        image_bytes("PNG", size=(1200, 900)),
-        intent.required_headers,
-    )
+    intent, _ = uploaded_local(storage, "image/png", "PNG", (1200, 900))
     validated = storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
 
     review = storage.write_review_copy(VENUE_ID, IMAGE_ID, validated)
@@ -154,8 +156,7 @@ def test_local_review_copy_is_private_compressed_and_signed_for_five_minutes() -
 
 def test_local_promotion_is_stable_verified_and_cleanup_is_idempotent() -> None:
     storage = LocalMediaStorage(public_base_url="https://images.example.test/media")
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/webp")
-    storage.accept_upload(intent.object_key, image_bytes("WEBP"), intent.required_headers)
+    intent, _ = uploaded_local(storage, "image/webp", "WEBP")
     validated = storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
 
     first = storage.promote_and_verify(VENUE_ID, IMAGE_ID, validated)
@@ -200,7 +201,9 @@ class FakeBucket:
 
     def __init__(self) -> None:
         self.objects: dict[str, FakeObject] = {}
-        self.sign_calls: list[tuple[str, str, int, dict[str, str] | None]] = []
+        self.sign_calls: list[
+            tuple[str, str, int, dict[str, str] | None, set[str] | None]
+        ] = []
         self.read_results: list[FakeReadResult] = []
         self.put_calls: list[tuple[str, dict[str, str]]] = []
         self.copy_calls: list[tuple[str, str, str]] = []
@@ -214,8 +217,9 @@ class FakeBucket:
         key: str,
         expires: int,
         headers: dict[str, str] | None = None,
+        additional_headers: set[str] | None = None,
     ) -> str:
-        self.sign_calls.append((method, key, expires, headers))
+        self.sign_calls.append((method, key, expires, headers, additional_headers))
         return f"https://signed.example.test/{key}?method={method}&expires={expires}"
 
     def get_object(self, key: str) -> FakeReadResult:
@@ -252,11 +256,27 @@ def oss_storage(bucket: FakeBucket) -> OssMediaStorage:
     return OssMediaStorage(bucket=bucket, public_base_url="https://cdn.example.test/media")
 
 
+def test_upload_intents_reject_zero_or_oversized_declared_length() -> None:
+    for storage in (LocalMediaStorage(), oss_storage(FakeBucket())):
+        for byte_size in (0, MAX_IMAGE_BYTES + 1):
+            with pytest.raises(InvalidMediaError, match="byte size"):
+                storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg", byte_size)
+
+
+def test_local_upload_rejects_body_with_different_content_length() -> None:
+    storage = LocalMediaStorage()
+    payload = image_bytes("JPEG")
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg", len(payload) + 1)
+
+    with pytest.raises(InvalidMediaError, match="Content-Length"):
+        storage.accept_upload(intent.object_key, payload, intent.required_headers)
+
+
 def test_oss_put_intent_signs_required_content_type_without_credentials() -> None:
     bucket = FakeBucket()
     storage = oss_storage(bucket)
 
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg")
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg", 1234)
 
     assert bucket.sign_calls == [
         (
@@ -265,9 +285,11 @@ def test_oss_put_intent_signs_required_content_type_without_credentials() -> Non
             intent.expires_in_seconds,
             {
                 "Content-Type": "image/jpeg",
+                "Content-Length": "1234",
                 "x-oss-forbid-overwrite": "true",
                 "x-oss-object-acl": "private",
             },
+            {"content-length"},
         )
     ]
     assert "credential" not in intent.url.casefold()
@@ -277,8 +299,8 @@ def test_oss_put_intent_signs_required_content_type_without_credentials() -> Non
 def test_oss_read_is_bounded_and_computes_server_digest() -> None:
     bucket = FakeBucket()
     storage = oss_storage(bucket)
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png")
     payload = image_bytes("PNG")
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png", len(payload))
     bucket.objects[intent.object_key] = FakeObject(payload, "image/png")
 
     validated = storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
@@ -292,8 +314,8 @@ def test_oss_bounded_read_handles_partial_stream_chunks_and_closes_result() -> N
     bucket = FakeBucket()
     bucket.read_chunk_size = 17
     storage = oss_storage(bucket)
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png")
     payload = image_bytes("PNG")
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png", len(payload))
     bucket.objects[intent.object_key] = FakeObject(payload, "image/png")
 
     validated = storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
@@ -306,7 +328,7 @@ def test_oss_bounded_read_handles_partial_stream_chunks_and_closes_result() -> N
 def test_oss_oversized_stream_is_rejected_and_deleted() -> None:
     bucket = FakeBucket()
     storage = oss_storage(bucket)
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png")
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/png", MAX_IMAGE_BYTES)
     bucket.objects[intent.object_key] = FakeObject(b"x" * (MAX_IMAGE_BYTES + 1), "image/png")
 
     with pytest.raises(InvalidMediaError, match="10 MiB"):
@@ -320,8 +342,9 @@ def test_oss_oversized_stream_is_rejected_and_deleted() -> None:
 def test_oss_review_promotion_head_verification_and_cleanup() -> None:
     bucket = FakeBucket()
     storage = oss_storage(bucket)
-    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg")
-    bucket.objects[intent.object_key] = FakeObject(image_bytes("JPEG"), "image/jpeg")
+    payload = image_bytes("JPEG")
+    intent = storage.create_upload_intent(VENUE_ID, IMAGE_ID, "image/jpeg", len(payload))
+    bucket.objects[intent.object_key] = FakeObject(payload, "image/jpeg")
     validated = storage.read_bounded(VENUE_ID, IMAGE_ID, intent.object_key)
 
     review = storage.write_review_copy(VENUE_ID, IMAGE_ID, validated)
@@ -334,7 +357,7 @@ def test_oss_review_promotion_head_verification_and_cleanup() -> None:
         "Content-Type": "image/jpeg",
         "x-oss-object-acl": "private",
     }
-    assert bucket.sign_calls[-1] == ("GET", review.object_key, 300, None)
+    assert bucket.sign_calls[-1] == ("GET", review.object_key, 300, None, None)
     assert "expires=300" in signed_url
     assert bucket.copy_calls == [(bucket.bucket_name, intent.object_key, published.object_key)]
     assert bucket.head_calls == [published.object_key]
@@ -420,30 +443,3 @@ def test_oss_settings_require_https_public_url_and_redact_secret() -> None:
     assert "OSS_PUBLIC_BASE_URL must use HTTPS" in rendered
     assert secret not in rendered
     assert "SECRET_URL_SENTINEL" not in rendered
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    [
-        ("oss_endpoint", "https://oss.example.test/path", "origin only"),
-        ("oss_endpoint", "https://oss.example.test?token=secret", "query or fragment"),
-        (
-            "oss_public_base_url",
-            "https://cdn.example.test/media#fragment",
-            "query or fragment",
-        ),
-    ],
-)
-def test_oss_settings_reject_url_components_that_break_object_paths(
-    field: str, value: str, message: str
-) -> None:
-    with pytest.raises(ValidationError, match=message):
-        Settings(**deployed_settings(**{field: value}))
-
-
-def test_complete_oss_settings_keep_access_credentials_out_of_repr() -> None:
-    settings = Settings(**deployed_settings())
-
-    assert isinstance(settings.oss_access_key_secret, SecretStr)
-    assert "access-key-id" not in repr(settings)
-    assert "OSS_SECRET_SENTINEL" not in repr(settings)

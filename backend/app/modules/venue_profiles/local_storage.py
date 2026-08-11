@@ -9,12 +9,14 @@ from .storage import (
     REVIEW_URL_TTL_SECONDS,
     UPLOAD_URL_TTL_SECONDS,
     ImageContentType,
+    InvalidMediaError,
     PublishedImage,
     StorageBoundaryError,
     UploadIntent,
     ValidatedImage,
     compressed_review_data,
     extension_for,
+    require_byte_size,
     require_content_type,
     validate_image,
 )
@@ -34,9 +36,10 @@ class LocalMediaStorage:
         self._objects: dict[str, _StoredObject] = {}
 
     def create_upload_intent(
-        self, venue_id: UUID, image_id: UUID, content_type: str
+        self, venue_id: UUID, image_id: UUID, content_type: str, byte_size: int
     ) -> UploadIntent:
         accepted = require_content_type(content_type)
+        accepted_size = require_byte_size(byte_size)
         key = (
             f"private/venues/{venue_id}/images/{image_id}/original."
             f"{extension_for(accepted)}"
@@ -48,6 +51,7 @@ class LocalMediaStorage:
             max_bytes=MAX_IMAGE_BYTES,
             required_headers={
                 "Content-Type": accepted,
+                "Content-Length": str(accepted_size),
                 "x-oss-forbid-overwrite": "true",
                 "x-oss-object-acl": "private",
             },
@@ -57,6 +61,8 @@ class LocalMediaStorage:
         self, object_key: str, data: bytes, headers: Mapping[str, str]
     ) -> None:
         content_type = require_content_type(headers.get("Content-Type", ""))
+        if headers.get("Content-Length") != str(len(data)):
+            raise InvalidMediaError("uploaded body does not match signed Content-Length")
         if headers.get("x-oss-forbid-overwrite") != "true":
             raise ValueError("immutable upload header is required")
         if headers.get("x-oss-object-acl") != "private":

@@ -296,6 +296,33 @@ def test_settings_repr_and_str_redact_secret_values() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("oss_endpoint", "https://oss.example.test/path", "origin only"),
+        ("oss_endpoint", "https://oss.example.test?token=secret", "query or fragment"),
+        (
+            "oss_public_base_url",
+            "https://cdn.example.test/media#fragment",
+            "query or fragment",
+        ),
+    ],
+)
+def test_oss_settings_reject_url_components_that_break_object_paths(
+    field: str, value: str, message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Settings(**deployed_settings(**{field: value}))
+
+
+def test_complete_oss_settings_keep_access_credentials_out_of_repr() -> None:
+    settings = Settings(**deployed_settings())
+
+    assert isinstance(settings.oss_access_key_secret, SecretStr)
+    assert "staging-access-key-id" not in repr(settings)
+    assert "staging-access-key-secret" not in repr(settings)
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"phone_encryption_key_base64": "SECRET_INVALID_BASE64!"},

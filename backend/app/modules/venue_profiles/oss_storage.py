@@ -18,6 +18,7 @@ from .storage import (
     ValidatedImage,
     compressed_review_data,
     extension_for,
+    require_byte_size,
     require_content_type,
     validate_image,
 )
@@ -47,7 +48,7 @@ class OssMediaStorage:
         if any(value is None for value in required):
             raise ValueError("OSS storage configuration is incomplete")
         assert settings.oss_access_key_secret is not None
-        auth = oss2.Auth(
+        auth = oss2.AuthV2(
             cast(str, settings.oss_access_key_id),
             settings.oss_access_key_secret.get_secret_value(),
         )
@@ -55,19 +56,27 @@ class OssMediaStorage:
         return cls(bucket=bucket, public_base_url=str(settings.oss_public_base_url))
 
     def create_upload_intent(
-        self, venue_id: UUID, image_id: UUID, content_type: str
+        self, venue_id: UUID, image_id: UUID, content_type: str, byte_size: int
     ) -> UploadIntent:
         accepted = require_content_type(content_type)
+        accepted_size = require_byte_size(byte_size)
         key = (
             f"private/venues/{venue_id}/images/{image_id}/original."
             f"{extension_for(accepted)}"
         )
         headers = {
             "Content-Type": accepted,
+            "Content-Length": str(accepted_size),
             "x-oss-forbid-overwrite": "true",
             "x-oss-object-acl": "private",
         }
-        url = self._bucket.sign_url("PUT", key, UPLOAD_URL_TTL_SECONDS, headers=headers)
+        url = self._bucket.sign_url(
+            "PUT",
+            key,
+            UPLOAD_URL_TTL_SECONDS,
+            headers=headers,
+            additional_headers={"content-length"},
+        )
         return UploadIntent(
             object_key=key,
             url=url,
