@@ -1,81 +1,124 @@
 import {
   VENUE_INVENTORY_VISUAL_FIXTURE,
+  buildVenueInventoryView,
   resolveVenueInventoryVisualState,
   type VenueInventoryVisualState,
 } from "../../venue-inventory-fixture";
 import { readIntentHeaderLayout } from "../../intent-header-layout";
 
-interface VenueInventoryOptions {
-  state?: unknown;
-}
+interface Options { state?: unknown }
+interface DatasetEvent { currentTarget?: { dataset?: { pitchId?: unknown; date?: unknown; slotId?: unknown } } }
 
-interface VenueInventorySlotEvent {
-  currentTarget?: {
-    dataset?: {
-      slotId?: unknown;
-    };
-  };
-}
+const dateLabel = (iso: string | null) => {
+  if (!iso) return "日期待加载";
+  const date = new Date(`${iso}T00:00:00Z`);
+  const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  return `${date.getUTCMonth() + 1}月${date.getUTCDate()}日 ${names[date.getUTCDay()]}`;
+};
 
-function visualStatePatch(visualState: VenueInventoryVisualState) {
+const runtimePatch = (state: VenueInventoryVisualState) => {
+  const view = buildVenueInventoryView(state);
   return {
-    visualState,
-    isPanelOpen: visualState !== "day-ready",
-    isCreatePanel: visualState === "create-slot-open"
-      || visualState === "save-result-unknown"
-      || visualState === "create-slot-overlap",
-    isEditPanel: visualState === "edit-slot-open",
-    isSavingUnknown: visualState === "save-result-unknown",
-    isOverlap: visualState === "create-slot-overlap",
+    ...view,
+    sheet: view.sheet ?? null,
+    editor: view.editor ?? null,
+    statusMessage: view.statusMessage ?? "",
+    recoveryLabel: view.recoveryLabel ?? "",
+    recoveryNextState: view.recoveryNextState ?? null,
+    duplicateSaveDisabled: Boolean(view.duplicateSaveDisabled),
+    writeControlsDisabled: Boolean(view.writeControlsDisabled),
+    selectedDateLabel: dateLabel(view.selectedDate),
+    pendingDate: view.sheet?.pendingDate ?? "",
   };
-}
+};
 
 Page({
   data: {
     ...VENUE_INVENTORY_VISUAL_FIXTURE,
-    ...visualStatePatch("day-ready"),
+    ...runtimePatch("day-ready"),
     headerTopPx: 0,
     headerRowHeightPx: 44,
     headerRightInsetPx: 0,
-    headerContentHeightPx: 88,
   },
 
-  onLoad(options: VenueInventoryOptions = {}) {
-    const headerLayout = readIntentHeaderLayout();
-    const visualState = resolveVenueInventoryVisualState(options.state);
+  transition(state: VenueInventoryVisualState, patch: Record<string, unknown> = {}) {
+    this.setData({ ...runtimePatch(state), ...patch });
+  },
+
+  onLoad(options: Options = {}) {
+    const layout = readIntentHeaderLayout();
     this.setData({
-      ...visualStatePatch(visualState),
-      headerTopPx: headerLayout.topPx,
-      headerRowHeightPx: headerLayout.rowHeightPx,
-      headerRightInsetPx: headerLayout.rightInsetPx,
+      ...runtimePatch(resolveVenueInventoryVisualState(options.state)),
+      headerTopPx: layout.topPx,
+      headerRowHeightPx: layout.rowHeightPx,
+      headerRightInsetPx: layout.rightInsetPx,
     });
   },
 
-  onOpenCreate() {
-    this.setData(visualStatePatch("create-slot-open"));
+  onOpenCreate() { this.transition("create-slot-open"); },
+  onOpenPitchPicker() { this.transition("pitch-picker-open"); },
+  onOpenCalendar() { this.transition("calendar-open"); },
+
+  onSelectPitch(event: DatasetEvent) {
+    const pitchId = event.currentTarget?.dataset?.pitchId;
+    const pitch = VENUE_INVENTORY_VISUAL_FIXTURE.pitchGroups.flatMap(({ pitches }) => pitches).find(({ id }) => id === pitchId);
+    if (!pitch) return;
+    const date = this.data.selectedDate || "2026-08-11";
+    this.transition("pitch-refreshing", {
+      selectedPitch: pitch,
+      selectedDate: date,
+      selectedDateLabel: dateLabel(date),
+      requestSequence: Number(this.data.requestSequence) + 1,
+    });
   },
 
-  onSlotTap(event: VenueInventorySlotEvent) {
+  onSelectDate(event: DatasetEvent) {
+    const date = event.currentTarget?.dataset?.date;
+    if (typeof date !== "string") return;
+    const sheet = this.data.sheet;
+    if (this.data.visualState === "calendar-open" && sheet?.kind === "calendar" && sheet.days) {
+      this.setData({
+        pendingDate: date,
+        sheet: {
+          ...sheet,
+          pendingDate: date,
+          pendingLabel: dateLabel(date),
+          days: sheet.days.map((day) => ({ ...day, selected: day.iso === date })),
+        },
+      });
+      return;
+    }
+    this.transition("date-refreshing", { selectedDate: date, selectedDateLabel: dateLabel(date) });
+  },
+
+  onConfirmDate() {
+    const date = this.data.pendingDate;
+    if (!date) return;
+    const selectedPitch = this.data.selectedPitch;
+    this.transition("date-refreshing", {
+      selectedDate: date,
+      selectedDateLabel: dateLabel(date),
+      selectedPitch,
+      requestSequence: Number(this.data.requestSequence) + 1,
+    });
+  },
+
+  onSlotTap(event: DatasetEvent) {
     const slotId = event.currentTarget?.dataset?.slotId;
     const slot = VENUE_INVENTORY_VISUAL_FIXTURE.slots.find(({ id }) => id === slotId);
-    if (!slot?.editable) return;
-    this.setData(visualStatePatch("edit-slot-open"));
+    if (slot?.editable && !this.data.writeControlsDisabled) this.transition("edit-slot-open");
   },
 
-  onClosePanel() {
-    if (this.data.isSavingUnknown) return;
-    this.setData(visualStatePatch("day-ready"));
+  onCloseOverlay() {
+    if (this.data.duplicateSaveDisabled) return;
+    this.transition(this.data.selectedDate === "2026-08-23" ? "cross-week-ready" : "day-ready");
   },
-
-  onCancelPanel() {
-    this.onClosePanel();
+  onRecovery() {
+    if (this.data.recoveryNextState) this.transition(this.data.recoveryNextState);
   },
-
   onPreviewSave() {
-    if (this.data.isSavingUnknown) return;
-    this.setData(visualStatePatch("save-result-unknown"));
+    if (!this.data.duplicateSaveDisabled) this.transition("save-in-progress");
   },
-
   onPreviewFieldTap() {
     wx.showToast({ title: "仅视觉预览，未写入库存", icon: "none" });
   },

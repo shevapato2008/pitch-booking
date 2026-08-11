@@ -1,144 +1,114 @@
-<view class="venue-inventory u-page">
-  <view class="venue-inventory__header" style="padding-top: {{headerTopPx}}px;" aria-hidden="{{isPanelOpen}}">
-    <view class="venue-inventory__header-row" style="height: {{headerContentHeightPx}}px; min-height: {{headerRowHeightPx}}px;">
-      <view class="venue-inventory__identity" style="padding-right: {{headerRightInsetPx}}px;">
-        <text class="venue-inventory__venue">渤海元丰足球场</text>
-        <text class="venue-inventory__venue-note">库存工作台 · 仅授权工作人员</text>
+<view class="inventory-page">
+  <view class="inventory-header" style="padding-top: {{headerTopPx}}px;">
+    <view class="inventory-header__row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <view class="icon-back" aria-hidden="true"></view>
+      <view class="inventory-header__identity">
+        <text class="inventory-header__title">{{venue.name}}</text>
+        <text class="inventory-header__subtitle">{{venueNote}}</text>
       </view>
-      <button class="venue-inventory__add venue-inventory__touch" hover-class="venue-inventory__add--pressed" bindtap="onOpenCreate" aria-label="新增未来时段">
-        <view class="venue-inventory-icon venue-inventory-icon--plus" aria-hidden="true"></view>
-        <text>新增时段</text>
-      </button>
     </view>
   </view>
 
-  <scroll-view class="venue-inventory__screen" scroll-y enhanced show-scrollbar="false" aria-hidden="{{isPanelOpen}}">
-    <view class="venue-inventory__calendar-toolbar">
-      <text class="venue-inventory__month">{{monthLabel}}</text>
-      <button class="venue-inventory__more venue-inventory__touch" hover-class="venue-inventory__control--pressed" bindtap="onPreviewFieldTap" aria-label="选择更多日期">
-        <view class="venue-inventory-icon venue-inventory-icon--calendar" aria-hidden="true"></view>
-        <text>更多日期</text>
+  <view wx:if="{{mode === 'initial-loading' || mode === 'load-error'}}" class="initial-state">
+    <view wx:if="{{mode === 'initial-loading'}}" class="loading-mark" aria-hidden="true"></view>
+    <text>{{statusMessage}}</text>
+    <button wx:if="{{recoveryLabel}}" class="secondary-button" bindtap="onRecovery">{{recoveryLabel}}</button>
+  </view>
+
+  <view wx:else class="inventory-content">
+    <view class="month-row">
+      <text class="month-title">2026年8月</text>
+      <button class="text-button" bindtap="onOpenCalendar">更多日期</button>
+    </view>
+
+    <view class="week-strip" role="group" aria-label="当前自然周">
+      <button wx:for="{{week}}" wx:key="iso" class="week-day {{item.iso === selectedDate ? 'week-day--selected' : ''}}" bindtap="onSelectDate" data-date="{{item.iso}}">
+        <text>{{item.weekday}}</text><text class="week-day__number">{{item.day}}</text>
       </button>
     </view>
 
-    <view class="venue-inventory__week" role="group" aria-label="选择日期">
-      <button
-        wx:for="{{days}}"
-        wx:key="day"
-        class="venue-inventory__day venue-inventory__touch {{item.selected ? 'venue-inventory__day--selected' : ''}}"
-        hover-class="venue-inventory__day--pressed"
-        bindtap="onPreviewFieldTap"
-        aria-label="8月{{item.day}}日，星期{{item.weekday}}{{item.selected ? '，当前选择' : ''}}"
-        aria-pressed="{{item.selected}}"
-      >
-        <text>{{item.weekday}}</text><text class="venue-inventory__day-number">{{item.day}}</text>
-      </button>
+    <button class="current-pitch" bindtap="onOpenPitchPicker" disabled="{{writeControlsDisabled}}" aria-label="选择物理场地">
+      <view class="current-pitch__copy">
+        <text class="context-label">当前场地</text>
+        <text class="current-pitch__value">{{selectedPitch.displayName}} · {{selectedPitch.playersPerSide}}人制</text>
+      </view>
+      <view class="icon-chevron" aria-hidden="true"></view>
+    </button>
+
+    <view class="inventory-summary">
+      <text class="inventory-summary__date">{{selectedDateLabel}}</text>
+      <text class="inventory-summary__count">{{slotCount === null ? '正在读取' : slotCount + ' 个时段'}}</text>
     </view>
 
-    <view class="venue-inventory__pitches" role="group" aria-label="选择物理场地">
-      <button
-        wx:for="{{pitches}}"
-        wx:key="id"
-        class="venue-inventory__pitch venue-inventory__touch {{item.selected ? 'venue-inventory__pitch--selected' : ''}}"
-        hover-class="venue-inventory__control--pressed"
-        bindtap="onPreviewFieldTap"
-        aria-pressed="{{item.selected}}"
-      >{{item.label}}</button>
+    <view wx:if="{{statusMessage}}" class="status-callout status-callout--{{mode}}">
+      <text>{{statusMessage}}</text>
+      <button wx:if="{{recoveryLabel}}" class="inline-retry" bindtap="onRecovery">{{recoveryLabel}}</button>
     </view>
 
-    <view class="venue-inventory__summary">
-      <text>{{selectedDateLabel}}</text><text class="venue-inventory__total">{{totalLabel}}</text>
-    </view>
-
-    <view class="venue-inventory__slots" aria-label="当日时段列表">
-      <button
-        wx:for="{{slots}}"
-        wx:key="id"
-        class="venue-inventory__slot venue-inventory__touch"
-        hover-class="venue-inventory__slot--pressed"
-        disabled="{{!item.editable}}"
-        bindtap="onSlotTap"
-        data-slot-id="{{item.id}}"
-        aria-label="{{item.accessibilityLabel}}"
-      >
-        <view class="venue-inventory__slot-main">
-          <text class="venue-inventory__slot-title">{{item.time}} · ¥{{item.priceYuan}}</text>
-          <text class="venue-inventory__slot-helper">{{item.helper}}</text>
+    <scroll-view class="inventory-list" scroll-y enhanced show-scrollbar="false" scroll-into-view="{{initializeAtEnd ? 'list-end' : ''}}">
+      <view wx:if="{{mode === 'empty'}}" class="empty-state">当天还没有时段，可从下方新增第一条时段</view>
+      <block wx:else>
+        <view wx:for="{{slots}}" wx:key="id" class="slot-card {{!item.editable || writeControlsDisabled ? 'slot-card--readonly' : ''}}" bindtap="onSlotTap" data-slot-id="{{item.id}}" role="button" aria-label="{{item.start}}到{{item.end}}，{{item.statusLabel}}">
+          <view class="slot-card__main">
+            <text class="slot-card__title">{{item.start}}–{{item.end}} · ¥{{item.price}}</text>
+            <text class="slot-card__detail">{{writeControlsDisabled && item.editable ? '权限已失效 · 不可修改' : item.detail}}</text>
+          </view>
+          <text class="status-badge status-badge--{{item.status}}">{{item.statusLabel}}</text>
+          <view wx:if="{{item.editable && !writeControlsDisabled}}" class="icon-chevron" aria-hidden="true"></view>
         </view>
-        <text class="venue-inventory__badge venue-inventory__badge--{{item.statusClass}}">{{item.statusLabel}}</text>
-        <view class="venue-inventory__trailing" aria-hidden="true">
-          <view wx:if="{{item.trailingIcon === 'chevron'}}" class="venue-inventory-icon venue-inventory-icon--chevron"></view>
-          <view wx:elif="{{item.trailingIcon === 'lock'}}" class="venue-inventory-icon venue-inventory-icon--lock"></view>
-          <view wx:else class="venue-inventory-icon venue-inventory-icon--check"></view>
+      </block>
+      <view id="list-end" class="list-end"></view>
+    </scroll-view>
+  </view>
+
+  <view class="inventory-footer">
+    <text class="fixture-note">仅视觉预览，未写入库存</text>
+    <button class="primary-button" bindtap="onOpenCreate" disabled="{{pageAction.disabled}}">＋ 新增时段</button>
+  </view>
+
+  <block wx:if="{{sheet}}">
+    <view class="sheet-scrim" bindtap="onCloseOverlay" aria-hidden="true"></view>
+    <view class="bottom-sheet" role="dialog" aria-modal="true" aria-label="{{sheet.title}}">
+      <view class="sheet-handle" aria-hidden="true"></view>
+      <view class="sheet-heading">
+        <view><text class="sheet-title">{{sheet.title}}</text><text class="sheet-subtitle">{{sheet.kind === 'calendar' ? '未来 14 天' : '只显示使用中的物理场地'}}</text></view>
+        <button class="close-button" bindtap="onCloseOverlay" aria-label="关闭"><view class="icon-close"></view></button>
+      </view>
+      <block wx:if="{{sheet.kind === 'pitch-picker'}}">
+        <view wx:for="{{sheet.groups}}" wx:key="playersPerSide" class="pitch-group">
+          <text class="pitch-group__title">{{item.playersPerSide}}人制</text>
+          <button wx:for="{{item.pitches}}" wx:for-item="pitch" wx:key="id" class="pitch-option {{pitch.id === sheet.selectedPitchId ? 'pitch-option--selected' : ''}}" bindtap="onSelectPitch" data-pitch-id="{{pitch.id}}">
+            <text>{{pitch.displayName}} · {{pitch.playersPerSide}}人制</text><text>{{pitch.id === sheet.selectedPitchId ? '当前' : '第 ' + pitch.sequence + ' 块'}}</text>
+          </button>
         </view>
-      </button>
-    </view>
-    <view class="venue-inventory__scroll-spacer"></view>
-  </scroll-view>
-
-  <block wx:if="{{visualState === 'create-slot-open'}}">
-    <view class="venue-inventory__scrim" bindtap="onClosePanel" aria-hidden="true"></view>
-    <view class="venue-inventory__sheet" role="dialog" aria-modal="true" aria-label="新增时段">
-      <view class="venue-inventory__handle" aria-hidden="true"></view>
-      <view class="venue-inventory__sheet-heading">
-        <view><text class="venue-inventory__sheet-title">新增时段</text><text class="venue-inventory__sheet-subtitle">时间按 30 分钟递增，保存后立即开放预订。</text></view>
-        <button class="venue-inventory__close venue-inventory__touch" hover-class="venue-inventory__close--pressed" bindtap="onClosePanel" aria-label="关闭新增时段面板"><view class="venue-inventory-icon venue-inventory-icon--close" aria-hidden="true"></view></button>
-      </view>
-      <view class="venue-inventory__chips"><text>8月11日 周二</text><text>7人场</text><text>09:30–11:00</text></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">开始时间</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">{{createDraft.start}}<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">结束时间</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">{{createDraft.end}}<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">价格</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">¥ {{createDraft.priceYuan}}<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__callout venue-inventory__callout--success" aria-live="polite"><view class="venue-inventory-icon venue-inventory-icon--check" aria-hidden="true"></view><text>共 1 小时 30 分钟 · 当前列表未发现重叠</text></view>
-      <view class="venue-inventory__actions"><button class="venue-inventory__secondary venue-inventory__touch" bindtap="onCancelPanel">取消</button><button class="venue-inventory__primary venue-inventory__touch" bindtap="onPreviewSave">新增并开放</button></view>
+      </block>
+      <block wx:else>
+        <view class="calendar-weekdays"><text>一</text><text>二</text><text>三</text><text>四</text><text>五</text><text>六</text><text>日</text></view>
+        <view class="calendar-grid">
+          <button wx:for="{{sheet.days}}" wx:key="iso" class="calendar-day {{item.selected ? 'calendar-day--selected' : ''}}" disabled="{{!item.manageable}}" bindtap="onSelectDate" data-date="{{item.iso}}">{{item.day}}</button>
+        </view>
+        <view class="calendar-pending"><text>待确认日期</text><text>{{sheet.pendingLabel}}</text></view>
+        <button class="primary-button" bindtap="onConfirmDate">确认日期</button>
+      </block>
     </view>
   </block>
 
-  <block wx:if="{{visualState === 'edit-slot-open'}}">
-    <view class="venue-inventory__scrim" bindtap="onClosePanel" aria-hidden="true"></view>
-    <view class="venue-inventory__sheet" role="dialog" aria-modal="true" aria-label="编辑时段">
-      <view class="venue-inventory__handle" aria-hidden="true"></view>
-      <view class="venue-inventory__sheet-heading">
-        <view><text class="venue-inventory__sheet-title">编辑时段</text><text class="venue-inventory__sheet-subtitle">8月11日 周二 · 7人场 · 当前开放</text></view>
-        <button class="venue-inventory__close venue-inventory__touch" hover-class="venue-inventory__close--pressed" bindtap="onClosePanel" aria-label="关闭编辑时段面板"><view class="venue-inventory-icon venue-inventory-icon--close" aria-hidden="true"></view></button>
+  <block wx:if="{{editor}}">
+    <view class="sheet-scrim" bindtap="onCloseOverlay" aria-hidden="true"></view>
+    <view class="bottom-sheet" role="dialog" aria-modal="true" aria-label="{{editor.title}}">
+      <view class="sheet-handle"></view>
+      <view class="sheet-heading">
+        <view><text class="sheet-title">{{editor.title}}</text><text class="sheet-subtitle">{{statusMessage || '时间按 30 分钟递增'}}</text></view>
+        <button class="close-button" bindtap="onCloseOverlay" disabled="{{editor.closeDisabled}}"><view class="icon-close"></view></button>
       </view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">时段时间</text><text class="venue-inventory__value venue-inventory__value--readonly">16:00–18:00</text></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">价格</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">¥ 280<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">当前状态</text><text class="venue-inventory__value venue-inventory__value--readonly">开放预订</text></view>
-      <view class="venue-inventory__callout venue-inventory__callout--info" aria-live="polite"><view class="venue-inventory-icon venue-inventory-icon--info" aria-hidden="true"></view><text>已有时段不修改时间；首期只调整价格或开放状态。</text></view>
-      <view class="venue-inventory__actions"><button class="venue-inventory__secondary venue-inventory__secondary--neutral venue-inventory__touch" bindtap="onPreviewSave">临时关闭</button><button class="venue-inventory__primary venue-inventory__touch" bindtap="onPreviewSave">保存价格</button></view>
-    </view>
-  </block>
-
-  <block wx:if="{{visualState === 'save-result-unknown'}}">
-    <view class="venue-inventory__scrim" aria-hidden="true"></view>
-    <view class="venue-inventory__sheet" role="dialog" aria-modal="true" aria-label="正在确认新增时段保存结果">
-      <view class="venue-inventory__handle" aria-hidden="true"></view>
-      <view class="venue-inventory__sheet-heading">
-        <view><text class="venue-inventory__sheet-title">新增时段</text><text class="venue-inventory__sheet-subtitle">8月11日 周二 · 7人场</text></view>
-        <button class="venue-inventory__close venue-inventory__touch" disabled aria-label="确认保存结果期间暂不可关闭"><view class="venue-inventory-icon venue-inventory-icon--close" aria-hidden="true"></view></button>
-      </view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">开始时间</text><text class="venue-inventory__value venue-inventory__value--readonly">{{createDraft.start}}</text></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">结束时间</text><text class="venue-inventory__value venue-inventory__value--readonly">{{createDraft.end}}</text></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">价格</text><text class="venue-inventory__value venue-inventory__value--readonly">¥ {{createDraft.priceYuan}}</text></view>
-      <view class="venue-inventory__callout venue-inventory__callout--info" aria-live="polite"><view class="venue-inventory-icon venue-inventory-icon--clock" aria-hidden="true"></view><view><text class="venue-inventory__callout-title">正在确认保存结果</text><text class="venue-inventory__callout-detail">输入已保留，将使用原请求继续确认。</text></view></view>
-      <view class="venue-inventory__actions"><button class="venue-inventory__secondary venue-inventory__touch" disabled>暂不可取消</button><button class="venue-inventory__primary venue-inventory__touch" disabled aria-busy="true"><view class="venue-inventory__spinner" aria-hidden="true"></view>确认中</button></view>
-    </view>
-  </block>
-
-  <block wx:if="{{visualState === 'create-slot-overlap'}}">
-    <view class="venue-inventory__scrim" bindtap="onClosePanel" aria-hidden="true"></view>
-    <view class="venue-inventory__sheet" role="dialog" aria-modal="true" aria-label="新增时段存在冲突">
-      <view class="venue-inventory__handle" aria-hidden="true"></view>
-      <view class="venue-inventory__sheet-heading">
-        <view><text class="venue-inventory__sheet-title">新增时段</text><text class="venue-inventory__sheet-subtitle">输入已保留，后台已刷新当天权威库存。</text></view>
-        <button class="venue-inventory__close venue-inventory__touch" hover-class="venue-inventory__close--pressed" bindtap="onClosePanel" aria-label="关闭新增时段面板"><view class="venue-inventory-icon venue-inventory-icon--close" aria-hidden="true"></view></button>
-      </view>
-      <view class="venue-inventory__chips"><text>8月11日 周二</text><text>7人场</text><text>09:30–11:00</text></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">开始时间</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">{{createDraft.start}}<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">结束时间</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">{{createDraft.end}}<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__field"><text class="venue-inventory__label">价格</text><button class="venue-inventory__value venue-inventory__touch" bindtap="onPreviewFieldTap">¥ {{createDraft.priceYuan}}<view class="venue-inventory-icon venue-inventory-icon--chevron" aria-hidden="true"></view></button></view>
-      <view class="venue-inventory__callout venue-inventory__callout--error" role="alert"><view class="venue-inventory-icon venue-inventory-icon--alert" aria-hidden="true"></view><view><text class="venue-inventory__callout-title">与已有时段冲突，请调整时间</text><text class="venue-inventory__callout-detail">最新库存中 10:30–12:00 已被占用。</text></view></view>
-      <view class="venue-inventory__actions"><button class="venue-inventory__secondary venue-inventory__touch" bindtap="onCancelPanel">取消</button><button class="venue-inventory__primary venue-inventory__touch" bindtap="onPreviewFieldTap">重新校验</button></view>
+      <view class="context-chips"><text wx:for="{{editor.contextChips}}" wx:key="*this">{{item}}</text></view>
+      <view class="editor-field"><text>开始时间</text><button bindtap="onPreviewFieldTap" disabled="{{editor.timeReadOnly}}">{{editor.draft.start}}</button></view>
+      <view class="editor-field"><text>结束时间</text><button bindtap="onPreviewFieldTap" disabled="{{editor.timeReadOnly}}">{{editor.draft.end}}</button></view>
+      <view class="editor-field"><text>价格</text><button bindtap="onPreviewFieldTap">¥ {{editor.draft.price}}</button></view>
+      <view wx:if="{{editor.inlineError}}" class="editor-error" role="alert"><text>{{editor.inlineError}}</text><text>最新库存中 {{editor.conflictingTime}} 已被占用。</text></view>
+      <view wx:if="{{editor.reviewCopy}}" class="editor-warning">{{editor.reviewCopy}}</view>
+      <view wx:if="{{visualState === 'permission-expired'}}" class="editor-error">权限已失效，请重新进入</view>
+      <view class="sheet-actions"><button class="secondary-button" bindtap="onCloseOverlay" disabled="{{editor.closeDisabled}}">取消</button><button class="primary-button" bindtap="onPreviewSave" disabled="{{editor.saveDisabled}}">{{editor.saveLabel}}</button></view>
     </view>
   </block>
 </view>

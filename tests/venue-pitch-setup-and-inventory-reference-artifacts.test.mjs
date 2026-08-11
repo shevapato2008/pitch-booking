@@ -152,6 +152,8 @@ test("venue pitch setup and inventory v2 manifests freeze shared identity, entry
   assert.equal(inventory.id, "venue-inventory-workbench-v2");
   assert.deepEqual({ ...setup, id: undefined, states: undefined, authority: undefined, pitches: undefined, capabilities: undefined }, {
     ...sharedFields,
+    reference_gate: "reference-approved-native-approved",
+    native_gate: "native-approved",
     fixture: { ...sharedFields.fixture, planned_path: "miniprogram/dev/venue-pitch-setup-fixture.ts" },
     id: undefined,
     states: undefined,
@@ -626,7 +628,7 @@ test("physical pitch setup source includes the complete required copy and live a
   assert.match(controller, /return violations;/);
 });
 
-test("physical pitch setup review records Reference approval while Native Fixture approval remains pending", () => {
+test("physical pitch setup review records Reference and Native Fixture approval", () => {
   mustExist(setupReviewPath);
   const review = read(setupReviewPath);
   const rows = [...review.matchAll(/^\| `([^`]+)` \|/gm)].map(([, state]) => state);
@@ -634,7 +636,7 @@ test("physical pitch setup review records Reference approval while Native Fixtur
   assert.deepEqual(rows, setupStates);
   assert.match(review, /Target viewport:\s*375\s*[×x]\s*812/);
   assert.match(review, /Reference Artifact visual approval:\s*approved on 2026-08-11/);
-  assert.match(review, /Native Fixture visual approval:\s*pending/);
+  assert.match(review, /Native Fixture visual approval:\s*approved on 2026-08-11/);
   assert.match(review, /Production disabled/);
   assert.match(review, /docs\/superpowers\/specs\/2026-08-10-venue-pitch-setup-and-inventory-revision-design\.md/);
   assert.match(review, /artifacts\/ui\/screen-manifest\/venue-pitch-setup\.yaml/);
@@ -920,7 +922,7 @@ test("venue operations reviews contain complete audited 375 by 812 Reference evi
     reviewRoot: "artifacts/ui/reviews/venue-pitch-setup",
     reviewPath: setupReviewPath,
     boardPath: setupReviewBoardPath,
-    nativeApproval: "pending",
+    nativeApproval: "approved on 2026-08-11",
     capturedStates: setupCapturedEvidenceStates,
   });
   assertReferenceEvidence({
