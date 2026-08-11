@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-10
 
-**状态：** Reference Artifacts 与物理场地配置原生 Fixture 已由用户确认；库存工作台 v2 原生 Fixture 待实现
+**状态：** Reference Artifacts、物理场地配置原生 Fixture 与库存工作台 v2 原生 Fixture 视觉已由用户确认；待契约阶段
 
 **修订对象：** [目的入口与场馆单日库存切片设计](./2026-08-10-intent-entry-and-venue-inventory-design.md)
 

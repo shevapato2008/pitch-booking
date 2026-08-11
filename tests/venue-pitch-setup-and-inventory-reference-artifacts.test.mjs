@@ -21,6 +21,8 @@ const inventoryReferenceDataPath = "artifacts/ui/references/venue-inventory-work
 const inventoryReferenceControllerPath = "artifacts/ui/references/venue-inventory-workbench-v2.js";
 const inventoryReviewPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/README.md";
 const inventoryReviewBoardPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/reference-board.html";
+const inventoryDesignSpecPath = "docs/superpowers/specs/2026-08-10-intent-entry-and-venue-inventory-design.md";
+const inventoryRevisionSpecPath = "docs/superpowers/specs/2026-08-10-venue-pitch-setup-and-inventory-revision-design.md";
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
 const pngDimensions = (path) => {
@@ -163,6 +165,8 @@ test("venue pitch setup and inventory v2 manifests freeze shared identity, entry
   });
   assert.deepEqual({ ...inventory, id: undefined, states: undefined, authority: undefined, default_selection: undefined, date_window: undefined, picker_pitches: undefined }, {
     ...sharedFields,
+    reference_gate: "reference-approved-native-approved",
+    native_gate: "native-approved",
     fixture: { ...sharedFields.fixture, planned_path: "miniprogram/dev/venue-inventory-fixture.ts" },
     id: undefined,
     states: undefined,
@@ -888,7 +892,7 @@ test("inventory v2 live audit excludes nodes fully clipped by the canvas or a sc
   assert.match(iconAudit, /if \(!isVisible\(icon\)\) return;[\s\S]*icon-box-outside-control[\s\S]*icon-outside-canvas/);
 });
 
-test("inventory v2 review records Reference approval without starting Native Fixture implementation", () => {
+test("inventory v2 records the user-approved Native Fixture visual gate", () => {
   mustExist(inventoryReviewPath);
   const review = read(inventoryReviewPath);
   const rows = [...review.matchAll(/^\| `([^`]+)` \|/gm)].map(([, state]) => state);
@@ -896,7 +900,7 @@ test("inventory v2 review records Reference approval without starting Native Fix
   assert.deepEqual(rows, inventoryStates);
   assert.match(review, /Target viewport:\s*375\s*[×x]\s*812/);
   assert.match(review, /Reference Artifact visual approval:\s*approved on 2026-08-11/);
-  assert.match(review, /Native Fixture visual approval:\s*not started/);
+  assert.match(review, /Native Fixture visual approval:\s*approved on 2026-08-11/);
   assert.match(review, /Production disabled/);
   assert.match(review, /historical and superseded/);
   assert.match(review, /docs\/superpowers\/specs\/2026-08-10-venue-pitch-setup-and-inventory-revision-design\.md/);
@@ -914,6 +918,8 @@ test("inventory v2 review records Reference approval without starting Native Fix
     assert.equal((line.match(/not started/g) ?? []).length, 4);
     assert.match(line, /\| pending \|$/);
   }
+  assert.match(read(inventoryDesignSpecPath), /场馆库存工作台 v2 原生 Fixture 视觉已由用户确认/);
+  assert.match(read(inventoryRevisionSpecPath), /库存工作台 v2 原生 Fixture 视觉已由用户确认/);
 });
 
 test("venue operations reviews contain complete audited 375 by 812 Reference evidence", () => {
@@ -930,7 +936,7 @@ test("venue operations reviews contain complete audited 375 by 812 Reference evi
     reviewRoot: "artifacts/ui/reviews/venue-inventory-workbench-v2",
     reviewPath: inventoryReviewPath,
     boardPath: inventoryReviewBoardPath,
-    nativeApproval: "not started",
+    nativeApproval: "approved on 2026-08-11",
   });
 });
 

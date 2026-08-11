@@ -4,8 +4,8 @@
 
 - Target viewport: 375 × 812.
 - Reference Artifact visual approval: approved on 2026-08-11.
-- Native Fixture visual approval: not started.
-- Production disabled; this is a browser Reference only and has no production route, Fixture, contract, backend, migration, or real save.
+- Native Fixture visual approval: approved on 2026-08-11.
+- Production disabled; the approved native Fixture remains development-only and has no production route, contract, backend, migration, or real save.
 - Fixture deletion condition: `delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit`.
 - The old inventory Artifact is historical and superseded; it remains only as the cited slot-status material baseline.
 
@@ -80,6 +80,6 @@ Copy names the selected date and physical pitch, keeps load failures distinct fr
 
 ### State semantics
 
-Pitch and date refresh states retain the complementary selection; their errors retain the attempted selection and expose retry. Calendar dates outside 2026-08-10 through 2026-08-23 are visibly disabled, `cross-week-ready` shows Aug 17–23, error sheets retain draft inputs, and `permission-expired` keeps readable context while disabling write controls. Native and production gates remain not started or disabled.
+Pitch and date refresh states retain the complementary selection; their errors retain the attempted selection and expose retry. Calendar dates outside 2026-08-10 through 2026-08-23 are visibly disabled, `cross-week-ready` shows Aug 17–23, error sheets retain draft inputs, and `permission-expired` keeps readable context while disabling write controls. The Native Fixture visual gate is approved; production remains disabled.
 
-Reference screenshots are approved, but no native implementation, side-by-side, overlay, or difference screenshots are claimed; Native Fixture work has not started.
+Reference screenshots and the Native Fixture visual are approved. This status-only approval record does not claim new implementation, side-by-side, overlay, or difference evidence files; those evidence-register cells remain unchanged.

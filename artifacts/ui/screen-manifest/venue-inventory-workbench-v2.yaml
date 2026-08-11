@@ -2,7 +2,8 @@ id: venue-inventory-workbench-v2
 target_viewport: {width: 375, height: 812}
 production_enabled: false
 entry: authorized-deep-link-only
-reference_gate: reference-approved-native-pending
+reference_gate: reference-approved-native-approved
+native_gate: native-approved
 venue_scope:
   venue_id: venue-bohai-yuanfeng
   name: 渤海元丰足球场
