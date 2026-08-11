@@ -21,9 +21,9 @@ test("booking preview manifest stays scoped while development page discovery own
   });
 });
 
-test("production source manifest does not expose the inventory preview or Fixture copy", () => {
+test("production source manifest exposes the real inventory route without a development route", () => {
   const productionManifest = readFileSync(productionManifestPath, "utf8");
 
-  assert.doesNotMatch(productionManifest, /venue-inventory|库存工作台|渤海元丰足球场/);
+  assert.match(productionManifest, /pages\/venue-inventory\/index/);
   assert.doesNotMatch(productionManifest, /dev\//);
 });

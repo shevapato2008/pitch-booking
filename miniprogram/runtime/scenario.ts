@@ -24,7 +24,7 @@ const RFC3339_PATTERN =
 
 type NativeResult = "success" | "failure";
 type MediaRole = "COVER" | "GALLERY";
-type HttpMethod = "GET" | "POST";
+type HttpMethod = "GET" | "POST" | "PUT";
 
 interface FixtureOutcome { fixture: FixtureName; delay_ms?: number }
 interface ErrorOutcome { error: string; delay_ms?: number }
@@ -134,6 +134,7 @@ export function scenarioRuntime(input: unknown, fixtureLoader: FixtureLoader = p
   const transport: Transport = {
     get: <T>(path: string, headers?: Readonly<Record<string, string>>) => dispatch<T>("GET", path, headers),
     post: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => dispatch<T>("POST", path, headers, body),
+    put: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => dispatch<T>("PUT", path, headers, body),
   };
 
   const native: NativeCapabilities = {
@@ -179,7 +180,7 @@ function parseRule(value: unknown): HttpRule {
     if (matchInput[key] !== undefined) match[key] = requiredString(matchInput[key], "INVALID_MATCH_VALUE");
   }
   if (matchInput.method !== undefined) {
-    if (matchInput.method !== "GET" && matchInput.method !== "POST") throw new Error("INVALID_MATCH_METHOD");
+    if (matchInput.method !== "GET" && matchInput.method !== "POST" && matchInput.method !== "PUT") throw new Error("INVALID_MATCH_METHOD");
     match.method = matchInput.method;
   }
   if (matchInput.headers !== undefined) {

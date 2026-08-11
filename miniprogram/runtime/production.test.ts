@@ -192,6 +192,16 @@ test("forwards GET headers and POST body/headers through the frozen transport bo
   }));
 });
 
+test("forwards PUT body and headers", async () => {
+  const request = captureRequest();
+  const response = productionTransport("https://api.example").put("/resource/one", { status: "CLOSED" }, { "Idempotency-Key": "key-1" });
+  request.options.success?.(requestResult(200, { status: "CLOSED" }));
+  await expect(response).resolves.toEqual({ status: "CLOSED" });
+  expect(request.call).toHaveBeenCalledWith(expect.objectContaining({
+    method: "PUT", data: { status: "CLOSED" }, header: { "Idempotency-Key": "key-1" },
+  }));
+});
+
 test.each([400, 404, 500, 503])("normalizes HTTP %i responses", async (statusCode) => {
   const request = captureRequest();
   const response = productionTransport("https://api.example").get("/resource");

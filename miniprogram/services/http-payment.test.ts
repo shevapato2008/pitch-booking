@@ -15,7 +15,7 @@ const paymentConfirming = jest.requireActual<Record<string, unknown>>("../../con
 const session = jest.requireActual<Record<string, unknown>>("../../contracts/examples/wechat-session.json");
 
 interface Call {
-  readonly method: "GET" | "POST";
+  readonly method: "GET" | "POST" | "PUT";
   readonly path: string;
   readonly body?: unknown;
   readonly headers?: Readonly<Record<string, string>>;
@@ -45,8 +45,9 @@ function harness(
   const transport: PaymentTransport = {
     get: async <T>() => await next() as T,
     post: async <T>() => await next() as T,
+    put: async <T>() => await next() as T,
     requestWithStatus: async <T>(
-      method: "GET" | "POST",
+      method: "GET" | "POST" | "PUT",
       path: string,
       body: unknown,
       headers?: Readonly<Record<string, string>>,

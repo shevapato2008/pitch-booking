@@ -100,7 +100,7 @@ export const productionTencentPoiRequest: TencentPoiRequest = ({ url, data }) =>
 
 export function productionTransport(baseUrl: string): StatusTransport {
   const requestWithStatus = <T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PUT",
     path: string,
     body: unknown,
     headers?: Readonly<Record<string, string>>,
@@ -145,6 +145,8 @@ export function productionTransport(baseUrl: string): StatusTransport {
       (await requestWithStatus<T>("GET", path, undefined, headers)).data,
     post: async <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
       (await requestWithStatus<T>("POST", path, body, headers)).data,
+    put: async <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
+      (await requestWithStatus<T>("PUT", path, body, headers)).data,
     requestWithStatus,
   };
 }

@@ -490,6 +490,7 @@ test("production app registers no development pages", () => {
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-inventory/index",
   ]);
   assert.equal(app.pages.some((page) => page.startsWith("dev/")), false);
 });

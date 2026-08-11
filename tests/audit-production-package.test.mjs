@@ -388,6 +388,7 @@ async function createProductionPackage() {
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-inventory/index",
   ];
   await writeFile(
     path.join(packageRoot, "app.json"),

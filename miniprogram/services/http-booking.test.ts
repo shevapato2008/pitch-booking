@@ -254,6 +254,7 @@ function createHarness() {
   const transport: Transport = {
     get: <T>(path: string, headers?: Readonly<Record<string, string>>) => get(path, headers) as Promise<T>,
     post: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => post(path, body, headers) as Promise<T>,
+    put: async <T>() => undefined as T,
   };
   const identity: WeChatIdentityCapability = { login: jest.fn(async () => ({ code: "wx-login-code" })) };
   const phone: WeChatPhoneCapability = {

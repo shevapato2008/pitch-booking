@@ -28,7 +28,7 @@ const venueDetail = jest.requireActual<Record<string, unknown>>("../../contracts
 
 interface RequestOptions {
   readonly url: string;
-  readonly method: "GET" | "POST";
+  readonly method: "GET" | "POST" | "PUT";
   readonly data?: unknown;
   readonly header?: Readonly<Record<string, string>>;
   readonly success: (response: { statusCode: number; data: unknown }) => void;

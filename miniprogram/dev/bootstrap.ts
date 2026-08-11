@@ -7,6 +7,8 @@ import {
 } from "../runtime/production";
 import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeutralPhoneTapCode } from "../services/booking";
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
+import { createInventoryMutationAttemptStore, registerInventoryMutationAttemptStore } from "../services/inventory-attempt-store";
+import { registerInventoryDataSource } from "../services/inventory";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
@@ -31,6 +33,7 @@ export type DevelopmentBootstrapOptions =
 
 export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { source: "fixture" }): void {
   registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));
+  registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));
   registerPaymentCapability(createDevelopmentPaymentCapability("success", showDevelopmentCashier));
   if (options.source === "http") {
     const sources = createDevelopmentHttpSources(options.apiBaseUrl);
@@ -38,6 +41,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerBookingDataSource(sources.booking);
     registerPaymentDataSource(sources.payment);
     registerVenueDirectoryDataSource(sources.venues);
+    registerInventoryDataSource(sources.inventory);
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);

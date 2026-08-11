@@ -19,7 +19,7 @@ test("development preview manifest has exactly the two booking routes", async ()
   ]);
 });
 
-test("source production manifest puts the map first across five production routes", async () => {
+test("source production manifest puts the map first across six production routes", async () => {
   const manifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(manifest.pages, [
     "pages/venue-map/index",
@@ -27,10 +27,11 @@ test("source production manifest puts the map first across five production route
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-inventory/index",
   ]);
 });
 
-test("development includes four deterministic native preview pages while production stays on five routes", async (t) => {
+test("development includes four deterministic native preview pages while production stays on six routes", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -47,6 +48,7 @@ test("development includes four deterministic native preview pages while product
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-inventory/index",
   ];
   const developmentRoutes = [
     ...productionRoutes,

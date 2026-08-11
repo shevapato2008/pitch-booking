@@ -219,7 +219,7 @@ test("temporary map previews are absent while the approved center asset remains"
   assert.doesNotMatch(productionText, previewSymbols);
 });
 
-test("real production build emits all five production routes as native artifacts", async (t) => {
+test("real production build emits all six production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -230,6 +230,7 @@ test("real production build emits all five production routes as native artifacts
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-inventory/index",
   ];
   assert.deepEqual(manifest.pages, routes);
   for (const route of routes) {
