@@ -1,7 +1,26 @@
 {
   "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
   "name": "浦东星跃足球公园",
-  "description": "专业人造草足球场，适合朋友约球、球队训练与企业活动。",
+  "profile": {
+    "publication_state": "PUBLISHED",
+    "published_version": 3,
+    "description": "专业人造草足球场，适合朋友约球、球队训练与企业活动。",
+    "cover_image": "https://assets.example.com/venues/xingyue/cover.jpg",
+    "images": [
+      {"url": "https://assets.example.com/venues/xingyue/cover.jpg", "alt": "浦东星跃足球公园五人制球场全景", "role": "COVER", "sort_order": 0},
+      {"url": "https://assets.example.com/venues/xingyue/gallery-1.jpg", "alt": "夜间灯光下的球场", "role": "GALLERY", "sort_order": 1},
+      {"url": "https://assets.example.com/venues/xingyue/gallery-2.jpg", "alt": "场馆更衣室", "role": "GALLERY", "sort_order": 2}
+    ],
+    "facilities": [
+      {"code": "LIGHTING", "name": "专业夜场照明", "sort_order": 0},
+      {"code": "CHANGING_ROOM", "name": "更衣室", "sort_order": 1},
+      {"code": "DRINKING_WATER", "name": "饮水设施", "sort_order": 2},
+      {"code": "PARKING", "name": "停车场", "sort_order": 3}
+    ],
+    "pitch_sizes": ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
+    "live_price": {"available": true, "from_price_cents": 36000, "currency": "CNY", "unit": "HOUR"},
+    "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"}
+  },
   "price_advantage_text": "工作日白天低至每小时 360 元，在线价格透明，无额外服务费。",
   "timezone": "Asia/Shanghai",
   "business_hours_text": "每日 09:00–23:00，法定节假日营业时间以场馆通知为准。",
@@ -10,42 +29,10 @@
   "longitude": 121.623847,
   "parking_text": "园区提供收费停车位，前 30 分钟免费。",
   "refund_policy_summary": "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。",
-  "cover_image": "https://assets.example.com/venues/xingyue/cover.jpg",
-  "live_price": {"available": true, "from_price_cents": 36000, "currency": "CNY", "unit": "HOUR"},
-  "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"},
-  "images": [
-    {
-      "url": "https://assets.example.com/venues/xingyue/cover.jpg",
-      "alt": "浦东星跃足球公园五人制球场全景",
-      "role": "COVER",
-      "sort_order": 0
-    },
-    {
-      "url": "https://assets.example.com/venues/xingyue/gallery-1.jpg",
-      "alt": "夜间灯光下的球场",
-      "role": "GALLERY",
-      "sort_order": 1
-    },
-    {
-      "url": "https://assets.example.com/venues/xingyue/gallery-2.jpg",
-      "alt": "场馆更衣室",
-      "role": "GALLERY",
-      "sort_order": 2
-    }
-  ],
-  "facilities": [
-    { "code": "LIGHTING", "name": "专业夜场照明", "sort_order": 0 },
-    { "code": "CHANGING_ROOM", "name": "更衣室", "sort_order": 1 },
-    { "code": "DRINKING_WATER", "name": "饮水设施", "sort_order": 2 },
-    { "code": "PARKING", "name": "停车场", "sort_order": 3 }
-  ],
   "pitch_types": [
-    { "code": "FIVE_A_SIDE", "name": "五人制", "sort_order": 0 },
-    { "code": "SEVEN_A_SIDE", "name": "七人制", "sort_order": 1 }
+    {"code": "FIVE_A_SIDE", "name": "五人制", "sort_order": 0},
+    {"code": "SEVEN_A_SIDE", "name": "七人制", "sort_order": 1}
   ],
-  "availability_window": {
-    "start_date": "2026-07-22",
-    "end_date": "2026-08-04"
-  },
+  "availability_window": {"start_date": "2026-07-22", "end_date": "2026-08-04"},
   "generated_at": "2026-07-22T09:30:00+08:00"
 }

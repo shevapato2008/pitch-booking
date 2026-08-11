@@ -2,7 +2,17 @@
   "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
   "slug": "bohai-yuanfeng-football-pitch",
   "name": "渤海元丰足球场",
-  "description": "专业人造草足球场，适合朋友约球、球队训练与企业活动。",
+  "profile": {
+    "publication_state": "PUBLISHED",
+    "published_version": 3,
+    "description": "专业人造草足球场，适合朋友约球、球队训练与企业活动。",
+    "cover_image": "https://assets.example.com/venues/xingyue/cover.jpg",
+    "images": [{"url": "https://assets.example.com/venues/xingyue/cover.jpg", "alt": "渤海元丰足球场", "role": "COVER", "sort_order": 0}],
+    "facilities": [{"code": "LIGHTING", "name": "专业夜场照明", "sort_order": 0}],
+    "pitch_sizes": ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
+    "live_price": {"available": true, "from_price_cents": 16000, "currency": "CNY", "unit": "HOUR"},
+    "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"}
+  },
   "address": "天津市西青区利达路",
   "latitude": 39.000867,
   "longitude": 117.212396,
@@ -12,7 +22,6 @@
   "navigation_longitude": 117.212208,
   "booking_mode": "ONLINE",
   "pitch_types": ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
-  "cover_image": "https://assets.example.com/venues/xingyue/cover.jpg",
   "nearest_transit": [],
   "content_verified_at": "2026-07-30T18:15:00+08:00",
   "price_advantage_text": "在线价格透明，以可订时段显示为准。",
@@ -20,25 +29,5 @@
   "business_hours_text": "营业时间以在线可订时段为准。",
   "parking_text": "停车安排以场馆现场指引为准。",
   "refund_policy_summary": "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。",
-  "live_price": {"available": true, "from_price_cents": 16000, "currency": "CNY", "unit": "HOUR"},
-  "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"},
-  "images": [
-    {
-      "url": "https://assets.example.com/venues/xingyue/cover.jpg",
-      "alt": "渤海元丰足球场",
-      "role": "COVER",
-      "sort_order": 0
-    }
-  ],
-  "facilities": [
-    {
-      "code": "LIGHTING",
-      "name": "专业夜场照明",
-      "sort_order": 0
-    }
-  ],
-  "availability_window": {
-    "start_date": "2026-07-30",
-    "end_date": "2026-08-29"
-  }
+  "availability_window": {"start_date": "2026-07-30", "end_date": "2026-08-29"}
 }

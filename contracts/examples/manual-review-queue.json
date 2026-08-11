@@ -9,7 +9,7 @@
       "item_version": 2,
       "item_type": "IMAGE",
       "state": "PENDING_MANUAL",
-      "review_content_path": "/api/v1/admin/moderation/venue-profiles/9c6dc06a-e825-4c55-8e2b-237b7cb8d101/content",
+      "review_image_url": "https://review-assets.example.com/venue-profiles/9c6dc06a-e825-4c55-8e2b-237b7cb8d101/review.webp?expires=1786443900&signature=short-lived",
       "submitted_at": "2026-08-11T15:35:00+08:00"
     }
   ],

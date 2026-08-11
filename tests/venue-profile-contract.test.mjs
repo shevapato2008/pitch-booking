@@ -104,8 +104,25 @@ test('upload intent is private, bounded, typed, and credential-free', async () =
   assert.doesNotMatch(JSON.stringify(intent), /access[_-]?key|secret|credential|DASHSCOPE_API_KEY/i);
 
   for (const filename of ['venue-profile-admin-ready.json', 'venue-profile-reviewing.json', 'venue-profile-rejected.json']) {
-    assert.doesNotMatch(JSON.stringify(await readJson(filename)), /object_key|signed_(?:put_)?url/i, filename);
+    const snapshot = await readJson(filename);
+    assert.doesNotMatch(JSON.stringify(snapshot), /object_key|signed_(?:put_)?url|preview_path/i, filename);
+    assert.equal(snapshot.current_revision.images.every((image) => !Object.hasOwn(image, 'preview_path')), true);
   }
+});
+
+test('manual review image access is restricted, expiring, and absent from normal snapshots', async () => {
+  const contract = await readContract();
+  const item = contract.components.schemas.ManualReviewItem;
+  assert.equal(item.properties.review_content_path, undefined);
+  assert.deepEqual(item.properties.review_image_url.type, ['string', 'null']);
+  assert.equal(item.properties.review_image_url.format, 'uri');
+  assert.equal(item.properties.review_image_url.pattern, '^https://');
+  assert.match(item.properties.review_image_url.description, /restricted/i);
+  assert.match(item.properties.review_image_url.description, /expir/i);
+
+  const queue = await readJson('manual-review-queue.json');
+  assert.equal(queue.items[0].review_content_path, undefined);
+  assert.match(queue.items[0].review_image_url, /^https:\/\//);
 });
 
 test('frozen profile states preserve published data and moderation boundaries', async () => {
@@ -135,19 +152,32 @@ test('frozen profile states preserve published data and moderation boundaries', 
   assert.match(schemaText, /key.*never exposed/i);
 });
 
-test('public venue and order examples expose no venue contact or private moderation data', async () => {
-  const venueFiles = ['venue-primary.json', 'venue-online-detail.json', 'venue-directory-detail.json'];
+test('public venue responses structurally expose only the named published projection', async () => {
+  const contract = await readContract();
+  const venueSchemas = [
+    ['venue-primary.json', 'Venue'], ['venue-online-detail.json', 'OnlineVenueDetail'],
+    ['venue-directory-detail.json', 'DirectoryVenueDetail'],
+  ];
+  for (const [filename, schemaName] of venueSchemas) {
+    const schema = contract.components.schemas[schemaName];
+    assert.ok(schema.required.includes('profile'), schemaName);
+    assert.equal(schema.properties.profile.$ref, '#/components/schemas/PublishedVenueProfile');
+    for (const field of ['description', 'images', 'facilities']) assert.equal(schema.properties[field], undefined, `${schemaName}.${field}`);
+
+    const example = await readJson(filename);
+    assert.equal(example.phone, undefined, filename);
+    assert.equal(example.profile.publication_state, 'PUBLISHED', filename);
+    assert.ok(Number.isInteger(example.profile.published_version), filename);
+    assert.ok('description' in example.profile && 'images' in example.profile && 'facilities' in example.profile, filename);
+    assert.doesNotMatch(JSON.stringify(example), /object_key|signed_(?:put_)?url|review|draft|preview_path/i, filename);
+  }
+});
+
+test('order examples expose no venue contact while retaining user masked phone', async () => {
   const orderFiles = [
     'order-confirmed.json', 'order-expired.json', 'order-payment-exception.json',
     'order-pending.json', 'payment-already-confirmed.json', 'payment-confirming.json',
   ];
-  for (const filename of venueFiles) {
-    const example = await readJson(filename);
-    assert.equal(example.phone, undefined, filename);
-    assert.ok('description' in example && 'images' in example && 'facilities' in example, filename);
-    assert.ok('pitch_types' in example && 'live_price' in example && 'availability_target' in example, filename);
-    assert.doesNotMatch(JSON.stringify(example), /object_key|signed_(?:put_)?url|review|draft/i, filename);
-  }
   for (const filename of orderFiles) {
     const example = await readJson(filename);
     let maskedPhoneFound = false;

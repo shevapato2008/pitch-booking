@@ -1607,20 +1607,21 @@ components:
     PublishedVenueProfile:
       type: object
       additionalProperties: false
-      required: [published_version, description, cover_image, images, facilities, pitch_sizes, live_price, availability_target]
+      required: [publication_state, published_version, description, cover_image, images, facilities, pitch_sizes, live_price, availability_target]
       properties:
+        publication_state: {type: string, const: PUBLISHED}
         published_version: {type: integer, minimum: 1}
         description: {type: string, maxLength: 300}
-        cover_image: {type: string, format: uri, pattern: '^https://'}
+        cover_image: {type: [string, 'null'], format: uri, pattern: '^https://'}
         images:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 8
           items: {$ref: '#/components/schemas/VenueImage'}
         facilities:
           type: array
           uniqueItems: true
-          items: {$ref: '#/components/schemas/FacilityCode'}
+          items: {$ref: '#/components/schemas/Facility'}
         pitch_sizes:
           type: array
           uniqueItems: true
@@ -1638,12 +1639,9 @@ components:
     AdminVenueProfileImage:
       type: object
       additionalProperties: false
-      required: [id, preview_path, alt, role, sort_order, state, reason_code, item_version]
+      required: [id, alt, role, sort_order, state, reason_code, item_version]
       properties:
         id: {type: string, format: uuid}
-        preview_path:
-          type: string
-          pattern: '^/api/v1/admin/venues/[0-9a-f-]+/profile/images/[0-9a-f-]+/content$'
         alt: {type: string, minLength: 1}
         role: {type: string, enum: [COVER, GALLERY]}
         sort_order: {type: integer, minimum: 0, maximum: 7}
@@ -1779,7 +1777,7 @@ components:
     ManualReviewItem:
       type: object
       additionalProperties: false
-      required: [item_id, venue_id, venue_name, revision_id, revision_version, item_version, item_type, state, review_content_path, submitted_at]
+      required: [item_id, venue_id, venue_name, revision_id, revision_version, item_version, item_type, state, review_image_url, submitted_at]
       properties:
         item_id: {type: string, format: uuid}
         venue_id: {type: string, format: uuid}
@@ -1789,9 +1787,11 @@ components:
         item_version: {type: integer, minimum: 1}
         item_type: {type: string, enum: [DESCRIPTION, IMAGE]}
         state: {type: string, const: PENDING_MANUAL}
-        review_content_path:
-          type: string
-          pattern: '^/api/v1/admin/moderation/venue-profiles/[0-9a-f-]+/content$'
+        review_image_url:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+          description: Restricted reviewer-only image URL that expires after a short lifetime; null for description jobs.
         submitted_at: {type: string, format: date-time}
     ManualReviewQueue:
       type: object
@@ -2178,7 +2178,7 @@ components:
         - id
         - slug
         - name
-        - description
+        - profile
         - address
         - latitude
         - longitude
@@ -2188,7 +2188,6 @@ components:
         - navigation_longitude
         - booking_mode
         - pitch_types
-        - cover_image
         - nearest_transit
         - content_verified_at
         - price_advantage_text
@@ -2196,11 +2195,7 @@ components:
         - business_hours_text
         - parking_text
         - refund_policy_summary
-        - images
-        - facilities
         - availability_window
-        - live_price
-        - availability_target
       properties:
         id:
           type: string
@@ -2211,8 +2206,8 @@ components:
         name:
           type: string
           minLength: 1
-        description:
-          type: string
+        profile:
+          $ref: '#/components/schemas/PublishedVenueProfile'
         address:
           type: string
           minLength: 1
@@ -2247,10 +2242,6 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PublicPitchTypeCode'
-        cover_image:
-          type: [string, 'null']
-          format: uri
-          pattern: '^https://'
         nearest_transit:
           type: array
           items:
@@ -2273,22 +2264,8 @@ components:
         refund_policy_summary:
           type: string
           minLength: 1
-        images:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/VenueImage'
-        facilities:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/Facility'
         availability_window:
           $ref: '#/components/schemas/AvailabilityWindow'
-        live_price:
-          $ref: '#/components/schemas/LiveVenuePrice'
-        availability_target:
-          $ref: '#/components/schemas/VenueAvailabilityTarget'
     DirectoryVenueDetail:
       type: object
       additionalProperties: false
@@ -2296,7 +2273,7 @@ components:
         - id
         - slug
         - name
-        - description
+        - profile
         - address
         - latitude
         - longitude
@@ -2306,15 +2283,10 @@ components:
         - navigation_longitude
         - booking_mode
         - pitch_types
-        - cover_image
         - nearest_transit
         - content_verified_at
         - business_hours_text
         - parking_text
-        - images
-        - facilities
-        - live_price
-        - availability_target
       properties:
         id:
           type: string
@@ -2325,8 +2297,8 @@ components:
         name:
           type: string
           minLength: 1
-        description:
-          type: string
+        profile:
+          $ref: '#/components/schemas/PublishedVenueProfile'
         address:
           type: string
           minLength: 1
@@ -2360,10 +2332,6 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PublicPitchTypeCode'
-        cover_image:
-          type: [string, 'null']
-          format: uri
-          pattern: '^https://'
         nearest_transit:
           type: array
           items:
@@ -2375,22 +2343,6 @@ components:
           type: [string, 'null']
         parking_text:
           type: [string, 'null']
-        images:
-          type: array
-          uniqueItems: true
-          items:
-            type: string
-            format: uri
-            pattern: '^https://'
-        facilities:
-          type: array
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/FacilityCode'
-        live_price:
-          $ref: '#/components/schemas/LiveVenuePrice'
-        availability_target:
-          $ref: '#/components/schemas/VenueAvailabilityTarget'
     VenueDetail:
       oneOf:
         - $ref: '#/components/schemas/OnlineVenueDetail'
@@ -2406,7 +2358,7 @@ components:
       required:
         - id
         - name
-        - description
+        - profile
         - price_advantage_text
         - timezone
         - business_hours_text
@@ -2415,14 +2367,9 @@ components:
         - longitude
         - parking_text
         - refund_policy_summary
-        - images
-        - facilities
         - pitch_types
         - availability_window
         - generated_at
-        - cover_image
-        - live_price
-        - availability_target
       properties:
         id:
           type: string
@@ -2430,8 +2377,8 @@ components:
         name:
           type: string
           minLength: 1
-        description:
-          type: string
+        profile:
+          $ref: '#/components/schemas/PublishedVenueProfile'
         price_advantage_text:
           type: string
           minLength: 1
@@ -2458,16 +2405,6 @@ components:
         refund_policy_summary:
           type: string
           minLength: 1
-        images:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/VenueImage'
-        facilities:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/Facility'
         pitch_types:
           type: array
           minItems: 1
@@ -2478,14 +2415,6 @@ components:
         generated_at:
           type: string
           format: date-time
-        cover_image:
-          type: string
-          format: uri
-          pattern: '^https://'
-        live_price:
-          $ref: '#/components/schemas/LiveVenuePrice'
-        availability_target:
-          $ref: '#/components/schemas/VenueAvailabilityTarget'
     Slot:
       type: object
       additionalProperties: false

@@ -669,12 +669,14 @@ function toJsonSchema(value) {
 }
 
 function validateVenueBusinessRules(venue, filename) {
-  if (venue.images.filter(({ role }) => role === 'COVER').length !== 1) {
+  const published = venue.profile;
+  if (published.images.filter(({ role }) => role === 'COVER').length !== 1) {
     fail(`${filename}: images must contain exactly one COVER`);
   }
-  for (const field of ['images', 'facilities', 'pitch_types']) {
-    assertSorted(venue[field], ({ sort_order: sortOrder }) => sortOrder, `${filename}: ${field}`);
+  for (const field of ['images', 'facilities']) {
+    assertSorted(published[field], ({ sort_order: sortOrder }) => sortOrder, `${filename}: profile.${field}`);
   }
+  assertSorted(venue.pitch_types, ({ sort_order: sortOrder }) => sortOrder, `${filename}: pitch_types`);
   const pitchCodes = [...new Set(venue.pitch_types.map(({ code }) => code))].sort();
   if (!isDeepStrictEqual(pitchCodes, ['FIVE_A_SIDE', 'SEVEN_A_SIDE'])) {
     fail(`${filename}: venue must support both required pitch types`);

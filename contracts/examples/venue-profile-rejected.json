@@ -3,11 +3,18 @@
   "facility_version": 4,
   "revision_version": 9,
   "published": {
+    "publication_state": "PUBLISHED",
     "published_version": 3,
     "description": "滨河路旁的社区足球场，提供夜场灯光、休息区与基础更衣设施。",
     "cover_image": "https://assets.example.com/venues/bohai/cover.webp",
     "images": [{"url": "https://assets.example.com/venues/bohai/cover.webp", "alt": "渤海元丰足球场主场全景", "role": "COVER", "sort_order": 0}],
-    "facilities": ["PARKING", "TOILET", "CHANGING_ROOM", "DRINKING_WATER", "REST_AREA", "FIRST_AID", "OUTDOOR", "LIGHTING", "ARTIFICIAL_TURF"],
+    "facilities": [
+      {"code": "PARKING", "name": "停车场", "sort_order": 0}, {"code": "TOILET", "name": "卫生间", "sort_order": 1},
+      {"code": "CHANGING_ROOM", "name": "更衣室", "sort_order": 2}, {"code": "DRINKING_WATER", "name": "饮水设施", "sort_order": 3},
+      {"code": "REST_AREA", "name": "休息区", "sort_order": 4}, {"code": "FIRST_AID", "name": "急救设施", "sort_order": 5},
+      {"code": "OUTDOOR", "name": "室外", "sort_order": 6}, {"code": "LIGHTING", "name": "夜场照明", "sort_order": 7},
+      {"code": "ARTIFICIAL_TURF", "name": "人工草", "sort_order": 8}
+    ],
     "pitch_sizes": ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
     "live_price": {"available": true, "from_price_cents": 16000, "currency": "CNY", "unit": "HOUR"},
     "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"}
@@ -19,8 +26,8 @@
     "description_state": "APPROVED", "description_reason_code": null,
     "facilities": ["PARKING", "TOILET", "CHANGING_ROOM", "SHOWER", "DRINKING_WATER", "REST_AREA", "FIRST_AID", "AED", "OUTDOOR", "LIGHTING", "ARTIFICIAL_TURF"],
     "images": [
-      {"id": "c3195309-183b-46cc-81e6-2c0977223001", "preview_path": "/api/v1/admin/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/profile/images/c3195309-183b-46cc-81e6-2c0977223001/content", "alt": "渤海元丰足球场主场全景", "role": "COVER", "sort_order": 0, "state": "APPROVED", "reason_code": null, "item_version": 2},
-      {"id": "c3195309-183b-46cc-81e6-2c0977223002", "preview_path": "/api/v1/admin/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/profile/images/c3195309-183b-46cc-81e6-2c0977223002/content", "alt": "场馆入口新照片", "role": "GALLERY", "sort_order": 1, "state": "REJECTED", "reason_code": "IMAGE_QUALITY", "item_version": 1}
+      {"id": "c3195309-183b-46cc-81e6-2c0977223001", "alt": "渤海元丰足球场主场全景", "role": "COVER", "sort_order": 0, "state": "APPROVED", "reason_code": null, "item_version": 2},
+      {"id": "c3195309-183b-46cc-81e6-2c0977223002", "alt": "场馆入口新照片", "role": "GALLERY", "sort_order": 1, "state": "REJECTED", "reason_code": "IMAGE_QUALITY", "item_version": 1}
     ],
     "updated_at": "2026-08-11T15:30:00+08:00"
   },

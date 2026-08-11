@@ -163,29 +163,27 @@ test('map and venue detail schemas are closed, discriminated, and location-free'
   });
 
   const commonFields = new Set([
-    'id', 'slug', 'name', 'description', 'address', 'latitude', 'longitude',
+    'id', 'slug', 'name', 'profile', 'address', 'latitude', 'longitude',
     'coordinate_system', 'navigation_poi_name', 'navigation_latitude',
-    'navigation_longitude', 'booking_mode', 'pitch_types', 'cover_image',
+    'navigation_longitude', 'booking_mode', 'pitch_types',
     'nearest_transit', 'content_verified_at',
   ]);
   assert.equal(online.additionalProperties, false);
   assert.deepEqual(new Set(online.required), new Set([
     ...commonFields, 'price_advantage_text', 'timezone', 'business_hours_text',
-    'parking_text', 'refund_policy_summary', 'images', 'facilities',
-    'availability_window', 'live_price', 'availability_target',
+    'parking_text', 'refund_policy_summary', 'availability_window',
   ]));
   assert.equal(directory.additionalProperties, false);
   assert.deepEqual(new Set(directory.required), new Set([
-    ...commonFields, 'business_hours_text', 'parking_text', 'images', 'facilities',
-    'live_price', 'availability_target',
+    ...commonFields, 'business_hours_text', 'parking_text',
   ]));
   for (const forbidden of ['price_advantage_text', 'timezone', 'phone', 'refund_policy_summary', 'availability_window']) {
     assert.equal(directory.properties[forbidden], undefined, forbidden);
   }
   assert.deepEqual(directory.properties.business_hours_text.type, ['string', 'null']);
   assert.deepEqual(directory.properties.parking_text.type, ['string', 'null']);
-  assert.equal(directory.properties.images.type, 'array');
-  assert.equal(directory.properties.facilities.type, 'array');
+  assert.equal(online.properties.profile.$ref, '#/components/schemas/PublishedVenueProfile');
+  assert.equal(directory.properties.profile.$ref, '#/components/schemas/PublishedVenueProfile');
   for (const mapOnlyField of ['district_code', 'district_name']) {
     assert.equal(online.properties[mapOnlyField], undefined, mapOnlyField);
     assert.equal(directory.properties[mapOnlyField], undefined, mapOnlyField);
@@ -420,7 +418,7 @@ test('contract validator rejects media URLs outside the client grammar', async (
     'https://example.com:443/a.jpg',
   ]) {
     await assertMutatedExampleRejected('venue-primary.json', (venue) => {
-      venue.images[0].url = invalid;
+      venue.profile.images[0].url = invalid;
     }, /url|pattern|format/i);
   }
 });
@@ -830,7 +828,7 @@ test('fixture publication rolls back every file after a deterministic second-pub
     ])));
     const venuePath = path.join(temporaryDirectory, 'contracts/examples/venue-primary.json');
     const venue = JSON.parse(await readFile(venuePath, 'utf8'));
-    venue.description = 'transaction candidate venue copy';
+    venue.profile.description = 'transaction candidate venue copy';
     await writeFile(venuePath, JSON.stringify(venue), 'utf8');
     for (const filename of ['availability-ready.json', 'availability-empty.json']) {
       const sourcePath = path.join(temporaryDirectory, 'contracts/examples', filename);
@@ -866,7 +864,7 @@ test('backup cleanup failure preserves the committed new fixture set and recover
     const oldVenue = await readFile(path.join(fixturesDirectory, 'venue-ready.json'));
     const venuePath = path.join(temporaryDirectory, 'contracts/examples/venue-primary.json');
     const venue = JSON.parse(await readFile(venuePath, 'utf8'));
-    venue.description = 'committed transaction candidate';
+    venue.profile.description = 'committed transaction candidate';
     await writeFile(venuePath, JSON.stringify(venue), 'utf8');
     let cleanupCalls = 0;
     await assert.rejects(
