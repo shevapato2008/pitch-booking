@@ -229,7 +229,7 @@ def upgrade() -> None:
         sa.Column("policy_version", sa.String(length=80), nullable=False),
         sa.Column("status", _type("moderation_job_status"), nullable=False),
         sa.Column("attempt_count", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("claim_token", sa.UUID(), nullable=True),
         sa.Column("lease_until", sa.DateTime(timezone=True), nullable=True),
         sa.Column("fixed_reason_code", _type("moderation_reason_code"), nullable=True),

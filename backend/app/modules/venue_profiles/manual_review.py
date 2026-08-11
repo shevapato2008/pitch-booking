@@ -237,6 +237,11 @@ class ManualVenueProfileReviewService:
         else:
             image.moderation_status = status
             image.moderation_reason_code = reason
+        job.status = ModerationJobStatus.COMPLETED
+        job.completed_at = now
+        job.claim_token = None
+        job.lease_until = None
+        job.next_run_at = None
         job.fixed_reason_code = reason
         self._summarize(revision)
         publish = revision.status is VenueProfileRevisionStatus.READY

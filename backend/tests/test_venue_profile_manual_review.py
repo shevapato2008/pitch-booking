@@ -19,6 +19,7 @@ from backend.app.models import (
     ImageRole,
     ModerationItemType,
     ModerationJobStatus,
+    ModerationReasonCode,
     User,
     UserSession,
     Venue,
@@ -179,3 +180,44 @@ def test_manual_decision_rejects_stale_item_version(pg_engine: Engine) -> None:
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "VENUE_PROFILE_VERSION_CONFLICT"
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected_reason"),
+    [
+        ("PASS", None),
+        ("UNRELATED_CONTENT", ModerationReasonCode.UNRELATED_CONTENT),
+    ],
+)
+def test_manual_decision_atomically_completes_job_and_replay_does_not_duplicate(
+    pg_engine: Engine,
+    decision: str,
+    expected_reason: ModerationReasonCode | None,
+) -> None:
+    reviewer_id, _, revision_id = _seed(pg_engine)
+    claim_token = uuid.uuid4()
+    with Session(pg_engine) as session:
+        job = session.scalar(select(ContentModerationJob))
+        assert job is not None
+        job.claim_token = claim_token
+        job.lease_until = datetime.now(UTC) + timedelta(minutes=1)
+        session.commit()
+        job_id = job.id
+
+    client = _client(pg_engine, reviewer_id)
+    url = f"/api/v1/admin/moderation/venue-profiles/{revision_id}/decisions"
+    headers = _headers(REVIEWER_TOKEN, f"manual-metadata-{decision.lower()}")
+    body = {"expected_item_version": 2, "decision": decision}
+
+    assert client.post(url, headers=headers, json=body).status_code == 204
+    assert client.post(url, headers=headers, json=body).status_code == 204
+
+    with Session(pg_engine) as session:
+        job = session.get_one(ContentModerationJob, job_id)
+        assert job.status is ModerationJobStatus.COMPLETED
+        assert job.completed_at is not None
+        assert job.claim_token is None
+        assert job.lease_until is None
+        assert job.next_run_at is None
+        assert job.fixed_reason_code is expected_reason
+        assert len(list(session.scalars(select(ContentModerationDecision)))) == 1
