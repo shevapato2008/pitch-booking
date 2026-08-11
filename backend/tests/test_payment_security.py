@@ -49,6 +49,11 @@ def test_no_unverified_production_notification_route_is_registered() -> None:
             database_url="postgresql+psycopg://u:p@db.example.com/pitch",
             public_api_base_url="https://api.example.com",
             public_image_hosts=("images.example.com",),
+            oss_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+            oss_bucket="venue-media-production",
+            oss_public_base_url="https://images.example.com/media",
+            oss_access_key_id="production-access-key-id",
+            oss_access_key_secret="production-access-key-secret",
         )
     )
     assert "/api/v1/payments/wechat/notify" not in _route_paths(app)

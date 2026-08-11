@@ -27,6 +27,11 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://pitch:change-before-deploy@postgres:5432/pitch}
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-https://staging.invalid}
       PUBLIC_IMAGE_HOSTS: ${PUBLIC_IMAGE_HOSTS:-cdn.invalid}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-https://oss.invalid}
+      OSS_BUCKET: ${OSS_BUCKET:-venue-media-staging}
+      OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL:-https://cdn.invalid/media}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-replace-before-deploy}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-replace-before-deploy}
     depends_on:
       postgres:
         condition: service_healthy

@@ -3,6 +3,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.preflight_deploy import preflight
 
 
@@ -25,6 +27,11 @@ def valid_local_environment() -> dict[str, str]:
         "POSTGRES_PASSWORD": "local-password",
         "PUBLIC_API_BASE_URL": "http://127.0.0.1:8080",
         "PUBLIC_IMAGE_HOSTS": '["cdn.example.test"]',
+        "OSS_ENDPOINT": "https://oss-cn-hangzhou.aliyuncs.com",
+        "OSS_BUCKET": "venue-media-staging",
+        "OSS_PUBLIC_BASE_URL": "https://cdn.example.test/media",
+        "OSS_ACCESS_KEY_ID": "staging-access-key-id",
+        "OSS_ACCESS_KEY_SECRET": "staging-access-key-secret",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
     }
@@ -72,6 +79,51 @@ def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> No
     assert result.failures == ()
 
 
+def test_preflight_requires_complete_oss_configuration_without_printing_secrets(
+    tmp_path: Path,
+) -> None:
+    values = valid_local_environment()
+    secret = values.pop("OSS_ACCESS_KEY_SECRET")
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == ("OSS_ACCESS_KEY_SECRET is required",)
+    assert secret not in repr(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "failure"),
+    [
+        ("OSS_ENDPOINT", "http://oss.example.test", "OSS_ENDPOINT must use HTTPS"),
+        (
+            "OSS_PUBLIC_BASE_URL",
+            "http://cdn.example.test/media",
+            "OSS_PUBLIC_BASE_URL must use HTTPS",
+        ),
+        ("OSS_BUCKET", "Invalid_Bucket", "OSS_BUCKET is invalid"),
+        (
+            "OSS_ENDPOINT",
+            "https://oss.example.test/path",
+            "OSS_ENDPOINT must be an origin URL",
+        ),
+        (
+            "OSS_PUBLIC_BASE_URL",
+            "https://cdn.example.test/media?token=secret",
+            "OSS_PUBLIC_BASE_URL must not contain query or fragment",
+        ),
+    ],
+)
+def test_preflight_rejects_unsafe_oss_public_configuration(
+    tmp_path: Path, field: str, value: str, failure: str
+) -> None:
+    values = valid_local_environment()
+    values[field] = value
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (failure,)
+
+
 def test_preflight_rejects_mock_payment_configuration(tmp_path: Path) -> None:
     values = valid_local_environment()
     values["PAYMENT_PROVIDER"] = "mock"
@@ -100,7 +152,39 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
     assert config["services"]["postgres"]["healthcheck"]
     assert config["services"]["api"]["depends_on"]["postgres"]["condition"] == "service_healthy"
     assert "alembic upgrade head" in " ".join(config["services"]["api"]["command"])
+    assert {
+        key: config["services"]["api"]["environment"][key]
+        for key in (
+            "OSS_ENDPOINT",
+            "OSS_BUCKET",
+            "OSS_PUBLIC_BASE_URL",
+            "OSS_ACCESS_KEY_ID",
+            "OSS_ACCESS_KEY_SECRET",
+        )
+    } == {
+        key: valid_local_environment()[key]
+        for key in (
+            "OSS_ENDPOINT",
+            "OSS_BUCKET",
+            "OSS_PUBLIC_BASE_URL",
+            "OSS_ACCESS_KEY_ID",
+            "OSS_ACCESS_KEY_SECRET",
+        )
+    }
     assert "postgres_data" in config["volumes"]
+
+
+def test_deploy_environment_template_declares_all_oss_inputs() -> None:
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+
+    for key in (
+        "OSS_ENDPOINT",
+        "OSS_BUCKET",
+        "OSS_PUBLIC_BASE_URL",
+        "OSS_ACCESS_KEY_ID",
+        "OSS_ACCESS_KEY_SECRET",
+    ):
+        assert f"{key}=" in template
 
 
 def test_runtime_image_never_syncs_development_dependencies() -> None:

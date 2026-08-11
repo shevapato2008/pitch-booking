@@ -20,6 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _CANONICAL_POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*", re.ASCII)
 _HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
+_OSS_BUCKET = re.compile(r"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]", re.ASCII)
 _PUBLIC_API_URL_ADAPTER = TypeAdapter(AnyHttpUrl)
 _SETTINGS_CONTROL_NAMES = frozenset(
     name
@@ -41,6 +42,11 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite+pysqlite:///:memory:", repr=False)
     public_api_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
     public_image_hosts: tuple[str, ...] = ()
+    oss_endpoint: AnyHttpUrl | None = Field(default=None, repr=False)
+    oss_bucket: str | None = Field(default=None, repr=False)
+    oss_public_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
+    oss_access_key_id: str | None = Field(default=None, repr=False)
+    oss_access_key_secret: SecretStr | None = Field(default=None, repr=False)
     wechat_provider: Literal["development", "real"] = "development"
     payment_provider: Literal["wechat", "mock"] = "wechat"
     enable_mock_payment_provider: bool = False
@@ -106,6 +112,8 @@ class Settings(BaseSettings):
             "WECHAT_APP_SECRET",
             "phone_encryption_key_base64",
             "PHONE_ENCRYPTION_KEY_BASE64",
+            "oss_access_key_secret",
+            "OSS_ACCESS_KEY_SECRET",
         ):
             secret = sanitized.get(key)
             if secret is None or isinstance(secret, SecretStr):
@@ -234,6 +242,74 @@ class Settings(BaseSettings):
                 )
             normalized_hosts.append(normalized)
         return tuple(normalized_hosts)
+
+    @field_validator("oss_endpoint", "oss_public_base_url", mode="before")
+    @classmethod
+    def validate_oss_urls(cls, value: object, info: ValidationInfo) -> AnyHttpUrl | None:
+        field_name = info.field_name
+        assert field_name is not None
+        environment_name = field_name.upper()
+        if value is None:
+            if cls._is_deployed(info):
+                raise cls._safe_value_error(
+                    field_name,
+                    "OSS storage configuration is required for staging and production",
+                )
+            return None
+        try:
+            validated = _PUBLIC_API_URL_ADAPTER.validate_python(value)
+        except (TypeError, ValueError, ValidationError):
+            raise cls._safe_value_error(field_name, f"{environment_name} is invalid") from None
+        if validated.username is not None or validated.password is not None:
+            raise cls._safe_value_error(
+                field_name, f"{environment_name} must not contain credentials"
+            )
+        if validated.scheme != "https":
+            raise cls._safe_value_error(field_name, f"{environment_name} must use HTTPS")
+        if validated.query is not None or validated.fragment is not None:
+            raise cls._safe_value_error(
+                field_name, f"{environment_name} must not contain query or fragment"
+            )
+        if field_name == "oss_endpoint" and validated.path not in {None, "/"}:
+            raise cls._safe_value_error(field_name, "OSS_ENDPOINT must be origin only")
+        return validated
+
+    @field_validator("oss_bucket", "oss_access_key_id", mode="before")
+    @classmethod
+    def validate_oss_names(cls, value: object, info: ValidationInfo) -> str | None:
+        field_name = info.field_name
+        assert field_name is not None
+        if value is None or type(value) is str and not value.strip():
+            if cls._is_deployed(info):
+                raise cls._safe_value_error(
+                    field_name,
+                    "OSS storage configuration is required for staging and production",
+                )
+            if value is not None:
+                raise cls._safe_value_error(field_name, f"{field_name.upper()} must not be empty")
+            return None
+        if type(value) is not str or value != value.strip():
+            raise cls._safe_value_error(field_name, f"{field_name.upper()} is invalid")
+        if field_name == "oss_bucket" and _OSS_BUCKET.fullmatch(value) is None:
+            raise cls._safe_value_error(field_name, "OSS_BUCKET is invalid")
+        return value
+
+    @field_validator("oss_access_key_secret")
+    @classmethod
+    def validate_oss_access_key_secret(
+        cls, value: SecretStr | None, info: ValidationInfo
+    ) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            if cls._is_deployed(info):
+                raise cls._safe_value_error(
+                    "oss_access_key_secret",
+                    "OSS storage configuration is required for staging and production",
+                )
+            if value is not None:
+                raise cls._safe_value_error(
+                    "oss_access_key_secret", "OSS_ACCESS_KEY_SECRET must not be empty"
+                )
+        return value
 
     @field_validator("wechat_provider")
     @classmethod

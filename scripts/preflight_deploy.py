@@ -16,10 +16,16 @@ REQUIRED_KEYS = (
     "POSTGRES_PASSWORD",
     "PUBLIC_API_BASE_URL",
     "PUBLIC_IMAGE_HOSTS",
+    "OSS_ENDPOINT",
+    "OSS_BUCKET",
+    "OSS_PUBLIC_BASE_URL",
+    "OSS_ACCESS_KEY_ID",
+    "OSS_ACCESS_KEY_SECRET",
     "PAYMENT_PROVIDER",
     "ENABLE_MOCK_PAYMENT_PROVIDER",
 )
 COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
+OSS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
@@ -83,6 +89,23 @@ def preflight(env_file: str | Path) -> PreflightResult:
         or any(not isinstance(host, str) or not host for host in image_hosts)
     ):
         failures.append("PUBLIC_IMAGE_HOSTS must be a non-empty JSON string array")
+
+    for key in ("OSS_ENDPOINT", "OSS_PUBLIC_BASE_URL"):
+        parsed_oss_url = urlsplit(values.get(key, ""))
+        if parsed_oss_url.scheme != "https":
+            failures.append(f"{key} must use HTTPS")
+        elif (
+            not parsed_oss_url.hostname
+            or parsed_oss_url.username is not None
+            or parsed_oss_url.password is not None
+        ):
+            failures.append(f"{key} is invalid")
+        elif parsed_oss_url.query or parsed_oss_url.fragment:
+            failures.append(f"{key} must not contain query or fragment")
+        elif key == "OSS_ENDPOINT" and parsed_oss_url.path not in {"", "/"}:
+            failures.append("OSS_ENDPOINT must be an origin URL")
+    if values.get("OSS_BUCKET") and OSS_BUCKET.fullmatch(values["OSS_BUCKET"]) is None:
+        failures.append("OSS_BUCKET is invalid")
 
     return PreflightResult(tuple(failures))
 
