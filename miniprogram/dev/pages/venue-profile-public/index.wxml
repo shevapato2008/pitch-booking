@@ -1,0 +1,70 @@
+<view class="venue-profile-public">
+  <view class="venue-profile-public__system" style="height: {{headerTopPx}}px"></view>
+  <view class="venue-profile-public__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px">
+    <button class="venue-profile-public__back venue-profile-public__touch" aria-label="返回" bindtap="onBack">
+      <view class="venue-profile-public-icon venue-profile-public-icon--back" aria-hidden="true"></view>
+    </button>
+    <text class="venue-profile-public__title">场馆详情</text>
+  </view>
+
+  <scroll-view class="venue-profile-public__scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
+    <view class="venue-profile-public__content">
+      <text class="venue-profile-public__venue-heading">{{profile.name}}</text>
+      <view class="venue-profile-public__status" role="status">
+        <view class="venue-profile-public__status-mark" aria-hidden="true">i</view>
+        <view>
+          <text class="venue-profile-public__status-title">当前公开资料</text>
+          <text class="venue-profile-public__status-detail">仅展示最近一次整版审核通过的数据</text>
+        </view>
+      </view>
+
+      <view class="venue-profile-public__card">
+        <view class="venue-profile-public-scene venue-profile-public-scene--{{selectedImage.scene}}" role="img" aria-label="{{selectedImage.alt}}">
+          <view class="venue-profile-public-scene__sky"></view>
+          <view class="venue-profile-public-scene__field"></view>
+          <view class="venue-profile-public-scene__halfway"></view>
+          <view class="venue-profile-public-scene__circle"></view>
+          <view class="venue-profile-public-scene__goal"></view>
+        </view>
+        <scroll-view class="venue-profile-public__gallery" scroll-x="true" enhanced="true" show-scrollbar="false">
+          <button
+            wx:for="{{profile.images}}"
+            wx:key="id"
+            class="venue-profile-public__thumb {{item.id === selectedImageId ? 'venue-profile-public__thumb--selected' : ''}}"
+            data-image-id="{{item.id}}"
+            aria-label="查看{{item.alt}}"
+            aria-pressed="{{item.id === selectedImageId}}"
+            bindtap="onSelectGallery"
+          >
+            <view class="venue-profile-public__thumb-color venue-profile-public__thumb-color--{{item.scene}}"></view>
+          </button>
+        </scroll-view>
+      </view>
+
+      <view class="venue-profile-public__card">
+        <text class="venue-profile-public__section-title">场馆介绍</text>
+        <text class="venue-profile-public__description">{{profile.description}}</text>
+      </view>
+
+      <view class="venue-profile-public__card">
+        <text class="venue-profile-public__section-title">场馆设施</text>
+        <view class="venue-profile-public__facilities">
+          <text wx:for="{{facilityLabels}}" wx:key="*this" class="venue-profile-public__facility">{{item}}</text>
+        </view>
+      </view>
+
+      <view class="venue-profile-public__card venue-profile-public__price">
+        <text>当前可订价格</text>
+        <text class="venue-profile-public__price-value">{{profile.priceSummary}}</text>
+      </view>
+      <text class="venue-profile-public__artifact-note">参考页面 · Production disabled</text>
+    </view>
+  </scroll-view>
+
+  <view class="venue-profile-public__footer">
+    <text class="venue-profile-public__footer-note">价格与时段以可订列表为准</text>
+    <button class="venue-profile-public__primary venue-profile-public__touch" bindtap="onViewAvailability">
+      <text>查看可订时段</text>
+    </button>
+  </view>
+</view>
