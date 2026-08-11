@@ -1,0 +1,59 @@
+{
+  "venue": {
+    "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+    "name": "渤海元丰足球场",
+    "timezone": "Asia/Shanghai"
+  },
+  "facility_version": 4,
+  "revision_version": 7,
+  "published": {
+    "published_version": 3,
+    "description": "滨河路旁的社区足球场，提供夜场灯光、休息区与基础更衣设施。",
+    "cover_image": "https://assets.example.com/venues/bohai/cover.webp",
+    "images": [
+      {"url": "https://assets.example.com/venues/bohai/cover.webp", "alt": "渤海元丰足球场主场全景", "role": "COVER", "sort_order": 0},
+      {"url": "https://assets.example.com/venues/bohai/sideline.webp", "alt": "球场边线与灯光", "role": "GALLERY", "sort_order": 1}
+    ],
+    "facilities": ["PARKING", "TOILET", "CHANGING_ROOM", "DRINKING_WATER", "REST_AREA", "FIRST_AID", "OUTDOOR", "LIGHTING", "ARTIFICIAL_TURF"],
+    "pitch_sizes": ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
+    "live_price": {"available": true, "from_price_cents": 16000, "currency": "CNY", "unit": "HOUR"},
+    "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"}
+  },
+  "current_revision": {
+    "id": "2b5ce378-21b2-4fb7-85ef-6089704ff701",
+    "revision_version": 7,
+    "base_published_version": 3,
+    "summary_state": "READY",
+    "description": "滨河路旁的社区足球场，新增夜场照明与淋浴设施。到场后请按场馆指引有序入场。",
+    "description_state": "APPROVED",
+    "description_reason_code": null,
+    "facilities": ["PARKING", "TOILET", "CHANGING_ROOM", "SHOWER", "DRINKING_WATER", "REST_AREA", "FIRST_AID", "AED", "OUTDOOR", "LIGHTING", "ARTIFICIAL_TURF"],
+    "images": [
+      {"id": "c3195309-183b-46cc-81e6-2c0977223001", "preview_path": "/api/v1/admin/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/profile/images/c3195309-183b-46cc-81e6-2c0977223001/content", "alt": "渤海元丰足球场主场全景", "role": "COVER", "sort_order": 0, "state": "APPROVED", "reason_code": null, "item_version": 2},
+      {"id": "c3195309-183b-46cc-81e6-2c0977223002", "preview_path": "/api/v1/admin/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/profile/images/c3195309-183b-46cc-81e6-2c0977223002/content", "alt": "场馆入口新照片", "role": "GALLERY", "sort_order": 1, "state": "APPROVED", "reason_code": null, "item_version": 1}
+    ],
+    "updated_at": "2026-08-11T15:20:00+08:00"
+  },
+  "facility_catalog": [
+    {"code": "PARKING", "label": "停车场"}, {"code": "TOILET", "label": "卫生间"},
+    {"code": "CHANGING_ROOM", "label": "更衣室"}, {"code": "SHOWER", "label": "淋浴"},
+    {"code": "LOCKERS", "label": "储物柜"}, {"code": "DRINKING_WATER", "label": "饮水设施"},
+    {"code": "BEVERAGE_SALES", "label": "饮料售卖"}, {"code": "EQUIPMENT_RENTAL", "label": "器材租赁"},
+    {"code": "REST_AREA", "label": "休息区"}, {"code": "FIRST_AID", "label": "急救设施"},
+    {"code": "AED", "label": "AED"}, {"code": "INDOOR", "label": "室内"},
+    {"code": "OUTDOOR", "label": "室外"}, {"code": "COVERED", "label": "有顶棚"},
+    {"code": "LIGHTING", "label": "夜场照明"}, {"code": "ARTIFICIAL_TURF", "label": "人工草"},
+    {"code": "NATURAL_GRASS", "label": "天然草"}
+  ],
+  "rejection_reason_catalog": [
+    {"code": "CONTACT_INFO", "label": "请删除电话、微信号等联系方式"},
+    {"code": "QR_OR_PAYMENT_CODE", "label": "图片中不能包含二维码或收款码"},
+    {"code": "OFF_PLATFORM_TRADE", "label": "请删除线下交易或绕过平台付款的引导"},
+    {"code": "EXTERNAL_LINK", "label": "请删除外部网站或其他平台链接"},
+    {"code": "UNRELATED_CONTENT", "label": "内容需与当前场馆有关"},
+    {"code": "IMAGE_NOT_VENUE", "label": "请上传真实的场馆环境照片"},
+    {"code": "IMAGE_QUALITY", "label": "图片过于模糊或无法辨认"},
+    {"code": "PERSONAL_PRIVACY", "label": "图片包含清晰人物面部或其他隐私信息"},
+    {"code": "UNSAFE_CONTENT", "label": "内容不符合平台发布要求"}
+  ]
+}

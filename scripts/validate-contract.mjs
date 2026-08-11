@@ -321,6 +321,64 @@ const exampleMap = [
     schema: 'PitchConfiguration',
     attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', '200', 'Saved', 'put')],
   },
+  {
+    filename: 'venue-profile-admin-ready.json',
+    reference: './examples/venue-profile-admin-ready.json',
+    schema: 'AdminVenueProfile',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Ready'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Ready', 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}', '200', 'Ready', 'delete'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/order', '200', 'Ready', 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', '200', 'Ready', 'put'),
+    ],
+  },
+  {
+    filename: 'venue-profile-upload-intent.json',
+    reference: './examples/venue-profile-upload-intent.json',
+    schema: 'VenueProfileUploadIntent',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/profile/images/upload-intents', '201', 'UploadIntent', 'post')],
+  },
+  {
+    filename: 'venue-profile-reviewing.json',
+    reference: './examples/venue-profile-reviewing.json',
+    schema: 'AdminVenueProfile',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Reviewing'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete', '202', 'Reviewing', 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', '202', 'Reviewing', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-profile-rejected.json',
+    reference: './examples/venue-profile-rejected.json',
+    schema: 'AdminVenueProfile',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Rejected')],
+  },
+  {
+    filename: 'manual-review-queue.json',
+    reference: './examples/manual-review-queue.json',
+    schema: 'ManualReviewQueue',
+    attachments: [attachment('/api/v1/admin/moderation/venue-profiles/pending', '200', 'Pending')],
+  },
+  ...[
+    ['error-venue-profile-version-conflict.json', 'VenueProfileVersionConflict', '409'],
+    ['error-venue-profile-validation.json', 'VenueProfileValidationFailed', '422'],
+  ].map(([filename, key, status]) => ({
+    filename,
+    reference: `./examples/${filename}`,
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/profile', status, key, 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/upload-intents', status, key, 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete', status, key, 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}', status, key, 'delete'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/order', status, key, 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', status, key, 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', status, key, 'post'),
+      attachment('/api/v1/admin/moderation/venue-profiles/{item_id}/decisions', status, key, 'post'),
+    ],
+  })),
   ...[
     ['error-inventory-forbidden.json', 'InventoryForbidden', '403', 'INVENTORY_FORBIDDEN'],
     ['error-pitch-not-found.json', 'PitchNotFound', '404', 'PITCH_NOT_FOUND'],
@@ -405,6 +463,8 @@ const requiredErrorCodes = new Set([
   'INVALID_PLAYERS_PER_SIDE',
   'INVALID_CUSTOM_NAME',
   'DUPLICATE_PITCH_CHANGE',
+  'VENUE_PROFILE_VERSION_CONFLICT',
+  'VENUE_PROFILE_VALIDATION_FAILED',
 ]);
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
@@ -423,6 +483,15 @@ const expectedOperations = new Map([
   ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/inventory/slots', new Set(['post'])],
   ['/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile', new Set(['get', 'put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/upload-intents', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}', new Set(['delete'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/order', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', new Set(['post'])],
+  ['/api/v1/admin/moderation/venue-profiles/pending', new Set(['get'])],
+  ['/api/v1/admin/moderation/venue-profiles/{item_id}/decisions', new Set(['post'])],
 ]);
 const httpMethods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
@@ -488,12 +557,18 @@ function validateErrorCodeEnum(contract) {
   assertExactSet(new Set(declaredCodes), requiredErrorCodes, 'Error.code.enum');
 }
 
+function resolveLocalReference(contract, value) {
+  if (!value?.$ref?.startsWith('#/')) return value;
+  return value.$ref.slice(2).split('/').reduce((current, segment) => current?.[segment], contract);
+}
+
 function findAllAttachments(contract) {
   const found = [];
   for (const [pathName, pathItem] of Object.entries(contract.paths ?? {})) {
     for (const method of httpMethods) {
       const operation = pathItem[method];
-      for (const [status, response] of Object.entries(operation?.responses ?? {})) {
+      for (const [status, rawResponse] of Object.entries(operation?.responses ?? {})) {
+        const response = resolveLocalReference(contract, rawResponse);
         if (Object.hasOwn(response, 'example') || Object.hasOwn(response, 'examples')) {
           fail(`misplaced response-level example is not allowed at ${method.toUpperCase()} ${pathName} ${status}`);
         }

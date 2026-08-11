@@ -1019,6 +1019,203 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/admin/venues/{venue_id}/profile:
+    get:
+      operationId: getAdminVenueProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileSnapshot'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+    put:
+      operationId: saveAdminVenueProfile
+      description: Atomically saves facilities and the description draft after checking both authoritative versions.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SaveVenueProfile'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/upload-intents:
+    post:
+      operationId: createVenueProfileImageUploadIntent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateVenueProfileUploadIntent'}
+      responses:
+        '201': {$ref: '#/components/responses/VenueProfileUploadIntentCreated'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete:
+    post:
+      operationId: completeVenueProfileImageUpload
+      description: Verifies the private upload and starts moderation using a compressed review image.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ImageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CompleteVenueProfileImageUpload'}
+      responses:
+        '202': {$ref: '#/components/responses/VenueProfileReviewStarted'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/{image_id}:
+    delete:
+      operationId: deleteVenueProfileImage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ImageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueProfileRevisionMutation'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/order:
+    put:
+      operationId: orderVenueProfileImages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderVenueProfileImages'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover:
+    put:
+      operationId: setVenueProfileImageCover
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ImageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueProfileRevisionMutation'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry:
+    post:
+      operationId: retryVenueProfileModeration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ModerationItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueProfileRevisionMutation'}
+      responses:
+        '202': {$ref: '#/components/responses/VenueProfileReviewStarted'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/moderation/venue-profiles/pending:
+    get:
+      operationId: listPendingVenueProfileModeration
+      description: Restricted to configured platform moderation reviewers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200': {$ref: '#/components/responses/ManualVenueProfileReviewQueue'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/ManualModerationForbidden'}
+  /api/v1/admin/moderation/venue-profiles/{item_id}/decisions:
+    post:
+      operationId: decidePendingVenueProfileModeration
+      description: Applies PASS or one fixed rejection reason only if this remains the current item version.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModerationItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ManualModerationDecision'}
+      responses:
+        '204': {$ref: '#/components/responses/ManualModerationDecisionApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/ManualModerationForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
   /api/v1/admin/venues/{venue_id}/pitch-configuration:
     get:
       operationId: getAdminVenuePitchConfiguration
@@ -1236,7 +1433,385 @@ components:
       schema:
         type: string
         minLength: 1
+  parameters:
+    VenueId:
+      name: venue_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ImageId:
+      name: image_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ModerationItemId:
+      name: item_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Reuse the same key to recover the authoritative result after an unknown outcome.
+      schema: {type: string, minLength: 16, maxLength: 128}
+  responses:
+    AuthRequired:
+      description: Authentication required.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    VenueProfileForbidden:
+      description: Venue profile management permission required.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    ManualModerationForbidden:
+      description: Configured platform moderation reviewer permission required.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    VenueProfileNotFound:
+      description: Venue, image, revision, or moderation item not found.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    VenueProfileSnapshot:
+      description: Published authority and the current private draft with fixed catalogs.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminVenueProfile'}
+          examples:
+            Ready: {externalValue: './examples/venue-profile-admin-ready.json'}
+            Reviewing: {externalValue: './examples/venue-profile-reviewing.json'}
+            Rejected: {externalValue: './examples/venue-profile-rejected.json'}
+    VenueProfileMutationApplied:
+      description: Mutation applied or replayed with the authoritative profile snapshot.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminVenueProfile'}
+          examples:
+            Ready: {externalValue: './examples/venue-profile-admin-ready.json'}
+    VenueProfileUploadIntentCreated:
+      description: Private direct-upload reservation created; the URL is short-lived and contains no credentials.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/VenueProfileUploadIntent'}
+          examples:
+            UploadIntent: {externalValue: './examples/venue-profile-upload-intent.json'}
+    VenueProfileReviewStarted:
+      description: Upload completion or moderation retry accepted with the current reviewing snapshot.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminVenueProfile'}
+          examples:
+            Reviewing: {externalValue: './examples/venue-profile-reviewing.json'}
+    ManualVenueProfileReviewQueue:
+      description: Current PENDING_MANUAL items visible only to configured reviewers.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManualReviewQueue'}
+          examples:
+            Pending: {externalValue: './examples/manual-review-queue.json'}
+    ManualModerationDecisionApplied:
+      description: Decision applied or idempotently replayed; no response body.
+    VenueProfileVersionConflict:
+      description: Facility, revision, item, or idempotency authority changed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          examples:
+            VenueProfileVersionConflict: {externalValue: './examples/error-venue-profile-version-conflict.json'}
+    VenueProfileValidationFailed:
+      description: Description, facility, image, MIME type, size, order, cover, or decision is invalid.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          examples:
+            VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    FacilityCode:
+      type: string
+      enum:
+        - PARKING
+        - TOILET
+        - CHANGING_ROOM
+        - SHOWER
+        - LOCKERS
+        - DRINKING_WATER
+        - BEVERAGE_SALES
+        - EQUIPMENT_RENTAL
+        - REST_AREA
+        - FIRST_AID
+        - AED
+        - INDOOR
+        - OUTDOOR
+        - COVERED
+        - LIGHTING
+        - ARTIFICIAL_TURF
+        - NATURAL_GRASS
+    ModerationReasonCode:
+      type: string
+      enum:
+        - CONTACT_INFO
+        - QR_OR_PAYMENT_CODE
+        - OFF_PLATFORM_TRADE
+        - EXTERNAL_LINK
+        - UNRELATED_CONTENT
+        - IMAGE_NOT_VENUE
+        - IMAGE_QUALITY
+        - PERSONAL_PRIVACY
+        - UNSAFE_CONTENT
+    VenueProfileItemState:
+      type: string
+      enum: [UPLOADING, REVIEWING, APPROVED, REJECTED, PENDING_MANUAL]
+    VenueProfileRevisionSummaryState:
+      type: string
+      enum: [READY, REVIEWING, REJECTED, PENDING_MANUAL, PUBLISHED]
+    VenueProfileMimeType:
+      type: string
+      enum: [image/jpeg, image/png, image/webp]
+    VenueProfileCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [code, label]
+      properties:
+        code: {$ref: '#/components/schemas/FacilityCode'}
+        label: {type: string, minLength: 1}
+    VenueProfileReasonCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [code, label]
+      properties:
+        code: {$ref: '#/components/schemas/ModerationReasonCode'}
+        label: {type: string, minLength: 1}
+    LiveVenuePrice:
+      type: object
+      additionalProperties: false
+      required: [available, from_price_cents, currency, unit]
+      properties:
+        available: {type: boolean}
+        from_price_cents: {type: [integer, 'null'], minimum: 0}
+        currency: {type: string, const: CNY}
+        unit: {type: string, const: HOUR}
+    VenueAvailabilityTarget:
+      type: object
+      additionalProperties: false
+      required: [enabled, label, path]
+      properties:
+        enabled: {type: boolean}
+        label: {type: string, const: 查看可订时段}
+        path:
+          type: [string, 'null']
+          pattern: '^/api/v1/venues/[0-9a-f-]+/availability$'
+    PublishedVenueProfile:
+      type: object
+      additionalProperties: false
+      required: [published_version, description, cover_image, images, facilities, pitch_sizes, live_price, availability_target]
+      properties:
+        published_version: {type: integer, minimum: 1}
+        description: {type: string, maxLength: 300}
+        cover_image: {type: string, format: uri, pattern: '^https://'}
+        images:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: {$ref: '#/components/schemas/VenueImage'}
+        facilities:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/FacilityCode'}
+        pitch_sizes:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/PublicPitchTypeCode'}
+        live_price: {$ref: '#/components/schemas/LiveVenuePrice'}
+        availability_target: {$ref: '#/components/schemas/VenueAvailabilityTarget'}
+    AdminVenueProfileVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        timezone: {type: string, const: Asia/Shanghai}
+    AdminVenueProfileImage:
+      type: object
+      additionalProperties: false
+      required: [id, preview_path, alt, role, sort_order, state, reason_code, item_version]
+      properties:
+        id: {type: string, format: uuid}
+        preview_path:
+          type: string
+          pattern: '^/api/v1/admin/venues/[0-9a-f-]+/profile/images/[0-9a-f-]+/content$'
+        alt: {type: string, minLength: 1}
+        role: {type: string, enum: [COVER, GALLERY]}
+        sort_order: {type: integer, minimum: 0, maximum: 7}
+        state: {$ref: '#/components/schemas/VenueProfileItemState'}
+        reason_code:
+          oneOf:
+            - {$ref: '#/components/schemas/ModerationReasonCode'}
+            - {type: 'null'}
+        item_version: {type: integer, minimum: 1}
+    CurrentVenueProfileRevision:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision_version
+        - base_published_version
+        - summary_state
+        - description
+        - description_state
+        - description_reason_code
+        - facilities
+        - images
+        - updated_at
+      properties:
+        id: {type: string, format: uuid}
+        revision_version: {type: integer, minimum: 1}
+        base_published_version: {type: integer, minimum: 1}
+        summary_state: {$ref: '#/components/schemas/VenueProfileRevisionSummaryState'}
+        description: {type: string, maxLength: 300}
+        description_state: {$ref: '#/components/schemas/VenueProfileItemState'}
+        description_reason_code:
+          oneOf:
+            - {$ref: '#/components/schemas/ModerationReasonCode'}
+            - {type: 'null'}
+        facilities:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/FacilityCode'}
+        images:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/AdminVenueProfileImage'}
+        updated_at: {type: string, format: date-time}
+    AdminVenueProfile:
+      description: >-
+        Provider boundary: image moderation requires a compressed image as real vision input plus a short policy prompt.
+        The initial configurable default is DASHSCOPE_MODERATION_MODEL=qwen3-vl-flash. Description moderation is text-only.
+        The provider API key is never exposed in responses or logs.
+      type: object
+      additionalProperties: false
+      required: [venue, facility_version, revision_version, published, current_revision, facility_catalog, rejection_reason_catalog]
+      properties:
+        venue: {$ref: '#/components/schemas/AdminVenueProfileVenue'}
+        facility_version: {type: integer, minimum: 1}
+        revision_version: {type: integer, minimum: 1}
+        published: {$ref: '#/components/schemas/PublishedVenueProfile'}
+        current_revision: {$ref: '#/components/schemas/CurrentVenueProfileRevision'}
+        facility_catalog:
+          type: array
+          minItems: 17
+          maxItems: 17
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueProfileCatalogItem'}
+        rejection_reason_catalog:
+          type: array
+          minItems: 9
+          maxItems: 9
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueProfileReasonCatalogItem'}
+    SaveVenueProfile:
+      type: object
+      additionalProperties: false
+      required: [expected_facility_version, expected_revision_version, description, facilities]
+      properties:
+        expected_facility_version: {type: integer, minimum: 1}
+        expected_revision_version: {type: integer, minimum: 1}
+        description: {type: string, maxLength: 300}
+        facilities:
+          type: array
+          uniqueItems: true
+          maxItems: 17
+          items: {$ref: '#/components/schemas/FacilityCode'}
+    CreateVenueProfileUploadIntent:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version, filename, mime_type, byte_size]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+        filename: {type: string, minLength: 1, maxLength: 255}
+        mime_type: {$ref: '#/components/schemas/VenueProfileMimeType'}
+        byte_size: {type: integer, minimum: 1, maximum: 10485760}
+    VenueProfileUploadIntent:
+      description: This private upload response never contains provider credentials or moderation-provider keys.
+      type: object
+      additionalProperties: false
+      required: [image_id, object_key, signed_put_url, required_headers, maximum_bytes, accepted_mime_types]
+      properties:
+        image_id: {type: string, format: uuid}
+        object_key: {type: string, pattern: '^private/'}
+        signed_put_url: {type: string, format: uri, pattern: '^https://'}
+        required_headers:
+          type: object
+          minProperties: 1
+          additionalProperties: {type: string, minLength: 1}
+        maximum_bytes: {type: integer, const: 10485760}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png, image/webp]
+    CompleteVenueProfileImageUpload:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+    VenueProfileRevisionMutation:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+    OrderVenueProfileImages:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version, image_ids]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+        image_ids:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: {type: string, format: uuid}
+    ManualReviewItem:
+      type: object
+      additionalProperties: false
+      required: [item_id, venue_id, venue_name, revision_id, revision_version, item_version, item_type, state, review_content_path, submitted_at]
+      properties:
+        item_id: {type: string, format: uuid}
+        venue_id: {type: string, format: uuid}
+        venue_name: {type: string, minLength: 1}
+        revision_id: {type: string, format: uuid}
+        revision_version: {type: integer, minimum: 1}
+        item_version: {type: integer, minimum: 1}
+        item_type: {type: string, enum: [DESCRIPTION, IMAGE]}
+        state: {type: string, const: PENDING_MANUAL}
+        review_content_path:
+          type: string
+          pattern: '^/api/v1/admin/moderation/venue-profiles/[0-9a-f-]+/content$'
+        submitted_at: {type: string, format: date-time}
+    ManualReviewQueue:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ManualReviewItem'}
+        next_cursor: {type: [string, 'null']}
+    ManualModerationDecision:
+      type: object
+      additionalProperties: false
+      required: [expected_item_version, decision]
+      properties:
+        expected_item_version: {type: integer, minimum: 1}
+        decision:
+          oneOf:
+            - {const: PASS}
+            - {$ref: '#/components/schemas/ModerationReasonCode'}
     PitchConfigurationVenue:
       type: object
       additionalProperties: false
@@ -1478,8 +2053,7 @@ components:
       required: [code, name, sort_order]
       properties:
         code:
-          type: string
-          enum: [LIGHTING, CHANGING_ROOM, DRINKING_WATER, PARKING]
+          $ref: '#/components/schemas/FacilityCode'
         name:
           type: string
           minLength: 1
@@ -1621,11 +2195,12 @@ components:
         - timezone
         - business_hours_text
         - parking_text
-        - phone
         - refund_policy_summary
         - images
         - facilities
         - availability_window
+        - live_price
+        - availability_target
       properties:
         id:
           type: string
@@ -1695,9 +2270,6 @@ components:
         parking_text:
           type: string
           minLength: 1
-        phone:
-          type: string
-          minLength: 1
         refund_policy_summary:
           type: string
           minLength: 1
@@ -1713,6 +2285,10 @@ components:
             $ref: '#/components/schemas/Facility'
         availability_window:
           $ref: '#/components/schemas/AvailabilityWindow'
+        live_price:
+          $ref: '#/components/schemas/LiveVenuePrice'
+        availability_target:
+          $ref: '#/components/schemas/VenueAvailabilityTarget'
     DirectoryVenueDetail:
       type: object
       additionalProperties: false
@@ -1737,6 +2313,8 @@ components:
         - parking_text
         - images
         - facilities
+        - live_price
+        - availability_target
       properties:
         id:
           type: string
@@ -1808,8 +2386,11 @@ components:
           type: array
           uniqueItems: true
           items:
-            type: string
-            minLength: 1
+            $ref: '#/components/schemas/FacilityCode'
+        live_price:
+          $ref: '#/components/schemas/LiveVenuePrice'
+        availability_target:
+          $ref: '#/components/schemas/VenueAvailabilityTarget'
     VenueDetail:
       oneOf:
         - $ref: '#/components/schemas/OnlineVenueDetail'
@@ -1833,13 +2414,15 @@ components:
         - latitude
         - longitude
         - parking_text
-        - phone
         - refund_policy_summary
         - images
         - facilities
         - pitch_types
         - availability_window
         - generated_at
+        - cover_image
+        - live_price
+        - availability_target
       properties:
         id:
           type: string
@@ -1872,9 +2455,6 @@ components:
         parking_text:
           type: string
           minLength: 1
-        phone:
-          type: string
-          minLength: 1
         refund_policy_summary:
           type: string
           minLength: 1
@@ -1898,6 +2478,14 @@ components:
         generated_at:
           type: string
           format: date-time
+        cover_image:
+          type: string
+          format: uri
+          pattern: '^https://'
+        live_price:
+          $ref: '#/components/schemas/LiveVenuePrice'
+        availability_target:
+          $ref: '#/components/schemas/VenueAvailabilityTarget'
     Slot:
       type: object
       additionalProperties: false
@@ -2229,7 +2817,7 @@ components:
     OrderVenue:
       type: object
       additionalProperties: false
-      required: [id, name, address, latitude, longitude, customer_service_phone]
+      required: [id, name, address, latitude, longitude]
       properties:
         id:
           type: string
@@ -2248,9 +2836,6 @@ components:
           type: number
           minimum: -180
           maximum: 180
-        customer_service_phone:
-          type: string
-          minLength: 1
     OrderContact:
       type: object
       additionalProperties: false
@@ -2531,6 +3116,15 @@ components:
           $ref: '#/components/schemas/PitchFutureBlockers'
         latest_configuration:
           $ref: '#/components/schemas/PitchConfiguration'
+        current_facility_version:
+          type: integer
+          minimum: 1
+        current_revision_version:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 1
     Error:
       type: object
       additionalProperties: false
@@ -2576,6 +3170,8 @@ components:
             - INVALID_PLAYERS_PER_SIDE
             - INVALID_CUSTOM_NAME
             - DUPLICATE_PITCH_CHANGE
+            - VENUE_PROFILE_VERSION_CONFLICT
+            - VENUE_PROFILE_VALIDATION_FAILED
         message:
           type: string
           minLength: 1

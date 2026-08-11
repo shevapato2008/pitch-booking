@@ -93,14 +93,23 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen sixteen-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen twenty-five-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
+    '/api/v1/admin/moderation/venue-profiles/pending',
+    '/api/v1/admin/moderation/venue-profiles/{item_id}/decisions',
     '/api/v1/admin/venues/{venue_id}/inventory',
     '/api/v1/admin/venues/{venue_id}/inventory/slots',
     '/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}',
     '/api/v1/admin/venues/{venue_id}/pitch-configuration',
+    '/api/v1/admin/venues/{venue_id}/profile',
+    '/api/v1/admin/venues/{venue_id}/profile/images/order',
+    '/api/v1/admin/venues/{venue_id}/profile/images/upload-intents',
+    '/api/v1/admin/venues/{venue_id}/profile/images/{image_id}',
+    '/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete',
+    '/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover',
+    '/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry',
     '/api/v1/auth/wechat/phone',
     '/api/v1/auth/wechat/session',
     '/api/v1/health',
@@ -162,12 +171,13 @@ test('map and venue detail schemas are closed, discriminated, and location-free'
   assert.equal(online.additionalProperties, false);
   assert.deepEqual(new Set(online.required), new Set([
     ...commonFields, 'price_advantage_text', 'timezone', 'business_hours_text',
-    'parking_text', 'phone', 'refund_policy_summary', 'images', 'facilities',
-    'availability_window',
+    'parking_text', 'refund_policy_summary', 'images', 'facilities',
+    'availability_window', 'live_price', 'availability_target',
   ]));
   assert.equal(directory.additionalProperties, false);
   assert.deepEqual(new Set(directory.required), new Set([
     ...commonFields, 'business_hours_text', 'parking_text', 'images', 'facilities',
+    'live_price', 'availability_target',
   ]));
   for (const forbidden of ['price_advantage_text', 'timezone', 'phone', 'refund_policy_summary', 'availability_window']) {
     assert.equal(directory.properties[forbidden], undefined, forbidden);
@@ -461,7 +471,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 57 JSON examples/i);
+  assert.match(stdout, /validated 64 JSON examples/i);
   assert.equal(stderr, '');
 });
 

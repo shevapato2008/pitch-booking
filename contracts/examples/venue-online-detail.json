@@ -19,8 +19,9 @@
   "timezone": "Asia/Shanghai",
   "business_hours_text": "营业时间以在线可订时段为准。",
   "parking_text": "停车安排以场馆现场指引为准。",
-  "phone": "+86-21-5899-2608",
   "refund_policy_summary": "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。",
+  "live_price": {"available": true, "from_price_cents": 16000, "currency": "CNY", "unit": "HOUR"},
+  "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"},
   "images": [
     {
       "url": "https://assets.example.com/venues/xingyue/cover.jpg",

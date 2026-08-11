@@ -9,8 +9,10 @@
   "latitude": 31.245621,
   "longitude": 121.623847,
   "parking_text": "园区提供收费停车位，前 30 分钟免费。",
-  "phone": "+86-21-5899-2608",
   "refund_policy_summary": "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。",
+  "cover_image": "https://assets.example.com/venues/xingyue/cover.jpg",
+  "live_price": {"available": true, "from_price_cents": 36000, "currency": "CNY", "unit": "HOUR"},
+  "availability_target": {"enabled": true, "label": "查看可订时段", "path": "/api/v1/venues/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/availability"},
   "images": [
     {
       "url": "https://assets.example.com/venues/xingyue/cover.jpg",

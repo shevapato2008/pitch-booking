@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VENUE_PROFILE_VERSION_CONFLICT",
+    "message": "场馆资料已更新，请重新载入后再提交。",
+    "request_id": "req_profile_version_conflict_01",
+    "details": {"current_facility_version": 4, "current_revision_version": 10}
+  }
+}

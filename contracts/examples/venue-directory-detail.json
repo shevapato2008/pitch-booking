@@ -25,6 +25,8 @@
   "content_verified_at": "2026-07-30T18:15:00+08:00",
   "business_hours_text": null,
   "parking_text": null,
+  "live_price": {"available": false, "from_price_cents": null, "currency": "CNY", "unit": "HOUR"},
+  "availability_target": {"enabled": false, "label": "查看可订时段", "path": null},
   "images": [],
   "facilities": []
 }
