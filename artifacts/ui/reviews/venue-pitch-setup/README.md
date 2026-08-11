@@ -4,7 +4,7 @@
 
 - Target viewport: 375 × 812.
 - Reference Artifact visual approval: approved on 2026-08-11.
-- Native Fixture visual approval: pending.
+- Native Fixture visual approval: approved on 2026-08-11.
 - Production disabled; the isolated Native Fixture route has no production route, contract, backend, migration, or real save.
 - Fixture deletion condition: `delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit`.
 

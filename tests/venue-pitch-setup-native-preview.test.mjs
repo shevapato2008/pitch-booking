@@ -155,10 +155,11 @@ test("native button reset precedes component material so labels stay centered", 
   assert.match(styles.slice(resetIndex), /button\s*\{[^}]*background:\s*transparent;[^}]*margin:\s*0;/s);
 });
 
-test("native Fixture review records complete same-viewport evidence without claiming approval", async () => {
-  const [review, board] = await Promise.all([
+test("native Fixture review records complete approved same-viewport evidence", async () => {
+  const [review, board, manifest] = await Promise.all([
     readFile(`${reviewRoot}/README.md`, "utf8"),
     readFile(`${reviewRoot}/reference-board.html`, "utf8"),
+    readFile("artifacts/ui/screen-manifest/venue-pitch-setup.yaml", "utf8"),
   ]);
   const expectedImages = [
     ["reference-375x812.png", 375],
@@ -179,8 +180,8 @@ test("native Fixture review records complete same-viewport evidence without clai
     }
   }
 
-  assert.match(review, /Native Fixture visual approval:\s*pending/);
-  assert.match(board, /Native Fixture visual approval:\s*pending/);
+  assert.match(review, /Native Fixture visual approval:\s*approved on 2026-08-11/);
+  assert.match(board, /Native Fixture visual approval:\s*approved on 2026-08-11/);
   assert.match(review, /Production disabled/);
   assert.match(review, /Sky source screenshot: 1290 × 768/);
   assert.match(review, /Simulator crop: `x=997, y=67, width=284, height=615`/);
@@ -188,6 +189,6 @@ test("native Fixture review records complete same-viewport evidence without clai
   assert.match(review, /Larger safe-area smoke: passed/);
   assert.match(review, /Scroll reachability smoke: passed/);
   assert.match(board, /complete visible-simulator capture/);
-  assert.doesNotMatch(`${review}\n${board}`, /Native Fixture visual approval:\s*approved/i);
+  assert.match(manifest, /native_gate:\s*native-approved/);
   assert.doesNotMatch(`${review}\n${board}`, /user native (?:visual )?approval|用户原生视觉批准/i);
 });
