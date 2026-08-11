@@ -52,3 +52,21 @@ test("logs in once on missing session and keeps unresolved writes for original-k
   await expect(unknown.source.deleteImage(attempt)).rejects.toBeInstanceOf(VenueProfileApiError);
   expect(unknown.attemptStore.load()).toEqual(attempt);
 });
+
+test("keeps the attempt and maps malformed 2xx or unexpected mutation failures to unknown", async () => {
+  const attempt = { kind: "delete" as const, venueId, imageId, expectedRevisionVersion: 7, idempotencyKey: key };
+  const malformed = setup(); malformed.setResponse({ malformed: true });
+  await expect(malformed.source.deleteImage(attempt)).rejects.toMatchObject({ code: "VENUE_PROFILE_RESULT_UNKNOWN" });
+  expect(malformed.attemptStore.load()).toEqual(attempt);
+
+  const unexpected = setup(); unexpected.setFailure(new Error("socket adapter exploded"));
+  await expect(unexpected.source.deleteImage(attempt)).rejects.toMatchObject({ code: "VENUE_PROFILE_RESULT_UNKNOWN" });
+  expect(unexpected.attemptStore.load()).toEqual(attempt);
+});
+
+test("does not replace an explicit venue-profile business failure with unknown", async () => {
+  const x = setup(); x.setFailure({ code: "HTTP_ERROR", statusCode: 409, data: { error: { code: "VENUE_PROFILE_VERSION_CONFLICT", message: "stale", request_id: "request", details: {} } } });
+  const attempt = { kind: "delete" as const, venueId, imageId, expectedRevisionVersion: 7, idempotencyKey: key };
+  await expect(x.source.deleteImage(attempt)).rejects.toMatchObject({ code: "VENUE_PROFILE_VERSION_CONFLICT" });
+  expect(x.attemptStore.load()).toBeNull();
+});

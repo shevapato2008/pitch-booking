@@ -48,8 +48,10 @@ export function createHttpVenueProfileDataSource({ transport, identity, sessionS
           if (write && result.statusCode >= 500) throw new VenueProfileApiError("VENUE_PROFILE_RESULT_UNKNOWN");
           throw new VenueProfileApiError(result.code, result.details);
         }
-        const code = (caught as Partial<TransportError>).code;
-        if (write && (code === "NETWORK_ERROR" || code === "REQUEST_TIMEOUT")) throw new VenueProfileApiError("VENUE_PROFILE_RESULT_UNKNOWN");
+        if (write) {
+          if (caught instanceof VenueProfileApiError) throw caught;
+          throw new VenueProfileApiError("VENUE_PROFILE_RESULT_UNKNOWN");
+        }
         throw caught;
       }
     }
@@ -60,7 +62,12 @@ export function createHttpVenueProfileDataSource({ transport, identity, sessionS
     const stable = attemptStore.begin(attempt);
     try {
       const response = await authorized(true, () => perform(stable, { ...bearer(), "Idempotency-Key": stable.idempotencyKey }));
-      attemptStore.clear(); return decode(response);
+      let decoded: T;
+      try { decoded = decode(response); } catch (caught) {
+        if (caught instanceof VenueProfileApiError) throw caught;
+        throw new VenueProfileApiError("VENUE_PROFILE_RESULT_UNKNOWN");
+      }
+      attemptStore.clear(); return decoded;
     } catch (caught) {
       if (!(caught instanceof VenueProfileApiError) || caught.code !== "VENUE_PROFILE_RESULT_UNKNOWN") attemptStore.clear();
       throw caught;
