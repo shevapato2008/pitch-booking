@@ -130,7 +130,9 @@ def test_seed_writes_all_directory_era_venue_fields_explicitly(
         "2026-07-30T18:15:00+08:00"
     )
     assert venue_values["is_listed"] is True
-    assert venue_values["public_pitch_types"] == []
+    assert venue_values["public_pitch_types"] == ["FIVE_A_SIDE", "SEVEN_A_SIDE"]
+    assert venue_values["profile_version"] == 1
+    assert venue_values["facility_version"] == 1
     user_values = next(values for model, values in captured if model is User)
     membership_values = next(
         values for model, values in captured if model is VenueMembership
