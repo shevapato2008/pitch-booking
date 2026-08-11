@@ -2,9 +2,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -26,12 +27,26 @@ from backend.app.modules.payments.development_router import router as developmen
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
+from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
+from backend.app.modules.venue_profiles.oss_storage import OssMediaStorage
+from backend.app.modules.venue_profiles.router import (
+    profile_request_validation_handler,
+)
+from backend.app.modules.venue_profiles.router import (
+    router as venue_profiles_router,
+)
+from backend.app.modules.venue_profiles.storage import VenueMediaStore
 from backend.app.modules.venues.router import router as venues_router
 from backend.app.request_id import RequestIdMiddleware
 from backend.app.security.phone_vault import PhoneVault
 
 
-def create_app(*, include_test_routes: bool = False, settings: Settings | None = None) -> FastAPI:
+def create_app(
+    *,
+    include_test_routes: bool = False,
+    settings: Settings | None = None,
+    venue_media_store: VenueMediaStore | None = None,
+) -> FastAPI:
     resolved_settings = settings or Settings()
     phone_vault = (
         PhoneVault(
@@ -45,6 +60,16 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
     payment_provider = (
         MockPaymentProvider() if resolved_settings.mock_payment_provider_enabled else None
     )
+    owns_venue_media_store = venue_media_store is None
+    try:
+        resolved_media_store = venue_media_store or (
+            OssMediaStorage.from_settings(resolved_settings)
+            if resolved_settings.app_env in {"staging", "production"}
+            else LocalMediaStorage()
+        )
+    except BaseException:
+        provider_bundle.close()
+        raise
 
     @asynccontextmanager
     async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
@@ -52,6 +77,9 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
             yield
         finally:
             provider_bundle.close()
+            close_storage = getattr(resolved_media_store, "close", None)
+            if owns_venue_media_store and close_storage is not None:
+                close_storage()
 
     try:
         application = FastAPI(title="Pitch Booking API", version="0.1.0", lifespan=lifespan)
@@ -60,10 +88,17 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
             app_revision=resolved_settings.app_revision,
         )
         application.add_exception_handler(AppError, app_error_handler)
-        application.add_exception_handler(
-            RequestValidationError,
-            request_validation_error_handler,
-        )
+
+        async def validation_handler(request: Request, error: Exception) -> JSONResponse:
+            if (
+                request.url.path.startswith("/api/v1/admin/venues/")
+                and "/profile" in request.url.path
+            ):
+                assert isinstance(error, RequestValidationError)
+                return await profile_request_validation_handler(request, error)
+            return await request_validation_error_handler(request, error)
+
+        application.add_exception_handler(RequestValidationError, validation_handler)
         application.add_exception_handler(Exception, unexpected_error_handler)
         application.state.settings = resolved_settings
         application.state.identity_provider = provider_bundle.identity_provider
@@ -71,6 +106,7 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
         application.state.phone_vault = phone_vault
         application.state.provider_bundle = provider_bundle
         application.state.payment_provider = payment_provider
+        application.state.venue_media_store = resolved_media_store
         application.include_router(auth_router)
         application.include_router(availability_router)
         application.include_router(checkout_router)
@@ -78,11 +114,15 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
         application.include_router(orders_router)
         application.include_router(payments_router)
         application.include_router(pitch_configuration_router)
+        application.include_router(venue_profiles_router)
         if resolved_settings.mock_payment_provider_enabled:
             application.include_router(development_payment_router)
         application.include_router(venues_router)
     except BaseException:
         provider_bundle.close()
+        close_storage = getattr(resolved_media_store, "close", None)
+        if owns_venue_media_store and close_storage is not None:
+            close_storage()
         raise
 
     @application.get("/api/v1/health")
@@ -116,6 +156,12 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
             ):
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)
+            profile_get = (
+                schema.get("paths", {})
+                .get("/api/v1/admin/venues/{venue_id}/profile", {})
+                .get("get", {})
+            )
+            profile_get.get("responses", {}).pop("422", None)
             application.openapi_schema = schema
         return application.openapi_schema
 
