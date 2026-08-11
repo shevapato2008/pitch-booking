@@ -9,6 +9,8 @@ import { registerBookingDataSource, registerCreateOrderAttemptStore, registerNeu
 import { createCreateOrderAttemptStore } from "../services/create-order-attempt-store";
 import { createInventoryMutationAttemptStore, registerInventoryMutationAttemptStore } from "../services/inventory-attempt-store";
 import { registerInventoryDataSource } from "../services/inventory";
+import { registerPitchConfigurationDataSource } from "../services/pitch-configuration";
+import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
@@ -26,6 +28,7 @@ import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./pa
 import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
 import { createDevelopmentPaymentDataSource } from "./payment-source";
 import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
+import { createDevelopmentPitchConfigurationDataSource } from "./pitch-configuration-source";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -34,6 +37,7 @@ export type DevelopmentBootstrapOptions =
 export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { source: "fixture" }): void {
   registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));
   registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));
+  registerPitchConfigurationAttemptStore(createPitchConfigurationAttemptStore(productionSessionStorage));
   registerPaymentCapability(createDevelopmentPaymentCapability("success", showDevelopmentCashier));
   if (options.source === "http") {
     const sources = createDevelopmentHttpSources(options.apiBaseUrl);
@@ -42,6 +46,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerPaymentDataSource(sources.payment);
     registerVenueDirectoryDataSource(sources.venues);
     registerInventoryDataSource(sources.inventory);
+    registerPitchConfigurationDataSource(sources.pitchConfiguration);
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);
@@ -60,6 +65,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerPageDataSource(developmentPageDataSource);
   registerBookingDataSource(createDevelopmentBookingDataSource());
   registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource());
+  registerPitchConfigurationDataSource(createDevelopmentPitchConfigurationDataSource());
   registerLocationCapability(productionLocation);
   registerNeutralPhoneTapCode(() => "dev-phone-code");
 }

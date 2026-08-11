@@ -6,7 +6,9 @@ import { createHttpPaymentDataSource } from "../services/http-payment";
 import { createHttpPageDataSource } from "../services/http-page-data";
 import { createHttpVenueDirectoryDataSource } from "../services/http-venue-directory";
 import { createHttpInventoryDataSource } from "../services/http-inventory";
+import { createHttpPitchConfigurationDataSource } from "../services/http-pitch-configuration";
 import type { InventoryDataSource } from "../services/inventory";
+import type { PitchConfigurationDataSource } from "../services/pitch-configuration";
 import type { PageDataSource } from "../services/page-data";
 import type { PaymentDataSource } from "../services/payment";
 import type { VenueDirectoryDataSource } from "../services/venue-directory";
@@ -22,6 +24,7 @@ export interface DevelopmentHttpSources {
   readonly venues: VenueDirectoryDataSource;
   readonly neutralPhoneTapDetail: () => unknown;
   readonly inventory: InventoryDataSource;
+  readonly pitchConfiguration: PitchConfigurationDataSource;
 }
 
 function createMemorySessionStorage(): SessionStorage {
@@ -66,6 +69,7 @@ export function createDevelopmentHttpSources(apiBaseUrl: string): DevelopmentHtt
     pages: createHttpPageDataSource(transport, productionMedia),
     venues: createHttpVenueDirectoryDataSource(transport),
     inventory: createHttpInventoryDataSource({ transport, identity: developmentIdentity, sessionStore }),
+    pitchConfiguration: createHttpPitchConfigurationDataSource({ transport, identity: developmentIdentity, sessionStore }),
     neutralPhoneTapDetail: () => DEVELOPMENT_PHONE_CODE,
   };
 }

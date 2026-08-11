@@ -5,7 +5,8 @@
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
-    "pages/venue-inventory/index"
+    "pages/venue-inventory/index",
+    "pages/venue-pitch-setup/index"
   ],
   "window": {
     "navigationBarTitleText": "球场预订",

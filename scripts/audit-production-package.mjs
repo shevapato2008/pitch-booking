@@ -117,6 +117,7 @@ const productionRoutes = [
   "pages/booking-confirmation/index",
   "pages/order-detail/index",
   "pages/venue-inventory/index",
+  "pages/venue-pitch-setup/index",
 ];
 if (JSON.stringify(manifest.pages) !== JSON.stringify(productionRoutes)) {
   forbidden.push(`unexpected routes: ${JSON.stringify(manifest.pages)}`);
