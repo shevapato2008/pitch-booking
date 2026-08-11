@@ -36,6 +36,9 @@ FACILITY_CODES = (
     "NATURAL_GRASS",
 )
 LEGACY_FACILITY_CODES = ("LIGHTING", "CHANGING_ROOM", "DRINKING_WATER", "PARKING")
+DOWNGRADE_DROPPED_FACILITY_CODES = tuple(
+    code for code in FACILITY_CODES if code not in LEGACY_FACILITY_CODES
+)
 ENUMS = {
     "moderation_reason_code": (
         "CONTACT_INFO",
@@ -334,7 +337,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["venue_id"], ["venues.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["actor_user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("scope", "key", name="uq_profile_mutations_scope_key"),
+        sa.UniqueConstraint(
+            "venue_id",
+            "actor_user_id",
+            "scope",
+            "key",
+            name="uq_profile_mutations_scope_key",
+        ),
     )
     op.create_index(
         "ix_profile_mutations_venue_id", "profile_mutation_idempotency_records", ["venue_id"]
@@ -353,4 +362,8 @@ def downgrade() -> None:
     op.drop_column("venues", "profile_version")
     for name in reversed(ENUMS):
         postgresql.ENUM(name=name).drop(op.get_bind())
+    # PostgreSQL cannot cast 0010-only labels into the 0009 enum. Downgrade therefore
+    # deliberately discards those facility rows before restoring the legacy type.
+    dropped_codes = ", ".join(f"'{code}'" for code in DOWNGRADE_DROPPED_FACILITY_CODES)
+    op.execute(f"DELETE FROM venue_facilities WHERE code::text IN ({dropped_codes})")
     _replace_facility_enum(LEGACY_FACILITY_CODES, "0010")

@@ -644,7 +644,9 @@ class ProfileMutationIdempotencyRecord(Base):
             "response_status IS NULL OR response_status BETWEEN 100 AND 599",
             name="ck_profile_mutations_response_status",
         ),
-        UniqueConstraint("scope", "key", name="uq_profile_mutations_scope_key"),
+        UniqueConstraint(
+            "venue_id", "actor_user_id", "scope", "key", name="uq_profile_mutations_scope_key",
+        ),
         Index("ix_profile_mutations_venue_id", "venue_id"),
     )
 
