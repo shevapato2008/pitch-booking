@@ -1,5 +1,6 @@
 import type {
   Clock,
+  DeletingTransport,
   LocationCapability,
   MediaSourceResolver,
   NativeCapabilities,
@@ -7,6 +8,7 @@ import type {
   WeChatIdentityCapability,
   WeChatPhoneCapability,
 } from "./interfaces";
+import type { VenueProfileMediaCapability } from "../services/venue-profile";
 import type { SessionStorage } from "../services/session-store";
 import type { PaymentCapability } from "../domain/payment";
 import type { TencentPoiRequest } from "../services/tencent-poi-search";
@@ -98,9 +100,9 @@ export const productionTencentPoiRequest: TencentPoiRequest = ({ url, data }) =>
   });
 });
 
-export function productionTransport(baseUrl: string): StatusTransport {
+export function productionTransport(baseUrl: string): StatusTransport & DeletingTransport {
   const requestWithStatus = <T>(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body: unknown,
     headers?: Readonly<Record<string, string>>,
@@ -147,6 +149,8 @@ export function productionTransport(baseUrl: string): StatusTransport {
       (await requestWithStatus<T>("POST", path, body, headers)).data,
     put: async <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
       (await requestWithStatus<T>("PUT", path, body, headers)).data,
+    delete: async <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
+      (await requestWithStatus<T>("DELETE", path, body, headers)).data,
     requestWithStatus,
   };
 }
@@ -204,6 +208,51 @@ export const productionMedia: MediaSourceResolver = {
   resolve: (_role, source) => source,
 };
 
+const mediaError = (code: string): Error & { code: string } => Object.assign(new Error(code), { code });
+const mimeFromPath = (path: string) => {
+  const suffix = path.toLowerCase().split("?")[0].split(".").pop();
+  if (suffix === "jpg" || suffix === "jpeg") return "image/jpeg" as const;
+  if (suffix === "png") return "image/png" as const;
+  if (suffix === "webp") return "image/webp" as const;
+  throw mediaError("MEDIA_UNSUPPORTED");
+};
+
+export const productionVenueProfileMedia: VenueProfileMediaCapability = {
+  chooseImage() {
+    return new Promise((resolve, reject) => {
+      wx.chooseMedia({
+        count: 1, mediaType: ["image"], sourceType: ["album", "camera"],
+        success: ({ tempFiles }) => {
+          const file = tempFiles[0];
+          if (!file) { reject(mediaError("MEDIA_PICK_CANCELLED")); return; }
+          let mimeType: "image/jpeg" | "image/png" | "image/webp";
+          try { mimeType = mimeFromPath(file.tempFilePath); } catch (caught) { reject(caught); return; }
+          if (!Number.isSafeInteger(file.size) || file.size <= 0) { reject(mediaError("MEDIA_READ_FAILED")); return; }
+          if (file.size > 10 * 1024 * 1024) { reject(mediaError("MEDIA_TOO_LARGE")); return; }
+          wx.getFileSystemManager().readFile({
+            filePath: file.tempFilePath,
+            success: ({ data }) => {
+              if (!(data instanceof ArrayBuffer) || data.byteLength <= 0) { reject(mediaError("MEDIA_READ_FAILED")); return; }
+              if (data.byteLength > 10 * 1024 * 1024) { reject(mediaError("MEDIA_TOO_LARGE")); return; }
+              resolve({ filename: file.tempFilePath.split("/").pop() ?? "venue-image", mimeType, byteSize: data.byteLength, bytes: data });
+            },
+            fail: () => reject(mediaError("MEDIA_READ_FAILED")),
+          });
+        },
+        fail: ({ errMsg }) => reject(mediaError(/cancel/i.test(errMsg) ? "MEDIA_PICK_CANCELLED" : "MEDIA_PICK_FAILED")),
+      });
+    });
+  },
+  upload(signedPutUrl, bytes, requiredHeaders) {
+    if (!/^https:\/\//.test(signedPutUrl)) return Promise.reject(mediaError("MEDIA_UPLOAD_FAILED"));
+    return new Promise((resolve, reject) => wx.request({
+      url: signedPutUrl, method: "PUT", data: bytes, header: { ...requiredHeaders }, timeout: 15000,
+      success: ({ statusCode }) => statusCode >= 200 && statusCode < 300 ? resolve() : reject(mediaError("MEDIA_UPLOAD_FAILED")),
+      fail: ({ errMsg }) => reject(mediaError(/timeout/i.test(errMsg) ? "MEDIA_UPLOAD_TIMEOUT" : "MEDIA_UPLOAD_FAILED")),
+    }));
+  },
+};
+
 export function productionRuntime(baseUrl: string) {
   return {
     clock: productionClock,
@@ -212,5 +261,6 @@ export function productionRuntime(baseUrl: string) {
     media: productionMedia,
     identity: productionIdentity,
     phone: productionPhone,
+    venueProfileMedia: productionVenueProfileMedia,
   };
 }

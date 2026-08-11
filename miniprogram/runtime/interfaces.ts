@@ -8,6 +8,10 @@ export interface Transport {
   put<T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>): Promise<T>;
 }
 
+export interface DeletingTransport extends Transport {
+  delete<T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>): Promise<T>;
+}
+
 export interface TransportResponse<T> {
   readonly statusCode: number;
   readonly data: T;
