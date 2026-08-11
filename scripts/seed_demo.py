@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import os
 import uuid
 from collections.abc import Iterator
@@ -11,7 +12,16 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
-from backend.app.models import BookingMode, Pitch, Slot, Venue, VenueFacility, VenueImage
+from backend.app.models import (
+    BookingMode,
+    Pitch,
+    Slot,
+    User,
+    Venue,
+    VenueFacility,
+    VenueImage,
+    VenueMembership,
+)
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 NAMESPACE = uuid.UUID("f290c9b8-b58b-4e6e-8dff-b738e9705cd2")
@@ -68,6 +78,18 @@ def run_seed(
     with _seed_engine(database_url or settings.database_url) as engine, Session(
         engine
     ) as session:
+        development_user_id = stable_id("development-inventory-user")
+        development_suffix = hashlib.sha256(b"dev-login-code").hexdigest()[:32]
+        _insert_missing(
+            session,
+            User,
+            {
+                "id": development_user_id,
+                "wechat_app_id": settings.wechat_app_id or "development",
+                "wechat_openid": f"dev-openid-{development_suffix}",
+                "wechat_unionid": None,
+            },
+        )
         _insert_missing(
             session,
             Venue,
@@ -99,6 +121,17 @@ def run_seed(
                 "public_pitch_types": [],
                 "is_primary": True,
                 "is_active": True,
+            },
+        )
+        _insert_missing(
+            session,
+            VenueMembership,
+            {
+                "id": stable_id("development-inventory-membership"),
+                "venue_id": VENUE_ID,
+                "user_id": development_user_id,
+                "is_active": True,
+                "can_manage_inventory": True,
             },
         )
         for key, url, alt, role, sort_order in (

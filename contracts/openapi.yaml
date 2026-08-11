@@ -1019,6 +1019,105 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/admin/venues/{venue_id}/inventory:
+    get:
+      operationId: getAdminVenueInventory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: local_date
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: pitch_id
+          in: query
+          required: false
+          schema:
+            type: [string, 'null']
+            format: uuid
+      responses:
+        '200':
+          description: Authorized venue, ordered pitches, and selected-pitch inventory.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInventory'}
+              examples:
+                Ready:
+                  externalValue: './examples/admin-inventory-ready.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue or pitch not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: Date or query invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /api/v1/admin/venues/{venue_id}/inventory/slots:
+    post:
+      operationId: createAdminInventorySlot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 16, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAdminInventorySlot'}
+      responses:
+        '201':
+          description: Available future slot created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInventorySlot'}
+              examples:
+                Created:
+                  externalValue: './examples/admin-inventory-slot.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue or pitch not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: Idempotency or time conflict, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: Slot input invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}:
+    put:
+      operationId: updateAdminInventorySlot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slot_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAdminInventorySlot'}
+      responses:
+        '200':
+          description: Slot price and availability state updated.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInventorySlot'}
+              examples:
+                Updated:
+                  externalValue: './examples/admin-inventory-slot.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue or slot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: Version conflict or immutable slot, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: Slot update invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
 components:
   securitySchemes:
     bearerAuth:
@@ -1033,6 +1132,83 @@ components:
         type: string
         minLength: 1
   schemas:
+    AdminInventoryVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        timezone: {type: string, minLength: 1}
+    AdminInventoryPitch:
+      type: object
+      additionalProperties: false
+      required: [id, name, display_name, pitch_type, players_per_side]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        display_name: {type: string, minLength: 1}
+        pitch_type: {type: string, enum: [FIVE_A_SIDE, SEVEN_A_SIDE]}
+        players_per_side: {type: integer, enum: [5, 7]}
+    AdminInventoryWindow:
+      type: object
+      additionalProperties: false
+      required: [start_date, end_date]
+      properties:
+        start_date: {type: string, format: date}
+        end_date: {type: string, format: date}
+    AdminInventorySlot:
+      type: object
+      additionalProperties: false
+      required: [id, pitch_id, starts_at, ends_at, start_time, end_time, price_cents, status, checkout_version, editable, read_only_reason]
+      properties:
+        id: {type: string, format: uuid}
+        pitch_id: {type: string, format: uuid}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        start_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        end_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        price_cents: {type: integer, minimum: 0}
+        status: {type: string, enum: [AVAILABLE, LOCKED, BOOKED, CLOSED]}
+        checkout_version: {type: integer, minimum: 1}
+        editable: {type: boolean}
+        read_only_reason:
+          type: [string, 'null']
+          enum: [HELD_FOR_PAYMENT, ALREADY_BOOKED, TIME_PASSED, null]
+    AdminInventory:
+      type: object
+      additionalProperties: false
+      required: [venue, local_date, availability_window, pitches, selected_pitch_id, slots, generated_at]
+      properties:
+        venue: {$ref: '#/components/schemas/AdminInventoryVenue'}
+        local_date: {type: string, format: date}
+        availability_window: {$ref: '#/components/schemas/AdminInventoryWindow'}
+        pitches:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInventoryPitch'}
+        selected_pitch_id: {type: string, format: uuid}
+        slots:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInventorySlot'}
+        generated_at: {type: string, format: date-time}
+    CreateAdminInventorySlot:
+      type: object
+      additionalProperties: false
+      required: [pitch_id, local_date, start_time, end_time, price_cents]
+      properties:
+        pitch_id: {type: string, format: uuid}
+        local_date: {type: string, format: date}
+        start_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        end_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        price_cents: {type: integer, minimum: 0}
+    UpdateAdminInventorySlot:
+      type: object
+      additionalProperties: false
+      required: [price_cents, status, expected_checkout_version]
+      properties:
+        price_cents: {type: integer, minimum: 0}
+        status: {type: string, enum: [AVAILABLE, CLOSED]}
+        expected_checkout_version: {type: integer, minimum: 1}
     Health:
       type: object
       additionalProperties: false
@@ -2159,6 +2335,13 @@ components:
             - ORDER_EXPIRED
             - PAYMENT_CREATE_FAILED
             - PAYMENT_EXCEPTION
+            - INVENTORY_FORBIDDEN
+            - PITCH_NOT_FOUND
+            - SLOT_NOT_FOUND
+            - SLOT_TIME_CONFLICT
+            - INVENTORY_VERSION_CONFLICT
+            - INVENTORY_SLOT_READ_ONLY
+            - REQUEST_IN_PROGRESS
         message:
           type: string
           minLength: 1

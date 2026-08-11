@@ -9,7 +9,15 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 import scripts.seed_demo as seed_demo
-from backend.app.models import BookingMode, Order, Slot, SlotStatus, User, Venue
+from backend.app.models import (
+    BookingMode,
+    Order,
+    Slot,
+    SlotStatus,
+    User,
+    Venue,
+    VenueMembership,
+)
 from scripts.seed_demo import parse_anchor_date, run_seed
 
 
@@ -123,6 +131,15 @@ def test_seed_writes_all_directory_era_venue_fields_explicitly(
     )
     assert venue_values["is_listed"] is True
     assert venue_values["public_pitch_types"] == []
+    user_values = next(values for model, values in captured if model is User)
+    membership_values = next(
+        values for model, values in captured if model is VenueMembership
+    )
+    assert user_values["wechat_openid"].startswith("dev-openid-")
+    assert membership_values["venue_id"] == seed_demo.VENUE_ID
+    assert membership_values["user_id"] == user_values["id"]
+    assert membership_values["is_active"] is True
+    assert membership_values["can_manage_inventory"] is True
 
 
 @pytest.mark.integration
@@ -163,7 +180,8 @@ def test_seed_is_idempotent_preserves_business_rows_and_has_future_inventory(
     with Session(pg_engine) as session:
         protected = session.get_one(Slot, protected_id)
         assert (protected.price_cents, protected.status) == (45600, SlotStatus.BOOKED)
-        assert session.scalar(select(func.count()).select_from(User)) == 0
+        assert session.scalar(select(func.count()).select_from(User)) == 1
+        assert session.scalar(select(func.count()).select_from(VenueMembership)) == 1
         assert session.scalar(select(func.count()).select_from(Order)) == 0
 
 

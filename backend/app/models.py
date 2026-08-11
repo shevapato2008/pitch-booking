@@ -176,6 +176,34 @@ class Venue(Base):
     transit_stops: Mapped[list["VenueTransitStop"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
     )
+    memberships: Mapped[list["VenueMembership"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
+
+
+class VenueMembership(Base):
+    __tablename__ = "venue_memberships"
+    __table_args__ = (
+        UniqueConstraint("venue_id", "user_id", name="uq_venue_memberships_venue_user"),
+        Index("ix_venue_memberships_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    can_manage_inventory: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+
+    venue: Mapped[Venue] = relationship(back_populates="memberships")
+    user: Mapped["User"] = relationship(back_populates="venue_memberships")
 
 
 class VenueTransitStop(Base):
@@ -415,6 +443,9 @@ class User(Base):
     orders: Mapped[list["Order"]] = relationship(back_populates="user")
     idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
         back_populates="user"
+    )
+    venue_memberships: Mapped[list[VenueMembership]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 
