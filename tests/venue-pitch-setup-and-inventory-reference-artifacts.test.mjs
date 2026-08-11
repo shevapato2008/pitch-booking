@@ -600,13 +600,20 @@ test("physical pitch setup save and exit states retain drafts and prevent duplic
 test("physical pitch setup source includes the complete required copy and live audit contract", () => {
   const sources = [setupReferenceHtmlPath, setupReferenceDataPath, setupReferenceControllerPath].map(read).join("\n");
   for (const copy of [
-    "配置物理场地", "渤海元丰足球场", "每块可独立预订的场地都需要单独配置", "添加一块场地",
+    "配置场地", "渤海元丰足球场", "每块可独立预订的场地都需要单独配置", "添加一块场地",
     "保存并设置时段", "保存更改", "场地名称（可选）", "5人制", "7人制", "8人制", "11人制", "其他",
     "每队人数", "预览：6人制", "完成", "新建的 7 人制场地 1", "保存后生成正式名称",
     "未来库存尚未处理，暂不能停用", "正在确认保存结果", "场地配置已变化，请重新核对", "离开后，本次修改不会保存",
   ]) assert.match(sources, new RegExp(escape(copy)));
+  assert.doesNotMatch(sources, /配置物理场地/);
 
   const controller = read(setupReferenceControllerPath);
+  assert.match(controller, /identity\.append\(element\("h1", "", "配置场地"\)\)/);
+  assert.doesNotMatch(controller.match(/const renderHeader[\s\S]*?return fragment;/)?.[0] ?? "", /VENUE\.name/);
+  assert.match(controller, /screen\.append\(element\("h2", "setup-venue-heading", VENUE\.name\)/);
+  const css = read(setupReferenceCssPath);
+  assert.equal(property(declarations(css, ".setup-header h1"), "font-size"), "18px");
+  assert.equal(property(declarations(css, ".setup-venue-heading"), "font-size"), "18px");
   assert.match(controller, /window\.__artifactAudit__\s*=\s*\(\)\s*=>/);
   assert.match(controller, /getBoundingClientRect\(\)/);
   assert.match(controller, /getComputedStyle\(/);

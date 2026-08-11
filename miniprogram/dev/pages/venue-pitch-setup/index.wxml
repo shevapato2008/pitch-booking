@@ -5,12 +5,12 @@
       <view class="venue-pitch-setup-icon venue-pitch-setup-icon--back" aria-hidden="true"></view>
     </button>
     <view class="venue-pitch-setup__identity">
-      <text class="venue-pitch-setup__title">配置物理场地</text>
-      <text class="venue-pitch-setup__venue">渤海元丰足球场</text>
+      <text class="venue-pitch-setup__title">配置场地</text>
     </view>
   </view>
 
   <view class="venue-pitch-setup__content" aria-hidden="{{isSheetOpen}}">
+    <text class="venue-pitch-setup__venue-heading">渤海元丰足球场</text>
     <view class="venue-pitch-setup__callout">
       <view class="venue-pitch-setup-icon venue-pitch-setup-icon--info" aria-hidden="true">i</view>
       <view>

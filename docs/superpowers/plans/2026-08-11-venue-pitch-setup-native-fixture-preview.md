@@ -73,7 +73,7 @@ dev/pages/venue-inventory/index
 dev/pages/venue-pitch-setup/index
 ```
 
-Require all four compiled page artifacts in development. Require production to keep its existing five routes, contain no `dev` directory, and contain neither `venue-pitch-setup` nor the copy `配置物理场地`.
+Require all four compiled page artifacts in development. Require production to keep its existing five routes, contain no `dev` directory, and contain neither `venue-pitch-setup` nor the copy `配置场地`.
 
 - [ ] **Step 6: Run route tests to verify they fail**
 

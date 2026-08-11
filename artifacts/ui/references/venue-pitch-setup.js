@@ -50,7 +50,7 @@ const renderHeader = () => {
   back.setAttribute("aria-label", "返回");
   back.append(svgIcon("back"));
   const identity = element("div", "setup-header__identity");
-  identity.append(element("h1", "", "配置物理场地"), element("p", "type-caption muted", VENUE.name));
+  identity.append(element("h1", "", "配置场地"));
   header.append(back, identity, element("span", "touch-target"));
   fragment.append(system, header);
   return fragment;
@@ -219,6 +219,7 @@ const render = (stateId, stateOverride) => {
   app.replaceChildren(renderHeader());
 
   const screen = element("section", "setup-screen");
+  screen.append(element("h2", "setup-venue-heading", VENUE.name));
   screen.append(element("div", "status-callout setup-callout", "每块可独立预订的场地都需要单独配置"));
   const summary = element("div", "configured-summary");
   summary.append(

@@ -36,14 +36,30 @@ test("native physical pitch preview exposes all approved states and honest visib
   assert.deepEqual(JSON.parse(config), { navigationStyle: "custom" });
   for (const state of stateIds) assert.match(fixture, new RegExp(`"${state.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
   for (const copy of [
-    "配置物理场地", "渤海元丰足球场", "仅视觉预览，未写入场地配置", "物理场地决定可售库存的归属",
+    "配置场地", "渤海元丰足球场", "仅视觉预览，未写入场地配置", "物理场地决定可售库存的归属",
     "正在读取场地配置", "场地配置加载失败，请重新加载", "还没有已配置场地", "当前没有使用中的场地",
     "场地名称已被使用，请换一个名称", "未来库存尚未处理，暂不能停用", "确认删除这块场地？",
     "正在保存场地配置", "保存场地配置失败", "场地配置已变化", "正在确认保存结果", "放弃本次修改？",
     "ACTIVE · 使用中", "INACTIVE · 已停用", "已有业务记录，场地制式不可修改", "可选制式", "其他",
   ]) assert.match(`${fixture}\n${template}`, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(template, /配置物理场地/);
   assert.doesNotMatch(template, /https?:\/\/|<image\b/);
   assert.doesNotMatch(template, /[\u{1F300}-\u{1FAFF}]/u);
+});
+
+test("header keeps the task title separate from an equally prominent venue heading", async () => {
+  const [template, styles] = await Promise.all([
+    readFile(`${pageRoot}.wxml`, "utf8"),
+    readFile(`${pageRoot}.wxss`, "utf8"),
+  ]);
+  const header = template.match(/<view class="venue-pitch-setup__header"[\s\S]*?<\/view>\s*<\/view>/)?.[0] ?? "";
+  assert.match(header, />配置场地<\/text>/);
+  assert.doesNotMatch(header, /渤海元丰足球场/);
+  assert.match(template, /<view class="venue-pitch-setup__content"[^>]*>\s*<text class="venue-pitch-setup__venue-heading">渤海元丰足球场<\/text>/);
+  const titleSize = styles.match(/\.venue-pitch-setup__title\s*\{[^}]*font-size:\s*([^;]+);/s)?.[1];
+  const venueSize = styles.match(/\.venue-pitch-setup__venue-heading\s*\{[^}]*font-size:\s*([^;]+);/s)?.[1];
+  assert.equal(titleSize, "36rpx");
+  assert.equal(venueSize, titleSize);
 });
 
 test("markup keeps one modal hierarchy, one scrollable pitch list, numeric input, and native disabled semantics", async () => {
