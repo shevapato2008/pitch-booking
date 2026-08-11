@@ -113,6 +113,20 @@ def test_upgrade_sql_scopes_profile_idempotency_by_actor_and_venue(
     assert "UNIQUE (venue_id, actor_user_id, scope, key)" in output.getvalue()
 
 
+def test_upgrade_sql_adds_positive_description_item_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = StringIO()
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://unused@localhost/unused")
+    config = Config("alembic.ini", output_buffer=output)
+
+    command.upgrade(config, "0009:0010", sql=True)
+
+    sql = output.getvalue()
+    assert "description_item_version BIGINT DEFAULT '1' NOT NULL" in sql
+    assert "CHECK (description_item_version > 0)" in sql
+
+
 def test_downgrade_sql_deletes_facilities_unsupported_by_0009(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -148,8 +162,16 @@ def test_upgrade_and_downgrade_preserve_legacy_published_profile(
         "profile_mutation_idempotency_records",
     }
     columns = {column["name"]: column for column in inspector.get_columns("venues")}
-    assert columns["profile_version"]["default"] == "1"
-    assert columns["facility_version"]["default"] == "1"
+    assert columns["profile_version"]["default"] in {"1", "'1'::bigint"}
+    assert columns["facility_version"]["default"] in {"1", "'1'::bigint"}
+    revision_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("venue_profile_revisions")
+    }
+    assert revision_columns["description_item_version"]["default"] in {
+        "1",
+        "'1'::bigint",
+    }
     with migration_engine.connect() as connection:
         venue = connection.execute(
             text(

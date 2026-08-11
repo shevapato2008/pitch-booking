@@ -412,6 +412,10 @@ class VenueProfileRevision(Base):
         ),
         CheckConstraint("revision_version > 0", name="ck_venue_profile_revisions_revision_version"),
         CheckConstraint(
+            "description_item_version > 0",
+            name="ck_venue_profile_revisions_description_item_version",
+        ),
+        CheckConstraint(
             "char_length(target_description) <= 300",
             name="ck_venue_profile_revisions_description_length",
         ),
@@ -437,6 +441,9 @@ class VenueProfileRevision(Base):
     )
     base_published_version: Mapped[int] = mapped_column(BigInteger)
     revision_version: Mapped[int] = mapped_column(BigInteger)
+    description_item_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
     target_description: Mapped[str] = mapped_column(Text)
     status: Mapped[VenueProfileRevisionStatus] = mapped_column(
         Enum(VenueProfileRevisionStatus, name="venue_profile_revision_status")

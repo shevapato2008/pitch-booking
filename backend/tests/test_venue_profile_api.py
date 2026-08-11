@@ -14,7 +14,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
 from backend.app.main import create_app
-from backend.app.models import User, UserSession, Venue, VenueMembership
+from backend.app.models import (
+    ImageRole,
+    User,
+    UserSession,
+    Venue,
+    VenueImage,
+    VenueMembership,
+    VenueProfileRevision,
+)
 from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
 
 pytestmark = pytest.mark.integration
@@ -90,6 +98,21 @@ def _jpeg() -> bytes:
     return output.getvalue()
 
 
+def _add_published_images(engine: Engine, venue_id: uuid.UUID, count: int) -> None:
+    with Session(engine) as session:
+        session.add_all(
+            VenueImage(
+                venue_id=venue_id,
+                url=f"https://assets.example/{index}.webp",
+                alt=str(index),
+                role=ImageRole.COVER if index == 0 else ImageRole.GALLERY,
+                sort_order=index,
+            )
+            for index in range(count)
+        )
+        session.commit()
+
+
 def test_runtime_openapi_exposes_eight_admin_operations() -> None:
     paths = create_app().openapi()["paths"]
     expected = {
@@ -109,6 +132,7 @@ def test_profile_http_journey_covers_save_upload_complete_order_cover_delete_ret
     pg_engine: Engine,
 ) -> None:
     venue = _seed(pg_engine)
+    _add_published_images(pg_engine, venue.id, 1)
     storage = LocalMediaStorage("https://local.invalid/media")
     client = _client(pg_engine, storage)
     unauthorized = client.get(f"/api/v1/admin/venues/{venue.id}/profile")
@@ -118,6 +142,7 @@ def test_profile_http_journey_covers_save_upload_complete_order_cover_delete_ret
     initial = client.get(f"/api/v1/admin/venues/{venue.id}/profile", headers=_headers())
     assert initial.status_code == 200
     profile = initial.json()
+    inherited_image_id = profile["current_revision"]["images"][0]["id"]
     saved = client.put(
         f"/api/v1/admin/venues/{venue.id}/profile",
         headers=_headers("save-api-000000001"),
@@ -130,6 +155,7 @@ def test_profile_http_journey_covers_save_upload_complete_order_cover_delete_ret
     )
     assert saved.status_code == 200
     profile = saved.json()
+    revision_id = profile["current_revision"]["id"]
 
     data = _jpeg()
     intent_response = client.post(
@@ -160,13 +186,19 @@ def test_profile_http_journey_covers_save_upload_complete_order_cover_delete_ret
         json={"expected_revision_version": profile["revision_version"] + 1},
     ).json()
     image_id = intent["image_id"]
-    assert profile["current_revision"]["images"][0]["state"] == "REVIEWING"
+    uploaded = next(
+        image for image in profile["current_revision"]["images"] if image["id"] == image_id
+    )
+    assert uploaded["state"] == "REVIEWING"
     assert "object_key" not in str(profile)
 
     ordered = client.put(
         f"/api/v1/admin/venues/{venue.id}/profile/images/order",
         headers=_headers("order-api-00000001"),
-        json={"expected_revision_version": profile["revision_version"], "image_ids": [image_id]},
+        json={
+            "expected_revision_version": profile["revision_version"],
+            "image_ids": [image_id, inherited_image_id],
+        },
     )
     assert ordered.status_code == 200
     profile = ordered.json()
@@ -188,12 +220,44 @@ def test_profile_http_journey_covers_save_upload_complete_order_cover_delete_ret
 
     deleted = client.request(
         "DELETE",
-        f"/api/v1/admin/venues/{venue.id}/profile/images/{image_id}",
+        f"/api/v1/admin/venues/{venue.id}/profile/images/{inherited_image_id}",
         headers=_headers("delete-api-0000001"),
         json={"expected_revision_version": profile["revision_version"]},
     )
     assert deleted.status_code == 200
-    assert deleted.json()["current_revision"]["images"] == []
+    assert [image["id"] for image in deleted.json()["current_revision"]["images"]] == [
+        image_id
+    ]
+    with Session(pg_engine) as session:
+        revision = session.get(VenueProfileRevision, revision_id)
+        assert revision is not None
+        assert revision.description_item_version == 2
+
+
+@pytest.mark.parametrize("image_count", [1, 2])
+def test_api_rejects_deleting_current_cover(
+    pg_engine: Engine, image_count: int
+) -> None:
+    venue = _seed(pg_engine)
+    _add_published_images(pg_engine, venue.id, image_count)
+    client = _client(pg_engine, LocalMediaStorage())
+    profile = client.get(
+        f"/api/v1/admin/venues/{venue.id}/profile", headers=_headers()
+    ).json()
+    cover = next(
+        image for image in profile["current_revision"]["images"] if image["role"] == "COVER"
+    )
+
+    response = client.request(
+        "DELETE",
+        f"/api/v1/admin/venues/{venue.id}/profile/images/{cover['id']}",
+        headers=_headers(f"delete-cover-api-{image_count:04d}"),
+        json={"expected_revision_version": profile["revision_version"]},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VENUE_PROFILE_VALIDATION_FAILED"
+    assert response.json()["error"]["message"] == "请先设置新的封面图片，再删除当前封面。"
 
 
 def test_api_rejects_unknown_fields_and_cross_venue_access(pg_engine: Engine) -> None:

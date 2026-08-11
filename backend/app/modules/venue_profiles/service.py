@@ -102,9 +102,7 @@ class VenueProfileService:
                 revision.target_description = request.description
                 revision.description_status = VenueProfileItemStatus.REVIEWING
                 revision.description_reason_code = None
-                self.repository.add_job(
-                    revision, ModerationItemType.DESCRIPTION, revision.revision_version
-                )
+                self.repository.add_description_job(revision)
             self._summary(revision, self.repository.draft_images(revision.id))
             return self._response(venue, revision)
 
@@ -228,6 +226,13 @@ class VenueProfileService:
             target = next((image for image in images if image.id == image_id), None)
             if target is None:
                 self._not_found()
+            if target.role is ImageRole.COVER:
+                raise AppError(
+                    422,
+                    "VENUE_PROFILE_VALIDATION_FAILED",
+                    "请先设置新的封面图片，再删除当前封面。",
+                    {"field": "image_id", "reason": "REPLACEMENT_COVER_REQUIRED"},
+                )
             keys_to_delete.extend(
                 key for key in (target.original_object_key, target.review_object_key) if key
             )
@@ -235,8 +240,6 @@ class VenueProfileService:
             self.repository.delete_image(target)
             for index, image in enumerate(remaining):
                 image.sort_order = index
-            if remaining and target.role is ImageRole.COVER:
-                remaining[0].role = ImageRole.COVER
             revision.revision_version += 1
             self._summary(revision, remaining)
             return self._response(venue, revision)
@@ -320,9 +323,7 @@ class VenueProfileService:
                 revision.revision_version += 1
                 revision.description_status = VenueProfileItemStatus.REVIEWING
                 revision.description_reason_code = None
-                self.repository.add_job(
-                    revision, ModerationItemType.DESCRIPTION, revision.revision_version
-                )
+                self.repository.add_description_job(revision)
             else:
                 image = self.repository.get_draft_image(revision.id, item_id, for_update=True)
                 if image is None:

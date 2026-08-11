@@ -224,7 +224,15 @@ def test_profile_tables_counters_enums_and_due_index_exist(pg_engine: Engine) ->
     for name in ("profile_version", "facility_version"):
         assert str(venue_columns[name]["type"]) == "BIGINT"
         assert venue_columns[name]["nullable"] is False
-        assert venue_columns[name]["default"] == "1"
+        assert venue_columns[name]["default"] in {"1", "'1'::bigint"}
+    revision_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("venue_profile_revisions")
+    }
+    description_version = revision_columns["description_item_version"]
+    assert str(description_version["type"]) == "BIGINT"
+    assert description_version["nullable"] is False
+    assert description_version["default"] in {"1", "'1'::bigint"}
     with pg_engine.connect() as connection:
         rows = connection.execute(
             text(
@@ -285,6 +293,11 @@ def test_only_one_current_editable_revision_and_description_limit(
     pg_session.rollback()
 
     pg_session.add(_revision(venue(), creator, target_description="x" * 301))
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+
+    pg_session.rollback()
+    pg_session.add(_revision(venue(), creator, description_item_version=0))
     with pytest.raises(IntegrityError):
         pg_session.commit()
 

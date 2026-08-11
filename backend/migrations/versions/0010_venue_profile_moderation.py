@@ -113,6 +113,12 @@ def upgrade() -> None:
         sa.Column("venue_id", sa.UUID(), nullable=False),
         sa.Column("base_published_version", sa.BigInteger(), nullable=False),
         sa.Column("revision_version", sa.BigInteger(), nullable=False),
+        sa.Column(
+            "description_item_version",
+            sa.BigInteger(),
+            server_default="1",
+            nullable=False,
+        ),
         sa.Column("target_description", sa.Text(), nullable=False),
         sa.Column("status", _type("venue_profile_revision_status"), nullable=False),
         sa.Column("description_status", _type("venue_profile_item_status"), nullable=False),
@@ -131,6 +137,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "revision_version > 0", name="ck_venue_profile_revisions_revision_version"
+        ),
+        sa.CheckConstraint(
+            "description_item_version > 0",
+            name="ck_venue_profile_revisions_description_item_version",
         ),
         sa.CheckConstraint(
             "char_length(target_description) <= 300",

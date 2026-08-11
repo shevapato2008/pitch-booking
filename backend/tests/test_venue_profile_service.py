@@ -21,6 +21,7 @@ from backend.app.models import (
     VenueMembership,
     VenueProfileImageDraft,
     VenueProfileItemStatus,
+    VenueProfileRevision,
 )
 from backend.app.modules.venue_profiles.dto import (
     CreateUploadIntentRequest,
@@ -136,6 +137,119 @@ def test_save_accepts_300_code_points_and_atomically_updates_versions(
         ),
     )
     assert replay == saved
+
+
+def test_description_item_version_changes_only_for_description_work(
+    pg_session: Session,
+) -> None:
+    venue, admin, _ = _seed(pg_session)
+    service = _service(pg_session)
+    initial = service.get(venue_id=venue.id, user=admin)
+    revision = pg_session.get(VenueProfileRevision, initial.current_revision.id)
+    assert revision is not None
+    assert revision.description_item_version == 1
+
+    facilities_only = service.save(
+        venue_id=venue.id,
+        user=admin,
+        idempotency_key="facility-only-000001",
+        request=SaveVenueProfileRequest(
+            expected_facility_version=initial.facility_version,
+            expected_revision_version=initial.revision_version,
+            description=initial.current_revision.description,
+            facilities=["PARKING", "SHOWER"],
+        ),
+    )
+    pg_session.refresh(revision)
+    assert revision.description_item_version == 1
+
+    service.save(
+        venue_id=venue.id,
+        user=admin,
+        idempotency_key="description-00000001",
+        request=SaveVenueProfileRequest(
+            expected_facility_version=facilities_only.facility_version,
+            expected_revision_version=facilities_only.revision_version,
+            description="需要重新审核的介绍",
+            facilities=["PARKING", "SHOWER"],
+        ),
+    )
+    pg_session.refresh(revision)
+    assert revision.description_item_version == 2
+    job = pg_session.scalar(
+        select(ContentModerationJob).where(ContentModerationJob.revision_id == revision.id)
+    )
+    assert job is not None
+    assert job.item_version == 2
+
+    revision.description_status = VenueProfileItemStatus.REJECTED
+    revision.description_reason_code = "UNRELATED_CONTENT"
+    pg_session.commit()
+    current = service.get(venue_id=venue.id, user=admin)
+    service.retry(
+        venue_id=venue.id,
+        item_id=revision.id,
+        user=admin,
+        idempotency_key="description-retry-001",
+        request=VenueProfileRevisionMutationRequest(
+            expected_revision_version=current.revision_version
+        ),
+    )
+    pg_session.refresh(revision)
+    assert revision.description_item_version == 3
+    assert pg_session.scalar(
+        select(func.max(ContentModerationJob.item_version)).where(
+            ContentModerationJob.revision_id == revision.id
+        )
+    ) == 3
+
+
+@pytest.mark.parametrize("gallery_count", [0, 1])
+def test_delete_rejects_current_cover_until_replacement_is_set(
+    pg_session: Session, gallery_count: int
+) -> None:
+    venue, admin, _ = _seed(pg_session)
+    service = _service(pg_session)
+    initial = service.get(venue_id=venue.id, user=admin)
+    if gallery_count:
+        published = VenueImage(
+            venue_id=venue.id,
+            url="https://assets.example/gallery.webp",
+            alt="gallery",
+            role=ImageRole.GALLERY,
+            sort_order=1,
+        )
+        pg_session.add(published)
+        pg_session.flush()
+        pg_session.add(
+            VenueProfileImageDraft(
+                revision_id=initial.current_revision.id,
+                published_image_id=published.id,
+                role=ImageRole.GALLERY,
+                sort_order=1,
+                moderation_status=VenueProfileItemStatus.APPROVED,
+                item_version=1,
+            )
+        )
+        pg_session.commit()
+
+    cover_id = initial.current_revision.images[0].id
+    with pytest.raises(AppError) as rejected:
+        service.delete(
+            venue_id=venue.id,
+            image_id=cover_id,
+            user=admin,
+            idempotency_key=f"delete-cover-{gallery_count:08d}",
+            request=VenueProfileRevisionMutationRequest(
+                expected_revision_version=initial.revision_version
+            ),
+        )
+    assert rejected.value.code == "VENUE_PROFILE_VALIDATION_FAILED"
+    assert rejected.value.message == "请先设置新的封面图片，再删除当前封面。"
+    current = service.get(venue_id=venue.id, user=admin)
+    assert current.revision_version == initial.revision_version
+    assert current.current_revision.images[0].id == cover_id
+    assert len(current.current_revision.images) == gallery_count + 1
 
 
 def test_save_rejects_invalid_input_version_and_rolls_back_both_authorities(
@@ -312,6 +426,9 @@ def test_reorder_requires_exact_set_preserves_approval_and_cover(pg_session: Ses
     assert sum(image.role == "COVER" for image in result.current_revision.images) == 1
     assert all(image.state == "APPROVED" for image in result.current_revision.images)
     assert pg_session.scalar(select(func.count()).select_from(ContentModerationJob)) == before_jobs
+    revision = pg_session.get(VenueProfileRevision, revision_id)
+    assert revision is not None
+    assert revision.description_item_version == 1
 
 
 def test_upload_intent_enforces_eight_image_maximum(pg_session: Session) -> None:

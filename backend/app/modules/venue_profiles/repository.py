@@ -187,6 +187,12 @@ class VenueProfileRepository:
         self.session.flush()
         return job
 
+    def add_description_job(self, revision: VenueProfileRevision) -> ContentModerationJob:
+        revision.description_item_version += 1
+        return self.add_job(
+            revision, ModerationItemType.DESCRIPTION, revision.description_item_version
+        )
+
     def minimum_available_price(self, venue_id: uuid.UUID) -> int | None:
         return self.session.scalar(
             select(func.min(Slot.price_cents))
