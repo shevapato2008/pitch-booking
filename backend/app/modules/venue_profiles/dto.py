@@ -37,6 +37,18 @@ ReasonCodeValue = Literal[
 ItemState = Literal["UPLOADING", "REVIEWING", "APPROVED", "REJECTED", "PENDING_MANUAL"]
 RevisionState = Literal["READY", "REVIEWING", "REJECTED", "PENDING_MANUAL", "PUBLISHED"]
 MimeType = Literal["image/jpeg", "image/png", "image/webp"]
+ManualDecisionValue = Literal[
+    "PASS",
+    "CONTACT_INFO",
+    "QR_OR_PAYMENT_CODE",
+    "OFF_PLATFORM_TRADE",
+    "EXTERNAL_LINK",
+    "UNRELATED_CONTENT",
+    "IMAGE_NOT_VENUE",
+    "IMAGE_QUALITY",
+    "PERSONAL_PRIVACY",
+    "UNSAFE_CONTENT",
+]
 
 # Fixed wire catalogs live beside their closed enum decoders.
 FACILITY_LABELS: dict[FacilityCodeValue, str] = {
@@ -211,3 +223,26 @@ class OrderVenueProfileImagesRequest(VenueProfileRevisionMutationRequest):
         if len(self.image_ids) != len(set(self.image_ids)):
             raise ValueError("image ids must be unique")
         return self
+
+
+class ManualReviewItemResponse(ClosedModel):
+    item_id: uuid.UUID
+    venue_id: uuid.UUID
+    venue_name: str = Field(min_length=1)
+    revision_id: uuid.UUID
+    revision_version: int = Field(ge=1)
+    item_version: int = Field(ge=1)
+    item_type: Literal["DESCRIPTION", "IMAGE"]
+    state: Literal["PENDING_MANUAL"] = "PENDING_MANUAL"
+    review_image_url: str | None
+    submitted_at: datetime
+
+
+class ManualReviewQueueResponse(ClosedModel):
+    items: list[ManualReviewItemResponse]
+    next_cursor: str | None = None
+
+
+class ManualModerationDecisionRequest(ClosedModel):
+    expected_item_version: Annotated[int, Field(strict=True, ge=1)]
+    decision: ManualDecisionValue

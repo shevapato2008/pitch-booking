@@ -535,6 +535,14 @@ class ContentModerationJob(Base):
         CheckConstraint("item_version > 0", name="ck_content_moderation_jobs_item_version"),
         CheckConstraint("attempt_count >= 0", name="ck_content_moderation_jobs_attempt_count"),
         CheckConstraint(
+            "content_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_content_moderation_jobs_content_sha256",
+        ),
+        CheckConstraint(
+            "length(trim(policy_version)) > 0",
+            name="ck_content_moderation_jobs_policy_version",
+        ),
+        CheckConstraint(
             "(item_type = 'DESCRIPTION' AND image_draft_id IS NULL) OR "
             "(item_type = 'IMAGE' AND image_draft_id IS NOT NULL)",
             name="ck_content_moderation_jobs_item_target",
@@ -560,6 +568,8 @@ class ContentModerationJob(Base):
         Enum(ModerationItemType, name="moderation_item_type")
     )
     item_version: Mapped[int] = mapped_column(BigInteger)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    policy_version: Mapped[str] = mapped_column(String(80))
     status: Mapped[ModerationJobStatus] = mapped_column(
         Enum(ModerationJobStatus, name="moderation_job_status")
     )

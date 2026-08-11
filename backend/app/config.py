@@ -2,7 +2,8 @@ import base64
 import binascii
 import inspect
 import re
-from typing import Any, Literal, cast
+import uuid
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -16,7 +17,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_core import InitErrorDetails
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _CANONICAL_POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*", re.ASCII)
 _HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
@@ -47,6 +48,15 @@ class Settings(BaseSettings):
     oss_public_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
     oss_access_key_id: str | None = Field(default=None, repr=False)
     oss_access_key_secret: SecretStr | None = Field(default=None, repr=False)
+    dashscope_api_key: SecretStr | None = Field(default=None, repr=False)
+    dashscope_base_url: AnyHttpUrl = Field(
+        default_factory=lambda: _PUBLIC_API_URL_ADAPTER.validate_python(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ),
+        repr=False,
+    )
+    dashscope_moderation_model: str = "qwen3-vl-flash"
+    moderation_reviewer_user_ids: Annotated[tuple[uuid.UUID, ...], NoDecode] = ()
     wechat_provider: Literal["development", "real"] = "development"
     payment_provider: Literal["wechat", "mock"] = "wechat"
     enable_mock_payment_provider: bool = False
@@ -114,6 +124,8 @@ class Settings(BaseSettings):
             "PHONE_ENCRYPTION_KEY_BASE64",
             "oss_access_key_secret",
             "OSS_ACCESS_KEY_SECRET",
+            "dashscope_api_key",
+            "DASHSCOPE_API_KEY",
         ):
             secret = sanitized.get(key)
             if secret is None or isinstance(secret, SecretStr):
@@ -309,6 +321,70 @@ class Settings(BaseSettings):
                 raise cls._safe_value_error(
                     "oss_access_key_secret", "OSS_ACCESS_KEY_SECRET must not be empty"
                 )
+        return value
+
+    @field_validator("dashscope_api_key")
+    @classmethod
+    def validate_dashscope_api_key(
+        cls, value: SecretStr | None, info: ValidationInfo
+    ) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            if cls._is_deployed(info):
+                raise cls._safe_value_error(
+                    "dashscope_api_key",
+                    "DASHSCOPE_API_KEY is required for staging and production",
+                )
+            if value is not None:
+                raise cls._safe_value_error(
+                    "dashscope_api_key", "DASHSCOPE_API_KEY must not be empty"
+                )
+        return value
+
+    @field_validator("dashscope_base_url", mode="before")
+    @classmethod
+    def validate_dashscope_base_url(cls, value: object) -> AnyHttpUrl:
+        try:
+            validated = _PUBLIC_API_URL_ADAPTER.validate_python(value)
+        except (TypeError, ValueError, ValidationError):
+            raise cls._safe_value_error(
+                "dashscope_base_url", "DASHSCOPE_BASE_URL is invalid"
+            ) from None
+        if validated.scheme != "https":
+            raise cls._safe_value_error(
+                "dashscope_base_url", "DASHSCOPE_BASE_URL must use HTTPS"
+            )
+        if validated.username is not None or validated.password is not None:
+            raise cls._safe_value_error(
+                "dashscope_base_url", "DASHSCOPE_BASE_URL must not contain credentials"
+            )
+        if validated.query is not None or validated.fragment is not None:
+            raise cls._safe_value_error(
+                "dashscope_base_url", "DASHSCOPE_BASE_URL must not contain query or fragment"
+            )
+        return validated
+
+    @field_validator("dashscope_moderation_model")
+    @classmethod
+    def validate_dashscope_model(cls, value: str) -> str:
+        if not value.strip() or value != value.strip():
+            raise cls._safe_value_error(
+                "dashscope_moderation_model", "DASHSCOPE_MODERATION_MODEL is invalid"
+            )
+        return value
+
+    @field_validator("moderation_reviewer_user_ids", mode="before")
+    @classmethod
+    def parse_moderation_reviewer_user_ids(cls, value: object) -> object:
+        if value is None or value == "":
+            return ()
+        if isinstance(value, str):
+            parts = tuple(item.strip() for item in value.split(","))
+            if any(not item for item in parts):
+                raise cls._safe_value_error(
+                    "moderation_reviewer_user_ids",
+                    "MODERATION_REVIEWER_USER_IDS is invalid",
+                )
+            return parts
         return value
 
     @field_validator("wechat_provider")

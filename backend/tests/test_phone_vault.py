@@ -42,6 +42,7 @@ def deployed_settings(**overrides: object) -> dict[str, object]:
         "oss_public_base_url": "https://cdn.example.com/media",
         "oss_access_key_id": "staging-access-key-id",
         "oss_access_key_secret": "staging-access-key-secret",
+        "dashscope_api_key": "staging-dashscope-key",
         "wechat_provider": "real",
         "wechat_app_id": "wx-app-id",
         "wechat_app_secret": "wechat-secret",

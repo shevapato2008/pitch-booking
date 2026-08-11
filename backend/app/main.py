@@ -30,6 +30,9 @@ from backend.app.modules.pitch_configuration.router import router as pitch_confi
 from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
 from backend.app.modules.venue_profiles.oss_storage import OssMediaStorage
 from backend.app.modules.venue_profiles.router import (
+    manual_router as venue_profile_manual_router,
+)
+from backend.app.modules.venue_profiles.router import (
     profile_request_validation_handler,
 )
 from backend.app.modules.venue_profiles.router import (
@@ -115,6 +118,7 @@ def create_app(
         application.include_router(payments_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_profiles_router)
+        application.include_router(venue_profile_manual_router)
         if resolved_settings.mock_payment_provider_enabled:
             application.include_router(development_payment_router)
         application.include_router(venues_router)

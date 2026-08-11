@@ -54,6 +54,7 @@ def test_no_unverified_production_notification_route_is_registered() -> None:
             oss_public_base_url="https://images.example.com/media",
             oss_access_key_id="production-access-key-id",
             oss_access_key_secret="production-access-key-secret",
+            dashscope_api_key="production-dashscope-key",
         )
     )
     assert "/api/v1/payments/wechat/notify" not in _route_paths(app)

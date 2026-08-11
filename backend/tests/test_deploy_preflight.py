@@ -32,6 +32,10 @@ def valid_local_environment() -> dict[str, str]:
         "OSS_PUBLIC_BASE_URL": "https://cdn.example.test/media",
         "OSS_ACCESS_KEY_ID": "staging-access-key-id",
         "OSS_ACCESS_KEY_SECRET": "staging-access-key-secret",
+        "DASHSCOPE_API_KEY": "staging-dashscope-key",
+        "DASHSCOPE_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "DASHSCOPE_MODERATION_MODEL": "qwen3-vl-flash",
+        "MODERATION_REVIEWER_USER_IDS": "01a329c4-36b0-401a-a577-48ee1c475a37",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
     }
@@ -148,9 +152,10 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
     )
     config = json.loads(completed.stdout)
 
-    assert set(config["services"]) == {"api", "caddy", "postgres"}
+    assert set(config["services"]) == {"api", "caddy", "postgres", "worker"}
     assert config["services"]["postgres"]["healthcheck"]
     assert config["services"]["api"]["depends_on"]["postgres"]["condition"] == "service_healthy"
+    assert config["services"]["worker"]["depends_on"]["api"]["condition"] == "service_healthy"
     assert "alembic upgrade head" in " ".join(config["services"]["api"]["command"])
     assert {
         key: config["services"]["api"]["environment"][key]
@@ -184,6 +189,19 @@ def test_deploy_environment_template_declares_all_oss_inputs() -> None:
         "OSS_ACCESS_KEY_ID",
         "OSS_ACCESS_KEY_SECRET",
     ):
+        assert f"{key}=" in template
+
+
+def test_deploy_configuration_passes_through_moderation_inputs() -> None:
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+    for key in (
+        "DASHSCOPE_API_KEY",
+        "DASHSCOPE_BASE_URL",
+        "DASHSCOPE_MODERATION_MODEL",
+        "MODERATION_REVIEWER_USER_IDS",
+    ):
+        assert f"{key}:" in compose
         assert f"{key}=" in template
 
 

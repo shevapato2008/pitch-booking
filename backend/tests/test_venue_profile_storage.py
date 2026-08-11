@@ -408,6 +408,7 @@ def deployed_settings(**overrides: object) -> dict[str, object]:
         "oss_public_base_url": "https://cdn.example.test/media",
         "oss_access_key_id": "access-key-id",
         "oss_access_key_secret": "OSS_SECRET_SENTINEL",
+        "dashscope_api_key": "staging-dashscope-key",
     }
     values.update(overrides)
     return values

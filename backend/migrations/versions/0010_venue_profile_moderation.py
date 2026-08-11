@@ -225,6 +225,8 @@ def upgrade() -> None:
         sa.Column("image_draft_id", sa.UUID(), nullable=True),
         sa.Column("item_type", _type("moderation_item_type"), nullable=False),
         sa.Column("item_version", sa.BigInteger(), nullable=False),
+        sa.Column("content_sha256", sa.String(length=64), nullable=False),
+        sa.Column("policy_version", sa.String(length=80), nullable=False),
         sa.Column("status", _type("moderation_job_status"), nullable=False),
         sa.Column("attempt_count", sa.Integer(), server_default="0", nullable=False),
         sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=False),
@@ -240,6 +242,14 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("item_version > 0", name="ck_content_moderation_jobs_item_version"),
         sa.CheckConstraint("attempt_count >= 0", name="ck_content_moderation_jobs_attempt_count"),
+        sa.CheckConstraint(
+            "content_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_content_moderation_jobs_content_sha256",
+        ),
+        sa.CheckConstraint(
+            "length(trim(policy_version)) > 0",
+            name="ck_content_moderation_jobs_policy_version",
+        ),
         sa.CheckConstraint(
             "(item_type = 'DESCRIPTION' AND image_draft_id IS NULL) OR "
             "(item_type = 'IMAGE' AND image_draft_id IS NOT NULL)",

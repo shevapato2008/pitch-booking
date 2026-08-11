@@ -7,23 +7,30 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
-from backend.app.errors import ErrorEnvelope
+from backend.app.errors import AppError, ErrorEnvelope
 from backend.app.models import User
 from backend.app.modules.auth.router import get_current_user
 from backend.app.modules.venue_profiles.dto import (
     AdminVenueProfileResponse,
     CompleteUploadRequest,
     CreateUploadIntentRequest,
+    ManualModerationDecisionRequest,
+    ManualReviewQueueResponse,
     OrderVenueProfileImagesRequest,
     SaveVenueProfileRequest,
     UploadIntentResponse,
     VenueProfileRevisionMutationRequest,
 )
+from backend.app.modules.venue_profiles.manual_review import ManualVenueProfileReviewService
+from backend.app.modules.venue_profiles.publisher import VenueProfilePublisher
 from backend.app.modules.venue_profiles.repository import VenueProfileRepository
 from backend.app.modules.venue_profiles.service import VenueProfileService
 from backend.app.modules.venue_profiles.storage import VenueMediaStore
 
 router = APIRouter(prefix="/api/v1/admin/venues", tags=["venue-profiles"])
+manual_router = APIRouter(
+    prefix="/api/v1/admin/moderation/venue-profiles", tags=["venue-profile-moderation"]
+)
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=128)]
 ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorEnvelope},
@@ -41,6 +48,54 @@ def _service(database: Session, request: Request) -> VenueProfileService:
     return VenueProfileService(
         VenueProfileRepository(database),
         cast(VenueMediaStore, request.app.state.venue_media_store),
+    )
+
+
+def _manual_service(database: Session, request: Request) -> ManualVenueProfileReviewService:
+    media_store = cast(VenueMediaStore, request.app.state.venue_media_store)
+    bind = database.get_bind()
+    return ManualVenueProfileReviewService(
+        session=database,
+        media_store=media_store,
+        publisher=VenueProfilePublisher(lambda: Session(bind), media_store),
+        reviewer_ids=request.app.state.settings.moderation_reviewer_user_ids,
+    )
+
+
+@manual_router.get(
+    "/pending",
+    response_model=ManualReviewQueueResponse,
+    responses={401: {"model": ErrorEnvelope}, 403: {"model": ErrorEnvelope}},
+    operation_id="listPendingVenueProfileModeration",
+)
+def list_pending_moderation(
+    user: Annotated[User, Depends(get_current_user)],
+    database: Annotated[Session, Depends(get_database)],
+    request: Request,
+    cursor: str | None = None,
+    limit: int = 20,
+) -> ManualReviewQueueResponse:
+    if not 1 <= limit <= 100:
+        raise AppError(422, "INVALID_ARGUMENT", "请求参数格式不正确，请检查后重试。")
+    return _manual_service(database, request).pending(user=user, cursor=cursor, limit=limit)
+
+
+@manual_router.post(
+    "/{item_id}/decisions",
+    status_code=204,
+    responses=ERRORS,
+    operation_id="decidePendingVenueProfileModeration",
+)
+def decide_pending_moderation(
+    item_id: uuid.UUID,
+    body: ManualModerationDecisionRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    database: Annotated[Session, Depends(get_database)],
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> None:
+    _manual_service(database, request).decide(
+        item_id=item_id, user=user, request=body, idempotency_key=idempotency_key
     )
 
 

@@ -9,11 +9,19 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from backend.app.config import Settings
 from backend.app.database import get_engine
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.modules.payments.reconciliation import RECOVERY_LEASE_DURATION
 from backend.app.modules.payments.repository import PaymentRepository
+from backend.app.modules.venue_profiles.dashscope_moderation import DashScopeModerationProvider
+from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
+from backend.app.modules.venue_profiles.moderation import ContentModerationProvider
+from backend.app.modules.venue_profiles.oss_storage import OssMediaStorage
+from backend.app.modules.venue_profiles.publisher import VenueProfilePublisher
+from backend.app.modules.venue_profiles.storage import VenueMediaStore
+from backend.app.modules.venue_profiles.worker import VenueProfileModerationWorker
 
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_INTERVAL_SECONDS = 60.0
@@ -33,6 +41,10 @@ class PaymentRecovery(Protocol):
     ) -> object: ...
 
 
+class ProfileModerationScan(Protocol):
+    def run_once(self) -> int: ...
+
+
 class ExpiryWorker:
     def __init__(
         self,
@@ -40,6 +52,7 @@ class ExpiryWorker:
         session_factory: SessionFactory,
         expiry_service: PendingOrderExpiryService | None = None,
         payment_reconciliation: PaymentRecovery | None = None,
+        profile_moderation: ProfileModerationScan | None = None,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], None] | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -52,6 +65,7 @@ class ExpiryWorker:
         self._session_factory = session_factory
         self._expiry_service = expiry_service or PendingOrderExpiryService()
         self._payment_reconciliation = payment_reconciliation
+        self._profile_moderation = profile_moderation
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper or time.sleep
         self._batch_size = batch_size
@@ -110,7 +124,13 @@ class ExpiryWorker:
                         "Failed to expire pending order order_id=%s",
                         order_id,
                     )
-        return payment_count + len(candidate_ids)
+        moderation_count = 0
+        if self._profile_moderation is not None:
+            try:
+                moderation_count = self._profile_moderation.run_once()
+            except Exception:
+                logger.exception("Failed to scan venue profile moderation jobs")
+        return payment_count + len(candidate_ids) + moderation_count
 
     def run(self, *, once: bool = False) -> int:
         processed = 0
@@ -142,6 +162,10 @@ def main(
     clock: Callable[[], datetime] | None = None,
     sleeper: Callable[[float], None] | None = None,
     payment_reconciliation: PaymentRecovery | None = None,
+    profile_moderation: ProfileModerationScan | None = None,
+    settings: Settings | None = None,
+    venue_media_store: VenueMediaStore | None = None,
+    moderation_provider: ContentModerationProvider | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(description="Expire stale pending orders safely")
     parser.add_argument("--once", action="store_true")
@@ -153,14 +177,53 @@ def main(
     )
     arguments = parser.parse_args(argv)
     resolved_factory = session_factory or (lambda: Session(get_engine()))
-    ExpiryWorker(
-        session_factory=resolved_factory,
-        clock=clock,
-        sleeper=sleeper,
-        payment_reconciliation=payment_reconciliation,
-        batch_size=arguments.batch_size,
-        interval_seconds=arguments.interval_seconds,
-    ).run(once=arguments.once)
+    owned_provider: DashScopeModerationProvider | None = None
+    owned_store: VenueMediaStore | None = None
+    resolved_profile_moderation = profile_moderation
+    if resolved_profile_moderation is None:
+        resolved_settings = settings or Settings()
+        provider = moderation_provider
+        if provider is None and resolved_settings.dashscope_api_key is not None:
+            owned_provider = DashScopeModerationProvider(
+                api_key=resolved_settings.dashscope_api_key,
+                base_url=str(resolved_settings.dashscope_base_url),
+                model=resolved_settings.dashscope_moderation_model,
+            )
+            provider = owned_provider
+        if provider is not None:
+            store = venue_media_store
+            if store is None:
+                store = (
+                    OssMediaStorage.from_settings(resolved_settings)
+                    if resolved_settings.app_env in {"staging", "production"}
+                    else LocalMediaStorage()
+                )
+                owned_store = store
+            publisher = VenueProfilePublisher(resolved_factory, store)
+            resolved_profile_moderation = VenueProfileModerationWorker(
+                session_factory=resolved_factory,
+                provider=provider,
+                media_store=store,
+                publisher=publisher,
+                clock=clock,
+                batch_size=min(arguments.batch_size, 100),
+            )
+    try:
+        ExpiryWorker(
+            session_factory=resolved_factory,
+            clock=clock,
+            sleeper=sleeper,
+            payment_reconciliation=payment_reconciliation,
+            profile_moderation=resolved_profile_moderation,
+            batch_size=arguments.batch_size,
+            interval_seconds=arguments.interval_seconds,
+        ).run(once=arguments.once)
+    finally:
+        if owned_provider is not None:
+            owned_provider.close()
+        close_store = getattr(owned_store, "close", None)
+        if close_store is not None:
+            close_store()
     return 0
 
 

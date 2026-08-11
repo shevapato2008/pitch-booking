@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,6 +22,10 @@ REQUIRED_KEYS = (
     "OSS_PUBLIC_BASE_URL",
     "OSS_ACCESS_KEY_ID",
     "OSS_ACCESS_KEY_SECRET",
+    "DASHSCOPE_API_KEY",
+    "DASHSCOPE_BASE_URL",
+    "DASHSCOPE_MODERATION_MODEL",
+    "MODERATION_REVIEWER_USER_IDS",
     "PAYMENT_PROVIDER",
     "ENABLE_MOCK_PAYMENT_PROVIDER",
 )
@@ -106,6 +111,27 @@ def preflight(env_file: str | Path) -> PreflightResult:
             failures.append("OSS_ENDPOINT must be an origin URL")
     if values.get("OSS_BUCKET") and OSS_BUCKET.fullmatch(values["OSS_BUCKET"]) is None:
         failures.append("OSS_BUCKET is invalid")
+
+    dashscope_url = urlsplit(values.get("DASHSCOPE_BASE_URL", ""))
+    if dashscope_url.scheme != "https":
+        failures.append("DASHSCOPE_BASE_URL must use HTTPS")
+    elif (
+        not dashscope_url.hostname
+        or dashscope_url.username is not None
+        or dashscope_url.password is not None
+        or dashscope_url.query
+        or dashscope_url.fragment
+    ):
+        failures.append("DASHSCOPE_BASE_URL is invalid")
+    reviewer_ids = values.get("MODERATION_REVIEWER_USER_IDS", "").split(",")
+    try:
+        if any(not value.strip() for value in reviewer_ids):
+            raise ValueError
+        normalized_reviewers = [uuid.UUID(value.strip()) for value in reviewer_ids]
+        if len(normalized_reviewers) != len(set(normalized_reviewers)):
+            raise ValueError
+    except ValueError:
+        failures.append("MODERATION_REVIEWER_USER_IDS must be unique comma-separated UUIDs")
 
     return PreflightResult(tuple(failures))
 

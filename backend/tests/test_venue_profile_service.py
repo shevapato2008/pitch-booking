@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import UTC, datetime
 
@@ -181,6 +182,8 @@ def test_description_item_version_changes_only_for_description_work(
     )
     assert job is not None
     assert job.item_version == 2
+    assert job.content_sha256 == hashlib.sha256("需要重新审核的介绍".encode()).hexdigest()
+    assert job.policy_version == "venue-profile-v1"
 
     revision.description_status = VenueProfileItemStatus.REJECTED
     revision.description_reason_code = "UNRELATED_CONTENT"

@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from datetime import UTC, datetime
 
@@ -26,6 +27,7 @@ from backend.app.models import (
     VenueProfileRevision,
     VenueProfileRevisionStatus,
 )
+from backend.app.modules.venue_profiles.moderation import POLICY_VERSION
 
 
 class VenueProfileRepository:
@@ -174,11 +176,19 @@ class VenueProfileRepository:
         item_version: int,
         image: VenueProfileImageDraft | None = None,
     ) -> ContentModerationJob:
+        if item_type is ModerationItemType.DESCRIPTION:
+            content_sha256 = hashlib.sha256(revision.target_description.encode("utf-8")).hexdigest()
+        else:
+            if image is None or image.content_sha256 is None:
+                raise ValueError("image moderation requires a server-computed content hash")
+            content_sha256 = image.content_sha256
         job = ContentModerationJob(
             revision_id=revision.id,
             image_draft_id=image.id if image else None,
             item_type=item_type,
             item_version=item_version,
+            content_sha256=content_sha256,
+            policy_version=POLICY_VERSION,
             status=ModerationJobStatus.PENDING,
             attempt_count=0,
             next_run_at=datetime.now(UTC),
