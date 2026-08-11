@@ -62,7 +62,7 @@ Page({
   },
 
   onChooseImage() {
-    if (!this.data.editable || !this.data.workingProfile || this.data.workingProfile.images.length >= PROFILE_MAX_IMAGES) return;
+    if (!this.data.imageActionsEnabled || !this.data.workingProfile || this.data.workingProfile.images.length >= PROFILE_MAX_IMAGES) return;
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
@@ -84,7 +84,7 @@ Page({
   },
 
   onRemoveImage(event: DatasetEvent) {
-    if (!this.data.editable || !this.data.workingProfile) return;
+    if (!this.data.imageActionsEnabled || !this.data.workingProfile) return;
     const imageId = event.currentTarget?.dataset?.imageId;
     const selected = this.data.workingProfile.images.find(({ id }: VenueProfileImage) => id === imageId);
     if (!selected || selected.cover) return;
@@ -95,7 +95,7 @@ Page({
   },
 
   onReorderImage(event: DatasetEvent) {
-    if (!this.data.editable || !this.data.workingProfile) return;
+    if (!this.data.imageActionsEnabled || !this.data.workingProfile) return;
     const imageId = event.currentTarget?.dataset?.imageId;
     const direction = Number(event.currentTarget?.dataset?.direction);
     const images = [...this.data.workingProfile.images];
@@ -107,7 +107,7 @@ Page({
   },
 
   onSetCover(event: DatasetEvent) {
-    if (!this.data.editable || !this.data.workingProfile) return;
+    if (!this.data.imageActionsEnabled || !this.data.workingProfile) return;
     const imageId = event.currentTarget?.dataset?.imageId;
     const selected = this.data.workingProfile.images.find(({ id }: VenueProfileImage) => id === imageId);
     if (!selected) return;

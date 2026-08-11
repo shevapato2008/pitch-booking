@@ -13,6 +13,7 @@ interface PageData {
   visualState: string;
   workingProfile: Profile | null;
   descriptionCount: number;
+  imageActionsEnabled: boolean;
   headerTopPx: number;
   headerRowHeightPx: number;
   headerRightInsetPx: number;
@@ -71,6 +72,7 @@ describe.each(stateIds)("admin state %s", (state) => {
     expect(page.data.headerRowHeightPx).toBe(44);
     expect(page.data.headerRightInsetPx).toBe(105);
     expect(page.data.workingProfile === null).toBe(state === "load-error");
+    expect(page.data.imageActionsEnabled).toBe(state === "ready");
   });
 });
 
@@ -103,6 +105,20 @@ test("delete, reorder, and set-cover visibly mutate working images", () => {
   expect(page.data.workingProfile!.images.filter(({ cover }) => cover)).toHaveLength(1);
   page.onRemoveImage({ currentTarget: { dataset: { imageId: before[1] } } });
   expect(page.data.workingProfile!.images.map(({ id }) => id)).not.toContain(before[1]);
+});
+
+test.each(["image-rejected", "description-rejected"] as const)("%s keeps image controls noninteractive while text remains editable", (state) => {
+  const page = loadPage();
+  page.onLoad({ state });
+  const before = JSON.stringify(page.data.workingProfile!.images);
+  const imageId = page.data.workingProfile!.images[1].id;
+  page.onChooseImage();
+  page.onRemoveImage({ currentTarget: { dataset: { imageId } } });
+  page.onReorderImage({ currentTarget: { dataset: { imageId, direction: 1 } } });
+  page.onSetCover({ currentTarget: { dataset: { imageId } } });
+  expect(page.data.visualState).toBe(state);
+  expect(JSON.stringify(page.data.workingProfile!.images)).toBe(before);
+  expect(wx.chooseMedia).not.toHaveBeenCalled();
 });
 
 test("moderation retry is explicit and preserves the working draft", () => {

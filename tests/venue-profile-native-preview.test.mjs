@@ -41,6 +41,7 @@ test("admin source exposes exact approved states, copy, handlers, and Unicode-sa
     "onRetryModeration", "onDescriptionInput", "onToggleFacility", "onSave", "onReload", "onRetryUnknown",
   ]) assert.match(controller, new RegExp(`${handler}\\s*\\(`));
   assert.match(controller, /Array\.from\(value\)\.slice\(0,\s*300\)\.join\(""\)/);
+  assert.match(template, /<textarea[\s\S]*?maxlength="-1"[\s\S]*?bindinput="onDescriptionInput"/);
   assert.doesNotMatch(template, /maxlength\s*=\s*["']?300/);
   assert.doesNotMatch(`${controller}\n${template}`, /https?:\/\/|phone|contact|chat|拨号|电话|微信号/i);
   assert.match(styles, /position:\s*fixed;/);
@@ -57,6 +58,28 @@ test("every visible enabled button has a real Fixture binding and disabled contr
   }
   assert.match(template, /disabled="{{!editable}}"/);
   assert.match(template, /disabled="{{footerAction\.disabled}}"/);
+  assert.match(template, /wx:if="{{imageActionsEnabled && !item\.cover}}"/);
+  assert.match(template, /wx:if="{{imageActionsEnabled && imageCount < maxImages}}"/);
+});
+
+test("development Fixture owns the complete fixed moderation reason catalog", async () => {
+  const fixture = await readFile("miniprogram/dev/fixtures/venue-profile.ts", "utf8");
+  const reasons = [
+    ["CONTACT_INFO", "请删除电话、微信号等联系方式"],
+    ["QR_OR_PAYMENT_CODE", "图片中不能包含二维码或收款码"],
+    ["OFF_PLATFORM_TRADE", "请删除线下交易或绕过平台付款的引导"],
+    ["EXTERNAL_LINK", "请删除外部网站或其他平台链接"],
+    ["UNRELATED_CONTENT", "内容需与当前场馆有关"],
+    ["IMAGE_NOT_VENUE", "请上传真实的场馆环境照片"],
+    ["IMAGE_QUALITY", "图片过于模糊或无法辨认"],
+    ["PERSONAL_PRIVACY", "图片包含清晰人物面部或其他隐私信息"],
+    ["UNSAFE_CONTENT", "内容不符合平台发布要求"],
+  ];
+  assert.match(fixture, /export const MODERATION_REASON_CATALOG/);
+  for (const [code, label] of reasons) {
+    assert.match(fixture, new RegExp(`code:\\s*"${code}"[\\s\\S]{0,80}label:\\s*"${label}"`));
+  }
+  assert.match(fixture, /"pending-manual"[\s\S]{0,400}rejectionCodes:\s*\[\]/);
 });
 
 test("public source renders published projection, gallery, and availability without contact controls", async () => {

@@ -39,14 +39,14 @@
                 <view class="venue-profile-scene__goal"></view>
               </view>
               <text wx:if="{{item.cover}}" class="venue-profile__cover-label">封面</text>
-              <view wx:if="{{editable && !item.cover}}" class="venue-profile__image-actions">
+              <view wx:if="{{imageActionsEnabled && !item.cover}}" class="venue-profile__image-actions">
                 <button class="venue-profile__image-action" data-image-id="{{item.id}}" bindtap="onSetCover">设为封面</button>
                 <button class="venue-profile__image-action venue-profile__image-action--danger" data-image-id="{{item.id}}" bindtap="onRemoveImage">移除</button>
                 <button class="venue-profile__image-action" data-image-id="{{item.id}}" data-direction="-1" disabled="{{imageIndex <= 1}}" bindtap="onReorderImage">前移</button>
               </view>
             </view>
 
-            <button wx:if="{{editable && imageCount < maxImages}}" class="venue-profile__add-image venue-profile__touch" bindtap="onChooseImage">
+            <button wx:if="{{imageActionsEnabled && imageCount < maxImages}}" class="venue-profile__add-image venue-profile__touch" bindtap="onChooseImage">
               <view class="venue-profile-icon venue-profile-icon--plus" aria-hidden="true"></view>
               <text>添加图片</text>
             </button>
@@ -63,6 +63,7 @@
             id="venue-description"
             class="venue-profile__description"
             value="{{workingProfile.description}}"
+            maxlength="-1"
             disabled="{{!editable}}"
             bindinput="onDescriptionInput"
             aria-describedby="description-help description-counter"
