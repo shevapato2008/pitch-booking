@@ -108,8 +108,12 @@ test("native source uses the approved v2 hierarchy", () => {
   expect(template).not.toMatch(/class="venue-inventory__add/);
   expect(template).toMatch(/scroll-view[^>]*class="inventory-list"[^>]*scroll-y/);
   expect(template).toMatch(/class="inventory-footer"/);
+  expect(template).toMatch(/class="icon-chevron \{\{item\.editable && !writeControlsDisabled \? '' : 'icon-chevron--placeholder'\}\}"/);
   expect(template).toMatch(/wx:if="{{sheet}}"[\s\S]*role="dialog"/);
   expect(styles).toMatch(/\.inventory-footer\s*\{[^}]*position:\s*fixed;/s);
+  expect(styles).toMatch(/\.text-button\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+  expect(styles).toMatch(/\.status-badge\s*\{[^}]*display:\s*flex;[^}]*width:\s*104rpx;[^}]*height:\s*56rpx;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+  expect(styles).toMatch(/\.icon-chevron--placeholder\s*\{[^}]*visibility:\s*hidden;/s);
   expect(styles).toMatch(/env\(safe-area-inset-bottom(?:,\s*0px)?\)/);
   expect(styles).not.toMatch(/gradient|https?:\/\//);
 });

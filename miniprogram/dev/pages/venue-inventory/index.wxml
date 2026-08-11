@@ -54,7 +54,7 @@
             <text class="slot-card__detail">{{writeControlsDisabled && item.editable ? '权限已失效 · 不可修改' : item.detail}}</text>
           </view>
           <text class="status-badge status-badge--{{item.status}}">{{item.statusLabel}}</text>
-          <view wx:if="{{item.editable && !writeControlsDisabled}}" class="icon-chevron" aria-hidden="true"></view>
+          <view class="icon-chevron {{item.editable && !writeControlsDisabled ? '' : 'icon-chevron--placeholder'}}" aria-hidden="true"></view>
         </view>
       </block>
       <view id="list-end" class="list-end"></view>
