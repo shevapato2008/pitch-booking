@@ -21,6 +21,7 @@ from backend.app.models import (
     VenueFacility,
     VenueImage,
     VenueMembership,
+    VenuePitchSequenceCounter,
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -167,9 +168,9 @@ def run_seed(
                 "sort_order": 0,
             },
         )
-        for pitch_id, code, name, pitch_type, sort_order in (
-            (five_id, "FIVE-A", "五人制 A 场", "FIVE_A_SIDE", 0),
-            (seven_id, "SEVEN-A", "七人制 A 场", "SEVEN_A_SIDE", 1),
+        for pitch_id, code, name, pitch_type, players_per_side, sort_order in (
+            (five_id, "FIVE-A", "五人制 A 场", "FIVE_A_SIDE", 5, 0),
+            (seven_id, "SEVEN-A", "七人制 A 场", "SEVEN_A_SIDE", 7, 1),
         ):
             _insert_missing(
                 session,
@@ -181,6 +182,20 @@ def run_seed(
                     "name": name,
                     "pitch_type": pitch_type,
                     "sort_order": sort_order,
+                    "players_per_side": players_per_side,
+                    "system_name": name,
+                    "custom_name": None,
+                    "sequence": 1,
+                    "status": "ACTIVE",
+                },
+            )
+            _insert_missing(
+                session,
+                VenuePitchSequenceCounter,
+                {
+                    "venue_id": VENUE_ID,
+                    "players_per_side": players_per_side,
+                    "last_sequence": 1,
                 },
             )
 

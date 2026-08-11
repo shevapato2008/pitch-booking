@@ -140,6 +140,44 @@ def test_seed_writes_all_directory_era_venue_fields_explicitly(
     assert membership_values["user_id"] == user_values["id"]
     assert membership_values["is_active"] is True
     assert membership_values["can_manage_inventory"] is True
+    pitch_values = [values for model, values in captured if model is seed_demo.Pitch]
+    assert pitch_values == [
+        {
+            "id": seed_demo.stable_id("pitch-five-a"),
+            "venue_id": seed_demo.VENUE_ID,
+            "code": "FIVE-A",
+            "name": "五人制 A 场",
+            "pitch_type": "FIVE_A_SIDE",
+            "sort_order": 0,
+            "players_per_side": 5,
+            "system_name": "五人制 A 场",
+            "custom_name": None,
+            "sequence": 1,
+            "status": "ACTIVE",
+        },
+        {
+            "id": seed_demo.stable_id("pitch-seven-a"),
+            "venue_id": seed_demo.VENUE_ID,
+            "code": "SEVEN-A",
+            "name": "七人制 A 场",
+            "pitch_type": "SEVEN_A_SIDE",
+            "sort_order": 1,
+            "players_per_side": 7,
+            "system_name": "七人制 A 场",
+            "custom_name": None,
+            "sequence": 1,
+            "status": "ACTIVE",
+        },
+    ]
+    counter_values = [
+        values
+        for model, values in captured
+        if model is seed_demo.VenuePitchSequenceCounter
+    ]
+    assert counter_values == [
+        {"venue_id": seed_demo.VENUE_ID, "players_per_side": 5, "last_sequence": 1},
+        {"venue_id": seed_demo.VENUE_ID, "players_per_side": 7, "last_sequence": 1},
+    ]
 
 
 @pytest.mark.integration
