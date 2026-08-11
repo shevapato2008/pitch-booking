@@ -30,6 +30,15 @@ test("freezes physical-pitch identity, selection, date window, and canonical slo
     "pitch-5-001", "pitch-5-002", "pitch-7-001", "pitch-7-002", "pitch-7-003",
   ]);
   expect(fixture.slots.map(({ status }) => status)).toEqual(["AVAILABLE", "AVAILABLE", "LOCKED", "CLOSED", "BOOKED"]);
+  expect(fixture).toMatchObject({
+    visualState: "day-ready",
+    mode: "ready",
+    selectedPitch: { id: "pitch-7-001", displayName: "A场", playersPerSide: 7 },
+    selectedDate: "2026-08-11",
+    selectedDateLabel: "8月11日 周二",
+    slotCount: 5,
+  });
+  expect(fixture.week).toHaveLength(7);
   expect(Object.isFrozen(fixture)).toBe(true);
   expect(Object.isFrozen(fixture.pitchGroups)).toBe(true);
   expect(Object.isFrozen(fixture.slots)).toBe(true);
