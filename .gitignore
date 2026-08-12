@@ -4,6 +4,7 @@ node_modules/
 dist/
 coverage/
 project.private.config.json
+backend/.env.local
 .DS_Store
 .venv/
 __pycache__/
