@@ -46,3 +46,25 @@ docker compose --env-file deploy/.env.local down
 
 Remote Alibaba Cloud deployment, DNS/TLS, partner-approved content and physical-device acceptance are
 outside this local checkpoint.
+
+## Prepare live-staging inputs
+
+After public staging is authorized, generate the two ignored, mode-`0600` input files from the local
+OSS configuration, shell `DASHSCOPE_API_KEY`, and WeChat project AppID. The command prompts without
+echo for only `WECHAT_APP_SECRET` and `MINIPROGRAM_TENCENT_MAP_KEY`:
+
+```bash
+uv run python -m scripts.prepare_live_deploy \
+  --oss-env backend/.env.local \
+  --project-config project.private.config.json
+uv run python -m scripts.preflight_deploy --env-file deploy/.env.live.local
+docker compose --env-file deploy/.env.live.local config --quiet
+bash -c 'set -a; source deploy/miniprogram.live.local; set +a; npm run build:miniprogram:production'
+npm run audit:miniprogram-package
+```
+
+Rerunning the generator preserves the PostgreSQL password, phone encryption key, and generated
+bootstrap moderation reviewer UUID. That UUID only initializes the reviewer allowlist; it does not
+create reviewer user membership. The command also reports the derived OSS upload request origin to
+register alongside `https://pitch-api-staging.modelstella.com`; register
+`https://media.modelstella.com` as the download origin.
