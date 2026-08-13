@@ -80,3 +80,8 @@ test("production markup contains no Fixture controls and binds every visible bus
   expect(markup).not.toMatch(/Fixture|Production disabled|nextState/);
   for (const handler of ["onBack", "onReload", "onChooseImage", "onSetCover", "onRemoveImage", "onReorderImage", "onRetryModeration", "onDescriptionInput", "onToggleFacility", "onSave", "onRetryUnknown", "onNavigateWorkbench"]) expect(markup).toContain(handler);
 });
+
+test("facility buttons use the same explicit centering contract as other page controls", () => {
+  const styles = readFileSync("miniprogram/pages/venue-profile/index.wxss", "utf8");
+  expect(styles).toMatch(/\.venue-profile__chip\s*\{[^}]*display:flex;[^}]*height:88rpx;[^}]*align-items:center;[^}]*justify-content:center;/);
+});

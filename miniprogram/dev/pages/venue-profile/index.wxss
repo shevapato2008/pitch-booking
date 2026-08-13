@@ -175,7 +175,7 @@ button::after { border: 0; }
 .venue-profile__facility-group + .venue-profile__facility-group { margin-top: 28rpx; }
 .venue-profile__facility-title { display: block; margin-bottom: 16rpx; color: var(--muted); font-size: 24rpx; font-weight: 700; }
 .venue-profile__chips { display: flex; flex-wrap: wrap; gap: 16rpx; }
-.venue-profile__chip { min-height: 88rpx; padding: 0 26rpx; border: 2rpx solid var(--border); border-radius: 999rpx; background: var(--surface); color: var(--muted); font-size: 26rpx; }
+.venue-profile__chip { display: flex; height: 88rpx; align-items: center; justify-content: center; padding: 0 26rpx; border: 2rpx solid var(--border); border-radius: 999rpx; background: var(--surface); color: var(--muted); font-size: 26rpx; line-height: 1; }
 .venue-profile__chip--selected { border-color: #7DD3FC; background: var(--primary-soft); color: var(--primary-strong); font-weight: 750; }
 .venue-profile__chip[disabled] { opacity: 1; }
 .venue-profile__chip[disabled]:not(.venue-profile__chip--selected) { color: #94A3B8; }
