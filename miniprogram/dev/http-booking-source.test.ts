@@ -4,6 +4,7 @@ import { getBookingDataSource, getNeutralPhoneTapCode, resetBookingDataSourceFor
 import { getPageDataSource } from "../services/page-data";
 import { getPaymentBindings, resetPaymentBindingsForTesting } from "../services/payment";
 import { getVenueDirectoryDataSource } from "../services/venue-directory";
+import { getVenueProfileDataSource, resetVenueProfileBindingsForTesting } from "../services/venue-profile";
 import { bootstrapDevelopment } from "./bootstrap";
 import { createDevelopmentHttpSources } from "./http-booking-source";
 
@@ -37,9 +38,16 @@ interface RequestOptions {
 const requests: RequestOptions[] = [];
 
 function installRequestRuntime(): void {
+  const storage = new Map<string, unknown>();
   Object.defineProperty(globalThis, "wx", {
     configurable: true,
     value: {
+      login(options: { readonly success: (result: { readonly code: string }) => void }) {
+        options.success({ code: "real-wx-code" });
+      },
+      getStorageSync(key: string) { return storage.get(key); },
+      setStorageSync(key: string, value: unknown) { storage.set(key, value); },
+      removeStorageSync(key: string) { storage.delete(key); },
       request(options: RequestOptions) {
         requests.push(options);
         const path = new URL(options.url).pathname;
@@ -66,6 +74,7 @@ afterEach(() => {
   requests.length = 0;
   resetBookingDataSourceForTesting();
   resetPaymentBindingsForTesting();
+  resetVenueProfileBindingsForTesting();
   Reflect.deleteProperty(globalThis, "wx");
 });
 
@@ -107,6 +116,9 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
   bootstrapDevelopment({ source: "http", apiBaseUrl: "http://localhost:8000" });
 
   expect(getNeutralPhoneTapCode()).toBe("dev-phone-code");
+  await expect(getVenueProfileDataSource().get(String(venue.id))).rejects.toBeDefined();
+  const sessions = requests.filter(({ url }) => url.endsWith("/auth/wechat/session"));
+  expect(sessions[sessions.length - 1]?.data).toEqual({ code: "dev-login-code" });
   await expect(getPageDataSource().getVenue()).resolves.toMatchObject({ id: venue.id });
   await expect(getVenueDirectoryDataSource().getVenueDetail(String(venueDetail.id)))
     .resolves.toMatchObject({ id: venueDetail.id });

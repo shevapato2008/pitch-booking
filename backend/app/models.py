@@ -445,6 +445,9 @@ class VenueProfileRevision(Base):
         BigInteger, default=1, server_default=text("1")
     )
     target_description: Mapped[str] = mapped_column(Text)
+    target_facilities: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
     status: Mapped[VenueProfileRevisionStatus] = mapped_column(
         Enum(VenueProfileRevisionStatus, name="venue_profile_revision_status")
     )

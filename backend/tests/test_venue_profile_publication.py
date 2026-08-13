@@ -13,6 +13,7 @@ from backend.app.models import (
     ImageRole,
     User,
     Venue,
+    VenueFacility,
     VenueImage,
     VenueProfileImageDraft,
     VenueProfileItemStatus,
@@ -64,6 +65,7 @@ def _seed(engine: Engine, storage: LocalMediaStorage) -> tuple[uuid.UUID, uuid.U
             created_by_user_id=user.id, is_current_editable=True,
         )
         session.add_all([old, revision])
+        revision.target_facilities = ["SHOWER", "LIGHTING"]
         session.flush()
         image_id = uuid.uuid4()
         intent = storage.create_upload_intent(venue.id, image_id, "image/jpeg", len(_jpeg()))
@@ -93,12 +95,20 @@ def test_publisher_promotes_then_atomically_switches_public_profile(pg_engine: E
         venue = session.get_one(Venue, venue_id)
         revision = session.get_one(VenueProfileRevision, revision_id)
         images = list(session.scalars(select(VenueImage).where(VenueImage.venue_id == venue_id)))
+        facilities = list(
+            session.scalars(
+                select(VenueFacility)
+                .where(VenueFacility.venue_id == venue_id)
+                .order_by(VenueFacility.sort_order)
+            )
+        )
         assert venue.description == "新介绍"
         assert venue.profile_version == 2
         assert revision.status is VenueProfileRevisionStatus.PUBLISHED
         assert revision.is_current_editable is False
         assert len(images) == 1
         assert images[0].url.startswith("https://cdn.example/media/published/")
+        assert [item.code.value for item in facilities] == ["SHOWER", "LIGHTING"]
 
 
 def test_publisher_leaves_old_rows_when_promotion_fails(pg_engine: Engine) -> None:

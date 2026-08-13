@@ -120,6 +120,12 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("target_description", sa.Text(), nullable=False),
+        sa.Column(
+            "target_facilities",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
         sa.Column("status", _type("venue_profile_revision_status"), nullable=False),
         sa.Column("description_status", _type("venue_profile_item_status"), nullable=False),
         sa.Column("description_reason_code", _type("moderation_reason_code"), nullable=True),

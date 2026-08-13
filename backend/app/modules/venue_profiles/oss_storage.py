@@ -136,6 +136,7 @@ class OssMediaStorage:
             f"{extension_for(image.content_type)}"
         )
         self._bucket.copy_object(self._bucket.bucket_name, image.object_key, key)
+        self._bucket.put_object_acl(key, oss2.OBJECT_ACL_PUBLIC_READ)
         head = self._bucket.head_object(key)
         if (
             head.content_length != image.byte_size

@@ -207,6 +207,7 @@ class FakeBucket:
         self.read_results: list[FakeReadResult] = []
         self.put_calls: list[tuple[str, dict[str, str]]] = []
         self.copy_calls: list[tuple[str, str, str]] = []
+        self.acl_calls: list[tuple[str, str]] = []
         self.head_calls: list[str] = []
         self.delete_calls: list[str] = []
         self.read_chunk_size: int | None = None
@@ -246,6 +247,9 @@ class FakeBucket:
             (),
             {"content_length": len(stored.data), "content_type": stored.content_type},
         )()
+
+    def put_object_acl(self, key: str, acl: str) -> None:
+        self.acl_calls.append((key, acl))
 
     def delete_object(self, key: str) -> None:
         self.delete_calls.append(key)
@@ -360,6 +364,7 @@ def test_oss_review_promotion_head_verification_and_cleanup() -> None:
     assert bucket.sign_calls[-1] == ("GET", review.object_key, 300, None, None)
     assert "expires=300" in signed_url
     assert bucket.copy_calls == [(bucket.bucket_name, intent.object_key, published.object_key)]
+    assert bucket.acl_calls == [(published.object_key, "public-read")]
     assert bucket.head_calls == [published.object_key]
     assert published.url == f"https://cdn.example.test/media/{published.object_key}"
     assert set(bucket.delete_calls) >= {intent.object_key, review.object_key}

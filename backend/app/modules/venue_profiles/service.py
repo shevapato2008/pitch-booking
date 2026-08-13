@@ -86,15 +86,13 @@ class VenueProfileService:
         codes = [FacilityCode(code) for code in request.facilities]
 
         def mutate(venue: Venue, revision: VenueProfileRevision) -> AdminVenueProfileResponse:
-            self.repository.lock_facilities(venue.id)
             self._versions(
                 venue,
                 revision,
                 request.expected_facility_version,
                 request.expected_revision_version,
             )
-            labels = {FacilityCode(code): label for code, label in FACILITY_LABELS.items()}
-            self.repository.replace_facilities(venue.id, codes, labels)
+            revision.target_facilities = [code.value for code in codes]
             venue.facility_version += 1
             changed = revision.target_description != request.description
             revision.revision_version += 1
@@ -273,6 +271,7 @@ class VenueProfileService:
             for index, image_id in enumerate(request.image_ids):
                 by_id[image_id].sort_order = index
             revision.revision_version += 1
+            self.repository.publish_approved_metadata(venue, revision, images)
             return self._response(venue, revision)
 
         return self._profile_mutation(
@@ -293,9 +292,16 @@ class VenueProfileService:
             images = self.repository.draft_images(revision.id, for_update=True)
             if image_id not in {image.id for image in images}:
                 self._not_found()
-            for image in images:
+            ordered = sorted(images, key=lambda image: image.id != image_id)
+            offset = len(ordered)
+            for index, image in enumerate(ordered):
+                image.sort_order = offset + index
+            self.repository.flush()
+            for index, image in enumerate(ordered):
                 image.role = ImageRole.COVER if image.id == image_id else ImageRole.GALLERY
+                image.sort_order = index
             revision.revision_version += 1
+            self.repository.publish_approved_metadata(venue, revision, ordered)
             return self._response(venue, revision)
 
         subject = {"image_id": str(image_id), **request.model_dump(mode="json")}
@@ -447,7 +453,7 @@ class VenueProfileService:
                     if revision.description_reason_code
                     else None
                 ),
-                facilities=[item.code.value for item in facilities],
+                facilities=cast(Any, revision.target_facilities),
                 images=[
                     DraftImageResponse(
                         id=image.id,

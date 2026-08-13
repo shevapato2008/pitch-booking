@@ -1,7 +1,6 @@
 import { MINIPROGRAM_TENCENT_MAP_KEY } from "../config/runtime";
 import {
   productionClock,
-  productionIdentity,
   productionLocation,
   productionSessionStorage,
   productionTencentPoiRequest,
@@ -29,7 +28,7 @@ import {
   registerPaymentDataSource,
 } from "../services/payment";
 import { createDevelopmentBookingDataSource } from "./booking-source";
-import { createDevelopmentHttpSources } from "./http-booking-source";
+import { createDevelopmentHttpSources, developmentIdentity } from "./http-booking-source";
 import { developmentPageDataSource } from "./page-data";
 import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./payment-capability";
 import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
@@ -58,7 +57,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerInventoryDataSource(sources.inventory);
     registerPitchConfigurationDataSource(sources.pitchConfiguration);
     const transport = productionTransport(options.apiBaseUrl);
-    registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: productionIdentity, sessionStore: createSessionStore(productionSessionStorage), attemptStore: venueProfileAttemptStore }));
+    registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: developmentIdentity, sessionStore: createSessionStore(productionSessionStorage), attemptStore: venueProfileAttemptStore }));
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);

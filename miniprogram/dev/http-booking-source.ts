@@ -36,7 +36,7 @@ function createMemorySessionStorage(): SessionStorage {
   };
 }
 
-const developmentIdentity: WeChatIdentityCapability = {
+export const developmentIdentity: WeChatIdentityCapability = {
   async login() {
     return { code: DEVELOPMENT_LOGIN_CODE };
   },

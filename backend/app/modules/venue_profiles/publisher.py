@@ -11,8 +11,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.models import (
+    FacilityCode,
     ImageRole,
     Venue,
+    VenueFacility,
     VenueImage,
     VenueProfileImageDraft,
     VenueProfileItemStatus,
@@ -20,6 +22,7 @@ from backend.app.models import (
     VenueProfileRevisionStatus,
 )
 
+from .dto import FACILITY_LABELS
 from .storage import PublishedImage, VenueMediaStore
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
@@ -144,6 +147,16 @@ class VenueProfilePublisher:
                         VenueImage.venue_id == venue_id,
                         VenueImage.id.not_in(inherited_ids),
                     )
+                )
+                session.execute(delete(VenueFacility).where(VenueFacility.venue_id == venue_id))
+                session.add_all(
+                    VenueFacility(
+                        venue_id=venue_id,
+                        code=FacilityCode(code),
+                        name=FACILITY_LABELS[FacilityCode(code).value],
+                        sort_order=index,
+                    )
+                    for index, code in enumerate(locked_revision.target_facilities)
                 )
                 for item in prepared:
                     if item.inherited_id is not None:

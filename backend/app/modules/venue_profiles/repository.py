@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.models import (
     ContentModerationJob,
     FacilityCode,
+    ImageRole,
     ModerationItemType,
     ModerationJobStatus,
     Pitch,
@@ -74,6 +75,7 @@ class VenueProfileRepository:
             base_published_version=venue.profile_version,
             revision_version=max(venue.profile_version, (last_version or 0) + 1),
             target_description=venue.description,
+            target_facilities=[item.code.value for item in self.facilities(venue.id)],
             status=VenueProfileRevisionStatus.READY,
             description_status=VenueProfileItemStatus.APPROVED,
             created_by_user_id=user.id,
@@ -94,16 +96,6 @@ class VenueProfileRepository:
             )
         self.session.flush()
         return revision
-
-    def lock_facilities(self, venue_id: uuid.UUID) -> list[VenueFacility]:
-        return list(
-            self.session.scalars(
-                select(VenueFacility)
-                .where(VenueFacility.venue_id == venue_id)
-                .order_by(VenueFacility.sort_order, VenueFacility.id)
-                .with_for_update()
-            )
-        )
 
     def facilities(self, venue_id: uuid.UUID) -> list[VenueFacility]:
         return list(
@@ -134,6 +126,33 @@ class VenueProfileRepository:
                 .order_by(VenueImage.sort_order, VenueImage.id)
             )
         )
+
+    def publish_approved_metadata(
+        self, venue: Venue, revision: VenueProfileRevision, images: list[VenueProfileImageDraft]
+    ) -> bool:
+        if (
+            revision.status is not VenueProfileRevisionStatus.READY
+            or revision.description_status is not VenueProfileItemStatus.APPROVED
+            or any(
+                image.moderation_status is not VenueProfileItemStatus.APPROVED
+                or image.published_image_id is None
+                for image in images
+            )
+        ):
+            return False
+        published = {image.id: image for image in self.published_images(venue.id)}
+        if {image.published_image_id for image in images} != set(published):
+            return False
+        for image in published.values():
+            image.role = ImageRole.GALLERY
+        self.session.flush()
+        for draft in images:
+            assert draft.published_image_id is not None
+            image = published[draft.published_image_id]
+            image.role = draft.role
+            image.sort_order = draft.sort_order
+        venue.profile_version += 1
+        return True
 
     def draft_images(
         self, revision_id: uuid.UUID, *, for_update: bool = False

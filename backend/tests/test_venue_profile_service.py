@@ -124,6 +124,10 @@ def test_save_accepts_300_code_points_and_atomically_updates_versions(
     assert saved.facility_version == initial.facility_version + 1
     assert saved.revision_version == initial.revision_version + 1
     assert saved.current_revision.facilities == ["PARKING", "SHOWER"]
+    assert saved.published.facilities == initial.published.facilities
+    assert [item.code.value for item in pg_session.scalars(
+        select(VenueFacility).where(VenueFacility.venue_id == venue.id)
+    )] == [item.code for item in initial.published.facilities]
     assert pg_session.scalar(select(func.count()).select_from(ContentModerationJob)) == 1
 
     replay = service.save(
@@ -432,6 +436,43 @@ def test_reorder_requires_exact_set_preserves_approval_and_cover(pg_session: Ses
     revision = pg_session.get(VenueProfileRevision, revision_id)
     assert revision is not None
     assert revision.description_item_version == 1
+
+
+def test_set_cover_on_approved_inherited_images_updates_public_cover(pg_session: Session) -> None:
+    venue, admin, _ = _seed(pg_session)
+    second = VenueImage(
+        venue_id=venue.id,
+        url="https://assets.example/second-cover.webp",
+        alt="second",
+        role=ImageRole.GALLERY,
+        sort_order=1,
+    )
+    pg_session.add(second)
+    pg_session.commit()
+    service = _service(pg_session)
+    initial = service.get(venue_id=venue.id, user=admin)
+    second_draft = next(image for image in initial.current_revision.images if image.sort_order == 1)
+
+    service.set_cover(
+        venue_id=venue.id,
+        image_id=second_draft.id,
+        user=admin,
+        idempotency_key="set-approved-cover-1",
+        request=VenueProfileRevisionMutationRequest(
+            expected_revision_version=initial.revision_version
+        ),
+    )
+
+    public_cover = pg_session.scalar(
+        select(VenueImage).where(
+            VenueImage.venue_id == venue.id, VenueImage.role == ImageRole.COVER
+        )
+    )
+    assert public_cover is not None
+    assert public_cover.id == second.id
+    refreshed = service.get(venue_id=venue.id, user=admin)
+    assert refreshed.current_revision.images[0].id == second_draft.id
+    assert refreshed.current_revision.images[0].role == "COVER"
 
 
 def test_upload_intent_enforces_eight_image_maximum(pg_session: Session) -> None:
