@@ -1,12 +1,20 @@
+import { execFile } from "node:child_process";
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 const adminRoot = "miniprogram/dev/pages/venue-profile/index";
 const publicRoot = "miniprogram/dev/pages/venue-profile-public/index";
 const routes = ["dev/pages/venue-profile/index", "dev/pages/venue-profile-public/index"];
+const productionRoute = "pages/venue-profile/index";
+const execFileAsync = promisify(execFile);
+const buildScript = path.resolve("scripts/build-miniprogram.mjs");
+const testTencentMapKey = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
 
-test("both native Fixture routes exist only in the development manifest", async () => {
+test("native Fixture routes stay development-only while the real profile route is production", async () => {
   const [development, production] = await Promise.all([
     readFile("miniprogram/dev/app-pages.json", "utf8"),
     readFile("miniprogram/app.json", "utf8"),
@@ -17,6 +25,7 @@ test("both native Fixture routes exist only in the development manifest", async 
     assert.ok(developmentPages.includes(route), `${route} must be registered for development`);
     assert.ok(!productionPages.includes(route), `${route} must stay out of production`);
   }
+  assert.ok(productionPages.includes(productionRoute), `${productionRoute} must be registered for production`);
 });
 
 test("admin source exposes exact approved states, copy, handlers, and Unicode-safe editing", async () => {
@@ -102,20 +111,32 @@ test("public source renders published projection, gallery, and availability with
   assert.match(styles, /env\(safe-area-inset-bottom,\s*0px\)/);
 });
 
-test("production bootstrap and built package cannot import or contain the Fixture routes or source", async () => {
-  const [sourceApp, sourceManifest, buildScript, builtManifest, builtApp] = await Promise.all([
+test("production bootstrap and built package cannot import or contain the Fixture routes or source", async (t) => {
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-venue-profile-build-"));
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await cp("miniprogram", path.join(projectRoot, "miniprogram"), { recursive: true });
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      MINIPROGRAM_API_BASE_URL: "https://staging-api.pitch-booking.example",
+      MINIPROGRAM_TENCENT_MAP_KEY: testTencentMapKey,
+    },
+  });
+  const builtRoot = path.join(projectRoot, "dist/miniprogram-production");
+  const [sourceApp, sourceManifest, buildSource, builtManifest, builtApp] = await Promise.all([
     readFile("miniprogram/app.ts", "utf8"),
     readFile("miniprogram/app.json", "utf8"),
     readFile("scripts/build-miniprogram.mjs", "utf8"),
-    readFile("dist/miniprogram-production/app.json", "utf8"),
-    readFile("dist/miniprogram-production/app.js", "utf8"),
+    readFile(path.join(builtRoot, "app.json"), "utf8"),
+    readFile(path.join(builtRoot, "app.js"), "utf8"),
   ]);
   for (const route of routes) {
     assert.doesNotMatch(sourceManifest, new RegExp(route));
     assert.doesNotMatch(builtManifest, new RegExp(route));
   }
-  for (const source of [sourceApp, buildScript, builtApp]) {
+  for (const source of [sourceApp, buildSource, builtApp]) {
     assert.doesNotMatch(source, /dev\/fixtures\/venue-profile|venue-profile-public/);
   }
-  await assert.rejects(access("dist/miniprogram-production/dev"), /ENOENT/);
+  await assert.rejects(access(path.join(builtRoot, "dev")), /ENOENT/);
 });

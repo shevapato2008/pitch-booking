@@ -35,13 +35,13 @@ test("venue page registers the shared venue card", async () => {
   assert.equal(pageConfig.usingComponents?.["venue-card"], "/components/venue-card/index");
 });
 
-test("venue journey exposes the agreed primary action", async () => {
-  const [pageMarkup, componentMarkup] = await Promise.all([
-    read("miniprogram/pages/venue/index.wxml"),
-    read("miniprogram/components/venue-card/index.wxml").catch(() => ""),
-  ]);
+test("venue journey renders the server-authored primary action", async () => {
+  const pageMarkup = await read("miniprogram/pages/venue/index.wxml");
+  const primaryAction = pageMarkup.match(
+    /<button[^>]*bindtap="onViewAvailability"[^>]*>([\s\S]*?)<\/button>/,
+  )?.[1] ?? "";
 
-  assert.match(`${pageMarkup}\n${componentMarkup}`, />\s*查看可订时段\s*</);
+  assert.match(primaryAction, /\{\{venue\.availabilityLabel\}\}/);
 });
 
 test("production venue page has no development import", async () => {
@@ -111,21 +111,11 @@ test("venue identity is overlaid inside the hero", async () => {
   assert.match(hero, /\{\{venue\.description\}\}/);
 });
 
-test("venue card shows exactly the three confirmed preview labels", async () => {
+test("venue card renders every server-provided pitch and facility label", async () => {
   const markup = await read("miniprogram/components/venue-card/index.wxml");
-  const chipGroup = markup.match(
-    /<view class="chip-group"[^>]*>([\s\S]*?)<\/view>\s*<view wx:if="\{\{venue\.bookingMode === 'DIRECTORY_ONLY'\}\}" class="directory-notice/,
-  )?.[1] ?? "";
-  const chipNodes = chipGroup.match(/<view[^>]*class="[^"]*\bchip\b[^"]*"[^>]*>[\s\S]*?<\/view>/g) ?? [];
-  const chipBindings = chipGroup.match(/\{\{venue\.(?:pitchTypes|facilities)\[\d\]\.label\}\}/g) ?? [];
-
-  assert.equal(chipNodes.length, 3);
-  assert.deepEqual(chipBindings, [
-    "{{venue.pitchTypes[0].label}}",
-    "{{venue.pitchTypes[1].label}}",
-    "{{venue.facilities[0].label}}",
-  ]);
-  assert.doesNotMatch(markup, /wx:for="\{\{venue\.(?:pitchTypes|facilities)\}\}"/);
+  assert.match(markup, /wx:for="\{\{venue\.pitchTypes\}\}"[^>]*wx:key="code"[^>]*>\{\{item\.label\}\}<\/view>/);
+  assert.match(markup, /wx:for="\{\{venue\.facilities\}\}"[^>]*wx:key="code"[^>]*>\{\{item\.label\}\}<\/view>/);
+  assert.equal((markup.match(/wx:for="\{\{venue\.(?:pitchTypes|facilities)\}\}"/g) ?? []).length, 2);
 });
 
 test("venue consumers use shared token utilities", async () => {

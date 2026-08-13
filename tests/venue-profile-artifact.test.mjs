@@ -256,7 +256,7 @@ test("visual review evidence covers every approved state at the exact native vie
   }
   const readme = read(`${reviewRoot}/README.md`);
   for (const phrase of [
-    "WeChat DevTools", "iPhone X", "375 × 812", "user visual approval: pending",
+    "WeChat DevTools", "iPhone X", "375 × 812", "Native Fixture user visual approval: approved by the user on 2026-08-11",
     "composition", "geometry/spacing", "hierarchy", "typography/colors/materials",
     "icons/assets", "copy", "state semantics", "larger iPhone safe-area/scroll smoke",
   ]) assert.match(readme, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));

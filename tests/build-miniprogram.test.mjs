@@ -156,7 +156,7 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
-test("production app registers HTTP data, Tencent POI, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, venue profiles, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -169,6 +169,9 @@ test("production app registers HTTP data, Tencent POI, and native payment before
   assert.match(app, /registerPageDataSource/);
   assert.match(app, /createHttpVenueDirectoryDataSource/);
   assert.match(app, /registerVenueDirectoryDataSource/);
+  assert.match(app, /createHttpVenueProfileDataSource/);
+  assert.match(app, /registerVenueProfileDataSource/);
+  assert.match(app, /registerVenueProfileMediaCapability/);
   assert.match(app, /registerLocationCapability/);
   assert.match(app, /productionLocation/);
   assert.match(app, /createHttpBookingDataSource/);
@@ -185,6 +188,8 @@ test("production app registers HTTP data, Tencent POI, and native payment before
   assert.match(app, /registerPoiSearchCapability/);
   assert.equal(app.indexOf("registerPageDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueProfileDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueProfileMediaCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
@@ -219,7 +224,7 @@ test("temporary map previews are absent while the approved center asset remains"
   assert.doesNotMatch(productionText, previewSymbols);
 });
 
-test("real production build emits all seven production routes as native artifacts", async (t) => {
+test("real production build emits all eight production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -230,6 +235,7 @@ test("real production build emits all seven production routes as native artifact
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
   ];
@@ -308,6 +314,16 @@ test("built development Scenario runtime is self-contained without URL", async (
     path.join(projectRoot, "miniprogram/services/tencent-poi-search.ts"),
     "export type TencentPoiRequest = (input: { readonly url: string; readonly data: Readonly<Record<string, string>> }) => Promise<unknown>;\n",
   );
+  await writeFile(
+    path.join(projectRoot, "miniprogram/services/venue-profile.ts"),
+    [
+      "export interface VenueProfileMediaCapability {",
+      "  chooseImage(): Promise<{ readonly filename: string; readonly mimeType: 'image/jpeg' | 'image/png' | 'image/webp'; readonly byteSize: number; readonly bytes: ArrayBuffer }>;",
+      "  upload(signedPutUrl: string, bytes: ArrayBuffer, requiredHeaders: Readonly<Record<string, string>>): Promise<void>;",
+      "}",
+      "",
+    ].join("\n"),
+  );
   await mkdir(path.join(projectRoot, "miniprogram/domain"));
   await cp("miniprogram/domain/booking.ts", path.join(projectRoot, "miniprogram/domain/booking.ts"));
   await cp("miniprogram/domain/payment.ts", path.join(projectRoot, "miniprogram/domain/payment.ts"));
@@ -337,11 +353,11 @@ test("built development Scenario runtime is self-contained without URL", async (
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
       assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"]), true);
-      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].images), true);
-      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].images[0]), true);
-      const originalCover = FIXTURE_DATA["venue-ready"].images[0].url;
-      FIXTURE_DATA["venue-ready"].images[0].url = "https://mutated.invalid/cover.jpg";
-      assert.equal(FIXTURE_DATA["venue-ready"].images[0].url, originalCover);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].profile.images), true);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].profile.images[0]), true);
+      const originalCover = FIXTURE_DATA["venue-ready"].profile.images[0].url;
+      FIXTURE_DATA["venue-ready"].profile.images[0].url = "https://mutated.invalid/cover.jpg";
+      assert.equal(FIXTURE_DATA["venue-ready"].profile.images[0].url, originalCover);
       for (const name of names) {
         const runtime = scenarioRuntime({
           id: name,

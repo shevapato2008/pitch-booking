@@ -412,6 +412,9 @@ test("golden metadata schema requires reproducibility fields", () => {
   const inventoryRoutes = [readYaml(
     "artifacts/ui/screen-manifest/venue-inventory-workbench-v2.yaml",
   ).route];
+  const profileRoutes = ["pages/venue-profile/index"];
+  const pitchSetupRoutes = ["pages/venue-pitch-setup/index"];
+  const focusedWorkbenchRoutes = [...profileRoutes, ...pitchSetupRoutes];
   const scenarioIds = readdirSync(scenarioRoot)
     .filter((name) => name.endsWith(".yaml"))
     .map((name) => name.slice(0, -5))
@@ -419,10 +422,16 @@ test("golden metadata schema requires reproducibility fields", () => {
   assert.deepEqual(schema.properties.route.enum, goldenRoutes);
   assert.deepEqual(
     bookingRoutes,
-    appRoutes.filter((route) => !goldenRoutes.includes(route) && !mapRoutes.includes(route) && !inventoryRoutes.includes(route)),
-    "production routes outside browsing and map manifests must be covered by the booking manifest",
+    appRoutes.filter((route) => !goldenRoutes.includes(route) && !mapRoutes.includes(route)
+      && !inventoryRoutes.includes(route) && !focusedWorkbenchRoutes.includes(route)),
+    "production routes outside focused manifests must be covered by the booking manifest",
   );
-  assert.deepEqual([...new Set([...mapRoutes, ...goldenRoutes, ...bookingRoutes, ...inventoryRoutes])], appRoutes);
+  assert.deepEqual([
+    ...new Set([
+      ...mapRoutes, ...goldenRoutes, ...bookingRoutes, ...profileRoutes, ...inventoryRoutes,
+      ...pitchSetupRoutes,
+    ]),
+  ], appRoutes);
   assert.deepEqual([...schema.properties.scenario.enum].sort(), scenarioIds);
 
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);

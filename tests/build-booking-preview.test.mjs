@@ -12,14 +12,16 @@ const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
 
-test("development preview manifest has exactly the two booking routes", async () => {
+test("development preview manifest has the two booking and two venue-profile routes", async () => {
   assert.deepEqual(await readDevelopmentPreviewRoutes("miniprogram"), [
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "dev/pages/venue-profile/index",
+    "dev/pages/venue-profile-public/index",
   ]);
 });
 
-test("source production manifest puts the map first across seven production routes", async () => {
+test("source production manifest puts the map first across eight production routes", async () => {
   const manifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(manifest.pages, [
     "pages/venue-map/index",
@@ -27,12 +29,13 @@ test("source production manifest puts the map first across seven production rout
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
   ]);
 });
 
-test("development includes four deterministic native preview pages while production stays on seven routes", async (t) => {
+test("development includes six deterministic native preview pages while production stays on eight routes", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -49,11 +52,14 @@ test("development includes four deterministic native preview pages while product
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
   ];
   const developmentRoutes = [
     ...productionRoutes,
+    "dev/pages/venue-profile/index",
+    "dev/pages/venue-profile-public/index",
     "dev/pages/intent-entry/index",
     "dev/pages/intent-home/index",
     "dev/pages/venue-inventory/index",
@@ -62,6 +68,8 @@ test("development includes four deterministic native preview pages while product
   assert.deepEqual(development.pages, developmentRoutes);
   assert.deepEqual(production.pages, productionRoutes);
   for (const route of [
+    "dev/pages/venue-profile/index",
+    "dev/pages/venue-profile-public/index",
     "dev/pages/intent-entry/index",
     "dev/pages/intent-home/index",
     "dev/pages/venue-inventory/index",
@@ -71,7 +79,7 @@ test("development includes four deterministic native preview pages while product
       await readFile(path.join(root, "dist/miniprogram-development", `${route}${extension}`));
     }
   }
-  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/(?:intent-(?:entry|home)|venue-(?:inventory|pitch-setup))\/index/);
+  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/(?:intent-(?:entry|home)|venue-(?:profile(?:-public)?|inventory|pitch-setup))\/index/);
   await assert.rejects(access(path.join(root, "dist/miniprogram-production/dev")), /ENOENT/);
   const developmentApp = await readFile(path.join(root, "dist/miniprogram-development/app.js"), "utf8");
   const productionApp = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
