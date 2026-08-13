@@ -10,6 +10,15 @@ import { registerVenueProfileAttemptStore, resetVenueProfileAttemptStoreForTesti
 
 let captured: any;
 const ready = decodeAdminVenueProfile(JSON.parse(readFileSync("contracts/examples/venue-profile-admin-ready.json", "utf8")));
+const reviewing = decodeAdminVenueProfile(JSON.parse(readFileSync("contracts/examples/venue-profile-reviewing.json", "utf8")));
+const pendingManual = {
+  ...reviewing,
+  currentRevision: {
+    ...reviewing.currentRevision,
+    summaryState: "PENDING_MANUAL" as const,
+    descriptionState: "PENDING_MANUAL" as const,
+  },
+};
 const next = (patch: Record<string, unknown> = {}) => ({ ...ready, revisionVersion: ready.revisionVersion + 1, currentRevision: { ...ready.currentRevision, revisionVersion: ready.currentRevision.revisionVersion + 1 }, ...patch });
 function source(): jest.Mocked<VenueProfileDataSource> {
   return {
@@ -66,6 +75,42 @@ test("keeps an unknown write for an exact same-key retry and reloads version con
   api.save.mockRejectedValueOnce(Object.assign(new Error(), { code: "VENUE_PROFILE_VERSION_CONFLICT" })); page.onDescriptionInput({ detail: { value: "冲突" } }); await page.onSave(); expect(api.get).toHaveBeenCalledTimes(2);
 });
 
+test.each([
+  ["reviewing", reviewing],
+  ["pending-manual", pendingManual],
+] as const)("%s status refresh uses one GET, preserves a draft, and ignores an active duplicate", async (_mode, profile) => {
+  const api = source(); api.get.mockResolvedValue(profile); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: profile.venue.id });
+  page.setData({ description: "保留的本地介绍", descriptionCount: 7, facilities: ["LOCKERS"], dirty: true });
+  let resolveRefresh!: (value: typeof profile) => void;
+  api.get.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+
+  const refresh = page.onRefreshReviewStatus();
+  const duplicate = page.onRefreshReviewStatus();
+
+  expect(api.get).toHaveBeenCalledTimes(2);
+  expect(page.data.operationBusy).toBe(true);
+  await duplicate;
+  resolveRefresh(profile); await refresh;
+  expect(page.data).toMatchObject({ description: "保留的本地介绍", facilities: ["LOCKERS"], dirty: true, operationBusy: false });
+
+  await page.onRefreshReviewStatus();
+  expect(api.get).toHaveBeenCalledTimes(3);
+});
+
+test("status refresh keeps the last profile visible and can retry after an explicit error", async () => {
+  const api = source(); api.get.mockResolvedValue(reviewing); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: reviewing.venue.id });
+  api.get.mockRejectedValueOnce(new Error("network"));
+
+  await page.onRefreshReviewStatus();
+
+  expect(page.data.profile).toEqual(reviewing);
+  expect(page.data).toMatchObject({ mode: "reviewing", operationBusy: false, message: "审核状态刷新失败，请重试" });
+  await page.onRefreshReviewStatus();
+  expect(api.get).toHaveBeenCalledTimes(3);
+});
+
 test("navigation and back-with-unsaved-confirmation all target real routes", async () => {
   const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "未保存" } }); page.onBack();
   expect(wx.showModal).toHaveBeenCalled(); expect(wx.navigateBack).toHaveBeenCalled();
@@ -78,7 +123,8 @@ test("navigation and back-with-unsaved-confirmation all target real routes", asy
 test("production markup contains no Fixture controls and binds every visible business action", () => {
   const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8");
   expect(markup).not.toMatch(/Fixture|Production disabled|nextState/);
-  for (const handler of ["onBack", "onReload", "onChooseImage", "onSetCover", "onRemoveImage", "onReorderImage", "onRetryModeration", "onDescriptionInput", "onToggleFacility", "onSave", "onRetryUnknown", "onNavigateWorkbench"]) expect(markup).toContain(handler);
+  for (const handler of ["onBack", "onReload", "onRefreshReviewStatus", "onChooseImage", "onSetCover", "onRemoveImage", "onReorderImage", "onRetryModeration", "onDescriptionInput", "onToggleFacility", "onSave", "onRetryUnknown", "onNavigateWorkbench"]) expect(markup).toContain(handler);
+  expect(markup).toMatch(/wx:if="\{\{mode === 'reviewing' \|\| mode === 'pending-manual'\}\}"[^>]*bindtap="onRefreshReviewStatus"[^>]*disabled="\{\{operationBusy\}\}"[^>]*aria-busy="\{\{operationBusy\}\}"/);
 });
 
 test("facility buttons use the same explicit centering contract as other page controls", () => {

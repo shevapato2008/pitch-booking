@@ -72,6 +72,7 @@ button::after { border:0; }
 .venue-profile__primary,.venue-profile__secondary { display:flex; width:100%; min-height:88rpx; align-items:center; justify-content:center; gap:16rpx; padding:16rpx 32rpx; border-radius:22rpx; font-size:28rpx; font-weight:750; }
 .venue-profile__primary { border:2rpx solid var(--primary-strong); background:var(--primary-strong); color:var(--surface); }
 .venue-profile__secondary { margin-top:16rpx; border:2rpx solid #7DD3FC; background:var(--surface); color:var(--primary-strong); }
+.venue-profile__review-refresh { margin:-16rpx 0 32rpx; }
 .venue-profile__primary[disabled],.venue-profile__secondary[disabled] { opacity:.46; }
 .venue-profile__error-panel { display:flex; flex-direction:column; align-items:center; gap:12rpx; padding:64rpx 40rpx; text-align:center; }
 .venue-profile__error-title { font-size:32rpx; font-weight:750; }

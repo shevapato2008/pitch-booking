@@ -18,6 +18,7 @@
         <view class="venue-profile__status-mark" aria-hidden="true">{{tone === 'error' ? '!' : 'i'}}</view>
         <view class="venue-profile__status-copy"><text class="venue-profile__status-title">{{status}}</text><text class="venue-profile__status-detail">{{statusDetail}}</text></view>
       </view>
+      <button wx:if="{{mode === 'reviewing' || mode === 'pending-manual'}}" class="venue-profile__secondary venue-profile__review-refresh venue-profile__touch" bindtap="onRefreshReviewStatus" disabled="{{operationBusy}}" aria-busy="{{operationBusy}}"><text>{{operationBusy ? '刷新中' : '刷新审核状态'}}</text></button>
       <view wx:if="{{message}}" class="venue-profile__message" role="alert">{{message}}</view>
 
       <view wx:if="{{rejectionLabels.length}}" class="venue-profile__card" role="alert">

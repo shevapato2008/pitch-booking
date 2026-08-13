@@ -74,6 +74,11 @@ Page({
     const attempt = { kind: "save" as const, venueId: this.data.venueId, body: { expectedFacilityVersion: this.data.profile.facilityVersion, expectedRevisionVersion: this.data.profile.revisionVersion, description: this.data.description, facilities: this.data.facilities }, idempotencyKey: key("save") };
     return this.runAttempt(attempt, (stable) => getVenueProfileDataSource().save(stable as typeof attempt));
   },
+  async onRefreshReviewStatus() {
+    if ((this.data.mode !== "reviewing" && this.data.mode !== "pending-manual") || this.data.operationBusy || !this.data.profile) return;
+    this.setData({ operationBusy: true, message: "" });
+    try { await this.loadProfile(true); } catch (caught) { this.handleError(caught, false, "审核状态刷新失败，请重试"); }
+  },
   async onChooseImage() {
     if (!this.data.imageActionsEnabled || this.data.operationBusy || !this.data.profile || this.data.imageCount >= MAX_IMAGES) return;
     try {
