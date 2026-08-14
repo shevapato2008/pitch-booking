@@ -17,7 +17,18 @@ class FakeStaging:
         self.venue = {
             "id": VENUE_ID,
             "name": "浦东星跃足球公园",
-            "description": "专业人造草足球场",
+            "profile": {
+                "publication_state": "PUBLISHED",
+                "published_version": 1,
+                "description": "专业人造草足球场",
+                "cover_image": "https://assets.example.com/cover.jpg",
+                "images": [
+                    {"role": "COVER", "url": "https://assets.example.com/cover.jpg"}
+                ],
+                "facilities": [
+                    {"code": "LIGHTING", "name": "照明", "sort_order": 0}
+                ],
+            },
             "price_advantage_text": "透明场地价",
             "timezone": "Asia/Shanghai",
             "business_hours_text": "每日 09:00–23:00",
@@ -25,10 +36,7 @@ class FakeStaging:
             "latitude": 31.245621,
             "longitude": 121.623847,
             "parking_text": "园区提供收费停车位",
-            "phone": "+86-21-5899-2608",
             "refund_policy_summary": "开场前 24 小时可退款",
-            "images": [{"role": "COVER", "url": "https://assets.example.com/cover.jpg"}],
-            "facilities": [{"code": "LIGHTING", "name": "照明", "sort_order": 0}],
             "pitch_types": [
                 {"code": "FIVE_A_SIDE", "name": "五人制", "sort_order": 0},
                 {"code": "SEVEN_A_SIDE", "name": "七人制", "sort_order": 1},
@@ -93,11 +101,11 @@ def test_verify_accepts_complete_real_shape_and_writes_report(tmp_path: Path) ->
 
 def test_verify_rejects_missing_primary_venue_field() -> None:
     staging = FakeStaging()
-    staging.venue["phone"] = ""
+    staging.venue["parking_text"] = ""
 
     report = verify("http://staging.test", today=TODAY, request=staging.request)
 
-    assert "venue.phone is empty" in report.failures
+    assert "venue.parking_text is empty" in report.failures
 
 
 def test_verify_rejects_incomplete_fourteen_day_coverage() -> None:
