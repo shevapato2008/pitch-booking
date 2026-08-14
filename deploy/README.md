@@ -1,6 +1,8 @@
 # Local staging
 
-> Delivery status: public HTTPS staging is paused while ICP filing for `modelstella.com` is in progress. See [venue browsing delivery progress](../docs/acceptance/venue-browsing-progress.md) for completed evidence, blockers, and the resume checklist.
+> Delivery status: `modelstella.com` ICP filing was confirmed active on 2026-08-14
+> (`京ICP备2026047949号-1`). Public HTTPS staging and physical-device acceptance may proceed through
+> the gates below.
 
 The first venue-browsing slice uses a staging-shaped local stack before any remote deployment:
 
