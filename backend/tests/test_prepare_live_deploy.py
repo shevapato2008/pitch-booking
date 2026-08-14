@@ -65,6 +65,7 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert deploy["WECHAT_PROVIDER"] == "real"
     assert deploy["PAYMENT_PROVIDER"] == "wechat"
     assert deploy["ENABLE_MOCK_PAYMENT_PROVIDER"] == "false"
+    assert deploy["MINIPROGRAM_ICP_FILING_CONFIRMED"] == "false"
     assert deploy["MODERATION_REVIEWER_USER_IDS"]
     assert len(base64.b64decode(deploy["PHONE_ENCRYPTION_KEY_BASE64"], validate=True)) == 32
     assert read_env_file(paths.miniprogram_env) == {
@@ -82,6 +83,13 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
 def test_prepare_preserves_generated_and_existing_values_on_rerun(tmp_path: Path) -> None:
     first = prepare_live_deploy(inputs(tmp_path))
     original = read_env_file(first.deploy_env)
+    first.deploy_env.write_text(
+        first.deploy_env.read_text(encoding="utf-8").replace(
+            "MINIPROGRAM_ICP_FILING_CONFIRMED=false",
+            "MINIPROGRAM_ICP_FILING_CONFIRMED=true",
+        ),
+        encoding="utf-8",
+    )
 
     second = prepare_live_deploy(
         inputs(
@@ -99,6 +107,7 @@ def test_prepare_preserves_generated_and_existing_values_on_rerun(tmp_path: Path
         "MODERATION_REVIEWER_USER_IDS",
     ):
         assert updated[key] == original[key]
+    assert updated["MINIPROGRAM_ICP_FILING_CONFIRMED"] == "true"
     assert updated["APP_REVISION"] == "b" * 40
 
 

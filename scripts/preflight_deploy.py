@@ -59,7 +59,11 @@ def read_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def preflight(env_file: str | Path) -> PreflightResult:
+def preflight(
+    env_file: str | Path,
+    *,
+    require_miniprogram_acceptance: bool = False,
+) -> PreflightResult:
     try:
         values = read_env_file(Path(env_file))
     except (OSError, UnicodeError, ValueError) as error:
@@ -74,6 +78,13 @@ def preflight(env_file: str | Path) -> PreflightResult:
         failures.append("PAYMENT_PROVIDER must be wechat for deployment")
     if values.get("ENABLE_MOCK_PAYMENT_PROVIDER", "").casefold() != "false":
         failures.append("ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment")
+    if (
+        require_miniprogram_acceptance
+        and values.get("MINIPROGRAM_ICP_FILING_CONFIRMED", "").casefold() != "true"
+    ):
+        failures.append(
+            "MINIPROGRAM_ICP_FILING_CONFIRMED must be true before generating a device QR code"
+        )
 
     public_url = values.get("PUBLIC_API_BASE_URL", "")
     parsed = urlsplit(public_url)
@@ -139,8 +150,12 @@ def preflight(env_file: str | Path) -> PreflightResult:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate local staging deployment inputs")
     parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--require-miniprogram-acceptance", action="store_true")
     args = parser.parse_args()
-    result = preflight(args.env_file)
+    result = preflight(
+        args.env_file,
+        require_miniprogram_acceptance=args.require_miniprogram_acceptance,
+    )
     print(json.dumps({"ok": result.ok, "failures": result.failures}, ensure_ascii=False))
     return 0 if result.ok else 1
 

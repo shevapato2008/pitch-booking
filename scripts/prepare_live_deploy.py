@@ -26,6 +26,7 @@ PRESERVED_KEYS = (
     "POSTGRES_PASSWORD",
     "PHONE_ENCRYPTION_KEY_BASE64",
     "MODERATION_REVIEWER_USER_IDS",
+    "MINIPROGRAM_ICP_FILING_CONFIRMED",
 )
 ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -136,6 +137,12 @@ def _validate_preserved(values: Mapping[str, str]) -> dict[str, str]:
         except ValueError as error:
             raise ValueError("existing MODERATION_REVIEWER_USER_IDS is invalid") from error
         preserved["MODERATION_REVIEWER_USER_IDS"] = reviewer
+
+    icp_confirmed = values.get("MINIPROGRAM_ICP_FILING_CONFIRMED")
+    if icp_confirmed:
+        if icp_confirmed.casefold() not in {"true", "false"}:
+            raise ValueError("existing MINIPROGRAM_ICP_FILING_CONFIRMED is invalid")
+        preserved["MINIPROGRAM_ICP_FILING_CONFIRMED"] = icp_confirmed.casefold()
     return preserved
 
 
@@ -188,6 +195,7 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
     )
     reviewer_id = preserved.get("MODERATION_REVIEWER_USER_IDS", str(uuid.uuid4()))
+    icp_confirmed = preserved.get("MINIPROGRAM_ICP_FILING_CONFIRMED", "false")
     oss_request_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], oss["OSS_BUCKET"])
 
     deploy_values = {
@@ -209,6 +217,7 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "WECHAT_PROVIDER": "real",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        "MINIPROGRAM_ICP_FILING_CONFIRMED": icp_confirmed,
         "WECHAT_APP_ID": app_id,
         "WECHAT_APP_SECRET": wechat_app_secret,
         "PHONE_ENCRYPTION_KEY_BASE64": phone_key,

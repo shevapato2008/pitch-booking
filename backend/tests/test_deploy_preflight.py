@@ -83,6 +83,29 @@ def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> No
     assert result.failures == ()
 
 
+def test_device_qr_preflight_rejects_unconfirmed_icp_filing(tmp_path: Path) -> None:
+    result = preflight(
+        write_env(tmp_path, valid_local_environment()),
+        require_miniprogram_acceptance=True,
+    )
+
+    assert result.failures == (
+        "MINIPROGRAM_ICP_FILING_CONFIRMED must be true before generating a device QR code",
+    )
+
+
+def test_device_qr_preflight_accepts_confirmed_icp_filing(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values["MINIPROGRAM_ICP_FILING_CONFIRMED"] = "true"
+
+    result = preflight(
+        write_env(tmp_path, values),
+        require_miniprogram_acceptance=True,
+    )
+
+    assert result.ok is True
+
+
 def test_preflight_requires_complete_oss_configuration_without_printing_secrets(
     tmp_path: Path,
 ) -> None:

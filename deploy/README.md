@@ -63,6 +63,20 @@ bash -c 'set -a; source deploy/miniprogram.live.local; set +a; npm run build:min
 npm run audit:miniprogram-package
 ```
 
+The ordinary preflight above permits API deployment before ICP filing. It does not permit a physical
+device acceptance QR. After the API domain has an active ICP filing record, set
+`MINIPROGRAM_ICP_FILING_CONFIRMED=true` in the ignored `deploy/.env.live.local`, then require the
+device gate before generating any QR code:
+
+```bash
+uv run python -m scripts.preflight_deploy \
+  --env-file deploy/.env.live.local \
+  --require-miniprogram-acceptance
+```
+
+Do not generate a device acceptance QR when this command fails. The generator defaults this flag to
+`false` and preserves an existing valid value on reruns.
+
 Rerunning the generator preserves the PostgreSQL password, phone encryption key, and generated
 bootstrap moderation reviewer UUID. That UUID only initializes the reviewer allowlist; it does not
 create reviewer user membership. The command also reports the derived OSS upload request origin to
