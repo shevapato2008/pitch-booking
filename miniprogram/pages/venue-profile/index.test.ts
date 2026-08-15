@@ -129,3 +129,9 @@ test("an unknown complete replay that returns reviewing schedules the image refr
 test("attempt-store conflicts are rendered in their owning region instead of escaping", async () => {
   const conflictingStore: VenueProfileAttemptStore = { load: () => null, begin: () => { throw new Error("conflict"); }, clear: () => undefined }; registerVenueProfileAttemptStore(conflictingStore); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "介绍" } }); await expect(page.onSubmitDescription()).resolves.toBeUndefined(); expect(page.data.descriptionActionError).toBe("介绍提交失败，请重试");
 });
+
+test("facility save disables immediately while its request is in flight and suppresses a duplicate", async () => {
+  const api = source(); let resolveSave!: (value: typeof ready) => void; api.save.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; })); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } });
+  const save = page.onSaveFacilities(); expect(page.data).toMatchObject({ facilitySaveBusy: true, facilitySaveEnabled: false }); await page.onSaveFacilities(); expect(api.save).toHaveBeenCalledTimes(1);
+  resolveSave(next()); await save; expect(page.data.facilitySaveBusy).toBe(false);
+});
