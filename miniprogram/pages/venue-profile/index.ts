@@ -95,7 +95,7 @@ Page({
     const image = selected ?? await getVenueProfileMediaCapability().chooseImage();
     if (image.filename !== attempt.body.filename || image.mimeType !== attempt.body.mimeType || image.byteSize !== attempt.body.byteSize) throw Object.assign(new Error("MEDIA_FILE_MISMATCH"), { code: "MEDIA_FILE_MISMATCH" });
     await getVenueProfileMediaCapability().upload(intent.signedPutUrl, image.bytes, intent.requiredHeaders); store?.clear();
-    const complete = { kind: "complete" as const, venueId: this.data.venueId, imageId: intent.imageId, expectedRevisionVersion: attempt.body.expectedRevisionVersion, idempotencyKey: key("complete") };
+    const complete = { kind: "complete" as const, venueId: this.data.venueId, imageId: intent.imageId, expectedRevisionVersion: attempt.body.expectedRevisionVersion + 1, idempotencyKey: key("complete") };
     const stableComplete = store?.begin(complete) as typeof complete | undefined ?? complete;
     const profile = await getVenueProfileDataSource().completeUpload(stableComplete); store?.clear(); this.applyProfile(profile, true);
   },
