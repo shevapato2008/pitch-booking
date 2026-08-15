@@ -25,6 +25,8 @@ button::after { border:0; }
 .venue-profile__status-title { display:block; font-size:28rpx; font-weight:750; line-height:40rpx; }
 .venue-profile__status-detail { display:block; margin-top:4rpx; color:var(--muted); font-size:24rpx; line-height:36rpx; }
 .venue-profile__message { margin:-12rpx 0 24rpx; padding:20rpx 24rpx; border-radius:20rpx; background:var(--error-soft); color:var(--error); font-size:24rpx; line-height:36rpx; }
+.venue-profile__local-error { display:block; margin:12rpx 0; color:var(--error); font-size:24rpx; line-height:36rpx; }
+.venue-profile__draft { flex:0 0 auto; padding:6rpx 16rpx; border-radius:999rpx; background:var(--primary-soft); color:var(--primary-strong); font-size:22rpx; font-weight:750; }
 .venue-profile__card { margin-bottom:24rpx; padding:28rpx; border:2rpx solid var(--border); border-radius:28rpx; background:var(--surface); }
 .venue-profile__section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:24rpx; margin-bottom:24rpx; }
 .venue-profile__section-title { display:block; font-size:34rpx; font-weight:750; line-height:48rpx; }

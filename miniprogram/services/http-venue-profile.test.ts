@@ -25,7 +25,7 @@ const key = "1234567890abcdef"; const venueId = "venue / one"; const imageId = "
 
 test("maps bootstrap and every profile mutation to the frozen authenticated endpoints", async () => {
   const x = setup(); await x.source.get(venueId);
-  await x.source.save({ kind: "save", venueId, idempotencyKey: key, body: { expectedFacilityVersion: 4, expectedRevisionVersion: 7, description: "介绍", facilities: ["PARKING"] } });
+  await x.source.save({ kind: "save", venueId, scope: "description", idempotencyKey: key, body: { expectedFacilityVersion: 4, expectedRevisionVersion: 7, description: "介绍", facilities: ["PARKING"] } } as never);
   x.setResponse({ image_id: "c3195309-183b-46cc-81e6-2c0977223001", object_key: "private/key", signed_put_url: "https://uploads.example.com/object?signature=x", required_headers: { "Content-Type": "image/jpeg", "Content-Length": "8" }, maximum_bytes: 10485760, accepted_mime_types: ["image/jpeg", "image/png", "image/webp"] });
   await x.source.createUploadIntent({ kind: "uploadIntent", venueId, idempotencyKey: key, body: { expectedRevisionVersion: 7, filename: "field.jpg", mimeType: "image/jpeg", byteSize: 8 } });
   x.setResponse(venueProfileWire());
@@ -41,6 +41,7 @@ test("maps bootstrap and every profile mutation to the frozen authenticated endp
     "PUT /api/v1/admin/venues/venue%20%2F%20one/profile/images/image%20%2F%20one/cover", "POST /api/v1/admin/venues/venue%20%2F%20one/profile/moderation/image%20%2F%20one/retry",
   ]);
   expect(x.calls.slice(1).every((call) => call.headers?.Authorization === "Bearer token" && call.headers["Idempotency-Key"] === key)).toBe(true);
+  expect(x.calls[1].body).toEqual({ expected_facility_version: 4, expected_revision_version: 7, description: "介绍", facilities: ["PARKING"] });
 });
 
 test("logs in once on missing session and keeps unresolved writes for original-key retry", async () => {

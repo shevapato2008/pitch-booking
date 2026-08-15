@@ -3,7 +3,7 @@ import type { AdminVenueProfile, VenueProfileFacilityCode, VenueProfileMimeType,
 export interface SaveVenueProfileBody { readonly expectedFacilityVersion: number; readonly expectedRevisionVersion: number; readonly description: string; readonly facilities: readonly VenueProfileFacilityCode[] }
 export interface UploadIntentBody { readonly expectedRevisionVersion: number; readonly filename: string; readonly mimeType: VenueProfileMimeType; readonly byteSize: number }
 export type VenueProfileMutationAttempt =
-  | { readonly kind: "save"; readonly venueId: string; readonly body: SaveVenueProfileBody; readonly idempotencyKey: string }
+  | { readonly kind: "save"; readonly venueId: string; readonly scope: "description" | "facilities"; readonly body: SaveVenueProfileBody; readonly idempotencyKey: string }
   | { readonly kind: "uploadIntent"; readonly venueId: string; readonly body: UploadIntentBody; readonly idempotencyKey: string }
   | { readonly kind: "complete"; readonly venueId: string; readonly imageId: string; readonly expectedRevisionVersion: number; readonly idempotencyKey: string }
   | { readonly kind: "delete"; readonly venueId: string; readonly imageId: string; readonly expectedRevisionVersion: number; readonly idempotencyKey: string }

@@ -6,139 +6,88 @@ import { getVenueProfileDataSource, getVenueProfileMediaCapability, type ChosenV
 type DatasetEvent = { currentTarget?: { dataset?: Record<string, unknown> } };
 type InputEvent = { detail?: { value?: unknown } };
 type PageError = { code?: string };
-type ImageView = { id: string; cover: boolean; state: VenueProfileItemState };
+type RefreshOrigin = "page" | "image" | "description";
+type ImageView = { id: string; cover: boolean; state: VenueProfileItemState; url: string; alt: string; stateLabel: string; reasonLabel: string };
 const MAX_IMAGES = 8;
 const GROUPS: readonly { title: string; codes: readonly VenueProfileFacilityCode[] }[] = [
-  { title: "基础设施", codes: ["PARKING", "TOILET", "CHANGING_ROOM", "SHOWER", "LOCKERS"] },
-  { title: "补给服务", codes: ["DRINKING_WATER", "BEVERAGE_SALES", "EQUIPMENT_RENTAL"] },
-  { title: "观赛与安全", codes: ["REST_AREA", "FIRST_AID", "AED"] },
-  { title: "场地环境", codes: ["INDOOR", "OUTDOOR", "COVERED", "LIGHTING"] },
-  { title: "草皮类型", codes: ["ARTIFICIAL_TURF", "NATURAL_GRASS"] },
+  { title: "基础设施", codes: ["PARKING", "TOILET", "CHANGING_ROOM", "SHOWER", "LOCKERS"] }, { title: "补给服务", codes: ["DRINKING_WATER", "BEVERAGE_SALES", "EQUIPMENT_RENTAL"] }, { title: "观赛与安全", codes: ["REST_AREA", "FIRST_AID", "AED"] }, { title: "场地环境", codes: ["INDOOR", "OUTDOOR", "COVERED", "LIGHTING"] }, { title: "草皮类型", codes: ["ARTIFICIAL_TURF", "NATURAL_GRASS"] },
 ];
 const key = (kind: string) => `venue-profile-${kind}-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
 const codePoints = (value: string) => Array.from(value);
 const errorCode = (caught: unknown) => (caught as PageError)?.code ?? "";
+const pending = (state: VenueProfileItemState) => state === "UPLOADING" || state === "REVIEWING" || state === "PENDING_MANUAL";
 
 Page({
   data: {
-    venueId: "", venueName: "", mode: "loading", status: "正在读取场馆资料", statusDetail: "", tone: "loading",
-    profile: null as AdminVenueProfile | null, description: "", descriptionCount: 0, facilities: [] as VenueProfileFacilityCode[], facilityGroups: [] as unknown[],
-    images: [] as ImageView[], imageCount: 0, maxImages: MAX_IMAGES, rejectionLabels: [] as string[], dirty: false, editable: false,
-    imageActionsEnabled: false, busyItemId: "", operationBusy: false, message: "", headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0,
+    venueId: "", venueName: "", mode: "loading", status: "正在读取场馆资料", statusDetail: "", tone: "loading", pageRefreshError: "",
+    profile: null as AdminVenueProfile | null, description: "", descriptionCount: 0, facilities: [] as VenueProfileFacilityCode[], facilityGroups: [] as unknown[], images: [] as ImageView[], imageCount: 0, maxImages: MAX_IMAGES,
+    descriptionDirty: false, facilitiesDirty: false, descriptionEditable: false, facilitiesEditable: false, imageActionsEnabled: false, imagePending: false, descriptionPending: false, descriptionStateLabel: "", descriptionReasonLabel: "", descriptionSubmitEnabled: false, facilitySaveEnabled: false, facilitySaveBlockedReason: "",
+    imageRefreshError: "", descriptionRefreshError: "", imageActionError: "", descriptionActionError: "", facilitySaveError: "", imageRefreshBusy: false, descriptionRefreshBusy: false, descriptionSubmitBusy: false, facilitySaveBusy: false, operationBusy: false, busyItemId: "", unknownScope: "",
+    headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0,
   },
-  requestSequence: 0, disposed: false, loaded: false, lastPollAt: 0,
+  requestSequence: 0, disposed: false, refreshInFlight: undefined as Promise<void> | undefined, imageRefreshTimer: undefined as ReturnType<typeof setTimeout> | undefined, descriptionRefreshTimer: undefined as ReturnType<typeof setTimeout> | undefined,
 
   async onLoad(options: Record<string, string | undefined> = {}) {
     this.disposed = false; const layout = readInventoryHeaderLayout(); const venueId = options.venue_id ?? "";
     this.setData({ venueId, headerTopPx: layout.topPx, headerRowHeightPx: layout.rowHeightPx, headerRightInsetPx: layout.rightInsetPx });
     if (!venueId) { this.failRead("场馆信息无效，请返回重试"); return; }
-    try { await getVenueProfileDataSource().login(); await this.loadProfile(); } catch (caught) { this.handleError(caught, true); }
+    try { await getVenueProfileDataSource().login(); await this.loadProfile("page", false); } catch (caught) { this.handleReadError(caught, "page", true); }
   },
-  onUnload() { this.disposed = true; this.requestSequence += 1; },
-  onShow() {
-    if (!this.loaded || !this.data.profile || this.data.operationBusy || Date.now() - this.lastPollAt < 1000) return;
-    const state = this.data.profile.currentRevision.summaryState;
-    if (state === "REVIEWING" || state === "PENDING_MANUAL") { this.lastPollAt = Date.now(); void this.loadProfile(true); }
+  onUnload() { this.disposed = true; this.requestSequence += 1; if (this.imageRefreshTimer) clearTimeout(this.imageRefreshTimer); if (this.descriptionRefreshTimer) clearTimeout(this.descriptionRefreshTimer); },
+  onShow() {},
+  async loadProfile(origin: RefreshOrigin, initial = false) {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    const sequence = ++this.requestSequence;
+    if (origin === "image") this.setData({ imageRefreshBusy: true, imageRefreshError: "" });
+    if (origin === "description") this.setData({ descriptionRefreshBusy: true, descriptionRefreshError: "" });
+    const request = (async () => {
+      try { const profile = await getVenueProfileDataSource().get(this.data.venueId); if (!this.disposed && sequence === this.requestSequence) this.applyProfile(profile); }
+      catch (caught) { this.handleReadError(caught, origin, initial); throw caught; }
+      finally { if (!this.disposed) this.setData({ imageRefreshBusy: false, descriptionRefreshBusy: false }); this.refreshInFlight = undefined; }
+    })();
+    this.refreshInFlight = request; return request;
   },
-  async loadProfile(preserveDraft = false) {
-    const sequence = ++this.requestSequence; this.setData({ mode: preserveDraft ? this.data.mode : "loading", message: "" });
-    const profile = await getVenueProfileDataSource().get(this.data.venueId);
-    if (this.disposed || sequence !== this.requestSequence) return;
-    this.loaded = true; this.applyProfile(profile, preserveDraft);
-    const pending = getVenueProfileAttemptStore()?.load();
-    if (pending?.venueId === this.data.venueId) this.setData({ mode: "save-unknown", editable: false, imageActionsEnabled: false, status: "正在核对操作结果", statusDetail: "请使用原提交继续核对，不要重复创建操作", tone: "warning" });
-  },
-  applyProfile(profile: AdminVenueProfile, preserveDraft = false) {
-    const revision = profile.currentRevision; const description = preserveDraft && this.data.dirty ? this.data.description : revision.description;
-    const facilities = preserveDraft && this.data.dirty ? this.data.facilities : [...revision.facilities];
-    const publishedByOrder = new Map(profile.published.images.map((image) => [image.sortOrder, image.url]));
-    const images = [...revision.images].sort((a, b) => a.sortOrder - b.sortOrder).map((image) => ({ ...image, cover: image.role === "COVER", url: publishedByOrder.get(image.sortOrder) ?? "", stateLabel: this.itemStateLabel(image.state), reasonLabel: image.reasonCode ? REASON_LABELS[image.reasonCode] : "" }));
-    const reasons = [revision.descriptionReasonCode, ...revision.images.map(({ reasonCode }) => reasonCode)].filter((value): value is NonNullable<typeof value> => value !== null).map((value) => REASON_LABELS[value]);
-    const summary = this.summaryFor(profile); const editable = summary.mode === "ready" || summary.mode === "rejected";
-    this.setData({ profile, venueName: profile.venue.name, description, descriptionCount: codePoints(description).length, facilities, facilityGroups: this.groupsFor(facilities), images, imageCount: images.length, rejectionLabels: [...new Set(reasons)], dirty: preserveDraft ? this.data.dirty : false, editable, imageActionsEnabled: editable, busyItemId: "", operationBusy: false, message: "", ...summary });
-  },
-  summaryFor(profile: AdminVenueProfile) {
-    const revision = profile.currentRevision;
-    if (revision.summaryState === "PENDING_MANUAL") return { mode: "pending-manual", status: "等待人工审核", statusDetail: "系统暂时无法确认结果，公开页继续显示上一版资料", tone: "warning" };
-    if (revision.summaryState === "REVIEWING") return { mode: "reviewing", status: "资料已提交，正在审核", statusDetail: "整版通过前，公开页继续显示上一版资料", tone: "review" };
-    if (revision.summaryState === "REJECTED") return { mode: "rejected", status: "部分内容未通过审核", statusDetail: "请按固定原因修改或重新上传", tone: "error" };
-    return { mode: "ready", status: revision.summaryState === "PUBLISHED" ? "场馆资料已发布" : "资料已载入，可继续编辑", statusDetail: "图片操作立即提交；保存只提交介绍与设施", tone: "info" };
+  applyProfile(profile: AdminVenueProfile) {
+    const revision = profile.currentRevision; const description = this.data.descriptionDirty ? this.data.description : revision.description; const facilities = this.data.facilitiesDirty ? this.data.facilities : [...revision.facilities];
+    const safePublished = (revision.summaryState === "READY" || revision.summaryState === "PUBLISHED") && revision.images.every((image) => image.state === "APPROVED"); const publishedByOrder = safePublished ? new Map(profile.published.images.map((image) => [image.sortOrder, image.url])) : new Map<number, string>();
+    const images = [...revision.images].sort((a, b) => a.sortOrder - b.sortOrder).map((image) => ({ id: image.id, cover: image.role === "COVER", state: image.state, url: publishedByOrder.get(image.sortOrder) ?? "", alt: image.alt, stateLabel: this.itemStateLabel(image.state), reasonLabel: image.reasonCode ? REASON_LABELS[image.reasonCode] : "" }));
+    const imagePending = revision.images.some((image) => pending(image.state)); const descriptionPending = revision.descriptionState === "REVIEWING" || revision.descriptionState === "PENDING_MANUAL"; const facilitySaveBlockedReason = imagePending ? "图片正在审核，审核结束后可保存设施" : descriptionPending ? "场馆介绍正在审核，审核结束后可保存设施" : "";
+    const loaded = true;
+    this.setData({ profile, venueName: profile.venue.name, mode: "ready", description, descriptionCount: codePoints(description).length, facilities, facilityGroups: this.groupsFor(facilities), images, imageCount: images.length, descriptionEditable: loaded, facilitiesEditable: loaded, imageActionsEnabled: !imagePending, imagePending, descriptionPending, descriptionStateLabel: this.itemStateLabel(revision.descriptionState), descriptionReasonLabel: revision.descriptionReasonCode ? REASON_LABELS[revision.descriptionReasonCode] : "", descriptionSubmitEnabled: this.data.descriptionDirty && !descriptionPending && !this.data.descriptionSubmitBusy, facilitySaveEnabled: this.data.facilitiesDirty && !facilitySaveBlockedReason && !this.data.facilitySaveBusy, facilitySaveBlockedReason, imageRefreshError: "", descriptionRefreshError: "", pageRefreshError: "", operationBusy: false, busyItemId: "" });
   },
   itemStateLabel(state: VenueProfileItemState) { return ({ UPLOADING: "上传中", REVIEWING: "审核中", APPROVED: "已通过", REJECTED: "未通过", PENDING_MANUAL: "人工审核" } as const)[state]; },
   groupsFor(selected: readonly VenueProfileFacilityCode[]) { return GROUPS.map((group) => ({ title: group.title, items: group.codes.map((code) => ({ code, label: FACILITY_LABELS[code], selected: selected.includes(code) })) })); },
-
-  onDescriptionInput(event: InputEvent) { if (!this.data.editable) return; const value = typeof event.detail?.value === "string" ? event.detail.value : ""; const description = codePoints(value).slice(0, 300).join(""); this.setData({ description, descriptionCount: codePoints(description).length, dirty: true }); },
-  onToggleFacility(event: DatasetEvent) { const code = event.currentTarget?.dataset?.facilityCode; if (!this.data.editable || typeof code !== "string" || !FACILITY_CODES.includes(code as VenueProfileFacilityCode)) return; const typed = code as VenueProfileFacilityCode; const facilities = this.data.facilities.includes(typed) ? this.data.facilities.filter((item) => item !== typed) : [...this.data.facilities, typed]; this.setData({ facilities, facilityGroups: this.groupsFor(facilities), dirty: true }); },
-  async onSave() {
-    if (!this.data.editable || this.data.operationBusy || !this.data.profile) return;
-    const attempt = { kind: "save" as const, venueId: this.data.venueId, body: { expectedFacilityVersion: this.data.profile.facilityVersion, expectedRevisionVersion: this.data.profile.revisionVersion, description: this.data.description, facilities: this.data.facilities }, idempotencyKey: key("save") };
-    return this.runAttempt(attempt, (stable) => getVenueProfileDataSource().save(stable as typeof attempt));
+  onDescriptionInput(event: InputEvent) { if (!this.data.descriptionEditable) return; const value = typeof event.detail?.value === "string" ? event.detail.value : ""; const description = codePoints(value).slice(0, 300).join(""); this.setData({ description, descriptionCount: codePoints(description).length, descriptionDirty: true, descriptionActionError: "", descriptionSubmitEnabled: !this.data.descriptionPending && !this.data.descriptionSubmitBusy }); },
+  onToggleFacility(event: DatasetEvent) { const code = event.currentTarget?.dataset?.facilityCode; if (!this.data.facilitiesEditable || typeof code !== "string" || !FACILITY_CODES.includes(code as VenueProfileFacilityCode)) return; const typed = code as VenueProfileFacilityCode; const facilities = this.data.facilities.includes(typed) ? this.data.facilities.filter((item) => item !== typed) : [...this.data.facilities, typed]; this.setData({ facilities, facilityGroups: this.groupsFor(facilities), facilitiesDirty: true, facilitySaveError: "", facilitySaveEnabled: !this.data.facilitySaveBlockedReason && !this.data.facilitySaveBusy }); },
+  async onSubmitDescription() { if (!this.data.profile || !this.data.descriptionDirty || this.data.descriptionPending || this.data.descriptionSubmitBusy) return; const attempt = { kind: "save" as const, scope: "description" as const, venueId: this.data.venueId, body: { expectedFacilityVersion: this.data.profile.facilityVersion, expectedRevisionVersion: this.data.profile.revisionVersion, description: this.data.description, facilities: this.data.profile.currentRevision.facilities }, idempotencyKey: key("description") }; return this.runScopedSave(attempt); },
+  async onSaveFacilities() { if (!this.data.profile || !this.data.facilitiesDirty || this.data.facilitySaveBlockedReason || this.data.facilitySaveBusy) return; const attempt = { kind: "save" as const, scope: "facilities" as const, venueId: this.data.venueId, body: { expectedFacilityVersion: this.data.profile.facilityVersion, expectedRevisionVersion: this.data.profile.revisionVersion, description: this.data.profile.currentRevision.description, facilities: this.data.facilities }, idempotencyKey: key("facilities") }; return this.runScopedSave(attempt); },
+  async runScopedSave(attempt: Extract<VenueProfileMutationAttempt, { kind: "save" }>) {
+    const store = getVenueProfileAttemptStore(); const stable = store?.begin(attempt) ?? attempt; this.setData(attempt.scope === "description" ? { descriptionSubmitBusy: true, descriptionActionError: "", unknownScope: "" } : { facilitySaveBusy: true, facilitySaveError: "", unknownScope: "" });
+    try { const profile = await getVenueProfileDataSource().save(stable as typeof attempt); store?.clear(); this.setData(attempt.scope === "description" ? { descriptionDirty: false, descriptionSubmitBusy: false } : { facilitiesDirty: false, facilitySaveBusy: false }); this.applyProfile(profile); if (attempt.scope === "description") this.scheduleRefresh("description"); }
+    catch (caught) { this.setData(attempt.scope === "description" ? { descriptionSubmitBusy: false } : { facilitySaveBusy: false }); this.handleMutationError(caught, attempt.scope); }
   },
-  async onRefreshReviewStatus() {
-    if ((this.data.mode !== "reviewing" && this.data.mode !== "pending-manual") || this.data.operationBusy || !this.data.profile) return;
-    this.setData({ operationBusy: true, message: "" });
-    try { await this.loadProfile(true); } catch (caught) { this.handleError(caught, false, "审核状态刷新失败，请重试"); }
-  },
-  async onChooseImage() {
-    if (!this.data.imageActionsEnabled || this.data.operationBusy || !this.data.profile || this.data.imageCount >= MAX_IMAGES) return;
-    try {
-      this.setData({ operationBusy: true, mode: "uploading", status: "图片正在上传", statusDetail: "上传完成后将自动提交审核", tone: "loading", message: "" });
-      const image = await getVenueProfileMediaCapability().chooseImage();
-      const intentAttempt = { kind: "uploadIntent" as const, venueId: this.data.venueId, body: { expectedRevisionVersion: this.data.profile.revisionVersion, filename: image.filename, mimeType: image.mimeType, byteSize: image.byteSize }, idempotencyKey: key("upload") };
-      const stable = getVenueProfileAttemptStore()?.begin(intentAttempt) as typeof intentAttempt | undefined ?? intentAttempt;
-      const intent = await getVenueProfileDataSource().createUploadIntent(stable); await this.finishUpload(stable, intent, image);
-    } catch (caught) { this.handleUploadError(caught); }
-  },
+  scheduleRefresh(region: "image" | "description") { const timer = region === "image" ? "imageRefreshTimer" : "descriptionRefreshTimer"; if (this[timer]) clearTimeout(this[timer]); this[timer] = setTimeout(() => { this[timer] = undefined; void this.loadProfile(region).catch(() => undefined); }, 5000); },
+  async onRefreshImageStatus() { if (!this.data.imagePending && !this.data.imageRefreshError) return; return this.loadProfile("image").catch(() => undefined); },
+  async onRefreshDescriptionStatus() { if (!this.data.descriptionPending && !this.data.descriptionRefreshError) return; return this.loadProfile("description").catch(() => undefined); },
+  async onPullDownRefresh() { try { await this.loadProfile("page"); } catch { /* page error is rendered above */ } finally { wx.stopPullDownRefresh(); } },
+  async onChooseImage() { if (!this.data.imageActionsEnabled || this.data.operationBusy || !this.data.profile || this.data.imageCount >= MAX_IMAGES) return; try { this.setData({ operationBusy: true, imageActionError: "" }); const image = await getVenueProfileMediaCapability().chooseImage(); const attempt = { kind: "uploadIntent" as const, venueId: this.data.venueId, body: { expectedRevisionVersion: this.data.profile.revisionVersion, filename: image.filename, mimeType: image.mimeType, byteSize: image.byteSize }, idempotencyKey: key("upload") }; const stable = getVenueProfileAttemptStore()?.begin(attempt) as typeof attempt | undefined ?? attempt; const intent = await getVenueProfileDataSource().createUploadIntent(stable); await this.finishUpload(stable, intent, image); } catch (caught) { this.handleMutationError(caught, "image"); } },
   onRetryUpload() { return getVenueProfileAttemptStore()?.load()?.kind === "uploadIntent" ? this.onRetryUnknown() : this.onChooseImage(); },
-  async finishUpload(attempt: Extract<VenueProfileMutationAttempt, { kind: "uploadIntent" }>, intent: VenueProfileUploadIntent, selected?: ChosenVenueProfileImage) {
-    const store = getVenueProfileAttemptStore(); store?.clear(); store?.begin(attempt);
-    const image = selected ?? await getVenueProfileMediaCapability().chooseImage();
-    if (image.filename !== attempt.body.filename || image.mimeType !== attempt.body.mimeType || image.byteSize !== attempt.body.byteSize) throw Object.assign(new Error("MEDIA_FILE_MISMATCH"), { code: "MEDIA_FILE_MISMATCH" });
-    await getVenueProfileMediaCapability().upload(intent.signedPutUrl, image.bytes, intent.requiredHeaders); store?.clear();
-    const complete = { kind: "complete" as const, venueId: this.data.venueId, imageId: intent.imageId, expectedRevisionVersion: attempt.body.expectedRevisionVersion + 1, idempotencyKey: key("complete") };
-    const stableComplete = store?.begin(complete) as typeof complete | undefined ?? complete;
-    const profile = await getVenueProfileDataSource().completeUpload(stableComplete); store?.clear(); this.applyProfile(profile, true);
-  },
-  handleUploadError(caught: unknown) {
-    const code = errorCode(caught); if (code === "VENUE_PROFILE_RESULT_UNKNOWN") { this.handleError(caught, false); return; }
-    if (this.data.profile) this.applyProfile(this.data.profile, true);
-    this.setData({ mode: "upload-error", message: code === "MEDIA_FILE_MISMATCH" ? "请选择与原上传一致的图片" : code === "MEDIA_PICK_CANCELLED" ? "已取消选择，可稍后继续上传" : "图片上传失败，请重试" });
-  },
-  async onSetCover(event: DatasetEvent) { const imageId = this.imageId(event); if (!imageId) return; return this.runImage(imageId, "cover", (attempt) => getVenueProfileDataSource().setCover(attempt as Extract<VenueProfileMutationAttempt, { kind: "cover" }>)); },
-  async onRemoveImage(event: DatasetEvent) { const imageId = this.imageId(event); if (!imageId || this.data.images.find((item) => item.id === imageId)?.cover) return; return this.runImage(imageId, "delete", (attempt) => getVenueProfileDataSource().deleteImage(attempt as Extract<VenueProfileMutationAttempt, { kind: "delete" }>)); },
-  async onReorderImage(event: DatasetEvent) {
-    const imageId = this.imageId(event); const direction = Number(event.currentTarget?.dataset?.direction); if (!imageId || !this.data.profile || !Number.isInteger(direction)) return;
-    const ids = this.data.images.map((image) => image.id); const from = ids.indexOf(imageId); const to = Math.max(1, Math.min(ids.length - 1, from + direction)); if (from < 1 || from === to) return; [ids[from], ids[to]] = [ids[to], ids[from]];
-    const attempt = { kind: "reorder" as const, venueId: this.data.venueId, imageIds: ids, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("reorder") }; return this.runAttempt(attempt, (stable) => getVenueProfileDataSource().reorderImages(stable as typeof attempt), imageId);
-  },
-  async onRetryModeration(event: DatasetEvent) { const itemId = event.currentTarget?.dataset?.itemId; if (typeof itemId !== "string" || !this.data.profile) return; const attempt = { kind: "retry" as const, venueId: this.data.venueId, itemId, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("retry") }; return this.runAttempt(attempt, (stable) => getVenueProfileDataSource().retryModeration(stable as typeof attempt), itemId); },
+  async finishUpload(attempt: Extract<VenueProfileMutationAttempt, { kind: "uploadIntent" }>, intent: VenueProfileUploadIntent, selected?: ChosenVenueProfileImage) { const store = getVenueProfileAttemptStore(); store?.clear(); store?.begin(attempt); const image = selected ?? await getVenueProfileMediaCapability().chooseImage(); if (image.filename !== attempt.body.filename || image.mimeType !== attempt.body.mimeType || image.byteSize !== attempt.body.byteSize) throw Object.assign(new Error("MEDIA_FILE_MISMATCH"), { code: "MEDIA_FILE_MISMATCH" }); await getVenueProfileMediaCapability().upload(intent.signedPutUrl, image.bytes, intent.requiredHeaders); store?.clear(); const complete = { kind: "complete" as const, venueId: this.data.venueId, imageId: intent.imageId, expectedRevisionVersion: attempt.body.expectedRevisionVersion + 1, idempotencyKey: key("complete") }; const stable = store?.begin(complete) as typeof complete | undefined ?? complete; const profile = await getVenueProfileDataSource().completeUpload(stable); store?.clear(); this.applyProfile(profile); this.scheduleRefresh("image"); },
   imageId(event: DatasetEvent) { const imageId = event.currentTarget?.dataset?.imageId; return this.data.imageActionsEnabled && !this.data.operationBusy && typeof imageId === "string" ? imageId : ""; },
-  async runImage(imageId: string, kind: "cover" | "delete", call: (attempt: VenueProfileMutationAttempt) => Promise<AdminVenueProfile>) { if (!this.data.profile) return; const attempt = { kind, venueId: this.data.venueId, imageId, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key(kind) } as VenueProfileMutationAttempt; return this.runAttempt(attempt, call, imageId); },
-  async runAttempt(attempt: VenueProfileMutationAttempt, call: (stable: VenueProfileMutationAttempt) => Promise<AdminVenueProfile>, busyItemId = "") {
-    if (this.data.operationBusy) return; const stable = getVenueProfileAttemptStore()?.begin(attempt) ?? attempt; this.setData({ operationBusy: true, busyItemId, message: "" });
-    try { const profile = await call(stable); getVenueProfileAttemptStore()?.clear(); this.applyProfile(profile, attempt.kind !== "save"); if (attempt.kind === "save") this.setData({ dirty: false }); }
-    catch (caught) { this.handleError(caught, false); }
+  async onSetCover(event: DatasetEvent) { const id = this.imageId(event); if (id) return this.runImage(id, "cover", (a) => getVenueProfileDataSource().setCover(a as Extract<VenueProfileMutationAttempt, { kind: "cover" }>)); },
+  async onRemoveImage(event: DatasetEvent) { const id = this.imageId(event); if (id && !this.data.images.find((image) => image.id === id)?.cover) return this.runImage(id, "delete", (a) => getVenueProfileDataSource().deleteImage(a as Extract<VenueProfileMutationAttempt, { kind: "delete" }>)); },
+  async onReorderImage(event: DatasetEvent) { const id = this.imageId(event); const direction = Number(event.currentTarget?.dataset?.direction); if (!id || !this.data.profile || !Number.isInteger(direction)) return; const ids = this.data.images.map((image) => image.id); const from = ids.indexOf(id); const to = Math.max(1, Math.min(ids.length - 1, from + direction)); if (from < 1 || from === to) return; [ids[from], ids[to]] = [ids[to], ids[from]]; const attempt = { kind: "reorder" as const, venueId: this.data.venueId, imageIds: ids, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("reorder") }; return this.runImageAttempt(attempt, (a) => getVenueProfileDataSource().reorderImages(a as Extract<VenueProfileMutationAttempt, { kind: "reorder" }>), id); },
+  async onRetryModeration(event: DatasetEvent) { const itemId = event.currentTarget?.dataset?.itemId; if (typeof itemId !== "string" || !this.data.profile) return; const attempt = { kind: "retry" as const, venueId: this.data.venueId, itemId, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key("retry") }; return this.runImageAttempt(attempt, (a) => getVenueProfileDataSource().retryModeration(a as Extract<VenueProfileMutationAttempt, { kind: "retry" }>), itemId); },
+  async runImage(id: string, kind: "cover" | "delete", call: (attempt: VenueProfileMutationAttempt) => Promise<AdminVenueProfile>) { if (!this.data.profile) return; return this.runImageAttempt({ kind, venueId: this.data.venueId, imageId: id, expectedRevisionVersion: this.data.profile.revisionVersion, idempotencyKey: key(kind) } as VenueProfileMutationAttempt, call, id); },
+  async runImageAttempt(attempt: VenueProfileMutationAttempt, call: (attempt: VenueProfileMutationAttempt) => Promise<AdminVenueProfile>, busyItemId = "") { const stable = getVenueProfileAttemptStore()?.begin(attempt) ?? attempt; this.setData({ operationBusy: true, busyItemId, imageActionError: "" }); try { const profile = await call(stable); getVenueProfileAttemptStore()?.clear(); this.applyProfile(profile); if (attempt.kind === "retry") this.scheduleRefresh("image"); } catch (caught) { this.handleMutationError(caught, "image"); } },
+  async onRetryUnknown() { const attempt = getVenueProfileAttemptStore()?.load(); if (!attempt || attempt.venueId !== this.data.venueId) return this.loadProfile("page").catch(() => undefined); if (attempt.kind === "save") return this.runScopedSave(attempt); if (attempt.kind === "uploadIntent") { this.setData({ operationBusy: true, imageActionError: "" }); try { const intent = await getVenueProfileDataSource().createUploadIntent(attempt); await this.finishUpload(attempt, intent); } catch (caught) { this.handleMutationError(caught, "image"); } return; } const source = getVenueProfileDataSource(); const calls = { complete: source.completeUpload, delete: source.deleteImage, cover: source.setCover, reorder: source.reorderImages, retry: source.retryModeration }; return this.runImageAttempt(attempt, (a) => (calls[a.kind as keyof typeof calls] as (value: never) => Promise<AdminVenueProfile>)(a as never)); },
+  async onReload() { try { await this.loadProfile("page", true); } catch { /* rendered by loadProfile */ } },
+  handleReadError(caught: unknown, origin: RefreshOrigin, initial: boolean) { const code = errorCode(caught); if (code === "VENUE_PROFILE_FORBIDDEN" || code === "AUTH_REQUIRED") { this.setData({ mode: "permission-error", status: "当前账号无权管理该场馆", statusDetail: "请联系场馆管理员确认权限", tone: "error" }); return; } if (initial || !this.data.profile) { this.failRead("场馆资料加载失败，请重试"); return; } if (origin === "image") this.setData({ imageRefreshError: "图片状态刷新失败，请重试" }); else if (origin === "description") this.setData({ descriptionRefreshError: "介绍状态刷新失败，请重试" }); else this.setData({ pageRefreshError: "资料刷新失败，请重试" }); },
+  handleMutationError(caught: unknown, scope: "image" | "description" | "facilities") { const code = errorCode(caught); if (code === "VENUE_PROFILE_FORBIDDEN" || code === "AUTH_REQUIRED") { this.setData({ mode: "permission-error", status: "当前账号无权管理该场馆", statusDetail: "请联系场馆管理员确认权限", tone: "error" }); return; } if (code === "VENUE_PROFILE_VERSION_CONFLICT") { void this.loadProfile("page").catch(() => undefined); }
+    if (code === "VENUE_PROFILE_RESULT_UNKNOWN") { this.setData(scope === "description" ? { descriptionActionError: "提交结果未知，请核对后重试", unknownScope: "description" } : scope === "facilities" ? { facilitySaveError: "保存结果未知，请核对后重试", unknownScope: "facilities" } : { imageActionError: "图片操作结果未知，请核对后重试", unknownScope: "image" }); return; }
+    this.setData({ operationBusy: false, busyItemId: "", ...(scope === "description" ? { descriptionActionError: "介绍提交失败，请重试" } : scope === "facilities" ? { facilitySaveError: "设施保存失败，请重试" } : { imageActionError: code === "MEDIA_FILE_MISMATCH" ? "请选择与原上传一致的图片" : "图片操作失败，请重试" }) });
   },
-  async onRetryUnknown() {
-    const attempt = getVenueProfileAttemptStore()?.load(); if (!attempt || attempt.venueId !== this.data.venueId) { await this.loadProfile(true); return; }
-    const source = getVenueProfileDataSource(); const calls = { save: source.save, complete: source.completeUpload, delete: source.deleteImage, cover: source.setCover, reorder: source.reorderImages, retry: source.retryModeration };
-    if (attempt.kind === "uploadIntent") {
-      this.setData({ operationBusy: true, mode: "uploading", status: "正在核对图片上传", statusDetail: "请重新选择同一张图片以继续上传", tone: "warning", message: "" });
-      try { const intent = await source.createUploadIntent(attempt); await this.finishUpload(attempt, intent); } catch (caught) { this.handleUploadError(caught); }
-      return;
-    }
-    return this.runAttempt(attempt, (stable) => (calls[stable.kind as keyof typeof calls] as (value: never) => Promise<AdminVenueProfile>)(stable as never));
-  },
-  async onReload() { try { await this.loadProfile(false); } catch (caught) { this.handleError(caught, true); } },
-  handleError(caught: unknown, initial: boolean, fallback = "操作失败，请重试") {
-    const code = errorCode(caught); this.setData({ operationBusy: false, busyItemId: "" });
-    if (code === "VENUE_PROFILE_RESULT_UNKNOWN") { this.setData({ mode: "save-unknown", editable: false, imageActionsEnabled: false, status: "正在核对操作结果", statusDetail: "请使用同一次提交继续核对", tone: "warning", message: "" }); return; }
-    if (code === "VENUE_PROFILE_VERSION_CONFLICT") { this.setData({ message: "资料已被其他工作人员更新，正在刷新" }); void this.onReload(); return; }
-    if (code === "VENUE_PROFILE_FORBIDDEN" || code === "AUTH_REQUIRED") { this.setData({ mode: "permission-error", editable: false, imageActionsEnabled: false, status: "当前账号无权管理该场馆", statusDetail: "请联系场馆管理员确认权限", tone: "error", message: "" }); return; }
-    if (initial) { this.failRead("场馆资料加载失败，请重试"); return; }
-    if (this.data.profile) this.applyProfile(this.data.profile, true); this.setData({ message: fallback });
-  },
-  failRead(message: string) { this.setData({ mode: "load-error", editable: false, imageActionsEnabled: false, status: message, statusDetail: "上一版公开资料不受影响", tone: "error", profile: null, message: "" }); },
+  failRead(message: string) { this.setData({ mode: "load-error", status: message, statusDetail: "上一版公开资料不受影响", tone: "error", profile: null }); },
   onNavigateWorkbench(event: DatasetEvent) { const target = event.currentTarget?.dataset?.target; const suffix = `?venue_id=${encodeURIComponent(this.data.venueId)}`; if (target === "profile") { void wx.redirectTo({ url: `/pages/venue-profile/index${suffix}` }); return; } if (target === "pitches") void wx.navigateTo({ url: `/pages/venue-pitch-setup/index${suffix}` }); if (target === "inventory") void wx.navigateTo({ url: `/pages/venue-inventory/index${suffix}` }); },
-  onBack() { if (!this.data.dirty) { void wx.navigateBack(); return; } wx.showModal({ title: "放弃未保存修改？", content: "场馆介绍和设施尚未保存。", confirmText: "放弃", success: ({ confirm }) => { if (confirm) void wx.navigateBack(); } }); },
+  onBack() { if (!this.data.descriptionDirty && !this.data.facilitiesDirty) { void wx.navigateBack(); return; } wx.showModal({ title: "放弃未保存修改？", content: "场馆介绍或设施尚未保存。", confirmText: "放弃", success: ({ confirm }) => { if (confirm) void wx.navigateBack(); } }); },
 });

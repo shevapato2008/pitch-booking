@@ -26,8 +26,8 @@ function positiveVersion(value: unknown): boolean { return Number.isSafeInteger(
 function isAttempt(value: unknown): value is VenueProfileMutationAttempt {
   if (!isObject(value) || typeof value.kind !== "string" || typeof value.venueId !== "string"
     || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 16 || value.idempotencyKey.length > 128) return false;
-  if (value.kind === "save" && exact(value, ["kind", "venueId", "body", "idempotencyKey"]) && isObject(value.body)) {
-    const body = value.body; return exact(body, ["expectedFacilityVersion", "expectedRevisionVersion", "description", "facilities"])
+  if (value.kind === "save" && exact(value, ["kind", "venueId", "scope", "body", "idempotencyKey"]) && isObject(value.body)) {
+    const body = value.body; return (value.scope === "description" || value.scope === "facilities") && exact(body, ["expectedFacilityVersion", "expectedRevisionVersion", "description", "facilities"])
       && positiveVersion(body.expectedFacilityVersion) && positiveVersion(body.expectedRevisionVersion) && typeof body.description === "string"
       && Array.from(body.description).length <= 300 && Array.isArray(body.facilities) && body.facilities.every((item) => typeof item === "string");
   }

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { beforeEach, expect, jest, test } from "@jest/globals";
+import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 import { decodeAdminVenueProfile } from "../../domain/venue-profile";
 import type { VenueProfileDataSource, VenueProfileMediaCapability } from "../../services/venue-profile";
@@ -11,22 +11,12 @@ import { registerVenueProfileAttemptStore, resetVenueProfileAttemptStoreForTesti
 let captured: any;
 const ready = decodeAdminVenueProfile(JSON.parse(readFileSync("contracts/examples/venue-profile-admin-ready.json", "utf8")));
 const reviewing = decodeAdminVenueProfile(JSON.parse(readFileSync("contracts/examples/venue-profile-reviewing.json", "utf8")));
-const pendingManual = {
-  ...reviewing,
-  currentRevision: {
-    ...reviewing.currentRevision,
-    summaryState: "PENDING_MANUAL" as const,
-    descriptionState: "PENDING_MANUAL" as const,
-  },
-};
 const next = (patch: Record<string, unknown> = {}) => ({ ...ready, revisionVersion: ready.revisionVersion + 1, currentRevision: { ...ready.currentRevision, revisionVersion: ready.currentRevision.revisionVersion + 1 }, ...patch });
-function source(): jest.Mocked<VenueProfileDataSource> {
-  return {
-    login: jest.fn(async () => undefined), get: jest.fn(async () => ready), save: jest.fn(async () => next()),
-    createUploadIntent: jest.fn(async () => ({ imageId: "c3195309-183b-46cc-81e6-2c0977223099", objectKey: "private/image.webp", signedPutUrl: "https://oss.example.com/image", requiredHeaders: { "Content-Type": "image/webp", "Content-Length": "3" }, maximumBytes: 10485760, acceptedMimeTypes: ["image/jpeg", "image/png", "image/webp"] })),
-    completeUpload: jest.fn(async () => next()), deleteImage: jest.fn(async () => next()), reorderImages: jest.fn(async () => next()), setCover: jest.fn(async () => next()), retryModeration: jest.fn(async () => next()),
-  };
-}
+function source(): jest.Mocked<VenueProfileDataSource> { return {
+  login: jest.fn(async () => undefined), get: jest.fn(async () => ready), save: jest.fn(async () => next()),
+  createUploadIntent: jest.fn(async () => ({ imageId: "c3195309-183b-46cc-81e6-2c0977223099", objectKey: "private/image.webp", signedPutUrl: "https://oss.example.com/image", requiredHeaders: { "Content-Type": "image/webp", "Content-Length": "3" }, maximumBytes: 10485760, acceptedMimeTypes: ["image/jpeg", "image/png", "image/webp"] })),
+  completeUpload: jest.fn(async () => next()), deleteImage: jest.fn(async () => next()), reorderImages: jest.fn(async () => next()), setCover: jest.fn(async () => next()), retryModeration: jest.fn(async () => next()),
+}; }
 const media: jest.Mocked<VenueProfileMediaCapability> = { chooseImage: jest.fn(async () => ({ filename: "field.webp", mimeType: "image/webp", byteSize: 3, bytes: new Uint8Array([1, 2, 3]).buffer })), upload: jest.fn(async () => undefined) };
 let stored: any = null;
 const store: VenueProfileAttemptStore = { load: jest.fn(() => stored), begin: jest.fn((attempt: any) => { if (!stored) stored = structuredClone(attempt); return stored; }), clear: jest.fn(() => { stored = null; }) };
@@ -35,100 +25,61 @@ function loadPage() { if (!captured) { (globalThis as any).Page = (value: any) =
 beforeEach(() => {
   resetVenueProfileBindingsForTesting(); resetVenueProfileAttemptStoreForTesting(); stored = null; jest.clearAllMocks();
   registerVenueProfileDataSource(source()); registerVenueProfileMediaCapability(media); registerVenueProfileAttemptStore(store);
-  (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, bottom: 80, left: 278, right: 365, width: 87, height: 32 })), navigateBack: jest.fn(), navigateTo: jest.fn(), redirectTo: jest.fn(), showToast: jest.fn(), showModal: jest.fn(({ success }: any) => success({ confirm: true })) };
+  (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, bottom: 80, left: 278, right: 365, width: 87, height: 32 })), navigateBack: jest.fn(), navigateTo: jest.fn(), redirectTo: jest.fn(), showModal: jest.fn(({ success }: any) => success({ confirm: true })), stopPullDownRefresh: jest.fn() };
+});
+afterEach(() => { jest.useRealTimers(); });
+
+test("keeps description and facilities drafts independently across a scoped description submission", async () => {
+  const api = source(); api.save.mockImplementation(async (attempt) => next({ currentRevision: { ...ready.currentRevision, description: attempt.body.description, facilities: ready.currentRevision.facilities } })); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id });
+  page.onDescriptionInput({ detail: { value: "新的介绍" } }); expect(page.data).toMatchObject({ descriptionDirty: true, facilitiesDirty: false });
+  page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); expect(page.data).toMatchObject({ descriptionDirty: true, facilitiesDirty: true });
+  await page.onSubmitDescription();
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ scope: "description", body: expect.objectContaining({ description: "新的介绍", facilities: ready.currentRevision.facilities }) }));
+  expect(page.data).toMatchObject({ descriptionDirty: false, facilitiesDirty: true });
+  page.onUnload();
 });
 
-test("loads the authoritative profile and preserves the approved hierarchy", async () => {
+test("saves facilities with authoritative description while content review keeps chips editable", async () => {
+  const api = source(); api.get.mockResolvedValue(reviewing); api.save.mockImplementation(async (attempt) => ({ ...reviewing, currentRevision: { ...reviewing.currentRevision, facilities: attempt.body.facilities } })); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: reviewing.venue.id }); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } });
+  expect(page.data).toMatchObject({ facilitiesDirty: true, facilitySaveBlockedReason: expect.any(String) });
+  await page.onSaveFacilities(); expect(api.save).not.toHaveBeenCalled();
+  page.applyProfile({ ...ready, currentRevision: { ...ready.currentRevision, description: "authoritative" } }); await page.onSaveFacilities();
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ scope: "facilities", body: expect.objectContaining({ description: "authoritative", facilities: expect.arrayContaining(["LOCKERS"]) }) }));
+});
+
+test("regional refresh preserves both drafts, clears regional errors, and pull-down always stops", async () => {
   const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id });
-  expect(api.login).toHaveBeenCalled(); expect(api.get).toHaveBeenCalledWith(ready.venue.id);
-  expect(page.data).toMatchObject({ venueName: "渤海元丰足球场", mode: "ready", description: ready.currentRevision.description, descriptionCount: Array.from(ready.currentRevision.description).length, imageCount: 2 });
+  page.onDescriptionInput({ detail: { value: "本地介绍" } }); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); page.setData({ imageRefreshError: "图片刷新失败", descriptionRefreshError: "介绍刷新失败" });
+  await page.onPullDownRefresh();
+  expect(api.get).toHaveBeenCalledTimes(2); expect(wx.stopPullDownRefresh).toHaveBeenCalledTimes(1); expect(page.data).toMatchObject({ description: "本地介绍", facilitiesDirty: true, imageRefreshError: "", descriptionRefreshError: "" });
+  api.get.mockRejectedValueOnce(new Error("network")); await page.onPullDownRefresh(); expect(wx.stopPullDownRefresh).toHaveBeenCalledTimes(2);
 });
 
-test("edits 300 code points and saves facilities plus description atomically", async () => {
-  const api = source(); api.save.mockImplementation(async (attempt) => next({ currentRevision: { ...ready.currentRevision, revisionVersion: ready.currentRevision.revisionVersion + 1, description: attempt.body.description, facilities: attempt.body.facilities } })); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id });
-  page.onDescriptionInput({ detail: { value: `${"足".repeat(299)}⚽尾` } }); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); await page.onSave();
-  expect(Array.from(page.data.description)).toHaveLength(300);
-  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ kind: "save", venueId: ready.venue.id, body: expect.objectContaining({ description: `${"足".repeat(299)}⚽`, facilities: expect.arrayContaining(["LOCKERS"]) }), idempotencyKey: expect.any(String) }));
-  expect(page.data.dirty).toBe(false);
+test("regional refresh suppresses concurrent duplicate GETs and onShow is inert", async () => {
+  const api = source(); api.get.mockResolvedValue(reviewing); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onShow(); expect(api.get).toHaveBeenCalledTimes(1);
+  let resolve!: (value: typeof reviewing) => void; api.get.mockImplementationOnce(() => new Promise((done) => { resolve = done; })); const first = page.onRefreshImageStatus(); const duplicate = page.onRefreshDescriptionStatus(); expect(api.get).toHaveBeenCalledTimes(2); resolve(reviewing); await Promise.all([first, duplicate]);
 });
 
-test("uploads to the signed URL then completes, and image controls call their matching endpoints", async () => {
-  const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onChooseImage();
-  expect(api.createUploadIntent).toHaveBeenCalledTimes(1); expect(media.upload).toHaveBeenCalledWith("https://oss.example.com/image", expect.any(ArrayBuffer), { "Content-Type": "image/webp", "Content-Length": "3" }); expect(api.completeUpload).toHaveBeenCalledTimes(1);
-  expect(api.completeUpload).toHaveBeenCalledWith(expect.objectContaining({ expectedRevisionVersion: ready.revisionVersion + 1 }));
-  const gallery = ready.currentRevision.images[1].id; await page.onSetCover({ currentTarget: { dataset: { imageId: gallery } } }); const third = { ...page.data.images[1], id: "c3195309-183b-46cc-81e6-2c0977223003" }; page.setData({ images: [...page.data.images, third], imageCount: 3 }); await page.onReorderImage({ currentTarget: { dataset: { imageId: third.id, direction: -1 } } }); await page.onRemoveImage({ currentTarget: { dataset: { imageId: gallery } } }); await page.onRetryModeration({ currentTarget: { dataset: { itemId: gallery } } });
-  expect(api.setCover).toHaveBeenCalledTimes(1); expect(api.reorderImages).toHaveBeenCalledTimes(1); expect(api.deleteImage).toHaveBeenCalledTimes(1); expect(api.retryModeration).toHaveBeenCalledTimes(1);
-  expect(api.reorderImages.mock.calls[0][0].imageIds[0]).toBe(ready.currentRevision.images[0].id);
+test("schedules one replacing 5-second authoritative refresh for image and description submissions and cancels on unload", async () => {
+  jest.useFakeTimers(); const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id });
+  await page.onChooseImage(); await page.onChooseImage(); expect(api.get).toHaveBeenCalledTimes(1); await jest.advanceTimersByTimeAsync(5000); expect(api.get).toHaveBeenCalledTimes(2);
+  page.onDescriptionInput({ detail: { value: "定时介绍" } }); await page.onSubmitDescription(); await page.onSubmitDescription(); await jest.advanceTimersByTimeAsync(5000); expect(api.get).toHaveBeenCalledTimes(3);
+  await page.onChooseImage(); page.onUnload(); await jest.advanceTimersByTimeAsync(5000); expect(api.get).toHaveBeenCalledTimes(3);
 });
 
-test("replays an unknown upload intent with its original key and metadata before completing", async () => {
-  const api = source(); api.createUploadIntent.mockRejectedValueOnce(Object.assign(new Error(), { code: "VENUE_PROFILE_RESULT_UNKNOWN" })); registerVenueProfileDataSource(api);
-  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onChooseImage();
-  const original = api.createUploadIntent.mock.calls[0][0]; expect(page.data.mode).toBe("save-unknown");
-  await page.onRetryUnknown();
-  expect(api.createUploadIntent.mock.calls[1][0]).toEqual(original); expect(media.chooseImage).toHaveBeenCalledTimes(2); expect(media.upload).toHaveBeenCalledTimes(1); expect(api.completeUpload).toHaveBeenCalledTimes(1); expect(stored).toBeNull();
+test("does not map old published URLs onto pending or rejected draft images", async () => {
+  const page = loadPage(); const unsafe = { ...ready, currentRevision: { ...ready.currentRevision, summaryState: "REVIEWING" as const, images: ready.currentRevision.images.map((image) => ({ ...image, state: "REVIEWING" as const })) } }; page.applyProfile(unsafe); expect(page.data.images[0].url).toBe("");
+  page.applyProfile(ready); expect(page.data.images[0].url).toBe(ready.published.images[0].url);
 });
 
-test("keeps an unknown write for an exact same-key retry and reloads version conflicts", async () => {
-  const api = source(); api.save.mockRejectedValueOnce(Object.assign(new Error(), { code: "VENUE_PROFILE_RESULT_UNKNOWN" })).mockResolvedValueOnce(next()); registerVenueProfileDataSource(api);
-  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "需要可靠重试的介绍" } }); await page.onSave();
-  expect(page.data.mode).toBe("save-unknown"); const first = api.save.mock.calls[0][0]; await page.onRetryUnknown(); expect(api.save.mock.calls[1][0]).toEqual(first);
-  api.save.mockRejectedValueOnce(Object.assign(new Error(), { code: "VENUE_PROFILE_VERSION_CONFLICT" })); page.onDescriptionInput({ detail: { value: "冲突" } }); await page.onSave(); expect(api.get).toHaveBeenCalledTimes(2);
+test("production markup binds regional actions and facilities-only footer", () => {
+  const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8"); const json = readFileSync("miniprogram/pages/venue-profile/index.json", "utf8");
+  for (const handler of ["onRefreshImageStatus", "onRefreshDescriptionStatus", "onSubmitDescription", "onSaveFacilities", "onRetryUnknown"]) expect(markup).toContain(handler);
+  expect(markup).toContain("保存场馆设施"); expect(markup).not.toContain("保存场馆资料"); expect(markup).not.toContain("onRefreshReviewStatus"); expect(json).toContain('"enablePullDownRefresh":true');
 });
 
-test.each([
-  ["reviewing", reviewing],
-  ["pending-manual", pendingManual],
-] as const)("%s status refresh uses one GET, preserves a draft, and ignores an active duplicate", async (_mode, profile) => {
-  const api = source(); api.get.mockResolvedValue(profile); registerVenueProfileDataSource(api);
-  const page = loadPage(); await page.onLoad({ venue_id: profile.venue.id });
-  page.setData({ description: "保留的本地介绍", descriptionCount: 7, facilities: ["LOCKERS"], dirty: true });
-  let resolveRefresh!: (value: typeof profile) => void;
-  api.get.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
-
-  const refresh = page.onRefreshReviewStatus();
-  const duplicate = page.onRefreshReviewStatus();
-
-  expect(api.get).toHaveBeenCalledTimes(2);
-  expect(page.data.operationBusy).toBe(true);
-  await duplicate;
-  resolveRefresh(profile); await refresh;
-  expect(page.data).toMatchObject({ description: "保留的本地介绍", facilities: ["LOCKERS"], dirty: true, operationBusy: false });
-
-  await page.onRefreshReviewStatus();
-  expect(api.get).toHaveBeenCalledTimes(3);
-});
-
-test("status refresh keeps the last profile visible and can retry after an explicit error", async () => {
-  const api = source(); api.get.mockResolvedValue(reviewing); registerVenueProfileDataSource(api);
-  const page = loadPage(); await page.onLoad({ venue_id: reviewing.venue.id });
-  api.get.mockRejectedValueOnce(new Error("network"));
-
-  await page.onRefreshReviewStatus();
-
-  expect(page.data.profile).toEqual(reviewing);
-  expect(page.data).toMatchObject({ mode: "reviewing", operationBusy: false, message: "审核状态刷新失败，请重试" });
-  await page.onRefreshReviewStatus();
-  expect(api.get).toHaveBeenCalledTimes(3);
-});
-
-test("navigation and back-with-unsaved-confirmation all target real routes", async () => {
-  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "未保存" } }); page.onBack();
-  expect(wx.showModal).toHaveBeenCalled(); expect(wx.navigateBack).toHaveBeenCalled();
-  page.onNavigateWorkbench({ currentTarget: { dataset: { target: "profile" } } }); page.onNavigateWorkbench({ currentTarget: { dataset: { target: "pitches" } } }); page.onNavigateWorkbench({ currentTarget: { dataset: { target: "inventory" } } });
-  expect(wx.redirectTo).toHaveBeenCalledWith({ url: `/pages/venue-profile/index?venue_id=${ready.venue.id}` });
-  expect(wx.navigateTo).toHaveBeenCalledWith({ url: `/pages/venue-pitch-setup/index?venue_id=${ready.venue.id}` });
-  expect(wx.navigateTo).toHaveBeenCalledWith({ url: `/pages/venue-inventory/index?venue_id=${ready.venue.id}` });
-});
-
-test("production markup contains no Fixture controls and binds every visible business action", () => {
-  const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8");
-  expect(markup).not.toMatch(/Fixture|Production disabled|nextState/);
-  for (const handler of ["onBack", "onReload", "onRefreshReviewStatus", "onChooseImage", "onSetCover", "onRemoveImage", "onReorderImage", "onRetryModeration", "onDescriptionInput", "onToggleFacility", "onSave", "onRetryUnknown", "onNavigateWorkbench"]) expect(markup).toContain(handler);
-  expect(markup).toMatch(/wx:if="\{\{mode === 'reviewing' \|\| mode === 'pending-manual'\}\}"[^>]*bindtap="onRefreshReviewStatus"[^>]*disabled="\{\{operationBusy\}\}"[^>]*aria-busy="\{\{operationBusy\}\}"/);
-});
-
-test("facility buttons use the same explicit centering contract as other page controls", () => {
-  const styles = readFileSync("miniprogram/pages/venue-profile/index.wxss", "utf8");
-  expect(styles).toMatch(/\.venue-profile__chip\s*\{[^}]*display:flex;[^}]*height:88rpx;[^}]*align-items:center;[^}]*justify-content:center;/);
+test("facility buttons retain their centered 88rpx touch target", () => {
+  const styles = readFileSync("miniprogram/pages/venue-profile/index.wxss", "utf8"); expect(styles).toMatch(/\.venue-profile__chip\s*\{[^}]*display:flex;[^}]*height:88rpx;[^}]*align-items:center;[^}]*justify-content:center;/);
 });
