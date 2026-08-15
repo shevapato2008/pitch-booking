@@ -63,7 +63,13 @@ uv run python -m scripts.preflight_deploy --env-file deploy/.env.live.local
 docker compose --env-file deploy/.env.live.local config --quiet
 bash -c 'set -a; source deploy/miniprogram.live.local; set +a; npm run build:miniprogram:production'
 npm run audit:miniprogram-package
+npm run prepare:miniprogram:live-preview
 ```
+
+For the physical-device QR, open `dist/miniprogram-live-preview` as the WeChat DevTools project.
+That generated, ignored project contains only the audited production package. Do not generate the
+acceptance QR from the repository root because its checked-in `project.config.json` intentionally
+targets the development Fixture build.
 
 The ordinary preflight above permits API deployment before ICP filing. It does not permit a physical
 device acceptance QR. After the API domain has an active ICP filing record, set
