@@ -78,7 +78,7 @@ test("production markup binds regional actions and facilities-only footer", () =
   const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8"); const json = readFileSync("miniprogram/pages/venue-profile/index.json", "utf8");
   for (const handler of ["onRefreshImageStatus", "onRefreshDescriptionStatus", "onSubmitDescription", "onRetryDescription", "onSaveFacilities", "onRetryUnknown"]) expect(markup).toContain(handler);
   expect(markup).toContain("imageRefreshError"); expect(markup).toContain("descriptionRefreshError"); expect(markup).toContain("descriptionActionLabel");
-  expect(markup).toContain("保存场馆设施"); expect(markup).not.toContain("保存场馆资料"); expect(markup).not.toContain("onRefreshReviewStatus"); expect(json).toContain('"enablePullDownRefresh":true');
+  expect(markup).toContain("保存场馆设施"); expect(markup).not.toContain("保存场馆资料"); expect(markup).not.toContain("onRefreshReviewStatus"); expect(markup).not.toContain("onRetryUpload"); expect(json).toContain('"enablePullDownRefresh":true');
 });
 
 test("facility buttons retain their centered 88rpx touch target", () => {
@@ -105,8 +105,11 @@ test("conflicts refresh authoritatively without replacing either local draft or 
 
 test("ordinary image, description, and facility failures remain in their owning regions", async () => {
   const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); api.save.mockRejectedValueOnce(new Error("description")); page.onDescriptionInput({ detail: { value: "介绍" } }); await page.onSubmitDescription(); expect(page.data).toMatchObject({ descriptionActionError: "介绍提交失败，请重试", facilitySaveError: "", imageActionError: "" });
+  expect(page.data.unknownScope).toBe("description"); stored = null; page.setData({ unknownScope: "" });
   api.save.mockRejectedValueOnce(new Error("facilities")); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); await page.onSaveFacilities(); expect(page.data).toMatchObject({ facilitySaveError: "设施保存失败，请重试", imageActionError: "" });
+  expect(page.data.unknownScope).toBe("facilities"); stored = null; page.setData({ unknownScope: "" });
   api.createUploadIntent.mockRejectedValueOnce(new Error("image")); await page.onChooseImage(); expect(page.data).toMatchObject({ imageActionError: "图片操作失败，请重试", descriptionActionError: "介绍提交失败，请重试" });
+  expect(page.data.unknownScope).toBe("image");
 });
 
 test("only pending moderation blocks facilities and only a pending image loses its own actions", async () => {
@@ -180,4 +183,16 @@ test("disposed failures and conflicts do not update state or start reads", async
 
 test("only the current overlapping refresh clears its own busy state", async () => {
   const api = source(); api.get.mockResolvedValue(reviewing); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); let resolveOld!: (value: typeof reviewing) => void; let resolveNew!: (value: typeof reviewing) => void; api.get.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; })).mockImplementationOnce(() => new Promise((resolve) => { resolveNew = resolve; })); const old = page.onRefreshImageStatus(); page.invalidateReads(); const current = page.onRefreshDescriptionStatus(); resolveOld(reviewing); await old; expect(page.data.descriptionRefreshBusy).toBe(true); resolveNew(reviewing); await current;
+});
+
+test("normal save refreshes never leave a temporary attempt exposed as unknown", async () => {
+  const api = source(); let resolveSave!: (value: typeof ready) => void; api.save.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; })); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "保存中" } }); const save = page.onSubmitDescription(); await page.onPullDownRefresh(); expect(page.data.unknownScope).toBe(""); resolveSave(next()); await save; expect(page.data.unknownScope).toBe(""); expect(stored).toBeNull(); page.onUnload();
+});
+
+test("successful reads and missing-attempt recovery clear stale unknown scope", async () => {
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.setData({ unknownScope: "description" }); await page.onPullDownRefresh(); expect(page.data.unknownScope).toBe(""); page.setData({ unknownScope: "image" }); await page.onRetryUnknown(); expect(page.data.unknownScope).toBe("");
+});
+
+test("OSS upload failure exposes and replays its original persisted upload intent", async () => {
+  const api = source(); registerVenueProfileDataSource(api); media.upload.mockRejectedValueOnce(new Error("oss")); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onChooseImage(); const original = stored; expect(page.data.unknownScope).toBe("image"); expect(original).toMatchObject({ kind: "uploadIntent", body: { filename: "field.webp", mimeType: "image/webp", byteSize: 3 } }); await page.onRetryUnknown(); expect(api.createUploadIntent).toHaveBeenLastCalledWith(original); page.onUnload();
 });
