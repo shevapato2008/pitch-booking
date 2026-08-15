@@ -76,10 +76,56 @@ test("does not map old published URLs onto pending or rejected draft images", as
 
 test("production markup binds regional actions and facilities-only footer", () => {
   const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8"); const json = readFileSync("miniprogram/pages/venue-profile/index.json", "utf8");
-  for (const handler of ["onRefreshImageStatus", "onRefreshDescriptionStatus", "onSubmitDescription", "onSaveFacilities", "onRetryUnknown"]) expect(markup).toContain(handler);
+  for (const handler of ["onRefreshImageStatus", "onRefreshDescriptionStatus", "onSubmitDescription", "onRetryDescription", "onSaveFacilities", "onRetryUnknown"]) expect(markup).toContain(handler);
+  expect(markup).toContain("imageRefreshError"); expect(markup).toContain("descriptionRefreshError"); expect(markup).toContain("descriptionActionLabel");
   expect(markup).toContain("保存场馆设施"); expect(markup).not.toContain("保存场馆资料"); expect(markup).not.toContain("onRefreshReviewStatus"); expect(json).toContain('"enablePullDownRefresh":true');
 });
 
 test("facility buttons retain their centered 88rpx touch target", () => {
   const styles = readFileSync("miniprogram/pages/venue-profile/index.wxss", "utf8"); expect(styles).toMatch(/\.venue-profile__chip\s*\{[^}]*display:flex;[^}]*height:88rpx;[^}]*align-items:center;[^}]*justify-content:center;/);
+});
+
+test("a clean rejected description retries its own moderation item and a dirty one submits a modification", async () => {
+  jest.useFakeTimers(); const rejected = { ...ready, currentRevision: { ...ready.currentRevision, summaryState: "REJECTED" as const, descriptionState: "REJECTED" as const } }; const api = source(); api.get.mockResolvedValue(rejected); api.retryModeration.mockResolvedValue(rejected); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); expect(page.data.descriptionActionLabel).toBe("重新审核介绍"); await page.onRetryDescription();
+  expect(api.retryModeration).toHaveBeenCalledWith(expect.objectContaining({ itemId: rejected.currentRevision.id })); await jest.advanceTimersByTimeAsync(5000); expect(api.get).toHaveBeenCalledTimes(2);
+  page.onDescriptionInput({ detail: { value: "修改后的介绍" } }); expect(page.data.descriptionActionLabel).toBe("提交修改"); page.onUnload();
+});
+
+test("restores a persisted scoped save into its region and replays the exact key without clearing another draft", async () => {
+  const attempt = { kind: "save" as const, scope: "description" as const, venueId: ready.venue.id, body: { expectedFacilityVersion: ready.facilityVersion, expectedRevisionVersion: ready.revisionVersion, description: "待重试", facilities: ready.currentRevision.facilities }, idempotencyKey: "original-description-key-123" }; stored = structuredClone(attempt); const api = source(); api.save.mockResolvedValue(next()); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); expect(page.data.unknownScope).toBe("description"); await page.onRetryUnknown();
+  expect(api.save).toHaveBeenCalledWith(attempt); expect(page.data).toMatchObject({ descriptionDirty: false, facilitiesDirty: true }); page.onUnload();
+});
+
+test("conflicts refresh authoritatively without replacing either local draft or adding a regional generic error", async () => {
+  const api = source(); api.save.mockRejectedValueOnce(Object.assign(new Error(), { code: "VENUE_PROFILE_VERSION_CONFLICT" })); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "本地介绍" } }); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); await page.onSubmitDescription();
+  expect(api.get).toHaveBeenCalledTimes(2); expect(page.data).toMatchObject({ description: "本地介绍", descriptionDirty: true, facilitiesDirty: true, descriptionActionError: "" });
+});
+
+test("ordinary image, description, and facility failures remain in their owning regions", async () => {
+  const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); api.save.mockRejectedValueOnce(new Error("description")); page.onDescriptionInput({ detail: { value: "介绍" } }); await page.onSubmitDescription(); expect(page.data).toMatchObject({ descriptionActionError: "介绍提交失败，请重试", facilitySaveError: "", imageActionError: "" });
+  api.save.mockRejectedValueOnce(new Error("facilities")); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); await page.onSaveFacilities(); expect(page.data).toMatchObject({ facilitySaveError: "设施保存失败，请重试", imageActionError: "" });
+  api.createUploadIntent.mockRejectedValueOnce(new Error("image")); await page.onChooseImage(); expect(page.data).toMatchObject({ imageActionError: "图片操作失败，请重试", descriptionActionError: "介绍提交失败，请重试" });
+});
+
+test("only pending moderation blocks facilities and only a pending image loses its own actions", async () => {
+  const api = source(); registerVenueProfileDataSource(api); const pendingImage = { ...ready, currentRevision: { ...ready.currentRevision, summaryState: "REVIEWING" as const, images: ready.currentRevision.images.map((image, index) => ({ ...image, state: index === 0 ? "REVIEWING" as const : "APPROVED" as const })) } }; const page = loadPage(); page.applyProfile(pendingImage); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } });
+  expect(page.data).toMatchObject({ facilitySaveBlockedReason: expect.any(String), imageActionsEnabled: true }); expect(page.data.images).toEqual(expect.arrayContaining([expect.objectContaining({ state: "REVIEWING", actionsEnabled: false }), expect.objectContaining({ state: "APPROVED", actionsEnabled: true })]));
+  await page.onSetCover({ currentTarget: { dataset: { imageId: pendingImage.currentRevision.images[1].id } } }); expect(api.setCover).toHaveBeenCalledTimes(1);
+  const rejected = { ...ready, currentRevision: { ...ready.currentRevision, summaryState: "REJECTED" as const, descriptionState: "REJECTED" as const } }; page.applyProfile(rejected); expect(page.data.facilitySaveBlockedReason).toBe(""); page.applyProfile(ready); expect(page.data.facilitySaveBlockedReason).toBe("");
+});
+
+test("upload completion increments the revision and navigation and either local dirty flag retain their existing safeguards", async () => {
+  const api = source(); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onChooseImage(); expect(api.completeUpload).toHaveBeenCalledWith(expect.objectContaining({ expectedRevisionVersion: ready.revisionVersion + 1 }));
+  page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); page.onBack(); expect(wx.showModal).toHaveBeenCalled(); page.onNavigateWorkbench({ currentTarget: { dataset: { target: "inventory" } } }); expect(wx.navigateTo).toHaveBeenCalledWith({ url: `/pages/venue-inventory/index?venue_id=${ready.venue.id}` }); page.onUnload();
+});
+
+test("an unknown complete replay that returns reviewing schedules the image refresh", async () => {
+  jest.useFakeTimers(); const intentImageId = "c3195309-183b-46cc-81e6-2c0977223099"; const attempt = { kind: "complete" as const, venueId: ready.venue.id, imageId: intentImageId, expectedRevisionVersion: ready.revisionVersion + 1, idempotencyKey: "original-complete-key-123" }; stored = structuredClone(attempt); const api = source(); api.completeUpload.mockResolvedValue(reviewing); registerVenueProfileDataSource(api);
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); await page.onRetryUnknown(); expect(api.completeUpload).toHaveBeenCalledWith(attempt); await jest.advanceTimersByTimeAsync(5000); expect(api.get).toHaveBeenCalledTimes(2); page.onUnload();
+});
+
+test("attempt-store conflicts are rendered in their owning region instead of escaping", async () => {
+  const conflictingStore: VenueProfileAttemptStore = { load: () => null, begin: () => { throw new Error("conflict"); }, clear: () => undefined }; registerVenueProfileAttemptStore(conflictingStore); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "介绍" } }); await expect(page.onSubmitDescription()).resolves.toBeUndefined(); expect(page.data.descriptionActionError).toBe("介绍提交失败，请重试");
 });
