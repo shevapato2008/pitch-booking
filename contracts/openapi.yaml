@@ -1019,6 +1019,22 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/admin/venues:
+    get:
+      operationId: listManagedVenues
+      description: Lists active venues the authenticated user can currently manage.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active managed venues ordered by normalized name and venue ID.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagedVenuesResponse'}
+              examples:
+                ManagedVenues:
+                  externalValue: './examples/managed-venues.json'
+        '401': {$ref: '#/components/responses/AuthRequired'}
   /api/v1/admin/venues/{venue_id}/profile:
     get:
       operationId: getAdminVenueProfile
@@ -1530,6 +1546,23 @@ components:
           examples:
             VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    ManagedVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, district_name, address]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+    ManagedVenuesResponse:
+      type: object
+      additionalProperties: false
+      required: [venues]
+      properties:
+        venues:
+          type: array
+          items: {$ref: '#/components/schemas/ManagedVenue'}
     FacilityCode:
       type: string
       enum:

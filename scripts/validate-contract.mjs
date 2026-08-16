@@ -18,6 +18,12 @@ const attachment = (pathName, status, key, method = 'get') => ({
 
 const exampleMap = [
   {
+    filename: 'managed-venues.json',
+    reference: './examples/managed-venues.json',
+    schema: 'ManagedVenuesResponse',
+    attachments: [attachment('/api/v1/admin/venues', '200', 'ManagedVenues')],
+  },
+  {
     filename: 'venue-primary.json',
     reference: './examples/venue-primary.json',
     schema: 'Venue',
@@ -479,6 +485,7 @@ const expectedOperations = new Map([
   ['/api/v1/orders/{order_id}', new Set(['get'])],
   ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
   ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
+  ['/api/v1/admin/venues', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
   ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/inventory/slots', new Set(['post'])],

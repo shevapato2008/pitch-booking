@@ -88,6 +88,41 @@ def test_openapi_exposes_only_implemented_slice_paths() -> None:
     assert set(paths["/api/v1/venues/primary"]) == {"get"}
 
 
+def test_managed_venues_contract_and_runtime_are_closed_and_authenticated() -> None:
+    contract = _contract()
+    operation = contract["paths"]["/api/v1/admin/venues"]["get"]
+    schemas = contract["components"]["schemas"]
+
+    assert operation["security"] == [{"bearerAuth": []}]
+    assert set(operation["responses"]) == {"200", "401"}
+    assert _response_schema(operation, "200") == {
+        "$ref": "#/components/schemas/ManagedVenuesResponse"
+    }
+    assert operation["responses"]["200"]["content"]["application/json"]["examples"] == {
+        "ManagedVenues": {"externalValue": "./examples/managed-venues.json"}
+    }
+
+    response_schema = schemas["ManagedVenuesResponse"]
+    assert response_schema["additionalProperties"] is False
+    assert set(response_schema["required"]) == {"venues"}
+    item_schema = schemas["ManagedVenue"]
+    assert item_schema["additionalProperties"] is False
+    assert set(item_schema["required"]) == {"id", "name", "district_name", "address"}
+    assert set(item_schema["properties"]) == set(item_schema["required"])
+
+    example = json.loads((EXAMPLES_DIRECTORY / "managed-venues.json").read_text())
+    _assert_example_matches_schema(contract, example, response_schema)
+
+    runtime = create_app().openapi()
+    runtime_operation = runtime["paths"]["/api/v1/admin/venues"]["get"]
+    runtime_response = runtime_operation["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    runtime_schema = runtime["components"]["schemas"][runtime_response["$ref"].rsplit("/", 1)[-1]]
+    assert runtime_schema["additionalProperties"] is False
+    assert set(runtime_schema["required"]) == {"venues"}
+
+
 def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
     contract = _contract()
     expected_operations = {
