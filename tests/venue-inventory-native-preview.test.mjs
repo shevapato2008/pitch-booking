@@ -16,14 +16,7 @@ test("venue inventory preview is a complete development-only native page", () =>
 
 test("explicit preview manifest excludes the discovery-owned inventory route", () => {
   const manifest = JSON.parse(readFileSync("miniprogram/dev/app-pages.json", "utf8"));
-  assert.deepEqual(manifest, {
-    pages: [
-      "pages/booking-confirmation/index",
-      "pages/order-detail/index",
-      "dev/pages/venue-profile/index",
-      "dev/pages/venue-profile-public/index",
-    ],
-  });
+  assert.ok(!manifest.pages.includes("dev/pages/venue-inventory/index"));
 });
 
 test("production source manifest exposes the real inventory route without a development route", () => {

@@ -1,0 +1,45 @@
+<view class="venue-access u-page">
+  <view class="venue-access__header" style="padding-top: {{headerTopPx}}px;">
+    <view class="venue-access__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <text class="venue-access__title">{{title}}</text>
+    </view>
+  </view>
+
+  <view class="venue-access__content">
+    <block wx:if="{{previewCase === 'multiple'}}">
+      <text class="venue-access__description">{{description}}</text>
+      <view class="venue-access__list" aria-label="可管理场馆">
+        <button
+          wx:for="{{venues}}"
+          wx:key="id"
+          class="venue-access__card"
+          hover-class="venue-access__card--pressed"
+          bindtap="onChooseVenue"
+          data-venue-id="{{item.id}}"
+          aria-label="{{item.name}}，{{item.location}}，进入场馆工作台预览"
+        >
+          <view class="venue-access__card-copy">
+            <text class="venue-access__venue-name">{{item.name}}</text>
+            <text class="venue-access__venue-location">{{item.location}}</text>
+          </view>
+          <view class="venue-access__chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+    </block>
+
+    <view wx:else class="venue-access__empty">
+      <view class="venue-access__permission-mark" role="img" aria-label="场馆权限核验">
+        <view class="venue-access__permission-building" aria-hidden="true">
+          <view class="venue-access__permission-door"></view>
+        </view>
+      </view>
+      <text class="venue-access__empty-heading">暂未发现可管理的场馆</text>
+      <text class="venue-access__empty-copy">{{description}}</text>
+      <view class="venue-access__verification-note">
+        <view class="venue-access__verification-dot" aria-hidden="true"></view>
+        <text>平台核验完成前，不会开放场馆管理权限。</text>
+      </view>
+      <button class="venue-access__back-entry" hover-class="venue-access__back-entry--pressed" bindtap="onBackToEntry" aria-label="返回目的选择入口">返回入口</button>
+    </view>
+  </view>
+</view>

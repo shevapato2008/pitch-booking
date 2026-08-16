@@ -525,13 +525,14 @@ test("every production route has four native page files", () => {
       assert.equal(existsSync(`miniprogram/${route}.${ext}`), true);
 });
 
-test("development preview manifest declares four complete native pages", () => {
+test("development preview manifest declares five complete native pages", () => {
   const manifest = JSON.parse(readFileSync("miniprogram/dev/app-pages.json", "utf8"));
   assert.deepEqual(manifest, { pages: [
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
     "dev/pages/venue-profile/index",
     "dev/pages/venue-profile-public/index",
+    "dev/pages/venue-access/index",
   ] });
   for (const route of manifest.pages)
     for (const ext of ["ts", "json", "wxml", "wxss"])

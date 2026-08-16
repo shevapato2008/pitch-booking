@@ -1,0 +1,228 @@
+@import "../../../styles/tokens.wxss";
+
+.venue-access {
+  box-sizing: border-box;
+  min-height: 100vh;
+  background: #F8FAFC;
+}
+
+.venue-access__header {
+  background: #FFFFFF;
+  border-bottom: 2rpx solid #DBE5EC;
+}
+
+.venue-access__header-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding-left: 40rpx;
+}
+
+.venue-access__title {
+  overflow: hidden;
+  color: #10243E;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.venue-access__content {
+  padding: 48rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px));
+}
+
+.venue-access__description {
+  display: block;
+  margin: 0 8rpx 32rpx;
+  color: #64748B;
+  font-size: 28rpx;
+  line-height: 40rpx;
+}
+
+.venue-access__list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.venue-access__card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-height: 176rpx;
+  margin: 0;
+  padding: 28rpx 72rpx;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid #DBE5EC;
+  border-radius: 32rpx;
+  background: #FFFFFF;
+  color: #10243E;
+}
+
+.venue-access__card::after,
+.venue-access__back-entry::after {
+  border: 0;
+}
+
+.venue-access__card--pressed {
+  border-color: #7DD3FC;
+  background: #EFFBF6;
+}
+
+.venue-access__card-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.venue-access__venue-name {
+  color: #10243E;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 48rpx;
+}
+
+.venue-access__venue-location {
+  margin-top: 8rpx;
+  color: #64748B;
+  font-size: 26rpx;
+  line-height: 40rpx;
+}
+
+.venue-access__chevron {
+  position: absolute;
+  top: 50%;
+  right: 32rpx;
+  box-sizing: border-box;
+  width: 18rpx;
+  height: 18rpx;
+  border-top: 3rpx solid #0284C7;
+  border-right: 3rpx solid #0284C7;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.venue-access__empty {
+  display: flex;
+  min-height: calc(100vh - 320rpx);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.venue-access__permission-mark {
+  box-sizing: border-box;
+  display: flex;
+  width: 128rpx;
+  height: 128rpx;
+  margin-bottom: 32rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: 64rpx;
+  background: #E0F2FE;
+}
+
+.venue-access__permission-building {
+  position: relative;
+  box-sizing: border-box;
+  width: 56rpx;
+  height: 52rpx;
+  border: 4rpx solid #0284C7;
+  border-top-width: 12rpx;
+}
+
+.venue-access__permission-building::before,
+.venue-access__permission-building::after {
+  position: absolute;
+  top: 8rpx;
+  width: 4rpx;
+  height: 20rpx;
+  background: #0284C7;
+  content: "";
+}
+
+.venue-access__permission-building::before { left: 12rpx; }
+.venue-access__permission-building::after { right: 12rpx; }
+
+.venue-access__permission-door {
+  position: absolute;
+  bottom: -4rpx;
+  left: 50%;
+  width: 12rpx;
+  height: 18rpx;
+  border: 4rpx solid #0284C7;
+  border-bottom: 0;
+  background: #E0F2FE;
+  transform: translateX(-50%);
+}
+
+.venue-access__empty-heading {
+  color: #10243E;
+  font-size: 40rpx;
+  font-weight: 700;
+  line-height: 56rpx;
+}
+
+.venue-access__empty-copy {
+  max-width: 608rpx;
+  margin-top: 20rpx;
+  color: #64748B;
+  font-size: 28rpx;
+  line-height: 44rpx;
+}
+
+.venue-access__verification-note {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  margin-top: 32rpx;
+  padding: 24rpx;
+  align-items: flex-start;
+  justify-content: center;
+  border: 2rpx solid #BAE6FD;
+  border-radius: 24rpx;
+  background: #FFFFFF;
+  color: #10243E;
+  font-size: 24rpx;
+  line-height: 36rpx;
+  text-align: left;
+}
+
+.venue-access__verification-dot {
+  flex: 0 0 auto;
+  width: 12rpx;
+  height: 12rpx;
+  margin: 12rpx 16rpx 0 0;
+  border-radius: 50%;
+  background: #0284C7;
+}
+
+.venue-access__back-entry {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-height: 88rpx;
+  margin: 40rpx 0 0;
+  padding: 16rpx 32rpx;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid #0284C7;
+  border-radius: 24rpx;
+  background: #0284C7;
+  color: #FFFFFF;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 40rpx;
+  text-align: center;
+}
+
+.venue-access__back-entry--pressed {
+  border-color: #0369A1;
+  background: #0369A1;
+}
