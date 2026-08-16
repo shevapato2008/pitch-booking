@@ -19,7 +19,14 @@ test("prepares an isolated DevTools project around the audited production packag
     miniprogramRoot: "dist/miniprogram-development/",
     setting: { es6: true, useCompilerPlugins: ["typescript"] },
   }));
-  const privateConfig = JSON.stringify({ condition: { miniprogram: { list: [] } } });
+  const privateConfig = JSON.stringify({
+    condition: {
+      miniprogram: {
+        current: 0,
+        list: [{ pathName: "pages/venue-profile/index" }],
+      },
+    },
+  });
   await writeFile(path.join(root, "project.private.config.json"), privateConfig);
 
   let audited = "";
@@ -40,9 +47,9 @@ test("prepares an isolated DevTools project around the audited production packag
       setting: { es6: true, useCompilerPlugins: [] },
     },
   );
-  assert.equal(
-    await readFile(path.join(previewRoot, "project.private.config.json"), "utf8"),
-    privateConfig,
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(previewRoot, "project.private.config.json"), "utf8")),
+    {},
   );
   assert.equal(
     await readFile(path.join(previewRoot, "miniprogram/pages/venue-profile/index.js"), "utf8"),

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
@@ -49,14 +49,7 @@ export async function prepareLivePreview({
       setting: { ...projectConfig.setting, useCompilerPlugins: [] },
     }, null, 2)}\n`,
   );
-  try {
-    await copyFile(
-      path.join(root, "project.private.config.json"),
-      path.join(previewRoot, "project.private.config.json"),
-    );
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
+  await writeFile(path.join(previewRoot, "project.private.config.json"), "{}\n");
   return previewRoot;
 }
 
