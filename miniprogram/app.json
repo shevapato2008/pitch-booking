@@ -1,5 +1,7 @@
 {
   "pages": [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

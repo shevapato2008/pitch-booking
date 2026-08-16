@@ -1,0 +1,58 @@
+<view class="venue-access u-page">
+  <view class="venue-access__header" style="padding-top: {{headerTopPx}}px;">
+    <view class="venue-access__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <text class="venue-access__title">{{title}}</text>
+    </view>
+  </view>
+
+  <view class="venue-access__content">
+    <block wx:if="{{mode === 'multiple'}}">
+      <text class="venue-access__description">选择一个已由平台核验授权的场馆，进入场馆工作台。</text>
+      <view class="venue-access__list" aria-label="可管理场馆">
+        <button
+          wx:for="{{venues}}"
+          wx:key="id"
+          class="venue-access__card"
+          hover-class="venue-access__card--pressed"
+          bindtap="onChooseVenue"
+          data-venue-id="{{item.id}}"
+          aria-label="{{item.name}}，{{item.districtName}}，{{item.address}}，进入场馆工作台"
+        >
+          <view class="venue-access__card-copy">
+            <text class="venue-access__venue-name">{{item.name}}</text>
+            <text class="venue-access__venue-location">{{item.districtName}} · {{item.address}}</text>
+          </view>
+          <view class="venue-access__chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+    </block>
+
+    <view wx:elif="{{mode === 'empty'}}" class="venue-access__empty">
+      <view class="venue-access__permission-mark" role="img" aria-label="场馆权限核验">
+        <view class="venue-access__permission-building" aria-hidden="true">
+          <view class="venue-access__permission-door"></view>
+        </view>
+      </view>
+      <text class="venue-access__empty-heading">暂未发现可管理的场馆</text>
+      <text class="venue-access__empty-copy">微信登录只能确认当前账号身份，不能证明你拥有实体场馆的管理权。平台完成线下核验并授权后，场馆才会出现在这里。</text>
+      <view class="venue-access__verification-note">
+        <view class="venue-access__verification-dot" aria-hidden="true"></view>
+        <text>平台核验完成前，不会开放场馆管理权限。</text>
+      </view>
+      <button class="venue-access__back-entry" hover-class="venue-access__back-entry--pressed" bindtap="onBackToEntry" aria-label="返回目的选择入口">返回入口</button>
+    </view>
+
+    <view wx:elif="{{mode === 'error'}}" class="venue-access__empty">
+      <view class="venue-access__permission-mark venue-access__permission-mark--error" role="img" aria-label="场馆权限读取失败">!</view>
+      <text class="venue-access__empty-heading">暂时无法读取场馆权限</text>
+      <text class="venue-access__empty-copy">{{errorMessage}}</text>
+      <button class="venue-access__back-entry" hover-class="venue-access__back-entry--pressed" bindtap="onRetry" disabled="{{retrying}}">{{retrying ? '正在重试' : '重试'}}</button>
+      <button class="venue-access__secondary" hover-class="venue-access__secondary--pressed" bindtap="onBackToEntry">返回入口</button>
+    </view>
+
+    <view wx:else class="venue-access__state" aria-live="polite">
+      <view class="venue-access__spinner" aria-hidden="true"></view>
+      <text>{{mode === 'redirecting' ? '正在进入场馆工作台' : '正在读取场馆权限'}}</text>
+    </view>
+  </view>
+</view>

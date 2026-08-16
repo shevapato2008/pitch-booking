@@ -383,6 +383,8 @@ test("production audit rejects payment composition hidden in an uninvoked functi
 async function createProductionPackage() {
   const packageRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-audit-"));
   const routes = [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

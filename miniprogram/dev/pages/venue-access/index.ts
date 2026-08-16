@@ -2,7 +2,7 @@ import {
   VENUE_ACCESS_VISUAL_FIXTURES,
   type VenueAccessPreviewCase,
 } from "../../venue-access-fixture";
-import { readIntentHeaderLayout } from "../../intent-header-layout";
+import { readIntentHeaderLayout } from "../../../presentation/intent-header-layout";
 
 interface VenueAccessOptions {
   case?: unknown;

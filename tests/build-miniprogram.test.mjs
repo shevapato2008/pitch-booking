@@ -171,6 +171,8 @@ test("production app registers HTTP data, venue profiles, Tencent POI, and nativ
   assert.match(app, /registerVenueDirectoryDataSource/);
   assert.match(app, /createHttpVenueProfileDataSource/);
   assert.match(app, /registerVenueProfileDataSource/);
+  assert.match(app, /createHttpVenueAccessDataSource/);
+  assert.match(app, /registerVenueAccessDataSource/);
   assert.match(app, /registerVenueProfileMediaCapability/);
   assert.match(app, /registerLocationCapability/);
   assert.match(app, /productionLocation/);
@@ -189,6 +191,7 @@ test("production app registers HTTP data, venue profiles, Tencent POI, and nativ
   assert.equal(app.indexOf("registerPageDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueProfileDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueAccessDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueProfileMediaCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
@@ -224,12 +227,14 @@ test("temporary map previews are absent while the approved center asset remains"
   assert.doesNotMatch(productionText, previewSymbols);
 });
 
-test("real production build emits all eight production routes as native artifacts", async (t) => {
+test("real production build emits all ten production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   const routes = [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

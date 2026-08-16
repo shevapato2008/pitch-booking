@@ -5,6 +5,7 @@ import { getPageDataSource } from "../services/page-data";
 import { getPaymentBindings, resetPaymentBindingsForTesting } from "../services/payment";
 import { getVenueDirectoryDataSource } from "../services/venue-directory";
 import { getVenueProfileDataSource, resetVenueProfileBindingsForTesting } from "../services/venue-profile";
+import { getVenueAccessDataSource, resetVenueAccessBindingsForTesting } from "../services/venue-access";
 import { bootstrapDevelopment } from "./bootstrap";
 import { createDevelopmentHttpSources } from "./http-booking-source";
 
@@ -26,6 +27,14 @@ const confirming = jest.requireActual<PaymentExample>("../../contracts/examples/
 const confirmed = jest.requireActual<OrderExample>("../../contracts/examples/order-confirmed.json");
 const venueMap = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-map.json");
 const venueDetail = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-directory-detail.json");
+const managedVenues = {
+  venues: [{
+    id: venue.id,
+    name: "渤海元丰足球场",
+    district_name: "西青区",
+    address: "天津市西青区利达路",
+  }],
+};
 
 interface RequestOptions {
   readonly url: string;
@@ -60,6 +69,7 @@ function installRequestRuntime(): void {
                     : path === "/api/v1/venues/primary" ? { statusCode: 200, data: venue }
                       : path === "/api/v1/venues/map" ? { statusCode: 200, data: venueMap }
                         : path === `/api/v1/venues/${venueDetail.id}` ? { statusCode: 200, data: venueDetail }
+                          : path === "/api/v1/admin/venues" ? { statusCode: 200, data: managedVenues }
                       : undefined;
         const normalized = "statusCode" in (response ?? {})
           ? response as { statusCode: number; data: unknown }
@@ -75,6 +85,7 @@ afterEach(() => {
   resetBookingDataSourceForTesting();
   resetPaymentBindingsForTesting();
   resetVenueProfileBindingsForTesting();
+  resetVenueAccessBindingsForTesting();
   Reflect.deleteProperty(globalThis, "wx");
 });
 
@@ -119,6 +130,10 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
   await expect(getVenueProfileDataSource().get(String(venue.id))).rejects.toBeDefined();
   const sessions = requests.filter(({ url }) => url.endsWith("/auth/wechat/session"));
   expect(sessions[sessions.length - 1]?.data).toEqual({ code: "dev-login-code" });
+  await expect(getVenueAccessDataSource().listManagedVenues()).resolves.toEqual([expect.objectContaining({
+    id: venue.id,
+    districtName: "西青区",
+  })]);
   await expect(getPageDataSource().getVenue()).resolves.toMatchObject({ id: venue.id });
   await expect(getVenueDirectoryDataSource().getVenueDetail(String(venueDetail.id)))
     .resolves.toMatchObject({ id: venueDetail.id });

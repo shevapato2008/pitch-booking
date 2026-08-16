@@ -4,7 +4,7 @@ import {
   INTENT_ENTRY_VISUAL_FIXTURE,
   type IntentId,
 } from "../../intent-entry-fixture";
-import { readIntentHeaderLayout } from "../../intent-header-layout";
+import { readIntentHeaderLayout } from "../../../presentation/intent-header-layout";
 
 interface IntentChooseEvent {
   currentTarget?: {

@@ -485,6 +485,8 @@ test("payment review reserves the complete three-state evidence contract", () =>
 test("production app registers no development pages", () => {
   const app = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
   assert.deepEqual(app.pages, [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

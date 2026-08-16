@@ -111,6 +111,8 @@ try {
 
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
 const productionRoutes = [
+  "pages/intent-entry/index",
+  "pages/venue-access/index",
   "pages/venue-map/index",
   "pages/venue/index",
   "pages/availability/index",

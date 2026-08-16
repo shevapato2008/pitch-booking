@@ -15,7 +15,9 @@ import { registerPitchConfigurationDataSource } from "../services/pitch-configur
 import { createVenueProfileAttemptStore, registerVenueProfileAttemptStore } from "../services/venue-profile-attempt-store";
 import { registerVenueProfileDataSource, registerVenueProfileMediaCapability } from "../services/venue-profile";
 import { createHttpVenueProfileDataSource } from "../services/http-venue-profile";
+import { createHttpVenueAccessDataSource } from "../services/http-venue-access";
 import { createSessionStore } from "../services/session-store";
+import { registerVenueAccessDataSource } from "../services/venue-access";
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
@@ -57,7 +59,9 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerInventoryDataSource(sources.inventory);
     registerPitchConfigurationDataSource(sources.pitchConfiguration);
     const transport = productionTransport(options.apiBaseUrl);
-    registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: developmentIdentity, sessionStore: createSessionStore(productionSessionStorage), attemptStore: venueProfileAttemptStore }));
+    const sessionStore = createSessionStore(productionSessionStorage);
+    registerVenueAccessDataSource(createHttpVenueAccessDataSource({ transport, identity: developmentIdentity, sessionStore }));
+    registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: developmentIdentity, sessionStore, attemptStore: venueProfileAttemptStore }));
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);
