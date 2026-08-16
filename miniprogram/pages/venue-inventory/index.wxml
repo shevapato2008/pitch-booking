@@ -15,15 +15,15 @@
   </view>
 
   <view wx:else class="inventory-content">
-    <view class="month-row"><text class="month-title">{{monthTitle}}</text><button class="text-button" bindtap="onOpenCalendar">更多日期</button></view>
+    <view class="month-row"><text class="month-title">{{monthTitle}}</text><button class="text-button" bindtap="onOpenCalendar" disabled="{{mode === 'save-result-unknown' || !availabilityWindow.startDate}}">更多日期</button></view>
     <view class="week-strip" role="group" aria-label="当前自然周">
-      <button wx:for="{{week}}" wx:key="iso" class="week-day {{item.iso === selectedDate ? 'week-day--selected' : ''}}" disabled="{{!item.manageable}}" bindtap="onSelectDate" data-date="{{item.iso}}"><text>{{item.weekday}}</text><text class="week-day__number">{{item.day}}</text></button>
+      <button wx:for="{{week}}" wx:key="iso" class="week-day {{item.iso === selectedDate ? 'week-day--selected' : ''}}" disabled="{{!item.manageable || mode === 'save-result-unknown'}}" bindtap="onSelectDate" data-date="{{item.iso}}"><text>{{item.weekday}}</text><text class="week-day__number">{{item.day}}</text></button>
     </view>
     <button class="current-pitch" bindtap="onOpenPitchPicker" disabled="{{writeControlsDisabled}}" aria-label="选择物理场地">
-      <view class="current-pitch__copy"><text class="context-label">当前场地</text><text class="current-pitch__value">{{selectedPitch.displayName}} · {{selectedPitch.playersPerSide}}人制</text></view><view class="icon-chevron"></view>
+      <view class="current-pitch__copy"><text class="context-label">当前场地</text><text class="current-pitch__value">{{selectedPitch.displayName}} · {{selectedPitch.playersPerSide}}人制</text></view><view class="icon-chevron {{writeControlsDisabled ? 'icon-chevron--disabled' : ''}}"></view>
     </button>
     <view class="inventory-summary"><text class="inventory-summary__date">{{selectedDateLabel}}</text><text class="inventory-summary__count">{{slotCount === null ? '正在读取' : slotCount + ' 个时段'}}</text></view>
-    <view wx:if="{{statusMessage}}" class="status-callout status-callout--{{mode}}"><text>{{statusMessage}}</text><button wx:if="{{recoveryLabel}}" class="inline-retry" bindtap="onRetryRead">{{recoveryLabel}}</button></view>
+    <view wx:if="{{statusMessage}}" class="status-callout status-callout--{{mode}}"><text>{{statusMessage}}</text><button wx:if="{{mode === 'save-result-unknown' && !editor}}" class="inline-retry" bindtap="onRetryMutation">重新确认</button><button wx:elif="{{recoveryLabel}}" class="inline-retry" bindtap="onRetryRead">{{recoveryLabel}}</button></view>
     <scroll-view class="inventory-list" scroll-y enhanced show-scrollbar="false">
       <view wx:if="{{mode === 'empty'}}" class="empty-state">当天还没有时段，可从下方新增第一条时段</view>
       <view wx:for="{{slots}}" wx:key="id" class="slot-card {{!item.editable || writeControlsDisabled ? 'slot-card--readonly' : ''}}" bindtap="onSlotTap" data-slot-id="{{item.id}}" role="button">
@@ -46,7 +46,7 @@
       <block wx:else>
         <view class="calendar-weekdays"><text>一</text><text>二</text><text>三</text><text>四</text><text>五</text><text>六</text><text>日</text></view>
         <view class="calendar-grid"><button wx:for="{{sheet.days}}" wx:key="iso" class="calendar-day {{item.selected ? 'calendar-day--selected' : ''}}" disabled="{{!item.manageable}}" bindtap="onSelectDate" data-date="{{item.iso}}">{{item.day}}</button></view>
-        <view class="calendar-pending"><text>待确认日期</text><text>{{sheet.pendingLabel}}</text></view><button class="primary-button" bindtap="onConfirmDate">确认日期</button>
+        <view class="calendar-pending"><text>待确认日期</text><text>{{sheet.pendingLabel}}</text></view><button class="primary-button" bindtap="onConfirmDate" disabled="{{mode === 'save-result-unknown'}}">确认日期</button>
       </block>
     </view>
   </block>

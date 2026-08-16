@@ -17,8 +17,8 @@ export interface InventoryPitch {
   readonly id: string;
   readonly name: string;
   readonly displayName: string;
-  readonly pitchType: "FIVE_A_SIDE" | "SEVEN_A_SIDE";
-  readonly playersPerSide: 5 | 7;
+  readonly pitchType: "FIVE_A_SIDE" | "SEVEN_A_SIDE" | null;
+  readonly playersPerSide: number;
 }
 
 export interface InventorySlot {
@@ -93,13 +93,14 @@ export function decodeVenueInventory(value: unknown): VenueInventory {
   const pitches = arrayAt(object.pitches, "$.pitches", 1).map((raw, index): InventoryPitch => {
     const path = `$.pitches[${index}]`;
     const pitch = exactObject(raw, ["id", "name", "display_name", "pitch_type", "players_per_side"], path);
-    const pitchType = enumAt(pitch.pitch_type, ["FIVE_A_SIDE", "SEVEN_A_SIDE"] as const, `${path}.pitch_type`);
-    const playersPerSide = integerAt(pitch.players_per_side, `${path}.players_per_side`);
+    const pitchType = pitch.pitch_type === null ? null : enumAt(pitch.pitch_type, ["FIVE_A_SIDE", "SEVEN_A_SIDE"] as const, `${path}.pitch_type`);
+    const playersPerSide = integerAt(pitch.players_per_side, `${path}.players_per_side`, 1);
+    if (playersPerSide > 99) invalid(`${path}.players_per_side`);
     if ((pitchType === "FIVE_A_SIDE" && playersPerSide !== 5) || (pitchType === "SEVEN_A_SIDE" && playersPerSide !== 7)) invalid(path);
     return {
       id: uuidAt(pitch.id, `${path}.id`), name: stringAt(pitch.name, `${path}.name`),
       displayName: stringAt(pitch.display_name, `${path}.display_name`), pitchType,
-      playersPerSide: playersPerSide as 5 | 7,
+      playersPerSide,
     };
   });
   const selectedPitchId = uuidAt(object.selected_pitch_id, "$.selected_pitch_id");

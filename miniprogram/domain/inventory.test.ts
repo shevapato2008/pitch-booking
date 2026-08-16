@@ -44,6 +44,23 @@ describe("admin inventory decoders", () => {
     expect(decodeInventorySlot(slot).editable).toBe(true);
   });
 
+  test("accepts a configured custom-size pitch in the inventory workbench", () => {
+    const customPitch = {
+      ...inventory.pitches[0],
+      id: "00000000-0000-4000-8000-000000000021",
+      name: "六人场",
+      display_name: "六人场",
+      pitch_type: null,
+      players_per_side: 6,
+    };
+    expect(decodeVenueInventory({
+      ...inventory,
+      pitches: [customPitch],
+      selected_pitch_id: customPitch.id,
+      slots: [],
+    }).pitches[0]).toMatchObject({ displayName: "六人场", pitchType: null, playersPerSide: 6 });
+  });
+
   test.each([
     { ...inventory, unexpected: true },
     { ...inventory, venue: { ...inventory.venue, timezone: "UTC" } },

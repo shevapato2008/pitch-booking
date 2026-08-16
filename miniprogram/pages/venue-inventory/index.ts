@@ -1,5 +1,6 @@
 import type { InventoryPitch, InventorySlot, InventorySlotStatus, VenueInventory } from "../../domain/inventory";
 import { readInventoryHeaderLayout } from "../../presentation/inventory-layout";
+import { formatShanghaiLocalDate } from "../../presentation/shanghai-time";
 import { getInventoryDataSource, type InventoryMutationAttempt } from "../../services/inventory";
 import { getInventoryMutationAttemptStore } from "../../services/inventory-attempt-store";
 
@@ -59,13 +60,13 @@ Page({
     const venueId = options.venue_id;
     if (!venueId) { this.setData({ mode: "load-error", statusMessage: "场馆信息无效，请返回重试", recoveryLabel: "" }); return; }
     this.setData({ venueId });
-    try { await getInventoryDataSource().login(); await this.selectAndLoad(options.pitch_id, options.local_date || isoDate(new Date())); }
+    try { await getInventoryDataSource().login(); await this.selectAndLoad(options.pitch_id, options.local_date || formatShanghaiLocalDate(new Date())); }
     catch (caught) { this.handleReadError(caught, true); }
     const pending = getInventoryMutationAttemptStore()?.load();
     if (pending?.venueId === venueId && !this.mutationInFlight) { this.openEditorFromAttempt(pending); await this.runMutation(pending); }
   },
   onUnload() { this.disposed = true; this.requestSequence += 1; },
-  onBack() { if (!this.mutationInFlight) void wx.navigateBack(); },
+  onBack() { if (!this.mutationInFlight && this.data.mode !== "save-result-unknown") void wx.navigateBack(); },
 
   applyDay(day: VenueInventory) {
     const selectedPitch = day.pitches.find(({ id }) => id === day.selectedPitchId) ?? null;
@@ -78,35 +79,36 @@ Page({
     });
   },
   async selectAndLoad(pitchId: string | undefined, localDate: string) {
-    const sequence = ++this.requestSequence; this.lastRead = { pitchId, localDate };
-    this.setData({ mode: this.data.venue.id ? "partial-loading" : "initial-loading", statusMessage: "正在读取时段", recoveryLabel: "", slotCount: null, sheet: null });
+    const sequence = ++this.requestSequence; const initial = !this.data.venue.id; this.lastRead = { pitchId, localDate };
+    this.setData({ mode: initial ? "initial-loading" : "partial-loading", statusMessage: "正在读取时段", recoveryLabel: "", slotCount: null, sheet: null });
     try {
       const day = await getInventoryDataSource().getDay(this.data.venueId, pitchId, localDate);
       if (this.disposed || sequence !== this.requestSequence || day.localDate !== localDate || (pitchId && day.selectedPitchId !== pitchId)) return;
       this.applyDay(day);
-    } catch (caught) { if (!this.disposed && sequence === this.requestSequence) this.handleReadError(caught, false); }
+    } catch (caught) { if (!this.disposed && sequence === this.requestSequence) this.handleReadError(caught, initial); }
   },
   handleReadError(caught: unknown, initial: boolean) {
     const code = (caught as PageError).code;
     if (code === "INVENTORY_FORBIDDEN") {
-      this.setData({ mode: "permission-error", writeControlsDisabled: true, editor: null, sheet: null, slots: [], slotCount: null, statusMessage: "当前账号没有该场馆的库存管理权限", recoveryLabel: "", pageAction: { disabled: true } }); return;
+      this.setData({ mode: initial ? "load-error" : "permission-error", writeControlsDisabled: true, editor: null, sheet: null, slots: [], slotCount: null, statusMessage: "当前账号没有该场馆的库存管理权限", recoveryLabel: "", pageAction: { disabled: true } }); return;
     }
     this.setData({ mode: initial ? "load-error" : "partial-error", statusMessage: "库存加载失败，请重试", recoveryLabel: "重试", pageAction: { disabled: initial } });
   },
-  onRetryRead() { if (this.lastRead) return this.selectAndLoad(this.lastRead.pitchId, this.lastRead.localDate); },
+  onRetryRead() { if (this.data.mode !== "save-result-unknown" && this.lastRead) return this.selectAndLoad(this.lastRead.pitchId, this.lastRead.localDate); },
 
   onOpenPitchPicker() { if (!this.data.writeControlsDisabled) this.setData({ sheet: { kind: "pitch-picker", title: "选择物理场地", groups: groupsFor(this.data.pitches), selectedPitchId: this.data.selectedPitch?.id } }); },
-  onSelectPitch(event: DatasetEvent) { const pitchId = event.currentTarget?.dataset?.pitchId; if (typeof pitchId === "string" && pitchId !== this.data.selectedPitch?.id) void this.selectAndLoad(pitchId, this.data.selectedDate); },
+  onSelectPitch(event: DatasetEvent) { const pitchId = event.currentTarget?.dataset?.pitchId; if (this.data.mode !== "save-result-unknown" && typeof pitchId === "string" && pitchId !== this.data.selectedPitch?.id) void this.selectAndLoad(pitchId, this.data.selectedDate); },
   onOpenCalendar() {
-    const { startDate, endDate } = this.data.availabilityWindow; if (!startDate) return;
+    const { startDate, endDate } = this.data.availabilityWindow; if (!startDate || this.data.mode === "save-result-unknown") return;
     this.setData({ pendingDate: this.data.selectedDate, sheet: { kind: "calendar", title: "更多日期", days: calendarFor(this.data.selectedDate, startDate, endDate), pendingLabel: dateLabel(this.data.selectedDate) } });
   },
   onSelectDate(event: DatasetEvent) {
+    if (this.data.mode === "save-result-unknown") return;
     const date = event.currentTarget?.dataset?.date; if (typeof date !== "string" || date < this.data.availabilityWindow.startDate || date > this.data.availabilityWindow.endDate) return;
     if (this.data.sheet?.kind === "calendar") this.setData({ pendingDate: date, sheet: { ...this.data.sheet, pendingLabel: dateLabel(date), days: (this.data.sheet.days ?? []).map((day) => ({ ...day, selected: day.iso === date })) } });
     else if (date !== this.data.selectedDate) void this.selectAndLoad(this.data.selectedPitch?.id, date);
   },
-  onConfirmDate() { if (this.data.pendingDate) void this.selectAndLoad(this.data.selectedPitch?.id, this.data.pendingDate); },
+  onConfirmDate() { if (this.data.mode !== "save-result-unknown" && this.data.pendingDate) void this.selectAndLoad(this.data.selectedPitch?.id, this.data.pendingDate); },
 
   onOpenCreate() {
     if (this.data.pageAction.disabled || !this.data.selectedPitch) return;
@@ -125,7 +127,7 @@ Page({
   onPriceInput(event: ValueEvent) { this.updateDraft("price", event.detail?.value); },
   onStatusSelect(event: DatasetEvent) { this.updateDraft("status", event.currentTarget?.dataset?.status); },
   updateDraft(field: string, value: unknown) { if (!this.data.editor || typeof value !== "string" || this.mutationInFlight) return; const draft = { ...this.data.editor.draft, [field]: value }; this.setData({ editor: { ...this.data.editor, draft, fieldError: "", contextChips: [...this.data.editor.contextChips.slice(0, 3), `${draft.startTime}–${draft.endTime}`] } }); },
-  onCloseOverlay() { if (!this.mutationInFlight) this.setData({ sheet: null, editor: null, statusMessage: "" }); },
+  onCloseOverlay() { if (!this.mutationInFlight && this.data.mode !== "save-result-unknown") this.setData({ sheet: null, editor: null, statusMessage: "" }); },
 
   async onSaveSlot() {
     const editor = this.data.editor; const pitch = this.data.selectedPitch; if (!editor || !pitch || this.mutationInFlight) return;
@@ -146,14 +148,14 @@ Page({
     if (this.data.editor) this.setData({ mode: "saving", editor: { ...this.data.editor, saveDisabled: true, closeDisabled: true, saveLabel: "正在保存" }, statusMessage: "正在保存时段" });
     try {
       const saved = attempt.kind === "create" ? await getInventoryDataSource().createSlot(attempt) : await getInventoryDataSource().updateSlot(attempt);
-      getInventoryMutationAttemptStore()?.clear(); this.setData({ editor: null, statusMessage: "", mode: "ready" });
+      getInventoryMutationAttemptStore()?.clear(); this.setData({ editor: null, statusMessage: "", mode: "ready", writeControlsDisabled: false, pageAction: { disabled: false } });
       const slots = this.data.slots.filter(({ id }) => id !== saved.id).concat(slotView(saved)).sort((a, b) => a.startTime.localeCompare(b.startTime)); this.setData({ slots, slotCount: slots.length });
     } catch (caught) {
       const code = (caught as PageError).code;
-      if (code === "INVENTORY_RESULT_UNKNOWN") this.setData({ mode: "save-result-unknown", statusMessage: "保存结果正在确认，请使用原操作重试", editor: this.data.editor ? { ...this.data.editor, saveDisabled: true, closeDisabled: true, saveLabel: "等待确认" } : null });
+      if (code === "INVENTORY_RESULT_UNKNOWN") this.setData({ mode: "save-result-unknown", statusMessage: "保存结果正在确认，请使用原操作重试", writeControlsDisabled: true, pageAction: { disabled: true }, editor: this.data.editor ? { ...this.data.editor, saveDisabled: true, closeDisabled: true, saveLabel: "等待确认" } : null });
       else if (code === "INVENTORY_FORBIDDEN") { getInventoryMutationAttemptStore()?.clear(); this.handleReadError(caught, false); }
       else if (code === "SLOT_TIME_CONFLICT") this.setData({ mode: "ready", editor: this.data.editor ? { ...this.data.editor, saveDisabled: false, closeDisabled: false, saveLabel: "重新保存", fieldError: "与已有时段冲突，请调整时间" } : null, statusMessage: "" });
-      else if (code === "INVENTORY_VERSION_CONFLICT" || code === "INVENTORY_SLOT_READ_ONLY") { getInventoryMutationAttemptStore()?.clear(); this.setData({ editor: null, mode: "partial-error", statusMessage: "该时段状态已变化，已重新读取库存", recoveryLabel: "重试" }); void this.onRetryRead(); }
+      else if (code === "INVENTORY_VERSION_CONFLICT" || code === "INVENTORY_SLOT_READ_ONLY") { getInventoryMutationAttemptStore()?.clear(); this.setData({ editor: null }); await this.onRetryRead(); if (this.data.mode === "ready" || this.data.mode === "empty") this.setData({ statusMessage: "该时段状态已变化，已重新读取库存", recoveryLabel: "" }); }
       else { getInventoryMutationAttemptStore()?.clear(); this.setData({ mode: "ready", editor: this.data.editor ? { ...this.data.editor, saveDisabled: false, closeDisabled: false, saveLabel: "重新保存", fieldError: code === "INVALID_ARGUMENT" ? "请检查输入内容" : "保存失败，请重试" } : null, statusMessage: "" }); }
     } finally { this.mutationInFlight = false; }
   },

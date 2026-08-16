@@ -43,6 +43,39 @@ test("loads authority data and renders the approved inventory structure", async 
   expect(page.data.week).toHaveLength(7);
 });
 
+test("uses the Shanghai calendar date when no explicit inventory date is supplied", async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date("2026-08-15T17:38:00Z"));
+  try {
+    const source = sourceHarness();
+    source.getDay.mockImplementation(async (_venueId, _pitchId, localDate) => day(pitchA, localDate));
+    registerInventoryDataSource(source);
+    const page = loadPage(); await page.onLoad({ venue_id: venueId });
+    expect(source.getDay).toHaveBeenCalledWith(venueId, undefined, "2026-08-16");
+    expect(page.data).toMatchObject({ mode: "ready", selectedDate: "2026-08-16", selectedPitch: { id: pitchA.id } });
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("keeps an initial read failure in the full error state without an empty pitch shell", async () => {
+  const source = sourceHarness();
+  source.getDay.mockRejectedValueOnce(Object.assign(new Error("invalid local date"), { code: "INVALID_ARGUMENT" }));
+  registerInventoryDataSource(source);
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-15" });
+  expect(page.data).toMatchObject({ mode: "load-error", statusMessage: "库存加载失败，请重试", recoveryLabel: "重试", selectedPitch: null, pageAction: { disabled: true } });
+  const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
+  expect(markup).toContain("mode === 'initial-loading' || mode === 'load-error'");
+});
+
+test("shows a first-load permission failure as a complete non-retryable error state", async () => {
+  const source = sourceHarness();
+  source.getDay.mockRejectedValueOnce(Object.assign(new Error("forbidden"), { code: "INVENTORY_FORBIDDEN" }));
+  registerInventoryDataSource(source);
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-16" });
+  expect(page.data).toMatchObject({ mode: "load-error", statusMessage: "当前账号没有该场馆的库存管理权限", recoveryLabel: "", writeControlsDisabled: true, pageAction: { disabled: true } });
+});
+
 test("drops stale pitch/date responses and keeps the latest tuple", async () => {
   const first = deferred<ReturnType<typeof day>>(); const second = deferred<ReturnType<typeof day>>();
   const source = sourceHarness(); (source as any).getDay = jest.fn<(...args: any[]) => any>().mockResolvedValueOnce(day()).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -69,6 +102,22 @@ test("creates from real inputs, persists unknown attempts, and retries the same 
   expect(store.clear).toHaveBeenCalled(); expect(page.data.editor).toBeNull();
 });
 
+test("locks navigation, selection, and dismissal while a saved result is unknown", async () => {
+  const source = sourceHarness(); source.createSlot.mockRejectedValueOnce(Object.assign(new Error(), { code: "INVENTORY_RESULT_UNKNOWN" }));
+  registerInventoryDataSource(source);
+  let saved: any; registerInventoryMutationAttemptStore({ load: () => saved ?? null, save: jest.fn((value: any) => { saved = structuredClone(value); }), clear: jest.fn() });
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  page.onOpenCreate(); await page.onSaveSlot();
+  const editor = page.data.editor; const selectedDate = page.data.selectedDate; const selectedPitchId = page.data.selectedPitch.id;
+
+  page.onBack(); page.onOpenCalendar(); page.onOpenPitchPicker(); page.onSelectDate({ currentTarget: { dataset: { date: "2026-08-12" } } });
+  page.onSelectPitch({ currentTarget: { dataset: { pitchId: pitchB.id } } }); page.onCloseOverlay();
+
+  expect(wx.navigateBack).not.toHaveBeenCalled();
+  expect(page.data).toMatchObject({ mode: "save-result-unknown", selectedDate, selectedPitch: { id: selectedPitchId }, sheet: null, editor });
+  expect(source.getDay).toHaveBeenCalledTimes(1);
+});
+
 test("edits price/status and permission failure disables every write control", async () => {
   const source = sourceHarness();
   (source as any).updateSlot = jest.fn<(...args: any[]) => any>().mockResolvedValueOnce({ ...slot, status: "CLOSED", priceCents: 28000, checkoutVersion: 13 });
@@ -86,6 +135,69 @@ test("production markup has real handlers and no preview-only controls", () => {
   const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
   expect(markup).not.toContain("仅视觉预览"); expect(markup).not.toContain("onPreview");
   for (const handler of ["onBack", "onOpenCalendar", "onSelectDate", "onConfirmDate", "onOpenPitchPicker", "onSelectPitch", "onSlotTap", "onOpenCreate", "onStartTimeChange", "onEndTimeChange", "onPriceInput", "onStatusSelect", "onCloseOverlay", "onSaveSlot", "onRetryRead", "onRetryMutation"]) expect(markup).toContain(handler);
+});
+
+test("covers back, pitch picker, calendar, close, and initial retry controls", async () => {
+  const source = sourceHarness();
+  source.getDay.mockRejectedValueOnce(Object.assign(new Error(), { code: "SERVICE_UNAVAILABLE" })).mockImplementation(async (_venueId, pitchId, localDate) => day(pitchId === pitchB.id ? pitchB : pitchA, localDate));
+  registerInventoryDataSource(source);
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  expect(page.data.mode).toBe("load-error"); await page.onRetryRead(); expect(page.data.mode).toBe("ready");
+  page.onBack(); expect(wx.navigateBack).toHaveBeenCalled();
+
+  page.onOpenPitchPicker(); expect(page.data.sheet).toMatchObject({ kind: "pitch-picker", selectedPitchId: pitchA.id });
+  page.onCloseOverlay(); expect(page.data.sheet).toBeNull();
+  page.onOpenPitchPicker(); page.onSelectPitch({ currentTarget: { dataset: { pitchId: pitchB.id } } }); await Promise.resolve(); await Promise.resolve();
+  expect(page.data.selectedPitch).toMatchObject({ id: pitchB.id });
+
+  page.onOpenCalendar(); expect(page.data.sheet).toMatchObject({ kind: "calendar", pendingLabel: "8月11日 周二" });
+  page.onSelectDate({ currentTarget: { dataset: { date: "2026-08-12" } } }); expect(page.data.pendingDate).toBe("2026-08-12");
+  page.onConfirmDate(); await Promise.resolve(); await Promise.resolve(); expect(page.data.selectedDate).toBe("2026-08-12");
+});
+
+test("covers add, validation, cancel, editable and read-only slot controls", async () => {
+  const source = sourceHarness(); registerInventoryDataSource(source); registerInventoryMutationAttemptStore({ load: () => null, save: jest.fn(), clear: jest.fn() });
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  page.onOpenCreate(); expect(page.data.editor).toMatchObject({ mode: "create", saveLabel: "新增并开放" });
+  page.onStartTimeChange({ detail: { value: "11:00" } }); page.onEndTimeChange({ detail: { value: "10:30" } }); await page.onSaveSlot();
+  expect(page.data.editor.fieldError).toContain("请检查时间和价格"); expect(source.createSlot).not.toHaveBeenCalled();
+  page.onCloseOverlay(); expect(page.data.editor).toBeNull();
+
+  page.onSlotTap({ currentTarget: { dataset: { slotId: slot.id } } }); expect(page.data.editor).toMatchObject({ mode: "edit", timeReadOnly: true });
+  page.onStatusSelect({ currentTarget: { dataset: { status: "CLOSED" } } }); expect(page.data.editor.draft.status).toBe("CLOSED");
+  page.onCloseOverlay();
+  page.setData({ slots: [{ ...page.data.slots[0], editable: false }] }); page.onSlotTap({ currentTarget: { dataset: { slotId: slot.id } } }); expect(page.data.editor).toBeNull();
+});
+
+test("keeps retry visible when an unknown persisted update cannot rebuild its editor", async () => {
+  const missingAttempt = { kind: "update" as const, venueId, slotId: "00000000-0000-4000-8000-000000000099", body: { expectedCheckoutVersion: 2, priceCents: 22000, status: "AVAILABLE" as const }, idempotencyKey: "inventory-missing-slot-key" };
+  const source = sourceHarness(); source.updateSlot.mockRejectedValueOnce(Object.assign(new Error(), { code: "INVENTORY_RESULT_UNKNOWN" }));
+  registerInventoryDataSource(source); registerInventoryMutationAttemptStore({ load: () => missingAttempt, save: jest.fn(), clear: jest.fn() });
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  expect(page.data).toMatchObject({ mode: "save-result-unknown", editor: null, statusMessage: "保存结果正在确认，请使用原操作重试" });
+  const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
+  expect(markup).toContain("mode === 'save-result-unknown' && !editor"); expect(markup).toContain('bindtap="onRetryMutation"');
+});
+
+test("shows conflict feedback after the authoritative inventory refresh completes", async () => {
+  const source = sourceHarness(); source.updateSlot.mockRejectedValueOnce(Object.assign(new Error(), { code: "INVENTORY_VERSION_CONFLICT" }));
+  registerInventoryDataSource(source); registerInventoryMutationAttemptStore({ load: () => null, save: jest.fn(), clear: jest.fn() });
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  page.onSlotTap({ currentTarget: { dataset: { slotId: slot.id } } }); await page.onSaveSlot();
+  expect(source.getDay).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({ mode: "ready", editor: null, statusMessage: "该时段状态已变化，已重新读取库存" });
+});
+
+test("keeps editable input for time conflicts and ordinary save failures", async () => {
+  const source = sourceHarness(); source.createSlot
+    .mockRejectedValueOnce(Object.assign(new Error(), { code: "SLOT_TIME_CONFLICT" }))
+    .mockRejectedValueOnce(Object.assign(new Error(), { code: "SERVICE_UNAVAILABLE" }));
+  registerInventoryDataSource(source); registerInventoryMutationAttemptStore({ load: () => null, save: jest.fn(), clear: jest.fn() });
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  page.onOpenCreate(); await page.onSaveSlot();
+  expect(page.data.editor).toMatchObject({ saveLabel: "重新保存", saveDisabled: false, closeDisabled: false, fieldError: "与已有时段冲突，请调整时间" });
+  await page.onSaveSlot();
+  expect(page.data.editor).toMatchObject({ saveLabel: "重新保存", saveDisabled: false, closeDisabled: false, fieldError: "保存失败，请重试" });
 });
 
 function sourceHarness(): jest.Mocked<InventoryDataSource> {

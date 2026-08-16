@@ -165,6 +165,7 @@ test("venue pitch setup and inventory v2 manifests freeze shared identity, entry
   });
   assert.deepEqual({ ...inventory, id: undefined, states: undefined, authority: undefined, default_selection: undefined, date_window: undefined, picker_pitches: undefined }, {
     ...sharedFields,
+    route: "pages/venue-inventory/index",
     reference_gate: "reference-approved-native-approved",
     native_gate: "native-approved",
     fixture: { ...sharedFields.fixture, planned_path: "miniprogram/dev/venue-inventory-fixture.ts" },

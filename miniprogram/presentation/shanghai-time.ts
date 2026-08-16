@@ -9,6 +9,11 @@ interface ShanghaiParts {
   readonly minute: number;
 }
 
+export function formatShanghaiLocalDate(instant: Date): string {
+  const shifted = new Date(instant.getTime() + SHANGHAI_UTC_OFFSET_MS);
+  return `${shifted.getUTCFullYear()}-${two(shifted.getUTCMonth() + 1)}-${two(shifted.getUTCDate())}`;
+}
+
 export function formatShanghaiDateLabel(instant: string): string {
   const value = shanghaiParts(instant);
   return `${value.month}月${value.day}日 ${value.weekday}`;
