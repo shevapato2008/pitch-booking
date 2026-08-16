@@ -133,8 +133,10 @@ test("edits price/status and permission failure disables every write control", a
 
 test("production markup has real handlers and no preview-only controls", () => {
   const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/venue-inventory/index.wxss", "utf8");
   expect(markup).not.toContain("仅视觉预览"); expect(markup).not.toContain("onPreview");
   for (const handler of ["onBack", "onOpenCalendar", "onSelectDate", "onConfirmDate", "onOpenPitchPicker", "onSelectPitch", "onSlotTap", "onOpenCreate", "onStartTimeChange", "onEndTimeChange", "onPriceInput", "onStatusSelect", "onCloseOverlay", "onSaveSlot", "onRetryRead", "onRetryMutation"]) expect(markup).toContain(handler);
+  expect(styles).toMatch(/\.calendar-day\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
 });
 
 test("covers back, pitch picker, calendar, close, and initial retry controls", async () => {
@@ -192,12 +194,26 @@ test("keeps editable input for time conflicts and ordinary save failures", async
   const source = sourceHarness(); source.createSlot
     .mockRejectedValueOnce(Object.assign(new Error(), { code: "SLOT_TIME_CONFLICT" }))
     .mockRejectedValueOnce(Object.assign(new Error(), { code: "SERVICE_UNAVAILABLE" }));
+  const store = { load: () => null, save: jest.fn(), clear: jest.fn() };
+  registerInventoryDataSource(source); registerInventoryMutationAttemptStore(store);
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
+  page.onOpenCreate(); await page.onSaveSlot();
+  expect(page.data.editor).toMatchObject({ saveLabel: "重新保存", saveDisabled: false, closeDisabled: false, fieldError: "09:30–11:00 与已有时段重叠，请调整开始或结束时间" });
+  expect(store.clear).toHaveBeenCalledTimes(1);
+  await page.onSaveSlot();
+  expect(page.data.editor).toMatchObject({ saveLabel: "重新保存", saveDisabled: false, closeDisabled: false, fieldError: "保存失败，请重试" });
+});
+
+test("explains a rejected past start time instead of showing a generic input error", async () => {
+  const source = sourceHarness(); source.createSlot.mockRejectedValueOnce(Object.assign(new Error(), { code: "INVALID_ARGUMENT" }));
   registerInventoryDataSource(source); registerInventoryMutationAttemptStore({ load: () => null, save: jest.fn(), clear: jest.fn() });
   const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-11" });
   page.onOpenCreate(); await page.onSaveSlot();
-  expect(page.data.editor).toMatchObject({ saveLabel: "重新保存", saveDisabled: false, closeDisabled: false, fieldError: "与已有时段冲突，请调整时间" });
-  await page.onSaveSlot();
-  expect(page.data.editor).toMatchObject({ saveLabel: "重新保存", saveDisabled: false, closeDisabled: false, fieldError: "保存失败，请重试" });
+  expect(page.data.editor).toMatchObject({
+    saveLabel: "重新保存",
+    saveDisabled: false,
+    fieldError: "09:30 已经开始，请选择当前时间之后的开始时间",
+  });
 });
 
 function sourceHarness(): jest.Mocked<InventoryDataSource> {

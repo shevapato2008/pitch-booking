@@ -154,9 +154,19 @@ Page({
       const code = (caught as PageError).code;
       if (code === "INVENTORY_RESULT_UNKNOWN") this.setData({ mode: "save-result-unknown", statusMessage: "保存结果正在确认，请使用原操作重试", writeControlsDisabled: true, pageAction: { disabled: true }, editor: this.data.editor ? { ...this.data.editor, saveDisabled: true, closeDisabled: true, saveLabel: "等待确认" } : null });
       else if (code === "INVENTORY_FORBIDDEN") { getInventoryMutationAttemptStore()?.clear(); this.handleReadError(caught, false); }
-      else if (code === "SLOT_TIME_CONFLICT") this.setData({ mode: "ready", editor: this.data.editor ? { ...this.data.editor, saveDisabled: false, closeDisabled: false, saveLabel: "重新保存", fieldError: "与已有时段冲突，请调整时间" } : null, statusMessage: "" });
+      else if (code === "SLOT_TIME_CONFLICT") {
+        getInventoryMutationAttemptStore()?.clear();
+        const interval = attempt.kind === "create" ? `${attempt.body.startTime}–${attempt.body.endTime}` : "当前时段";
+        this.setData({ mode: "ready", editor: this.data.editor ? { ...this.data.editor, saveDisabled: false, closeDisabled: false, saveLabel: "重新保存", fieldError: `${interval} 与已有时段重叠，请调整开始或结束时间` } : null, statusMessage: "" });
+      }
       else if (code === "INVENTORY_VERSION_CONFLICT" || code === "INVENTORY_SLOT_READ_ONLY") { getInventoryMutationAttemptStore()?.clear(); this.setData({ editor: null }); await this.onRetryRead(); if (this.data.mode === "ready" || this.data.mode === "empty") this.setData({ statusMessage: "该时段状态已变化，已重新读取库存", recoveryLabel: "" }); }
-      else { getInventoryMutationAttemptStore()?.clear(); this.setData({ mode: "ready", editor: this.data.editor ? { ...this.data.editor, saveDisabled: false, closeDisabled: false, saveLabel: "重新保存", fieldError: code === "INVALID_ARGUMENT" ? "请检查输入内容" : "保存失败，请重试" } : null, statusMessage: "" }); }
+      else {
+        getInventoryMutationAttemptStore()?.clear();
+        const fieldError = code === "INVALID_ARGUMENT"
+          ? attempt.kind === "create" ? `${attempt.body.startTime} 已经开始，请选择当前时间之后的开始时间` : "价格无效，请重新输入"
+          : "保存失败，请重试";
+        this.setData({ mode: "ready", editor: this.data.editor ? { ...this.data.editor, saveDisabled: false, closeDisabled: false, saveLabel: "重新保存", fieldError } : null, statusMessage: "" });
+      }
     } finally { this.mutationInFlight = false; }
   },
   onRetryMutation() { const attempt = getInventoryMutationAttemptStore()?.load(); if (attempt && !this.mutationInFlight) return this.runMutation(attempt); },

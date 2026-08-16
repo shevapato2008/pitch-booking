@@ -70,7 +70,7 @@ button::after { border: 0; }
 .pitch-option--selected { border-color: #38bdf8; background: #f0faff; color: #0369a1; }
 .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
 .calendar-weekdays { margin-top: 22rpx; color: #718397; font-size: 21rpx; text-align: center; }
-.calendar-day { min-height: 88rpx; border-radius: 18rpx; font-size: 24rpx; }
+.calendar-day { display: flex; min-height: 88rpx; align-items: center; justify-content: center; border-radius: 18rpx; font-size: 24rpx; }
 .calendar-day[disabled] { color: #c3ced8; }
 .calendar-day--selected { background: #087dad; color: #fff; }
 .calendar-pending { min-height: 72rpx; margin: 12rpx 0; color: #5f7388; font-size: 23rpx; }
