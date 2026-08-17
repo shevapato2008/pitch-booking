@@ -9,6 +9,7 @@ This is a development-only static Fixture. Every local decision is reset on relo
 - Runtime: plain HTML/CSS/JavaScript served from a temporary `127.0.0.1` static server.
 - Browser: real Chromium driven through Playwright CLI.
 - Viewport: exactly `1440 × 900` CSS pixels for every source capture.
+- Layout evidence: `browser-layout-1440x900.json` records live `getBoundingClientRect()` values for `#frame` and its rendered root in all six states, tied to the current reference source SHA-256. Both bounds are `1440 × 900` in every state.
 - Browser console after the interaction audit: `0 errors, 0 warnings`.
 - Reference: `artifacts/ui/reference/platform-onboarding/index.html?case=<state>`.
 - Implementation: `platform-admin/dev/index.html?case=<state>`.
@@ -25,6 +26,8 @@ Each state has the same five files:
 ```
 
 Captured states: `login`, `pending`, `approved`, `rejected`, `expired-evidence-link`, and `decision-error`.
+
+The source and all comparison images were recaptured after explicitly sizing reference `#frame` to the full fixed viewport. The earlier captures with auto-height reference roots were overwritten and are not retained as valid comparison evidence.
 
 ## Button and control matrix
 
@@ -60,6 +63,7 @@ The 50% overlay and pixel difference show the expected density and component-pla
 - Repeated queue rows, evidence rows, status badges, document marks, and decision cards align consistently.
 - Native select arrows, status marks, modal scrim, and the close `×` remain complete and visible.
 - No target-viewport clipping, horizontal scroll, hidden decision footer, or content-under-fixed-element issue was observed.
+- The reference root and first rendered child reach the bottom of the `1440 × 900` viewport in every state; no blank lower-viewport region remains.
 - Claim detail shows only the existing target venue; create detail shows only proposed identity, district, address, and coordinates.
 - Login, pending, approved, rejected, expired evidence, and decision error copy is truthful and paired with visible recovery or audit information.
 - Keyboard focus rings are visible, form labels are associated, the error is adjacent to its field, and reduced-motion styling is present.

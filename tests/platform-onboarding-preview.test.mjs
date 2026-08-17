@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
 const previewRoot = "platform-admin/dev";
 const referencePath = "artifacts/ui/reference/platform-onboarding/index.html";
+const reviewRoot = "artifacts/ui/reviews/platform-onboarding";
+const layoutEvidencePath = `${reviewRoot}/browser-layout-1440x900.json`;
 
 const read = (relativePath) => readFileSync(relativePath, "utf8");
 const normalizeRealm = (value) => JSON.parse(JSON.stringify(value));
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const pngDimensions = (relativePath) => {
+  const png = readFileSync(relativePath);
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${relativePath} PNG signature`);
+  assert.equal(png.subarray(12, 16).toString("ascii"), "IHDR", `${relativePath} IHDR`);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+};
 
 const loadPreviewModel = () => {
   const context = vm.createContext({ console });
@@ -44,6 +54,25 @@ test("reference freezes login and every review presentation at 1440 by 900", () 
   assert.match(reference, /width:\s*1440px/);
   assert.match(reference, /height:\s*900px/);
   assert.match(reference, /<link rel="icon" href="data:,"/);
+});
+
+test("real Chromium evidence proves every reference root fills the 1440 by 900 capture", () => {
+  const reference = read(referencePath);
+  const evidence = JSON.parse(read(layoutEvidencePath));
+  const states = ["login", "pending", "approved", "rejected", "expired-evidence-link", "decision-error"];
+
+  assert.deepEqual(evidence.viewport, { width: 1440, height: 900 });
+  assert.equal(evidence.referenceSha256, sha256(reference), "browser measurements must match the current reference source");
+
+  for (const state of states) {
+    assert.deepEqual(evidence.states[state].frame, { width: 1440, height: 900 }, `${state} #frame browser bounds`);
+    assert.deepEqual(evidence.states[state].renderedRoot, { width: 1440, height: 900 }, `${state} rendered root browser bounds`);
+    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-reference-1440x900.png`), { width: 1440, height: 900 });
+    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-implementation-1440x900.png`), { width: 1440, height: 900 });
+    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-side-by-side-1440x900.png`), { width: 2880, height: 900 });
+    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-overlay-50-1440x900.png`), { width: 1440, height: 900 });
+    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-difference-1440x900.png`), { width: 1440, height: 900 });
+  }
 });
 
 test("preview exposes the frozen queue, detail, evidence, and decision semantics", () => {

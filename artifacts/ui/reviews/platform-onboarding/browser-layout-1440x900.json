@@ -1,0 +1,35 @@
+{
+  "capturedAt": "2026-08-17T07:51:00Z",
+  "browser": "Chromium via Playwright CLI",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "referenceSha256": "0c2d65befb6205e051de7e108aa0fa52dc2ec5914c6b470d3d910d6f981a4f6e",
+  "states": {
+    "login": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "pending": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "approved": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "rejected": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "expired-evidence-link": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "decision-error": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    }
+  }
+}
