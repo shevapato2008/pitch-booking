@@ -6,8 +6,8 @@
 - Target viewport: 375 × 812.
 - Static reference: [six named frames](../../reference/venue-onboarding/index.html).
 - Source verification: GREEN; development build: GREEN.
-- Real WeChat runtime capture: blocked. `WECHAT_DEVTOOLS_CLI` is not configured as an absolute executable path, so WeChat DevTools automation cannot open `dist/miniprogram-development` and capture native pages.
-- Visual approval: pending real-runtime capture and user review. No browser reference image is presented as an implementation screenshot.
+- Real WeChat runtime capture: GREEN. WeChat DevTools CLI opened `dist/miniprogram-development` and captured the six named native pages at 375 × 812 CSS pixels (750 × 1624 physical pixels).
+- Visual approval: pending user review. Reference and implementation images remain labeled separately.
 
 ## Preview routes and required states
 
@@ -56,7 +56,10 @@ GREEN, after implementation:
 
 ```text
 node --test tests/venue-onboarding-native-preview.test.mjs
-7 passed, 0 failed
+13 passed, 0 failed
+
+npx jest miniprogram/dev/pages/venue-profile/index.test.ts miniprogram/dev/pages/venue-profile-public/index.test.ts --runInBand
+24 passed, 0 failed
 
 npm run build:miniprogram:development
 Built development mini program at dist/miniprogram-development
@@ -64,12 +67,21 @@ Built development mini program at dist/miniprogram-development
 
 The first build attempt found a missing local `miniprogram-api-typings` install. One proportional recovery (`npm ci --offline`) restored the lockfile dependencies; the next build passed.
 
-Native capture check:
+Native capture check and capture:
 
 ```text
-npm run env:wechat:check -- --port 9420
-WECHAT_CLI_INVALID — WeChat DevTools CLI must be an absolute executable file
+WECHAT_DEVTOOLS_CLI=/Applications/wechatwebdevtools.app/Contents/MacOS/cli \
+  npm run env:wechat:check -- --port 40842
+ok: true; version: 2.01.2510290; automation enabled
+
+miniprogram-automator launch dist/miniprogram-development
+six implementation PNGs captured at 750 × 1624 physical pixels
 ```
+
+Each state has a reference image, native implementation image, side-by-side image,
+50% overlay, and absolute difference image in this directory. The browser reference
+was captured at 375 × 812 CSS pixels and scaled 2× only to match the native raster
+dimensions before comparison.
 
 ## Focused self-review
 
@@ -79,6 +91,8 @@ WECHAT_CLI_INVALID — WeChat DevTools CLI must be an absolute executable file
 - Repeated elements: venue cards, evidence rows, status summaries, action sizes, border radii, and text columns are consistent within each group.
 - Icons and clipping: back and chevron marks are CSS line icons with fixed bounding boxes; long venue/file text uses ellipsis where needed. No emoji structural icons or external raster assets were introduced.
 - State truthfulness: submit results say “视觉预览，不会提交”; submitted copy says approval is pending and grants nothing; rejected copy names the reason and returns to editing; failed evidence identifies the file/item and exposes retry.
-- Remaining visual gap: without the configured WeChat CLI, implementation screenshots, side-by-side, 50% overlay, and difference images cannot be produced or manually reviewed in the target native runtime. Those four evidence columns remain intentionally absent rather than fabricated.
+- Same-size comparison: all six reference/implementation pairs were reviewed as side-by-side, 50% overlay, and difference images. The native implementation intentionally adds the real capsule-safe back affordance, slightly roomier form rows, and explicit guidance around claim/create actions; these are the principal geometric differences from the compact static reference.
+- Target runtime check: no clipped headings, off-center button labels, footer overlap, or unsafe bottom spacing was found. Ready/create and evidence pages scroll behind a fixed safe-area footer as intended.
+- State semantics: upload failure stays scoped to the named material; submitted and rejected states show immutable or retry behavior without implying that a venue or permission already exists.
 
 The known baseline failure in `tests/venue-access-native-preview.test.mjs` was not run or modified; its stale `/venue-access|dev/` production-manifest regex is outside this task.
