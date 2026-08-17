@@ -641,9 +641,25 @@ def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone
     }
     assert set(create_evidence["properties"]) == set(create_evidence["required"])
 
+    claim_request = schemas["SubmitVenueClaim"]
+    assert set(claim_request["required"]) == {
+        "venue_id",
+        "contact_name",
+        "evidence",
+    }
+    assert set(claim_request["properties"]) == {
+        "venue_id",
+        "contact_name",
+        "evidence",
+    }
     for name in ("SubmitVenueClaim", "SubmitVenueCreate"):
         request = schemas[name]
         assert request["additionalProperties"] is False
+        assert request["properties"]["contact_name"] == {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+        }
         assert "phone" not in request["properties"]
         assert "phone" not in request.get("required", [])
         assert "verified phone" in request["description"].lower()
@@ -670,6 +686,83 @@ def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone
     applications = schemas["VenueOnboardingApplications"]
     assert applications["additionalProperties"] is False
     assert set(applications["required"]) == {"items", "next_cursor"}
+
+
+def test_venue_create_request_requires_authoritative_location() -> None:
+    contract = _contract()
+    request = contract["components"]["schemas"]["SubmitVenueCreate"]
+    expected_fields = {
+        "name",
+        "address",
+        "district_code",
+        "district_name",
+        "latitude",
+        "longitude",
+        "contact_name",
+        "evidence",
+    }
+    assert set(request["required"]) == expected_fields
+    assert set(request["properties"]) == expected_fields
+    assert request["properties"]["district_code"] == {
+        "type": "string",
+        "pattern": "^[0-9]{6}$",
+    }
+    assert request["properties"]["district_name"] == {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120,
+    }
+    assert request["properties"]["latitude"] == {
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90,
+    }
+    assert request["properties"]["longitude"] == {
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180,
+    }
+
+    value = {
+        "name": "前滩社区足球场",
+        "address": "前滩大道88号",
+        "district_code": "310115",
+        "district_name": "浦东新区",
+        "latitude": 31.152,
+        "longitude": 121.507,
+        "contact_name": "张三",
+        "evidence": {
+            "BUSINESS_LICENSE": "3e096d1f-e847-45aa-81e8-358886b87f3a",
+            "MANAGEMENT_AUTHORIZATION": "b722736c-bc48-4312-9c18-12f44dbc062f",
+            "VENUE_EXTERIOR": "10b305df-c2e8-4bc9-b2d5-9dc92c07a865",
+            "VENUE_INTERIOR": "24aa9cc2-2de8-48d6-80ea-11bb5a190fbf",
+        },
+    }
+    validator = Draft202012Validator(contract).evolve(schema=request)
+    assert validator.is_valid(value)
+
+    for field in (
+        "district_code",
+        "district_name",
+        "latitude",
+        "longitude",
+        "contact_name",
+    ):
+        without_field = {
+            key: item for key, item in value.items() if key != field
+        }
+        assert not validator.is_valid(without_field)
+    for field, invalid in (
+        ("district_code", "31015"),
+        ("district_name", ""),
+        ("latitude", -90.01),
+        ("latitude", 90.01),
+        ("longitude", -180.01),
+        ("longitude", 180.01),
+        ("contact_name", ""),
+        ("contact_name", "甲" * 41),
+    ):
+        assert not validator.is_valid({**value, field: invalid})
 
 
 def test_venue_onboarding_errors_and_examples_are_closed_and_non_disclosing() -> None:
