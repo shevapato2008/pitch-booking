@@ -83,6 +83,10 @@ test("only a rejected application opens its fresh retry journey", () => {
   expect(wx.navigateTo).not.toHaveBeenCalled();
   target.onOpenApplication({ currentTarget: { dataset: { applicationId: "51479910-178f-43ba-941a-93c1aa8247f8", kind: "CREATE", status: "REJECTED" } } });
   expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/pages/venue-create/index?application_id=51479910-178f-43ba-941a-93c1aa8247f8" });
+  const markup = readFileSync("miniprogram/pages/venue-access/index.wxml", "utf8");
+  expect(markup).toContain("修改并重新申请");
+  expect(markup).toMatch(/<button wx:if="\{\{item\.status === 'REJECTED'\}\}"[^>]*bindtap="onOpenApplication"/);
+  expect(markup).toMatch(/<view wx:else class="venue-access__application"/);
 });
 
 test("a failed read remains distinct from empty and retries into the loaded state", async () => {

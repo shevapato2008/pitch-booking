@@ -10,6 +10,7 @@ import {
   createOnboardingIdempotencyKey,
   getVenueOnboardingDataSource,
   getVenueOnboardingEvidenceCapability,
+  getVenueOnboardingEvidenceCapabilityOrUndefined,
   type VenueOnboardingLocalEvidence,
 } from "../../services/venue-onboarding";
 
@@ -70,7 +71,10 @@ Page({
     }
   },
 
-  onUnload() { this.disposed = true; },
+  onUnload() {
+    this.disposed = true;
+    getVenueOnboardingEvidenceCapabilityOrUndefined()?.abortAll?.();
+  },
   onBack() { returnToPortfolio(); },
 
   onSearchInput(event: TextInputEvent) {
@@ -139,6 +143,7 @@ Page({
       };
       await this.uploadEvidence(kind);
     } catch {
+      if (this.disposed) return;
       if (this.evidenceFiles[kind]) this.setData({ notice: "未选择新材料，原材料保持不变" });
       else this.markEvidenceError(kind, "未选择材料，请重新选择", "reselect");
     }
@@ -166,14 +171,18 @@ Page({
     try {
       const source = getVenueOnboardingDataSource();
       const intent = await source.createUploadIntent(kind, attempt.intentKey);
+      if (this.disposed) return;
       if (!intent.acceptedMimeTypes.includes(file.mimeType)) throw new Error("INVALID_MIME");
       if (file.byteSize > intent.maximumBytes) throw new Error("TOO_LARGE");
       if (Date.parse(intent.postPolicy.expiresAt) <= Date.now()) throw new Error("POLICY_EXPIRED");
       await getVenueOnboardingEvidenceCapability().upload(file, intent);
+      if (this.disposed) return;
       await source.completeEvidence(intent.evidenceId, attempt.completeKey);
+      if (this.disposed) return;
       this.patchEvidence(kind, { status: "completed", fileName: file.filename, evidenceId: intent.evidenceId, errorMessage: undefined, retryMode: undefined });
       this.setData({ notice: `${this.evidenceLabel(kind)}已上传` });
     } catch (caught) {
+      if (this.disposed) return;
       const code = evidenceErrorCode(caught);
       if (code === "INVALID_MIME" || code === "TOO_LARGE" || code === "ONBOARDING_EVIDENCE_INVALID") {
         delete this.evidenceFiles[kind];
@@ -183,9 +192,9 @@ Page({
             : code === "TOO_LARGE" ? "文件过大，请压缩后重新选择"
               : "材料内容无法校验，请重新选择文件",
           "reselect");
-      } else if (code === "POLICY_EXPIRED" || code === "OSS_UPLOAD_REJECTED") {
+      } else if (isRestartEvidenceError(code)) {
         this.markEvidenceError(kind, "上传凭证已失效，请重新上传", "restart");
-      } else this.markEvidenceError(kind, "上传失败，请重试", "retry");
+      } else this.markEvidenceError(kind, code === "OSS_UPLOAD_TIMEOUT" ? "上传超时，请重试" : "上传失败，请重试", "retry");
     }
   },
 
@@ -284,6 +293,16 @@ function evidenceErrorCode(caught: unknown): string {
     return (caught as { code: string }).code;
   }
   return caught instanceof Error ? caught.message : "UNKNOWN";
+}
+
+function isRestartEvidenceError(code: string): boolean {
+  return [
+    "POLICY_EXPIRED",
+    "OSS_UPLOAD_REJECTED",
+    "ONBOARDING_APPLICATION_NOT_FOUND",
+    "ONBOARDING_APPLICATION_STATE_CHANGED",
+    "IDEMPOTENCY_KEY_REUSED",
+  ].includes(code);
 }
 
 function returnToPortfolio(): void {

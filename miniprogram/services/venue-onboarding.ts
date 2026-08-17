@@ -50,6 +50,7 @@ export interface VenueOnboardingLocalEvidence {
 export interface VenueOnboardingEvidenceCapability {
   choose(kind: VenueOnboardingEvidenceKind): Promise<VenueOnboardingLocalEvidence>;
   upload(file: VenueOnboardingLocalEvidence, intent: VenueOnboardingUploadIntent): Promise<void>;
+  abortAll?(): void;
 }
 
 let dataSource: VenueOnboardingDataSource | undefined;
@@ -78,30 +79,56 @@ export function getVenueOnboardingEvidenceCapability(): VenueOnboardingEvidenceC
   return evidenceCapability;
 }
 
+export function getVenueOnboardingEvidenceCapabilityOrUndefined(): VenueOnboardingEvidenceCapability | undefined {
+  return evidenceCapability;
+}
+
 export function createOnboardingIdempotencyKey(scope: string): string {
   keySequence += 1;
   return `${scope}-${Date.now().toString(36)}-${keySequence.toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export function createWeChatVenueOnboardingEvidenceCapability(): VenueOnboardingEvidenceCapability {
+  const activeUploads = new Set<{ abort(code?: string): void }>();
   return {
     choose(kind) {
       return isDocument(kind) ? chooseDocument() : choosePhoto();
     },
     upload(file, intent) {
       return new Promise<void>((resolve, reject) => {
-        wx.uploadFile({
+        let settled = false;
+        const controller: { task?: { abort(): void }; timeout?: ReturnType<typeof setTimeout> } = {};
+        const finish = (complete: () => void) => {
+          if (settled) return;
+          settled = true;
+          if (controller.timeout !== undefined) clearTimeout(controller.timeout);
+          activeUploads.delete(activeUpload);
+          complete();
+        };
+        const activeUpload = {
+          abort(code = "OSS_UPLOAD_ABORTED") {
+            if (settled) return;
+            finish(() => reject(new Error(code)));
+            controller.task?.abort();
+          },
+        };
+        activeUploads.add(activeUpload);
+        controller.timeout = setTimeout(() => activeUpload.abort("OSS_UPLOAD_TIMEOUT"), 15_000);
+        controller.task = wx.uploadFile({
           url: intent.postPolicy.url,
           filePath: file.tempFilePath,
           name: "file",
           formData: { ...intent.postPolicy.fields },
           success(result) {
-            if (result.statusCode >= 200 && result.statusCode < 300) resolve();
-            else reject(new Error("OSS_UPLOAD_REJECTED"));
+            if (result.statusCode >= 200 && result.statusCode < 300) finish(resolve);
+            else finish(() => reject(new Error("OSS_UPLOAD_REJECTED")));
           },
-          fail() { reject(new Error("OSS_UPLOAD_FAILED")); },
+          fail() { finish(() => reject(new Error("OSS_UPLOAD_FAILED"))); },
         });
       });
+    },
+    abortAll() {
+      for (const activeUpload of [...activeUploads]) activeUpload.abort();
     },
   };
 }

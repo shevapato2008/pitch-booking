@@ -41,6 +41,7 @@ button::after { border: 0; }
 .venue-access__application-status--approved { background: #D1FAE5; color: #047857; }
 .venue-access__application-status--rejected { background: #FEE2E2; color: #C42525; }
 .venue-access__application-reason { margin-top: 8rpx; color: #C42525; font-size: 22rpx; line-height: 34rpx; }
+.venue-access__application-action { margin-top: 8rpx; color: var(--primary-strong); font-size: 22rpx; font-weight: 750; line-height: 34rpx; }
 .venue-access__application-error { display: flex; margin-top: 24rpx; padding: 20rpx 24rpx; align-items: center; justify-content: space-between; gap: 20rpx; border-left: 8rpx solid #C42525; border-radius: 18rpx; background: #FFFFFF; color: #C42525; font-size: 24rpx; line-height: 36rpx; }
 .venue-access__application-error button { display: flex; min-width: 88rpx; min-height: 72rpx; align-items: center; justify-content: center; color: var(--primary-strong); font-weight: 750; }
 .venue-access__onboarding { margin-top: 32rpx; padding: 28rpx; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; }

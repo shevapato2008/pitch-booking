@@ -91,6 +91,25 @@ describe("native onboarding evidence upload", () => {
     const request = (wx.uploadFile as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
     expect(request).not.toHaveProperty("header");
   });
+
+  test("aborts an upload that produces no callback after fifteen seconds", async () => {
+    jest.useFakeTimers();
+    try {
+      let request: { fail(result: { errMsg: string }): void } | undefined;
+      const abort = jest.fn(() => request?.fail({ errMsg: "uploadFile:fail abort" }));
+      (globalThis as any).wx = {
+        uploadFile: jest.fn((options: { fail(result: { errMsg: string }): void }) => { request = options; return { abort }; }),
+      };
+      const capability = createWeChatVenueOnboardingEvidenceCapability();
+      const pending = expect(capability.upload({ tempFilePath: "/tmp/stuck.jpg", filename: "stuck.jpg", mimeType: "image/jpeg", byteSize: 43 }, policy))
+        .rejects.toThrow("OSS_UPLOAD_TIMEOUT");
+      jest.advanceTimersByTime(15_000);
+      await pending;
+      expect(abort).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 function harness(token?: string) {

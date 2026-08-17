@@ -77,6 +77,16 @@ test("expired upload policy starts a fresh reservation while keeping the selecte
   expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "completed" })]));
 });
 
+test.each(["ONBOARDING_APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"])("%s restarts the evidence reservation", async (code) => {
+  const api = source();
+  (api.completeEvidence as jest.MockedFunction<VenueOnboardingDataSource["completeEvidence"]>)
+    .mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+  registerVenueOnboardingDataSource(api); registerVenueOnboardingEvidenceCapability(media);
+  const target = page(); await target.onLoad({});
+  await target.onChooseEvidence({ currentTarget: { dataset: { evidenceKind: "VENUE_EXTERIOR" } } });
+  expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "error", retryMode: "restart" })]));
+});
+
 test("returns to the existing portfolio page without growing the page stack", async () => {
   const api = source(); registerVenueOnboardingDataSource(api); registerVenueOnboardingEvidenceCapability(media);
   const target = page(); await target.onLoad({});

@@ -33,10 +33,16 @@
 
     <view wx:if="{{applications.length}}" class="venue-access__applications">
       <text class="venue-access__onboarding-title">我的申请</text>
-      <button wx:for="{{applications}}" wx:key="applicationId" class="venue-access__application" bindtap="onOpenApplication" data-application-id="{{item.applicationId}}" data-kind="{{item.kind}}" data-status="{{item.status}}" aria-label="{{item.venue.name}}，{{item.statusLabel}}{{item.status === 'REJECTED' ? '，修改并重新申请' : ''}}">
-        <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.venue.name}}</text><text class="venue-access__venue-location">{{item.venue.address}}</text><text wx:if="{{item.rejectionReason}}" class="venue-access__application-reason">{{item.rejectionReason}}</text></view>
-        <text class="venue-access__application-status venue-access__application-status--{{item.statusTone}}">{{item.statusLabel}}</text>
-      </button>
+      <block wx:for="{{applications}}" wx:key="applicationId">
+        <button wx:if="{{item.status === 'REJECTED'}}" class="venue-access__application venue-access__touch" hover-class="venue-access__card--pressed" bindtap="onOpenApplication" data-application-id="{{item.applicationId}}" data-kind="{{item.kind}}" data-status="{{item.status}}" aria-label="{{item.venue.name}}，申请未通过，修改并重新申请">
+          <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.venue.name}}</text><text class="venue-access__venue-location">{{item.venue.address}}</text><text wx:if="{{item.rejectionReason}}" class="venue-access__application-reason">{{item.rejectionReason}}</text><text class="venue-access__application-action">修改并重新申请</text></view>
+          <text class="venue-access__application-status venue-access__application-status--{{item.statusTone}}">{{item.statusLabel}}</text>
+        </button>
+        <view wx:else class="venue-access__application" aria-label="{{item.venue.name}}，{{item.statusLabel}}">
+          <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.venue.name}}</text><text class="venue-access__venue-location">{{item.venue.address}}</text></view>
+          <text class="venue-access__application-status venue-access__application-status--{{item.statusTone}}">{{item.statusLabel}}</text>
+        </view>
+      </block>
     </view>
     <view wx:if="{{applicationsError}}" class="venue-access__application-error" role="status"><text>{{applicationsError}}</text><button bindtap="onRetry" disabled="{{retrying}}">{{retrying ? '正在重试' : '重试'}}</button></view>
 

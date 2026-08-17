@@ -65,6 +65,20 @@ test("one evidence failure stays in its row and retry reuses the selected file",
   expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "completed" })]));
 });
 
+test("upload timeout leaves the evidence row in an explicit retryable error", async () => {
+  const api = source();
+  const timeoutMedia: VenueOnboardingEvidenceCapability = {
+    choose: jest.fn(async () => ({ tempFilePath: "/tmp/stuck.jpg", filename: "stuck.jpg", mimeType: "image/jpeg", byteSize: 42 })),
+    upload: jest.fn(async () => { throw new Error("OSS_UPLOAD_TIMEOUT"); }),
+  };
+  registerVenueOnboardingDataSource(api); registerVenueOnboardingEvidenceCapability(timeoutMedia);
+  const target = page(); await target.onLoad({});
+  await target.onChooseEvidence({ currentTarget: { dataset: { evidenceKind: "VENUE_EXTERIOR" } } });
+  expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({
+    kind: "VENUE_EXTERIOR", status: "error", retryMode: "retry", errorMessage: "上传超时，请重试",
+  })]));
+});
+
 test("passes native getPhoneNumber detail to phone verification", async () => {
   const api = source();
   (api.login as jest.MockedFunction<VenueOnboardingDataSource["login"]>).mockResolvedValueOnce({ userId: "user", maskedPhone: null, contactName: "张三" });
@@ -95,6 +109,40 @@ test("invalid server evidence response requires a fresh file selection", async (
   await target.onRetryEvidence(event);
   expect(replacementMedia.choose).toHaveBeenCalledTimes(2);
   expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "completed", fileName: "good.jpg" })]));
+});
+
+test("a stale completed-evidence reservation restarts with fresh keys and the same local file", async () => {
+  const api = source();
+  (api.completeEvidence as jest.MockedFunction<VenueOnboardingDataSource["completeEvidence"]>)
+    .mockRejectedValueOnce(Object.assign(new Error("gone"), { code: "ONBOARDING_APPLICATION_NOT_FOUND" }));
+  registerVenueOnboardingDataSource(api); registerVenueOnboardingEvidenceCapability(media);
+  const target = page(); await target.onLoad({});
+  const event = { currentTarget: { dataset: { evidenceKind: "VENUE_EXTERIOR" } } };
+  await target.onChooseEvidence(event);
+  expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "error", retryMode: "restart" })]));
+  await target.onRetryEvidence(event);
+  const calls = (api.createUploadIntent as jest.Mock).mock.calls;
+  expect(calls[1][1]).not.toBe(calls[0][1]);
+  expect(media.choose).toHaveBeenCalledTimes(1);
+  expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "completed" })]));
+});
+
+test("unload aborts an in-flight upload and ignores its rejection", async () => {
+  const api = source();
+  let rejectUpload: ((reason: Error) => void) | undefined;
+  const abortableMedia: VenueOnboardingEvidenceCapability = {
+    choose: jest.fn(async () => ({ tempFilePath: "/tmp/stuck.jpg", filename: "stuck.jpg", mimeType: "image/jpeg", byteSize: 42 })),
+    upload: jest.fn(() => new Promise<void>((_resolve, reject) => { rejectUpload = reject; })),
+    abortAll: jest.fn(() => rejectUpload?.(new Error("OSS_UPLOAD_ABORTED"))),
+  };
+  registerVenueOnboardingDataSource(api); registerVenueOnboardingEvidenceCapability(abortableMedia);
+  const target = page(); await target.onLoad({});
+  const pending = target.onChooseEvidence({ currentTarget: { dataset: { evidenceKind: "VENUE_EXTERIOR" } } });
+  await Promise.resolve(); await Promise.resolve();
+  target.onUnload();
+  await pending;
+  expect(abortableMedia.abortAll).toHaveBeenCalledTimes(1);
+  expect(target.data.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "VENUE_EXTERIOR", status: "uploading" })]));
 });
 
 test("returns to the existing portfolio page without growing the page stack", async () => {
