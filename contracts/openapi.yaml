@@ -2132,16 +2132,17 @@ components:
         Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
       type: object
       additionalProperties: false
-      required: [venue_id, evidence]
+      required: [venue_id, contact_name, evidence]
       properties:
         venue_id: {type: string, format: uuid}
+        contact_name: {type: string, minLength: 1, maxLength: 40}
         evidence: {$ref: '#/components/schemas/VenueClaimEvidence'}
     SubmitVenueCreate:
       description: >-
         Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
       type: object
       additionalProperties: false
-      required: [name, address, district_code, district_name, latitude, longitude, evidence]
+      required: [name, address, district_code, district_name, latitude, longitude, contact_name, evidence]
       properties:
         name: {type: string, minLength: 1, maxLength: 120}
         address: {type: string, minLength: 1, maxLength: 300}
@@ -2149,6 +2150,7 @@ components:
         district_name: {type: string, minLength: 1, maxLength: 120}
         latitude: {type: number, minimum: -90, maximum: 90}
         longitude: {type: number, minimum: -180, maximum: 180}
+        contact_name: {type: string, minLength: 1, maxLength: 40}
         evidence: {$ref: '#/components/schemas/VenueCreateEvidence'}
     VenueOnboardingApplicationVenue:
       type: object
