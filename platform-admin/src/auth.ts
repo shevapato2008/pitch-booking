@@ -3,18 +3,44 @@ import { ApiError, PlatformApi, type PlatformSession, SessionExpiredError } from
 export type AuthState =
   | { status: "checking"; session: null; error: null }
   | { status: "anonymous"; session: null; error: string | null }
-  | { status: "authenticated"; session: PlatformSession; error: null };
+  | { status: "authenticated"; session: PlatformSession; error: string | null };
+
+interface AuthControllerOptions {
+  now?: () => number;
+  setTimer?: (callback: () => void, milliseconds: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+}
+
+export function consumeAccessToken(input: Pick<HTMLInputElement, "value">): string {
+  const token = input.value;
+  input.value = "";
+  return token;
+}
 
 export class AuthController {
   state: AuthState = { status: "checking", session: null, error: null };
+  private expiryHandler: () => void = () => undefined;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly now: () => number;
+  private readonly setTimer: AuthControllerOptions["setTimer"];
+  private readonly clearTimer: AuthControllerOptions["clearTimer"];
 
-  constructor(private readonly api: PlatformApi) {}
+  constructor(private readonly api: PlatformApi, options: AuthControllerOptions = {}) {
+    this.now = options.now ?? Date.now;
+    this.setTimer = options.setTimer ?? ((callback, milliseconds) => setTimeout(callback, milliseconds));
+    this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
+  }
+
+  setExpiryHandler(handler: () => void): void {
+    this.expiryHandler = handler;
+  }
 
   async bootstrap(): Promise<void> {
+    this.cancelExpiryTimer();
     this.state = { status: "checking", session: null, error: null };
     try {
       const session = await this.api.restoreSession();
-      this.state = { status: "authenticated", session, error: null };
+      this.authenticate(session);
     } catch (error) {
       if (error instanceof SessionExpiredError) {
         this.state = { status: "anonymous", session: null, error: null };
@@ -32,7 +58,7 @@ export class AuthController {
     }
     try {
       const session = await this.api.login(token);
-      this.state = { status: "authenticated", session, error: null };
+      this.authenticate(session);
       return true;
     } catch (error) {
       this.state = { status: "anonymous", session: null, error: messageOf(error) };
@@ -40,16 +66,61 @@ export class AuthController {
     }
   }
 
-  async logout(): Promise<void> {
+  async logout(): Promise<boolean> {
     try {
       await this.api.logout();
-    } finally {
-      this.state = { status: "anonymous", session: null, error: null };
+      this.clearAuthenticatedState(null);
+      return true;
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        this.clearAuthenticatedState(null);
+        return true;
+      }
+      if (this.state.status === "authenticated") {
+        this.state = { ...this.state, error: messageOf(error) };
+      }
+      return false;
     }
   }
 
   expire(message = "平台登录已失效，请重新登录"): void {
-    this.state = { status: "anonymous", session: null, error: message };
+    this.clearAuthenticatedState(message);
+  }
+
+  checkExpiry(): boolean {
+    if (this.state.status !== "authenticated") return false;
+    const expiresAt = Date.parse(this.state.session.expires_at);
+    if (Number.isFinite(expiresAt) && expiresAt > this.now()) return false;
+    this.expire();
+    return true;
+  }
+
+  private authenticate(session: PlatformSession): void {
+    this.cancelExpiryTimer();
+    this.state = { status: "authenticated", session, error: null };
+    const expiresAt = Date.parse(session.expires_at);
+    const delay = expiresAt - this.now();
+    if (!Number.isFinite(delay) || delay <= 0) {
+      this.expire();
+      return;
+    }
+    this.expiryTimer = this.setTimer?.(
+      () => this.expire(),
+      Math.min(delay, 2_147_483_647),
+    ) ?? null;
+    const nodeTimer = this.expiryTimer as unknown as { unref?: () => void } | null;
+    nodeTimer?.unref?.();
+  }
+
+  private clearAuthenticatedState(error: string | null): void {
+    this.cancelExpiryTimer();
+    this.state = { status: "anonymous", session: null, error };
+    this.expiryHandler();
+  }
+
+  private cancelExpiryTimer(): void {
+    if (this.expiryTimer !== null) this.clearTimer?.(this.expiryTimer);
+    this.expiryTimer = null;
   }
 }
 

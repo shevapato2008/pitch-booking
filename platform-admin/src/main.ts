@@ -1,5 +1,5 @@
 import { ApiError, PlatformApi, SessionExpiredError, type ReviewApplicationDetail, type ReviewEvidence } from "./api";
-import { AuthController } from "./auth";
+import { AuthController, consumeAccessToken } from "./auth";
 import { ReviewController } from "./review";
 
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -8,7 +8,11 @@ if (!root) throw new Error("platform admin root is missing");
 const api = new PlatformApi();
 const auth = new AuthController(api);
 const review = new ReviewController(api);
-let feedback: { type: "error" | "warning" | "success"; message: string } | null = null;
+let feedback: {
+  type: "error" | "warning" | "success";
+  message: string;
+  recovery?: "decision";
+} | null = null;
 
 const escapeHtml = (value: unknown): string => String(value ?? "")
   .replaceAll("&", "&amp;")
@@ -34,12 +38,12 @@ const formatBytes = (bytes: number): string => bytes >= 1024 * 1024
 const badge = (text: string, tone: string): string => `<span class="badge badge--${escapeHtml(tone)}">${escapeHtml(text)}</span>`;
 
 const alert = (): string => feedback
-  ? `<div class="alert alert--${feedback.type}" role="status"><span class="alert__mark" aria-hidden="true">${feedback.type === "error" ? "×" : feedback.type === "success" ? "✓" : "!"}</span><span><strong>${feedback.type === "error" ? "操作未完成" : feedback.type === "success" ? "审核记录已更新" : "需要处理"}</strong>${escapeHtml(feedback.message)}</span></div>`
+  ? `<div class="alert alert--${feedback.type}" role="status"><span class="alert__mark" aria-hidden="true">${feedback.type === "error" ? "×" : feedback.type === "success" ? "✓" : "!"}</span><span><strong>${feedback.type === "error" ? "操作未完成" : feedback.type === "success" ? "审核记录已更新" : "需要处理"}</strong>${escapeHtml(feedback.message)}</span>${feedback.recovery === "decision" ? `<span class="alert__actions"><button class="button button--quiet button--small" data-action="refresh-detail" type="button">刷新详情</button><button class="button button--quiet button--small" data-action="refresh-queue" type="button">刷新队列</button></span>` : ""}</div>`
   : "";
 
 const renderLogin = (): string => {
   const checking = auth.state.status === "checking";
-  return `<main class="login-shell" id="main-content"><section class="login-intro"><div class="brand brand--login"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>Pitch Booking</strong><small>平台管理控制台</small></span></div><div><p class="eyebrow">Venue onboarding</p><h1>让每一次场馆入驻<br />都有清晰依据</h1><p>仅供已授权的平台工作人员审核场馆认领与创建申请。</p></div><p class="security-note"><span aria-hidden="true">⌁</span>登录会话仅保存在安全 HttpOnly Cookie 中，8 小时后自动失效。</p></section><section class="login-card"><div><p class="eyebrow">Staff access</p><h2>平台工作人员登录</h2><p>输入部署人员单独提供的高强度访问令牌。</p></div><form data-form="login" novalidate><label class="field-label" for="access-token">工作人员访问令牌</label><input class="token-input${auth.state.error ? " has-error" : ""}" id="access-token" name="access-token" type="password" autocomplete="current-password" placeholder="请输入访问令牌" ${checking ? "disabled" : ""} aria-describedby="login-help login-error" /><p class="field-help" id="login-help">请勿通过聊天或截图共享令牌。</p><p class="field-error${auth.state.error ? " is-visible" : ""}" id="login-error" role="alert">${escapeHtml(auth.state.error ?? "")}</p><button class="button button--primary button--full" data-action="login" type="submit" ${checking ? "disabled" : ""}>${checking ? "正在确认登录…" : "进入审核台"}</button></form></section></main>`;
+  return `<main class="login-shell" id="main-content"><section class="login-intro"><div class="brand brand--login"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>Pitch Booking</strong><small>平台管理控制台</small></span></div><div><p class="eyebrow">Venue onboarding</p><h1>让每一次场馆入驻<br />都有清晰依据</h1><p>仅供已授权的平台工作人员审核场馆认领与创建申请。</p></div><p class="security-note"><span aria-hidden="true">⌁</span>登录会话仅保存在安全 HttpOnly Cookie 中，8 小时后自动失效。</p></section><section class="login-card"><div><p class="eyebrow">Staff access</p><h2>平台工作人员登录</h2><p>输入部署人员单独提供的高强度访问令牌。</p></div><form data-form="login" novalidate><label class="field-label" for="access-token">工作人员访问令牌</label><input class="token-input${auth.state.error ? " has-error" : ""}" id="access-token" name="access-token" type="password" autocomplete="off" placeholder="请输入访问令牌" ${checking ? "disabled" : ""} aria-describedby="login-help login-error" /><p class="field-help" id="login-help">请勿通过聊天或截图共享令牌。</p><p class="field-error${auth.state.error ? " is-visible" : ""}" id="login-error" role="alert">${escapeHtml(auth.state.error ?? "")}</p><button class="button button--primary button--full" data-action="login" type="submit" ${checking ? "disabled" : ""}>${checking ? "正在确认登录…" : "进入审核台"}</button></form></section></main>`;
 };
 
 const renderQueueRow = (item: ReviewController["state"]["items"][number]): string => {
@@ -61,7 +65,8 @@ const renderDecision = (application: ReviewApplicationDetail): string => {
     const approved = application.decision.outcome === "APPROVED";
     return `<article class="panel panel--padded decision-panel"><p class="eyebrow">Decision</p><h3>审核结果</h3><div class="decision-result decision-result--${approved ? "approved" : "rejected"}"><span class="decision-result__mark" aria-hidden="true">${approved ? "✓" : "×"}</span><div><strong>${approved ? "已通过申请" : "已驳回申请"}</strong><p>${escapeHtml(application.decision.reason)}</p><small>${escapeHtml(application.decision.reviewer_principal_id)} · ${escapeHtml(formatTime(application.decision.reviewed_at))}</small></div></div></article>`;
   }
-  return `<article class="panel panel--padded decision-panel"><p class="eyebrow">Decision</p><h3>审核决定</h3><label class="field-label" for="decision-reason">审核理由 <span class="required">*</span></label><textarea class="reason-input" id="decision-reason" aria-describedby="decision-help decision-error"></textarea><p class="field-help" id="decision-help">通过与驳回均会写入不可变审核记录。</p><p class="field-error" id="decision-error" role="alert"></p><div class="decision-actions"><button class="button button--danger" data-action="reject" type="button" ${review.state.deciding ? "disabled" : ""}>驳回申请</button><button class="button button--primary" data-action="approve" type="button" ${review.state.deciding ? "disabled" : ""}>${review.state.deciding ? "正在提交…" : "通过申请"}</button></div></article>`;
+  const locked = review.state.deciding || review.state.decisionUncertain;
+  return `<article class="panel panel--padded decision-panel"><p class="eyebrow">Decision</p><h3>审核决定</h3><label class="field-label" for="decision-reason">审核理由 <span class="required">*</span></label><textarea class="reason-input" id="decision-reason" aria-describedby="decision-help decision-error" ${locked ? "disabled" : ""}></textarea><p class="field-help" id="decision-help">${review.state.decisionUncertain ? "上一操作结果待确认，请先刷新详情或队列。" : "通过与驳回均会写入不可变审核记录。"}</p><p class="field-error" id="decision-error" role="alert"></p><div class="decision-actions"><button class="button button--danger" data-action="reject" type="button" ${locked ? "disabled" : ""}>驳回申请</button><button class="button button--primary" data-action="approve" type="button" ${locked ? "disabled" : ""}>${review.state.deciding ? "正在提交…" : "通过申请"}</button></div></article>`;
 };
 
 const renderDetail = (): string => {
@@ -78,7 +83,7 @@ const renderReview = (): string => {
   const session = auth.state.status === "authenticated" ? auth.state.session : null;
   const kind = review.state.filters.kind ?? "ALL";
   const status = review.state.filters.status ?? "ALL";
-  return `<div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台入驻审核</strong><small>生产审核台</small></span></div><div class="reviewer">${badge(session?.roles[0] ?? "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header><div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p>筛选并核验场馆认领或创建申请。</p><div class="filters"><label><span>申请类型</span><select data-action="filter-kind"><option value="ALL"${kind === "ALL" ? " selected" : ""}>全部类型</option><option value="CLAIM"${kind === "CLAIM" ? " selected" : ""}>认领已有场馆</option><option value="CREATE"${kind === "CREATE" ? " selected" : ""}>创建新场馆</option></select></label><label><span>审核状态</span><select data-action="filter-status"><option value="ALL"${status === "ALL" ? " selected" : ""}>全部状态</option><option value="SUBMITTED"${status === "SUBMITTED" ? " selected" : ""}>待审核</option><option value="APPROVED"${status === "APPROVED" ? " selected" : ""}>已通过</option><option value="REJECTED"${status === "REJECTED" ? " selected" : ""}>已驳回</option></select></label></div></div><div class="queue__summary"><strong>${review.state.items.length}</strong> 条申请<span>${review.state.loading ? "正在更新" : "按提交时间排序"}</span></div><div class="queue__list">${review.state.items.map(renderQueueRow).join("")}</div></aside>${renderDetail()}</div></div>`;
+  return `<div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台入驻审核</strong><small>生产审核台</small></span></div><div class="reviewer">${badge(session?.roles[0] ?? "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header><div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p>筛选并核验场馆认领或创建申请。</p><div class="filters"><label><span>申请类型</span><select data-action="filter-kind"><option value="ALL"${kind === "ALL" ? " selected" : ""}>全部类型</option><option value="CLAIM"${kind === "CLAIM" ? " selected" : ""}>认领已有场馆</option><option value="CREATE"${kind === "CREATE" ? " selected" : ""}>创建新场馆</option></select></label><label><span>审核状态</span><select data-action="filter-status"><option value="ALL"${status === "ALL" ? " selected" : ""}>全部状态</option><option value="SUBMITTED"${status === "SUBMITTED" ? " selected" : ""}>待审核</option><option value="APPROVED"${status === "APPROVED" ? " selected" : ""}>已通过</option><option value="REJECTED"${status === "REJECTED" ? " selected" : ""}>已驳回</option></select></label></div></div><div class="queue__summary"><strong>${review.state.items.length}</strong> 条已加载<span>${review.state.loading ? "正在更新" : "按提交时间排序"}</span></div><div class="queue__list">${review.state.items.map(renderQueueRow).join("")}${review.state.nextCursor ? `<div class="queue__load-more"><button class="button button--quiet button--small" data-action="load-more" type="button" ${review.state.loadingMore ? "disabled" : ""}>${review.state.loadingMore ? "正在加载…" : "加载更多"}</button></div>` : ""}</div></aside>${renderDetail()}</div></div>`;
 };
 
 const render = (): void => {
@@ -100,7 +105,9 @@ const handleSessionError = (error: unknown): void => {
 root.addEventListener("submit", async (event) => {
   if (!(event.target instanceof HTMLFormElement) || !event.target.matches('[data-form="login"]')) return;
   event.preventDefault();
-  const token = document.querySelector<HTMLInputElement>("#access-token")?.value ?? "";
+  const tokenInput = document.querySelector<HTMLInputElement>("#access-token");
+  if (!tokenInput) return;
+  const token = consumeAccessToken(tokenInput);
   const ok = await auth.login(token);
   if (ok) {
     feedback = null;
@@ -131,11 +138,24 @@ root.addEventListener("click", async (event) => {
   const id = target.dataset.id;
   try {
     if (action === "logout") {
-      await auth.logout(); feedback = null; render();
+      const loggedOut = await auth.logout();
+      if (loggedOut) {
+        review.clear();
+        feedback = null;
+      } else {
+        feedback = { type: "error", message: auth.state.error ?? "退出登录失败，请重试" };
+      }
+      render();
     } else if (action === "select-row" && id) {
       feedback = null; await review.select(id); render(); document.querySelector<HTMLElement>("#main-content")?.focus();
     } else if (action === "retry-queue") {
       feedback = null; await review.load(); render();
+    } else if (action === "load-more") {
+      feedback = null; await review.loadMore(); render();
+    } else if (action === "refresh-detail" && review.state.selected) {
+      feedback = null; await review.select(review.state.selected.application_id); render();
+    } else if (action === "refresh-queue") {
+      feedback = null; await review.load(review.state.filters); render();
     } else if (action === "open-evidence" && id) {
       target.setAttribute("disabled", "true");
       target.textContent = "正在获取…";
@@ -153,12 +173,33 @@ root.addEventListener("click", async (event) => {
       const pending = review.decide(action === "approve" ? "APPROVED" : "REJECTED", reason);
       render();
       const result = await pending;
-      feedback = result.ok ? { type: "success", message: "审核决定已写入，不可再次修改。" } : { type: "error", message: result.error };
+      if (result.ok && result.sessionExpired) {
+        auth.expire("审核决定已保存，但登录已失效；请重新登录查看结果。");
+        return;
+      }
+      feedback = result.ok
+        ? result.refreshError
+          ? { type: "warning", message: result.refreshError, recovery: "decision" }
+          : { type: "success", message: "审核决定已写入，不可再次修改。" }
+        : { type: "error", message: result.error, recovery: result.refreshRequired ? "decision" : undefined };
       render();
       if (!result.ok) document.querySelector<HTMLTextAreaElement>("#decision-reason")?.focus();
     }
   } catch (error) { handleSessionError(error); }
 });
+
+auth.setExpiryHandler(() => {
+  review.clear();
+  feedback = null;
+  render();
+  document.querySelector<HTMLInputElement>("#access-token")?.focus();
+});
+
+const checkForegroundExpiry = (): void => { auth.checkExpiry(); };
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkForegroundExpiry();
+});
+window.addEventListener("focus", checkForegroundExpiry);
 
 render();
 void auth.bootstrap().then(async () => {

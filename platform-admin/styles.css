@@ -95,6 +95,7 @@ h1, h2, h3, p { margin-top: 0; }
 .queue__summary strong { color: var(--text); font-size: 18px; }
 .queue__summary span { margin-left: auto; }
 .queue__list { min-height: 0; overflow-y: auto; }
+.queue__load-more { display: flex; justify-content: center; padding: 14px 20px 18px; }
 .queue-row { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 20px; border: 0; border-bottom: 1px solid var(--border); text-align: left; color: var(--text); background: white; }
 .queue-row:hover { background: #F8FAFC; }
 .queue-row.is-selected { padding-left: 16px; border-left: 4px solid var(--primary); background: var(--primary-soft); }
@@ -115,6 +116,7 @@ h1, h2, h3, p { margin-top: 0; }
 .alert, .risk-callout { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid; border-radius: 12px; font-size: 13px; line-height: 1.5; }
 .alert strong, .risk-callout strong { display: block; margin-bottom: 2px; }
 .alert__mark, .risk-callout__mark { width: 24px; height: 24px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 900; }
+.alert__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .alert--error { color: #9F1239; border-color: #FECDD3; background: var(--error-soft); }
 .alert--warning, .risk-callout { color: #7C2D12; border-color: #FED7AA; background: var(--warning-soft); }
 .alert--success { color: #065F46; border-color: #A7F3D0; background: var(--success-soft); }
@@ -137,6 +139,7 @@ h1, h2, h3, p { margin-top: 0; }
 .evidence-row small { color: var(--muted); font-size: 11px; }
 .document-mark { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; color: var(--primary-strong); background: var(--primary-soft); font-size: 10px; font-weight: 900; }
 .reason-input { min-height: 132px; resize: vertical; padding: 12px; line-height: 1.55; }
+.reason-input:disabled { color: var(--muted); background: #F8FAFC; }
 .decision-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .decision-result { display: flex; gap: 12px; padding: 16px; border-radius: 11px; }
 .decision-result--approved { color: #065F46; background: var(--success-soft); }
