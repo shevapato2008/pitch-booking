@@ -2,6 +2,7 @@ import { MINIPROGRAM_TENCENT_MAP_KEY } from "../config/runtime";
 import {
   productionClock,
   productionLocation,
+  productionPhone,
   productionSessionStorage,
   productionTencentPoiRequest,
   productionTransport,
@@ -16,8 +17,10 @@ import { createVenueProfileAttemptStore, registerVenueProfileAttemptStore } from
 import { registerVenueProfileDataSource, registerVenueProfileMediaCapability } from "../services/venue-profile";
 import { createHttpVenueProfileDataSource } from "../services/http-venue-profile";
 import { createHttpVenueAccessDataSource } from "../services/http-venue-access";
+import { createHttpVenueOnboardingDataSource } from "../services/http-venue-onboarding";
 import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
+import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingDataSource, registerVenueOnboardingEvidenceCapability } from "../services/venue-onboarding";
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
@@ -61,6 +64,8 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     const transport = productionTransport(options.apiBaseUrl);
     const sessionStore = createSessionStore(productionSessionStorage);
     registerVenueAccessDataSource(createHttpVenueAccessDataSource({ transport, identity: developmentIdentity, sessionStore }));
+    registerVenueOnboardingDataSource(createHttpVenueOnboardingDataSource({ transport, identity: developmentIdentity, phone: productionPhone, sessionStore }));
+    registerVenueOnboardingEvidenceCapability(createWeChatVenueOnboardingEvidenceCapability());
     registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: developmentIdentity, sessionStore, attemptStore: venueProfileAttemptStore }));
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);

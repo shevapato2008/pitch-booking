@@ -1,0 +1,60 @@
+<view class="venue-claim">
+  <view class="venue-claim__system" style="height: {{headerTopPx}}px;"></view>
+  <view class="venue-claim__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="venue-claim__back venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onBack" aria-label="返回我的场馆"><view class="venue-claim-icon venue-claim-icon--back" aria-hidden="true"></view></button>
+    <text class="venue-claim__title">{{title}}</text>
+  </view>
+
+  <block wx:if="{{mode === 'submitted'}}">
+    <view class="venue-claim__result">
+      <view class="venue-claim__status-mark" aria-hidden="true">i</view>
+      <text class="venue-claim__result-title">认领申请已提交</text>
+      <text class="venue-claim__result-copy">平台审核通过前不会开放场馆管理权限。可以回到“我的场馆”查看最新状态。</text>
+      <button class="venue-claim__secondary venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onReturnPortfolio">返回我的场馆</button>
+    </view>
+  </block>
+
+  <block wx:else>
+    <scroll-view class="venue-claim__content" scroll-y enhanced show-scrollbar="{{false}}">
+      <text class="venue-claim__eyebrow">CLAIM EXISTING VENUE</text>
+      <text class="venue-claim__heading">先找到平台已有场馆</text>
+      <text class="venue-claim__description">认领只会提交审核申请，通过前不会获得管理权限。</text>
+
+      <label class="venue-claim__label" for="venue-search">场馆搜索</label>
+      <view class="venue-claim__search-row">
+        <input id="venue-search" class="venue-claim__input venue-claim__touch" value="{{searchQuery}}" bindinput="onSearchInput" maxlength="80" placeholder="输入至少两个字" aria-label="场馆搜索" />
+        <button class="venue-claim__search-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onSearch" disabled="{{searching}}">{{searching ? '搜索中' : '搜索'}}</button>
+      </view>
+      <view class="venue-claim__candidates">
+        <button wx:for="{{candidates}}" wx:key="venueId" class="venue-claim__candidate venue-claim__touch {{item.selected ? 'venue-claim__candidate--selected' : ''}}" hover-class="venue-claim__pressed" bindtap="onSelectCandidate" data-candidate-id="{{item.venueId}}" aria-pressed="{{item.selected}}">
+          <view class="venue-claim__candidate-copy"><text class="venue-claim__candidate-name">{{item.name}}</text><text class="venue-claim__meta">{{item.districtName}} · {{item.address}}</text></view>
+          <text class="venue-claim__selected-label">{{item.selected ? '已选择' : '选择'}}</text>
+        </button>
+      </view>
+
+      <text class="venue-claim__section-title">申请人信息</text>
+      <label class="venue-claim__label" for="claim-applicant">申请人姓名</label>
+      <input id="claim-applicant" class="venue-claim__input venue-claim__touch" value="{{contactName}}" bindinput="onApplicantInput" maxlength="40" placeholder="填写真实联系人" aria-label="申请人姓名" />
+      <text class="venue-claim__label">联系电话状态</text>
+      <view wx:if="{{maskedPhone}}" class="venue-claim__readonly venue-claim__touch"><text>{{maskedPhone}}</text><text class="venue-claim__verified">已验证</text></view>
+      <button wx:else class="venue-claim__phone venue-claim__touch" open-type="getPhoneNumber" bindgetphonenumber="onAuthorizePhone">验证微信手机号</button>
+
+      <text class="venue-claim__section-title">证明材料</text>
+      <view class="venue-claim__evidence">
+        <view wx:for="{{evidence}}" wx:key="kind" class="venue-claim__evidence-row {{item.status === 'error' ? 'venue-claim__evidence-row--error' : ''}}">
+          <view class="venue-claim__evidence-copy"><text class="venue-claim__evidence-label">{{item.label}}</text><text class="venue-claim__meta">{{item.status === 'error' ? item.errorMessage : (item.status === 'uploading' ? '正在上传…' : (item.fileName || item.helper))}}</text></view>
+          <button wx:if="{{item.status === 'error'}}" class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onRetryEvidence" data-evidence-kind="{{item.kind}}" aria-label="{{item.label}}，{{item.retryMode === 'reselect' ? '重新选择' : (item.retryMode === 'restart' ? '重新上传' : '重试上传')}}">{{item.retryMode === 'reselect' ? '重新选择' : (item.retryMode === 'restart' ? '重新上传' : '重试上传')}}</button>
+          <button wx:else class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onChooseEvidence" disabled="{{item.status === 'uploading'}}" data-evidence-kind="{{item.kind}}" aria-label="{{item.label}}，{{item.status === 'completed' ? '替换材料' : '上传材料'}}">{{item.status === 'completed' ? '替换' : '上传'}}</button>
+        </view>
+      </view>
+      <text wx:if="{{notice}}" class="venue-claim__notice" role="status">{{notice}}</text>
+      <view class="venue-claim__bottom-spacer"></view>
+    </scroll-view>
+
+    <view class="venue-claim__footer">
+      <text class="venue-claim__fixture-note">提交后由平台核验场馆和管理权</text>
+      <text wx:if="{{submitDisabledReason}}" class="venue-claim__disabled-reason">{{submitDisabledReason}}</text>
+      <button class="venue-claim__primary venue-claim__touch" hover-class="venue-claim__primary--pressed" disabled="{{submitDisabled}}" bindtap="onSubmit">提交认领申请</button>
+    </view>
+  </block>
+</view>

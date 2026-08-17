@@ -1,4 +1,5 @@
 /// <reference types="node" />
+/* eslint-disable @typescript-eslint/no-explicit-any -- dynamic Mini Program Page harness */
 
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
@@ -28,11 +29,11 @@ beforeEach(() => {
   (globalThis as any).wx = {
     getWindowInfo: jest.fn(() => ({ windowWidth: 393, statusBarHeight: 59 })),
     getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 63, left: 295, height: 32 })),
-    redirectTo: jest.fn(), reLaunch: jest.fn(),
+    redirectTo: jest.fn(), navigateTo: jest.fn(), reLaunch: jest.fn(),
   };
 });
 
-test("zero venues renders verified-access guidance and returns to the entry", async () => {
+test("zero venues still renders both real onboarding actions and returns to the entry", async () => {
   const api = source(); registerVenueAccessDataSource(api); const target = page();
   await target.onLoad();
   expect(api.login).toHaveBeenCalledTimes(1); expect(api.listManagedVenues).toHaveBeenCalledTimes(1);
@@ -41,13 +42,17 @@ test("zero venues renders verified-access guidance and returns to the entry", as
   target.onBackToEntry();
   expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
   const markup = readFileSync("miniprogram/pages/venue-access/index.wxml", "utf8");
-  expect(markup).toContain("微信登录只能确认当前账号身份，不能证明你拥有实体场馆的管理权");
+  expect(markup).toContain("认领已有场馆");
+  expect(markup).toContain("创建新场馆");
   expect(markup).not.toMatch(/自动授权|自助认证|申请成功/);
 });
 
-test("one venue redirects exactly once with the authoritative venue id", async () => {
+test("one venue remains in the stable portfolio and can be chosen explicitly", async () => {
   registerVenueAccessDataSource(source([first])); const target = page();
-  await target.onLoad(); await target.onRetry();
+  await target.onLoad();
+  expect(target.data).toMatchObject({ title: "我的场馆", mode: "ready", venues: [first] });
+  expect(wx.redirectTo).not.toHaveBeenCalled();
+  target.onChooseVenue({ currentTarget: { dataset: { venueId: first.id } } });
   expect(wx.redirectTo).toHaveBeenCalledTimes(1);
   expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-profile/index?venue_id=${encodeURIComponent(first.id)}` }));
 });
@@ -55,7 +60,7 @@ test("one venue redirects exactly once with the authoritative venue id", async (
 test("multiple venues stay selectable and reject unknown ids", async () => {
   registerVenueAccessDataSource(source([first, second])); const target = page();
   await target.onLoad();
-  expect(target.data).toMatchObject({ title: "选择管理场馆", mode: "multiple", venues: [first, second] });
+  expect(target.data).toMatchObject({ title: "我的场馆", mode: "ready", venues: [first, second] });
   expect(wx.redirectTo).not.toHaveBeenCalled();
   target.onChooseVenue({ currentTarget: { dataset: { venueId: "unknown" } } });
   expect(wx.redirectTo).not.toHaveBeenCalled();
@@ -63,6 +68,21 @@ test("multiple venues stay selectable and reject unknown ids", async () => {
   target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id } } });
   expect(wx.redirectTo).toHaveBeenCalledTimes(1);
   expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-profile/index?venue_id=${encodeURIComponent(second.id)}` }));
+});
+
+test("claim and create CTAs open their production routes", async () => {
+  registerVenueAccessDataSource(source([first])); const target = page(); await target.onLoad();
+  target.onOpenClaim(); target.onOpenCreate();
+  expect(wx.navigateTo).toHaveBeenNthCalledWith(1, { url: "/pages/venue-claim/index" });
+  expect(wx.navigateTo).toHaveBeenNthCalledWith(2, { url: "/pages/venue-create/index" });
+});
+
+test("only a rejected application opens its fresh retry journey", () => {
+  registerVenueAccessDataSource(source()); const target = page();
+  target.onOpenApplication({ currentTarget: { dataset: { applicationId: "51479910-178f-43ba-941a-93c1aa8247f8", kind: "CREATE", status: "SUBMITTED" } } });
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+  target.onOpenApplication({ currentTarget: { dataset: { applicationId: "51479910-178f-43ba-941a-93c1aa8247f8", kind: "CREATE", status: "REJECTED" } } });
+  expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/pages/venue-create/index?application_id=51479910-178f-43ba-941a-93c1aa8247f8" });
 });
 
 test("a failed read remains distinct from empty and retries into the loaded state", async () => {
@@ -73,7 +93,7 @@ test("a failed read remains distinct from empty and retries into the loaded stat
   await target.onLoad();
   expect(target.data).toMatchObject({ mode: "error", errorMessage: "场馆权限暂时无法读取，请重试" });
   const retry = target.onRetry(); expect(target.data.retrying).toBe(true); await retry;
-  expect(target.data).toMatchObject({ mode: "multiple", retrying: false, venues: [first, second] });
+  expect(target.data).toMatchObject({ mode: "ready", retrying: false, venues: [first, second] });
 });
 
 test("production page has no fixture or query-case dependency", () => {

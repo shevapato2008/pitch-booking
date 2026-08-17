@@ -385,6 +385,8 @@ async function createProductionPackage() {
   const routes = [
     "pages/intent-entry/index",
     "pages/venue-access/index",
+    "pages/venue-claim/index",
+    "pages/venue-create/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

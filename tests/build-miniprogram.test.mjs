@@ -173,6 +173,9 @@ test("production app registers HTTP data, venue profiles, Tencent POI, and nativ
   assert.match(app, /registerVenueProfileDataSource/);
   assert.match(app, /createHttpVenueAccessDataSource/);
   assert.match(app, /registerVenueAccessDataSource/);
+  assert.match(app, /createHttpVenueOnboardingDataSource/);
+  assert.match(app, /registerVenueOnboardingDataSource/);
+  assert.match(app, /registerVenueOnboardingEvidenceCapability/);
   assert.match(app, /registerVenueProfileMediaCapability/);
   assert.match(app, /registerLocationCapability/);
   assert.match(app, /productionLocation/);
@@ -192,6 +195,8 @@ test("production app registers HTTP data, venue profiles, Tencent POI, and nativ
   assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueProfileDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueAccessDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueOnboardingDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueOnboardingEvidenceCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueProfileMediaCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
@@ -216,6 +221,11 @@ test("temporary map previews are absent while the approved center asset remains"
   }
   assert.equal(existsSync(path.join(developmentRoot, "assets/map-search-center.png")), true);
   assert.equal(existsSync(path.join(productionRoot, "assets/map-search-center.png")), true);
+  for (const route of ["dev/pages/venue-access/index", "dev/pages/venue-claim/index", "dev/pages/venue-create/index"]) {
+    for (const extension of ["js", "json", "wxml", "wxss"])
+      assert.equal(existsSync(path.join(developmentRoot, `${route}.${extension}`)), true, `${route}.${extension}`);
+    assert.equal(existsSync(path.join(productionRoot, `${route}.js`)), false, route);
+  }
   const developmentText = (await Promise.all((await collectFiles(developmentRoot))
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");
@@ -225,9 +235,11 @@ test("temporary map previews are absent while the approved center asset remains"
   const previewSymbols = /VenueDistrictSidecar|venue-map-preview|poi-search-preview|DEV_ONLY_POI_SEARCH_PREVIEW|previewPoiSearchCapability/;
   assert.doesNotMatch(developmentText, previewSymbols);
   assert.doesNotMatch(productionText, previewSymbols);
+  assert.match(developmentText, /VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES/);
+  assert.doesNotMatch(productionText, /VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES/);
 });
 
-test("real production build emits all ten production routes as native artifacts", async (t) => {
+test("real production build emits all twelve production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -235,6 +247,8 @@ test("real production build emits all ten production routes as native artifacts"
   const routes = [
     "pages/intent-entry/index",
     "pages/venue-access/index",
+    "pages/venue-claim/index",
+    "pages/venue-create/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
@@ -250,6 +264,10 @@ test("real production build emits all ten production routes as native artifacts"
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
     assert.equal(existsSync(path.join(outputRoot, `${route}.ts`)), false);
   }
+  const productionText = (await Promise.all((await collectFiles(outputRoot))
+    .filter((file) => !file.endsWith(".png"))
+    .map((file) => readFile(file, "utf8")))).join("\n");
+  assert.doesNotMatch(productionText, /venue-onboarding-fixture|VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES|视觉预览，不会提交/);
 });
 
 test("production API URL override changes generated production config only", async (t) => {

@@ -1,4 +1,5 @@
 /// <reference types="node" />
+/* eslint-disable @typescript-eslint/no-explicit-any -- dynamic Mini Program Page harness */
 
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
@@ -55,6 +56,12 @@ test("invalid intents are inert and production source has no development depende
   expect(wx.navigateTo).not.toHaveBeenCalled();
   const source = readFileSync("miniprogram/pages/intent-entry/index.ts", "utf8");
   expect(source).not.toMatch(/\/dev\/|DEV_|fixture/i);
+});
+
+test("HOST explains both application and authorized workbench paths", () => {
+  const hosting = page();
+  expect(hosting.data.intents.find(({ id }: { id: string }) => id === "HOST").subtitle)
+    .toBe("申请合作，或进入已授权的场馆工作台");
 });
 
 test("retains the confirmed capsule-safe city interaction", () => {

@@ -166,6 +166,12 @@ test("production markup binds every visible business handler", () => {
   const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8"); for (const handler of ["onBack", "onReload", "onChooseImage", "onSetCover", "onRemoveImage", "onReorderImage", "onRetryModeration", "onRefreshImageStatus", "onDescriptionInput", "onRefreshDescriptionStatus", "onSubmitDescription", "onRetryDescription", "onToggleFacility", "onSaveFacilities", "onRetryUnknown", "onNavigateWorkbench"]) expect(markup).toContain(handler);
 });
 
+test("clean workbench back action returns to the stable venue portfolio", async () => {
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onBack();
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/pages/venue-access/index" });
+  page.onUnload();
+});
+
 test("save success preserves a newer description or facilities edit made while the request was pending", async () => {
   const api = source(); let resolveDescription!: (value: typeof ready) => void; api.save.mockImplementationOnce(() => new Promise((resolve) => { resolveDescription = resolve; })); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "first" } }); const descriptionSave = page.onSubmitDescription(); page.onDescriptionInput({ detail: { value: "second" } }); resolveDescription(next()); await descriptionSave; expect(page.data).toMatchObject({ description: "second", descriptionDirty: true });
   let resolveFacilities!: (value: typeof ready) => void; api.save.mockImplementationOnce(() => new Promise((resolve) => { resolveFacilities = resolve; })); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "LOCKERS" } } }); const facilitySave = page.onSaveFacilities(); page.onToggleFacility({ currentTarget: { dataset: { facilityCode: "PARKING" } } }); const newerFacilities = [...page.data.facilities]; resolveFacilities(next()); await facilitySave; expect(page.data).toMatchObject({ facilitiesDirty: true }); expect(page.data.facilities).toEqual(newerFacilities); page.onUnload();

@@ -1,17 +1,21 @@
+import type { ManagedVenue } from "../../domain/venue-access";
+import { presentApplicationStatus, type VenueOnboardingApplication } from "../../domain/venue-onboarding";
 import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { getVenueAccessDataSource } from "../../services/venue-access";
-import type { ManagedVenue } from "../../domain/venue-access";
+import { getVenueOnboardingDataSourceOrUndefined } from "../../services/venue-onboarding";
 
-type VenueChooseEvent = { currentTarget?: { dataset?: { venueId?: unknown } } };
+type VenueChooseEvent = { currentTarget?: { dataset?: { venueId?: unknown; applicationId?: unknown } } };
 type PageError = { code?: unknown };
 
 const workbenchUrl = (venueId: string) => `/pages/venue-profile/index?venue_id=${encodeURIComponent(venueId)}`;
 
 Page({
   data: {
-    title: "场馆管理",
+    title: "我的场馆",
     mode: "loading",
     venues: [] as ManagedVenue[],
+    applications: [] as readonly (VenueOnboardingApplication & { statusLabel: string; statusTone: string })[],
+    applicationsError: "",
     retrying: false,
     errorMessage: "",
     headerTopPx: 0,
@@ -34,10 +38,13 @@ Page({
     await this.loadManagedVenues();
   },
 
+  onShow() {
+    if (this.data.mode !== "loading" && !this.requestInFlight) void this.loadManagedVenues();
+  },
+
   onUnload() { this.disposed = true; },
 
   loadManagedVenues(): Promise<void> {
-    if (this.redirected) return Promise.resolve();
     if (this.requestInFlight) return this.requestInFlight;
     this.setData({ mode: "loading", errorMessage: "" });
     const request = (async () => {
@@ -45,15 +52,23 @@ Page({
         const source = getVenueAccessDataSource();
         await source.login();
         const venues = await source.listManagedVenues();
-        if (this.disposed) return;
-        if (venues.length === 1) {
-          this.enterWorkbench(venues[0].id);
-          return;
+        const onboarding = getVenueOnboardingDataSourceOrUndefined();
+        let applications: readonly VenueOnboardingApplication[] = [];
+        let applicationsError = "";
+        if (onboarding) {
+          try { applications = (await onboarding.listApplications()).items; } catch { applicationsError = "申请状态暂时无法读取，请重试"; }
         }
+        if (this.disposed) return;
         this.setData({
-          title: venues.length === 0 ? "场馆管理" : "选择管理场馆",
-          mode: venues.length === 0 ? "empty" : "multiple",
+          title: "我的场馆",
+          mode: venues.length === 0 ? "empty" : "ready",
           venues: [...venues],
+          applications: applications.map((application) => ({
+            ...application,
+            statusLabel: presentApplicationStatus(application.status).label,
+            statusTone: presentApplicationStatus(application.status).tone,
+          })),
+          applicationsError,
         });
       } catch (caught) {
         if (this.disposed) return;
@@ -72,7 +87,7 @@ Page({
   },
 
   async onRetry() {
-    if (this.data.retrying || this.redirected) return;
+    if (this.data.retrying) return;
     this.setData({ retrying: true });
     await this.loadManagedVenues();
     if (!this.disposed) this.setData({ retrying: false });
@@ -80,14 +95,13 @@ Page({
 
   onChooseVenue(event: VenueChooseEvent) {
     const venueId = event.currentTarget?.dataset?.venueId;
-    if (typeof venueId !== "string" || !this.data.venues.some((venue: { id: string }) => venue.id === venueId)) return;
+    if (typeof venueId !== "string" || !this.data.venues.some((venue: ManagedVenue) => venue.id === venueId)) return;
     this.enterWorkbench(venueId);
   },
 
   enterWorkbench(venueId: string) {
     if (this.redirected || this.disposed) return;
     this.redirected = true;
-    this.setData({ mode: "redirecting" });
     wx.redirectTo({
       url: workbenchUrl(venueId),
       fail: () => {
@@ -98,7 +112,13 @@ Page({
     });
   },
 
-  onBackToEntry() {
-    wx.reLaunch({ url: "/pages/intent-entry/index" });
+  onOpenClaim() { wx.navigateTo({ url: "/pages/venue-claim/index" }); },
+  onOpenCreate() { wx.navigateTo({ url: "/pages/venue-create/index" }); },
+  onOpenApplication(event: VenueChooseEvent) {
+    const { applicationId, kind, status } = event.currentTarget?.dataset as { applicationId?: unknown; kind?: unknown; status?: unknown } ?? {};
+    if (typeof applicationId !== "string" || status !== "REJECTED" || (kind !== "CLAIM" && kind !== "CREATE")) return;
+    const route = kind === "CLAIM" ? "venue-claim" : "venue-create";
+    wx.navigateTo({ url: `/pages/${route}/index?application_id=${encodeURIComponent(applicationId)}` });
   },
+  onBackToEntry() { wx.reLaunch({ url: "/pages/intent-entry/index" }); },
 });
