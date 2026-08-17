@@ -2141,10 +2141,14 @@ components:
         Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
       type: object
       additionalProperties: false
-      required: [name, address, evidence]
+      required: [name, address, district_code, district_name, latitude, longitude, evidence]
       properties:
         name: {type: string, minLength: 1, maxLength: 120}
         address: {type: string, minLength: 1, maxLength: 300}
+        district_code: {type: string, pattern: '^[0-9]{6}$'}
+        district_name: {type: string, minLength: 1, maxLength: 120}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
         evidence: {$ref: '#/components/schemas/VenueCreateEvidence'}
     VenueOnboardingApplicationVenue:
       type: object
