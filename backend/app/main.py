@@ -28,6 +28,7 @@ from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
 from backend.app.modules.platform_auth.router import router as platform_auth_router
+from backend.app.modules.platform_onboarding.router import router as platform_onboarding_router
 from backend.app.modules.venue_access.router import router as venue_access_router
 from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
 from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
@@ -142,6 +143,7 @@ def create_app(
         application.include_router(orders_router)
         application.include_router(payments_router)
         application.include_router(platform_auth_router)
+        application.include_router(platform_onboarding_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_onboarding_router)
@@ -219,6 +221,24 @@ def create_app(
                             else {"pattern": "^[0-9a-f]{64}$"}
                         ),
                     }
+            platform_decision = schema.get("paths", {}).get(
+                "/platform-admin/api/v1/onboarding/applications/{application_id}/decisions",
+                {},
+            ).get("post", {})
+            for parameter in platform_decision.get("parameters", []):
+                if parameter.get("name") not in {"Origin", "X-CSRF-Token"}:
+                    continue
+                name = parameter["name"]
+                parameter["required"] = True
+                parameter["schema"] = {
+                    "type": "string",
+                    "title": parameter.get("schema", {}).get("title", name),
+                    **(
+                        {"format": "uri"}
+                        if name == "Origin"
+                        else {"pattern": "^[0-9a-f]{64}$"}
+                    ),
+                }
             application.openapi_schema = schema
         return application.openapi_schema
 

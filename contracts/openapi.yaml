@@ -1971,6 +1971,137 @@ paths:
         '401': {description: Active platform staff session required, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_REQUIRED}}}}}]}}}}
         '403': {description: Same-origin or CSRF validation failed, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_CSRF_INVALID}}}}}]}}}}
         '503': {description: Platform authentication is unavailable, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}}]}}}}
+  /platform-admin/api/v1/onboarding/applications:
+    get:
+      operationId: listPlatformOnboardingApplications
+      description: Newest-first platform review queue. Private evidence storage fields and phone ciphertext are never returned.
+      security:
+        - platformSession: []
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: {type: string, enum: [CLAIM, CREATE]}
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: Filtered review queue.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingQueue'}
+              examples:
+                Queue: {externalValue: './examples/platform-onboarding-queue.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/onboarding/applications/{application_id}:
+    get:
+      operationId: getPlatformOnboardingApplication
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/OnboardingApplicationId'
+      responses:
+        '200':
+          description: Reviewer detail with masked phone and closed evidence metadata.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingApplicationDetail'}
+              examples:
+                Detail: {externalValue: './examples/platform-onboarding-detail.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '404': {$ref: '#/components/responses/PlatformOnboardingNotFound'}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/onboarding/evidence/{evidence_id}/download:
+    get:
+      operationId: createPlatformOnboardingEvidenceDownload
+      description: Issues a short-lived attachment-oriented GET URL for completed evidence attached to an onboarding application.
+      security:
+        - platformSession: []
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Short-lived private evidence download.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingEvidenceDownload'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '404': {$ref: '#/components/responses/PlatformOnboardingNotFound'}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/onboarding/applications/{application_id}/decisions:
+    post:
+      operationId: decidePlatformOnboardingApplication
+      description: >-
+        Atomically approves or rejects one application. An equivalent outcome and trimmed reason replays the existing
+        decision; any different decision against a decided application returns a state conflict.
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/OnboardingApplicationId'
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformOnboardingDecisionRequest'}
+      responses:
+        '200':
+          description: Decision applied or equivalently replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingDecision'}
+              examples:
+                Decision: {externalValue: './examples/platform-onboarding-decision.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '404': {$ref: '#/components/responses/PlatformOnboardingNotFound'}
+        '409':
+          description: Application already has a different immutable decision or a duplicate venue blocks approval.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ONBOARDING_APPLICATION_STATE_CHANGED, POSSIBLE_DUPLICATE_VENUE]}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
 components:
   securitySchemes:
     bearerAuth:
@@ -2010,7 +2141,62 @@ components:
       required: true
       description: Reuse the same key to recover the authoritative result after an unknown outcome.
       schema: {type: string, minLength: 16, maxLength: 128}
+    OnboardingApplicationId:
+      name: application_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
   responses:
+    PlatformAuthRequired:
+      description: Active platform staff session required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_REQUIRED}}}}
+    PlatformReviewForbidden:
+      description: Platform onboarding reviewer role or valid mutation protection required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {enum: [PLATFORM_ROLE_REQUIRED, PLATFORM_CSRF_INVALID]}}}}
+    PlatformOnboardingNotFound:
+      description: Application or attached evidence not found.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: ONBOARDING_APPLICATION_NOT_FOUND}}}}
+    PlatformOnboardingInvalid:
+      description: Filter, cursor, path, or decision input is invalid.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+    PlatformOnboardingUnavailable:
+      description: Platform onboarding review service is unavailable.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
     AuthRequired:
       description: Authentication required.
       content:
@@ -2085,6 +2271,142 @@ components:
           examples:
             VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    PlatformOnboardingVenueSummary:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address, district_name]
+      properties:
+        venue_id: {type: [string, 'null'], format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+    PlatformOnboardingQueueItem:
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, contact_name, venue, submitted_at, reviewed_at]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        contact_name: {type: string, minLength: 1, maxLength: 40}
+        venue: {$ref: '#/components/schemas/PlatformOnboardingVenueSummary'}
+        submitted_at: {type: string, format: date-time}
+        reviewed_at: {type: [string, 'null'], format: date-time}
+    PlatformOnboardingQueue:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformOnboardingQueueItem'}
+        next_cursor: {type: [string, 'null']}
+    PlatformOnboardingApplicant:
+      type: object
+      additionalProperties: false
+      required: [contact_name, masked_phone]
+      properties:
+        contact_name: {type: string, minLength: 1, maxLength: 40}
+        masked_phone: {type: string, pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'}
+    PlatformOnboardingTargetVenue:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address, district_code, district_name, latitude, longitude]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_code: {type: string, pattern: '^[0-9]{6}$'}
+        district_name: {type: string, minLength: 1}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    PlatformOnboardingProposedVenue:
+      type: object
+      additionalProperties: false
+      required: [name, address, district_code, district_name, latitude, longitude]
+      properties:
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_code: {type: string, pattern: '^[0-9]{6}$'}
+        district_name: {type: string, minLength: 1}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    PlatformOnboardingDuplicateCandidate:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address, district_name, is_listed, exact_address_match, distance_meters]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+        is_listed: {type: boolean}
+        exact_address_match: {type: boolean}
+        distance_meters: {type: integer, minimum: 0}
+    PlatformOnboardingEvidence:
+      description: Reviewer-safe evidence metadata without private object key or content digest.
+      type: object
+      additionalProperties: false
+      required: [evidence_id, kind, content_type, byte_size, created_at]
+      properties:
+        evidence_id: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/VenueOnboardingEvidenceKind'}
+        content_type: {type: string, enum: [image/jpeg, image/png, application/pdf]}
+        byte_size: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+    PlatformOnboardingDecision:
+      type: object
+      additionalProperties: false
+      required: [application_id, outcome, reason, reviewer_principal_id, reviewed_at, approved_venue_id]
+      properties:
+        application_id: {type: string, format: uuid}
+        outcome: {type: string, enum: [APPROVED, REJECTED]}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+        reviewer_principal_id: {type: string, minLength: 1, maxLength: 128}
+        reviewed_at: {type: string, format: date-time}
+        approved_venue_id: {type: [string, 'null'], format: uuid}
+    PlatformOnboardingDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, reason]
+      properties:
+        outcome: {type: string, enum: [APPROVED, REJECTED]}
+        reason: {type: string, minLength: 1, maxLength: 1000, pattern: '.*\S.*'}
+    PlatformOnboardingApplicationDetail:
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, submitted_at, applicant, target_venue, proposed_venue, duplicate_candidates, evidence, decision]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        submitted_at: {type: string, format: date-time}
+        applicant: {$ref: '#/components/schemas/PlatformOnboardingApplicant'}
+        target_venue:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformOnboardingTargetVenue'}
+            - {type: 'null'}
+        proposed_venue:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformOnboardingProposedVenue'}
+            - {type: 'null'}
+        duplicate_candidates:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformOnboardingDuplicateCandidate'}
+        evidence:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformOnboardingEvidence'}
+        decision:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformOnboardingDecision'}
+            - {type: 'null'}
+    PlatformOnboardingEvidenceDownload:
+      type: object
+      additionalProperties: false
+      required: [download_url, expires_at]
+      properties:
+        download_url: {type: string, format: uri, pattern: '^https://'}
+        expires_at: {type: string, format: date-time}
     PlatformSessionExchange:
       type: object
       additionalProperties: false
@@ -3903,6 +4225,7 @@ components:
             - PLATFORM_AUTH_REQUIRED
             - PLATFORM_AUTH_INVALID
             - PLATFORM_CSRF_INVALID
+            - PLATFORM_ROLE_REQUIRED
         message:
           type: string
           minLength: 1

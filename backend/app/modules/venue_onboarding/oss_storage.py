@@ -15,10 +15,12 @@ from backend.app.config import Settings
 
 from .storage import (
     UPLOAD_POLICY_TTL_SECONDS,
+    PrivateDownloadUrl,
     PrivateObject,
     PrivateObjectStateError,
     PrivateStorageUnavailableError,
     PrivateUploadPolicy,
+    _require_safe_download_request,
 )
 
 
@@ -152,3 +154,32 @@ class OssOnboardingStorage:
             raise PrivateStorageUnavailableError("private evidence read failed") from error
         finally:
             result.close()
+
+    def create_download_url(
+        self,
+        object_key: str,
+        expires_seconds: int,
+        attachment_filename: str,
+    ) -> PrivateDownloadUrl:
+        _require_safe_download_request(
+            object_key,
+            expires_seconds,
+            attachment_filename,
+        )
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_seconds)
+        try:
+            url = self._bucket.sign_url(
+                "GET",
+                object_key,
+                expires_seconds,
+                params={
+                    "response-content-disposition": (
+                        f'attachment; filename="{attachment_filename}"'
+                    )
+                },
+            )
+        except Exception as error:
+            raise PrivateStorageUnavailableError(
+                "private evidence signing failed"
+            ) from error
+        return PrivateDownloadUrl(url=cast(str, url), expires_at=expires_at)

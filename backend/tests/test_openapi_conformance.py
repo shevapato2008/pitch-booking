@@ -90,6 +90,84 @@ def test_openapi_exposes_only_implemented_slice_paths() -> None:
     assert set(paths["/api/v1/venues/primary"]) == {"get"}
 
 
+def test_platform_onboarding_review_contract_is_closed_and_runtime_aligned() -> None:
+    contract = _contract()
+    paths = contract["paths"]
+    schemas = contract["components"]["schemas"]
+    expected = {
+        "/platform-admin/api/v1/onboarding/applications": {"get"},
+        "/platform-admin/api/v1/onboarding/applications/{application_id}": {"get"},
+        "/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download": {"get"},
+        "/platform-admin/api/v1/onboarding/applications/{application_id}/decisions": {"post"},
+    }
+    assert {path: set(paths[path]) for path in expected} == expected
+    for path, methods in expected.items():
+        for method in methods:
+            operation = paths[path][method]
+            assert operation["security"] == [{"platformSession": []}]
+            assert "401" in operation["responses"]
+            assert "403" in operation["responses"]
+
+    queue_operation = paths["/platform-admin/api/v1/onboarding/applications"]["get"]
+    parameters = {parameter["name"]: parameter for parameter in queue_operation["parameters"]}
+    assert parameters["limit"]["schema"] == {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 20,
+    }
+    assert parameters["kind"]["schema"]["enum"] == ["CLAIM", "CREATE"]
+    assert parameters["status"]["schema"]["enum"] == [
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED",
+    ]
+
+    decision_operation = paths[
+        "/platform-admin/api/v1/onboarding/applications/{application_id}/decisions"
+    ]["post"]
+    assert decision_operation["parameters"][0] == {
+        "$ref": "#/components/parameters/OnboardingApplicationId"
+    }
+    assert {
+        parameter["name"] for parameter in decision_operation["parameters"][1:]
+    } == {"Origin", "X-CSRF-Token"}
+    decision_request = schemas["PlatformOnboardingDecisionRequest"]
+    assert decision_request["additionalProperties"] is False
+    assert set(decision_request["required"]) == {"outcome", "reason"}
+    assert decision_request["properties"]["reason"]["minLength"] == 1
+
+    for schema_name in (
+        "PlatformOnboardingQueue",
+        "PlatformOnboardingApplicationDetail",
+        "PlatformOnboardingEvidenceDownload",
+        "PlatformOnboardingDecision",
+    ):
+        assert schemas[schema_name]["additionalProperties"] is False
+
+    detail_example = json.loads(
+        (EXAMPLES_DIRECTORY / "platform-onboarding-detail.json").read_text()
+    )
+    _assert_example_matches_schema(
+        contract, detail_example, schemas["PlatformOnboardingApplicationDetail"]
+    )
+    detail_text = json.dumps(detail_example)
+    assert "object_key" not in detail_text
+    assert "content_sha256" not in detail_text
+    assert "ciphertext" not in detail_text
+
+    runtime = create_app().openapi()
+    for path, methods in expected.items():
+        assert set(runtime["paths"][path]) == methods
+    assert runtime["components"]["schemas"]["PlatformOnboardingDecision"][
+        "properties"
+    ]["outcome"] == {
+        "type": "string",
+        "enum": ["APPROVED", "REJECTED"],
+        "title": "Outcome",
+    }
+
+
 def test_managed_venues_contract_and_runtime_are_closed_and_authenticated() -> None:
     contract = _contract()
     operation = contract["paths"]["/api/v1/admin/venues"]["get"]

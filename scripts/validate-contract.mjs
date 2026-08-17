@@ -340,6 +340,24 @@ const exampleMap = [
     ],
   },
   {
+    filename: 'platform-onboarding-queue.json',
+    reference: './examples/platform-onboarding-queue.json',
+    schema: 'PlatformOnboardingQueue',
+    attachments: [attachment('/platform-admin/api/v1/onboarding/applications', '200', 'Queue')],
+  },
+  {
+    filename: 'platform-onboarding-detail.json',
+    reference: './examples/platform-onboarding-detail.json',
+    schema: 'PlatformOnboardingApplicationDetail',
+    attachments: [attachment('/platform-admin/api/v1/onboarding/applications/{application_id}', '200', 'Detail')],
+  },
+  {
+    filename: 'platform-onboarding-decision.json',
+    reference: './examples/platform-onboarding-decision.json',
+    schema: 'PlatformOnboardingDecision',
+    attachments: [attachment('/platform-admin/api/v1/onboarding/applications/{application_id}/decisions', '200', 'Decision', 'post')],
+  },
+  {
     filename: 'error-possible-duplicate-venue.json',
     reference: './examples/error-possible-duplicate-venue.json',
     schema: 'ErrorEnvelope',
@@ -562,6 +580,7 @@ const requiredErrorCodes = new Set([
   'PLATFORM_AUTH_REQUIRED',
   'PLATFORM_AUTH_INVALID',
   'PLATFORM_CSRF_INVALID',
+  'PLATFORM_ROLE_REQUIRED',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -571,6 +590,7 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'PLATFORM_AUTH_REQUIRED',
   'PLATFORM_AUTH_INVALID',
   'PLATFORM_CSRF_INVALID',
+  'PLATFORM_ROLE_REQUIRED',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -595,6 +615,10 @@ const expectedOperations = new Map([
   ['/api/v1/venue-onboarding/venues', new Set(['post'])],
   ['/api/v1/venue-onboarding/applications', new Set(['get'])],
   ['/platform-admin/api/v1/auth/session', new Set(['post', 'get', 'delete'])],
+  ['/platform-admin/api/v1/onboarding/applications', new Set(['get'])],
+  ['/platform-admin/api/v1/onboarding/applications/{application_id}', new Set(['get'])],
+  ['/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download', new Set(['get'])],
+  ['/platform-admin/api/v1/onboarding/applications/{application_id}/decisions', new Set(['post'])],
   ['/api/v1/admin/venues', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
   ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],
