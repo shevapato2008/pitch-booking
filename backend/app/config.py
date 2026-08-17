@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     public_image_hosts: tuple[str, ...] = ()
     oss_endpoint: AnyHttpUrl | None = Field(default=None, repr=False)
     oss_bucket: str | None = Field(default=None, repr=False)
-    oss_onboarding_bucket: str | None = Field(default=None, repr=False)
+    onboarding_oss_bucket: str | None = Field(default=None, repr=False)
     oss_public_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
     oss_access_key_id: str | None = Field(default=None, repr=False)
     oss_access_key_secret: SecretStr | None = Field(default=None, repr=False)
@@ -289,7 +289,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "oss_bucket",
-        "oss_onboarding_bucket",
+        "onboarding_oss_bucket",
         "oss_access_key_id",
         mode="before",
     )
@@ -298,7 +298,7 @@ class Settings(BaseSettings):
         field_name = info.field_name
         assert field_name is not None
         if value is None or type(value) is str and not value.strip():
-            if cls._is_deployed(info) and field_name != "oss_onboarding_bucket":
+            if cls._is_deployed(info) and field_name != "onboarding_oss_bucket":
                 raise cls._safe_value_error(
                     field_name,
                     "OSS storage configuration is required for staging and production",
@@ -308,7 +308,7 @@ class Settings(BaseSettings):
             return None
         if type(value) is not str or value != value.strip():
             raise cls._safe_value_error(field_name, f"{field_name.upper()} is invalid")
-        if field_name in {"oss_bucket", "oss_onboarding_bucket"} and _OSS_BUCKET.fullmatch(
+        if field_name in {"oss_bucket", "onboarding_oss_bucket"} and _OSS_BUCKET.fullmatch(
             value
         ) is None:
             raise cls._safe_value_error(field_name, f"{field_name.upper()} is invalid")
@@ -431,10 +431,10 @@ class Settings(BaseSettings):
     def validate_private_onboarding_bucket(self) -> "Settings":
         if (
             self.oss_bucket is not None
-            and self.oss_onboarding_bucket is not None
-            and self.oss_bucket == self.oss_onboarding_bucket
+            and self.onboarding_oss_bucket is not None
+            and self.oss_bucket == self.onboarding_oss_bucket
         ):
-            raise ValueError("OSS_ONBOARDING_BUCKET must be separate from OSS_BUCKET")
+            raise ValueError("ONBOARDING_OSS_BUCKET must be separate from OSS_BUCKET")
         return self
 
     @property

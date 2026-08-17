@@ -45,7 +45,7 @@ class OssOnboardingStorage:
     def from_settings(cls, settings: Settings) -> OssOnboardingStorage:
         required = (
             settings.oss_endpoint,
-            settings.oss_onboarding_bucket,
+            settings.onboarding_oss_bucket,
             settings.oss_access_key_id,
             settings.oss_access_key_secret,
         )
@@ -53,19 +53,19 @@ class OssOnboardingStorage:
             raise ValueError("private onboarding OSS configuration is incomplete")
         assert settings.oss_access_key_secret is not None
         assert settings.oss_endpoint is not None
-        assert settings.oss_onboarding_bucket is not None
+        assert settings.onboarding_oss_bucket is not None
         assert settings.oss_access_key_id is not None
         secret = settings.oss_access_key_secret.get_secret_value()
         auth = oss2.AuthV2(settings.oss_access_key_id, secret)
         bucket = oss2.Bucket(
             auth,
             str(settings.oss_endpoint),
-            settings.oss_onboarding_bucket,
+            settings.onboarding_oss_bucket,
         )
         return cls(
             bucket=bucket,
             endpoint=str(settings.oss_endpoint),
-            bucket_name=settings.oss_onboarding_bucket,
+            bucket_name=settings.onboarding_oss_bucket,
             access_key_id=settings.oss_access_key_id,
             access_key_secret=secret,
         )

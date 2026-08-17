@@ -84,7 +84,7 @@ def create_app(
             resolved_onboarding_store = venue_onboarding_store
         elif resolved_settings.app_env not in {"staging", "production"}:
             resolved_onboarding_store = MemoryOnboardingStorage()
-        elif resolved_settings.oss_onboarding_bucket is None:
+        elif resolved_settings.onboarding_oss_bucket is None:
             resolved_onboarding_store = UnavailableOnboardingStorage()
         else:
             resolved_onboarding_store = OssOnboardingStorage.from_settings(

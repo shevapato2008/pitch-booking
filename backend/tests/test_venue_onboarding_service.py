@@ -171,5 +171,15 @@ def test_onboarding_bucket_cannot_reuse_public_media_bucket() -> None:
     with pytest.raises(ValidationError, match="must be separate"):
         Settings(
             oss_bucket="venue-media-test",
-            oss_onboarding_bucket="venue-media-test",
+            onboarding_oss_bucket="venue-media-test",
         )
+
+
+def test_onboarding_bucket_uses_frozen_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONBOARDING_OSS_BUCKET", "venue-onboarding-private")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.onboarding_oss_bucket == "venue-onboarding-private"
