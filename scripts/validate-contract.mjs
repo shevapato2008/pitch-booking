@@ -331,6 +331,15 @@ const exampleMap = [
     attachments: [attachment('/api/v1/venue-onboarding/applications', '200', 'Applications')],
   },
   {
+    filename: 'platform-session.json',
+    reference: './examples/platform-session.json',
+    schema: 'PlatformSession',
+    attachments: [
+      attachment('/platform-admin/api/v1/auth/session', '200', 'PlatformSession', 'post'),
+      attachment('/platform-admin/api/v1/auth/session', '200', 'PlatformSession'),
+    ],
+  },
+  {
     filename: 'error-possible-duplicate-venue.json',
     reference: './examples/error-possible-duplicate-venue.json',
     schema: 'ErrorEnvelope',
@@ -550,12 +559,18 @@ const requiredErrorCodes = new Set([
   'ONBOARDING_APPLICATION_EXISTS',
   'ONBOARDING_APPLICATION_NOT_FOUND',
   'ONBOARDING_APPLICATION_STATE_CHANGED',
+  'PLATFORM_AUTH_REQUIRED',
+  'PLATFORM_AUTH_INVALID',
+  'PLATFORM_CSRF_INVALID',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
   'ONBOARDING_APPLICATION_EXISTS',
   'ONBOARDING_APPLICATION_NOT_FOUND',
   'ONBOARDING_APPLICATION_STATE_CHANGED',
+  'PLATFORM_AUTH_REQUIRED',
+  'PLATFORM_AUTH_INVALID',
+  'PLATFORM_CSRF_INVALID',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -579,6 +594,7 @@ const expectedOperations = new Map([
   ['/api/v1/venue-onboarding/claims', new Set(['post'])],
   ['/api/v1/venue-onboarding/venues', new Set(['post'])],
   ['/api/v1/venue-onboarding/applications', new Set(['get'])],
+  ['/platform-admin/api/v1/auth/session', new Set(['post', 'get', 'delete'])],
   ['/api/v1/admin/venues', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
   ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],

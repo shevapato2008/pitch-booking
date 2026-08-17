@@ -93,12 +93,13 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen twenty-five-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen thirty-three-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
     '/api/v1/admin/moderation/venue-profiles/pending',
     '/api/v1/admin/moderation/venue-profiles/{item_id}/decisions',
+    '/api/v1/admin/venues',
     '/api/v1/admin/venues/{venue_id}/inventory',
     '/api/v1/admin/venues/{venue_id}/inventory/slots',
     '/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}',
@@ -118,10 +119,17 @@ test('OpenAPI document validates and exposes the frozen twenty-five-path operati
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
     '/api/v1/slots/{slot_id}/checkout',
+    '/api/v1/venue-onboarding/applications',
+    '/api/v1/venue-onboarding/candidates',
+    '/api/v1/venue-onboarding/claims',
+    '/api/v1/venue-onboarding/evidence/upload-intents',
+    '/api/v1/venue-onboarding/evidence/{evidence_id}/complete',
+    '/api/v1/venue-onboarding/venues',
     '/api/v1/venues/map',
     '/api/v1/venues/primary',
     '/api/v1/venues/{venue_id}',
     '/api/v1/venues/{venue_id}/availability',
+    '/platform-admin/api/v1/auth/session',
   ]);
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
 });

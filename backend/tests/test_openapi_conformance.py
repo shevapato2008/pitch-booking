@@ -973,3 +973,79 @@ def test_possible_duplicate_response_rejects_unrelated_error_details() -> None:
 
     safe_error["error"]["details"] = {"field": "address"}
     assert not validator.is_valid(safe_error)
+
+
+def test_platform_session_contract_is_closed_cookie_authenticated_and_csrf_protected() -> None:
+    contract = _contract()
+    path = contract["paths"]["/platform-admin/api/v1/auth/session"]
+    assert set(path) == {"post", "get", "delete"}
+
+    assert path["post"].get("security", []) == []
+    assert set(path["post"]["responses"]) == {"200", "401", "422", "503"}
+    assert path["get"]["security"] == [{"platformSession": []}]
+    assert set(path["get"]["responses"]) == {"200", "401", "503"}
+    assert path["delete"]["security"] == [{"platformSession": []}]
+    assert set(path["delete"]["responses"]) == {"204", "401", "403", "503"}
+
+    exchange = contract["components"]["schemas"]["PlatformSessionExchange"]
+    assert exchange["additionalProperties"] is False
+    assert set(exchange["required"]) == {"access_token"}
+    assert set(exchange["properties"]) == {"access_token"}
+    assert exchange["properties"]["access_token"] == {
+        "type": "string",
+        "minLength": 32,
+        "maxLength": 256,
+        "writeOnly": True,
+    }
+
+    response = contract["components"]["schemas"]["PlatformSession"]
+    assert response["additionalProperties"] is False
+    assert set(response["required"]) == {
+        "principal_id",
+        "display_name",
+        "roles",
+        "csrf_token",
+        "expires_at",
+    }
+    assert not {"access_token", "token_sha256", "session_token"} & set(
+        response["properties"]
+    )
+    assert response["properties"]["roles"]["items"]["enum"] == [
+        "PLATFORM_ADMIN",
+        "ONBOARDING_REVIEWER",
+    ]
+
+    parameters = {item["name"]: item for item in path["delete"]["parameters"]}
+    assert set(parameters) == {"Origin", "X-CSRF-Token"}
+    assert all(item["in"] == "header" and item["required"] for item in parameters.values())
+    assert contract["components"]["securitySchemes"]["platformSession"] == {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "pitch_platform_session",
+    }
+
+    expected_error_codes = {
+        ("post", "401"): "PLATFORM_AUTH_INVALID",
+        ("post", "422"): "INVALID_ARGUMENT",
+        ("post", "503"): "SERVICE_UNAVAILABLE",
+        ("get", "401"): "PLATFORM_AUTH_REQUIRED",
+        ("get", "503"): "SERVICE_UNAVAILABLE",
+        ("delete", "401"): "PLATFORM_AUTH_REQUIRED",
+        ("delete", "403"): "PLATFORM_CSRF_INVALID",
+        ("delete", "503"): "SERVICE_UNAVAILABLE",
+    }
+    for (method, status), code in expected_error_codes.items():
+        schema = _response_schema(path[method], status)
+        assert schema["allOf"][0] == {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+        }
+        assert schema["allOf"][1]["properties"]["error"]["properties"][
+            "code"
+        ] == {"const": code}
+
+    example = json.loads((EXAMPLES_DIRECTORY / "platform-session.json").read_text())
+    _assert_example_matches_schema(contract, example, response)
+
+    runtime = create_app().openapi()
+    runtime_path = runtime["paths"]["/platform-admin/api/v1/auth/session"]
+    assert set(runtime_path) == {"post", "get", "delete"}

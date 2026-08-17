@@ -1149,6 +1149,44 @@ class UserSession(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
 
+class PlatformSession(Base):
+    __tablename__ = "platform_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "token_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_platform_sessions_token_hash",
+        ),
+        CheckConstraint(
+            "length(trim(principal_id)) BETWEEN 1 AND 128",
+            name="ck_platform_sessions_principal_id",
+        ),
+        CheckConstraint(
+            "expires_at > issued_at",
+            name="ck_platform_sessions_expiry",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= issued_at",
+            name="ck_platform_sessions_revoked_at",
+        ),
+        UniqueConstraint(
+            "token_hash",
+            name="uq_platform_sessions_token_hash",
+        ),
+        Index("ix_platform_sessions_principal_id", "principal_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    token_hash: Mapped[str] = mapped_column(String(64))
+    principal_id: Mapped[str] = mapped_column(String(128))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (

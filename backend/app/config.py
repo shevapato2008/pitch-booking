@@ -1,6 +1,7 @@
 import base64
 import binascii
 import inspect
+import json
 import re
 import uuid
 from typing import Annotated, Any, Literal, cast
@@ -66,6 +67,8 @@ class Settings(BaseSettings):
     phone_encryption_key_base64: SecretStr | None = Field(default=None, repr=False)
     phone_encryption_key_version: int | None = None
     session_ttl_days: int = 30
+    platform_staff_principals_json: SecretStr | None = Field(default=None, repr=False)
+    platform_csrf_secret: SecretStr | None = Field(default=None, repr=False)
 
     def __init__(self, **values: object) -> None:
         known_fields = {name.casefold(): name for name in type(self).model_fields}
@@ -127,6 +130,10 @@ class Settings(BaseSettings):
             "OSS_ACCESS_KEY_SECRET",
             "dashscope_api_key",
             "DASHSCOPE_API_KEY",
+            "platform_staff_principals_json",
+            "PLATFORM_STAFF_PRINCIPALS_JSON",
+            "platform_csrf_secret",
+            "PLATFORM_CSRF_SECRET",
         ):
             secret = sanitized.get(key)
             if secret is None or isinstance(secret, SecretStr):
@@ -145,6 +152,100 @@ class Settings(BaseSettings):
             if value is not None:
                 raise ValueError("WECHAT_APP_SECRET must not be empty")
         return value
+
+    @field_validator("platform_staff_principals_json", mode="before")
+    @classmethod
+    def validate_platform_staff_principals(
+        cls, value: object
+    ) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if type(raw) is not str or not raw:
+            raise cls._safe_value_error(
+                "platform_staff_principals_json",
+                "PLATFORM_STAFF_PRINCIPALS_JSON is invalid",
+            )
+        try:
+            decoded = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raise cls._safe_value_error(
+                "platform_staff_principals_json",
+                "PLATFORM_STAFF_PRINCIPALS_JSON is invalid",
+            ) from None
+        if not isinstance(decoded, list):
+            raise cls._safe_value_error(
+                "platform_staff_principals_json",
+                "PLATFORM_STAFF_PRINCIPALS_JSON is invalid",
+            )
+        expected = {
+            "principal_id",
+            "display_name",
+            "token_sha256",
+            "enabled",
+            "roles",
+        }
+        allowed_roles = {"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"}
+        principal_ids: set[str] = set()
+        token_hashes: set[str] = set()
+        for item in decoded:
+            if not isinstance(item, dict) or set(item) != expected:
+                raise cls._safe_value_error(
+                    "platform_staff_principals_json",
+                    "PLATFORM_STAFF_PRINCIPALS_JSON is invalid",
+                )
+            principal_id = item["principal_id"]
+            display_name = item["display_name"]
+            token_hash = item["token_sha256"]
+            enabled = item["enabled"]
+            roles = item["roles"]
+            if (
+                type(principal_id) is not str
+                or not 1 <= len(principal_id.strip()) <= 128
+                or principal_id != principal_id.strip()
+                or type(display_name) is not str
+                or not 1 <= len(display_name.strip()) <= 120
+                or display_name != display_name.strip()
+                or type(token_hash) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", token_hash, re.ASCII) is None
+                or type(enabled) is not bool
+                or not isinstance(roles, list)
+                or not roles
+                or any(type(role) is not str or role not in allowed_roles for role in roles)
+                or len(set(roles)) != len(roles)
+                or principal_id in principal_ids
+                or token_hash in token_hashes
+            ):
+                raise cls._safe_value_error(
+                    "platform_staff_principals_json",
+                    "PLATFORM_STAFF_PRINCIPALS_JSON is invalid",
+                )
+            principal_ids.add(principal_id)
+            token_hashes.add(token_hash)
+        return SecretStr(raw)
+
+    @field_validator("platform_csrf_secret", mode="before")
+    @classmethod
+    def validate_platform_csrf_secret(cls, value: object) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if type(raw) is not str:
+            raise cls._safe_value_error(
+                "platform_csrf_secret", "PLATFORM_CSRF_SECRET is invalid"
+            )
+        try:
+            decoded = base64.b64decode(raw, validate=True)
+        except (binascii.Error, UnicodeEncodeError, ValueError):
+            raise cls._safe_value_error(
+                "platform_csrf_secret", "PLATFORM_CSRF_SECRET is invalid"
+            ) from None
+        if len(decoded) != 32 or base64.b64encode(decoded).decode("ascii") != raw:
+            raise cls._safe_value_error(
+                "platform_csrf_secret",
+                "PLATFORM_CSRF_SECRET must be canonical Base64 for exactly 32 bytes",
+            )
+        return SecretStr(raw)
 
     @field_validator("phone_encryption_key_base64")
     @classmethod

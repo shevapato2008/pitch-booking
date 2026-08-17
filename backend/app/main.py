@@ -27,6 +27,7 @@ from backend.app.modules.payments.development_router import router as developmen
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
+from backend.app.modules.platform_auth.router import router as platform_auth_router
 from backend.app.modules.venue_access.router import router as venue_access_router
 from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
 from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
@@ -140,6 +141,7 @@ def create_app(
         application.include_router(inventory_router)
         application.include_router(orders_router)
         application.include_router(payments_router)
+        application.include_router(platform_auth_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_onboarding_router)

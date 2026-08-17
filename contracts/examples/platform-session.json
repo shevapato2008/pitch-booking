@@ -1,0 +1,7 @@
+{
+  "principal_id": "ops-1",
+  "display_name": "平台审核员",
+  "roles": ["ONBOARDING_REVIEWER"],
+  "csrf_token": "8ea398b79d28d28c521f8ea505d6f8cc60807203873ac128336e816376247e3a",
+  "expires_at": "2026-08-17T18:00:00Z"
+}
