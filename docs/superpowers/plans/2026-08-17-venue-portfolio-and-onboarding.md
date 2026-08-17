@@ -8,6 +8,8 @@
 
 **Tech Stack:** WeChat Mini Program TypeScript/WXML/WXSS, FastAPI, SQLAlchemy 2, PostgreSQL, Alembic, Alibaba Cloud OSS private objects, plain TypeScript/HTML/CSS platform console, OpenAPI, Jest, Node test runner, pytest.
 
+**Implementation status (2026-08-18):** Tasks 1–11 and Task 12 Steps 1–4 are implemented, reviewed and deployed. The production entry, portfolio, create/claim forms and image selection have received focused iPhone confirmation. Task 12 Steps 5–7 remain: one controlled CLAIM approval, one controlled CREATE approval, final device/desktop audit, roadmap closeout and branch integration.
+
 ---
 
 ## Scope and fixed decisions
