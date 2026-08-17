@@ -19,6 +19,7 @@ from .storage import (
     PrivateObjectStateError,
     PrivateStorageUnavailableError,
     PrivateUploadPolicy,
+    _require_safe_private_object_request,
 )
 
 
@@ -152,3 +153,48 @@ class OssOnboardingStorage:
             raise PrivateStorageUnavailableError("private evidence read failed") from error
         finally:
             result.close()
+
+    def open_private_object(
+        self,
+        object_key: str,
+        expected_bytes: int,
+    ) -> bytes:
+        _require_safe_private_object_request(object_key, expected_bytes)
+        try:
+            result = self._bucket.get_object(object_key)
+        except Exception as error:
+            raise PrivateStorageUnavailableError(
+                "private evidence download failed"
+            ) from error
+        try:
+            if getattr(result, "content_length", None) != expected_bytes:
+                raise PrivateObjectStateError(
+                    "private evidence length no longer matches the verified record"
+                )
+            chunks: list[bytes] = []
+            total = 0
+            maximum_read = expected_bytes + 1
+            while total < maximum_read:
+                chunk = result.read(min(64 * 1024, maximum_read - total))
+                if not chunk:
+                    break
+                chunks.append(cast(bytes, chunk))
+                total += len(chunk)
+            if total != expected_bytes:
+                raise PrivateObjectStateError(
+                    "private evidence length no longer matches the verified record"
+                )
+            return b"".join(chunks)
+        except PrivateObjectStateError:
+            raise
+        except Exception as error:
+            raise PrivateStorageUnavailableError(
+                "private evidence download failed"
+            ) from error
+        finally:
+            try:
+                result.close()
+            except Exception as error:
+                raise PrivateStorageUnavailableError(
+                    "private evidence download failed"
+                ) from error

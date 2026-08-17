@@ -72,6 +72,12 @@ class VenueOnboardingStore(Protocol):
         maximum_bytes: int,
     ) -> PrivateObject: ...
 
+    def open_private_object(
+        self,
+        object_key: str,
+        expected_bytes: int,
+    ) -> bytes: ...
+
 
 class MemoryOnboardingStorage:
     """Non-networked development adapter; tests may inject their own protocol fake."""
@@ -109,6 +115,25 @@ class MemoryOnboardingStorage:
         item = require_single_private_object(self._objects.get(object_prefix, []))
         return PrivateObject(item.object_key, item.data[: maximum_bytes + 1])
 
+    def open_private_object(
+        self,
+        object_key: str,
+        expected_bytes: int,
+    ) -> bytes:
+        _require_safe_private_object_request(object_key, expected_bytes)
+        matches = [
+            item
+            for objects in self._objects.values()
+            for item in objects
+            if item.object_key == object_key
+        ]
+        item = require_single_private_object(matches)
+        if len(item.data) != expected_bytes:
+            raise PrivateObjectStateError(
+                "private evidence length no longer matches the verified record"
+            )
+        return bytes(item.data)
+
     def accept_upload(self, object_prefix: str, filename: str, data: bytes) -> None:
         self._objects.setdefault(object_prefix, []).append(
             PrivateObject(f"{object_prefix}{filename}", bytes(data))
@@ -139,6 +164,16 @@ class UnavailableOnboardingStorage:
             "dedicated private onboarding bucket is not configured"
         )
 
+    def open_private_object(
+        self,
+        object_key: str,
+        expected_bytes: int,
+    ) -> bytes:
+        del object_key, expected_bytes
+        raise PrivateStorageUnavailableError(
+            "dedicated private onboarding bucket is not configured"
+        )
+
 
 def evidence_constraints(kind: VenueOnboardingEvidenceKind) -> EvidenceConstraints:
     if kind in {
@@ -158,6 +193,32 @@ def require_single_private_object(objects: Sequence[PrivateObject]) -> PrivateOb
             "private evidence prefix must contain exactly one object"
         )
     return objects[0]
+
+
+def _require_safe_private_object_request(
+    object_key: str,
+    expected_bytes: int,
+) -> None:
+    segments = object_key.split("/")
+    if len(segments) < 4 or segments[0] != "venue-onboarding":
+        raise ValueError("review download object key is outside the private namespace")
+    try:
+        UUID(segments[1])
+        UUID(segments[2])
+    except ValueError:
+        raise ValueError(
+            "review download object key is outside the private namespace"
+        ) from None
+    if any(
+        not segment
+        or segment in {".", ".."}
+        or "\\" in segment
+        or any(ord(character) < 32 for character in segment)
+        for segment in segments
+    ):
+        raise ValueError("review download object key is outside the private namespace")
+    if not 1 <= expected_bytes <= PHOTO_MAXIMUM_BYTES:
+        raise ValueError("review download byte bound is invalid")
 
 
 def validate_evidence_object(

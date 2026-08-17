@@ -93,7 +93,7 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen thirty-three-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen thirty-seven-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
@@ -130,6 +130,10 @@ test('OpenAPI document validates and exposes the frozen thirty-three-path operat
     '/api/v1/venues/{venue_id}',
     '/api/v1/venues/{venue_id}/availability',
     '/platform-admin/api/v1/auth/session',
+    '/platform-admin/api/v1/onboarding/applications',
+    '/platform-admin/api/v1/onboarding/applications/{application_id}',
+    '/platform-admin/api/v1/onboarding/applications/{application_id}/decisions',
+    '/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download',
   ]);
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
 });

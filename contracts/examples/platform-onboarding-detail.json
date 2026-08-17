@@ -1,0 +1,30 @@
+{
+  "application_id": "2d2be4ad-8f75-43c9-942d-23f6f6ff7601",
+  "kind": "CREATE",
+  "status": "SUBMITTED",
+  "submitted_at": "2026-08-17T08:18:00+08:00",
+  "applicant": {
+    "contact_name": "吴晨",
+    "masked_phone": "139****1068"
+  },
+  "target_venue": null,
+  "proposed_venue": {
+    "name": "杨浦滨江足球中心",
+    "address": "安浦路 615 号滨江运动园 2 号入口",
+    "district_code": "310110",
+    "district_name": "杨浦区",
+    "latitude": 31.2631,
+    "longitude": 121.5386
+  },
+  "duplicate_candidates": [],
+  "evidence": [
+    {
+      "evidence_id": "a05f5b32-5441-4e1d-9902-2a6df7622542",
+      "kind": "BUSINESS_LICENSE",
+      "content_type": "application/pdf",
+      "byte_size": 1258291,
+      "created_at": "2026-08-17T08:11:00+08:00"
+    }
+  ],
+  "decision": null
+}
