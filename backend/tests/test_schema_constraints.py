@@ -190,6 +190,39 @@ def test_declared_indexes_and_overlap_constraint_exist(pg_engine: Engine) -> Non
         assert {row[0] for row in exclusions} == {"ex_slots_no_overlap"}
 
 
+def test_onboarding_tables_and_pending_uniqueness_indexes_exist(pg_engine: Engine) -> None:
+    inspector = inspect(pg_engine)
+
+    assert set(inspector.get_table_names()) >= {
+        "venue_onboarding_applications",
+        "venue_onboarding_evidence",
+    }
+    assert {index["name"] for index in inspector.get_indexes("venue_onboarding_applications")} >= {
+        "uq_venue_onboarding_submitted_claim",
+        "uq_venue_onboarding_submitted_create",
+    }
+    evidence_columns = {
+        column["name"]: column for column in inspector.get_columns("venue_onboarding_evidence")
+    }
+    application_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("venue_onboarding_applications")
+    }
+    assert "reviewer_principal_id" in application_columns
+    assert str(application_columns["reviewer_principal_id"]["type"]) == "VARCHAR(128)"
+    assert application_columns["reviewer_principal_id"]["nullable"] is True
+    assert "reviewer_user_id" not in application_columns
+    foreign_key_columns = {
+        column
+        for constraint in inspector.get_foreign_keys("venue_onboarding_applications")
+        for column in constraint["constrained_columns"]
+    }
+    assert "reviewer_principal_id" not in foreign_key_columns
+    assert evidence_columns["owner_user_id"]["nullable"] is False
+    assert evidence_columns["application_id"]["nullable"] is True
+    assert "url" not in evidence_columns
+
+
 def _profile_user() -> profile_models.User:
     return profile_models.User(wechat_app_id="wx-profile", wechat_openid=f"profile-{uuid.uuid4()}")
 

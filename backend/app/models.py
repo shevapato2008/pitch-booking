@@ -159,6 +159,29 @@ class ProfileMutationState(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class VenueOnboardingKind(StrEnum):
+    CLAIM = "CLAIM"
+    CREATE = "CREATE"
+
+
+class VenueOnboardingStatus(StrEnum):
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class VenueOnboardingEvidenceKind(StrEnum):
+    BUSINESS_LICENSE = "BUSINESS_LICENSE"
+    MANAGEMENT_AUTHORIZATION = "MANAGEMENT_AUTHORIZATION"
+    VENUE_EXTERIOR = "VENUE_EXTERIOR"
+    VENUE_INTERIOR = "VENUE_INTERIOR"
+
+
+class VenueOnboardingEvidenceState(StrEnum):
+    UPLOADING = "UPLOADING"
+    COMPLETED = "COMPLETED"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -878,6 +901,226 @@ class User(Base):
     venue_memberships: Mapped[list[VenueMembership]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class VenueOnboardingApplication(Base):
+    __tablename__ = "venue_onboarding_applications"
+    __table_args__ = (
+        CheckConstraint(
+            "(kind = 'CLAIM' AND target_venue_id IS NOT NULL "
+            "AND proposed_name IS NULL AND proposed_address IS NULL "
+            "AND proposed_district_code IS NULL AND proposed_district_name IS NULL "
+            "AND proposed_latitude IS NULL AND proposed_longitude IS NULL "
+            "AND normalized_proposed_name IS NULL "
+            "AND normalized_proposed_address IS NULL) OR "
+            "(kind = 'CREATE' AND target_venue_id IS NULL "
+            "AND proposed_name IS NOT NULL AND proposed_address IS NOT NULL "
+            "AND proposed_district_code IS NOT NULL "
+            "AND proposed_district_name IS NOT NULL "
+            "AND proposed_latitude IS NOT NULL AND proposed_longitude IS NOT NULL "
+            "AND normalized_proposed_name IS NOT NULL "
+            "AND normalized_proposed_address IS NOT NULL)",
+            name="ck_onboarding_applications_kind_fields",
+        ),
+        CheckConstraint(
+            "proposed_name IS NULL OR length(trim(proposed_name)) > 0",
+            name="ck_onboarding_applications_proposed_name",
+        ),
+        CheckConstraint(
+            "proposed_address IS NULL OR length(trim(proposed_address)) > 0",
+            name="ck_onboarding_applications_proposed_address",
+        ),
+        CheckConstraint(
+            "proposed_district_code IS NULL OR proposed_district_code ~ '^[0-9]{6}$'",
+            name="ck_onboarding_applications_district_code",
+        ),
+        CheckConstraint(
+            "proposed_district_name IS NULL OR length(trim(proposed_district_name)) > 0",
+            name="ck_onboarding_applications_district_name",
+        ),
+        CheckConstraint(
+            "proposed_latitude IS NULL OR proposed_latitude BETWEEN -90 AND 90",
+            name="ck_onboarding_applications_latitude",
+        ),
+        CheckConstraint(
+            "proposed_longitude IS NULL OR proposed_longitude BETWEEN -180 AND 180",
+            name="ck_onboarding_applications_longitude",
+        ),
+        CheckConstraint(
+            "normalized_proposed_name IS NULL OR length(trim(normalized_proposed_name)) > 0",
+            name="ck_onboarding_applications_normalized_name",
+        ),
+        CheckConstraint(
+            "normalized_proposed_address IS NULL OR length(trim(normalized_proposed_address)) > 0",
+            name="ck_onboarding_applications_normalized_address",
+        ),
+        CheckConstraint(
+            "length(trim(contact_name)) BETWEEN 1 AND 40",
+            name="ck_onboarding_applications_contact_name",
+        ),
+        CheckConstraint(
+            "contact_phone_key_version > 0",
+            name="ck_onboarding_applications_phone_key_version",
+        ),
+        CheckConstraint(
+            "octet_length(contact_phone_nonce) = 12",
+            name="ck_onboarding_applications_phone_nonce_length",
+        ),
+        CheckConstraint(
+            "octet_length(contact_phone_ciphertext) >= 16",
+            name="ck_onboarding_applications_phone_ciphertext_length",
+        ),
+        CheckConstraint(
+            "(status = 'SUBMITTED' AND reviewer_principal_id IS NULL "
+            "AND reviewed_at IS NULL AND review_reason IS NULL "
+            "AND approved_venue_id IS NULL) OR "
+            "(status = 'APPROVED' AND reviewer_principal_id IS NOT NULL "
+            "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
+            "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NOT NULL) OR "
+            "(status = 'REJECTED' AND reviewer_principal_id IS NOT NULL "
+            "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
+            "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NULL)",
+            name="ck_onboarding_applications_review_state",
+        ),
+        CheckConstraint(
+            "reviewer_principal_id IS NULL OR length(trim(reviewer_principal_id)) > 0",
+            name="ck_onboarding_applications_reviewer_principal",
+        ),
+        CheckConstraint(
+            "reviewed_at IS NULL OR reviewed_at >= submitted_at",
+            name="ck_onboarding_applications_reviewed_at",
+        ),
+        CheckConstraint(
+            "status <> 'APPROVED' OR kind <> 'CLAIM' OR approved_venue_id = target_venue_id",
+            name="ck_onboarding_applications_claim_approval",
+        ),
+        Index(
+            "uq_venue_onboarding_submitted_claim",
+            "applicant_user_id",
+            "target_venue_id",
+            unique=True,
+            postgresql_where=text("kind = 'CLAIM' AND status = 'SUBMITTED'"),
+        ),
+        Index(
+            "uq_venue_onboarding_submitted_create",
+            "applicant_user_id",
+            "normalized_proposed_name",
+            "normalized_proposed_address",
+            unique=True,
+            postgresql_where=text("kind = 'CREATE' AND status = 'SUBMITTED'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    applicant_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_onboarding_applications_applicant_user",
+            ondelete="RESTRICT",
+        ),
+    )
+    kind: Mapped[VenueOnboardingKind] = mapped_column(
+        Enum(VenueOnboardingKind, name="venue_onboarding_kind")
+    )
+    target_venue_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venues.id",
+            name="fk_onboarding_applications_target_venue",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    proposed_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    proposed_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposed_district_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    proposed_district_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposed_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    proposed_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    normalized_proposed_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalized_proposed_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_phone_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    contact_phone_nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    contact_phone_key_version: Mapped[int] = mapped_column(Integer)
+    contact_name: Mapped[str] = mapped_column(String(40))
+    status: Mapped[VenueOnboardingStatus] = mapped_column(
+        Enum(VenueOnboardingStatus, name="venue_onboarding_status")
+    )
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    reviewer_principal_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_venue_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venues.id",
+            name="fk_onboarding_applications_approved_venue",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+
+    evidence: Mapped[list["VenueOnboardingEvidence"]] = relationship(back_populates="application")
+
+
+class VenueOnboardingEvidence(Base):
+    __tablename__ = "venue_onboarding_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(object_key)) > 0 "
+            "AND object_key !~* '^[a-z][a-z0-9+.-]*://' "
+            "AND left(object_key, 1) <> '/'",
+            name="ck_onboarding_evidence_private_object_key",
+        ),
+        CheckConstraint(
+            "length(trim(content_type)) > 0",
+            name="ck_onboarding_evidence_content_type",
+        ),
+        CheckConstraint(
+            "(state = 'UPLOADING' AND application_id IS NULL "
+            "AND byte_size IS NULL AND content_sha256 IS NULL) OR "
+            "(state = 'COMPLETED' AND byte_size IS NOT NULL AND byte_size > 0 "
+            "AND content_sha256 IS NOT NULL "
+            "AND content_sha256 ~ '^[0-9a-f]{64}$')",
+            name="ck_onboarding_evidence_state_fields",
+        ),
+        UniqueConstraint("object_key", name="uq_onboarding_evidence_object_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_onboarding_evidence_owner_user",
+            ondelete="RESTRICT",
+        ),
+    )
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venue_onboarding_applications.id",
+            name="fk_onboarding_evidence_application",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    kind: Mapped[VenueOnboardingEvidenceKind] = mapped_column(
+        Enum(VenueOnboardingEvidenceKind, name="venue_onboarding_evidence_kind")
+    )
+    state: Mapped[VenueOnboardingEvidenceState] = mapped_column(
+        Enum(VenueOnboardingEvidenceState, name="venue_onboarding_evidence_state")
+    )
+    object_key: Mapped[str] = mapped_column(Text)
+    content_type: Mapped[str] = mapped_column(String(255))
+    byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    application: Mapped[VenueOnboardingApplication | None] = relationship(back_populates="evidence")
 
 
 class UserSession(Base):
