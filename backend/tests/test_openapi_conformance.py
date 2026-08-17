@@ -658,6 +658,11 @@ def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone
 
     application = schemas["VenueOnboardingApplication"]
     assert application["additionalProperties"] is False
+    assert application["properties"]["status"]["enum"] == [
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED",
+    ]
     forbidden = {"phone", "phone_number", "object_key", "reviewer_notes", "review_material"}
     assert not forbidden & set(application["properties"])
     applications = schemas["VenueOnboardingApplications"]

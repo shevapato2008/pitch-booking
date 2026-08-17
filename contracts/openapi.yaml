@@ -2146,7 +2146,7 @@ components:
       properties:
         application_id: {type: string, format: uuid}
         kind: {type: string, enum: [CLAIM, CREATE]}
-        status: {type: string, enum: [SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
         venue: {$ref: '#/components/schemas/VenueOnboardingApplicationVenue'}
         submitted_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
