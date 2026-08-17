@@ -151,6 +151,43 @@ test("selecting the second portfolio venue opens a workbench for that exact Fixt
   assert.doesNotMatch(profileTemplate, /venue-profile__venue-heading">渤海元丰足球场<\/text>/);
 });
 
+test("selected venue context survives the public profile and availability button chain", () => {
+  const access = loadNativePage(`${roots.access}.ts`);
+  access.page.onLoad({ case: "multiple" });
+  access.page.onChooseVenue({ currentTarget: { dataset: { venueId: "venue-tianjin-olympic" } } });
+
+  const profileRoute = new URL(access.calls.navigateTo[0].url, "https://fixture.invalid");
+  const profile = loadNativePage("miniprogram/dev/pages/venue-profile/index.ts");
+  profile.page.onLoad({
+    state: profileRoute.searchParams.get("state"),
+    venue_id: profileRoute.searchParams.get("venue_id"),
+  });
+  profile.page.onSave();
+  assert.equal(profile.page.data.visualState, "save-unknown");
+  profile.page.onRetryUnknown();
+  assert.equal(profile.page.data.visualState, "description-reviewing");
+  const publicAction = profile.page.data.stateActions.find(({ operation }) => operation === "VIEW_PUBLIC_PROFILE");
+  assert.ok(publicAction, "reviewing state must expose the visible public profile button");
+  profile.page.onStateAction({
+    currentTarget: { dataset: { operation: publicAction.operation, nextState: publicAction.nextState } },
+  });
+
+  const publicRoute = new URL(profile.calls.navigateTo[0].url, "https://fixture.invalid");
+  assert.equal(publicRoute.pathname, "/dev/pages/venue-profile-public/index");
+  assert.equal(publicRoute.searchParams.get("venue_id"), "venue-tianjin-olympic");
+
+  const publicProfile = loadNativePage("miniprogram/dev/pages/venue-profile-public/index.ts");
+  publicProfile.page.onLoad({ venue_id: publicRoute.searchParams.get("venue_id") });
+  assert.equal(publicProfile.page.data.profile.venueId, "venue-tianjin-olympic");
+  assert.equal(publicProfile.page.data.profile.name, "天津奥体足球公园");
+  assert.doesNotMatch(publicProfile.page.data.profile.description, /渤海元丰/);
+
+  publicProfile.page.onViewAvailability();
+  const availabilityRoute = new URL(publicProfile.calls.navigateTo[0].url, "https://fixture.invalid");
+  assert.equal(availabilityRoute.pathname, "/pages/availability/index");
+  assert.equal(availabilityRoute.searchParams.get("venueId"), "venue-tianjin-olympic");
+});
+
 test("selected claim exposes candidate selection, contact state, evidence actions, upload retry, and honest submit", () => {
   const { controller, template, styles } = readPage(roots.claim);
   const fixture = readFileSync("miniprogram/dev/venue-onboarding-fixture.ts", "utf8");

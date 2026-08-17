@@ -183,5 +183,7 @@ test("approved state buttons always produce their declared local state or real n
   page.onStateAction({ currentTarget: { dataset: { operation: "GET_IMAGE_UPLOAD", nextState: "image-reviewing" } } });
   expect(page.data.visualState).toBe("image-reviewing");
   page.onStateAction({ currentTarget: { dataset: { operation: "VIEW_PUBLIC_PROFILE", nextState: "public-published" } } });
-  expect((wx.navigateTo as jest.Mock)).toHaveBeenCalledWith({ url: "/dev/pages/venue-profile-public/index" });
+  expect((wx.navigateTo as jest.Mock)).toHaveBeenCalledWith({
+    url: "/dev/pages/venue-profile-public/index?venue_id=venue-bohai-yuanfeng",
+  });
 });

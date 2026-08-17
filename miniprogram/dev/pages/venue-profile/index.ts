@@ -196,7 +196,7 @@ Page({
     const operation = event.currentTarget?.dataset?.operation;
     const nextState = event.currentTarget?.dataset?.nextState;
     if (operation === "VIEW_PUBLIC_PROFILE") {
-      wx.navigateTo({ url: "/dev/pages/venue-profile-public/index" });
+      wx.navigateTo({ url: `/dev/pages/venue-profile-public/index?venue_id=${encodeURIComponent(this.data.venueId)}` });
       return;
     }
     if (typeof nextState !== "string" || nextState === "public-published") return;
