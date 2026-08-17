@@ -61,7 +61,10 @@ describe("AuthController", () => {
     let now = new Date("2026-08-17T10:00:00Z").getTime();
     const expiring = { ...session, expires_at: "2026-08-17T10:00:01Z" };
     const api = { restoreSession: jest.fn<() => Promise<PlatformSession>>().mockResolvedValue(expiring) } as unknown as PlatformApi;
-    const controller = new AuthController(api, { now: () => now, setTimer: () => 0 as ReturnType<typeof setTimeout> });
+    const controller = new AuthController(api, {
+      now: () => now,
+      setTimer: () => 0 as unknown as ReturnType<typeof setTimeout>,
+    });
     await controller.bootstrap();
 
     now = new Date("2026-08-17T10:00:02Z").getTime();

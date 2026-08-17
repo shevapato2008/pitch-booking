@@ -1,6 +1,6 @@
 # Platform onboarding review visual evidence
 
-Status: manual self-review passed on 2026-08-17; user visual approval is still pending.
+Status: manual self-review and user visual approval passed on 2026-08-17.
 
 This is a development-only static Fixture. Every local decision is reset on reload, no request or browser persistence API is used, and nothing here submits or changes production data. Delete `platform-admin/dev` when the approved console is promoted to the real API-backed client in Task 11.
 
@@ -71,7 +71,24 @@ The 50% overlay and pixel difference show the expected density and component-pla
 - The real-browser focus audit covers login/error/logout, both filters, queue selection, modal initial/Tab/Shift+Tab/Escape/close restoration, expired evidence refresh, decision error refresh/retry, and filtered decision empty state.
 - Known AA pairs retained from the existing product system: `#10243E`/white, `#64748B`/white, and white/`#0369A1`.
 
-## Remaining gate
+## Historical gate outcome
 
-- User visual confirmation is still required before any production `platform-admin`, OpenAPI, backend, authentication, or decision route work begins.
+- User visual confirmation was granted before production `platform-admin`, OpenAPI, backend,
+  authentication, and decision-route work began.
 - These screenshots contain Fixture identities only; they are not evidence of backend authorization, persistence, or real decisions.
+
+## Production promotion verification · 2026-08-17
+
+After visual approval, the console was promoted to the real authenticated API-backed client. The
+development Fixture evidence above remains historical and is not bundled into production. Task 12's
+single focused local verification produced:
+
+```text
+focused backend slice: 105 tests passed
+focused Mini Program + platform Jest: 9 suites, 58 tests passed
+npm run build:platform-admin: built platform-admin/dist
+node --test tests/build-platform-admin.test.mjs: 1 passed
+```
+
+The production build test confirms only approved API-backed assets are emitted. This record does not
+claim that external deployment or the two controlled real review decisions have run.

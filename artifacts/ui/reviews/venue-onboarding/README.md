@@ -7,7 +7,7 @@
 - Static reference: [six named frames](../../reference/venue-onboarding/index.html).
 - Source verification: GREEN; development build: GREEN.
 - Real WeChat runtime capture: GREEN. WeChat DevTools CLI opened `dist/miniprogram-development` and captured the six named native pages at 375 × 812 CSS pixels (750 × 1624 physical pixels).
-- Visual approval: pending user review. Reference and implementation images remain labeled separately.
+- Visual approval: approved by the user on 2026-08-17. Reference and implementation images remain labeled separately.
 
 ## Preview routes and required states
 
@@ -96,3 +96,20 @@ dimensions before comparison.
 - State semantics: upload failure stays scoped to the named material; submitted and rejected states show immutable or retry behavior without implying that a venue or permission already exists.
 
 The known baseline failure in `tests/venue-access-native-preview.test.mjs` was not run or modified; its stale `/venue-access|dev/` production-manifest regex is outside this task.
+
+## Production promotion verification · 2026-08-17
+
+The approved journey has since been promoted to the production Mini Program client and the
+development Fixture remains excluded from the production package. Task 12's single focused local
+verification produced:
+
+```text
+focused Mini Program + platform Jest: 9 suites, 58 tests passed
+npm run typecheck: passed
+npm run contract:validate: 76 examples validated
+npm run build:miniprogram:production: built dist/miniprogram-production
+npm run audit:miniprogram-package: 0 forbidden paths/tokens
+```
+
+This record is local build/audit evidence only. It does not claim the still-separate UCloud deploy,
+real private-OSS upload, platform decision, or physical-iPhone acceptance steps have run.

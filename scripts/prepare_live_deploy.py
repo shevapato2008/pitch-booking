@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
+import hashlib
 import json
 import os
 import re
@@ -27,6 +28,9 @@ PRESERVED_KEYS = (
     "PHONE_ENCRYPTION_KEY_BASE64",
     "MODERATION_REVIEWER_USER_IDS",
     "MINIPROGRAM_ICP_FILING_CONFIRMED",
+    "ONBOARDING_OSS_BUCKET",
+    "PLATFORM_STAFF_PRINCIPALS_JSON",
+    "PLATFORM_CSRF_SECRET",
 )
 ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -34,6 +38,7 @@ OSS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 TENCENT_MAP_KEY = re.compile(r"^[A-Z0-9]{5}(?:-[A-Z0-9]{5}){5}$", re.IGNORECASE)
 API_BASE_URL = "https://pitch-api-staging.modelstella.com"
 MEDIA_HOST = "media.modelstella.com"
+PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,8 @@ class PrepareInputs:
     wechat_app_secret: str
     tencent_map_key: str
     revision: str
+    onboarding_oss_bucket: str = ""
+    platform_reviewer_token: str = ""
 
 
 @dataclass(frozen=True)
@@ -53,6 +60,7 @@ class PreparedPaths:
     deploy_env: Path
     miniprogram_env: Path
     oss_request_base_url: str
+    onboarding_upload_base_url: str
 
 
 def read_env_file(path: Path, label: str) -> dict[str, str]:
@@ -143,7 +151,97 @@ def _validate_preserved(values: Mapping[str, str]) -> dict[str, str]:
         if icp_confirmed.casefold() not in {"true", "false"}:
             raise ValueError("existing MINIPROGRAM_ICP_FILING_CONFIRMED is invalid")
         preserved["MINIPROGRAM_ICP_FILING_CONFIRMED"] = icp_confirmed.casefold()
+
+    onboarding_bucket = values.get("ONBOARDING_OSS_BUCKET")
+    if onboarding_bucket and OSS_BUCKET.fullmatch(onboarding_bucket) is not None:
+        preserved["ONBOARDING_OSS_BUCKET"] = onboarding_bucket
+
+    principals = values.get("PLATFORM_STAFF_PRINCIPALS_JSON")
+    if principals and _valid_platform_principals(principals):
+        preserved["PLATFORM_STAFF_PRINCIPALS_JSON"] = principals
+
+    csrf_secret = values.get("PLATFORM_CSRF_SECRET")
+    if csrf_secret and _valid_base64_32(csrf_secret):
+        preserved["PLATFORM_CSRF_SECRET"] = csrf_secret
     return preserved
+
+
+def _valid_base64_32(value: str) -> bool:
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (ValueError, UnicodeError):
+        return False
+    return len(decoded) == 32 and base64.b64encode(decoded).decode("ascii") == value
+
+
+def _valid_platform_principals(value: str) -> bool:
+    try:
+        principals = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(principals, list) or not principals:
+        return False
+    expected = {
+        "principal_id",
+        "display_name",
+        "token_sha256",
+        "enabled",
+        "roles",
+    }
+    principal_ids: set[str] = set()
+    token_hashes: set[str] = set()
+    has_enabled_reviewer = False
+    for principal in principals:
+        if not isinstance(principal, dict) or set(principal) != expected:
+            return False
+        principal_id = principal["principal_id"]
+        display_name = principal["display_name"]
+        token_hash = principal["token_sha256"]
+        enabled = principal["enabled"]
+        roles = principal["roles"]
+        if (
+            type(principal_id) is not str
+            or not 1 <= len(principal_id.strip()) <= 128
+            or principal_id != principal_id.strip()
+            or type(display_name) is not str
+            or not 1 <= len(display_name.strip()) <= 120
+            or display_name != display_name.strip()
+            or type(token_hash) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", token_hash, re.ASCII) is None
+            or type(enabled) is not bool
+            or not isinstance(roles, list)
+            or not roles
+            or any(type(role) is not str or role not in PLATFORM_ROLES for role in roles)
+            or len(roles) != len(set(roles))
+            or principal_id in principal_ids
+            or token_hash in token_hashes
+        ):
+            return False
+        principal_ids.add(principal_id)
+        token_hashes.add(token_hash)
+        has_enabled_reviewer = has_enabled_reviewer or (
+            enabled and "ONBOARDING_REVIEWER" in roles
+        )
+    return has_enabled_reviewer
+
+
+def _platform_principals_json(raw_token: str) -> str:
+    token = _required(raw_token, "platform reviewer token")
+    if len(token) < 32:
+        raise ValueError("platform reviewer token must contain at least 32 characters")
+    return json.dumps(
+        [
+            {
+                "principal_id": "onboarding-reviewer",
+                "display_name": "入驻审核员",
+                "token_sha256": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                "enabled": True,
+                "roles": ["ONBOARDING_REVIEWER"],
+            }
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def _atomic_write(path: Path, contents: str) -> None:
@@ -196,7 +294,27 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
     )
     reviewer_id = preserved.get("MODERATION_REVIEWER_USER_IDS", str(uuid.uuid4()))
     icp_confirmed = preserved.get("MINIPROGRAM_ICP_FILING_CONFIRMED", "false")
+    preserved_onboarding_bucket = preserved.get("ONBOARDING_OSS_BUCKET")
+    if preserved_onboarding_bucket == oss["OSS_BUCKET"]:
+        preserved_onboarding_bucket = None
+    onboarding_bucket = preserved_onboarding_bucket or _required(
+        inputs.onboarding_oss_bucket, "ONBOARDING_OSS_BUCKET"
+    )
+    if OSS_BUCKET.fullmatch(onboarding_bucket) is None:
+        raise ValueError("ONBOARDING_OSS_BUCKET is invalid")
+    if onboarding_bucket == oss["OSS_BUCKET"]:
+        raise ValueError("ONBOARDING_OSS_BUCKET must be separate from OSS_BUCKET")
+    platform_principals = preserved.get("PLATFORM_STAFF_PRINCIPALS_JSON")
+    if platform_principals is None:
+        platform_principals = _platform_principals_json(inputs.platform_reviewer_token)
+    platform_csrf_secret = preserved.get(
+        "PLATFORM_CSRF_SECRET",
+        base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
+    )
     oss_request_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], oss["OSS_BUCKET"])
+    onboarding_upload_base_url = _oss_request_base_url(
+        oss["OSS_ENDPOINT"], onboarding_bucket
+    )
 
     deploy_values = {
         "APP_ENV": "staging",
@@ -210,6 +328,7 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "PUBLIC_API_BASE_URL": API_BASE_URL,
         "PUBLIC_IMAGE_HOSTS": f'["{MEDIA_HOST}"]',
         **oss,
+        "ONBOARDING_OSS_BUCKET": onboarding_bucket,
         "DASHSCOPE_API_KEY": dashscope_api_key,
         "DASHSCOPE_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "DASHSCOPE_MODERATION_MODEL": "qwen3-vl-flash",
@@ -223,6 +342,8 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "PHONE_ENCRYPTION_KEY_BASE64": phone_key,
         "PHONE_ENCRYPTION_KEY_VERSION": "1",
         "SESSION_TTL_DAYS": "30",
+        "PLATFORM_STAFF_PRINCIPALS_JSON": platform_principals,
+        "PLATFORM_CSRF_SECRET": platform_csrf_secret,
     }
     miniprogram_values = {
         "MINIPROGRAM_API_BASE_URL": API_BASE_URL,
@@ -240,10 +361,16 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         inputs.miniprogram_env,
         _render(
             miniprogram_values,
-            f"# Generated local build inputs. OSS upload request origin: {oss_request_base_url}",
+            "# Generated local build inputs. WeChat OSS request origin: "
+            f"{oss_request_base_url}; uploadFile origin: {onboarding_upload_base_url}",
         ),
     )
-    return PreparedPaths(inputs.deploy_env, inputs.miniprogram_env, oss_request_base_url)
+    return PreparedPaths(
+        inputs.deploy_env,
+        inputs.miniprogram_env,
+        oss_request_base_url,
+        onboarding_upload_base_url,
+    )
 
 
 def _git_revision() -> str:
@@ -271,6 +398,33 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    existing: dict[str, str] = {}
+    if args.deploy_env.exists():
+        try:
+            existing = read_env_file(args.deploy_env, "existing deployment environment file")
+        except ValueError as error:
+            parser.error(str(error))
+    try:
+        existing_bootstrap = _validate_preserved(existing)
+    except ValueError as error:
+        parser.error(str(error))
+    onboarding_bucket = existing_bootstrap.get("ONBOARDING_OSS_BUCKET", "")
+    try:
+        source_oss_bucket = read_env_file(
+            args.oss_env, "OSS environment file"
+        ).get("OSS_BUCKET", "")
+    except ValueError as error:
+        parser.error(str(error))
+    if onboarding_bucket == source_oss_bucket:
+        onboarding_bucket = ""
+    if not onboarding_bucket:
+        onboarding_bucket = os.environ.get("ONBOARDING_OSS_BUCKET") or getpass.getpass(
+            "ONBOARDING_OSS_BUCKET: "
+        )
+    reviewer_token = ""
+    if "PLATFORM_STAFF_PRINCIPALS_JSON" not in existing_bootstrap:
+        reviewer_token = getpass.getpass("PLATFORM_REVIEWER_TOKEN: ")
+
     wechat_secret = os.environ.get("WECHAT_APP_SECRET") or getpass.getpass(
         "WECHAT_APP_SECRET: "
     )
@@ -288,13 +442,19 @@ def main() -> int:
                 wechat_app_secret=wechat_secret,
                 tencent_map_key=tencent_key,
                 revision=_git_revision(),
+                onboarding_oss_bucket=onboarding_bucket,
+                platform_reviewer_token=reviewer_token,
             )
         )
     except ValueError as error:
         parser.error(str(error))
 
     print(f"Prepared {result.deploy_env} and {result.miniprogram_env} with mode 0600.")
-    print(f"WeChat request origins: {API_BASE_URL}, {result.oss_request_base_url}")
+    print(
+        f"WeChat request origins: {API_BASE_URL}, {result.oss_request_base_url}, "
+        "https://apis.map.qq.com"
+    )
+    print(f"WeChat uploadFile origin: {result.onboarding_upload_base_url}")
     print(f"WeChat download origin: https://{MEDIA_HOST}")
     return 0
 
