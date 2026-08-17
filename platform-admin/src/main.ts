@@ -48,7 +48,7 @@ const renderLogin = (): string => {
 
 const renderQueueRow = (item: ReviewController["state"]["items"][number]): string => {
   const selected = review.state.selected?.application_id === item.application_id;
-  return `<button class="queue-row${selected ? " is-selected" : ""}" data-action="select-row" data-id="${escapeHtml(item.application_id)}" type="button" aria-pressed="${selected}"><span class="queue-row__top">${badge(kindLabel(item.kind), item.kind.toLowerCase())}${badge(statusLabel(item.status), item.status.toLowerCase())}</span><strong>${escapeHtml(item.venue.name)}</strong><span>${escapeHtml(item.contact_name)} · ${escapeHtml(item.venue.district_name)}</span><small>${escapeHtml(formatTime(item.submitted_at))}</small></button>`;
+  return `<button class="queue-row${selected ? " is-selected" : ""}" data-action="select-row" data-id="${escapeHtml(item.application_id)}" type="button" aria-pressed="${selected}" ${review.state.loading || review.state.deciding ? "disabled" : ""}><span class="queue-row__top">${badge(kindLabel(item.kind), item.kind.toLowerCase())}${badge(statusLabel(item.status), item.status.toLowerCase())}</span><strong>${escapeHtml(item.venue.name)}</strong><span>${escapeHtml(item.contact_name)} · ${escapeHtml(item.venue.district_name)}</span><small>${escapeHtml(formatTime(item.submitted_at))}</small></button>`;
 };
 
 const renderIdentity = (application: ReviewApplicationDetail): string => {
@@ -83,7 +83,8 @@ const renderReview = (): string => {
   const session = auth.state.status === "authenticated" ? auth.state.session : null;
   const kind = review.state.filters.kind ?? "ALL";
   const status = review.state.filters.status ?? "ALL";
-  return `<div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台入驻审核</strong><small>生产审核台</small></span></div><div class="reviewer">${badge(session?.roles[0] ?? "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header><div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p>筛选并核验场馆认领或创建申请。</p><div class="filters"><label><span>申请类型</span><select data-action="filter-kind"><option value="ALL"${kind === "ALL" ? " selected" : ""}>全部类型</option><option value="CLAIM"${kind === "CLAIM" ? " selected" : ""}>认领已有场馆</option><option value="CREATE"${kind === "CREATE" ? " selected" : ""}>创建新场馆</option></select></label><label><span>审核状态</span><select data-action="filter-status"><option value="ALL"${status === "ALL" ? " selected" : ""}>全部状态</option><option value="SUBMITTED"${status === "SUBMITTED" ? " selected" : ""}>待审核</option><option value="APPROVED"${status === "APPROVED" ? " selected" : ""}>已通过</option><option value="REJECTED"${status === "REJECTED" ? " selected" : ""}>已驳回</option></select></label></div></div><div class="queue__summary"><strong>${review.state.items.length}</strong> 条已加载<span>${review.state.loading ? "正在更新" : "按提交时间排序"}</span></div><div class="queue__list">${review.state.items.map(renderQueueRow).join("")}${review.state.nextCursor ? `<div class="queue__load-more"><button class="button button--quiet button--small" data-action="load-more" type="button" ${review.state.loadingMore ? "disabled" : ""}>${review.state.loadingMore ? "正在加载…" : "加载更多"}</button></div>` : ""}</div></aside>${renderDetail()}</div></div>`;
+  const controlsLocked = review.state.loading || review.state.deciding;
+  return `<div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台入驻审核</strong><small>生产审核台</small></span></div><div class="reviewer">${badge(session?.roles[0] ?? "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header><div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p>筛选并核验场馆认领或创建申请。</p><div class="filters"><label><span>申请类型</span><select data-action="filter-kind" ${controlsLocked ? "disabled" : ""}><option value="ALL"${kind === "ALL" ? " selected" : ""}>全部类型</option><option value="CLAIM"${kind === "CLAIM" ? " selected" : ""}>认领已有场馆</option><option value="CREATE"${kind === "CREATE" ? " selected" : ""}>创建新场馆</option></select></label><label><span>审核状态</span><select data-action="filter-status" ${controlsLocked ? "disabled" : ""}><option value="ALL"${status === "ALL" ? " selected" : ""}>全部状态</option><option value="SUBMITTED"${status === "SUBMITTED" ? " selected" : ""}>待审核</option><option value="APPROVED"${status === "APPROVED" ? " selected" : ""}>已通过</option><option value="REJECTED"${status === "REJECTED" ? " selected" : ""}>已驳回</option></select></label></div></div><div class="queue__summary"><strong>${review.state.items.length}</strong> 条已加载<span>${review.state.loading ? "正在更新" : "按提交时间排序"}</span></div><div class="queue__list">${review.state.items.map(renderQueueRow).join("")}${review.state.nextCursor ? `<div class="queue__load-more"><button class="button button--quiet button--small" data-action="load-more" type="button" ${review.state.loadingMore || controlsLocked ? "disabled" : ""}>${review.state.loadingMore ? "正在加载…" : "加载更多"}</button></div>` : ""}</div></aside>${renderDetail()}</div></div>`;
 };
 
 const render = (): void => {
@@ -123,10 +124,12 @@ root.addEventListener("change", async (event) => {
   const statusControl = document.querySelector<HTMLSelectElement>('[data-action="filter-status"]');
   feedback = null;
   try {
-    await review.load({
+    const pending = review.load({
       kind: kindControl?.value === "ALL" ? undefined : kindControl?.value as "CLAIM" | "CREATE",
       status: statusControl?.value === "ALL" ? undefined : statusControl?.value as "SUBMITTED" | "APPROVED" | "REJECTED",
     });
+    render();
+    await pending;
     render();
   } catch (error) { handleSessionError(error); }
 });
@@ -147,7 +150,12 @@ root.addEventListener("click", async (event) => {
       }
       render();
     } else if (action === "select-row" && id) {
-      feedback = null; await review.select(id); render(); document.querySelector<HTMLElement>("#main-content")?.focus();
+      feedback = null;
+      const pending = review.select(id);
+      render();
+      await pending;
+      render();
+      document.querySelector<HTMLElement>("#main-content")?.focus();
     } else if (action === "retry-queue") {
       feedback = null; await review.load(); render();
     } else if (action === "load-more") {

@@ -38,6 +38,8 @@ export type DecisionResult =
 
 export class ReviewController {
   private generation = 0;
+  private queryRevision = 0;
+  private selectionRevision = 0;
 
   state: ReviewState = {
     filters: {},
@@ -55,15 +57,28 @@ export class ReviewController {
 
   async load(filters: ReviewFilters = this.state.filters): Promise<void> {
     const generation = this.generation;
-    this.state = { ...this.state, filters, loading: true, error: null };
+    const queryRevision = ++this.queryRevision;
+    const selectionRevision = ++this.selectionRevision;
+    const queryFilters = { ...filters };
+    this.state = {
+      ...this.state,
+      filters: queryFilters,
+      loading: true,
+      loadingMore: false,
+      error: null,
+    };
     try {
-      const queue = await this.api.listApplications(filters);
-      if (generation !== this.generation) return;
+      const queue = await this.api.listApplications(queryFilters);
+      if (generation !== this.generation || queryRevision !== this.queryRevision) return;
       const selectedId = queue.items.some((item) => item.application_id === this.state.selected?.application_id)
         ? this.state.selected?.application_id
         : queue.items[0]?.application_id;
       const selected = selectedId ? await this.api.getApplication(selectedId) : null;
-      if (generation !== this.generation) return;
+      if (
+        generation !== this.generation
+        || queryRevision !== this.queryRevision
+        || selectionRevision !== this.selectionRevision
+      ) return;
       this.state = {
         ...this.state,
         items: queue.items,
@@ -74,7 +89,7 @@ export class ReviewController {
         error: null,
       };
     } catch (error) {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || queryRevision !== this.queryRevision) return;
       this.state = { ...this.state, loading: false, error: messageOf(error) };
       throw error;
     }
@@ -84,10 +99,12 @@ export class ReviewController {
     const cursor = this.state.nextCursor;
     if (!cursor || this.state.loadingMore) return;
     const generation = this.generation;
+    const queryRevision = this.queryRevision;
+    const queryFilters = { ...this.state.filters };
     this.state = { ...this.state, loadingMore: true, error: null };
     try {
-      const queue = await this.api.listApplications({ ...this.state.filters, cursor });
-      if (generation !== this.generation) return;
+      const queue = await this.api.listApplications({ ...queryFilters, cursor });
+      if (generation !== this.generation || queryRevision !== this.queryRevision) return;
       const items = [...this.state.items];
       const known = new Set(items.map((item) => item.application_id));
       for (const item of queue.items) {
@@ -104,7 +121,7 @@ export class ReviewController {
         error: null,
       };
     } catch (error) {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || queryRevision !== this.queryRevision) return;
       this.state = { ...this.state, loadingMore: false, error: messageOf(error) };
       throw error;
     }
@@ -112,10 +129,17 @@ export class ReviewController {
 
   async select(applicationId: string): Promise<void> {
     const generation = this.generation;
+    const queryRevision = this.queryRevision;
+    const selectionRevision = ++this.selectionRevision;
     this.state = { ...this.state, loading: true, error: null };
     try {
       const selected = await this.api.getApplication(applicationId);
-      if (generation !== this.generation) return;
+      if (
+        generation !== this.generation
+        || queryRevision !== this.queryRevision
+        || selectionRevision !== this.selectionRevision
+        || selected.application_id !== applicationId
+      ) return;
       this.state = {
         ...this.state,
         selected,
@@ -123,7 +147,11 @@ export class ReviewController {
         decisionUncertain: false,
       };
     } catch (error) {
-      if (generation !== this.generation) return;
+      if (
+        generation !== this.generation
+        || queryRevision !== this.queryRevision
+        || selectionRevision !== this.selectionRevision
+      ) return;
       this.state = { ...this.state, loading: false, error: messageOf(error) };
       throw error;
     }
@@ -143,11 +171,12 @@ export class ReviewController {
     }
 
     const generation = this.generation;
+    const applicationId = selected.application_id;
     this.state = { ...this.state, deciding: true, error: null };
     try {
-      const decision = await this.api.decide(selected.application_id, outcome, normalized);
+      const decision = await this.api.decide(applicationId, outcome, normalized);
       if (generation !== this.generation) return { ok: true, decision };
-      this.applyDecision(decision);
+      this.applyDecision(decision, applicationId);
       try {
         await this.load(this.state.filters);
         return { ok: true, decision };
@@ -185,6 +214,8 @@ export class ReviewController {
 
   clear(): void {
     this.generation += 1;
+    this.queryRevision += 1;
+    this.selectionRevision += 1;
     this.state = {
       filters: {},
       items: [],
@@ -198,12 +229,14 @@ export class ReviewController {
     };
   }
 
-  private applyDecision(decision: ReviewDecision): void {
+  private applyDecision(decision: ReviewDecision, applicationId: string): void {
     const selected = this.state.selected;
     this.state = {
       ...this.state,
-      selected: selected ? { ...selected, status: decision.outcome, decision } : null,
-      items: this.state.items.map((item) => item.application_id === decision.application_id
+      selected: selected?.application_id === applicationId
+        ? { ...selected, status: decision.outcome, decision }
+        : selected,
+      items: this.state.items.map((item) => item.application_id === applicationId
         ? { ...item, status: decision.outcome, reviewed_at: decision.reviewed_at }
         : item),
       decisionUncertain: false,
