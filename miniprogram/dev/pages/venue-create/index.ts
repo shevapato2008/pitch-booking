@@ -114,9 +114,25 @@ Page({
       this.setData({ previewNotice: this.data.submitDisabledReason });
       return;
     }
+    const submittedFixture = VENUE_CREATE_ONBOARDING_FIXTURES.submitted;
+    const evidence = this.data.evidence.map((item: EvidencePreviewItem) => ({ ...item }));
+    const completedEvidenceCount = evidence.filter(({ status }) => status === "uploaded").length;
     this.setData({
       previewCase: "submitted",
-      ...VENUE_CREATE_ONBOARDING_FIXTURES.submitted,
+      ...submittedFixture,
+      venueName: this.data.venueName,
+      address: this.data.address,
+      district: this.data.district,
+      applicantName: this.data.applicantName,
+      phoneDisplay: this.data.phoneDisplay,
+      phoneStatus: this.data.phoneStatus,
+      evidence,
+      summaryRows: [
+        { label: "申请类型", value: "创建新场馆" },
+        { label: "场馆地址", value: this.data.address },
+        { label: "申请人", value: this.data.applicantName },
+        { label: "证明材料", value: `${completedEvidenceCount} 项已提交` },
+      ],
       previewNotice: "视觉预览，不会提交",
     });
   },

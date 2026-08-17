@@ -9,7 +9,7 @@
 
   <scroll-view class="venue-profile__scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
     <view class="venue-profile__content">
-      <text class="venue-profile__venue-heading">渤海元丰足球场</text>
+      <text class="venue-profile__venue-heading">{{venueName}}</text>
 
       <view class="venue-profile__status venue-profile__status--{{tone}}" role="{{tone === 'error' ? 'alert' : 'status'}}">
         <view class="venue-profile__status-mark" aria-hidden="true">{{tone === 'error' ? '!' : 'i'}}</view>

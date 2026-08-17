@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 
 const roots = Object.freeze({
   access: "miniprogram/dev/pages/venue-access/index",
@@ -29,6 +31,47 @@ function assertEveryButtonHasFixtureBehavior(root, controller, template) {
       assert.match(controller, new RegExp(`${binding[1]}\\s*\\(`), `${binding[1]} must have a Fixture handler`);
     }
   }
+}
+
+function loadNativePage(entryPath) {
+  const calls = { navigateTo: [], navigateBack: [], reLaunch: [] };
+  const wx = {
+    getWindowInfo: () => ({ windowWidth: 375, statusBarHeight: 44 }),
+    getMenuButtonBoundingClientRect: () => ({ top: 48, left: 278, width: 87, height: 32 }),
+    navigateTo: (options) => calls.navigateTo.push(options),
+    navigateBack: (options) => calls.navigateBack.push(options),
+    reLaunch: (options) => calls.reLaunch.push(options),
+  };
+  const modules = new Map();
+  let definition;
+
+  function loadModule(requestedPath) {
+    const filename = requestedPath.endsWith(".ts") ? requestedPath : `${requestedPath}.ts`;
+    if (modules.has(filename)) return modules.get(filename).exports;
+    const module = { exports: {} };
+    modules.set(filename, module);
+    const source = readFileSync(filename, "utf8");
+    const output = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+      fileName: filename,
+    }).outputText;
+    const localRequire = (specifier) => {
+      if (!specifier.startsWith(".")) throw new Error(`Unsupported test module: ${specifier}`);
+      return loadModule(path.resolve(path.dirname(filename), specifier));
+    };
+    const evaluate = new Function("require", "module", "exports", "Page", "wx", output);
+    evaluate(localRequire, module, module.exports, (value) => { definition = value; }, wx);
+    return module.exports;
+  }
+
+  loadModule(path.resolve(entryPath));
+  assert.ok(definition, `${entryPath} must register a Page definition`);
+  const page = {
+    ...definition,
+    data: structuredClone(definition.data),
+    setData(patch) { Object.assign(this.data, structuredClone(patch)); },
+  };
+  return { page, calls };
 }
 
 test("portfolio, claim, and create previews stay isolated development-only native pages", () => {
@@ -85,6 +128,29 @@ test("venue-access handles one, multiple, and empty portfolios with stable onboa
   for (const token of ["#F8FAFC", "#FFFFFF", "#10243E", "#0284C7"]) assert.match(styles, new RegExp(token));
 });
 
+test("selecting the second portfolio venue opens a workbench for that exact Fixture venue", () => {
+  const access = loadNativePage(`${roots.access}.ts`);
+  access.page.onLoad({ case: "multiple" });
+  access.page.onChooseVenue({ currentTarget: { dataset: { venueId: "venue-tianjin-olympic" } } });
+  assert.equal(access.calls.navigateTo.length, 1);
+
+  const selectedUrl = new URL(access.calls.navigateTo[0].url, "https://fixture.invalid");
+  const profile = loadNativePage("miniprogram/dev/pages/venue-profile/index.ts");
+  profile.page.onLoad({
+    state: selectedUrl.searchParams.get("state"),
+    venue_id: selectedUrl.searchParams.get("venue_id"),
+  });
+
+  assert.equal(profile.page.data.venueId, "venue-tianjin-olympic");
+  assert.equal(profile.page.data.venueName, "天津奥体足球公园");
+  assert.equal(profile.page.data.workingProfile.venueId, "venue-tianjin-olympic");
+  assert.equal(profile.page.data.workingProfile.name, "天津奥体足球公园");
+  assert.doesNotMatch(profile.page.data.workingProfile.description, /渤海元丰/);
+  const profileTemplate = readFileSync("miniprogram/dev/pages/venue-profile/index.wxml", "utf8");
+  assert.match(profileTemplate, /venue-profile__venue-heading">{{venueName}}<\/text>/);
+  assert.doesNotMatch(profileTemplate, /venue-profile__venue-heading">渤海元丰足球场<\/text>/);
+});
+
 test("selected claim exposes candidate selection, contact state, evidence actions, upload retry, and honest submit", () => {
   const { controller, template, styles } = readPage(roots.claim);
   const fixture = readFileSync("miniprogram/dev/venue-onboarding-fixture.ts", "utf8");
@@ -126,6 +192,27 @@ test("create ready, submitted, and rejected states expose explicit Fixture trans
   assertEveryButtonHasFixtureBehavior(roots.create, controller, template);
   assert.match(styles, /min-height:\s*88rpx/);
   assert.match(styles, /env\(safe-area-inset-bottom,\s*0px\)/);
+});
+
+test("create submit builds the reviewing summary from the current editable form", () => {
+  const { page } = loadNativePage(`${roots.create}.ts`);
+  page.onLoad({ case: "ready" });
+  page.onVenueNameInput({ detail: { value: "编辑后的测试场馆" } });
+  page.onAddressInput({ detail: { value: "天津市河东区编辑路 99 号" } });
+  page.onApplicantInput({ detail: { value: "李经理" } });
+  page.onChooseEvidence({ currentTarget: { dataset: { evidenceId: "business-license" } } });
+  page.onSubmit();
+
+  assert.equal(page.data.previewCase, "submitted");
+  assert.equal(page.data.statusLabel, "审核中");
+  assert.equal(page.data.venueName, "编辑后的测试场馆");
+  assert.equal(page.data.address, "天津市河东区编辑路 99 号");
+  assert.equal(page.data.applicantName, "李经理");
+  assert.equal(page.data.evidence.find(({ id }) => id === "business-license").fileName, "fixture-business-license.jpg");
+  const summary = Object.fromEntries(page.data.summaryRows.map(({ label, value }) => [label, value]));
+  assert.equal(summary["场馆地址"], "天津市河东区编辑路 99 号");
+  assert.equal(summary["申请人"], "李经理");
+  assert.equal(summary["证明材料"], "4 项已提交");
 });
 
 test("all preview controls center labels and reuse the approved token and safe-area system", () => {

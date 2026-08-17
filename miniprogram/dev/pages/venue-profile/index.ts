@@ -4,14 +4,39 @@ import {
   type AdminProfileFixtureState, type AdminVenueProfileStateId, type VenueProfile, type VenueProfileImage,
 } from "../../fixtures/venue-profile";
 import { readIntentHeaderLayout } from "../../intent-header-layout";
+import {
+  VENUE_ACCESS_ONBOARDING_FIXTURES,
+  type VenuePortfolioPreviewVenue,
+} from "../../venue-onboarding-fixture";
 
-interface SetupOptions { state?: unknown }
+interface SetupOptions { state?: unknown; venue_id?: unknown }
 interface DatasetEvent { currentTarget?: { dataset?: { imageId?: unknown; direction?: unknown; facilityCode?: unknown; operation?: unknown; nextState?: unknown } } }
 interface InputEvent { detail?: { value?: unknown } }
 
 const localUpload: VenueProfileImage = {
   id: "image-local-upload", cover: false, alt: "本次选择的场馆照片", scene: "entry", localPath: "/tmp/venue.jpg",
 };
+
+const portfolioVenues = VENUE_ACCESS_ONBOARDING_FIXTURES.multiple.venues;
+const defaultPortfolioVenue = portfolioVenues[0];
+
+function resolvePortfolioVenue(value: unknown): VenuePortfolioPreviewVenue {
+  return typeof value === "string" ? portfolioVenues.find(({ id }) => id === value) ?? defaultPortfolioVenue : defaultPortfolioVenue;
+}
+
+function profileForVenue(profile: VenueProfile | null, venue: VenuePortfolioPreviewVenue): VenueProfile | null {
+  if (!profile || profile.venueId === venue.id) return profile;
+  return {
+    ...profile,
+    venueId: venue.id,
+    name: venue.name,
+    description: `${venue.location}的场馆资料 Fixture。页面只展示当前所选授权场馆，不会写入线上数据。`,
+    images: profile.images.map((image, index) => ({
+      ...image,
+      alt: index === 0 ? `${venue.name}主场全景` : `${venue.name}场馆照片`,
+    })),
+  };
+}
 
 const renderPatch = (state: AdminProfileFixtureState, profile: VenueProfile | null) => ({
   ...state,
@@ -25,6 +50,8 @@ const renderPatch = (state: AdminProfileFixtureState, profile: VenueProfile | nu
 Page({
   data: {
     ...renderPatch(buildAdminVenueProfileState("ready"), buildDraftVenueProfile()),
+    venueId: defaultPortfolioVenue.id,
+    venueName: defaultPortfolioVenue.name,
     maxImages: PROFILE_MAX_IMAGES,
     descriptionMax: DESCRIPTION_MAX_CODE_POINTS,
     headerTopPx: 0,
@@ -36,8 +63,11 @@ Page({
   onLoad(options: SetupOptions = {}) {
     const layout = readIntentHeaderLayout();
     const state = buildAdminVenueProfileState(resolveAdminVenueProfileState(options.state));
+    const venue = resolvePortfolioVenue(options.venue_id);
     this.setData({
-      ...renderPatch(state, state.profile),
+      ...renderPatch(state, profileForVenue(state.profile, venue)),
+      venueId: venue.id,
+      venueName: venue.name,
       headerTopPx: layout.topPx,
       headerRowHeightPx: layout.rowHeightPx,
       headerRightInsetPx: layout.rightInsetPx,
@@ -149,7 +179,7 @@ Page({
   },
 
   onReload() {
-    const profile = buildDraftVenueProfile();
+    const profile = profileForVenue(buildDraftVenueProfile(), resolvePortfolioVenue(this.data.venueId));
     this.setData({ auditMessage: "已重新读取确定性 Fixture，未调用线上服务。" });
     this.transition("ready", profile);
   },
