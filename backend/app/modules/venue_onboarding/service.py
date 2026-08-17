@@ -548,6 +548,11 @@ def _application_response(
     application: VenueOnboardingApplication,
     venue: Venue | None,
 ) -> VenueOnboardingApplicationResponse:
+    rejection_reason = None
+    if application.status is VenueOnboardingStatus.REJECTED:
+        rejection_reason = (application.review_reason or "").strip()
+        if not rejection_reason:
+            raise RuntimeError("rejected application reason disappeared")
     if application.kind is VenueOnboardingKind.CLAIM:
         if venue is None:
             raise RuntimeError("claim application venue disappeared")
@@ -568,6 +573,7 @@ def _application_response(
         application_id=application.id,
         kind=application.kind,
         status=application.status,
+        rejection_reason=rejection_reason,
         venue=application_venue,
         submitted_at=application.submitted_at,
         updated_at=application.reviewed_at or application.submitted_at,

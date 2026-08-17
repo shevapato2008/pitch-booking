@@ -763,6 +763,12 @@ def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone
         "APPROVED",
         "REJECTED",
     ]
+    assert "rejection_reason" in application["required"]
+    assert application["properties"]["rejection_reason"] == {
+        "description": "Applicant-visible reason populated only for a rejected application.",
+        "type": ["string", "null"],
+        "minLength": 1,
+    }
     forbidden = {"phone", "phone_number", "object_key", "reviewer_notes", "review_material"}
     assert not forbidden & set(application["properties"])
     applications = schemas["VenueOnboardingApplications"]

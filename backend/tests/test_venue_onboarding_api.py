@@ -898,3 +898,89 @@ def test_application_list_is_newest_first_cursor_page_and_owner_isolated(
         claim.json()["application_id"]
     ]
     assert other_claim.json()["application_id"] not in second_page.text
+
+
+def test_application_list_returns_only_applicant_safe_rejection_reason(
+    pg_engine: Engine, seeded: Seeded, store: FakePrivateOnboardingStore
+) -> None:
+    now = datetime.now(UTC)
+    with Session(pg_engine) as session:
+        user = session.get_one(User, seeded.user_id)
+        applications = [
+            VenueOnboardingApplication(
+                applicant_user_id=user.id,
+                kind=VenueOnboardingKind.CLAIM,
+                target_venue_id=seeded.listed_venue_id,
+                contact_phone_ciphertext=user.phone_ciphertext,
+                contact_phone_nonce=user.phone_nonce,
+                contact_phone_key_version=user.phone_key_version,
+                contact_name="张三",
+                status=VenueOnboardingStatus.SUBMITTED,
+                submitted_at=now - timedelta(minutes=3),
+            ),
+            VenueOnboardingApplication(
+                applicant_user_id=user.id,
+                kind=VenueOnboardingKind.CLAIM,
+                target_venue_id=seeded.listed_venue_id,
+                contact_phone_ciphertext=user.phone_ciphertext,
+                contact_phone_nonce=user.phone_nonce,
+                contact_phone_key_version=user.phone_key_version,
+                contact_name="张三",
+                status=VenueOnboardingStatus.APPROVED,
+                submitted_at=now - timedelta(minutes=2),
+                reviewer_principal_id="reviewer-a",
+                reviewed_at=now - timedelta(minutes=1),
+                review_reason="  内部批准记录  ",
+                approved_venue_id=seeded.listed_venue_id,
+            ),
+            VenueOnboardingApplication(
+                applicant_user_id=user.id,
+                kind=VenueOnboardingKind.CLAIM,
+                target_venue_id=seeded.listed_venue_id,
+                contact_phone_ciphertext=user.phone_ciphertext,
+                contact_phone_nonce=user.phone_nonce,
+                contact_phone_key_version=user.phone_key_version,
+                contact_name="张三",
+                status=VenueOnboardingStatus.REJECTED,
+                submitted_at=now - timedelta(minutes=1),
+                reviewer_principal_id="reviewer-b",
+                reviewed_at=now,
+                review_reason="  请补充最新的场馆管理授权书  ",
+            ),
+            VenueOnboardingApplication(
+                applicant_user_id=seeded.other_user_id,
+                kind=VenueOnboardingKind.CLAIM,
+                target_venue_id=seeded.listed_venue_id,
+                contact_phone_ciphertext=user.phone_ciphertext,
+                contact_phone_nonce=user.phone_nonce,
+                contact_phone_key_version=user.phone_key_version,
+                contact_name="李四",
+                status=VenueOnboardingStatus.REJECTED,
+                submitted_at=now,
+                reviewer_principal_id="reviewer-c",
+                reviewed_at=now,
+                review_reason="其他申请人的私密驳回原因",
+            ),
+        ]
+        session.add_all(applications)
+        session.commit()
+
+    response = _client(pg_engine, store).get(
+        "/api/v1/venue-onboarding/applications",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [item["status"] for item in items] == [
+        "REJECTED",
+        "APPROVED",
+        "SUBMITTED",
+    ]
+    assert [item["rejection_reason"] for item in items] == [
+        "请补充最新的场馆管理授权书",
+        None,
+        None,
+    ]
+    assert "内部批准记录" not in response.text
+    assert "其他申请人的私密驳回原因" not in response.text

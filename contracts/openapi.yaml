@@ -2578,11 +2578,15 @@ components:
       description: Applicant-safe projection without phone snapshots, private object keys, or reviewer-only material.
       type: object
       additionalProperties: false
-      required: [application_id, kind, status, venue, submitted_at, updated_at]
+      required: [application_id, kind, status, rejection_reason, venue, submitted_at, updated_at]
       properties:
         application_id: {type: string, format: uuid}
         kind: {type: string, enum: [CLAIM, CREATE]}
         status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        rejection_reason:
+          description: Applicant-visible reason populated only for a rejected application.
+          type: [string, 'null']
+          minLength: 1
         venue: {$ref: '#/components/schemas/VenueOnboardingApplicationVenue'}
         submitted_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
