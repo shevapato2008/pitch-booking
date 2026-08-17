@@ -5,11 +5,11 @@ import { beforeEach, expect, jest, test } from "@jest/globals";
 interface PageData {
   selectedImageId: string;
   selectedImage: { id: string; cover: boolean };
-  profile: { description: string; images: { id: string; cover: boolean }[] };
+  profile: { venueId: string; name: string; description: string; images: { id: string; cover: boolean }[] };
 }
 interface PageDefinition {
   data: PageData;
-  onLoad(): void;
+  onLoad(options?: { venue_id?: unknown }): void;
   onSelectGallery(event: { currentTarget?: { dataset?: { imageId?: unknown } } }): void;
   onViewAvailability(): void;
 }
@@ -56,12 +56,16 @@ test("gallery selection changes the visible image", () => {
   expect(page.data.selectedImage.id).toBe(imageId);
 });
 
-test("查看可订时段 navigates inside the booking journey", () => {
+test("查看可订时段 preserves the selected venue inside the booking journey", () => {
   const page = loadPage();
-  page.onLoad();
+  page.onLoad({ venue_id: "venue-tianjin-olympic" });
+  expect(page.data.profile).toMatchObject({
+    venueId: "venue-tianjin-olympic",
+    name: "天津奥体足球公园",
+  });
   page.onViewAvailability();
   expect(wx.navigateTo).toHaveBeenCalledWith({
-    url: "/pages/availability/index?venue_id=venue-bohai-yuanfeng",
+    url: "/pages/availability/index?venueId=venue-tianjin-olympic",
   });
 });
 
