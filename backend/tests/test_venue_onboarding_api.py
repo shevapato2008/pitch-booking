@@ -5,8 +5,10 @@ import hashlib
 import io
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,9 +18,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
 from backend.app.database import get_database
+from backend.app.errors import AppError
 from backend.app.main import create_app
 from backend.app.models import (
     BookingMode,
+    IdempotencyRecord,
+    IdempotencyState,
     User,
     UserSession,
     Venue,
@@ -27,7 +32,12 @@ from backend.app.models import (
     VenueOnboardingEvidence,
     VenueOnboardingEvidenceKind,
     VenueOnboardingEvidenceState,
+    VenueOnboardingKind,
+    VenueOnboardingStatus,
 )
+from backend.app.modules.venue_onboarding.dto import SubmitVenueCreate
+from backend.app.modules.venue_onboarding.repository import VenueOnboardingRepository
+from backend.app.modules.venue_onboarding.service import VenueOnboardingService
 from backend.app.modules.venue_onboarding.storage import PrivateStorageUnavailableError
 from backend.app.security.phone_vault import PhoneVault
 
@@ -673,6 +683,133 @@ def test_create_submits_real_fields_without_creating_venue_or_membership(
         assert application.proposed_longitude == 117.16
         assert session.scalar(select(func.count()).select_from(Venue)) == 3
         assert session.scalar(select(func.count()).select_from(VenueMembership)) == 0
+
+
+def test_concurrent_create_maps_partial_unique_conflict_and_rolls_back_loser(
+    pg_engine: Engine,
+    seeded: Seeded,
+    store: FakePrivateOnboardingStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with Session(pg_engine) as session:
+        evidence_sets = [
+            _completed_evidence(
+                session, seeded.user_id, list(VenueOnboardingEvidenceKind)
+            )
+            for _ in range(2)
+        ]
+
+    both_checked_for_duplicates = Barrier(2)
+    original_find = VenueOnboardingRepository.find_submitted_create
+
+    def synchronized_find(
+        repository: VenueOnboardingRepository,
+        *,
+        applicant_user_id: uuid.UUID,
+        normalized_name: str,
+        normalized_address: str,
+    ) -> VenueOnboardingApplication | None:
+        application = original_find(
+            repository,
+            applicant_user_id=applicant_user_id,
+            normalized_name=normalized_name,
+            normalized_address=normalized_address,
+        )
+        both_checked_for_duplicates.wait(timeout=10)
+        return application
+
+    monkeypatch.setattr(
+        VenueOnboardingRepository, "find_submitted_create", synchronized_find
+    )
+
+    def submit(index: int) -> tuple[int, str | None]:
+        with Session(pg_engine) as session:
+            service = VenueOnboardingService(
+                repository=VenueOnboardingRepository(session),
+                storage=store,
+                phone_vault=PhoneVault(
+                    key_base64=KEY_BASE64,
+                    key_version=KEY_VERSION,
+                ),
+            )
+            user = session.get_one(User, seeded.user_id)
+            request = SubmitVenueCreate.model_validate(
+                {
+                    "name": "并发新建足球场",
+                    "address": "天津市河东区并发路 88 号",
+                    "district_code": "120102",
+                    "district_name": "河东区",
+                    "latitude": 30.0,
+                    "longitude": 110.0,
+                    "contact_name": "张三",
+                    "evidence": evidence_sets[index],
+                }
+            )
+            try:
+                result = service.submit_create(
+                    user=user,
+                    idempotency_key=f"concurrent-create-{index}",
+                    request=request,
+                )
+            except AppError as error:
+                return error.status_code, error.code
+            return result.status_code, None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = sorted(executor.map(submit, range(2)))
+
+    assert outcomes == [(201, None), (409, "ONBOARDING_APPLICATION_EXISTS")]
+
+    all_evidence_ids = {
+        uuid.UUID(evidence_id)
+        for evidence_set in evidence_sets
+        for evidence_id in evidence_set.values()
+    }
+    with Session(pg_engine) as session:
+        applications = list(
+            session.scalars(
+                select(VenueOnboardingApplication).where(
+                    VenueOnboardingApplication.applicant_user_id == seeded.user_id,
+                    VenueOnboardingApplication.kind == VenueOnboardingKind.CREATE,
+                    VenueOnboardingApplication.status
+                    == VenueOnboardingStatus.SUBMITTED,
+                    VenueOnboardingApplication.normalized_proposed_name
+                    == "并发新建足球场",
+                )
+            )
+        )
+        records = list(
+            session.scalars(
+                select(IdempotencyRecord).where(
+                    IdempotencyRecord.user_id == seeded.user_id,
+                    IdempotencyRecord.operation
+                    == "venue_onboarding_submit_create",
+                    IdempotencyRecord.key.in_(
+                        ["concurrent-create-0", "concurrent-create-1"]
+                    ),
+                )
+            )
+        )
+        evidence = list(
+            session.scalars(
+                select(VenueOnboardingEvidence).where(
+                    VenueOnboardingEvidence.id.in_(all_evidence_ids)
+                )
+            )
+        )
+
+    assert len(applications) == 1
+    assert len(records) == 1
+    assert records[0].state == IdempotencyState.COMPLETED
+    attached_ids = {item.id for item in evidence if item.application_id is not None}
+    unattached_ids = {item.id for item in evidence if item.application_id is None}
+    expected_sets = [
+        {uuid.UUID(evidence_id) for evidence_id in evidence_set.values()}
+        for evidence_set in evidence_sets
+    ]
+    assert attached_ids in expected_sets
+    assert unattached_ids in expected_sets
+    assert attached_ids != unattached_ids
 
 
 def test_application_list_is_newest_first_cursor_page_and_owner_isolated(

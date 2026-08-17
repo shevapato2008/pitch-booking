@@ -9,6 +9,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.app.errors import AppError
 from backend.app.models import (
     IdempotencyRecord,
@@ -393,6 +395,14 @@ class VenueOnboardingService:
                 item.application_id = application.id
             response = _application_response(application, None)
             return self._complete(record, 201, response)
+        except IntegrityError as error:
+            self.repository.rollback()
+            if (
+                _integrity_constraint_name(error)
+                == "uq_venue_onboarding_submitted_create"
+            ):
+                raise _application_exists() from None
+            raise
         except Exception:
             self.repository.rollback()
             raise
@@ -642,6 +652,12 @@ def _evidence_required() -> AppError:
 
 def _application_exists() -> AppError:
     return AppError(409, "ONBOARDING_APPLICATION_EXISTS", "已有待处理的申请。")
+
+
+def _integrity_constraint_name(error: IntegrityError) -> str | None:
+    diagnostic = getattr(error.orig, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    return constraint_name if isinstance(constraint_name, str) else None
 
 
 def _state_changed() -> AppError:
