@@ -4,7 +4,9 @@
 
 **Goal:** Make the approved three-purpose page the honest production start of the mini program, with real booking navigation and membership-authoritative venue-manager routing.
 
-**Architecture:** Reuse the approved intent-entry composition without importing `miniprogram/dev`. Add one authenticated read endpoint that lists the current user's active managed venues. A focused venue-access page owns the zero/one/many branching: zero explains the later verified onboarding journey, one redirects to the venue workbench, and many renders a venue selector.
+**Status:** The production entry and read endpoint were implemented. The original single-membership auto-redirect and deferred onboarding UI are superseded by [the 2026-08-17 venue portfolio and onboarding plan](./2026-08-17-venue-portfolio-and-onboarding.md).
+
+**Architecture:** Reuse the approved intent-entry composition without importing `miniprogram/dev`. The authenticated read endpoint lists the current user's active managed venues. The corrected venue-access page always renders one portfolio for zero, one, or many memberships; venue cards open a workbench and stable claim/create actions are completed by the superseding plan.
 
 **Tech Stack:** WeChat Mini Program TypeScript/WXML/WXSS, FastAPI, SQLAlchemy, PostgreSQL, Jest, Node test runner, pytest.
 
@@ -205,9 +207,9 @@ Verify:
 BOOK -> reLaunch /pages/venue-map/index
 PLAY -> disabled, visible “即将开放”, no navigation
 HOST -> navigate /pages/venue-access/index
-venue access zero -> honest verification explanation
-venue access one -> redirect /pages/venue-profile/index?venue_id=...
-venue access many -> cards; tap selected venue -> same workbench route
+venue access zero/one/many -> render the same “我的场馆” portfolio structure
+venue card -> redirect /pages/venue-profile/index?venue_id=...
+claim/create -> implemented only with the superseding real onboarding slice
 read failure -> explicit retry preserving the page
 ```
 
