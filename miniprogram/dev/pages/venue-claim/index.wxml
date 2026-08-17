@@ -1,0 +1,58 @@
+<view class="venue-claim">
+  <view class="venue-claim__system" style="height: {{headerTopPx}}px;"></view>
+  <view class="venue-claim__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="venue-claim__back venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onBack" aria-label="返回我的场馆">
+      <view class="venue-claim-icon venue-claim-icon--back" aria-hidden="true"></view>
+    </button>
+    <text class="venue-claim__title">{{title}}</text>
+  </view>
+
+  <block wx:if="{{submittedPreview}}">
+    <view class="venue-claim__result">
+      <view class="venue-claim__status-mark" aria-hidden="true">i</view>
+      <text class="venue-claim__result-title">视觉预览，不会提交</text>
+      <text class="venue-claim__result-copy">真实申请仍需接入候选搜索、私有材料上传和审核接口。本页只验证提交后的视觉反馈。</text>
+      <button class="venue-claim__secondary venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onReturnPortfolio">返回我的场馆</button>
+    </view>
+  </block>
+
+  <block wx:else>
+    <scroll-view class="venue-claim__content" scroll-y enhanced show-scrollbar="{{false}}">
+      <text class="venue-claim__eyebrow">CLAIM EXISTING VENUE</text>
+      <text class="venue-claim__heading">先找到平台已有场馆</text>
+      <text class="venue-claim__description">认领只会提交审核申请，通过前不会获得管理权限。</text>
+
+      <label class="venue-claim__label" for="venue-search">场馆搜索</label>
+      <input id="venue-search" class="venue-claim__input venue-claim__touch" value="{{searchQuery}}" bindinput="onSearchInput" placeholder="输入至少两个字" aria-label="场馆搜索" />
+      <view class="venue-claim__candidates">
+        <button wx:for="{{candidates}}" wx:key="id" class="venue-claim__candidate venue-claim__touch {{item.selected ? 'venue-claim__candidate--selected' : ''}}" hover-class="venue-claim__pressed" bindtap="onSelectCandidate" data-candidate-id="{{item.id}}" aria-pressed="{{item.selected}}">
+          <view class="venue-claim__candidate-copy"><text class="venue-claim__candidate-name">{{item.name}}</text><text class="venue-claim__meta">{{item.location}}</text></view>
+          <text class="venue-claim__selected-label">{{item.selected ? '已选择' : '选择'}}</text>
+        </button>
+      </view>
+
+      <text class="venue-claim__section-title">申请人信息</text>
+      <label class="venue-claim__label" for="claim-applicant">申请人姓名</label>
+      <input id="claim-applicant" class="venue-claim__input venue-claim__touch" value="{{applicantName}}" bindinput="onApplicantInput" aria-label="申请人姓名" />
+      <text class="venue-claim__label">联系电话状态</text>
+      <view class="venue-claim__readonly venue-claim__touch"><text>{{phoneDisplay}}</text><text class="venue-claim__verified">{{phoneStatus}}</text></view>
+
+      <text class="venue-claim__section-title">证明材料</text>
+      <view class="venue-claim__evidence">
+        <view wx:for="{{evidence}}" wx:key="id" class="venue-claim__evidence-row {{item.status === 'error' ? 'venue-claim__evidence-row--error' : ''}}">
+          <view class="venue-claim__evidence-copy"><text class="venue-claim__evidence-label">{{item.label}}</text><text class="venue-claim__meta">{{item.status === 'error' ? item.errorMessage : (item.fileName || item.helper)}}</text></view>
+          <button wx:if="{{item.status === 'error'}}" class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onRetryEvidence" data-evidence-id="{{item.id}}">重试上传</button>
+          <button wx:else class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onChooseEvidence" data-evidence-id="{{item.id}}">{{item.status === 'uploaded' ? '替换' : '上传'}}</button>
+        </view>
+      </view>
+      <text wx:if="{{previewNotice}}" class="venue-claim__notice" role="status">{{previewNotice}}</text>
+      <view class="venue-claim__bottom-spacer"></view>
+    </scroll-view>
+
+    <view class="venue-claim__footer">
+      <text class="venue-claim__fixture-note">视觉预览，不会提交</text>
+      <text wx:if="{{submitDisabledReason}}" class="venue-claim__disabled-reason">{{submitDisabledReason}}</text>
+      <button class="venue-claim__primary venue-claim__touch" hover-class="venue-claim__primary--pressed" disabled="{{submitDisabled}}" bindtap="onSubmit">提交认领申请</button>
+    </view>
+  </block>
+</view>

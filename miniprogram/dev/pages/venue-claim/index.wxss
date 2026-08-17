@@ -1,0 +1,53 @@
+@import "../../../styles/tokens.wxss";
+
+page { --page: #F8FAFC; --surface: #FFFFFF; --text: #10243E; --muted: #64748B; --border: #DBE5EC; --primary: #0284C7; --primary-strong: #0369A1; --error: #DC2626; --success: #059669; height: 100%; background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+view, text, button, input, scroll-view { box-sizing: border-box; }
+button { min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; }
+button::after { border: 0; }
+.venue-claim { display: flex; height: 100vh; flex-direction: column; overflow: hidden; background: #F8FAFC; }
+.venue-claim__system { flex: 0 0 auto; background: #FFFFFF; }
+.venue-claim__header { position: relative; display: flex; flex: 0 0 auto; min-height: 88rpx; align-items: center; justify-content: center; border-bottom: 2rpx solid var(--border); background: #FFFFFF; }
+.venue-claim__touch { min-width: 88rpx; min-height: 88rpx; }
+.venue-claim__back { position: absolute; top: 0; left: 16rpx; display: flex; align-items: center; justify-content: center; border-radius: 24rpx; }
+.venue-claim__title { overflow: hidden; font-size: 34rpx; font-weight: 750; line-height: 50rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-claim__content { flex: 1 1 auto; min-height: 0; padding: 28rpx 32rpx 0; }
+.venue-claim__eyebrow { display: block; color: var(--primary-strong); font-size: 20rpx; font-weight: 750; line-height: 30rpx; letter-spacing: 2rpx; }
+.venue-claim__heading { display: block; margin-top: 8rpx; font-size: 38rpx; font-weight: 750; line-height: 54rpx; }
+.venue-claim__description { display: block; margin: 4rpx 0 24rpx; color: var(--muted); font-size: 24rpx; line-height: 38rpx; }
+.venue-claim__label { display: block; margin: 16rpx 4rpx 8rpx; font-size: 26rpx; font-weight: 700; line-height: 38rpx; }
+.venue-claim__input, .venue-claim__readonly { width: 100%; min-height: 88rpx; padding: 18rpx 24rpx; border: 2rpx solid var(--border); border-radius: 20rpx; background: #FFFFFF; color: var(--text); font-size: 28rpx; line-height: 40rpx; }
+.venue-claim__readonly { display: flex; align-items: center; justify-content: space-between; }
+.venue-claim__verified { color: var(--success); font-size: 24rpx; font-weight: 750; }
+.venue-claim__candidates { margin-top: 16rpx; }
+.venue-claim__candidate { display: flex; width: 100%; padding: 20rpx 20rpx 20rpx 24rpx; align-items: center; justify-content: space-between; gap: 16rpx; border: 2rpx solid var(--border); border-radius: 22rpx; background: #FFFFFF; text-align: left; }
+.venue-claim__candidate--selected { border-color: #7DD3FC; background: #F0F9FF; }
+.venue-claim__candidate-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.venue-claim__candidate-name { overflow: hidden; font-size: 28rpx; font-weight: 750; line-height: 42rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-claim__selected-label { flex: 0 0 auto; color: var(--primary-strong); font-size: 24rpx; font-weight: 750; }
+.venue-claim__section-title { display: block; margin: 28rpx 4rpx 4rpx; font-size: 30rpx; font-weight: 750; line-height: 44rpx; }
+.venue-claim__evidence { display: flex; margin-top: 12rpx; flex-direction: column; gap: 14rpx; }
+.venue-claim__evidence-row { display: flex; min-height: 104rpx; padding: 14rpx 12rpx 14rpx 22rpx; align-items: center; justify-content: space-between; gap: 12rpx; border: 2rpx solid var(--border); border-radius: 22rpx; background: #FFFFFF; }
+.venue-claim__evidence-row--error { border-color: #FECACA; background: #FEF2F2; }
+.venue-claim__evidence-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.venue-claim__evidence-label { font-size: 26rpx; font-weight: 700; line-height: 38rpx; }
+.venue-claim__meta { overflow: hidden; color: var(--muted); font-size: 22rpx; line-height: 34rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-claim__evidence-row--error .venue-claim__meta { color: var(--error); }
+.venue-claim__mini-action { display: flex; padding: 12rpx 16rpx; align-items: center; justify-content: center; border-radius: 18rpx; color: var(--primary-strong); font-size: 24rpx; font-weight: 750; }
+.venue-claim__evidence-row--error .venue-claim__mini-action { color: var(--error); }
+.venue-claim__notice { display: block; margin-top: 16rpx; padding: 18rpx 22rpx; border-left: 8rpx solid var(--primary); border-radius: 16rpx; background: #FFFFFF; font-size: 24rpx; line-height: 36rpx; }
+.venue-claim__bottom-spacer { height: 260rpx; }
+.venue-claim__footer { position: fixed; z-index: 4; right: 0; bottom: 0; left: 0; padding: 14rpx 32rpx calc(24rpx + env(safe-area-inset-bottom, 0px)); background: #FFFFFF; box-shadow: 0 -8rpx 28rpx rgba(16, 36, 62, .12); }
+.venue-claim__fixture-note, .venue-claim__disabled-reason { display: block; color: var(--muted); font-size: 22rpx; line-height: 32rpx; text-align: center; }
+.venue-claim__disabled-reason { margin-bottom: 6rpx; color: var(--error); }
+.venue-claim__primary, .venue-claim__secondary { display: flex; width: 100%; padding: 16rpx 32rpx; align-items: center; justify-content: center; border: 2rpx solid var(--primary-strong); border-radius: 24rpx; font-size: 28rpx; font-weight: 750; line-height: 40rpx; text-align: center; }
+.venue-claim__primary { background: var(--primary-strong); color: #FFFFFF; }
+.venue-claim__secondary { margin-top: 32rpx; background: #FFFFFF; color: var(--primary-strong); }
+.venue-claim__primary[disabled] { opacity: .46; }
+.venue-claim__primary--pressed { background: #075985; }
+.venue-claim__pressed { background: #F1F5F9; }
+.venue-claim__result { display: flex; flex: 1; padding: 64rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px)); flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.venue-claim__status-mark { display: flex; width: 96rpx; height: 96rpx; align-items: center; justify-content: center; border-radius: 48rpx; background: #E0F2FE; color: var(--primary-strong); font-size: 38rpx; font-weight: 800; }
+.venue-claim__result-title { display: block; margin-top: 28rpx; font-size: 38rpx; font-weight: 750; line-height: 54rpx; }
+.venue-claim__result-copy { display: block; margin-top: 12rpx; color: var(--muted); font-size: 26rpx; line-height: 42rpx; }
+.venue-claim-icon { position: relative; display: inline-flex; width: 40rpx; height: 40rpx; align-items: center; justify-content: center; }
+.venue-claim-icon--back::before { width: 16rpx; height: 16rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; content: ""; transform: rotate(45deg); }
