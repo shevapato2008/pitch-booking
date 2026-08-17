@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>平台入驻审核 · 视觉基准</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+        --page: #f8fafc;
+        --surface: #ffffff;
+        --text: #10243e;
+        --muted: #64748b;
+        --border: #dbe5ec;
+        --primary: #0284c7;
+        --primary-strong: #0369a1;
+        --primary-soft: #eaf7fd;
+        --success: #047857;
+        --success-soft: #ecfdf5;
+        --warning: #a6530b;
+        --warning-soft: #fff7ed;
+        --error: #c42525;
+        --error-soft: #fff1f2;
+        color: var(--text);
+        background: var(--page);
+      }
+      * { box-sizing: border-box; }
+      body { width: 1440px; height: 900px; margin: 0; overflow: hidden; background: var(--page); }
+      button, input, select, textarea { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 2px; }
+      .app-shell { display: flex; min-height: 100%; flex-direction: column; }
+      .topbar { display: flex; height: 72px; flex: 0 0 72px; align-items: center; gap: 16px; padding: 0 28px; border-bottom: 1px solid var(--border); background: var(--surface); }
+      .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: var(--text); color: white; font-size: 12px; font-weight: 800; letter-spacing: .04em; }
+      .brand-copy strong { display: block; font-size: 16px; line-height: 22px; }
+      .brand-copy span { color: var(--muted); font-size: 12px; }
+      .topbar-meta { display: flex; align-items: center; gap: 18px; margin-left: auto; color: var(--muted); font-size: 13px; }
+      .role { padding: 5px 10px; border: 1px solid #bae6fd; border-radius: 999px; background: #f0f9ff; color: #075985; font-weight: 700; }
+      .workspace { display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: 372px minmax(0, 1fr); }
+      .queue { min-height: 0; border-right: 1px solid var(--border); background: var(--surface); }
+      .queue-head { padding: 22px 20px 18px; border-bottom: 1px solid var(--border); }
+      .eyebrow { margin: 0 0 6px; color: var(--primary-strong); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { margin-bottom: 6px; font-size: 24px; line-height: 32px; }
+      h2 { margin-bottom: 0; font-size: 20px; line-height: 28px; }
+      h3 { margin-bottom: 14px; font-size: 15px; line-height: 22px; }
+      .subtle { margin-bottom: 0; color: var(--muted); font-size: 13px; line-height: 20px; }
+      .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+      .select { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: white; color: var(--text); font-size: 13px; }
+      .queue-summary { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 10px; color: var(--muted); font-size: 12px; }
+      .count { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 750; }
+      .queue-list { padding: 0 12px; }
+      .queue-row { display: block; width: 100%; margin: 0 0 8px; padding: 14px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: inherit; text-align: left; }
+      .queue-row.is-active { border-color: #7dd3fc; background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
+      .row-top, .row-meta, .section-head, .evidence-main { display: flex; align-items: center; }
+      .row-top { justify-content: space-between; gap: 8px; }
+      .row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 760; }
+      .row-meta { gap: 7px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+      .pill { display: inline-flex; min-height: 24px; align-items: center; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; background: white; color: var(--muted); font-size: 11px; font-weight: 800; }
+      .pill.claim { border-color: #bae6fd; background: #f0f9ff; color: #075985; }
+      .pill.create { border-color: #c7d2fe; background: #eef2ff; color: #4338ca; }
+      .pill.pending { border-color: #fed7aa; background: var(--warning-soft); color: var(--warning); }
+      .pill.approved { border-color: #a7f3d0; background: var(--success-soft); color: var(--success); }
+      .pill.rejected { border-color: #fecdd3; background: var(--error-soft); color: var(--error); }
+      .detail { min-width: 0; overflow: auto; padding: 24px 28px 32px; }
+      .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+      .detail-id { margin: 4px 0 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+      .status-stack { display: flex; align-items: center; gap: 8px; }
+      .alert { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; padding: 13px 14px; border: 1px solid; border-radius: 12px; font-size: 13px; line-height: 20px; }
+      .alert strong { display: block; margin-bottom: 1px; }
+      .alert-warning { border-color: #fed7aa; background: var(--warning-soft); color: #8a3f08; }
+      .alert-error { border-color: #fecdd3; background: var(--error-soft); color: #9f1d1d; }
+      .alert-mark { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; border: 2px solid currentColor; border-radius: 50%; font-size: 12px; font-weight: 900; }
+      .content-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(312px, .8fr); gap: 16px; align-items: start; }
+      .stack { display: grid; gap: 16px; }
+      .card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 7px 22px rgba(16,36,62,.045); }
+      .card-pad { padding: 18px; }
+      .section-head { justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+      .section-head h3 { margin-bottom: 0; }
+      .key-values { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+      .field.wide { grid-column: 1 / -1; }
+      .field-label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+      .field-value { display: block; font-size: 14px; font-weight: 650; line-height: 21px; }
+      .evidence-list { overflow: hidden; border: 1px solid var(--border); border-radius: 11px; }
+      .evidence-row { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 12px; background: white; }
+      .evidence-row + .evidence-row { border-top: 1px solid var(--border); }
+      .doc-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--primary-soft); color: var(--primary-strong); font-size: 11px; font-weight: 850; }
+      .evidence-main { min-width: 0; gap: 10px; }
+      .evidence-copy { min-width: 0; }
+      .evidence-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; }
+      .evidence-meta { margin-top: 2px; color: var(--muted); font-size: 11px; }
+      .link-button { min-height: 36px; padding: 0 12px; border: 1px solid #bae6fd; border-radius: 9px; background: #f0f9ff; color: #075985; font-size: 12px; font-weight: 750; }
+      .link-button.expired { border-color: #fed7aa; background: var(--warning-soft); color: var(--warning); }
+      .decision-card { position: sticky; top: 0; }
+      .reason-label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 700; }
+      .required { color: var(--error); }
+      textarea { width: 100%; min-height: 116px; resize: none; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; line-height: 20px; }
+      .helper { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 17px; }
+      .decision-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+      .button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; padding: 0 15px; border-radius: 10px; font-size: 13px; font-weight: 800; line-height: 1; }
+      .button-primary { border: 1px solid var(--primary-strong); background: var(--primary-strong); color: white; }
+      .button-danger { border: 1px solid #fda4af; background: white; color: var(--error); }
+      .button-secondary { border: 1px solid var(--border); background: white; color: var(--text); }
+      .audit { padding: 14px; border-radius: 11px; background: #f1f5f9; }
+      .audit-title { margin-bottom: 8px; font-size: 13px; font-weight: 800; }
+      .audit p { margin: 0; color: #475569; font-size: 12px; line-height: 19px; }
+      .fixture-note { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; line-height: 17px; }
+      .state-switcher { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+      .state-link { min-height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--muted); font-size: 11px; }
+      .login-page { display: grid; width: 100%; height: 100%; grid-template-columns: minmax(0, 1fr) 520px; background: var(--page); }
+      .login-story { display: flex; flex-direction: column; justify-content: space-between; padding: 56px 64px; background: var(--text); color: white; }
+      .login-story .brand-mark { background: white; color: var(--text); }
+      .login-story .brand-copy span { color: #bae6fd; }
+      .story-copy { max-width: 620px; }
+      .story-copy h1 { max-width: 560px; margin-bottom: 20px; font-size: 44px; line-height: 1.18; }
+      .story-copy p { max-width: 540px; margin-bottom: 0; color: #cbd5e1; font-size: 16px; line-height: 28px; }
+      .login-foot { color: #94a3b8; font-size: 12px; }
+      .login-side { display: grid; place-items: center; padding: 48px; background: var(--surface); }
+      .login-card { width: 100%; max-width: 372px; }
+      .login-card h2 { margin-bottom: 8px; font-size: 28px; line-height: 38px; }
+      .login-card .subtle { margin-bottom: 28px; }
+      .input-label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 750; }
+      .text-input { width: 100%; height: 46px; padding: 0 13px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); }
+      .login-button { width: 100%; margin-top: 18px; }
+      .security-note { margin-top: 18px; padding: 13px 14px; border-radius: 10px; background: #f1f5f9; color: #475569; font-size: 12px; line-height: 19px; }
+      .reference-label { position: fixed; right: 16px; bottom: 14px; z-index: 10; padding: 5px 9px; border-radius: 7px; background: rgba(16,36,62,.86); color: white; font-size: 10px; letter-spacing: .04em; }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+    </style>
+  </head>
+  <body>
+    <main id="frame" aria-label="平台入驻审核视觉基准"></main>
+    <div class="reference-label">REFERENCE · 1440 × 900</div>
+    <script>
+      const state = new URLSearchParams(location.search).get("case") || "pending";
+      const statuses = {
+        pending: { label: "待审核", className: "pending", kind: "CLAIM", venue: "虹口足球公园", applicant: "周启航", phone: "138 **** 7621", number: "ONB-20260817-0038", submittedAt: "2026-08-17 09:42", relativeTime: "18 分钟前", district: "上海市虹口区", address: "广中路 444 号", notice: "系统发现同名场馆 1 条，请先核对目标场馆与授权材料。", reason: "申请人与现有场馆信息一致，授权材料完整。", reviewedAt: "2026-08-17 10:28" },
+        approved: { label: "已通过", className: "approved", kind: "CREATE", venue: "浦东张江足球公园", applicant: "林晓峰", phone: "136 **** 5582", number: "ONB-20260816-0029", submittedAt: "2026-08-16 15:24", relativeTime: "昨天", district: "上海市浦东新区", address: "科苑路 88 号张江体育公园东区", notice: "最近的现有场馆距离 1.2 公里，未发现重复记录。", reason: "主体、地址和授权材料核验一致，同意创建未公开场馆。", reviewedAt: "2026-08-17 10:18" },
+        rejected: { label: "已驳回", className: "rejected", kind: "CLAIM", venue: "静安运动中心", applicant: "陈嘉", phone: "137 **** 2239", number: "ONB-20260816-0026", submittedAt: "2026-08-16 11:03", relativeTime: "昨天", district: "上海市静安区", address: "康定路 151 号", notice: "目标场馆唯一，申请人主体与授权文件抬头不一致。", reason: "授权书未包含场馆完整名称，且签章页缺失。", reviewedAt: "2026-08-16 16:42" },
+        "expired-evidence-link": { label: "待审核", className: "pending", kind: "CREATE", venue: "杨浦滨江足球中心", applicant: "吴晨", phone: "139 **** 1068", number: "ONB-20260817-0037", submittedAt: "2026-08-17 08:18", relativeTime: "1 小时前", district: "上海市杨浦区", address: "安浦路 615 号滨江运动园 2 号入口", notice: "营业执照或主体证明预览链接已过期；重新获取只更新本地 Fixture。", reason: "主体、地址与授权材料核验一致。", reviewedAt: "" },
+        "decision-error": { label: "待审核", className: "pending", kind: "CLAIM", venue: "虹口足球公园", applicant: "周启航", phone: "138 **** 7621", number: "ONB-20260817-0038", submittedAt: "2026-08-17 09:42", relativeTime: "18 分钟前", district: "上海市虹口区", address: "广中路 444 号", notice: "提交决定失败：申请状态可能已变化。刷新详情后再重试。", reason: "申请人与现有场馆信息一致，授权材料完整。", reviewedAt: "" }
+      };
+      const login = `
+        <section class="login-page" aria-labelledby="login-title">
+          <div class="login-story">
+            <div style="display:flex;align-items:center;gap:14px"><span class="brand-mark">PB</span><span class="brand-copy"><strong>球场预订</strong><span>平台运营中心</span></span></div>
+            <div class="story-copy"><p class="eyebrow" style="color:#7dd3fc">Onboarding review</p><h1>只让经过授权的平台人员处理场馆入驻。</h1><p>查看认领与创建申请、核验证据，并留下清晰、可追溯的审核理由。</p></div>
+            <div class="login-foot">仅限平台工作人员 · 访问行为将被记录</div>
+          </div>
+          <div class="login-side">
+            <form class="login-card">
+              <p class="eyebrow">Staff access</p><h2 id="login-title">平台工作人员登录</h2>
+              <p class="subtle">使用部署管理员提供的工作人员访问令牌。</p>
+              <label class="input-label" for="access-token">工作人员访问令牌</label>
+              <input class="text-input" id="access-token" type="password" value="preview-token" autocomplete="current-password" />
+              <button class="button button-primary login-button" type="button">进入审核台</button>
+              <p class="security-note">登录会创建 8 小时安全会话。不要在共享设备上保存或转发访问令牌。</p>
+            </form>
+          </div>
+        </section>`;
+      const renderReview = (key) => {
+        const s = statuses[key] || statuses.pending;
+        const isDecided = key === "approved" || key === "rejected";
+        const isError = key === "decision-error";
+        const isExpired = key === "expired-evidence-link";
+        const kindLabel = s.kind === "CLAIM" ? "认领已有场馆" : "创建新场馆";
+        const evidenceNames = s.kind === "CLAIM" ? ["经营或管理授权证明", "场馆外部现场证明"] : ["营业执照或主体证明", "产权、租赁或管理授权证明", "场馆外部现场证明", "场馆内部现场证明"];
+        return `
+          <div class="app-shell">
+            <header class="topbar"><span class="brand-mark">PB</span><span class="brand-copy"><strong>平台入驻审核</strong><span>Development visual reference</span></span><div class="topbar-meta"><span class="role">ONBOARDING_REVIEWER</span><span>平台审核员</span><button class="button button-secondary" type="button">退出登录</button></div></header>
+            <div class="workspace">
+              <aside class="queue" aria-label="申请队列"><div class="queue-head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p class="subtle">优先处理已等待超过 24 小时的申请。</p><div class="filters"><select class="select" aria-label="申请类型"><option>全部类型</option><option>认领已有场馆</option><option>创建新场馆</option></select><select class="select" aria-label="审核状态"><option>全部状态</option><option>待审核</option><option>已通过</option><option>已驳回</option></select></div></div>
+                <div class="queue-summary"><span><span class="count">3</span> 条申请</span><span>按提交时间排序</span></div>
+                <div class="queue-list"><button class="queue-row is-active" type="button"><span class="row-top"><span class="row-title">${s.venue}</span><span class="pill ${s.className}">${s.label}</span></span><span class="row-meta"><span class="pill ${s.kind === "CLAIM" ? "claim" : "create"}">${s.kind}</span><span>${s.applicant}</span><span>${s.relativeTime}</span></span></button><button class="queue-row" type="button"><span class="row-top"><span class="row-title">杨浦滨江足球中心</span><span class="pill pending">待审核</span></span><span class="row-meta"><span class="pill create">CREATE</span><span>吴晨</span><span>1 小时前</span></span></button><button class="queue-row" type="button"><span class="row-top"><span class="row-title">静安运动中心</span><span class="pill rejected">已驳回</span></span><span class="row-meta"><span class="pill claim">CLAIM</span><span>陈嘉</span><span>昨天</span></span></button></div>
+              </aside>
+              <section class="detail" aria-labelledby="detail-title"><div class="detail-head"><div><p class="eyebrow">${kindLabel}</p><h2 id="detail-title">${s.venue}</h2><p class="detail-id">申请编号 ${s.number} · 提交于 ${s.submittedAt}</p></div><div class="status-stack"><span class="pill ${s.kind === "CLAIM" ? "claim" : "create"}">${s.kind}</span><span class="pill ${s.className}">${s.label}</span></div></div>
+                <div class="alert ${isError ? "alert-error" : "alert-warning"}" role="status"><span class="alert-mark">${isError ? "×" : "!"}</span><span><strong>${isError ? "决定未保存" : (isExpired ? "证据链接已过期" : "重复风险提示")}</strong>${s.notice}</span></div>
+                <div class="content-grid"><div class="stack"><article class="card card-pad"><div class="section-head"><h3>申请人与场馆身份</h3><span class="pill ${s.kind === "CLAIM" ? "claim" : "create"}">${kindLabel}</span></div><div class="key-values"><div class="field"><span class="field-label">申请人姓名</span><span class="field-value">${s.applicant}</span></div><div class="field"><span class="field-label">已验证联系电话</span><span class="field-value">${s.phone}</span></div>${s.kind === "CLAIM" ? `<div class="field wide"><span class="field-label">目标已有场馆</span><span class="field-value">${s.venue} · ${s.district}${s.address}</span></div>` : `<div class="field"><span class="field-label">拟建场馆名称</span><span class="field-value">${s.venue}</span></div><div class="field"><span class="field-label">行政区</span><span class="field-value">${s.district}</span></div><div class="field wide"><span class="field-label">拟建场馆地址</span><span class="field-value">${s.address}</span></div>`}</div></article>
+                  <article class="card card-pad"><div class="section-head"><h3>私密证据</h3><span class="subtle">${s.kind === "CLAIM" ? "2" : "4"} 项已完成</span></div><div class="evidence-list">${evidenceNames.map((name, index) => `<div class="evidence-row"><div class="evidence-main"><span class="doc-icon">${index < 2 ? "PDF" : "JPG"}</span><span class="evidence-copy"><span class="evidence-name">${name}</span><span class="evidence-meta">${index < 2 ? "1.8 MB · 文档" : "2.4 MB · 图片"}</span></span></div><button class="link-button ${isExpired && index === 0 ? "expired" : ""}" type="button">${isExpired && index === 0 ? "链接已过期 · 重新获取" : "查看证据"}</button></div>`).join("")}</div></article></div>
+                  <aside class="stack"><article class="card card-pad decision-card"><h3>${isDecided ? "审核结果" : "审核决定"}</h3>${isDecided ? `<div class="audit"><div class="audit-title">${key === "approved" ? "已通过申请" : "已驳回申请"}</div><p>${s.reason}</p><p style="margin-top:8px">平台审核员 · ${s.reviewedAt}</p></div>` : `<label class="reason-label" for="decision-reason">审核理由 <span class="required">*</span></label><textarea id="decision-reason">${s.reason}</textarea><p class="helper">理由会写入不可变审核记录；通过与驳回均必须填写。</p><div class="decision-actions"><button class="button button-danger" type="button">驳回申请</button><button class="button button-primary" type="button">通过申请</button></div>`}<p class="fixture-note">视觉基准，不会提交或修改任何生产数据。</p><div class="state-switcher">${Object.keys(statuses).map(name => `<button class="state-link" data-case="${name}" type="button">${name}</button>`).join("")}<button class="state-link" data-case="login" type="button">login</button></div></article></aside></div>
+              </section>
+            </div>
+          </div>`;
+      };
+      document.getElementById("frame").innerHTML = state === "login" ? login : renderReview(state);
+      document.addEventListener("click", (event) => { const key = event.target.closest("[data-case]")?.dataset.case; if (key) location.search = `?case=${key}`; });
+    </script>
+  </body>
+</html>

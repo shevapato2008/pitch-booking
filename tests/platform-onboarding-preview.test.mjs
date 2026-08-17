@@ -1,0 +1,143 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+import vm from "node:vm";
+
+const previewRoot = "platform-admin/dev";
+const referencePath = "artifacts/ui/reference/platform-onboarding/index.html";
+
+const read = (relativePath) => readFileSync(relativePath, "utf8");
+const normalizeRealm = (value) => JSON.parse(JSON.stringify(value));
+
+const loadPreviewModel = () => {
+  const context = vm.createContext({ console });
+  vm.runInContext(read(`${previewRoot}/fixture.js`), context, { filename: "fixture.js" });
+  vm.runInContext(read(`${previewRoot}/app.js`), context, { filename: "app.js" });
+  return {
+    fixture: context.PLATFORM_ONBOARDING_FIXTURE,
+    preview: context.PLATFORM_ONBOARDING_PREVIEW,
+  };
+};
+
+test("platform onboarding preview is isolated development-only static source", () => {
+  for (const file of ["index.html", "styles.css", "app.js", "fixture.js"]) {
+    assert.equal(existsSync(`${previewRoot}/${file}`), true, `missing ${previewRoot}/${file}`);
+  }
+  const packageSource = read("package.json");
+  assert.doesNotMatch(packageSource, /platform-admin\/dev/);
+  assert.equal(existsSync("platform-admin/index.html"), false, "must not create a production console in this slice");
+});
+
+test("reference freezes login and every review presentation at 1440 by 900", () => {
+  const reference = read(referencePath);
+  for (const copy of [
+    "平台工作人员登录",
+    "pending",
+    "approved",
+    "rejected",
+    "expired-evidence-link",
+    "decision-error",
+    "重复风险提示",
+    "证据链接已过期",
+    "决定未保存",
+  ]) assert.match(reference, new RegExp(copy));
+  assert.match(reference, /width:\s*1440px/);
+  assert.match(reference, /height:\s*900px/);
+  assert.match(reference, /<link rel="icon" href="data:,"/);
+});
+
+test("preview exposes the frozen queue, detail, evidence, and decision semantics", () => {
+  const html = read(`${previewRoot}/index.html`);
+  const styles = read(`${previewRoot}/styles.css`);
+  const app = read(`${previewRoot}/app.js`);
+  const fixture = read(`${previewRoot}/fixture.js`);
+  const combined = `${html}\n${app}\n${fixture}`;
+  assert.match(html, /<link rel="icon" href="data:,"/);
+
+  for (const copy of [
+    "平台工作人员登录",
+    "入驻申请",
+    "申请类型",
+    "审核状态",
+    "申请人姓名",
+    "目标已有场馆",
+    "拟建场馆名称",
+    "拟建场馆地址",
+    "重复风险提示",
+    "私密证据",
+    "通过申请",
+    "驳回申请",
+    "Development-only Fixture",
+    "不会提交",
+  ]) assert.match(combined, new RegExp(copy));
+
+  for (const state of [
+    "login",
+    "pending",
+    "approved",
+    "rejected",
+    "expired-evidence-link",
+    "decision-error",
+  ]) assert.match(fixture, new RegExp(`"${state}"`));
+
+  assert.match(fixture, /kind:\s*"CLAIM"[\s\S]*?targetVenue:/);
+  assert.match(fixture, /kind:\s*"CREATE"[\s\S]*?proposedVenue:/);
+  assert.doesNotMatch(fixture, /https?:\/\//);
+  assert.doesNotMatch(app, /fetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|localStorage|sessionStorage/);
+  assert.match(styles, /--page:\s*#F8FAFC/i);
+  assert.match(styles, /--text:\s*#10243E/i);
+  assert.match(styles, /--primary:\s*#0284C7/i);
+  assert.match(styles, /\.button[\s\S]*?align-items:\s*center[\s\S]*?justify-content:\s*center/);
+  assert.match(styles, /:focus-visible/);
+  assert.match(styles, /prefers-reduced-motion/);
+});
+
+test("Fixture store performs filters, row selection, login, evidence, and decisions locally", () => {
+  const { fixture, preview } = loadPreviewModel();
+  assert.ok(fixture);
+  assert.ok(preview);
+
+  const store = preview.createStore(fixture, { previewCase: "login" });
+  assert.equal(store.getState().screen, "login");
+  assert.deepEqual(normalizeRealm(store.login("")), { ok: false, error: "请输入工作人员访问令牌" });
+  assert.deepEqual(normalizeRealm(store.login("preview-staff-token")), { ok: true });
+  assert.equal(store.getState().screen, "review");
+
+  store.setFilters({ kind: "CREATE", status: "SUBMITTED" });
+  const visible = store.getVisibleApplications();
+  assert.ok(visible.length > 0);
+  assert.ok(visible.every((item) => item.kind === "CREATE" && item.status === "SUBMITTED"));
+
+  store.selectApplication("app-create-pending");
+  assert.equal(store.getSelectedApplication().id, "app-create-pending");
+  const opened = store.openEvidence("evidence-create-exterior");
+  assert.equal(opened.ok, true);
+  assert.equal(store.getState().evidencePanel.label, "场馆外部现场证明");
+  store.closeEvidence();
+  assert.equal(store.getState().evidencePanel, null);
+
+  assert.deepEqual(normalizeRealm(store.decide("REJECTED", "")), { ok: false, error: "请填写驳回理由" });
+  assert.deepEqual(normalizeRealm(store.decide("APPROVED", "主体、地址与授权材料核验一致")), { ok: true });
+  assert.equal(store.getSelectedApplication().status, "APPROVED");
+  assert.equal(store.getSelectedApplication().decision.reason, "主体、地址与授权材料核验一致");
+});
+
+test("expired evidence refresh and decision failure stay honest Fixture-only states", () => {
+  const { fixture, preview } = loadPreviewModel();
+  const expired = preview.createStore(fixture, { previewCase: "expired-evidence-link" });
+  assert.deepEqual(normalizeRealm(expired.getState().feedback), {
+    type: "warning",
+    message: "营业执照或主体证明预览链接已过期；重新获取只更新本地 Fixture。",
+  });
+  const firstOpen = expired.openEvidence("evidence-create-license");
+  assert.deepEqual(normalizeRealm(firstOpen), { ok: false, error: "证据预览链接已过期", recoverable: true });
+  assert.deepEqual(normalizeRealm(expired.refreshEvidence("evidence-create-license")), { ok: true });
+  assert.equal(expired.openEvidence("evidence-create-license").ok, true);
+
+  const failing = preview.createStore(fixture, { previewCase: "decision-error" });
+  assert.deepEqual(normalizeRealm(failing.decide("APPROVED", "核验完成")), {
+    ok: false,
+    error: "提交决定失败：申请状态可能已变化。刷新详情后再重试。",
+  });
+  assert.equal(failing.getSelectedApplication().status, "SUBMITTED");
+});
