@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -15,12 +16,11 @@ from backend.app.config import Settings
 
 from .storage import (
     UPLOAD_POLICY_TTL_SECONDS,
-    PrivateDownloadUrl,
     PrivateObject,
     PrivateObjectStateError,
     PrivateStorageUnavailableError,
     PrivateUploadPolicy,
-    _require_safe_download_request,
+    _require_safe_private_object_request,
 )
 
 
@@ -155,31 +155,42 @@ class OssOnboardingStorage:
         finally:
             result.close()
 
-    def create_download_url(
+    def open_private_object(
         self,
         object_key: str,
-        expires_seconds: int,
-        attachment_filename: str,
-    ) -> PrivateDownloadUrl:
-        _require_safe_download_request(
-            object_key,
-            expires_seconds,
-            attachment_filename,
-        )
-        expires_at = datetime.now(UTC) + timedelta(seconds=expires_seconds)
+        expected_bytes: int,
+    ) -> Iterable[bytes]:
+        _require_safe_private_object_request(object_key, expected_bytes)
         try:
-            url = self._bucket.sign_url(
-                "GET",
-                object_key,
-                expires_seconds,
-                params={
-                    "response-content-disposition": (
-                        f'attachment; filename="{attachment_filename}"'
-                    )
-                },
-            )
+            result = self._bucket.get_object(object_key)
         except Exception as error:
             raise PrivateStorageUnavailableError(
-                "private evidence signing failed"
+                "private evidence download failed"
             ) from error
-        return PrivateDownloadUrl(url=cast(str, url), expires_at=expires_at)
+        if getattr(result, "content_length", None) != expected_bytes:
+            result.close()
+            raise PrivateObjectStateError(
+                "private evidence length no longer matches the verified record"
+            )
+        return _bounded_download_chunks(result, expected_bytes)
+
+
+def _bounded_download_chunks(result: Any, expected_bytes: int) -> Iterator[bytes]:
+    remaining = expected_bytes
+    try:
+        while remaining:
+            chunk = result.read(min(64 * 1024, remaining))
+            if not chunk:
+                raise PrivateObjectStateError(
+                    "private evidence ended before its verified byte size"
+                )
+            remaining -= len(chunk)
+            yield cast(bytes, chunk)
+    except PrivateObjectStateError:
+        raise
+    except Exception as error:
+        raise PrivateStorageUnavailableError(
+            "private evidence download failed"
+        ) from error
+    finally:
+        result.close()

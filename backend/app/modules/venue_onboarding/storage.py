@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import io
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -46,12 +45,6 @@ class PrivateUploadPolicy:
 
 
 @dataclass(frozen=True)
-class PrivateDownloadUrl:
-    url: str
-    expires_at: datetime
-
-
-@dataclass(frozen=True)
 class PrivateObject:
     object_key: str
     data: bytes
@@ -79,12 +72,11 @@ class VenueOnboardingStore(Protocol):
         maximum_bytes: int,
     ) -> PrivateObject: ...
 
-    def create_download_url(
+    def open_private_object(
         self,
         object_key: str,
-        expires_seconds: int,
-        attachment_filename: str,
-    ) -> PrivateDownloadUrl: ...
+        expected_bytes: int,
+    ) -> Iterable[bytes]: ...
 
 
 class MemoryOnboardingStorage:
@@ -123,31 +115,24 @@ class MemoryOnboardingStorage:
         item = require_single_private_object(self._objects.get(object_prefix, []))
         return PrivateObject(item.object_key, item.data[: maximum_bytes + 1])
 
-    def create_download_url(
+    def open_private_object(
         self,
         object_key: str,
-        expires_seconds: int,
-        attachment_filename: str,
-    ) -> PrivateDownloadUrl:
-        _require_safe_download_request(
-            object_key,
-            expires_seconds,
-            attachment_filename,
-        )
-        expires_at = datetime.now(UTC) + timedelta(seconds=expires_seconds)
-        digest = hashlib.sha256(object_key.encode()).hexdigest()
-        signature = hmac.new(
-            b"development-private-onboarding-download",
-            f"{digest}:{int(expires_at.timestamp())}:{attachment_filename}".encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        return PrivateDownloadUrl(
-            url=(
-                f"https://private-download.invalid/evidence/{digest}"
-                f"?expires={int(expires_at.timestamp())}&signature={signature}"
-            ),
-            expires_at=expires_at,
-        )
+        expected_bytes: int,
+    ) -> Iterable[bytes]:
+        _require_safe_private_object_request(object_key, expected_bytes)
+        matches = [
+            item
+            for objects in self._objects.values()
+            for item in objects
+            if item.object_key == object_key
+        ]
+        item = require_single_private_object(matches)
+        if len(item.data) != expected_bytes:
+            raise PrivateObjectStateError(
+                "private evidence length no longer matches the verified record"
+            )
+        return iter((bytes(item.data),))
 
     def accept_upload(self, object_prefix: str, filename: str, data: bytes) -> None:
         self._objects.setdefault(object_prefix, []).append(
@@ -179,13 +164,12 @@ class UnavailableOnboardingStorage:
             "dedicated private onboarding bucket is not configured"
         )
 
-    def create_download_url(
+    def open_private_object(
         self,
         object_key: str,
-        expires_seconds: int,
-        attachment_filename: str,
-    ) -> PrivateDownloadUrl:
-        del object_key, expires_seconds, attachment_filename
+        expected_bytes: int,
+    ) -> Iterable[bytes]:
+        del object_key, expected_bytes
         raise PrivateStorageUnavailableError(
             "dedicated private onboarding bucket is not configured"
         )
@@ -211,31 +195,30 @@ def require_single_private_object(objects: Sequence[PrivateObject]) -> PrivateOb
     return objects[0]
 
 
-def _require_safe_download_request(
+def _require_safe_private_object_request(
     object_key: str,
-    expires_seconds: int,
-    attachment_filename: str,
+    expected_bytes: int,
 ) -> None:
-    if (
-        not object_key.startswith("venue-onboarding/")
-        or "/../" in object_key
-        or object_key.endswith("/")
+    segments = object_key.split("/")
+    if len(segments) < 4 or segments[0] != "venue-onboarding":
+        raise ValueError("review download object key is outside the private namespace")
+    try:
+        UUID(segments[1])
+        UUID(segments[2])
+    except ValueError:
+        raise ValueError(
+            "review download object key is outside the private namespace"
+        ) from None
+    if any(
+        not segment
+        or segment in {".", ".."}
+        or "\\" in segment
+        or any(ord(character) < 32 for character in segment)
+        for segment in segments
     ):
         raise ValueError("review download object key is outside the private namespace")
-    if not 1 <= expires_seconds <= 300:
-        raise ValueError("review download expiry must be short lived")
-    if (
-        not attachment_filename
-        or len(attachment_filename) > 128
-        or attachment_filename != attachment_filename.encode("ascii", "ignore").decode()
-        or any(
-            character not in "abcdefghijklmnopqrstuvwxyz0123456789.-"
-            for character in attachment_filename
-        )
-        or ".." in attachment_filename
-        or attachment_filename.startswith(".")
-    ):
-        raise ValueError("review download filename is unsafe")
+    if not 1 <= expected_bytes <= PHOTO_MAXIMUM_BYTES:
+        raise ValueError("review download byte bound is invalid")
 
 
 def validate_evidence_object(

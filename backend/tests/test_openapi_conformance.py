@@ -159,6 +159,10 @@ def test_platform_onboarding_review_contract_is_closed_and_runtime_aligned() -> 
     runtime = create_app().openapi()
     for path, methods in expected.items():
         assert set(runtime["paths"][path]) == methods
+        for method in methods:
+            assert set(runtime["paths"][path][method]["responses"]) == set(
+                paths[path][method]["responses"]
+            )
     assert runtime["components"]["schemas"]["PlatformOnboardingDecision"][
         "properties"
     ]["outcome"] == {

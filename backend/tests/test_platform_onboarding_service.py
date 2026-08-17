@@ -5,6 +5,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from sqlalchemy import Engine, func, select
@@ -34,27 +35,20 @@ pytestmark = pytest.mark.integration
 
 KEY_BASE64 = base64.b64encode(bytes(range(32))).decode("ascii")
 KEY_VERSION = 9
+DOWNLOAD_TOKEN_SECRET = base64.b64encode(bytes(reversed(range(32)))).decode("ascii")
 
 
 class RecordingDownloadStore:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int, str]] = []
+        self.calls: list[tuple[str, int]] = []
 
-    def create_download_url(
+    def open_private_object(
         self,
         object_key: str,
-        expires_seconds: int,
-        attachment_filename: str,
+        expected_bytes: int,
     ) -> object:
-        self.calls.append((object_key, expires_seconds, attachment_filename))
-        return type(
-            "Download",
-            (),
-            {
-                "url": "https://private-download.example.test/reviewer?signature=test",
-                "expires_at": datetime.now(UTC) + timedelta(seconds=expires_seconds),
-            },
-        )()
+        self.calls.append((object_key, expected_bytes))
+        return iter((b"x" * expected_bytes,))
 
 
 def _venue(*, name: str, address: str, latitude: float = 39.12) -> Venue:
@@ -154,43 +148,49 @@ def _service(
         repository=PlatformOnboardingRepository(session),
         storage=store or RecordingDownloadStore(),
         phone_vault=PhoneVault(key_base64=KEY_BASE64, key_version=KEY_VERSION),
+        download_token_secret=DOWNLOAD_TOKEN_SECRET,
     )
 
 
-def test_private_storage_download_is_short_lived_attachment_and_key_safe() -> None:
+def test_private_storage_opens_only_an_exact_private_namespaced_object() -> None:
     memory = MemoryOnboardingStorage()
-    object_key = f"venue-onboarding/{uuid.uuid4()}/{uuid.uuid4()}/secret.pdf"
+    prefix = f"venue-onboarding/{uuid.uuid4()}/{uuid.uuid4()}/"
+    object_key = f"{prefix}secret.pdf"
+    memory.accept_upload(prefix, "secret.pdf", b"private")
 
-    download = memory.create_download_url(
-        object_key,
-        300,
-        "business-license.pdf",
-    )
+    content = b"".join(memory.open_private_object(object_key, 7))
 
-    assert object_key not in download.url
-    assert "signature=" in download.url
-    assert 0 < (download.expires_at - datetime.now(UTC)).total_seconds() <= 300
+    assert content == b"private"
     with pytest.raises(ValueError):
-        memory.create_download_url("public/secret.pdf", 300, "secret.pdf")
-    with pytest.raises(ValueError):
-        memory.create_download_url(object_key, 300, "../secret.pdf")
+        memory.open_private_object("public/secret.pdf", 7)
 
 
-def test_oss_download_uses_private_get_signature_and_attachment_disposition() -> None:
+def test_oss_download_stream_reads_exact_private_key_with_a_hard_bound() -> None:
+    class Result:
+        content_length = 7
+
+        def __init__(self) -> None:
+            self.data = bytearray(b"private")
+            self.read_sizes: list[int] = []
+            self.closed = False
+
+        def read(self, size: int) -> bytes:
+            self.read_sizes.append(size)
+            chunk = bytes(self.data[:size])
+            del self.data[:size]
+            return chunk
+
+        def close(self) -> None:
+            self.closed = True
+
     class Bucket:
         def __init__(self) -> None:
-            self.calls: list[tuple[str, str, int, object]] = []
+            self.calls: list[str] = []
+            self.result = Result()
 
-        def sign_url(
-            self,
-            method: str,
-            key: str,
-            expires: int,
-            *,
-            params: object = None,
-        ) -> str:
-            self.calls.append((method, key, expires, params))
-            return "https://private-bucket.example.test/signed?signature=test"
+        def get_object(self, key: str) -> Result:
+            self.calls.append(key)
+            return self.result
 
     bucket = Bucket()
     adapter = OssOnboardingStorage(
@@ -202,21 +202,12 @@ def test_oss_download_uses_private_get_signature_and_attachment_disposition() ->
     )
     object_key = f"venue-onboarding/{uuid.uuid4()}/{uuid.uuid4()}/proof.jpg"
 
-    result = adapter.create_download_url(object_key, 300, "venue-exterior.jpg")
+    chunks = adapter.open_private_object(object_key, 7)
 
-    assert result.url.startswith("https://private-bucket.example.test/")
-    assert bucket.calls == [
-        (
-            "GET",
-            object_key,
-            300,
-            {
-                "response-content-disposition": (
-                    'attachment; filename="venue-exterior.jpg"'
-                )
-            },
-        )
-    ]
+    assert b"".join(chunks) == b"private"
+    assert bucket.calls == [object_key]
+    assert bucket.result.read_sizes == [7]
+    assert bucket.result.closed is True
 
 
 def test_queue_filters_and_uses_stable_cursor(pg_engine: Engine) -> None:
@@ -321,13 +312,33 @@ def test_download_requires_evidence_attached_to_application_and_is_short_lived(
         )
         assert evidence is not None
 
-        result = _service(session, store).create_evidence_download(evidence.id)
+        content_base_url = (
+            f"https://api.example.test/platform-admin/api/v1/onboarding/"
+            f"evidence/{evidence.id}/content"
+        )
+        result = _service(session, store).create_evidence_download(
+            evidence.id,
+            principal_id="ops-1",
+            content_base_url=content_base_url,
+        )
 
-        assert result.download_url.startswith("https://private-download.example.test/")
+        assert result.download_url.startswith(content_base_url)
+        assert evidence.object_key not in result.download_url
         assert 0 < (result.expires_at - datetime.now(UTC)).total_seconds() <= 300
-        assert store.calls == [
-            (evidence.object_key, 300, "business-license.pdf")
-        ]
+        assert store.calls == []
+
+        query = parse_qs(urlsplit(result.download_url).query)
+        content = _service(session, store).open_evidence_download(
+            evidence.id,
+            principal_id="ops-1",
+            expires_at=int(query["expires"][0]),
+            signature=query["signature"][0],
+        )
+        assert content.content_type == "application/pdf"
+        assert content.filename == "business-license.pdf"
+        assert content.byte_size == evidence.byte_size
+        assert len(b"".join(content.chunks)) == evidence.byte_size
+        assert store.calls == [(evidence.object_key, evidence.byte_size)]
 
         unattached = VenueOnboardingEvidence(
             owner_user_id=evidence.owner_user_id,
@@ -342,7 +353,11 @@ def test_download_requires_evidence_attached_to_application_and_is_short_lived(
         session.add(unattached)
         session.commit()
         with pytest.raises(AppError) as missing:
-            _service(session, store).create_evidence_download(unattached.id)
+            _service(session, store).create_evidence_download(
+                unattached.id,
+                principal_id="ops-1",
+                content_base_url=content_base_url,
+            )
         assert missing.value.code == "ONBOARDING_APPLICATION_NOT_FOUND"
 
 

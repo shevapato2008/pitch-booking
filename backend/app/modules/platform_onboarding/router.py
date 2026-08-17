@@ -4,8 +4,10 @@ import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from typing import Annotated, cast
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -73,26 +75,46 @@ def require_mutating_reviewer(
 
 
 def _service(request: Request, database: Session) -> PlatformOnboardingService:
+    token_secret = request.app.state.settings.platform_csrf_secret
     return PlatformOnboardingService(
         repository=PlatformOnboardingRepository(database),
         storage=cast(VenueOnboardingStore, request.app.state.venue_onboarding_store),
         phone_vault=request.app.state.phone_vault,
+        download_token_secret=(
+            token_secret.get_secret_value() if token_secret is not None else None
+        ),
     )
 
 
-_COMMON_ERRORS = {
+def _evidence_content_url(request: Request, evidence_id: uuid.UUID) -> str:
+    configured_base = request.app.state.settings.public_api_base_url
+    path = (
+        f"/platform-admin/api/v1/onboarding/evidence/{evidence_id}/content"
+    )
+    if configured_base is not None:
+        parsed = urlsplit(str(configured_base))
+        return f"{parsed.scheme}://{parsed.netloc}{path}"
+    return str(
+        request.url_for(
+            "stream_platform_onboarding_evidence",
+            evidence_id=str(evidence_id),
+        )
+    )
+
+
+_BASE_ERRORS = {
     401: {"model": ErrorEnvelope},
     403: {"model": ErrorEnvelope},
-    404: {"model": ErrorEnvelope},
     422: {"model": ErrorEnvelope},
     503: {"model": ErrorEnvelope},
 }
+_NOT_FOUND_ERRORS = {**_BASE_ERRORS, 404: {"model": ErrorEnvelope}}
 
 
 @router.get(
     "/applications",
     response_model=PlatformOnboardingQueue,
-    responses=_COMMON_ERRORS,
+    responses=_BASE_ERRORS,
 )
 def list_applications(
     request: Request,
@@ -120,7 +142,7 @@ def list_applications(
 @router.get(
     "/applications/{application_id}",
     response_model=PlatformOnboardingApplicationDetail,
-    responses=_COMMON_ERRORS,
+    responses=_NOT_FOUND_ERRORS,
 )
 def get_application(
     application_id: uuid.UUID,
@@ -140,27 +162,68 @@ def get_application(
 @router.get(
     "/evidence/{evidence_id}/download",
     response_model=PlatformOnboardingEvidenceDownload,
-    responses=_COMMON_ERRORS,
+    responses=_NOT_FOUND_ERRORS,
 )
 def create_evidence_download(
     evidence_id: uuid.UUID,
     request: Request,
     database: Annotated[Session, Depends(get_database)],
-    _authenticated: Annotated[
+    authenticated: Annotated[
         AuthenticatedPlatformSession,
         Depends(require_reviewer),
     ],
 ) -> PlatformOnboardingEvidenceDownload:
     return _database_call(
         database,
-        lambda: _service(request, database).create_evidence_download(evidence_id),
+        lambda: _service(request, database).create_evidence_download(
+            evidence_id,
+            principal_id=authenticated.principal.principal_id,
+            content_base_url=_evidence_content_url(request, evidence_id),
+        ),
+    )
+
+
+@router.get(
+    "/evidence/{evidence_id}/content",
+    include_in_schema=False,
+    name="stream_platform_onboarding_evidence",
+)
+def stream_evidence_content(
+    evidence_id: uuid.UUID,
+    request: Request,
+    database: Annotated[Session, Depends(get_database)],
+    authenticated: Annotated[
+        AuthenticatedPlatformSession,
+        Depends(require_reviewer),
+    ],
+    expires: int,
+    signature: str,
+) -> StreamingResponse:
+    content = _database_call(
+        database,
+        lambda: _service(request, database).open_evidence_download(
+            evidence_id,
+            principal_id=authenticated.principal.principal_id,
+            expires_at=expires,
+            signature=signature,
+        ),
+    )
+    return StreamingResponse(
+        content.chunks,
+        media_type=content.content_type,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{content.filename}"',
+            "Content-Length": str(content.byte_size),
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
 @router.post(
     "/applications/{application_id}/decisions",
     response_model=PlatformOnboardingDecision,
-    responses={**_COMMON_ERRORS, 409: {"model": ErrorEnvelope}},
+    responses={**_NOT_FOUND_ERRORS, 409: {"model": ErrorEnvelope}},
 )
 def decide_application(
     application_id: uuid.UUID,

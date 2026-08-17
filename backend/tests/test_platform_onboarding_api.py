@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +37,9 @@ CSRF_SECRET = base64.b64encode(bytes(reversed(range(32)))).decode("ascii")
 
 
 class ApiDownloadStore:
+    def __init__(self) -> None:
+        self.opened_keys: list[tuple[str, int]] = []
+
     def create_upload_policy(self, *_args: object) -> object:
         raise AssertionError("platform review must not create upload policies")
 
@@ -44,17 +49,15 @@ class ApiDownloadStore:
     def create_download_url(
         self, object_key: str, expires_seconds: int, attachment_filename: str
     ) -> object:
+        del object_key, expires_seconds, attachment_filename
+        raise AssertionError("platform API must not expose a direct object-store URL")
+
+    def open_private_object(
+        self, object_key: str, expected_bytes: int
+    ) -> Iterator[bytes]:
         assert object_key.startswith("venue-onboarding/")
-        assert expires_seconds == 300
-        assert attachment_filename.endswith(".pdf")
-        return type(
-            "Download",
-            (),
-            {
-                "url": "https://private-download.example.test/evidence?signature=test",
-                "expires_at": datetime.now(UTC) + timedelta(seconds=expires_seconds),
-            },
-        )()
+        self.opened_keys.append((object_key, expected_bytes))
+        yield b"%PDF" + b"x" * (expected_bytes - 4)
 
 
 def _principals(role: str) -> str:
@@ -104,7 +107,18 @@ def _login(client: TestClient) -> str:
     return str(response.json()["csrf_token"])
 
 
-def _seed_application(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
+def _download_signature(
+    *, evidence_id: uuid.UUID, principal_id: str, expires_at: int
+) -> str:
+    key = base64.b64decode(CSRF_SECRET, validate=True)
+    payload = (
+        f"platform-onboarding-evidence-download:v1:{evidence_id}:"
+        f"{principal_id}:{expires_at}"
+    )
+    return hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _seed_application(engine: Engine) -> tuple[uuid.UUID, uuid.UUID, str]:
     with Session(engine) as session:
         user = User(
             wechat_app_id="wx-platform-api",
@@ -141,25 +155,26 @@ def _seed_application(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
         )
         session.add(application)
         session.flush()
+        object_key = f"venue-onboarding/{user.id}/{uuid.uuid4()}/license.pdf"
         evidence = VenueOnboardingEvidence(
             owner_user_id=user.id,
             application_id=application.id,
             kind=VenueOnboardingEvidenceKind.BUSINESS_LICENSE,
             state=VenueOnboardingEvidenceState.COMPLETED,
-            object_key=f"venue-onboarding/{user.id}/{uuid.uuid4()}/license.pdf",
+            object_key=object_key,
             content_type="application/pdf",
             byte_size=300,
             content_sha256="d" * 64,
         )
         session.add(evidence)
         session.commit()
-        return application.id, evidence.id
+        return application.id, evidence.id, object_key
 
 
 def test_platform_onboarding_routes_require_platform_session_and_role(
     pg_engine: Engine,
 ) -> None:
-    application_id, evidence_id = _seed_application(pg_engine)
+    application_id, evidence_id, _object_key = _seed_application(pg_engine)
     anonymous = _client(pg_engine)
     paths = [
         anonymous.get("/platform-admin/api/v1/onboarding/applications"),
@@ -178,7 +193,7 @@ def test_review_queue_detail_download_and_decision_end_to_end(
     pg_engine: Engine,
     role: str,
 ) -> None:
-    application_id, evidence_id = _seed_application(pg_engine)
+    application_id, evidence_id, object_key = _seed_application(pg_engine)
     client = _client(pg_engine, role=role)
     csrf = _login(client)
 
@@ -202,6 +217,55 @@ def test_review_queue_detail_download_and_decision_end_to_end(
     )
     assert download.status_code == 200
     assert set(download.json()) == {"download_url", "expires_at"}
+    download_url = download.json()["download_url"]
+    assert object_key not in download_url
+    assert "venue-onboarding" not in download_url
+
+    content = client.get(download_url)
+    assert content.status_code == 200
+    assert content.content == b"%PDF" + b"x" * 296
+    assert content.headers["content-type"] == "application/pdf"
+    assert content.headers["content-disposition"] == (
+        'attachment; filename="business-license.pdf"'
+    )
+    assert content.headers["cache-control"] == "no-store"
+
+    parsed = urlsplit(download_url)
+    query = parse_qs(parsed.query)
+    signature = query["signature"][0]
+    query["signature"] = [f"{signature[:-1]}{'0' if signature[-1] != '0' else '1'}"]
+    tampered_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urlencode(query, doseq=True), "")
+    )
+    tampered = client.get(tampered_url)
+    assert tampered.status_code == 403
+    assert tampered.json()["error"]["code"] == "PLATFORM_CSRF_INVALID"
+
+    different_evidence = client.get(
+        parsed.path.replace(str(evidence_id), str(uuid.uuid4())),
+        params={
+            "expires": query["expires"][0],
+            "signature": signature,
+        },
+    )
+    assert different_evidence.status_code == 403
+    assert different_evidence.json()["error"]["code"] == "PLATFORM_CSRF_INVALID"
+
+    expired_at = int(datetime.now(UTC).timestamp()) - 1
+    expired_signature = _download_signature(
+        evidence_id=evidence_id,
+        principal_id="ops-1",
+        expires_at=expired_at,
+    )
+    expired = client.get(
+        f"{ORIGIN}{parsed.path}",
+        params={"expires": expired_at, "signature": expired_signature},
+    )
+    assert expired.status_code == 403
+    assert expired.json()["error"]["code"] == "PLATFORM_CSRF_INVALID"
+
+    anonymous_content = _client(pg_engine).get(download_url)
+    assert anonymous_content.status_code == 401
 
     missing_csrf = client.post(
         f"/platform-admin/api/v1/onboarding/applications/{application_id}/decisions",
@@ -264,7 +328,7 @@ def test_invalid_queue_parameters_are_closed_422(pg_engine: Engine) -> None:
 def test_missing_application_and_cross_application_evidence_are_not_found(
     pg_engine: Engine,
 ) -> None:
-    _application_id, evidence_id = _seed_application(pg_engine)
+    _application_id, evidence_id, _object_key = _seed_application(pg_engine)
     client = _client(pg_engine)
     _login(client)
 

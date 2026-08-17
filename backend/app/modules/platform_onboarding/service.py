@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import math
 import uuid
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
+from urllib.parse import urlencode
 
 from backend.app.errors import AppError
 from backend.app.models import (
@@ -36,6 +41,7 @@ from backend.app.modules.platform_onboarding.repository import (
 )
 from backend.app.modules.venue_onboarding.service import normalize_identity
 from backend.app.modules.venue_onboarding.storage import (
+    PrivateObjectStateError,
     PrivateStorageUnavailableError,
     VenueOnboardingStore,
 )
@@ -46,6 +52,15 @@ from backend.app.security.phone_vault import (
 )
 
 DOWNLOAD_TTL_SECONDS = 300
+DOWNLOAD_TOKEN_PURPOSE = "platform-onboarding-evidence-download:v1"
+
+
+@dataclass(frozen=True)
+class EvidenceDownloadContent:
+    chunks: Iterable[bytes]
+    content_type: str
+    byte_size: int
+    filename: str
 
 
 class PlatformOnboardingService:
@@ -55,10 +70,12 @@ class PlatformOnboardingService:
         repository: PlatformOnboardingRepository,
         storage: VenueOnboardingStore,
         phone_vault: PhoneVault | None,
+        download_token_secret: str | None,
     ) -> None:
         self.repository = repository
         self.storage = storage
         self.phone_vault = phone_vault
+        self.download_token_key = _decode_download_token_key(download_token_secret)
 
     def list_applications(
         self,
@@ -121,27 +138,88 @@ class PlatformOnboardingService:
     def create_evidence_download(
         self,
         evidence_id: uuid.UUID,
+        *,
+        principal_id: str,
+        content_base_url: str,
     ) -> PlatformOnboardingEvidenceDownload:
         evidence = self.repository.get_attached_evidence(evidence_id)
         if evidence is None:
             raise _not_found()
+        expires_at_unix = int(datetime.now(UTC).timestamp()) + DOWNLOAD_TTL_SECONDS
+        signature = self._download_signature(
+            evidence_id=evidence.id,
+            principal_id=principal_id,
+            expires_at=expires_at_unix,
+        )
+        query = urlencode(
+            {"expires": expires_at_unix, "signature": signature},
+        )
+        return PlatformOnboardingEvidenceDownload(
+            download_url=f"{content_base_url}?{query}",
+            expires_at=datetime.fromtimestamp(expires_at_unix, UTC),
+        )
+
+    def open_evidence_download(
+        self,
+        evidence_id: uuid.UUID,
+        *,
+        principal_id: str,
+        expires_at: int,
+        signature: str,
+    ) -> EvidenceDownloadContent:
+        expected_signature = self._download_signature(
+            evidence_id=evidence_id,
+            principal_id=principal_id,
+            expires_at=expires_at,
+        )
+        now_unix = int(datetime.now(UTC).timestamp())
+        if (
+            not hmac.compare_digest(signature, expected_signature)
+            or expires_at < now_unix
+            or expires_at > now_unix + DOWNLOAD_TTL_SECONDS
+        ):
+            raise _invalid_download()
+        evidence = self.repository.get_attached_evidence(evidence_id)
+        if evidence is None:
+            raise _not_found()
+        if evidence.byte_size is None:
+            raise _state_changed()
         filename = _attachment_filename(evidence)
         try:
-            signed = self.storage.create_download_url(
+            chunks = self.storage.open_private_object(
                 evidence.object_key,
-                DOWNLOAD_TTL_SECONDS,
-                filename,
+                evidence.byte_size,
             )
-        except PrivateStorageUnavailableError:
+        except (PrivateObjectStateError, PrivateStorageUnavailableError, ValueError):
             raise AppError(
                 503,
                 "SERVICE_UNAVAILABLE",
                 "私密证据暂时无法下载。",
             ) from None
-        return PlatformOnboardingEvidenceDownload(
-            download_url=signed.url,
-            expires_at=signed.expires_at,
+        return EvidenceDownloadContent(
+            chunks=chunks,
+            content_type=evidence.content_type,
+            byte_size=evidence.byte_size,
+            filename=filename,
         )
+
+    def _download_signature(
+        self,
+        *,
+        evidence_id: uuid.UUID,
+        principal_id: str,
+        expires_at: int,
+    ) -> str:
+        if self.download_token_key is None:
+            raise AppError(503, "SERVICE_UNAVAILABLE", "私密证据暂时无法下载。")
+        payload = (
+            f"{DOWNLOAD_TOKEN_PURPOSE}:{evidence_id}:{principal_id}:{expires_at}"
+        )
+        return hmac.new(
+            self.download_token_key,
+            payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
     def decide(
         self,
@@ -526,3 +604,17 @@ def _state_changed() -> AppError:
         "ONBOARDING_APPLICATION_STATE_CHANGED",
         "申请状态已变化，请刷新后重试。",
     )
+
+
+def _invalid_download() -> AppError:
+    return AppError(403, "PLATFORM_CSRF_INVALID", "证据下载链接无效或已过期。")
+
+
+def _decode_download_token_key(secret_base64: str | None) -> bytes | None:
+    if secret_base64 is None:
+        return None
+    try:
+        key = base64.b64decode(secret_base64, validate=True)
+    except (ValueError, UnicodeEncodeError):
+        return None
+    return key if len(key) >= 32 else None
