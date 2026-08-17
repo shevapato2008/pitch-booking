@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
@@ -29,6 +30,11 @@ from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
 from backend.app.modules.platform_auth.router import router as platform_auth_router
 from backend.app.modules.platform_onboarding.router import router as platform_onboarding_router
+from backend.app.modules.platform_web import (
+    PlatformAdminSecurityHeadersMiddleware,
+    create_platform_web_router,
+    default_platform_admin_root,
+)
 from backend.app.modules.venue_access.router import router as venue_access_router
 from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
 from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
@@ -60,6 +66,7 @@ def create_app(
     settings: Settings | None = None,
     venue_media_store: VenueMediaStore | None = None,
     venue_onboarding_store: VenueOnboardingStore | None = None,
+    platform_admin_root: Path | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings()
     phone_vault = (
@@ -115,6 +122,7 @@ def create_app(
             RequestIdMiddleware,
             app_revision=resolved_settings.app_revision,
         )
+        application.add_middleware(PlatformAdminSecurityHeadersMiddleware)
         application.add_exception_handler(AppError, app_error_handler)
 
         async def validation_handler(request: Request, error: Exception) -> JSONResponse:
@@ -152,6 +160,11 @@ def create_app(
         if resolved_settings.mock_payment_provider_enabled:
             application.include_router(development_payment_router)
         application.include_router(venues_router)
+        application.include_router(
+            create_platform_web_router(
+                platform_admin_root or default_platform_admin_root()
+            )
+        )
     except BaseException:
         provider_bundle.close()
         close_storage = getattr(resolved_media_store, "close", None)

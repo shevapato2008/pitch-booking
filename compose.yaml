@@ -36,6 +36,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # The API image also contains and serves the platform console under /platform-admin.
   api:
     build:
       context: .
