@@ -28,6 +28,13 @@ from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
 from backend.app.modules.venue_access.router import router as venue_access_router
+from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
+from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
+from backend.app.modules.venue_onboarding.storage import (
+    MemoryOnboardingStorage,
+    UnavailableOnboardingStorage,
+    VenueOnboardingStore,
+)
 from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
 from backend.app.modules.venue_profiles.oss_storage import OssMediaStorage
 from backend.app.modules.venue_profiles.router import (
@@ -50,6 +57,7 @@ def create_app(
     include_test_routes: bool = False,
     settings: Settings | None = None,
     venue_media_store: VenueMediaStore | None = None,
+    venue_onboarding_store: VenueOnboardingStore | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings()
     phone_vault = (
@@ -65,12 +73,23 @@ def create_app(
         MockPaymentProvider() if resolved_settings.mock_payment_provider_enabled else None
     )
     owns_venue_media_store = venue_media_store is None
+    owns_venue_onboarding_store = venue_onboarding_store is None
     try:
         resolved_media_store = venue_media_store or (
             OssMediaStorage.from_settings(resolved_settings)
             if resolved_settings.app_env in {"staging", "production"}
             else LocalMediaStorage()
         )
+        if venue_onboarding_store is not None:
+            resolved_onboarding_store = venue_onboarding_store
+        elif resolved_settings.app_env not in {"staging", "production"}:
+            resolved_onboarding_store = MemoryOnboardingStorage()
+        elif resolved_settings.onboarding_oss_bucket is None:
+            resolved_onboarding_store = UnavailableOnboardingStorage()
+        else:
+            resolved_onboarding_store = OssOnboardingStorage.from_settings(
+                resolved_settings
+            )
     except BaseException:
         provider_bundle.close()
         raise
@@ -84,6 +103,9 @@ def create_app(
             close_storage = getattr(resolved_media_store, "close", None)
             if owns_venue_media_store and close_storage is not None:
                 close_storage()
+            close_onboarding_storage = getattr(resolved_onboarding_store, "close", None)
+            if owns_venue_onboarding_store and close_onboarding_storage is not None:
+                close_onboarding_storage()
 
     try:
         application = FastAPI(title="Pitch Booking API", version="0.1.0", lifespan=lifespan)
@@ -111,6 +133,7 @@ def create_app(
         application.state.provider_bundle = provider_bundle
         application.state.payment_provider = payment_provider
         application.state.venue_media_store = resolved_media_store
+        application.state.venue_onboarding_store = resolved_onboarding_store
         application.include_router(auth_router)
         application.include_router(availability_router)
         application.include_router(checkout_router)
@@ -119,6 +142,7 @@ def create_app(
         application.include_router(payments_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
+        application.include_router(venue_onboarding_router)
         application.include_router(venue_profiles_router)
         application.include_router(venue_profile_manual_router)
         if resolved_settings.mock_payment_provider_enabled:
@@ -129,6 +153,9 @@ def create_app(
         close_storage = getattr(resolved_media_store, "close", None)
         if owns_venue_media_store and close_storage is not None:
             close_storage()
+        close_onboarding_storage = getattr(resolved_onboarding_store, "close", None)
+        if owns_venue_onboarding_store and close_onboarding_storage is not None:
+            close_onboarding_storage()
         raise
 
     @application.get("/api/v1/health")

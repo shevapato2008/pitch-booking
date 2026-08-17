@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     public_image_hosts: tuple[str, ...] = ()
     oss_endpoint: AnyHttpUrl | None = Field(default=None, repr=False)
     oss_bucket: str | None = Field(default=None, repr=False)
+    onboarding_oss_bucket: str | None = Field(default=None, repr=False)
     oss_public_base_url: AnyHttpUrl | None = Field(default=None, repr=False)
     oss_access_key_id: str | None = Field(default=None, repr=False)
     oss_access_key_secret: SecretStr | None = Field(default=None, repr=False)
@@ -286,13 +287,18 @@ class Settings(BaseSettings):
             raise cls._safe_value_error(field_name, "OSS_ENDPOINT must be origin only")
         return validated
 
-    @field_validator("oss_bucket", "oss_access_key_id", mode="before")
+    @field_validator(
+        "oss_bucket",
+        "onboarding_oss_bucket",
+        "oss_access_key_id",
+        mode="before",
+    )
     @classmethod
     def validate_oss_names(cls, value: object, info: ValidationInfo) -> str | None:
         field_name = info.field_name
         assert field_name is not None
         if value is None or type(value) is str and not value.strip():
-            if cls._is_deployed(info):
+            if cls._is_deployed(info) and field_name != "onboarding_oss_bucket":
                 raise cls._safe_value_error(
                     field_name,
                     "OSS storage configuration is required for staging and production",
@@ -302,8 +308,10 @@ class Settings(BaseSettings):
             return None
         if type(value) is not str or value != value.strip():
             raise cls._safe_value_error(field_name, f"{field_name.upper()} is invalid")
-        if field_name == "oss_bucket" and _OSS_BUCKET.fullmatch(value) is None:
-            raise cls._safe_value_error(field_name, "OSS_BUCKET is invalid")
+        if field_name in {"oss_bucket", "onboarding_oss_bucket"} and _OSS_BUCKET.fullmatch(
+            value
+        ) is None:
+            raise cls._safe_value_error(field_name, f"{field_name.upper()} is invalid")
         return value
 
     @field_validator("oss_access_key_secret")
@@ -417,6 +425,16 @@ class Settings(BaseSettings):
                 "Mock payment provider is allowed only when APP_ENV=development, "
                 "PAYMENT_PROVIDER=mock, and ENABLE_MOCK_PAYMENT_PROVIDER=true"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_private_onboarding_bucket(self) -> "Settings":
+        if (
+            self.oss_bucket is not None
+            and self.onboarding_oss_bucket is not None
+            and self.oss_bucket == self.onboarding_oss_bucket
+        ):
+            raise ValueError("ONBOARDING_OSS_BUCKET must be separate from OSS_BUCKET")
         return self
 
     @property
