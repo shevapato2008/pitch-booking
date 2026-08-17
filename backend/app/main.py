@@ -27,6 +27,7 @@ from backend.app.modules.payments.development_router import router as developmen
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
+from backend.app.modules.platform_auth.router import router as platform_auth_router
 from backend.app.modules.venue_access.router import router as venue_access_router
 from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
 from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
@@ -140,6 +141,7 @@ def create_app(
         application.include_router(inventory_router)
         application.include_router(orders_router)
         application.include_router(payments_router)
+        application.include_router(platform_auth_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_onboarding_router)
@@ -195,6 +197,28 @@ def create_app(
                 .get("get", {})
             )
             profile_get.get("responses", {}).pop("422", None)
+            platform_session_path = schema.get("paths", {}).get(
+                "/platform-admin/api/v1/auth/session", {}
+            )
+            for method, names in (
+                ("post", {"Origin"}),
+                ("delete", {"Origin", "X-CSRF-Token"}),
+            ):
+                parameters = platform_session_path.get(method, {}).get("parameters", [])
+                for parameter in parameters:
+                    if parameter.get("name") not in names:
+                        continue
+                    name = parameter["name"]
+                    parameter["required"] = True
+                    parameter["schema"] = {
+                        "type": "string",
+                        "title": parameter.get("schema", {}).get("title", name),
+                        **(
+                            {"format": "uri"}
+                            if name == "Origin"
+                            else {"pattern": "^[0-9a-f]{64}$"}
+                        ),
+                    }
             application.openapi_schema = schema
         return application.openapi_schema
 
