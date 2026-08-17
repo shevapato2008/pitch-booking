@@ -319,6 +319,8 @@ GET  /api/v1/venue-onboarding/applications
 
 All mutation operations require `Idempotency-Key`. Closed responses expose evidence IDs/statuses, never private OSS keys or reviewer-only material. Claim submission requires `MANAGEMENT_AUTHORIZATION` and `VENUE_EXTERIOR`; create submission requires `BUSINESS_LICENSE`, `MANAGEMENT_AUTHORIZATION`, `VENUE_EXTERIOR`, and `VENUE_INTERIOR`. Both require an already verified user phone, which the server snapshots rather than trusting a client phone string.
 
+Both claim and create requests collect the applicant's `contact_name` (1..40) explicitly. Create requests also carry the selected six-digit `district_code`, `district_name`, `latitude`, and `longitude`; the backend must persist those real values and must not manufacture placeholder locations or applicant names.
+
 Freeze the following transport details in schemas and examples:
 
 ```text
