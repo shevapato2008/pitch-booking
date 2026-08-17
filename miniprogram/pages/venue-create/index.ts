@@ -186,7 +186,7 @@ Page({
         delete this.evidenceFiles[kind];
         delete this.evidenceAttempts[kind];
         this.markEvidenceError(kind,
-          code === "INVALID_MIME" ? "文件格式不支持，请重新选择 JPG、PNG 或 PDF"
+          code === "INVALID_MIME" ? "文件格式不支持，请重新选择 JPG 或 PNG 图片"
             : code === "TOO_LARGE" ? "文件过大，请压缩后重新选择"
               : "材料内容无法校验，请重新选择文件",
           "reselect");

@@ -77,17 +77,22 @@ describe("native onboarding evidence upload", () => {
     acceptedMimeTypes: ["image/jpeg", "image/png"], maximumBytes: 15 * 1024 * 1024,
   };
 
-  test("uses document/photo pickers and posts opaque OSS fields unchanged without bearer headers", async () => {
+  test("uses the native image picker for every evidence row and posts opaque OSS fields unchanged", async () => {
+    const chooseMessageFile = jest.fn(({ success }) => success({ tempFiles: [{ path: "/tmp/license.pdf", name: "license.pdf", size: 42 }] }));
+    const chooseMedia = jest.fn(({ success }) => success({ tempFiles: [{ tempFilePath: "/tmp/evidence.jpg", fileType: "image", size: 43 }] }));
     (globalThis as any).wx = {
-      chooseMessageFile: jest.fn(({ success }) => success({ tempFiles: [{ path: "/tmp/license.pdf", name: "license.pdf", size: 42 }] })),
-      chooseMedia: jest.fn(({ success }) => success({ tempFiles: [{ tempFilePath: "/tmp/exterior.jpg", fileType: "image", size: 43 }] })),
+      chooseMessageFile,
+      chooseMedia,
       uploadFile: jest.fn(({ success }) => success({ statusCode: 201 })),
     };
     const capability = createWeChatVenueOnboardingEvidenceCapability();
-    await expect(capability.choose("BUSINESS_LICENSE")).resolves.toMatchObject({ mimeType: "application/pdf", byteSize: 42 });
+    await expect(capability.choose("BUSINESS_LICENSE")).resolves.toMatchObject({ mimeType: "image/jpeg", byteSize: 43 });
+    await expect(capability.choose("MANAGEMENT_AUTHORIZATION")).resolves.toMatchObject({ mimeType: "image/jpeg", byteSize: 43 });
     const photo = await capability.choose("VENUE_EXTERIOR");
     await capability.upload(photo, policy);
-    expect(wx.uploadFile).toHaveBeenCalledWith(expect.objectContaining({ url: policy.postPolicy.url, filePath: "/tmp/exterior.jpg", name: "file", formData: policy.postPolicy.fields }));
+    expect(chooseMessageFile).not.toHaveBeenCalled();
+    expect(chooseMedia).toHaveBeenCalledTimes(3);
+    expect(wx.uploadFile).toHaveBeenCalledWith(expect.objectContaining({ url: policy.postPolicy.url, filePath: "/tmp/evidence.jpg", name: "file", formData: policy.postPolicy.fields }));
     const request = (wx.uploadFile as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
     expect(request).not.toHaveProperty("header");
   });

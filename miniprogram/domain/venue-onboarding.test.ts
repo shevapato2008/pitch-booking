@@ -83,6 +83,8 @@ describe("venue onboarding decoders", () => {
 test("required evidence and truthful application labels drive submission state", () => {
   const claim = createEvidenceItems("CLAIM");
   expect(claim.map(({ kind }) => kind)).toEqual(["MANAGEMENT_AUTHORIZATION", "VENUE_EXTERIOR"]);
+  expect(createEvidenceItems("CREATE").slice(0, 2).map(({ helper }) => helper))
+    .toEqual(["支持 JPG、PNG 图片", "支持 JPG、PNG 图片"]);
   expect(submissionBlocker({ selectedVenueId: "venue", contactName: "张三", maskedPhone: null, evidence: claim }))
     .toBe("请先验证联系电话");
   expect(submissionBlocker({ selectedVenueId: "venue", contactName: "张三", maskedPhone: "138****0000", evidence: claim }))

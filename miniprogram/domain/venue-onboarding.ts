@@ -214,8 +214,8 @@ function nullableString(value: unknown, path: string): string | null {
 }
 
 const EVIDENCE_PRESENTATION: Readonly<Record<VenueOnboardingEvidenceKind, { readonly label: string; readonly helper: string }>> = {
-  BUSINESS_LICENSE: { label: "营业执照", helper: "支持 JPG、PNG 或 PDF" },
-  MANAGEMENT_AUTHORIZATION: { label: "经营或管理授权证明", helper: "支持 JPG、PNG 或 PDF" },
+  BUSINESS_LICENSE: { label: "营业执照", helper: "支持 JPG、PNG 图片" },
+  MANAGEMENT_AUTHORIZATION: { label: "经营或管理授权证明", helper: "支持 JPG、PNG 图片" },
   VENUE_EXTERIOR: { label: "场馆外观", helper: "请上传现场实拍图片" },
   VENUE_INTERIOR: { label: "场馆内部", helper: "请上传现场实拍图片" },
 };

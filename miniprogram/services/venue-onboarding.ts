@@ -91,8 +91,8 @@ export function createOnboardingIdempotencyKey(scope: string): string {
 export function createWeChatVenueOnboardingEvidenceCapability(): VenueOnboardingEvidenceCapability {
   const activeUploads = new Set<{ abort(code?: string): void }>();
   return {
-    choose(kind) {
-      return isDocument(kind) ? chooseDocument() : choosePhoto();
+    choose(_kind) {
+      return choosePhoto();
     },
     upload(file, intent) {
       return new Promise<void>((resolve, reject) => {
@@ -137,31 +137,6 @@ export function resetVenueOnboardingBindingsForTesting(): void {
   dataSource = undefined;
   evidenceCapability = undefined;
   keySequence = 0;
-}
-
-function isDocument(kind: VenueOnboardingEvidenceKind): boolean {
-  return kind === "BUSINESS_LICENSE" || kind === "MANAGEMENT_AUTHORIZATION";
-}
-
-function chooseDocument(): Promise<VenueOnboardingLocalEvidence> {
-  return new Promise((resolve, reject) => {
-    wx.chooseMessageFile({
-      count: 1,
-      type: "file",
-      extension: ["jpg", "jpeg", "png", "pdf"],
-      success(result) {
-        const file = result.tempFiles[0];
-        if (!file) { reject(new Error("EVIDENCE_NOT_SELECTED")); return; }
-        resolve({
-          tempFilePath: file.path,
-          filename: file.name,
-          mimeType: inferMime(file.name),
-          byteSize: file.size,
-        });
-      },
-      fail(result) { reject(new Error(result.errMsg || "EVIDENCE_NOT_SELECTED")); },
-    });
-  });
 }
 
 function choosePhoto(): Promise<VenueOnboardingLocalEvidence> {
