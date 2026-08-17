@@ -2578,6 +2578,18 @@ components:
       description: Applicant-safe projection without phone snapshots, private object keys, or reviewer-only material.
       type: object
       additionalProperties: false
+      required: [application_id, kind, status, venue, submitted_at, updated_at]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        venue: {$ref: '#/components/schemas/VenueOnboardingApplicationVenue'}
+        submitted_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    VenueOnboardingApplicantApplication:
+      description: Applicant-safe list projection without phone snapshots, private object keys, reviewer identity, or approval notes.
+      type: object
+      additionalProperties: false
       required: [application_id, kind, status, rejection_reason, venue, submitted_at, updated_at]
       properties:
         application_id: {type: string, format: uuid}
@@ -2597,7 +2609,7 @@ components:
       properties:
         items:
           type: array
-          items: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+          items: {$ref: '#/components/schemas/VenueOnboardingApplicantApplication'}
         next_cursor: {type: [string, 'null']}
     PossibleDuplicateVenueDetails:
       description: >-
