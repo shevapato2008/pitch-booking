@@ -11,11 +11,14 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import Engine, MetaData, Table, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
 from backend.app.database import get_database
 from backend.app.main import create_app
+from backend.app.modules.platform_auth import service as platform_auth_service
+from backend.app.modules.platform_auth.repository import PlatformAuthRepository
 
 pytestmark = pytest.mark.integration
 
@@ -78,6 +81,7 @@ def test_allowed_staff_role_exchanges_and_restores_secure_session(
     created = client.post(
         "/platform-admin/api/v1/auth/session",
         json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
     )
 
     assert created.status_code == 200
@@ -143,6 +147,7 @@ def test_invalid_access_token_is_rejected_without_secret_disclosure(
     response = client.post(
         "/platform-admin/api/v1/auth/session",
         json={"access_token": invalid},
+        headers={"Origin": ORIGIN},
     )
 
     assert response.status_code == 401
@@ -169,6 +174,7 @@ def test_missing_csrf_configuration_does_not_persist_unusable_session(
     response = client.post(
         "/platform-admin/api/v1/auth/session",
         json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
     )
 
     assert response.status_code == 503
@@ -188,6 +194,7 @@ def test_disabled_or_removed_principal_immediately_invalidates_existing_session(
     created = client.post(
         "/platform-admin/api/v1/auth/session",
         json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
     )
     assert created.status_code == 200
 
@@ -209,6 +216,7 @@ def test_logout_requires_same_origin_csrf_and_revokes_session(pg_engine: Engine)
     created = client.post(
         "/platform-admin/api/v1/auth/session",
         json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
     )
     assert created.status_code == 200
     csrf_token = created.json()["csrf_token"]
@@ -267,6 +275,7 @@ def test_expired_session_is_rejected(pg_engine: Engine) -> None:
     created = client.post(
         "/platform-admin/api/v1/auth/session",
         json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
     )
     assert created.status_code == 200
     session_token = client.cookies.get("pitch_platform_session")
@@ -296,6 +305,140 @@ def test_expired_session_is_rejected(pg_engine: Engine) -> None:
     response = client.get("/platform-admin/api/v1/auth/session")
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "PLATFORM_AUTH_REQUIRED"
+
+
+@pytest.mark.parametrize("origin", [None, "https://cross-origin.example.test"])
+def test_access_token_exchange_requires_exact_same_origin(
+    pg_engine: Engine,
+    origin: str | None,
+) -> None:
+    client = _client(pg_engine)
+    headers = {} if origin is None else {"Origin": origin}
+    platform_sessions = Table("platform_sessions", MetaData(), autoload_with=pg_engine)
+    with Session(pg_engine) as session:
+        before = session.scalar(
+            select(func.count()).select_from(platform_sessions)
+        )
+
+    response = client.post(
+        "/platform-admin/api/v1/auth/session",
+        json={"access_token": RAW_ACCESS_TOKEN},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "PLATFORM_CSRF_INVALID"
+    with Session(pg_engine) as session:
+        after = session.scalar(select(func.count()).select_from(platform_sessions))
+    assert after == before
+
+
+def test_session_hash_collision_returns_503_without_residual_session(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(pg_engine)
+    raw_session_token = "fixed-platform-session-token"
+    session_hash = hashlib.sha256(raw_session_token.encode()).hexdigest()
+    monkeypatch.setattr(
+        platform_auth_service.secrets,
+        "token_urlsafe",
+        lambda _bytes: raw_session_token,
+    )
+    first = client.post(
+        "/platform-admin/api/v1/auth/session",
+        json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
+    )
+    assert first.status_code == 200
+
+    collided = client.post(
+        "/platform-admin/api/v1/auth/session",
+        json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
+    )
+
+    assert collided.status_code == 503
+    assert collided.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    with Session(pg_engine) as session:
+        platform_sessions = Table(
+            "platform_sessions", MetaData(), autoload_with=pg_engine
+        )
+        assert session.scalar(
+            select(func.count()).select_from(platform_sessions).where(
+                platform_sessions.c.token_hash == session_hash
+            )
+        ) == 1
+
+
+def test_session_restore_database_failure_returns_503(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(pg_engine)
+    created = client.post(
+        "/platform-admin/api/v1/auth/session",
+        json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
+    )
+    assert created.status_code == 200
+
+    def fail_restore(
+        _repository: PlatformAuthRepository,
+        _token_hash: str,
+    ) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(PlatformAuthRepository, "get_by_token_hash", fail_restore)
+    restored = client.get("/platform-admin/api/v1/auth/session")
+
+    assert restored.status_code == 503
+    assert restored.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+
+
+def test_session_revoke_database_failure_returns_503_without_revocation(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(pg_engine)
+    created = client.post(
+        "/platform-admin/api/v1/auth/session",
+        json={"access_token": RAW_ACCESS_TOKEN},
+        headers={"Origin": ORIGIN},
+    )
+    assert created.status_code == 200
+
+    def fail_revoke(
+        _repository: PlatformAuthRepository,
+        _platform_session: object,
+        _revoked_at: datetime,
+    ) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(PlatformAuthRepository, "revoke", fail_revoke)
+    revoked = client.delete(
+        "/platform-admin/api/v1/auth/session",
+        headers={
+            "Origin": ORIGIN,
+            "X-CSRF-Token": created.json()["csrf_token"],
+        },
+    )
+
+    assert revoked.status_code == 503
+    assert revoked.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    session_token = client.cookies.get("pitch_platform_session")
+    assert session_token is not None
+    with Session(pg_engine) as session:
+        platform_sessions = Table(
+            "platform_sessions", MetaData(), autoload_with=pg_engine
+        )
+        record = session.execute(
+            select(platform_sessions).where(
+                platform_sessions.c.token_hash
+                == hashlib.sha256(session_token.encode()).hexdigest()
+            )
+        ).mappings().one()
+        assert record["revoked_at"] is None
 
 
 @pytest.mark.parametrize(

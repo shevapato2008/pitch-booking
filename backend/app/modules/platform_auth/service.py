@@ -91,12 +91,8 @@ class PlatformAuthService:
             revoked_at=None,
         )
         csrf_token = self._csrf_token(session_hash)
-        try:
-            self.repository.add(record)
-            self.repository.commit()
-        except Exception:
-            self.repository.rollback()
-            raise
+        self.repository.add(record)
+        self.repository.commit()
         return raw_session_token, AuthenticatedPlatformSession(
             record=record,
             principal=matched,
@@ -143,26 +139,20 @@ class PlatformAuthService:
         origin: str | None,
         csrf_token: str | None,
     ) -> None:
-        expected_origin = _expected_origin(request, self.settings)
-        if (
-            origin is None
-            or not hmac.compare_digest(origin, expected_origin)
-            or csrf_token is None
-            or not hmac.compare_digest(csrf_token, authenticated.csrf_token)
+        self.validate_origin(request, origin=origin)
+        if csrf_token is None or not hmac.compare_digest(
+            csrf_token, authenticated.csrf_token
         ):
-            raise AppError(
-                403,
-                "PLATFORM_CSRF_INVALID",
-                "平台操作来源或防伪令牌无效。",
-            )
+            raise _csrf_invalid()
+
+    def validate_origin(self, request: Request, *, origin: str | None) -> None:
+        expected_origin = _expected_origin(request, self.settings)
+        if origin is None or not hmac.compare_digest(origin, expected_origin):
+            raise _csrf_invalid()
 
     def logout(self, authenticated: AuthenticatedPlatformSession) -> None:
-        try:
-            self.repository.revoke(authenticated.record, datetime.now(UTC))
-            self.repository.commit()
-        except Exception:
-            self.repository.rollback()
-            raise
+        self.repository.revoke(authenticated.record, datetime.now(UTC))
+        self.repository.commit()
 
     def _configured_principals(
         self, *, required: bool
@@ -222,3 +212,7 @@ def _auth_required() -> AppError:
 
 def _unavailable() -> AppError:
     return AppError(503, "SERVICE_UNAVAILABLE", "平台登录服务暂不可用。")
+
+
+def _csrf_invalid() -> AppError:
+    return AppError(403, "PLATFORM_CSRF_INVALID", "平台操作来源或防伪令牌无效。")

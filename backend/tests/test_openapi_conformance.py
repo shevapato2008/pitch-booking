@@ -981,7 +981,7 @@ def test_platform_session_contract_is_closed_cookie_authenticated_and_csrf_prote
     assert set(path) == {"post", "get", "delete"}
 
     assert path["post"].get("security", []) == []
-    assert set(path["post"]["responses"]) == {"200", "401", "422", "503"}
+    assert set(path["post"]["responses"]) == {"200", "401", "403", "422", "503"}
     assert path["get"]["security"] == [{"platformSession": []}]
     assert set(path["get"]["responses"]) == {"200", "401", "503"}
     assert path["delete"]["security"] == [{"platformSession": []}]
@@ -1015,9 +1015,14 @@ def test_platform_session_contract_is_closed_cookie_authenticated_and_csrf_prote
         "ONBOARDING_REVIEWER",
     ]
 
-    parameters = {item["name"]: item for item in path["delete"]["parameters"]}
-    assert set(parameters) == {"Origin", "X-CSRF-Token"}
-    assert all(item["in"] == "header" and item["required"] for item in parameters.values())
+    post_parameters = {item["name"]: item for item in path["post"]["parameters"]}
+    assert set(post_parameters) == {"Origin"}
+    delete_parameters = {item["name"]: item for item in path["delete"]["parameters"]}
+    assert set(delete_parameters) == {"Origin", "X-CSRF-Token"}
+    assert all(
+        item["in"] == "header" and item["required"]
+        for item in (*post_parameters.values(), *delete_parameters.values())
+    )
     assert contract["components"]["securitySchemes"]["platformSession"] == {
         "type": "apiKey",
         "in": "cookie",
@@ -1026,6 +1031,7 @@ def test_platform_session_contract_is_closed_cookie_authenticated_and_csrf_prote
 
     expected_error_codes = {
         ("post", "401"): "PLATFORM_AUTH_INVALID",
+        ("post", "403"): "PLATFORM_CSRF_INVALID",
         ("post", "422"): "INVALID_ARGUMENT",
         ("post", "503"): "SERVICE_UNAVAILABLE",
         ("get", "401"): "PLATFORM_AUTH_REQUIRED",
@@ -1049,3 +1055,22 @@ def test_platform_session_contract_is_closed_cookie_authenticated_and_csrf_prote
     runtime = create_app().openapi()
     runtime_path = runtime["paths"]["/platform-admin/api/v1/auth/session"]
     assert set(runtime_path) == {"post", "get", "delete"}
+    for method, expected_names in (
+        ("post", {"Origin"}),
+        ("delete", {"Origin", "X-CSRF-Token"}),
+    ):
+        static_parameters = {
+            item["name"]: item for item in path[method]["parameters"]
+        }
+        runtime_parameters = {
+            item["name"]: item for item in runtime_path[method]["parameters"]
+        }
+        assert set(runtime_parameters) == expected_names == set(static_parameters)
+        for name in expected_names:
+            assert runtime_parameters[name]["required"] is True
+            assert runtime_parameters[name]["schema"].get("nullable") is not True
+            runtime_types = {
+                item.get("type")
+                for item in runtime_parameters[name]["schema"].get("anyOf", [])
+            }
+            assert runtime_types != {"string", "null"}

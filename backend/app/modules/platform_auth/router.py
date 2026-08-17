@@ -1,11 +1,14 @@
+from collections.abc import Callable
+from contextlib import suppress
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response, Security
 from fastapi.security import APIKeyCookie
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
-from backend.app.errors import ErrorEnvelope
+from backend.app.errors import AppError, ErrorEnvelope
 from backend.app.modules.platform_auth.dto import (
     PlatformSessionExchange,
     PlatformSessionResponse,
@@ -33,12 +36,24 @@ def _service(request: Request, database: Session) -> PlatformAuthService:
     )
 
 
+def _database_call[T](database: Session, operation: Callable[[], T]) -> T:
+    try:
+        return operation()
+    except SQLAlchemyError:
+        with suppress(SQLAlchemyError):
+            database.rollback()
+        raise AppError(503, "SERVICE_UNAVAILABLE", "平台登录服务暂不可用。") from None
+
+
 def get_current_platform_session(
     request: Request,
     database: Annotated[Session, Depends(get_database)],
     session_token: Annotated[str | None, Security(_session_cookie)],
 ) -> AuthenticatedPlatformSession:
-    return _service(request, database).authenticate_session(session_token)
+    return _database_call(
+        database,
+        lambda: _service(request, database).authenticate_session(session_token),
+    )
 
 
 def require_platform_mutation_session(
@@ -65,6 +80,7 @@ def require_platform_mutation_session(
     response_model=PlatformSessionResponse,
     responses={
         401: {"model": ErrorEnvelope},
+        403: {"model": ErrorEnvelope},
         422: {"model": ErrorEnvelope},
         503: {"model": ErrorEnvelope},
     },
@@ -74,10 +90,14 @@ def create_platform_session(
     response: Response,
     request: Request,
     database: Annotated[Session, Depends(get_database)],
+    origin: Annotated[str | None, Header(alias="Origin")] = None,
 ) -> PlatformSessionResponse:
-    raw_session_token, authenticated = _service(
-        request, database
-    ).exchange_access_token(body.access_token)
+    service = _service(request, database)
+    service.validate_origin(request, origin=origin)
+    raw_session_token, authenticated = _database_call(
+        database,
+        lambda: service.exchange_access_token(body.access_token),
+    )
     response.set_cookie(
         key=SESSION_COOKIE,
         value=raw_session_token,
@@ -123,7 +143,10 @@ def delete_platform_session(
         Depends(require_platform_mutation_session),
     ],
 ) -> None:
-    _service(request, database).logout(authenticated)
+    _database_call(
+        database,
+        lambda: _service(request, database).logout(authenticated),
+    )
     response.delete_cookie(
         key=SESSION_COOKIE,
         path="/platform-admin",

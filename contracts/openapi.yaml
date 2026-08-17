@@ -1913,6 +1913,11 @@ paths:
     post:
       operationId: createPlatformSession
       security: []
+      parameters:
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
       requestBody:
         required: true
         content:
@@ -1929,6 +1934,7 @@ paths:
               examples:
                 PlatformSession: {externalValue: './examples/platform-session.json'}
         '401': {description: Staff access token is invalid, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_INVALID}}}}}]}}}}
+        '403': {description: Same-origin validation failed, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_CSRF_INVALID}}}}}]}}}}
         '422': {description: Login input is invalid, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}}]}}}}
         '503': {description: Platform authentication is unavailable, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}}]}}}}
     get:

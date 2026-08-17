@@ -197,6 +197,28 @@ def create_app(
                 .get("get", {})
             )
             profile_get.get("responses", {}).pop("422", None)
+            platform_session_path = schema.get("paths", {}).get(
+                "/platform-admin/api/v1/auth/session", {}
+            )
+            for method, names in (
+                ("post", {"Origin"}),
+                ("delete", {"Origin", "X-CSRF-Token"}),
+            ):
+                parameters = platform_session_path.get(method, {}).get("parameters", [])
+                for parameter in parameters:
+                    if parameter.get("name") not in names:
+                        continue
+                    name = parameter["name"]
+                    parameter["required"] = True
+                    parameter["schema"] = {
+                        "type": "string",
+                        "title": parameter.get("schema", {}).get("title", name),
+                        **(
+                            {"format": "uri"}
+                            if name == "Origin"
+                            else {"pattern": "^[0-9a-f]{64}$"}
+                        ),
+                    }
             application.openapi_schema = schema
         return application.openapi_schema
 
