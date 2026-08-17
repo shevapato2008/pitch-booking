@@ -51,9 +51,16 @@ outside this local checkpoint.
 
 ## Prepare live-staging inputs
 
-After public staging is authorized, generate the two ignored, mode-`0600` input files from the local
-OSS configuration, shell `DASHSCOPE_API_KEY`, and WeChat project AppID. The command prompts without
-echo for only `WECHAT_APP_SECRET` and `MINIPROGRAM_TENCENT_MAP_KEY`:
+After public staging is authorized, first create a second OSS bucket dedicated to onboarding
+evidence. It must be private and different from the public venue-media bucket. Generate the two
+ignored, mode-`0600` input files from the local OSS configuration, shell `DASHSCOPE_API_KEY`, and
+WeChat project AppID. On first setup the command also reads `ONBOARDING_OSS_BUCKET` from the shell or
+prompts without echo, then securely prompts for a reviewer access token of at least 32 characters.
+Only the token's SHA-256 digest is written. The raw token is never printed or stored in either
+generated file. `PLATFORM_CSRF_SECRET` is generated from 32 random bytes automatically.
+
+The ordinary WeChat values are still read from the shell or prompted without echo:
+`WECHAT_APP_SECRET` and `MINIPROGRAM_TENCENT_MAP_KEY`.
 
 ```bash
 uv run python -m scripts.prepare_live_deploy \
@@ -65,6 +72,12 @@ bash -c 'set -a; source deploy/miniprogram.live.local; set +a; npm run build:min
 npm run audit:miniprogram-package
 npm run prepare:miniprogram:live-preview
 ```
+
+Keep the reviewer token in a password manager. It is the credential used to open
+`https://pitch-api-staging.modelstella.com/platform-admin`; losing it requires deliberately
+replacing `PLATFORM_STAFF_PRINCIPALS_JSON` with the SHA-256 of a new token. Rerunning the generator
+preserves an existing valid onboarding bucket, staff-principal JSON and CSRF secret, so it does not
+prompt for the reviewer token again.
 
 For the physical-device QR, open `dist/miniprogram-live-preview` as the WeChat DevTools project.
 That generated, ignored project contains only the audited production package. Do not generate the
@@ -85,8 +98,18 @@ uv run python -m scripts.preflight_deploy \
 Do not generate a device acceptance QR when this command fails. The generator defaults this flag to
 `false` and preserves an existing valid value on reruns.
 
-Rerunning the generator preserves the PostgreSQL password, phone encryption key, and generated
-bootstrap moderation reviewer UUID. That UUID only initializes the reviewer allowlist; it does not
-create reviewer user membership. The command also reports the derived OSS upload request origin to
-register alongside `https://pitch-api-staging.modelstella.com`; register
-`https://media.modelstella.com` as the download origin.
+Rerunning the generator also preserves the PostgreSQL password, phone encryption key, and generated
+bootstrap moderation reviewer UUID. That UUID only initializes the moderation reviewer allowlist;
+it does not create reviewer user membership.
+
+The generator prints the exact origins to configure in the WeChat console. Register them under the
+matching domain category (the categories are not interchangeable):
+
+- `request`: `https://pitch-api-staging.modelstella.com`, the printed venue-media OSS origin, and
+  `https://apis.map.qq.com`
+- `uploadFile`: the printed dedicated onboarding-evidence OSS origin
+- `downloadFile`: `https://media.modelstella.com`
+
+In particular, adding the onboarding OSS origin only to `request` does not authorize
+`wx.uploadFile`; it must be present in `uploadFile` before testing onboarding-evidence uploads on a
+physical iPhone. The venue-media PUT path uses `wx.request`, so its OSS origin remains in `request`.

@@ -9,6 +9,7 @@ x-app-environment: &app-environment
   OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL:-https://cdn.invalid/media}
   OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-replace-before-deploy}
   OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-replace-before-deploy}
+  ONBOARDING_OSS_BUCKET: ${ONBOARDING_OSS_BUCKET:-replace-with-dedicated-private-onboarding-bucket}
   DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-replace-before-deploy}
   DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
   DASHSCOPE_MODERATION_MODEL: ${DASHSCOPE_MODERATION_MODEL:-qwen3-vl-flash}
@@ -20,6 +21,8 @@ x-app-environment: &app-environment
   PHONE_ENCRYPTION_KEY_VERSION: ${PHONE_ENCRYPTION_KEY_VERSION:-1}
   PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-wechat}
   ENABLE_MOCK_PAYMENT_PROVIDER: ${ENABLE_MOCK_PAYMENT_PROVIDER:-false}
+  PLATFORM_STAFF_PRINCIPALS_JSON: ${PLATFORM_STAFF_PRINCIPALS_JSON:-[]}
+  PLATFORM_CSRF_SECRET: ${PLATFORM_CSRF_SECRET:-replace-before-deploy}
 
 services:
   postgres:

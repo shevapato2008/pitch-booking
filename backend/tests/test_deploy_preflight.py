@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import subprocess
@@ -38,6 +39,21 @@ def valid_local_environment() -> dict[str, str]:
         "MODERATION_REVIEWER_USER_IDS": "01a329c4-36b0-401a-a577-48ee1c475a37",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        "ONBOARDING_OSS_BUCKET": "venue-onboarding-private",
+        "PLATFORM_STAFF_PRINCIPALS_JSON": json.dumps(
+            [
+                {
+                    "principal_id": "onboarding-reviewer",
+                    "display_name": "入驻审核员",
+                    "token_sha256": "b" * 64,
+                    "enabled": True,
+                    "roles": ["ONBOARDING_REVIEWER"],
+                }
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "PLATFORM_CSRF_SECRET": base64.b64encode(bytes(range(32))).decode("ascii"),
     }
 
 
@@ -164,6 +180,60 @@ def test_preflight_rejects_mock_payment_configuration(tmp_path: Path) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "failure"),
+    [
+        (
+            "ONBOARDING_OSS_BUCKET",
+            "Invalid_Bucket",
+            "ONBOARDING_OSS_BUCKET is invalid",
+        ),
+        (
+            "ONBOARDING_OSS_BUCKET",
+            "venue-media-staging",
+            "ONBOARDING_OSS_BUCKET must be separate from OSS_BUCKET",
+        ),
+        (
+            "PLATFORM_STAFF_PRINCIPALS_JSON",
+            "[]",
+            "PLATFORM_STAFF_PRINCIPALS_JSON must contain an enabled ONBOARDING_REVIEWER",
+        ),
+        (
+            "PLATFORM_STAFF_PRINCIPALS_JSON",
+            json.dumps(
+                [
+                    {
+                        "principal_id": "reviewer",
+                        "display_name": "Reviewer",
+                        "token_sha256": "A" * 64,
+                        "enabled": True,
+                        "roles": ["SUPER_ADMIN"],
+                    }
+                ]
+            ),
+            "PLATFORM_STAFF_PRINCIPALS_JSON is invalid",
+        ),
+        (
+            "PLATFORM_CSRF_SECRET",
+            base64.b64encode(b"short").decode("ascii"),
+            "PLATFORM_CSRF_SECRET must be canonical Base64 for exactly 32 bytes",
+        ),
+    ],
+)
+def test_preflight_rejects_invalid_onboarding_or_platform_staff_configuration(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    failure: str,
+) -> None:
+    values = valid_local_environment()
+    values[field] = value
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (failure,)
+
+
 def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
     env_file = write_env(tmp_path, valid_local_environment())
 
@@ -188,6 +258,9 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
             "OSS_PUBLIC_BASE_URL",
             "OSS_ACCESS_KEY_ID",
             "OSS_ACCESS_KEY_SECRET",
+            "ONBOARDING_OSS_BUCKET",
+            "PLATFORM_STAFF_PRINCIPALS_JSON",
+            "PLATFORM_CSRF_SECRET",
         )
     } == {
         key: valid_local_environment()[key]
@@ -197,6 +270,9 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
             "OSS_PUBLIC_BASE_URL",
             "OSS_ACCESS_KEY_ID",
             "OSS_ACCESS_KEY_SECRET",
+            "ONBOARDING_OSS_BUCKET",
+            "PLATFORM_STAFF_PRINCIPALS_JSON",
+            "PLATFORM_CSRF_SECRET",
         )
     }
     assert "postgres_data" in config["volumes"]
@@ -211,7 +287,21 @@ def test_deploy_environment_template_declares_all_oss_inputs() -> None:
         "OSS_PUBLIC_BASE_URL",
         "OSS_ACCESS_KEY_ID",
         "OSS_ACCESS_KEY_SECRET",
+        "ONBOARDING_OSS_BUCKET",
     ):
+        assert f"{key}=" in template
+
+
+def test_deploy_configuration_passes_through_platform_staff_inputs() -> None:
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+
+    for key in (
+        "ONBOARDING_OSS_BUCKET",
+        "PLATFORM_STAFF_PRINCIPALS_JSON",
+        "PLATFORM_CSRF_SECRET",
+    ):
+        assert f"{key}:" in compose
         assert f"{key}=" in template
 
 
