@@ -11,6 +11,8 @@ const audit = path.resolve("scripts/audit-production-package.mjs");
 const productionRoutes = [
   "pages/intent-entry/index",
   "pages/venue-access/index",
+  "pages/venue-claim/index",
+  "pages/venue-create/index",
   "pages/venue-map/index",
   "pages/venue/index",
   "pages/availability/index",

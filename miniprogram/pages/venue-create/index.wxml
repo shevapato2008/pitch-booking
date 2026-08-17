@@ -1,0 +1,71 @@
+<view class="venue-create">
+  <view class="venue-create__system" style="height: {{headerTopPx}}px;"></view>
+  <view class="venue-create__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="venue-create__back venue-create__touch" hover-class="venue-create__pressed" bindtap="onBack" aria-label="返回我的场馆"><view class="venue-create-icon venue-create-icon--back" aria-hidden="true"></view></button>
+    <text class="venue-create__title">{{title}}</text>
+  </view>
+
+  <block wx:if="{{mode === 'submitted'}}">
+    <scroll-view class="venue-create__status-content" scroll-y enhanced show-scrollbar="{{false}}">
+      <view class="venue-create__status-card"><view class="venue-create__status-mark" aria-hidden="true">i</view><view><text class="venue-create__status-title">申请已提交</text><text class="venue-create__status-copy">平台会核验场馆身份、地址、重复信息和管理权，审核通过前不会创建场馆。</text></view></view>
+      <view class="venue-create__summary"><text class="venue-create__summary-title">{{application.venue.name}}</text><view class="venue-create__summary-row"><text>当前状态</text><text class="venue-create__status-label">审核中</text></view><view class="venue-create__summary-row"><text>场馆地址</text><text>{{application.venue.address}}</text></view><view class="venue-create__summary-row"><text>提交时间</text><text>{{application.submittedAt}}</text></view></view>
+      <text class="venue-create__immutable">提交后的摘要不可编辑；可返回“我的场馆”查看最新状态。</text>
+      <button class="venue-create__secondary venue-create__touch" hover-class="venue-create__pressed" bindtap="onReturnPortfolio">返回我的场馆</button>
+    </scroll-view>
+  </block>
+
+  <block wx:elif="{{mode === 'rejected'}}">
+    <scroll-view class="venue-create__status-content" scroll-y enhanced show-scrollbar="{{false}}">
+      <view class="venue-create__status-card venue-create__status-card--rejected"><view class="venue-create__status-mark venue-create__status-mark--rejected" aria-hidden="true">!</view><view><text class="venue-create__status-title">申请未通过</text><text class="venue-create__status-copy">根据审核原因修改后，可以提交一份新的申请。</text></view></view>
+      <view class="venue-create__reason" role="alert"><text class="venue-create__reason-title">审核原因</text><text>{{application.rejectionReason}}</text></view>
+      <view class="venue-create__summary"><text class="venue-create__summary-title">{{application.venue.name}}</text><view class="venue-create__summary-row"><text>场馆地址</text><text>{{application.venue.address}}</text></view><view class="venue-create__summary-row"><text>更新时间</text><text>{{application.updatedAt}}</text></view></view>
+      <text class="venue-create__immutable">重新申请时会保留名称和地址文本，但必须重新选择结构化地点并上传全套新材料。</text>
+      <button class="venue-create__primary venue-create__touch" hover-class="venue-create__primary--pressed" bindtap="onEditRejected">修改并重新申请</button>
+      <button class="venue-create__secondary venue-create__touch" hover-class="venue-create__pressed" bindtap="onReturnPortfolio">返回我的场馆</button>
+    </scroll-view>
+  </block>
+
+  <block wx:elif="{{mode === 'duplicate'}}">
+    <scroll-view class="venue-create__status-content" scroll-y enhanced show-scrollbar="{{false}}">
+      <view class="venue-create__status-card"><view class="venue-create__status-mark">i</view><view><text class="venue-create__status-title">发现可能重复的公开场馆</text><text class="venue-create__status-copy">该场馆已经在平台公开，可以改为提交认领申请。</text></view></view>
+      <view class="venue-create__summary"><text class="venue-create__summary-title">{{duplicateCandidate.name}}</text><view class="venue-create__summary-row"><text>行政区</text><text>{{duplicateCandidate.districtName}}</text></view><view class="venue-create__summary-row"><text>地址</text><text>{{duplicateCandidate.address}}</text></view></view>
+      <button class="venue-create__primary venue-create__touch" hover-class="venue-create__primary--pressed" bindtap="onConvertToClaim">改为认领已有场馆</button>
+      <button class="venue-create__secondary venue-create__touch" hover-class="venue-create__pressed" bindtap="onReturnPortfolio">返回我的场馆</button>
+    </scroll-view>
+  </block>
+
+  <block wx:else>
+    <scroll-view class="venue-create__content" scroll-y enhanced show-scrollbar="{{false}}">
+      <text class="venue-create__eyebrow">CREATE A VENUE</text>
+      <text class="venue-create__heading">提交一个新场馆</text>
+      <text class="venue-create__description">申请提交不会立即创建场馆。平台会先核验场馆身份、地址和证明材料。</text>
+      <label class="venue-create__label" for="create-name">场馆名称</label>
+      <input id="create-name" class="venue-create__input venue-create__touch" value="{{venueName}}" bindinput="onVenueNameInput" maxlength="120" placeholder="填写对外使用的场馆名称" aria-label="场馆名称" />
+      <label class="venue-create__label" for="create-address">地图位置与详细地址</label>
+      <input id="create-address" class="venue-create__input venue-create__touch" value="{{address}}" bindinput="onAddressInput" maxlength="300" placeholder="输入关键词后使用地图选点" aria-label="地图位置与详细地址" />
+      <text class="venue-create__label">行政区</text>
+      <view class="venue-create__map-row"><text>{{district}}</text><button class="venue-create__map-action venue-create__touch" hover-class="venue-create__pressed" bindtap="onChooseMapLocation">地图选点</button></view>
+      <text class="venue-create__section-title">申请人信息</text>
+      <label class="venue-create__label" for="create-applicant">申请人姓名</label>
+      <input id="create-applicant" class="venue-create__input venue-create__touch" value="{{contactName}}" bindinput="onApplicantInput" maxlength="40" placeholder="填写真实联系人" aria-label="申请人姓名" />
+      <text class="venue-create__label">联系电话状态</text>
+      <view wx:if="{{maskedPhone}}" class="venue-create__readonly venue-create__touch"><text>{{maskedPhone}}</text><text class="venue-create__verified">已验证</text></view>
+      <button wx:else class="venue-create__phone venue-create__touch" open-type="getPhoneNumber" bindgetphonenumber="onAuthorizePhone">验证微信手机号</button>
+      <text class="venue-create__section-title">证明材料</text>
+      <view class="venue-create__evidence">
+        <view wx:for="{{evidence}}" wx:key="kind" class="venue-create__evidence-row {{item.status === 'error' ? 'venue-create__evidence-row--error' : ''}}">
+          <view class="venue-create__evidence-copy"><text class="venue-create__evidence-label">{{item.label}}</text><text class="venue-create__meta">{{item.status === 'error' ? item.errorMessage : (item.status === 'uploading' ? '正在上传…' : (item.fileName || item.helper))}}</text></view>
+          <button wx:if="{{item.status === 'error'}}" class="venue-create__mini-action venue-create__touch" hover-class="venue-create__pressed" bindtap="onRetryEvidence" data-evidence-kind="{{item.kind}}">{{item.retryMode === 'reselect' ? '重新选择' : (item.retryMode === 'restart' ? '重新上传' : '重试上传')}}</button>
+          <button wx:else class="venue-create__mini-action venue-create__touch" hover-class="venue-create__pressed" bindtap="onChooseEvidence" disabled="{{item.status === 'uploading'}}" data-evidence-kind="{{item.kind}}">{{item.status === 'completed' ? '替换' : '上传'}}</button>
+        </view>
+      </view>
+      <text wx:if="{{notice}}" class="venue-create__notice" role="status">{{notice}}</text>
+      <view class="venue-create__bottom-spacer"></view>
+    </scroll-view>
+    <view class="venue-create__footer">
+      <text class="venue-create__fixture-note">提交后由平台审核，审核通过前不会创建场馆</text>
+      <text wx:if="{{submitDisabledReason}}" class="venue-create__disabled-reason">{{submitDisabledReason}}</text>
+      <button class="venue-create__primary venue-create__touch" hover-class="venue-create__primary--pressed" disabled="{{submitDisabled}}" bindtap="onSubmit">提交新场馆申请</button>
+    </view>
+  </block>
+</view>

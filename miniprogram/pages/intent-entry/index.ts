@@ -3,7 +3,7 @@ import { readIntentHeaderLayout } from "../../presentation/intent-header-layout"
 type IntentId = "HOST" | "BOOK" | "PLAY";
 
 const INTENTS = Object.freeze([
-  Object.freeze({ id: "HOST" as const, title: "我要出租场地", subtitle: "进入已授权的场馆工作台", icon: "venue", disabled: false, status: "" }),
+  Object.freeze({ id: "HOST" as const, title: "我要出租场地", subtitle: "申请合作，或进入已授权的场馆工作台", icon: "venue", disabled: false, status: "" }),
   Object.freeze({ id: "BOOK" as const, title: "我要租赁场地", subtitle: "查找时间、价格和可订整场", icon: "calendar", disabled: false, status: "" }),
   Object.freeze({ id: "PLAY" as const, title: "我要找球踢", subtitle: "加入开放球局", icon: "football", disabled: true, status: "即将开放" }),
 ]);

@@ -1,280 +1,59 @@
 @import "../../styles/tokens.wxss";
 
-.venue-access {
-  box-sizing: border-box;
-  min-height: 100vh;
-  background: #F8FAFC;
-}
-
-.venue-access__header {
-  background: #FFFFFF;
-  border-bottom: 2rpx solid #DBE5EC;
-}
-
-.venue-access__header-row {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  padding-left: 40rpx;
-}
-
-.venue-access__title {
-  overflow: hidden;
-  color: #10243E;
-  font-size: 34rpx;
-  font-weight: 700;
-  line-height: 48rpx;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.venue-access__content {
-  padding: 48rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px));
-}
-
-.venue-access__description {
-  display: block;
-  margin: 0 8rpx 32rpx;
-  color: #64748B;
-  font-size: 28rpx;
-  line-height: 40rpx;
-}
-
-.venue-access__list {
-  display: flex;
-  flex-direction: column;
-  gap: 24rpx;
-}
-
-.venue-access__card {
-  position: relative;
-  box-sizing: border-box;
-  display: flex;
-  width: 100%;
-  min-height: 176rpx;
-  margin: 0;
-  padding: 28rpx 72rpx;
-  align-items: center;
-  justify-content: center;
-  border: 2rpx solid #DBE5EC;
-  border-radius: 32rpx;
-  background: #FFFFFF;
-  color: #10243E;
-}
-
-.venue-access__card::after,
-.venue-access__back-entry::after,
-.venue-access__secondary::after {
-  border: 0;
-}
-
-.venue-access__card--pressed {
-  border-color: #7DD3FC;
-  background: #EFFBF6;
-}
-
-.venue-access__card-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-.venue-access__venue-name {
-  color: #10243E;
-  font-size: 34rpx;
-  font-weight: 700;
-  line-height: 48rpx;
-}
-
-.venue-access__venue-location {
-  margin-top: 8rpx;
-  color: #64748B;
-  font-size: 26rpx;
-  line-height: 40rpx;
-}
-
-.venue-access__chevron {
-  position: absolute;
-  top: 50%;
-  right: 32rpx;
-  box-sizing: border-box;
-  width: 18rpx;
-  height: 18rpx;
-  border-top: 3rpx solid #0284C7;
-  border-right: 3rpx solid #0284C7;
-  transform: translateY(-50%) rotate(45deg);
-}
-
-.venue-access__empty {
-  display: flex;
-  min-height: calc(100vh - 320rpx);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-.venue-access__permission-mark {
-  box-sizing: border-box;
-  display: flex;
-  width: 128rpx;
-  height: 128rpx;
-  margin-bottom: 32rpx;
-  align-items: center;
-  justify-content: center;
-  border-radius: 64rpx;
-  background: #E0F2FE;
-}
-
-.venue-access__permission-mark--error {
-  border: 4rpx solid #DC2626;
-  background: #FEF2F2;
-  color: #DC2626;
-  font-size: 64rpx;
-  font-weight: 700;
-  line-height: 120rpx;
-}
-
-.venue-access__permission-building {
-  position: relative;
-  box-sizing: border-box;
-  width: 56rpx;
-  height: 52rpx;
-  border: 4rpx solid #0284C7;
-  border-top-width: 12rpx;
-}
-
-.venue-access__permission-building::before,
-.venue-access__permission-building::after {
-  position: absolute;
-  top: 8rpx;
-  width: 4rpx;
-  height: 20rpx;
-  background: #0284C7;
-  content: "";
-}
-
-.venue-access__permission-building::before { left: 12rpx; }
-.venue-access__permission-building::after { right: 12rpx; }
-
-.venue-access__permission-door {
-  position: absolute;
-  bottom: -4rpx;
-  left: 50%;
-  width: 12rpx;
-  height: 18rpx;
-  border: 4rpx solid #0284C7;
-  border-bottom: 0;
-  background: #E0F2FE;
-  transform: translateX(-50%);
-}
-
-.venue-access__empty-heading {
-  color: #10243E;
-  font-size: 40rpx;
-  font-weight: 700;
-  line-height: 56rpx;
-}
-
-.venue-access__empty-copy {
-  max-width: 608rpx;
-  margin-top: 20rpx;
-  color: #64748B;
-  font-size: 28rpx;
-  line-height: 44rpx;
-}
-
-.venue-access__verification-note {
-  box-sizing: border-box;
-  display: flex;
-  width: 100%;
-  margin-top: 32rpx;
-  padding: 24rpx;
-  align-items: flex-start;
-  justify-content: center;
-  border: 2rpx solid #BAE6FD;
-  border-radius: 24rpx;
-  background: #FFFFFF;
-  color: #10243E;
-  font-size: 24rpx;
-  line-height: 36rpx;
-  text-align: left;
-}
-
-.venue-access__verification-dot {
-  flex: 0 0 auto;
-  width: 12rpx;
-  height: 12rpx;
-  margin: 12rpx 16rpx 0 0;
-  border-radius: 50%;
-  background: #0284C7;
-}
-
-.venue-access__back-entry {
-  box-sizing: border-box;
-  display: flex;
-  width: 100%;
-  min-height: 88rpx;
-  margin: 40rpx 0 0;
-  padding: 16rpx 32rpx;
-  align-items: center;
-  justify-content: center;
-  border: 2rpx solid #0284C7;
-  border-radius: 24rpx;
-  background: #0284C7;
-  color: #FFFFFF;
-  font-size: 30rpx;
-  font-weight: 700;
-  line-height: 40rpx;
-  text-align: center;
-}
-
-.venue-access__back-entry--pressed {
-  border-color: #0369A1;
-  background: #0369A1;
-}
-
-.venue-access__secondary {
-  box-sizing: border-box;
-  display: flex;
-  width: 100%;
-  min-height: 88rpx;
-  margin: 20rpx 0 0;
-  padding: 16rpx 32rpx;
-  align-items: center;
-  justify-content: center;
-  border: 2rpx solid #BAE6FD;
-  border-radius: 24rpx;
-  background: #FFFFFF;
-  color: #0369A1;
-  font-size: 30rpx;
-  font-weight: 700;
-  line-height: 40rpx;
-  text-align: center;
-}
-
-.venue-access__secondary--pressed { background: #EFFBF6; }
-
-.venue-access__state {
-  display: flex;
-  min-height: calc(100vh - 320rpx);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #64748B;
-  font-size: 28rpx;
-  line-height: 40rpx;
-}
-
-.venue-access__spinner {
-  box-sizing: border-box;
-  width: 64rpx;
-  height: 64rpx;
-  margin-bottom: 24rpx;
-  border: 6rpx solid #BAE6FD;
-  border-top-color: #0284C7;
-  border-radius: 50%;
-}
+page { --page: #F8FAFC; --surface: #FFFFFF; --text: #10243E; --muted: #64748B; --border: #DBE5EC; --primary: #0284C7; --primary-strong: #0369A1; height: 100%; background: var(--page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+view, text, button, scroll-view { box-sizing: border-box; }
+button { min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; }
+button::after { border: 0; }
+.venue-access { display: flex; height: 100vh; flex-direction: column; overflow: hidden; background: #F8FAFC; }
+.venue-access__system { flex: 0 0 auto; background: #FFFFFF; }
+.venue-access__header { position: relative; display: flex; flex: 0 0 auto; min-height: 88rpx; align-items: center; justify-content: center; border-bottom: 2rpx solid var(--border); background: #FFFFFF; }
+.venue-access__touch { min-width: 88rpx; min-height: 88rpx; }
+.venue-access__back { position: absolute; top: 0; left: 16rpx; display: flex; align-items: center; justify-content: center; border-radius: 24rpx; }
+.venue-access__back--pressed { background: #F1F5F9; }
+.venue-access__title { overflow: hidden; font-size: 36rpx; font-weight: 750; line-height: 52rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-access__content { flex: 1 1 auto; min-height: 0; padding: 40rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px)); }
+.venue-access__eyebrow { display: block; color: var(--primary-strong); font-size: 22rpx; font-weight: 750; line-height: 32rpx; letter-spacing: 3rpx; }
+.venue-access__heading { display: block; margin-top: 12rpx; font-size: 46rpx; font-weight: 750; line-height: 64rpx; }
+.venue-access__description { display: block; margin: 8rpx 0 32rpx; color: var(--muted); font-size: 28rpx; line-height: 44rpx; }
+.venue-access__list { display: flex; flex-direction: column; gap: 20rpx; }
+.venue-access__card { position: relative; display: flex; width: 100%; padding: 28rpx 88rpx 28rpx 28rpx; align-items: center; justify-content: flex-start; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; text-align: left; }
+.venue-access__card--pressed { border-color: #7DD3FC; background: #F0F9FF; }
+.venue-access__card-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.venue-access__venue-name { overflow: hidden; font-size: 32rpx; font-weight: 750; line-height: 48rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-access__venue-location, .venue-access__permission { display: block; margin-top: 4rpx; color: var(--muted); font-size: 24rpx; line-height: 36rpx; }
+.venue-access__permission { color: var(--primary-strong); }
+.venue-access__empty { display: flex; padding: 36rpx 28rpx; flex-direction: column; align-items: center; justify-content: center; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; text-align: center; }
+.venue-access__permission-mark { display: flex; width: 112rpx; height: 112rpx; margin-bottom: 24rpx; align-items: center; justify-content: center; border-radius: 56rpx; background: #E0F2FE; color: #C42525; font-size: 42rpx; font-weight: 800; }
+.venue-access__permission-mark--error { background: #FEE2E2; }
+.venue-access__permission-building { position: relative; width: 48rpx; height: 44rpx; border: 4rpx solid var(--primary); border-top-width: 10rpx; }
+.venue-access__permission-building::before, .venue-access__permission-building::after { position: absolute; top: 7rpx; width: 4rpx; height: 16rpx; background: var(--primary); content: ""; }
+.venue-access__permission-building::before { left: 9rpx; }
+.venue-access__permission-building::after { right: 9rpx; }
+.venue-access__permission-door { position: absolute; bottom: -4rpx; left: 50%; width: 12rpx; height: 16rpx; border: 4rpx solid var(--primary); border-bottom: 0; background: #E0F2FE; transform: translateX(-50%); }
+.venue-access__empty-heading { font-size: 34rpx; font-weight: 750; line-height: 50rpx; }
+.venue-access__empty-copy { display: block; margin-top: 12rpx; color: var(--muted); font-size: 26rpx; line-height: 40rpx; }
+.venue-access__state { display: flex; min-height: 220rpx; flex-direction: column; align-items: center; justify-content: center; gap: 20rpx; color: var(--muted); }
+.venue-access__spinner { width: 48rpx; height: 48rpx; border: 5rpx solid #BAE6FD; border-top-color: var(--primary-strong); border-radius: 50%; animation: venue-access-spin .8s linear infinite; }
+.venue-access__applications { margin-top: 32rpx; padding: 28rpx; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; }
+.venue-access__application { display: flex; padding: 20rpx 0; align-items: flex-start; gap: 20rpx; border-bottom: 2rpx solid #EDF2F7; }
+.venue-access__application:last-child { border-bottom: 0; }
+.venue-access__application-status { flex: 0 0 auto; padding: 8rpx 14rpx; border-radius: 999rpx; background: #E0F2FE; color: var(--primary-strong); font-size: 22rpx; font-weight: 750; }
+.venue-access__application-status--approved { background: #D1FAE5; color: #047857; }
+.venue-access__application-status--rejected { background: #FEE2E2; color: #C42525; }
+.venue-access__application-reason { margin-top: 8rpx; color: #C42525; font-size: 22rpx; line-height: 34rpx; }
+.venue-access__application-action { margin-top: 8rpx; color: var(--primary-strong); font-size: 22rpx; font-weight: 750; line-height: 34rpx; }
+.venue-access__application-error { display: flex; margin-top: 24rpx; padding: 20rpx 24rpx; align-items: center; justify-content: space-between; gap: 20rpx; border-left: 8rpx solid #C42525; border-radius: 18rpx; background: #FFFFFF; color: #C42525; font-size: 24rpx; line-height: 36rpx; }
+.venue-access__application-error button { display: flex; min-width: 88rpx; min-height: 72rpx; align-items: center; justify-content: center; color: var(--primary-strong); font-weight: 750; }
+.venue-access__onboarding { margin-top: 32rpx; padding: 28rpx; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; }
+.venue-access__onboarding-title { display: block; font-size: 30rpx; font-weight: 750; line-height: 44rpx; }
+.venue-access__onboarding-copy { display: block; margin: 6rpx 0 20rpx; color: var(--muted); font-size: 24rpx; line-height: 36rpx; }
+.venue-access__primary, .venue-access__secondary { display: flex; width: 100%; padding: 16rpx 32rpx; align-items: center; justify-content: center; border: 2rpx solid var(--primary-strong); border-radius: 24rpx; font-size: 28rpx; font-weight: 750; line-height: 40rpx; text-align: center; }
+.venue-access__primary { margin-top: 16rpx; background: var(--primary-strong); color: #FFFFFF; }
+.venue-access__secondary { margin-top: 16rpx; background: #FFFFFF; color: var(--primary-strong); }
+.venue-access__primary--pressed { background: #075985; }
+.venue-access__secondary--pressed { background: #F0F9FF; }
+.venue-access-icon { position: relative; display: inline-flex; width: 40rpx; height: 40rpx; flex: 0 0 auto; align-items: center; justify-content: center; color: currentColor; }
+.venue-access-icon--back::before { width: 16rpx; height: 16rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; content: ""; transform: rotate(45deg); }
+.venue-access-icon--chevron { position: absolute; top: 50%; right: 24rpx; width: 64rpx; height: 64rpx; transform: translateY(-50%); }
+.venue-access-icon--chevron::before { width: 16rpx; height: 16rpx; border-top: 4rpx solid var(--primary); border-right: 4rpx solid var(--primary); content: ""; transform: rotate(45deg); }
+@keyframes venue-access-spin { to { transform: rotate(360deg); } }

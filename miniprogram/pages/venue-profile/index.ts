@@ -98,5 +98,5 @@ Page({
   },
   failRead(message: string) { this.setData({ mode: "load-error", status: message, statusDetail: "上一版公开资料不受影响", tone: "error", profile: null }); },
   onNavigateWorkbench(event: DatasetEvent) { const target = event.currentTarget?.dataset?.target; const suffix = `?venue_id=${encodeURIComponent(this.data.venueId)}`; if (target === "profile") { void wx.redirectTo({ url: `/pages/venue-profile/index${suffix}` }); return; } if (target === "pitches") void wx.navigateTo({ url: `/pages/venue-pitch-setup/index${suffix}` }); if (target === "inventory") void wx.navigateTo({ url: `/pages/venue-inventory/index${suffix}` }); },
-  onBack() { if (!this.data.descriptionDirty && !this.data.facilitiesDirty) { void wx.navigateBack(); return; } wx.showModal({ title: "放弃未保存修改？", content: "场馆介绍或设施尚未保存。", confirmText: "放弃", success: ({ confirm }) => { if (confirm) void wx.navigateBack(); } }); },
+  onBack() { if (!this.data.descriptionDirty && !this.data.facilitiesDirty) { void wx.redirectTo({ url: "/pages/venue-access/index" }); return; } wx.showModal({ title: "放弃未保存修改？", content: "场馆介绍或设施尚未保存。", confirmText: "放弃", success: ({ confirm }) => { if (confirm) void wx.redirectTo({ url: "/pages/venue-access/index" }); } }); },
 });
