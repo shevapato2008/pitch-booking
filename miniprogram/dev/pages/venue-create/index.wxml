@@ -62,7 +62,7 @@
       <view class="venue-create__evidence">
         <view wx:for="{{evidence}}" wx:key="id" class="venue-create__evidence-row">
           <view class="venue-create__evidence-copy"><text class="venue-create__evidence-label">{{item.label}}</text><text class="venue-create__meta">{{item.fileName || item.helper}}</text></view>
-          <button class="venue-create__mini-action venue-create__touch" hover-class="venue-create__pressed" bindtap="onChooseEvidence" data-evidence-id="{{item.id}}">{{item.status === 'uploaded' ? '替换' : '上传'}}</button>
+          <button class="venue-create__mini-action venue-create__touch" hover-class="venue-create__pressed" bindtap="onChooseEvidence" data-evidence-id="{{item.id}}" aria-label="{{item.label}}，{{item.status === 'uploaded' ? '替换材料' : '上传材料'}}">{{item.status === 'uploaded' ? '替换' : '上传'}}</button>
         </view>
       </view>
       <text wx:if="{{previewNotice}}" class="venue-create__notice" role="status">{{previewNotice}}</text>

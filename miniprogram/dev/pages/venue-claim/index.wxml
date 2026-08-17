@@ -41,8 +41,8 @@
       <view class="venue-claim__evidence">
         <view wx:for="{{evidence}}" wx:key="id" class="venue-claim__evidence-row {{item.status === 'error' ? 'venue-claim__evidence-row--error' : ''}}">
           <view class="venue-claim__evidence-copy"><text class="venue-claim__evidence-label">{{item.label}}</text><text class="venue-claim__meta">{{item.status === 'error' ? item.errorMessage : (item.fileName || item.helper)}}</text></view>
-          <button wx:if="{{item.status === 'error'}}" class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onRetryEvidence" data-evidence-id="{{item.id}}">重试上传</button>
-          <button wx:else class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onChooseEvidence" data-evidence-id="{{item.id}}">{{item.status === 'uploaded' ? '替换' : '上传'}}</button>
+          <button wx:if="{{item.status === 'error'}}" class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onRetryEvidence" data-evidence-id="{{item.id}}" aria-label="{{item.label}}，重试上传">重试上传</button>
+          <button wx:else class="venue-claim__mini-action venue-claim__touch" hover-class="venue-claim__pressed" bindtap="onChooseEvidence" data-evidence-id="{{item.id}}" aria-label="{{item.label}}，{{item.status === 'uploaded' ? '替换材料' : '上传材料'}}">{{item.status === 'uploaded' ? '替换' : '上传'}}</button>
         </view>
       </view>
       <text wx:if="{{previewNotice}}" class="venue-claim__notice" role="status">{{previewNotice}}</text>

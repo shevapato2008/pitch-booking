@@ -33,6 +33,35 @@ function assertEveryButtonHasFixtureBehavior(root, controller, template) {
   }
 }
 
+function cssDeclarationsForClass(styles, className) {
+  const selector = `.${className}`;
+  return [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selectors]) => selectors.split(",").some((value) => value.trim() === selector))
+    .map(([, , declarations]) => declarations)
+    .join("\n");
+}
+
+function assertFlexCenteredClass(styles, className) {
+  const declarations = cssDeclarationsForClass(styles, className);
+  assert.ok(declarations, `.${className} must have an explicit CSS rule`);
+  assert.match(declarations, /display:\s*flex/, `.${className} must use flex layout`);
+  assert.match(declarations, /align-items:\s*center/, `.${className} must vertically center its content`);
+  assert.match(declarations, /justify-content:\s*center/, `.${className} must horizontally center its content`);
+}
+
+function relativeLuminance(hex) {
+  const channels = hex.slice(1).match(/../g).map((value) => parseInt(value, 16) / 255);
+  const linear = channels.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastRatio(foreground, background) {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+}
+
 function loadNativePage(entryPath) {
   const calls = { navigateTo: [], navigateBack: [], reLaunch: [] };
   const wx = {
@@ -201,11 +230,39 @@ test("selected claim exposes candidate selection, contact state, evidence action
   ]) assert.match(`${fixture}\n${template}`, new RegExp(copy));
   assert.match(template, /bindtap="onSelectCandidate"/);
   assert.match(template, /bindtap="onRetryEvidence"/);
+  assert.match(template, /aria-label="{{item\.label}}，重试上传"/);
+  assert.match(template, /aria-label="{{item\.label}}，{{item\.status === 'uploaded' \? '替换材料' : '上传材料'}}"/);
   assert.match(template, /disabled="{{submitDisabled}}"/);
   assert.match(template, /{{submitDisabledReason}}/);
   assertEveryButtonHasFixtureBehavior(roots.claim, controller, template);
   assert.match(styles, /min-height:\s*88rpx/);
   assert.match(styles, /env\(safe-area-inset-bottom,\s*0px\)/);
+});
+
+test("claim executes candidate selection, failed evidence retry, enabled submit, and return locally", () => {
+  const claim = loadNativePage(`${roots.claim}.ts`);
+  claim.page.onLoad({ case: "upload-error" });
+  assert.equal(claim.page.data.submitDisabled, true);
+
+  const candidate = claim.page.data.candidates[0];
+  claim.page.setData({
+    candidates: claim.page.data.candidates.map((item) => ({ ...item, selected: false })),
+  });
+  assert.equal(claim.page.data.candidates.find(({ id }) => id === candidate.id).selected, false);
+  claim.page.onSelectCandidate({ currentTarget: { dataset: { candidateId: candidate.id } } });
+  assert.equal(claim.page.data.candidates.find(({ id }) => id === candidate.id).selected, true);
+
+  const failedEvidence = claim.page.data.evidence.find(({ status }) => status === "error");
+  assert.ok(failedEvidence, "upload-error Fixture must expose a retryable material");
+  claim.page.onRetryEvidence({ currentTarget: { dataset: { evidenceId: failedEvidence.id } } });
+  assert.equal(claim.page.data.evidence.find(({ id }) => id === failedEvidence.id).status, "uploaded");
+  assert.equal(claim.page.data.submitDisabled, false);
+
+  claim.page.onSubmit();
+  assert.equal(claim.page.data.submittedPreview, true);
+  assert.equal(claim.page.data.previewNotice, "视觉预览，不会提交");
+  claim.page.onReturnPortfolio();
+  assert.deepEqual(claim.calls.reLaunch, [{ url: "/dev/pages/venue-access/index?case=one" }]);
 });
 
 test("create ready, submitted, and rejected states expose explicit Fixture transitions", () => {
@@ -225,6 +282,7 @@ test("create ready, submitted, and rejected states expose explicit Fixture trans
   assert.match(template, /wx:elif="{{previewCase === 'rejected'}}"/);
   assert.match(template, /wx:else/);
   assert.match(template, /disabled="{{submitDisabled}}"/);
+  assert.match(template, /aria-label="{{item\.label}}，{{item\.status === 'uploaded' \? '替换材料' : '上传材料'}}"/);
   assert.match(template, /{{submitDisabledReason}}/);
   assertEveryButtonHasFixtureBehavior(roots.create, controller, template);
   assert.match(styles, /min-height:\s*88rpx/);
@@ -252,11 +310,39 @@ test("create submit builds the reviewing summary from the current editable form"
   assert.equal(summary["证明材料"], "4 项已提交");
 });
 
-test("all preview controls center labels and reuse the approved token and safe-area system", () => {
+test("every primary onboarding button class explicitly centers its content", () => {
+  const centeredActionClasses = {
+    access: ["venue-access__back", "venue-access__primary", "venue-access__secondary"],
+    claim: ["venue-claim__back", "venue-claim__mini-action", "venue-claim__primary", "venue-claim__secondary"],
+    create: ["venue-create__back", "venue-create__map-action", "venue-create__mini-action", "venue-create__primary", "venue-create__secondary"],
+  };
+  for (const [name, classNames] of Object.entries(centeredActionClasses)) {
+    const { styles } = readPage(roots[name]);
+    for (const className of classNames) assertFlexCenteredClass(styles, className);
+  }
+});
+
+test("small success and error text uses existing dark semantic tokens at AA contrast", () => {
+  for (const root of [roots.claim, roots.create]) {
+    const { styles } = readPage(root);
+    assert.match(styles, /--success:\s*#047857/);
+    assert.match(styles, /--error:\s*#C42525/);
+  }
+
+  for (const [label, foreground, background] of [
+    ["verified on white", "#047857", "#FFFFFF"],
+    ["error on white", "#C42525", "#FFFFFF"],
+    ["error on soft error row", "#C42525", "#FEF2F2"],
+    ["error on rejected mark", "#C42525", "#FEE2E2"],
+  ]) {
+    const ratio = contrastRatio(foreground, background);
+    assert.ok(ratio >= 4.5, `${label} contrast ${ratio.toFixed(3)} must be at least 4.5:1`);
+  }
+});
+
+test("all preview pages reuse the approved token and safe-area system", () => {
   for (const root of Object.values(roots)) {
     const { styles } = readPage(root);
-    assert.match(styles, /align-items:\s*center/);
-    assert.match(styles, /justify-content:\s*center/);
     assert.match(styles, /#F8FAFC/);
     assert.match(styles, /#FFFFFF/);
     assert.match(styles, /#10243E/);
