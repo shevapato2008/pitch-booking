@@ -1,0 +1,19 @@
+{
+  "evidence_id": "37e2344f-91e1-4754-a171-8047a06bb3c1",
+  "status": "PENDING_UPLOAD",
+  "post_policy": {
+    "url": "https://uploads.example.com/venue-onboarding",
+    "method": "POST",
+    "fields": {
+      "key": "private/venue-onboarding/opaque-reservation",
+      "policy": "short-lived-policy",
+      "signature": "short-lived-signature"
+    },
+    "expires_at": "2026-08-17T09:45:00+08:00"
+  },
+  "constraints": {
+    "kind": "BUSINESS_LICENSE",
+    "accepted_mime_types": ["image/jpeg", "image/png", "application/pdf"],
+    "maximum_bytes": 10485760
+  }
+}

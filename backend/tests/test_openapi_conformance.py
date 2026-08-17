@@ -3,6 +3,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from jsonschema import Draft202012Validator
+
 from backend.app.main import create_app
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -498,3 +500,383 @@ def test_availability_response_schema_is_closed() -> None:
         "pitches",
         "generated_at",
     }
+
+
+def test_contract_freezes_authenticated_venue_onboarding_operation_matrix() -> None:
+    contract = _contract()
+    expected_operations = {
+        "/api/v1/venue-onboarding/candidates": "get",
+        "/api/v1/venue-onboarding/evidence/upload-intents": "post",
+        "/api/v1/venue-onboarding/evidence/{evidence_id}/complete": "post",
+        "/api/v1/venue-onboarding/claims": "post",
+        "/api/v1/venue-onboarding/venues": "post",
+        "/api/v1/venue-onboarding/applications": "get",
+    }
+
+    for path, method in expected_operations.items():
+        assert set(contract["paths"][path]) == {method}
+        operation = contract["paths"][path][method]
+        assert operation["security"] == [{"bearerAuth": []}]
+        assert "401" in operation["responses"]
+
+    mutations = set(expected_operations.items()) - {
+        ("/api/v1/venue-onboarding/candidates", "get"),
+        ("/api/v1/venue-onboarding/applications", "get"),
+    }
+    for path, method in mutations:
+        parameters = operation_parameters = contract["paths"][path][method].get(
+            "parameters", []
+        )
+        assert {parameter.get("$ref") for parameter in parameters} >= {
+            "#/components/parameters/IdempotencyKey"
+        }, operation_parameters
+
+    candidates_parameters = {
+        parameter["name"]: parameter
+        for parameter in contract["paths"][
+            "/api/v1/venue-onboarding/candidates"
+        ]["get"]["parameters"]
+    }
+    assert candidates_parameters["q"]["required"] is True
+    assert candidates_parameters["q"]["schema"] == {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 80,
+    }
+    assert candidates_parameters["limit"]["schema"]["minimum"] == 1
+    assert candidates_parameters["limit"]["schema"]["maximum"] == 20
+
+    applications = contract["paths"][
+        "/api/v1/venue-onboarding/applications"
+    ]["get"]
+    applications_parameters = {
+        parameter["name"]: parameter for parameter in applications["parameters"]
+    }
+    assert set(applications_parameters) == {"cursor", "limit"}
+    assert applications_parameters["limit"]["schema"]["minimum"] == 1
+    assert applications_parameters["limit"]["schema"]["maximum"] == 20
+    assert "current applicant" in applications["description"].lower()
+    assert "newest-first" in applications["responses"]["200"]["description"].lower()
+
+
+def test_venue_onboarding_evidence_contract_freezes_limits_and_closed_completion() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+
+    kind = schemas["VenueOnboardingEvidenceKind"]
+    assert kind["enum"] == [
+        "BUSINESS_LICENSE",
+        "MANAGEMENT_AUTHORIZATION",
+        "VENUE_EXTERIOR",
+        "VENUE_INTERIOR",
+    ]
+    document = schemas["VenueOnboardingDocumentEvidenceConstraints"]
+    assert document["properties"]["accepted_mime_types"]["const"] == [
+        "image/jpeg",
+        "image/png",
+        "application/pdf",
+    ]
+    assert document["properties"]["maximum_bytes"]["const"] == 10 * 1024 * 1024
+    photo = schemas["VenueOnboardingPhotoEvidenceConstraints"]
+    assert photo["properties"]["accepted_mime_types"]["const"] == [
+        "image/jpeg",
+        "image/png",
+    ]
+    assert photo["properties"]["maximum_bytes"]["const"] == 15 * 1024 * 1024
+
+    intent = schemas["VenueOnboardingUploadIntent"]
+    assert intent["additionalProperties"] is False
+    assert set(intent["required"]) == {
+        "evidence_id",
+        "status",
+        "post_policy",
+        "constraints",
+    }
+    assert intent["properties"]["status"] == {
+        "type": "string",
+        "const": "PENDING_UPLOAD",
+    }
+    assert "owner-bound" in intent["description"].lower()
+    policy = schemas["VenueOnboardingPostPolicy"]
+    assert policy["properties"]["method"] == {"type": "string", "const": "POST"}
+    assert policy["properties"]["expires_at"]["format"] == "date-time"
+
+    complete_operation = contract["paths"][
+        "/api/v1/venue-onboarding/evidence/{evidence_id}/complete"
+    ]["post"]
+    assert set(complete_operation["responses"]) >= {"200", "401", "404", "409", "422"}
+    completed = schemas["VenueOnboardingEvidenceClosed"]
+    assert completed["additionalProperties"] is False
+    assert set(completed["required"]) == {"evidence_id", "status"}
+    assert set(completed["properties"]) == {"evidence_id", "status"}
+    assert completed["properties"]["status"] == {
+        "type": "string",
+        "const": "COMPLETED",
+    }
+    description = complete_operation["description"].lower()
+    for phrase in ("stream", "sha-256", "jpeg", "png", "pdf", "non-authoritative"):
+        assert phrase in description
+    assert "first completion and an idempotent replay both return 200" in description
+
+
+def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+
+    claim_evidence = schemas["VenueClaimEvidence"]
+    assert claim_evidence["additionalProperties"] is False
+    assert set(claim_evidence["required"]) == {
+        "MANAGEMENT_AUTHORIZATION",
+        "VENUE_EXTERIOR",
+    }
+    assert set(claim_evidence["properties"]) == set(claim_evidence["required"])
+
+    create_evidence = schemas["VenueCreateEvidence"]
+    assert create_evidence["additionalProperties"] is False
+    assert set(create_evidence["required"]) == {
+        "BUSINESS_LICENSE",
+        "MANAGEMENT_AUTHORIZATION",
+        "VENUE_EXTERIOR",
+        "VENUE_INTERIOR",
+    }
+    assert set(create_evidence["properties"]) == set(create_evidence["required"])
+
+    for name in ("SubmitVenueClaim", "SubmitVenueCreate"):
+        request = schemas[name]
+        assert request["additionalProperties"] is False
+        assert "phone" not in request["properties"]
+        assert "phone" not in request.get("required", [])
+        assert "verified phone" in request["description"].lower()
+        assert "server" in request["description"].lower()
+
+    for path in (
+        "/api/v1/venue-onboarding/claims",
+        "/api/v1/venue-onboarding/venues",
+    ):
+        operation = contract["paths"][path]["post"]
+        assert set(operation["responses"]) >= {"200", "201", "401", "409", "422"}
+        assert "first submission returns 201" in operation["description"].lower()
+        assert "idempotent replay returns 200" in operation["description"].lower()
+
+    application = schemas["VenueOnboardingApplication"]
+    assert application["additionalProperties"] is False
+    assert application["properties"]["status"]["enum"] == [
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED",
+    ]
+    forbidden = {"phone", "phone_number", "object_key", "reviewer_notes", "review_material"}
+    assert not forbidden & set(application["properties"])
+    applications = schemas["VenueOnboardingApplications"]
+    assert applications["additionalProperties"] is False
+    assert set(applications["required"]) == {"items", "next_cursor"}
+
+
+def test_venue_onboarding_errors_and_examples_are_closed_and_non_disclosing() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    codes = set(schemas["Error"]["properties"]["code"]["enum"])
+    assert {
+        "POSSIBLE_DUPLICATE_VENUE",
+        "ONBOARDING_EVIDENCE_REQUIRED",
+        "ONBOARDING_EVIDENCE_INVALID",
+        "ONBOARDING_APPLICATION_EXISTS",
+        "ONBOARDING_APPLICATION_NOT_FOUND",
+        "ONBOARDING_APPLICATION_STATE_CHANGED",
+        "IDEMPOTENCY_KEY_REUSED",
+    } <= codes
+
+    duplicate_details = schemas["PossibleDuplicateVenueDetails"]
+    assert duplicate_details["additionalProperties"] is False
+    assert set(duplicate_details["properties"]) == {"claim_candidate"}
+    candidate = schemas["VenueOnboardingCandidate"]
+    assert candidate["additionalProperties"] is False
+    assert set(candidate["properties"]) == {
+        "venue_id",
+        "name",
+        "district_name",
+        "address",
+    }
+    assert "listed and active" in candidate["description"].lower()
+
+    expected_examples = {
+        "venue-onboarding-candidates.json": "VenueOnboardingCandidates",
+        "venue-claim-submitted.json": "VenueOnboardingApplication",
+        "venue-create-submitted.json": "VenueOnboardingApplication",
+        "venue-onboarding-applications.json": "VenueOnboardingApplications",
+        "venue-onboarding-upload-intent.json": "VenueOnboardingUploadIntent",
+        "error-possible-duplicate-venue.json": "ErrorEnvelope",
+        "error-onboarding-evidence-required.json": "ErrorEnvelope",
+    }
+    for filename, schema_name in expected_examples.items():
+        example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        _assert_example_matches_schema(contract, example, schemas[schema_name])
+
+    generic_duplicate = json.loads(
+        (EXAMPLES_DIRECTORY / "error-possible-duplicate-venue.json").read_text()
+    )
+    assert generic_duplicate["error"]["code"] == "POSSIBLE_DUPLICATE_VENUE"
+    assert generic_duplicate["error"]["details"] == {}
+    assert not {
+        "venue_id",
+        "name",
+        "district_name",
+        "address",
+        "latitude",
+        "longitude",
+    } & set(generic_duplicate["error"]["details"])
+
+
+def test_venue_onboarding_error_responses_freeze_operation_specific_codes() -> None:
+    contract = _contract()
+    assert set(
+        contract["paths"][
+            "/api/v1/venue-onboarding/evidence/{evidence_id}/complete"
+        ]["post"]["responses"]
+    ) == {"200", "401", "404", "409", "422", "503"}
+    for path in (
+        "/api/v1/venue-onboarding/claims",
+        "/api/v1/venue-onboarding/venues",
+    ):
+        assert set(contract["paths"][path]["post"]["responses"]) == {
+            "200",
+            "201",
+            "401",
+            "409",
+            "422",
+            "503",
+        }
+    assert set(
+        contract["paths"]["/api/v1/venue-onboarding/applications"]["get"][
+            "responses"
+        ]
+    ) == {"200", "401", "422", "503"}
+
+    expected = {
+        ("/api/v1/venue-onboarding/candidates", "get", "422"): {
+            "INVALID_ARGUMENT"
+        },
+        ("/api/v1/venue-onboarding/evidence/upload-intents", "post", "409"): {
+            "IDEMPOTENCY_KEY_REUSED"
+        },
+        ("/api/v1/venue-onboarding/evidence/upload-intents", "post", "422"): {
+            "INVALID_ARGUMENT",
+            "ONBOARDING_EVIDENCE_INVALID",
+        },
+        (
+            "/api/v1/venue-onboarding/evidence/{evidence_id}/complete",
+            "post",
+            "404",
+        ): {"ONBOARDING_APPLICATION_NOT_FOUND"},
+        (
+            "/api/v1/venue-onboarding/evidence/{evidence_id}/complete",
+            "post",
+            "409",
+        ): {"ONBOARDING_APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"},
+        (
+            "/api/v1/venue-onboarding/evidence/{evidence_id}/complete",
+            "post",
+            "422",
+        ): {"INVALID_ARGUMENT", "ONBOARDING_EVIDENCE_INVALID"},
+        ("/api/v1/venue-onboarding/claims", "post", "409"): {
+            "ONBOARDING_APPLICATION_EXISTS",
+            "ONBOARDING_APPLICATION_STATE_CHANGED",
+            "IDEMPOTENCY_KEY_REUSED",
+        },
+        ("/api/v1/venue-onboarding/applications", "get", "422"): {
+            "INVALID_ARGUMENT"
+        },
+    }
+    submission_validation_codes = {
+        "INVALID_ARGUMENT",
+        "PHONE_AUTH_REQUIRED",
+        "ONBOARDING_EVIDENCE_REQUIRED",
+        "ONBOARDING_EVIDENCE_INVALID",
+    }
+    expected[("/api/v1/venue-onboarding/claims", "post", "422")] = (
+        submission_validation_codes
+    )
+    expected[("/api/v1/venue-onboarding/venues", "post", "422")] = (
+        submission_validation_codes
+    )
+    for path, method in (
+        ("/api/v1/venue-onboarding/candidates", "get"),
+        ("/api/v1/venue-onboarding/evidence/upload-intents", "post"),
+        ("/api/v1/venue-onboarding/evidence/{evidence_id}/complete", "post"),
+        ("/api/v1/venue-onboarding/claims", "post"),
+        ("/api/v1/venue-onboarding/venues", "post"),
+        ("/api/v1/venue-onboarding/applications", "get"),
+    ):
+        expected[(path, method, "503")] = {"SERVICE_UNAVAILABLE"}
+
+    for (path, method, status), codes in expected.items():
+        schema = _response_schema(contract["paths"][path][method], status)
+        assert schema["allOf"][0] == {"$ref": "#/components/schemas/ErrorEnvelope"}
+        code_schema = schema["allOf"][1]["properties"]["error"]["properties"][
+            "code"
+        ]
+        actual = set(code_schema.get("enum", [code_schema.get("const")]))
+        assert actual == codes
+
+    invalid_argument_reference = "./examples/error-invalid-argument.json"
+    for path, method in (
+        ("/api/v1/venue-onboarding/evidence/{evidence_id}/complete", "post"),
+        ("/api/v1/venue-onboarding/claims", "post"),
+        ("/api/v1/venue-onboarding/venues", "post"),
+        ("/api/v1/venue-onboarding/applications", "get"),
+    ):
+        examples = contract["paths"][path][method]["responses"]["422"]["content"][
+            "application/json"
+        ]["examples"]
+        assert examples["InvalidArgument"] == {
+            "externalValue": invalid_argument_reference
+        }
+
+
+def test_possible_duplicate_response_rejects_unrelated_error_details() -> None:
+    contract = _contract()
+    response_schema = _response_schema(
+        contract["paths"]["/api/v1/venue-onboarding/venues"]["post"], "409"
+    )
+    assert response_schema == {
+        "oneOf": [
+            {"$ref": "#/components/schemas/PossibleDuplicateVenueError"},
+            {"$ref": "#/components/schemas/VenueOnboardingSubmissionConflictError"},
+        ]
+    }
+
+    possible_duplicate = contract["components"]["schemas"][
+        "PossibleDuplicateVenueError"
+    ]
+    assert possible_duplicate["allOf"][1]["properties"]["error"]["properties"][
+        "details"
+    ] == {"$ref": "#/components/schemas/PossibleDuplicateVenueDetails"}
+    assert possible_duplicate["allOf"][1]["properties"]["error"]["properties"][
+        "code"
+    ] == {"const": "POSSIBLE_DUPLICATE_VENUE"}
+    submission_conflict = contract["components"]["schemas"][
+        "VenueOnboardingSubmissionConflictError"
+    ]
+    assert set(
+        submission_conflict["allOf"][1]["properties"]["error"]["properties"][
+            "code"
+        ]["enum"]
+    ) == {
+        "ONBOARDING_APPLICATION_EXISTS",
+        "ONBOARDING_APPLICATION_STATE_CHANGED",
+        "IDEMPOTENCY_KEY_REUSED",
+    }
+
+    validator = Draft202012Validator(contract).evolve(schema=response_schema)
+    safe_error = {
+        "error": {
+            "code": "POSSIBLE_DUPLICATE_VENUE",
+            "message": "可能已存在该场馆",
+            "request_id": "req-duplicate",
+            "details": {},
+        }
+    }
+    assert validator.is_valid(safe_error)
+
+    safe_error["error"]["details"] = {"field": "address"}
+    assert not validator.is_valid(safe_error)

@@ -67,6 +67,11 @@ const exampleMap = [
       attachment('/api/v1/venues/{venue_id}/availability', '422', 'InvalidArgument'),
       attachment('/api/v1/auth/wechat/session', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/auth/wechat/phone', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/candidates', '422', 'InvalidArgument'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/applications', '422', 'InvalidArgument'),
     ],
   },
   {
@@ -109,6 +114,12 @@ const exampleMap = [
       attachment('/api/v1/venues/map', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}/availability', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venue-onboarding/candidates', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/applications', '503', 'ServiceUnavailable'),
     ],
   },
   {
@@ -228,7 +239,11 @@ const exampleMap = [
     filename: 'error-phone-auth-required.json',
     reference: './examples/error-phone-auth-required.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/orders', '422', 'PhoneAuthRequired', 'post')],
+    attachments: [
+      attachment('/api/v1/orders', '422', 'PhoneAuthRequired', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '422', 'PhoneAuthRequired', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'PhoneAuthRequired', 'post'),
+    ],
   },
   {
     filename: 'error-phone-auth-unavailable.json',
@@ -270,6 +285,64 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/orders', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/orders/{order_id}/pay', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '409', 'IdempotencyKeyReused', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-onboarding-candidates.json',
+    reference: './examples/venue-onboarding-candidates.json',
+    schema: 'VenueOnboardingCandidates',
+    attachments: [attachment('/api/v1/venue-onboarding/candidates', '200', 'Candidates')],
+  },
+  {
+    filename: 'venue-onboarding-upload-intent.json',
+    reference: './examples/venue-onboarding-upload-intent.json',
+    schema: 'VenueOnboardingUploadIntent',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '200', 'UploadIntent', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '201', 'UploadIntent', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-claim-submitted.json',
+    reference: './examples/venue-claim-submitted.json',
+    schema: 'VenueOnboardingApplication',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/claims', '200', 'ClaimSubmitted', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '201', 'ClaimSubmitted', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-create-submitted.json',
+    reference: './examples/venue-create-submitted.json',
+    schema: 'VenueOnboardingApplication',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/venues', '200', 'VenueSubmitted', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '201', 'VenueSubmitted', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-onboarding-applications.json',
+    reference: './examples/venue-onboarding-applications.json',
+    schema: 'VenueOnboardingApplications',
+    attachments: [attachment('/api/v1/venue-onboarding/applications', '200', 'Applications')],
+  },
+  {
+    filename: 'error-possible-duplicate-venue.json',
+    reference: './examples/error-possible-duplicate-venue.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venue-onboarding/venues', '409', 'PossibleDuplicateVenue', 'post')],
+  },
+  {
+    filename: 'error-onboarding-evidence-required.json',
+    reference: './examples/error-onboarding-evidence-required.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/claims', '422', 'OnboardingEvidenceRequired', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'OnboardingEvidenceRequired', 'post'),
     ],
   },
   {
@@ -471,7 +544,22 @@ const requiredErrorCodes = new Set([
   'DUPLICATE_PITCH_CHANGE',
   'VENUE_PROFILE_VERSION_CONFLICT',
   'VENUE_PROFILE_VALIDATION_FAILED',
+  'POSSIBLE_DUPLICATE_VENUE',
+  'ONBOARDING_EVIDENCE_REQUIRED',
+  'ONBOARDING_EVIDENCE_INVALID',
+  'ONBOARDING_APPLICATION_EXISTS',
+  'ONBOARDING_APPLICATION_NOT_FOUND',
+  'ONBOARDING_APPLICATION_STATE_CHANGED',
 ]);
+const errorCodesWithoutCanonicalExamples = new Set([
+  'ONBOARDING_EVIDENCE_INVALID',
+  'ONBOARDING_APPLICATION_EXISTS',
+  'ONBOARDING_APPLICATION_NOT_FOUND',
+  'ONBOARDING_APPLICATION_STATE_CHANGED',
+]);
+const requiredCanonicalErrorCodes = new Set(
+  [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
+);
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
   ['/api/v1/venues/primary', new Set(['get'])],
@@ -485,6 +573,12 @@ const expectedOperations = new Map([
   ['/api/v1/orders/{order_id}', new Set(['get'])],
   ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
   ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
+  ['/api/v1/venue-onboarding/candidates', new Set(['get'])],
+  ['/api/v1/venue-onboarding/evidence/upload-intents', new Set(['post'])],
+  ['/api/v1/venue-onboarding/evidence/{evidence_id}/complete', new Set(['post'])],
+  ['/api/v1/venue-onboarding/claims', new Set(['post'])],
+  ['/api/v1/venue-onboarding/venues', new Set(['post'])],
+  ['/api/v1/venue-onboarding/applications', new Set(['get'])],
   ['/api/v1/admin/venues', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
   ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],
@@ -840,7 +934,7 @@ export async function validateContract(contractPath = defaultContractPath) {
     }
   }
 
-  assertExactSet(coveredErrorCodes, requiredErrorCodes, 'canonical error example codes');
+  assertExactSet(coveredErrorCodes, requiredCanonicalErrorCodes, 'canonical error example codes');
 
   return { contract, exampleCount: exampleMap.length };
 }

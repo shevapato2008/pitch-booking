@@ -1,0 +1,12 @@
+{
+  "application_id": "51479910-178f-43ba-941a-93c1aa8247f8",
+  "kind": "CREATE",
+  "status": "SUBMITTED",
+  "venue": {
+    "venue_id": null,
+    "name": "前滩社区足球场",
+    "address": "前滩大道88号"
+  },
+  "submitted_at": "2026-08-17T09:35:00+08:00",
+  "updated_at": "2026-08-17T09:35:00+08:00"
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "POSSIBLE_DUPLICATE_VENUE",
+    "message": "可能已存在该场馆，请核对后选择认领或联系平台。",
+    "request_id": "req-contract-possible-duplicate-venue",
+    "details": {}
+  }
+}

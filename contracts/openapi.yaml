@@ -1019,6 +1019,479 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/venue-onboarding/candidates:
+    get:
+      operationId: searchVenueOnboardingCandidates
+      description: Searches only listed and active venues that are safe to expose to the authenticated applicant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: {type: string, minLength: 2, maxLength: 80}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 20, default: 20}
+      responses:
+        '200':
+          description: Cursor page of listed and active claim candidates.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingCandidates'}
+              examples:
+                Candidates: {externalValue: './examples/venue-onboarding-candidates.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '422':
+          description: Search query or cursor is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: INVALID_ARGUMENT}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/evidence/upload-intents:
+    post:
+      operationId: createVenueOnboardingEvidenceUploadIntent
+      description: >-
+        Creates an owner-bound evidence reservation and a short-lived private-object POST policy.
+        The server selects the hard MIME and byte constraints from the evidence kind.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateVenueOnboardingUploadIntent'}
+      responses:
+        '200':
+          description: Idempotent replay of the authoritative upload intent.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingUploadIntent'}
+              examples:
+                UploadIntent: {externalValue: './examples/venue-onboarding-upload-intent.json'}
+        '201':
+          description: Owner-bound upload intent created.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingUploadIntent'}
+              examples:
+                UploadIntent: {externalValue: './examples/venue-onboarding-upload-intent.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '409':
+          description: The idempotency key was reused with a different request.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: IDEMPOTENCY_KEY_REUSED}
+              examples:
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Evidence kind is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, ONBOARDING_EVIDENCE_INVALID]}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/evidence/{evidence_id}/complete:
+    post:
+      operationId: completeVenueOnboardingEvidence
+      description: >-
+        The server streams the owner-bound private object, computes authoritative size and SHA-256 under the
+        evidence-kind hard limit, and verifies actual JPEG or PNG decode or the PDF signature. Client metadata is
+        non-authoritative. The first completion and an idempotent replay both return 200; reusing the same key for
+        a different request returns 409. The closed response never exposes a private object key or reviewer-only material.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Evidence verified and closed, or the authoritative closed result replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingEvidenceClosed'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404':
+          description: Owner-bound evidence reservation was not found.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: ONBOARDING_APPLICATION_NOT_FOUND}
+        '409':
+          description: Evidence state changed or the idempotency key was reused with a different request.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Private evidence bytes fail the authoritative kind, size, digest, decode, or signature checks.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/claims:
+    post:
+      operationId: submitVenueOnboardingClaim
+      description: >-
+        Submits a claim after server-side verified-phone snapshotting. The first submission returns 201; an
+        idempotent replay returns 200; a same-key payload mismatch or conflicting application state returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitVenueClaim'}
+      responses:
+        '200':
+          description: Authoritative claim submission replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                ClaimSubmitted: {externalValue: './examples/venue-claim-submitted.json'}
+        '201':
+          description: Claim application submitted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                ClaimSubmitted: {externalValue: './examples/venue-claim-submitted.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '409':
+          description: Application state, duplicate state, or idempotency authority conflicts.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ONBOARDING_APPLICATION_EXISTS, ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Verified phone or exactly one completed item for each claim evidence kind is missing or invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                OnboardingEvidenceRequired: {externalValue: './examples/error-onboarding-evidence-required.json'}
+                PhoneAuthRequired: {externalValue: './examples/error-phone-auth-required.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/venues:
+    post:
+      operationId: submitVenueOnboardingVenue
+      description: >-
+        Submits an unlisted venue after server-side verified-phone snapshotting. The first submission returns 201;
+        an idempotent replay returns 200; a same-key payload mismatch, duplicate, or conflicting state returns 409.
+        A listed and active duplicate may return a safe claim candidate, while an unlisted match returns only a
+        generic conflict without identity or location.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitVenueCreate'}
+      responses:
+        '200':
+          description: Authoritative venue-create submission replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                VenueSubmitted: {externalValue: './examples/venue-create-submitted.json'}
+        '201':
+          description: Venue-create application submitted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                VenueSubmitted: {externalValue: './examples/venue-create-submitted.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '409':
+          description: Possible duplicate, application state, duplicate state, or idempotency authority conflicts.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PossibleDuplicateVenueError'
+                  - $ref: '#/components/schemas/VenueOnboardingSubmissionConflictError'
+              examples:
+                PossibleDuplicateVenue: {externalValue: './examples/error-possible-duplicate-venue.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Verified phone or exactly one completed item for each create evidence kind is missing or invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                OnboardingEvidenceRequired: {externalValue: './examples/error-onboarding-evidence-required.json'}
+                PhoneAuthRequired: {externalValue: './examples/error-phone-auth-required.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/applications:
+    get:
+      operationId: listVenueOnboardingApplications
+      description: Lists only applications owned by the current applicant; reviewer-only material is never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 20, default: 20}
+      responses:
+        '200':
+          description: Newest-first cursor page for the current applicant.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplications'}
+              examples:
+                Applications: {externalValue: './examples/venue-onboarding-applications.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '422':
+          description: Cursor or limit is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: INVALID_ARGUMENT}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/admin/venues:
     get:
       operationId: listManagedVenues
@@ -1546,6 +2019,193 @@ components:
           examples:
             VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    VenueOnboardingCandidate:
+      description: Safe claim candidate drawn only from listed and active public venues.
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, district_name, address]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+    VenueOnboardingCandidates:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/VenueOnboardingCandidate'}
+        next_cursor: {type: [string, 'null']}
+    VenueOnboardingEvidenceKind:
+      type: string
+      enum: [BUSINESS_LICENSE, MANAGEMENT_AUTHORIZATION, VENUE_EXTERIOR, VENUE_INTERIOR]
+    VenueOnboardingDocumentEvidenceConstraints:
+      type: object
+      additionalProperties: false
+      required: [kind, accepted_mime_types, maximum_bytes]
+      properties:
+        kind: {type: string, enum: [BUSINESS_LICENSE, MANAGEMENT_AUTHORIZATION]}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png, application/pdf]
+        maximum_bytes: {type: integer, const: 10485760}
+    VenueOnboardingPhotoEvidenceConstraints:
+      type: object
+      additionalProperties: false
+      required: [kind, accepted_mime_types, maximum_bytes]
+      properties:
+        kind: {type: string, enum: [VENUE_EXTERIOR, VENUE_INTERIOR]}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png]
+        maximum_bytes: {type: integer, const: 15728640}
+    VenueOnboardingEvidenceConstraints:
+      oneOf:
+        - $ref: '#/components/schemas/VenueOnboardingDocumentEvidenceConstraints'
+        - $ref: '#/components/schemas/VenueOnboardingPhotoEvidenceConstraints'
+      discriminator:
+        propertyName: kind
+        mapping:
+          BUSINESS_LICENSE: '#/components/schemas/VenueOnboardingDocumentEvidenceConstraints'
+          MANAGEMENT_AUTHORIZATION: '#/components/schemas/VenueOnboardingDocumentEvidenceConstraints'
+          VENUE_EXTERIOR: '#/components/schemas/VenueOnboardingPhotoEvidenceConstraints'
+          VENUE_INTERIOR: '#/components/schemas/VenueOnboardingPhotoEvidenceConstraints'
+    CreateVenueOnboardingUploadIntent:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: {$ref: '#/components/schemas/VenueOnboardingEvidenceKind'}
+    VenueOnboardingPostPolicy:
+      description: Short-lived form POST policy for the reserved private object; fields are opaque to the client.
+      type: object
+      additionalProperties: false
+      required: [url, method, fields, expires_at]
+      properties:
+        url: {type: string, format: uri, pattern: '^https://'}
+        method: {type: string, const: POST}
+        fields:
+          type: object
+          minProperties: 1
+          additionalProperties: {type: string, minLength: 1}
+        expires_at: {type: string, format: date-time}
+    VenueOnboardingUploadIntent:
+      description: Owner-bound evidence ID with a short-lived POST policy and server-selected hard constraints.
+      type: object
+      additionalProperties: false
+      required: [evidence_id, status, post_policy, constraints]
+      properties:
+        evidence_id: {type: string, format: uuid}
+        status: {type: string, const: PENDING_UPLOAD}
+        post_policy: {$ref: '#/components/schemas/VenueOnboardingPostPolicy'}
+        constraints: {$ref: '#/components/schemas/VenueOnboardingEvidenceConstraints'}
+    VenueOnboardingEvidenceClosed:
+      description: Closed applicant response; never contains a private object key, digest, or reviewer-only material.
+      type: object
+      additionalProperties: false
+      required: [evidence_id, status]
+      properties:
+        evidence_id: {type: string, format: uuid}
+        status: {type: string, const: COMPLETED}
+    VenueClaimEvidence:
+      description: Exactly one owner-bound completed evidence ID for every claim-required kind.
+      type: object
+      additionalProperties: false
+      required: [MANAGEMENT_AUTHORIZATION, VENUE_EXTERIOR]
+      properties:
+        MANAGEMENT_AUTHORIZATION: {type: string, format: uuid}
+        VENUE_EXTERIOR: {type: string, format: uuid}
+    VenueCreateEvidence:
+      description: Exactly one owner-bound completed evidence ID for every create-required kind.
+      type: object
+      additionalProperties: false
+      required: [BUSINESS_LICENSE, MANAGEMENT_AUTHORIZATION, VENUE_EXTERIOR, VENUE_INTERIOR]
+      properties:
+        BUSINESS_LICENSE: {type: string, format: uuid}
+        MANAGEMENT_AUTHORIZATION: {type: string, format: uuid}
+        VENUE_EXTERIOR: {type: string, format: uuid}
+        VENUE_INTERIOR: {type: string, format: uuid}
+    SubmitVenueClaim:
+      description: >-
+        Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
+      type: object
+      additionalProperties: false
+      required: [venue_id, evidence]
+      properties:
+        venue_id: {type: string, format: uuid}
+        evidence: {$ref: '#/components/schemas/VenueClaimEvidence'}
+    SubmitVenueCreate:
+      description: >-
+        Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
+      type: object
+      additionalProperties: false
+      required: [name, address, evidence]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 120}
+        address: {type: string, minLength: 1, maxLength: 300}
+        evidence: {$ref: '#/components/schemas/VenueCreateEvidence'}
+    VenueOnboardingApplicationVenue:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address]
+      properties:
+        venue_id: {type: [string, 'null'], format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+    VenueOnboardingApplication:
+      description: Applicant-safe projection without phone snapshots, private object keys, or reviewer-only material.
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, venue, submitted_at, updated_at]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        venue: {$ref: '#/components/schemas/VenueOnboardingApplicationVenue'}
+        submitted_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    VenueOnboardingApplications:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+        next_cursor: {type: [string, 'null']}
+    PossibleDuplicateVenueDetails:
+      description: >-
+        A listed and active public match may include claim_candidate. An unlisted match must use an empty object so
+        its identity and location remain undisclosed.
+      type: object
+      additionalProperties: false
+      properties:
+        claim_candidate: {$ref: '#/components/schemas/VenueOnboardingCandidate'}
+    PossibleDuplicateVenueError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code, details]
+              properties:
+                code: {const: POSSIBLE_DUPLICATE_VENUE}
+                details: {$ref: '#/components/schemas/PossibleDuplicateVenueDetails'}
+    VenueOnboardingSubmissionConflictError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code]
+              properties:
+                code: {enum: [ONBOARDING_APPLICATION_EXISTS, ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
     ManagedVenue:
       type: object
       additionalProperties: false
@@ -3087,6 +3747,8 @@ components:
         reason:
           type: string
           minLength: 1
+        claim_candidate:
+          $ref: '#/components/schemas/VenueOnboardingCandidate'
     Error:
       type: object
       additionalProperties: false
@@ -3134,6 +3796,12 @@ components:
             - DUPLICATE_PITCH_CHANGE
             - VENUE_PROFILE_VERSION_CONFLICT
             - VENUE_PROFILE_VALIDATION_FAILED
+            - POSSIBLE_DUPLICATE_VENUE
+            - ONBOARDING_EVIDENCE_REQUIRED
+            - ONBOARDING_EVIDENCE_INVALID
+            - ONBOARDING_APPLICATION_EXISTS
+            - ONBOARDING_APPLICATION_NOT_FOUND
+            - ONBOARDING_APPLICATION_STATE_CHANGED
         message:
           type: string
           minLength: 1
