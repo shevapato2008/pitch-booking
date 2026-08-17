@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "ONBOARDING_EVIDENCE_REQUIRED",
+    "message": "请为每种必需材料提交且仅提交一项已完成上传的凭证。",
+    "request_id": "req-contract-onboarding-evidence-required",
+    "details": {}
+  }
+}
