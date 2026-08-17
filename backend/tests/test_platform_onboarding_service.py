@@ -28,7 +28,11 @@ from backend.app.modules.platform_onboarding.dto import PlatformOnboardingDecisi
 from backend.app.modules.platform_onboarding.repository import PlatformOnboardingRepository
 from backend.app.modules.platform_onboarding.service import PlatformOnboardingService
 from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
-from backend.app.modules.venue_onboarding.storage import MemoryOnboardingStorage
+from backend.app.modules.venue_onboarding.storage import (
+    MemoryOnboardingStorage,
+    PrivateObjectStateError,
+    PrivateStorageUnavailableError,
+)
 from backend.app.security.phone_vault import PhoneVault
 
 pytestmark = pytest.mark.integration
@@ -46,9 +50,9 @@ class RecordingDownloadStore:
         self,
         object_key: str,
         expected_bytes: int,
-    ) -> object:
+    ) -> bytes:
         self.calls.append((object_key, expected_bytes))
-        return iter((b"x" * expected_bytes,))
+        return b"x" * expected_bytes
 
 
 def _venue(*, name: str, address: str, latitude: float = 39.12) -> Venue:
@@ -158,56 +162,105 @@ def test_private_storage_opens_only_an_exact_private_namespaced_object() -> None
     object_key = f"{prefix}secret.pdf"
     memory.accept_upload(prefix, "secret.pdf", b"private")
 
-    content = b"".join(memory.open_private_object(object_key, 7))
+    content = memory.open_private_object(object_key, 7)
 
     assert content == b"private"
     with pytest.raises(ValueError):
         memory.open_private_object("public/secret.pdf", 7)
 
 
-def test_oss_download_stream_reads_exact_private_key_with_a_hard_bound() -> None:
-    class Result:
-        content_length = 7
+class _OssDownloadResult:
+    def __init__(
+        self,
+        data: bytes,
+        *,
+        content_length: int = 7,
+        read_error: Exception | None = None,
+        close_error: Exception | None = None,
+    ) -> None:
+        self.content_length = content_length
+        self.data = bytearray(data)
+        self.read_error = read_error
+        self.close_error = close_error
+        self.read_sizes: list[int] = []
+        self.close_calls = 0
 
-        def __init__(self) -> None:
-            self.data = bytearray(b"private")
-            self.read_sizes: list[int] = []
-            self.closed = False
+    def read(self, size: int) -> bytes:
+        self.read_sizes.append(size)
+        if self.read_error is not None:
+            raise self.read_error
+        chunk = bytes(self.data[:size])
+        del self.data[:size]
+        return chunk
 
-        def read(self, size: int) -> bytes:
-            self.read_sizes.append(size)
-            chunk = bytes(self.data[:size])
-            del self.data[:size]
-            return chunk
+    def close(self) -> None:
+        self.close_calls += 1
+        if self.close_error is not None:
+            raise self.close_error
 
-        def close(self) -> None:
-            self.closed = True
 
-    class Bucket:
-        def __init__(self) -> None:
-            self.calls: list[str] = []
-            self.result = Result()
+class _OssDownloadBucket:
+    def __init__(self, result: _OssDownloadResult) -> None:
+        self.calls: list[str] = []
+        self.result = result
 
-        def get_object(self, key: str) -> Result:
-            self.calls.append(key)
-            return self.result
+    def get_object(self, key: str) -> _OssDownloadResult:
+        self.calls.append(key)
+        return self.result
 
-    bucket = Bucket()
-    adapter = OssOnboardingStorage(
-        bucket=bucket,
+
+def _oss_download_adapter(result: _OssDownloadResult) -> OssOnboardingStorage:
+    return OssOnboardingStorage(
+        bucket=_OssDownloadBucket(result),
         endpoint="https://oss-cn-beijing.aliyuncs.com",
         bucket_name="private-onboarding",
         access_key_id="access-key",
         access_key_secret="access-secret",
     )
+
+
+def test_oss_download_reads_exact_private_key_before_returning() -> None:
+    result = _OssDownloadResult(b"private")
+    adapter = _oss_download_adapter(result)
     object_key = f"venue-onboarding/{uuid.uuid4()}/{uuid.uuid4()}/proof.jpg"
 
-    chunks = adapter.open_private_object(object_key, 7)
+    content = adapter.open_private_object(object_key, 7)
 
-    assert b"".join(chunks) == b"private"
-    assert bucket.calls == [object_key]
-    assert bucket.result.read_sizes == [7]
-    assert bucket.result.closed is True
+    assert content == b"private"
+    assert result.read_sizes == [8, 1]
+    assert result.close_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("result", "error_type"),
+    [
+        (
+            _OssDownloadResult(b"private", read_error=OSError("read failed")),
+            PrivateStorageUnavailableError,
+        ),
+        (_OssDownloadResult(b"priv"), PrivateObjectStateError),
+        (_OssDownloadResult(b"private!"), PrivateObjectStateError),
+        (
+            _OssDownloadResult(b"private", content_length=6),
+            PrivateObjectStateError,
+        ),
+        (
+            _OssDownloadResult(b"private", close_error=OSError("close failed")),
+            PrivateStorageUnavailableError,
+        ),
+    ],
+)
+def test_oss_download_rejects_failures_before_returning(
+    result: _OssDownloadResult,
+    error_type: type[Exception],
+) -> None:
+    adapter = _oss_download_adapter(result)
+    object_key = f"venue-onboarding/{uuid.uuid4()}/{uuid.uuid4()}/proof.jpg"
+
+    with pytest.raises(error_type):
+        adapter.open_private_object(object_key, 7)
+
+    assert result.close_calls == 1
 
 
 def test_queue_filters_and_uses_stable_cursor(pg_engine: Engine) -> None:
@@ -337,7 +390,7 @@ def test_download_requires_evidence_attached_to_application_and_is_short_lived(
         assert content.content_type == "application/pdf"
         assert content.filename == "business-license.pdf"
         assert content.byte_size == evidence.byte_size
-        assert len(b"".join(content.chunks)) == evidence.byte_size
+        assert len(content.data) == evidence.byte_size
         assert store.calls == [(evidence.object_key, evidence.byte_size)]
 
         unattached = VenueOnboardingEvidence(

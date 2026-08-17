@@ -7,7 +7,7 @@ from typing import Annotated, cast
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -198,7 +198,7 @@ def stream_evidence_content(
     ],
     expires: int,
     signature: str,
-) -> StreamingResponse:
+) -> Response:
     content = _database_call(
         database,
         lambda: _service(request, database).open_evidence_download(
@@ -208,8 +208,8 @@ def stream_evidence_content(
             signature=signature,
         ),
     )
-    return StreamingResponse(
-        content.chunks,
+    return Response(
+        content=content.data,
         media_type=content.content_type,
         headers={
             "Cache-Control": "no-store",

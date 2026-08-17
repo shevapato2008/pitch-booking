@@ -26,6 +26,8 @@ from backend.app.models import (
     VenueOnboardingKind,
     VenueOnboardingStatus,
 )
+from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
+from backend.app.modules.venue_onboarding.storage import VenueOnboardingStore
 from backend.app.security.phone_vault import PhoneVault
 
 pytestmark = pytest.mark.integration
@@ -54,10 +56,10 @@ class ApiDownloadStore:
 
     def open_private_object(
         self, object_key: str, expected_bytes: int
-    ) -> Iterator[bytes]:
+    ) -> bytes:
         assert object_key.startswith("venue-onboarding/")
         self.opened_keys.append((object_key, expected_bytes))
-        yield b"%PDF" + b"x" * (expected_bytes - 4)
+        return b"%PDF" + b"x" * (expected_bytes - 4)
 
 
 def _principals(role: str) -> str:
@@ -75,7 +77,12 @@ def _principals(role: str) -> str:
     )
 
 
-def _client(engine: Engine, *, role: str = "ONBOARDING_REVIEWER") -> TestClient:
+def _client(
+    engine: Engine,
+    *,
+    role: str = "ONBOARDING_REVIEWER",
+    store: VenueOnboardingStore | None = None,
+) -> TestClient:
     app = create_app(
         settings=Settings(
             app_env="test",
@@ -86,7 +93,7 @@ def _client(engine: Engine, *, role: str = "ONBOARDING_REVIEWER") -> TestClient:
             phone_encryption_key_base64=KEY_BASE64,
             phone_encryption_key_version=3,
         ),
-        venue_onboarding_store=ApiDownloadStore(),
+        venue_onboarding_store=store or ApiDownloadStore(),
     )
 
     def database_override() -> Iterator[Session]:
@@ -306,6 +313,63 @@ def test_review_queue_detail_download_and_decision_end_to_end(
     )
     assert changed.status_code == 409
     assert changed.json()["error"]["code"] == "ONBOARDING_APPLICATION_STATE_CHANGED"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["read_error", "early_eof", "extra_byte", "close_error"],
+)
+def test_private_download_storage_failure_is_503_before_response_starts(
+    pg_engine: Engine,
+    failure: str,
+) -> None:
+    class Result:
+        content_length = 300
+
+        def __init__(self) -> None:
+            self.close_calls = 0
+            sizes = {"early_eof": 299, "extra_byte": 301}
+            self.data = bytearray(b"x" * sizes.get(failure, 300))
+
+        def read(self, size: int) -> bytes:
+            if failure == "read_error":
+                raise OSError("OSS connection dropped")
+            chunk = bytes(self.data[:size])
+            del self.data[:size]
+            return chunk
+
+        def close(self) -> None:
+            self.close_calls += 1
+            if failure == "close_error":
+                raise OSError("OSS close failed")
+
+    class Bucket:
+        def __init__(self) -> None:
+            self.result = Result()
+
+        def get_object(self, _key: str) -> Result:
+            return self.result
+
+    bucket = Bucket()
+    store = OssOnboardingStorage(
+        bucket=bucket,
+        endpoint="https://oss-cn-beijing.aliyuncs.com",
+        bucket_name="private-onboarding",
+        access_key_id="access-key",
+        access_key_secret="access-secret",
+    )
+    _application_id, evidence_id, _object_key = _seed_application(pg_engine)
+    client = _client(pg_engine, store=store)
+    _login(client)
+    issued = client.get(
+        f"/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download"
+    )
+
+    response = client.get(issued.json()["download_url"])
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert bucket.result.close_calls == 1
 
 
 def test_invalid_queue_parameters_are_closed_422(pg_engine: Engine) -> None:

@@ -6,7 +6,6 @@ import hmac
 import json
 import math
 import uuid
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -57,7 +56,7 @@ DOWNLOAD_TOKEN_PURPOSE = "platform-onboarding-evidence-download:v1"
 
 @dataclass(frozen=True)
 class EvidenceDownloadContent:
-    chunks: Iterable[bytes]
+    data: bytes
     content_type: str
     byte_size: int
     filename: str
@@ -186,7 +185,7 @@ class PlatformOnboardingService:
             raise _state_changed()
         filename = _attachment_filename(evidence)
         try:
-            chunks = self.storage.open_private_object(
+            data = self.storage.open_private_object(
                 evidence.object_key,
                 evidence.byte_size,
             )
@@ -197,7 +196,7 @@ class PlatformOnboardingService:
                 "私密证据暂时无法下载。",
             ) from None
         return EvidenceDownloadContent(
-            chunks=chunks,
+            data=data,
             content_type=evidence.content_type,
             byte_size=evidence.byte_size,
             filename=filename,

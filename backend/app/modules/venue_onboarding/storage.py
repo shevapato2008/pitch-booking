@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import warnings
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -76,7 +76,7 @@ class VenueOnboardingStore(Protocol):
         self,
         object_key: str,
         expected_bytes: int,
-    ) -> Iterable[bytes]: ...
+    ) -> bytes: ...
 
 
 class MemoryOnboardingStorage:
@@ -119,7 +119,7 @@ class MemoryOnboardingStorage:
         self,
         object_key: str,
         expected_bytes: int,
-    ) -> Iterable[bytes]:
+    ) -> bytes:
         _require_safe_private_object_request(object_key, expected_bytes)
         matches = [
             item
@@ -132,7 +132,7 @@ class MemoryOnboardingStorage:
             raise PrivateObjectStateError(
                 "private evidence length no longer matches the verified record"
             )
-        return iter((bytes(item.data),))
+        return bytes(item.data)
 
     def accept_upload(self, object_prefix: str, filename: str, data: bytes) -> None:
         self._objects.setdefault(object_prefix, []).append(
@@ -168,7 +168,7 @@ class UnavailableOnboardingStorage:
         self,
         object_key: str,
         expected_bytes: int,
-    ) -> Iterable[bytes]:
+    ) -> bytes:
         del object_key, expected_bytes
         raise PrivateStorageUnavailableError(
             "dedicated private onboarding bucket is not configured"

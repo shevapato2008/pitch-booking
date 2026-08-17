@@ -4,7 +4,6 @@ import base64
 import hashlib
 import hmac
 import json
-from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -159,7 +158,7 @@ class OssOnboardingStorage:
         self,
         object_key: str,
         expected_bytes: int,
-    ) -> Iterable[bytes]:
+    ) -> bytes:
         _require_safe_private_object_request(object_key, expected_bytes)
         try:
             result = self._bucket.get_object(object_key)
@@ -167,30 +166,35 @@ class OssOnboardingStorage:
             raise PrivateStorageUnavailableError(
                 "private evidence download failed"
             ) from error
-        if getattr(result, "content_length", None) != expected_bytes:
-            result.close()
-            raise PrivateObjectStateError(
-                "private evidence length no longer matches the verified record"
-            )
-        return _bounded_download_chunks(result, expected_bytes)
-
-
-def _bounded_download_chunks(result: Any, expected_bytes: int) -> Iterator[bytes]:
-    remaining = expected_bytes
-    try:
-        while remaining:
-            chunk = result.read(min(64 * 1024, remaining))
-            if not chunk:
+        try:
+            if getattr(result, "content_length", None) != expected_bytes:
                 raise PrivateObjectStateError(
-                    "private evidence ended before its verified byte size"
+                    "private evidence length no longer matches the verified record"
                 )
-            remaining -= len(chunk)
-            yield cast(bytes, chunk)
-    except PrivateObjectStateError:
-        raise
-    except Exception as error:
-        raise PrivateStorageUnavailableError(
-            "private evidence download failed"
-        ) from error
-    finally:
-        result.close()
+            chunks: list[bytes] = []
+            total = 0
+            maximum_read = expected_bytes + 1
+            while total < maximum_read:
+                chunk = result.read(min(64 * 1024, maximum_read - total))
+                if not chunk:
+                    break
+                chunks.append(cast(bytes, chunk))
+                total += len(chunk)
+            if total != expected_bytes:
+                raise PrivateObjectStateError(
+                    "private evidence length no longer matches the verified record"
+                )
+            return b"".join(chunks)
+        except PrivateObjectStateError:
+            raise
+        except Exception as error:
+            raise PrivateStorageUnavailableError(
+                "private evidence download failed"
+            ) from error
+        finally:
+            try:
+                result.close()
+            except Exception as error:
+                raise PrivateStorageUnavailableError(
+                    "private evidence download failed"
+                ) from error
