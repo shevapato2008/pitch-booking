@@ -971,16 +971,20 @@ class VenueOnboardingApplication(Base):
             name="ck_onboarding_applications_phone_ciphertext_length",
         ),
         CheckConstraint(
-            "(status = 'SUBMITTED' AND reviewer_user_id IS NULL "
+            "(status = 'SUBMITTED' AND reviewer_principal_id IS NULL "
             "AND reviewed_at IS NULL AND review_reason IS NULL "
             "AND approved_venue_id IS NULL) OR "
-            "(status = 'APPROVED' AND reviewer_user_id IS NOT NULL "
+            "(status = 'APPROVED' AND reviewer_principal_id IS NOT NULL "
             "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
             "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NOT NULL) OR "
-            "(status = 'REJECTED' AND reviewer_user_id IS NOT NULL "
+            "(status = 'REJECTED' AND reviewer_principal_id IS NOT NULL "
             "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
             "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NULL)",
             name="ck_onboarding_applications_review_state",
+        ),
+        CheckConstraint(
+            "reviewer_principal_id IS NULL OR length(trim(reviewer_principal_id)) > 0",
+            name="ck_onboarding_applications_reviewer_principal",
         ),
         CheckConstraint(
             "reviewed_at IS NULL OR reviewed_at >= submitted_at",
@@ -1046,15 +1050,7 @@ class VenueOnboardingApplication(Base):
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey(
-            "users.id",
-            name="fk_onboarding_applications_reviewer_user",
-            ondelete="RESTRICT",
-        ),
-        nullable=True,
-    )
+    reviewer_principal_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved_venue_id: Mapped[uuid.UUID | None] = mapped_column(

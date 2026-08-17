@@ -62,7 +62,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.Column("reviewer_user_id", sa.UUID(), nullable=True),
+        sa.Column("reviewer_principal_id", sa.String(length=128), nullable=True),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("review_reason", sa.Text(), nullable=True),
         sa.Column("approved_venue_id", sa.UUID(), nullable=True),
@@ -131,16 +131,20 @@ def upgrade() -> None:
             name="ck_onboarding_applications_phone_ciphertext_length",
         ),
         sa.CheckConstraint(
-            "(status = 'SUBMITTED' AND reviewer_user_id IS NULL "
+            "(status = 'SUBMITTED' AND reviewer_principal_id IS NULL "
             "AND reviewed_at IS NULL AND review_reason IS NULL "
             "AND approved_venue_id IS NULL) OR "
-            "(status = 'APPROVED' AND reviewer_user_id IS NOT NULL "
+            "(status = 'APPROVED' AND reviewer_principal_id IS NOT NULL "
             "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
             "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NOT NULL) OR "
-            "(status = 'REJECTED' AND reviewer_user_id IS NOT NULL "
+            "(status = 'REJECTED' AND reviewer_principal_id IS NOT NULL "
             "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
             "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NULL)",
             name="ck_onboarding_applications_review_state",
+        ),
+        sa.CheckConstraint(
+            "reviewer_principal_id IS NULL OR length(trim(reviewer_principal_id)) > 0",
+            name="ck_onboarding_applications_reviewer_principal",
         ),
         sa.CheckConstraint(
             "reviewed_at IS NULL OR reviewed_at >= submitted_at",
@@ -160,12 +164,6 @@ def upgrade() -> None:
             ["target_venue_id"],
             ["venues.id"],
             name="fk_onboarding_applications_target_venue",
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["reviewer_user_id"],
-            ["users.id"],
-            name="fk_onboarding_applications_reviewer_user",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(

@@ -34,9 +34,9 @@ def _config(engine: Engine) -> Config:
     return config
 
 
-def _seed_principals(engine: Engine) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID]:
+def _seed_principals(engine: Engine) -> tuple[uuid.UUID, str, uuid.UUID, uuid.UUID]:
     applicant_id = uuid.uuid4()
-    reviewer_id = uuid.uuid4()
+    reviewer_principal_id = "ops-1"
     target_venue_id = uuid.uuid4()
     other_venue_id = uuid.uuid4()
     users = Table("users", MetaData(), autoload_with=engine)
@@ -74,11 +74,6 @@ def _seed_principals(engine: Engine) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, u
                     "wechat_app_id": "wx-onboarding",
                     "wechat_openid": f"applicant-{applicant_id}",
                 },
-                {
-                    "id": reviewer_id,
-                    "wechat_app_id": "wx-onboarding",
-                    "wechat_openid": f"reviewer-{reviewer_id}",
-                },
             ],
         )
         connection.execute(
@@ -98,7 +93,7 @@ def _seed_principals(engine: Engine) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, u
                 },
             ],
         )
-    return applicant_id, reviewer_id, target_venue_id, other_venue_id
+    return applicant_id, reviewer_principal_id, target_venue_id, other_venue_id
 
 
 def _claim(
@@ -125,7 +120,7 @@ def _claim(
         "contact_name": "张三",
         "status": "SUBMITTED",
         "submitted_at": datetime(2026, 8, 1, tzinfo=UTC),
-        "reviewer_user_id": None,
+        "reviewer_principal_id": None,
         "reviewed_at": None,
         "review_reason": None,
         "approved_venue_id": None,
@@ -237,11 +232,13 @@ def test_application_kind_fields_are_isolated(migration_engine: Engine) -> None:
 
 def test_application_review_state_is_consistent(migration_engine: Engine) -> None:
     command.upgrade(_config(migration_engine), "0011")
-    applicant_id, reviewer_id, target_venue_id, other_venue_id = _seed_principals(migration_engine)
+    applicant_id, reviewer_principal_id, target_venue_id, other_venue_id = _seed_principals(
+        migration_engine
+    )
     reviewed_at = datetime.now(UTC)
 
     for field, value in {
-        "reviewer_user_id": reviewer_id,
+        "reviewer_principal_id": reviewer_principal_id,
         "reviewed_at": reviewed_at,
         "review_reason": "not allowed yet",
         "approved_venue_id": target_venue_id,
@@ -255,13 +252,18 @@ def test_application_review_state_is_consistent(migration_engine: Engine) -> Non
         applicant_id,
         target_venue_id,
         status="APPROVED",
-        reviewer_user_id=reviewer_id,
+        reviewer_principal_id=reviewer_principal_id,
         reviewed_at=reviewed_at,
         review_reason="ownership verified",
         approved_venue_id=target_venue_id,
     )
     _insert_application(migration_engine, approved)
-    for field in ("reviewer_user_id", "reviewed_at", "review_reason", "approved_venue_id"):
+    for field in (
+        "reviewer_principal_id",
+        "reviewed_at",
+        "review_reason",
+        "approved_venue_id",
+    ):
         _assert_application_rejected(
             migration_engine,
             {**approved, "id": uuid.uuid4(), field: None},
@@ -272,18 +274,22 @@ def test_application_review_state_is_consistent(migration_engine: Engine) -> Non
     )
     _assert_application_rejected(
         migration_engine,
+        {**approved, "id": uuid.uuid4(), "reviewer_principal_id": "   "},
+    )
+    _assert_application_rejected(
+        migration_engine,
         {**approved, "id": uuid.uuid4(), "approved_venue_id": other_venue_id},
     )
 
     rejected = _create(
         applicant_id,
         status="REJECTED",
-        reviewer_user_id=reviewer_id,
+        reviewer_principal_id=reviewer_principal_id,
         reviewed_at=reviewed_at,
         review_reason="identity could not be verified",
     )
     _insert_application(migration_engine, rejected)
-    for field in ("reviewer_user_id", "reviewed_at", "review_reason"):
+    for field in ("reviewer_principal_id", "reviewed_at", "review_reason"):
         _assert_application_rejected(
             migration_engine,
             {**rejected, "id": uuid.uuid4(), field: None},
@@ -302,7 +308,9 @@ def test_only_one_matching_submitted_application_is_allowed(
     migration_engine: Engine,
 ) -> None:
     command.upgrade(_config(migration_engine), "0011")
-    applicant_id, reviewer_id, target_venue_id, _ = _seed_principals(migration_engine)
+    applicant_id, reviewer_principal_id, target_venue_id, _ = _seed_principals(
+        migration_engine
+    )
 
     _insert_application(migration_engine, _claim(applicant_id, target_venue_id))
     _assert_application_rejected(migration_engine, _claim(applicant_id, target_venue_id))
@@ -314,7 +322,7 @@ def test_only_one_matching_submitted_application_is_allowed(
             applicant_id,
             target_venue_id,
             status="REJECTED",
-            reviewer_user_id=reviewer_id,
+            reviewer_principal_id=reviewer_principal_id,
             reviewed_at=reviewed_at,
             review_reason="retry allowed after review",
         ),
