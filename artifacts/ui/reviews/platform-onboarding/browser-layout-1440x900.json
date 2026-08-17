@@ -1,0 +1,95 @@
+{
+  "capturedAt": "2026-08-17T08:10:43Z",
+  "browser": "Chromium via Playwright CLI",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "referenceSha256": "0c2d65befb6205e051de7e108aa0fa52dc2ec5914c6b470d3d910d6f981a4f6e",
+  "implementationSourceSha256": "719ea32911792685495153ba2825c838455e6eecbc9dc1f3cb76f8f01b295551",
+  "focusChecks": {
+    "modalInitialFocus": "close-evidence",
+    "modalBackgroundInert": true,
+    "modalTabStayedInside": true,
+    "modalShiftTabStayedInside": true,
+    "modalEscapeClosed": true,
+    "modalEscapeRestoredTrigger": "open-evidence:evidence-claim-authorization",
+    "modalButtonRestoredTrigger": "open-evidence:evidence-claim-authorization",
+    "modalScrimRestoredTrigger": "open-evidence:evidence-claim-authorization",
+    "filterKindFocus": "filter-kind",
+    "filterStatusFocus": "filter-status",
+    "selectedRowFocus": "select-row:app-create-pending",
+    "emptyAfterFilteredDecision": true,
+    "filteredDecisionFocus": "main-content"
+  },
+  "states": {
+    "login": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "pending": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "approved": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "rejected": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "expired-evidence-link": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    },
+    "decision-error": {
+      "frame": { "width": 1440, "height": 900 },
+      "renderedRoot": { "width": 1440, "height": 900 }
+    }
+  },
+  "captureManifest": {
+    "login": {
+      "reference": { "file": "login-reference-1440x900.png", "sha256": "0e781a9f052124a7b922a92de919129db36cba4c3901f03aba7d046589809390" },
+      "implementation": { "file": "login-implementation-1440x900.png", "sha256": "dff07765d04bf49b200b6d5afa3798414259fe0aa1c2863d1c74f752b019b09a" },
+      "sideBySide": { "file": "login-side-by-side-1440x900.png", "sha256": "b528fbfc08ce472df101316f53196baf2392b3c1ecb8dbb369408efb24d409b3" },
+      "overlay50": { "file": "login-overlay-50-1440x900.png", "sha256": "516f7918378d2a8e881ceb714a2d7d51c870e29503d4c495c8afc3501f86f40c" },
+      "difference": { "file": "login-difference-1440x900.png", "sha256": "289ec62c4be92b9a8ff10f213a40dd3b7c855076542d91dc45920f42c771fa52" }
+    },
+    "pending": {
+      "reference": { "file": "pending-reference-1440x900.png", "sha256": "2b845ca57db71e1ff5f9a3891e7f7c4c5255b04a2c8745017547f8466779ca93" },
+      "implementation": { "file": "pending-implementation-1440x900.png", "sha256": "a7bcb45509bf8293c446c2b8e26a89e7b7987608be8e35f373b368f82268d485" },
+      "sideBySide": { "file": "pending-side-by-side-1440x900.png", "sha256": "038c6a542ad99ad5f3939ef955baabc3078113cfb186429e86fb7b6b249863b8" },
+      "overlay50": { "file": "pending-overlay-50-1440x900.png", "sha256": "6d985eab30afff23e561753a8978c7e5063b9cff3b2e3666b2df1f8bb75e52b1" },
+      "difference": { "file": "pending-difference-1440x900.png", "sha256": "d16a7f82763dfdb19ab659c52fa15fbb4f05e1cf8fb3de4abd6d0b6fa013e5f5" }
+    },
+    "approved": {
+      "reference": { "file": "approved-reference-1440x900.png", "sha256": "b11e1e927ae1df4cf43ce80084d54499f0173c1afea076024a880f56c5bda857" },
+      "implementation": { "file": "approved-implementation-1440x900.png", "sha256": "d0c42672098b55f1820197bb5fff1ec300365111d0ea107789fede37ca3e2c0e" },
+      "sideBySide": { "file": "approved-side-by-side-1440x900.png", "sha256": "2ebc9e078f3b148ef4b588e1e7928be88f11478966c0fdf1bc1c4f7a0fe062e4" },
+      "overlay50": { "file": "approved-overlay-50-1440x900.png", "sha256": "8d6b8efc776e225e255a7c98aea3995a54490ab057a08e23927be743a44b0f07" },
+      "difference": { "file": "approved-difference-1440x900.png", "sha256": "45766ad1c0593539521875f7af313072958a29b1df417d6e9f03b6efa039aff4" }
+    },
+    "rejected": {
+      "reference": { "file": "rejected-reference-1440x900.png", "sha256": "49f3149d0cf314e0feb68d65d1f34045d6f21d282ccbec68f8584c76f897e0d9" },
+      "implementation": { "file": "rejected-implementation-1440x900.png", "sha256": "6ba821fbaa53a499a66935ec880784880e688e0ea962f85e27d69d220bccfc4d" },
+      "sideBySide": { "file": "rejected-side-by-side-1440x900.png", "sha256": "c35810de4186ba0cc2fb4b9c17c9604edb7bc510352ac4a6b54ca1f9a2fb17c9" },
+      "overlay50": { "file": "rejected-overlay-50-1440x900.png", "sha256": "5fe765cea8535a45662987f51324d470e1972a59ed7c3698d4183e7ac5efe5f1" },
+      "difference": { "file": "rejected-difference-1440x900.png", "sha256": "84609f050b44c636e35e796d1b0136a637490c0500946d329ff17ae2907ad5da" }
+    },
+    "expired-evidence-link": {
+      "reference": { "file": "expired-evidence-link-reference-1440x900.png", "sha256": "077b2b1672bb8fb4a03ea863c2fd3e2f43334d56e98966e36889b6b2bc822112" },
+      "implementation": { "file": "expired-evidence-link-implementation-1440x900.png", "sha256": "38b132e98901e9b7d3304769cbb7411fe5f0ac19eefc9893cf87f4b9221478db" },
+      "sideBySide": { "file": "expired-evidence-link-side-by-side-1440x900.png", "sha256": "a1d6eff0a3b9e4e34bf1e2c0e9c2d80b4e43e4a51861a6fe33492f0466925c61" },
+      "overlay50": { "file": "expired-evidence-link-overlay-50-1440x900.png", "sha256": "097cedff9af8d305431beec7e09c7d29183321cbe8ff0e7ab52da90bac43a709" },
+      "difference": { "file": "expired-evidence-link-difference-1440x900.png", "sha256": "4aa8a81f8ea0f3f475e79ab1879fa35cff0c455be63f970fb2485a0f6d05d7c6" }
+    },
+    "decision-error": {
+      "reference": { "file": "decision-error-reference-1440x900.png", "sha256": "03bc92fe57f43eb84cb6c4b8210c1c59bc8b112d3fd542451faadc5e4e7c2a8f" },
+      "implementation": { "file": "decision-error-implementation-1440x900.png", "sha256": "82db6d788b15992af17fa8ad45f3f036bf8f389dc70dfa28e708f4a4b9031c6a" },
+      "sideBySide": { "file": "decision-error-side-by-side-1440x900.png", "sha256": "d5bc3fd4706352ac325c4ce9d10befd2a32ea03eabbfa23d1d33cf229edcc7e2" },
+      "overlay50": { "file": "decision-error-overlay-50-1440x900.png", "sha256": "36dcace49edcc5169cacb8702e0ea715663d4363e8f48f149500e4ffd9530bce" },
+      "difference": { "file": "decision-error-difference-1440x900.png", "sha256": "b7bbfc59f7f92998f209da364426c77b179f55d3d704c4c1bcc89cb108a76727" }
+    }
+  }
+}
