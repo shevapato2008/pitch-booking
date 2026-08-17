@@ -3,19 +3,21 @@
     {
       "application_id": "51479910-178f-43ba-941a-93c1aa8247f8",
       "kind": "CREATE",
-      "status": "SUBMITTED",
+      "status": "REJECTED",
+      "rejection_reason": "请补充最新的场馆管理授权书",
       "venue": {
         "venue_id": null,
         "name": "前滩社区足球场",
         "address": "前滩大道88号"
       },
       "submitted_at": "2026-08-17T09:35:00+08:00",
-      "updated_at": "2026-08-17T09:35:00+08:00"
+      "updated_at": "2026-08-17T10:05:00+08:00"
     },
     {
       "application_id": "1ec742d8-f301-4e39-8f74-bd2f8757c163",
       "kind": "CLAIM",
       "status": "SUBMITTED",
+      "rejection_reason": null,
       "venue": {
         "venue_id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
         "name": "浦东滨江足球公园",

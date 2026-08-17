@@ -97,6 +97,7 @@ class VenueOnboardingApplicationResponse(ClosedModel):
     application_id: uuid.UUID
     kind: VenueOnboardingKind
     status: VenueOnboardingStatus
+    rejection_reason: str | None = Field(min_length=1)
     venue: VenueOnboardingApplicationVenue
     submitted_at: datetime
     updated_at: datetime
