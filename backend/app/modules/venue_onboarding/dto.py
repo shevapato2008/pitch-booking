@@ -97,6 +97,15 @@ class VenueOnboardingApplicationResponse(ClosedModel):
     application_id: uuid.UUID
     kind: VenueOnboardingKind
     status: VenueOnboardingStatus
+    venue: VenueOnboardingApplicationVenue
+    submitted_at: datetime
+    updated_at: datetime
+
+
+class VenueOnboardingApplicantApplication(ClosedModel):
+    application_id: uuid.UUID
+    kind: VenueOnboardingKind
+    status: VenueOnboardingStatus
     rejection_reason: str | None = Field(min_length=1)
     venue: VenueOnboardingApplicationVenue
     submitted_at: datetime
@@ -104,7 +113,7 @@ class VenueOnboardingApplicationResponse(ClosedModel):
 
 
 class VenueOnboardingApplications(ClosedModel):
-    items: list[VenueOnboardingApplicationResponse]
+    items: list[VenueOnboardingApplicantApplication]
     next_cursor: str | None
 
 

@@ -763,8 +763,11 @@ def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone
         "APPROVED",
         "REJECTED",
     ]
-    assert "rejection_reason" in application["required"]
-    assert application["properties"]["rejection_reason"] == {
+    assert "rejection_reason" not in application["required"]
+    assert "rejection_reason" not in application["properties"]
+    applicant_application = schemas["VenueOnboardingApplicantApplication"]
+    assert "rejection_reason" in applicant_application["required"]
+    assert applicant_application["properties"]["rejection_reason"] == {
         "description": "Applicant-visible reason populated only for a rejected application.",
         "type": ["string", "null"],
         "minLength": 1,
@@ -774,6 +777,9 @@ def test_venue_onboarding_submission_schemas_require_exact_evidence_and_no_phone
     applications = schemas["VenueOnboardingApplications"]
     assert applications["additionalProperties"] is False
     assert set(applications["required"]) == {"items", "next_cursor"}
+    assert applications["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/VenueOnboardingApplicantApplication"
+    }
 
 
 def test_venue_create_request_requires_authoritative_location() -> None:
