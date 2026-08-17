@@ -24,6 +24,12 @@
       && (filters.status === "ALL" || application.status === filters.status)
     ));
 
+    const reconcileSelection = () => {
+      const visible = getVisibleApplications();
+      if (!visible.some((application) => application.id === selectedId)) selectedId = visible[0]?.id || null;
+      return visible;
+    };
+
     const getSelectedApplication = () => applications.find((application) => application.id === selectedId) || null;
 
     const findEvidence = (evidenceId) => {
@@ -67,8 +73,7 @@
         kind: nextFilters.kind || filters.kind,
         status: nextFilters.status || filters.status,
       };
-      const visible = getVisibleApplications();
-      if (!visible.some((application) => application.id === selectedId)) selectedId = visible[0]?.id || null;
+      const visible = reconcileSelection();
       evidencePanel = null;
       return visible;
     };
@@ -128,6 +133,7 @@
         reviewer: fixture.meta.reviewerName,
         reviewedAt: "2026-08-17 10:28",
       };
+      reconcileSelection();
       feedback = {
         type: "success",
         message: outcome === "APPROVED" ? "Fixture 已标记为通过，不会提交" : "Fixture 已标记为驳回，不会提交",
@@ -169,6 +175,7 @@
   const previewCase = params.get("case") || "pending";
   const store = createStore(fixture, { previewCase });
   const decisionDrafts = new Map();
+  let evidenceTrigger = null;
 
   const escapeHtml = (value) => String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -241,11 +248,12 @@
   };
 
   const renderEvidencePanel = (panel) => panel ? `
-    <div class="evidence-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-title"><button class="evidence-dialog__scrim" data-action="close-evidence" type="button" aria-label="关闭证据预览"></button><section class="evidence-dialog__panel"><header><div><p class="eyebrow">Evidence preview</p><h2 id="evidence-title">${escapeHtml(panel.label)}</h2></div><button class="icon-button" data-action="close-evidence" type="button" aria-label="关闭证据预览"><span aria-hidden="true">×</span></button></header><div class="document-preview"><span class="document-preview__badge">${escapeHtml(panel.format)}</span><span class="document-preview__line document-preview__line--wide"></span><span class="document-preview__line"></span><span class="document-preview__stamp">仅供审核</span></div><dl class="evidence-facts"><div><dt>文件名</dt><dd>${escapeHtml(panel.filename)}</dd></div><div><dt>文件大小</dt><dd>${escapeHtml(panel.size)}</dd></div><div><dt>接收时间</dt><dd>${escapeHtml(panel.receivedAt)}</dd></div></dl><p class="fixture-note">本地示意面板，不包含真实私密文件。</p></section></div>` : "";
+    <div class="evidence-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-title"><button class="evidence-dialog__scrim" data-action="close-evidence" type="button" tabindex="-1" aria-label="关闭证据预览"></button><section class="evidence-dialog__panel" tabindex="-1"><header><div><p class="eyebrow">Evidence preview</p><h2 id="evidence-title">${escapeHtml(panel.label)}</h2></div><button class="icon-button" data-action="close-evidence" data-evidence-initial-focus type="button" aria-label="关闭证据预览"><span aria-hidden="true">×</span></button></header><div class="document-preview"><span class="document-preview__badge">${escapeHtml(panel.format)}</span><span class="document-preview__line document-preview__line--wide"></span><span class="document-preview__line"></span><span class="document-preview__stamp">仅供审核</span></div><dl class="evidence-facts"><div><dt>文件名</dt><dd>${escapeHtml(panel.filename)}</dd></div><div><dt>文件大小</dt><dd>${escapeHtml(panel.size)}</dd></div><div><dt>接收时间</dt><dd>${escapeHtml(panel.receivedAt)}</dd></div></dl><p class="fixture-note">本地示意面板，不包含真实私密文件。</p></section></div>` : "";
 
   const renderReview = (state) => {
     const applications = store.getVisibleApplications();
     const application = store.getSelectedApplication();
+    const backgroundInert = state.evidencePanel ? " inert" : "";
     const alert = state.feedback ? `<div class="alert alert--${escapeHtml(state.feedback.type)}" role="status"><span class="alert__mark" aria-hidden="true">${state.feedback.type === "error" ? "×" : state.feedback.type === "success" ? "✓" : "!"}</span><span><strong>${state.feedback.type === "error" ? "操作未完成" : state.feedback.type === "success" ? "Fixture 已更新" : "需要处理"}</strong>${escapeHtml(state.feedback.message)}</span>${state.feedback.type === "error" && /状态可能已变化/.test(state.feedback.message) ? `<button class="button button--small button--quiet" data-action="refresh-detail" type="button">刷新详情</button>` : ""}</div>` : "";
     const empty = !application ? `<div class="empty-state"><span class="empty-state__mark" aria-hidden="true"></span><h2>没有匹配的申请</h2><p>调整申请类型或审核状态筛选条件。</p></div>` : `
       <header class="detail-heading"><div><p class="eyebrow">${escapeHtml(kindLabel(application.kind))}</p><h2>${escapeHtml(venueName(application))}</h2><p>申请编号 ${escapeHtml(application.number)} · 提交于 ${escapeHtml(application.submittedAt)}</p></div><div class="detail-heading__badges">${badge(application.kind, application.kind.toLowerCase())}${badge(statusLabel(application.status), application.status.toLowerCase())}</div></header>
@@ -253,18 +261,32 @@
       <div class="risk-callout"><span class="risk-callout__mark" aria-hidden="true">!</span><span><strong>${escapeHtml(application.duplicateRisk.title)}</strong>${escapeHtml(application.duplicateRisk.detail)}<small>${escapeHtml(application.duplicateRisk.match)}</small></span></div>
       <div class="detail-grid"><div class="content-stack">${renderIdentity(application)}${renderEvidence(application)}</div><aside>${renderDecision(application, state.feedback)}</aside></div>`;
     return `
-      <div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台入驻审核</strong><small>${escapeHtml(fixture.meta.environmentLabel)}</small></span></div><div class="preview-switcher" aria-label="预览状态">${Object.keys(fixture.previewCases).map((name) => `<button class="preview-switcher__item${name === state.previewCase ? " is-active" : ""}" data-action="set-case" data-id="${escapeHtml(name)}" type="button">${escapeHtml(name)}</button>`).join("")}</div><div class="reviewer">${badge(fixture.meta.reviewerRole, "role")}<span>${escapeHtml(fixture.meta.reviewerName)}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>
-        <div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p>优先处理已等待超过 24 小时的申请。</p><div class="filters"><label><span>申请类型</span><select data-action="filter-kind"><option value="ALL"${state.filters.kind === "ALL" ? " selected" : ""}>全部类型</option><option value="CLAIM"${state.filters.kind === "CLAIM" ? " selected" : ""}>认领已有场馆</option><option value="CREATE"${state.filters.kind === "CREATE" ? " selected" : ""}>创建新场馆</option></select></label><label><span>审核状态</span><select data-action="filter-status"><option value="ALL"${state.filters.status === "ALL" ? " selected" : ""}>全部状态</option><option value="SUBMITTED"${state.filters.status === "SUBMITTED" ? " selected" : ""}>待审核</option><option value="APPROVED"${state.filters.status === "APPROVED" ? " selected" : ""}>已通过</option><option value="REJECTED"${state.filters.status === "REJECTED" ? " selected" : ""}>已驳回</option></select></label></div></div><div class="queue__summary"><strong>${applications.length}</strong> 条申请<span>按提交时间排序</span></div><div class="queue__list">${applications.map((item) => renderQueueRow(item, state.selectedId)).join("")}</div><p class="queue__truth">${escapeHtml(fixture.meta.truthLabel)}</p></aside>
-          <main class="detail" id="main-content">${empty}</main></div>${renderEvidencePanel(state.evidencePanel)}
+      <div class="console-shell"><header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台入驻审核</strong><small>${escapeHtml(fixture.meta.environmentLabel)}</small></span></div><div class="preview-switcher" aria-label="预览状态">${Object.keys(fixture.previewCases).map((name) => `<button class="preview-switcher__item${name === state.previewCase ? " is-active" : ""}" data-action="set-case" data-id="${escapeHtml(name)}" type="button">${escapeHtml(name)}</button>`).join("")}</div><div class="reviewer">${badge(fixture.meta.reviewerRole, "role")}<span>${escapeHtml(fixture.meta.reviewerName)}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>
+        <div class="workspace"${backgroundInert}><aside class="queue"><div class="queue__head"><p class="eyebrow">Application queue</p><h1>入驻申请</h1><p>优先处理已等待超过 24 小时的申请。</p><div class="filters"><label><span>申请类型</span><select data-action="filter-kind"><option value="ALL"${state.filters.kind === "ALL" ? " selected" : ""}>全部类型</option><option value="CLAIM"${state.filters.kind === "CLAIM" ? " selected" : ""}>认领已有场馆</option><option value="CREATE"${state.filters.kind === "CREATE" ? " selected" : ""}>创建新场馆</option></select></label><label><span>审核状态</span><select data-action="filter-status"><option value="ALL"${state.filters.status === "ALL" ? " selected" : ""}>全部状态</option><option value="SUBMITTED"${state.filters.status === "SUBMITTED" ? " selected" : ""}>待审核</option><option value="APPROVED"${state.filters.status === "APPROVED" ? " selected" : ""}>已通过</option><option value="REJECTED"${state.filters.status === "REJECTED" ? " selected" : ""}>已驳回</option></select></label></div></div><div class="queue__summary"><strong>${applications.length}</strong> 条申请<span>按提交时间排序</span></div><div class="queue__list">${applications.map((item) => renderQueueRow(item, state.selectedId)).join("")}</div><p class="queue__truth">${escapeHtml(fixture.meta.truthLabel)}</p></aside>
+          <main class="detail" id="main-content" tabindex="-1">${empty}</main></div>${renderEvidencePanel(state.evidencePanel)}
       </div>`;
   };
 
-  const render = () => {
+  const findActionControl = (target) => [...root.querySelectorAll("[data-action]")]
+    .find((control) => control.dataset.action === target.action && (!target.id || control.dataset.id === target.id));
+
+  const focusAfterRender = (target) => scope.requestAnimationFrame(() => {
+    const control = target?.selector ? root.querySelector(target.selector) : target ? findActionControl(target) : null;
+    control?.focus();
+  });
+
+  const render = (focusTarget) => {
     const state = store.getState();
     root.innerHTML = state.screen === "login" ? renderLogin(state) : renderReview(state);
+    if (focusTarget) focusAfterRender(focusTarget);
   };
 
-  const focusAfterError = () => scope.requestAnimationFrame(() => document.getElementById("decision-reason")?.focus());
+  const closeEvidenceAndRestore = () => {
+    const focusTarget = evidenceTrigger || { selector: "#main-content" };
+    evidenceTrigger = null;
+    store.closeEvidence();
+    render(focusTarget);
+  };
 
   root.addEventListener("submit", (event) => {
     if (event.target.matches('[data-form="login"]')) event.preventDefault();
@@ -280,11 +302,36 @@
   root.addEventListener("change", (event) => {
     if (event.target.matches('[data-action="filter-kind"]')) {
       store.setFilters({ kind: event.target.value });
-      render();
+      render({ action: "filter-kind" });
     }
     if (event.target.matches('[data-action="filter-status"]')) {
       store.setFilters({ status: event.target.value });
-      render();
+      render({ action: "filter-status" });
+    }
+  });
+
+  root.addEventListener("keydown", (event) => {
+    const dialog = root.querySelector(".evidence-dialog");
+    if (!dialog) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeEvidenceAndRestore();
+      return;
+    }
+    if (event.key === "Tab") {
+      const focusable = [...dialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first) {
+        event.preventDefault();
+        dialog.querySelector(".evidence-dialog__panel")?.focus();
+      } else if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   });
 
@@ -296,28 +343,54 @@
     if (action === "login") {
       event.preventDefault();
       const result = store.login(document.getElementById("access-token")?.value);
-      render();
-      if (!result.ok) scope.requestAnimationFrame(() => document.getElementById("access-token")?.focus());
+      render({ selector: result.ok ? "#main-content" : "#access-token" });
       return;
     }
-    if (action === "logout") store.logout();
-    if (action === "select-row") store.selectApplication(id);
-    if (action === "open-evidence") store.openEvidence(id);
-    if (action === "close-evidence") store.closeEvidence();
-    if (action === "refresh-evidence") store.refreshEvidence(id);
-    if (action === "refresh-detail") store.refreshDetail();
+    if (action === "logout") {
+      store.logout();
+      render({ selector: "#access-token" });
+      return;
+    }
+    if (action === "select-row") {
+      store.selectApplication(id);
+      render({ action: "select-row", id });
+      return;
+    }
+    if (action === "open-evidence") {
+      const result = store.openEvidence(id);
+      if (result.ok) evidenceTrigger = { action: "open-evidence", id };
+      render(result.ok ? { selector: "[data-evidence-initial-focus]" } : { action: "open-evidence", id });
+      return;
+    }
+    if (action === "close-evidence") {
+      closeEvidenceAndRestore();
+      return;
+    }
+    if (action === "refresh-evidence") {
+      store.refreshEvidence(id);
+      render({ action: "open-evidence", id });
+      return;
+    }
+    if (action === "refresh-detail") {
+      store.refreshDetail();
+      render({ selector: "#decision-reason" });
+      return;
+    }
     if (action === "approve" || action === "reject") {
       const outcome = action === "approve" ? "APPROVED" : "REJECTED";
       const result = store.decide(outcome, document.getElementById("decision-reason")?.value);
-      render();
-      if (!result.ok && /理由/.test(result.error)) focusAfterError();
+      const focusTarget = result.ok
+        ? { selector: "#main-content" }
+        : /理由/.test(result.error)
+          ? { selector: "#decision-reason" }
+          : { action: "refresh-detail" };
+      render(focusTarget);
       return;
     }
     if (action === "set-case") {
       scope.location.search = `?case=${encodeURIComponent(id)}`;
       return;
     }
-    render();
   });
 
   render();

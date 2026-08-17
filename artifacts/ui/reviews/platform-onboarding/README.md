@@ -9,7 +9,8 @@ This is a development-only static Fixture. Every local decision is reset on relo
 - Runtime: plain HTML/CSS/JavaScript served from a temporary `127.0.0.1` static server.
 - Browser: real Chromium driven through Playwright CLI.
 - Viewport: exactly `1440 × 900` CSS pixels for every source capture.
-- Layout evidence: `browser-layout-1440x900.json` records live `getBoundingClientRect()` values for `#frame` and its rendered root in all six states, tied to the current reference source SHA-256. Both bounds are `1440 × 900` in every state.
+- Layout evidence: `browser-layout-1440x900.json` records live `getBoundingClientRect()` values for `#frame` and its rendered root in all six states, tied to the current reference SHA-256 and the combined SHA-256 of implementation `index.html`, `styles.css`, `app.js`, and `fixture.js`. Both bounds are `1440 × 900` in every state.
+- Capture manifest: the same evidence file records the SHA-256 of all 30 source/comparison PNGs, so screenshots cannot silently drift from the reviewed implementation.
 - Browser console after the interaction audit: `0 errors, 0 warnings`.
 - Reference: `artifacts/ui/reference/platform-onboarding/index.html?case=<state>`.
 - Implementation: `platform-admin/dev/index.html?case=<state>`.
@@ -35,13 +36,13 @@ The source and all comparison images were recaptured after explicitly sizing ref
 | --- | --- |
 | Login submit | Empty token shows an inline error and focuses the token field; any non-empty preview token opens the queue. |
 | Logout | Returns to the staff login frame and clears open evidence/feedback state. |
-| Kind filter | `CREATE` reduces the queue to create applications and selects the first visible row. |
-| Status filter | `SUBMITTED` combines with the kind filter and reduces the queue to the pending create application. |
-| Queue rows | Clicking/filtered selection changes applicant, claim/create identity, evidence, and decision detail. |
-| View evidence | Opens a labeled modal with file name, size, received time, close button, scrim close, and an explicit local-placeholder note. |
+| Kind filter | `CREATE` reduces the queue to create applications, selects the first visible row, and restores focus to the rebuilt kind filter. |
+| Status filter | `SUBMITTED` combines with the kind filter, reduces the queue to the pending create application, and restores focus to the rebuilt status filter. |
+| Queue rows | Clicking/filtered selection changes applicant, claim/create identity, evidence, and decision detail, then focuses the rebuilt selected row. |
+| View evidence | Opens a labeled modal and focuses its close button; background console regions are inert, forward/reverse Tab remain inside, and Escape, close button, or scrim close restores the exact trigger. |
 | Expired evidence | Shows a page-level warning and `链接已过期 · 重新获取`; refresh changes only Fixture state, then the same evidence opens normally. |
-| Reject | Empty reason is blocked with `请填写驳回理由` beside and focused on the field; a nonblank reason updates the selected Fixture to `REJECTED`. |
-| Approve | A nonblank reason updates the selected Fixture to `APPROVED`; the audit result names the local reviewer and remains visibly non-production. |
+| Reject | Empty reason is blocked with `请填写驳回理由` beside and focused on the field; a nonblank reason updates the selected Fixture to `REJECTED`. If current filters exclude it, selection moves to the next real row or an empty detail. |
+| Approve | A nonblank reason updates the selected Fixture to `APPROVED`; the audit result names the local reviewer and remains visibly non-production. If current filters exclude it, selection moves to the next real row or an empty detail. |
 | Decision error | The decision stays `SUBMITTED`, the error explains the state-change risk, and `刷新详情` enables an explicit retry. |
 | State switcher | All six frozen presentations can be opened directly without sharing mutable state between cases. |
 
@@ -67,6 +68,7 @@ The 50% overlay and pixel difference show the expected density and component-pla
 - Claim detail shows only the existing target venue; create detail shows only proposed identity, district, address, and coordinates.
 - Login, pending, approved, rejected, expired evidence, and decision error copy is truthful and paired with visible recovery or audit information.
 - Keyboard focus rings are visible, form labels are associated, the error is adjacent to its field, and reduced-motion styling is present.
+- The real-browser focus audit covers login/error/logout, both filters, queue selection, modal initial/Tab/Shift+Tab/Escape/close restoration, expired evidence refresh, decision error refresh/retry, and filtered decision empty state.
 - Known AA pairs retained from the existing product system: `#10243E`/white, `#64748B`/white, and white/`#0369A1`.
 
 ## Remaining gate

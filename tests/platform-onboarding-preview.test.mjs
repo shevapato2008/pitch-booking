@@ -8,10 +8,16 @@ const previewRoot = "platform-admin/dev";
 const referencePath = "artifacts/ui/reference/platform-onboarding/index.html";
 const reviewRoot = "artifacts/ui/reviews/platform-onboarding";
 const layoutEvidencePath = `${reviewRoot}/browser-layout-1440x900.json`;
+const implementationFiles = ["index.html", "styles.css", "app.js", "fixture.js"]
+  .map((filename) => `${previewRoot}/${filename}`);
 
 const read = (relativePath) => readFileSync(relativePath, "utf8");
 const normalizeRealm = (value) => JSON.parse(JSON.stringify(value));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const fileSha256 = (relativePath) => sha256(readFileSync(relativePath));
+const implementationSourceSha256 = () => sha256(implementationFiles
+  .map((relativePath) => `${relativePath}\0${read(relativePath)}`)
+  .join("\0"));
 const pngDimensions = (relativePath) => {
   const png = readFileSync(relativePath);
   assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${relativePath} PNG signature`);
@@ -56,22 +62,46 @@ test("reference freezes login and every review presentation at 1440 by 900", () 
   assert.match(reference, /<link rel="icon" href="data:,"/);
 });
 
-test("real Chromium evidence proves every reference root fills the 1440 by 900 capture", () => {
+test("real Chromium evidence binds current sources, focus behavior, and every 1440 by 900 capture", () => {
   const reference = read(referencePath);
   const evidence = JSON.parse(read(layoutEvidencePath));
   const states = ["login", "pending", "approved", "rejected", "expired-evidence-link", "decision-error"];
+  const captures = {
+    reference: { suffix: "reference-1440x900.png", dimensions: { width: 1440, height: 900 } },
+    implementation: { suffix: "implementation-1440x900.png", dimensions: { width: 1440, height: 900 } },
+    sideBySide: { suffix: "side-by-side-1440x900.png", dimensions: { width: 2880, height: 900 } },
+    overlay50: { suffix: "overlay-50-1440x900.png", dimensions: { width: 1440, height: 900 } },
+    difference: { suffix: "difference-1440x900.png", dimensions: { width: 1440, height: 900 } },
+  };
 
   assert.deepEqual(evidence.viewport, { width: 1440, height: 900 });
   assert.equal(evidence.referenceSha256, sha256(reference), "browser measurements must match the current reference source");
+  assert.equal(evidence.implementationSourceSha256, implementationSourceSha256(), "browser checks must match all current implementation sources");
+  assert.deepEqual(evidence.focusChecks, {
+    modalInitialFocus: "close-evidence",
+    modalBackgroundInert: true,
+    modalTabStayedInside: true,
+    modalShiftTabStayedInside: true,
+    modalEscapeClosed: true,
+    modalEscapeRestoredTrigger: "open-evidence:evidence-claim-authorization",
+    modalButtonRestoredTrigger: "open-evidence:evidence-claim-authorization",
+    modalScrimRestoredTrigger: "open-evidence:evidence-claim-authorization",
+    filterKindFocus: "filter-kind",
+    filterStatusFocus: "filter-status",
+    selectedRowFocus: "select-row:app-create-pending",
+    emptyAfterFilteredDecision: true,
+    filteredDecisionFocus: "main-content",
+  });
 
   for (const state of states) {
     assert.deepEqual(evidence.states[state].frame, { width: 1440, height: 900 }, `${state} #frame browser bounds`);
     assert.deepEqual(evidence.states[state].renderedRoot, { width: 1440, height: 900 }, `${state} rendered root browser bounds`);
-    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-reference-1440x900.png`), { width: 1440, height: 900 });
-    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-implementation-1440x900.png`), { width: 1440, height: 900 });
-    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-side-by-side-1440x900.png`), { width: 2880, height: 900 });
-    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-overlay-50-1440x900.png`), { width: 1440, height: 900 });
-    assert.deepEqual(pngDimensions(`${reviewRoot}/${state}-difference-1440x900.png`), { width: 1440, height: 900 });
+    for (const [captureName, capture] of Object.entries(captures)) {
+      const relativePath = `${reviewRoot}/${state}-${capture.suffix}`;
+      assert.equal(evidence.captureManifest[state][captureName].file, `${state}-${capture.suffix}`);
+      assert.equal(evidence.captureManifest[state][captureName].sha256, fileSha256(relativePath), `${state} ${captureName} capture hash`);
+      assert.deepEqual(pngDimensions(relativePath), capture.dimensions);
+    }
   }
 });
 
@@ -119,6 +149,25 @@ test("preview exposes the frozen queue, detail, evidence, and decision semantics
   assert.match(styles, /\.button[\s\S]*?align-items:\s*center[\s\S]*?justify-content:\s*center/);
   assert.match(styles, /:focus-visible/);
   assert.match(styles, /prefers-reduced-motion/);
+  assert.match(app, /\binert\b/);
+  assert.match(app, /event\.key === "Escape"/);
+  assert.match(app, /event\.key === "Tab"/);
+  assert.match(app, /focusAfterRender/);
+});
+
+test("deciding the only CREATE SUBMITTED result reconciles selection to a real empty detail", () => {
+  const { fixture, preview } = loadPreviewModel();
+  for (const outcome of ["APPROVED", "REJECTED"]) {
+    const store = preview.createStore(fixture, { previewCase: "pending" });
+    store.setFilters({ kind: "CREATE", status: "SUBMITTED" });
+    assert.deepEqual(normalizeRealm(store.getVisibleApplications().map((item) => item.id)), ["app-create-pending"]);
+    assert.equal(store.getSelectedApplication().id, "app-create-pending");
+
+    assert.deepEqual(normalizeRealm(store.decide(outcome, "主体、地址与授权材料核验一致")), { ok: true });
+    assert.deepEqual(normalizeRealm(store.getVisibleApplications()), []);
+    assert.equal(store.getState().selectedId, null);
+    assert.equal(store.getSelectedApplication(), null);
+  }
 });
 
 test("Fixture store performs filters, row selection, login, evidence, and decisions locally", () => {
@@ -145,6 +194,7 @@ test("Fixture store performs filters, row selection, login, evidence, and decisi
   store.closeEvidence();
   assert.equal(store.getState().evidencePanel, null);
 
+  store.setFilters({ status: "ALL" });
   assert.deepEqual(normalizeRealm(store.decide("REJECTED", "")), { ok: false, error: "请填写驳回理由" });
   assert.deepEqual(normalizeRealm(store.decide("APPROVED", "主体、地址与授权材料核验一致")), { ok: true });
   assert.equal(store.getSelectedApplication().status, "APPROVED");
