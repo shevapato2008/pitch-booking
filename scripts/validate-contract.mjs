@@ -68,6 +68,10 @@ const exampleMap = [
       attachment('/api/v1/auth/wechat/session', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/auth/wechat/phone', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/candidates', '422', 'InvalidArgument'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/applications', '422', 'InvalidArgument'),
     ],
   },
   {

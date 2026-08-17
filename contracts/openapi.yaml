@@ -1238,7 +1238,9 @@ paths:
                       error:
                         type: object
                         properties:
-                          code: {const: ONBOARDING_EVIDENCE_INVALID}
+                          code: {enum: [INVALID_ARGUMENT, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
         '503':
           description: Service is temporarily unavailable.
           headers:
@@ -1322,8 +1324,9 @@ paths:
                       error:
                         type: object
                         properties:
-                          code: {enum: [PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
+                          code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
               examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
                 OnboardingEvidenceRequired: {externalValue: './examples/error-onboarding-evidence-required.json'}
                 PhoneAuthRequired: {externalValue: './examples/error-phone-auth-required.json'}
         '503':
@@ -1387,14 +1390,9 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties:
-                      error:
-                        type: object
-                        properties:
-                          code: {enum: [POSSIBLE_DUPLICATE_VENUE, ONBOARDING_APPLICATION_EXISTS, ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+                oneOf:
+                  - $ref: '#/components/schemas/PossibleDuplicateVenueError'
+                  - $ref: '#/components/schemas/VenueOnboardingSubmissionConflictError'
               examples:
                 PossibleDuplicateVenue: {externalValue: './examples/error-possible-duplicate-venue.json'}
                 IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
@@ -1412,8 +1410,9 @@ paths:
                       error:
                         type: object
                         properties:
-                          code: {enum: [PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
+                          code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
               examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
                 OnboardingEvidenceRequired: {externalValue: './examples/error-onboarding-evidence-required.json'}
                 PhoneAuthRequired: {externalValue: './examples/error-phone-auth-required.json'}
         '503':
@@ -1459,6 +1458,23 @@ paths:
               examples:
                 Applications: {externalValue: './examples/venue-onboarding-applications.json'}
         '401': {$ref: '#/components/responses/AuthRequired'}
+        '422':
+          description: Cursor or limit is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: INVALID_ARGUMENT}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
         '503':
           description: Service is temporarily unavailable.
           headers:
@@ -2167,6 +2183,29 @@ components:
       additionalProperties: false
       properties:
         claim_candidate: {$ref: '#/components/schemas/VenueOnboardingCandidate'}
+    PossibleDuplicateVenueError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code, details]
+              properties:
+                code: {const: POSSIBLE_DUPLICATE_VENUE}
+                details: {$ref: '#/components/schemas/PossibleDuplicateVenueDetails'}
+    VenueOnboardingSubmissionConflictError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code]
+              properties:
+                code: {enum: [ONBOARDING_APPLICATION_EXISTS, ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
     ManagedVenue:
       type: object
       additionalProperties: false

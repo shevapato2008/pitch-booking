@@ -3,6 +3,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from jsonschema import Draft202012Validator
+
 from backend.app.main import create_app
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -727,6 +729,29 @@ def test_venue_onboarding_errors_and_examples_are_closed_and_non_disclosing() ->
 
 def test_venue_onboarding_error_responses_freeze_operation_specific_codes() -> None:
     contract = _contract()
+    assert set(
+        contract["paths"][
+            "/api/v1/venue-onboarding/evidence/{evidence_id}/complete"
+        ]["post"]["responses"]
+    ) == {"200", "401", "404", "409", "422", "503"}
+    for path in (
+        "/api/v1/venue-onboarding/claims",
+        "/api/v1/venue-onboarding/venues",
+    ):
+        assert set(contract["paths"][path]["post"]["responses"]) == {
+            "200",
+            "201",
+            "401",
+            "409",
+            "422",
+            "503",
+        }
+    assert set(
+        contract["paths"]["/api/v1/venue-onboarding/applications"]["get"][
+            "responses"
+        ]
+    ) == {"200", "401", "422", "503"}
+
     expected = {
         ("/api/v1/venue-onboarding/candidates", "get", "422"): {
             "INVALID_ARGUMENT"
@@ -752,20 +777,18 @@ def test_venue_onboarding_error_responses_freeze_operation_specific_codes() -> N
             "/api/v1/venue-onboarding/evidence/{evidence_id}/complete",
             "post",
             "422",
-        ): {"ONBOARDING_EVIDENCE_INVALID"},
+        ): {"INVALID_ARGUMENT", "ONBOARDING_EVIDENCE_INVALID"},
         ("/api/v1/venue-onboarding/claims", "post", "409"): {
             "ONBOARDING_APPLICATION_EXISTS",
             "ONBOARDING_APPLICATION_STATE_CHANGED",
             "IDEMPOTENCY_KEY_REUSED",
         },
-        ("/api/v1/venue-onboarding/venues", "post", "409"): {
-            "POSSIBLE_DUPLICATE_VENUE",
-            "ONBOARDING_APPLICATION_EXISTS",
-            "ONBOARDING_APPLICATION_STATE_CHANGED",
-            "IDEMPOTENCY_KEY_REUSED",
+        ("/api/v1/venue-onboarding/applications", "get", "422"): {
+            "INVALID_ARGUMENT"
         },
     }
     submission_validation_codes = {
+        "INVALID_ARGUMENT",
         "PHONE_AUTH_REQUIRED",
         "ONBOARDING_EVIDENCE_REQUIRED",
         "ONBOARDING_EVIDENCE_INVALID",
@@ -794,3 +817,66 @@ def test_venue_onboarding_error_responses_freeze_operation_specific_codes() -> N
         ]
         actual = set(code_schema.get("enum", [code_schema.get("const")]))
         assert actual == codes
+
+    invalid_argument_reference = "./examples/error-invalid-argument.json"
+    for path, method in (
+        ("/api/v1/venue-onboarding/evidence/{evidence_id}/complete", "post"),
+        ("/api/v1/venue-onboarding/claims", "post"),
+        ("/api/v1/venue-onboarding/venues", "post"),
+        ("/api/v1/venue-onboarding/applications", "get"),
+    ):
+        examples = contract["paths"][path][method]["responses"]["422"]["content"][
+            "application/json"
+        ]["examples"]
+        assert examples["InvalidArgument"] == {
+            "externalValue": invalid_argument_reference
+        }
+
+
+def test_possible_duplicate_response_rejects_unrelated_error_details() -> None:
+    contract = _contract()
+    response_schema = _response_schema(
+        contract["paths"]["/api/v1/venue-onboarding/venues"]["post"], "409"
+    )
+    assert response_schema == {
+        "oneOf": [
+            {"$ref": "#/components/schemas/PossibleDuplicateVenueError"},
+            {"$ref": "#/components/schemas/VenueOnboardingSubmissionConflictError"},
+        ]
+    }
+
+    possible_duplicate = contract["components"]["schemas"][
+        "PossibleDuplicateVenueError"
+    ]
+    assert possible_duplicate["allOf"][1]["properties"]["error"]["properties"][
+        "details"
+    ] == {"$ref": "#/components/schemas/PossibleDuplicateVenueDetails"}
+    assert possible_duplicate["allOf"][1]["properties"]["error"]["properties"][
+        "code"
+    ] == {"const": "POSSIBLE_DUPLICATE_VENUE"}
+    submission_conflict = contract["components"]["schemas"][
+        "VenueOnboardingSubmissionConflictError"
+    ]
+    assert set(
+        submission_conflict["allOf"][1]["properties"]["error"]["properties"][
+            "code"
+        ]["enum"]
+    ) == {
+        "ONBOARDING_APPLICATION_EXISTS",
+        "ONBOARDING_APPLICATION_STATE_CHANGED",
+        "IDEMPOTENCY_KEY_REUSED",
+    }
+
+    validator = Draft202012Validator(contract).evolve(schema=response_schema)
+    safe_error = {
+        "error": {
+            "code": "POSSIBLE_DUPLICATE_VENUE",
+            "message": "可能已存在该场馆",
+            "request_id": "req-duplicate",
+            "details": {},
+        }
+    }
+    assert validator.is_valid(safe_error)
+
+    safe_error["error"]["details"] = {"field": "address"}
+    assert not validator.is_valid(safe_error)
