@@ -3,14 +3,18 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
 from backend.app.errors import ErrorEnvelope
 from backend.app.models import User
 from backend.app.modules.auth.router import get_current_user, get_phone_vault
-from backend.app.modules.orders.dto import CreateOrderRequest, OrderDetailResponse
+from backend.app.modules.orders.dto import (
+    CreateOrderRequest,
+    OrderDetailResponse,
+    OrderListResponse,
+)
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.modules.orders.service import OrderService
 from backend.app.security.phone_vault import PhoneVault
@@ -20,6 +24,29 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 def get_order_clock() -> datetime:
     return datetime.now(UTC)
+
+
+@router.get(
+    "",
+    response_model=OrderListResponse,
+    responses={
+        401: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def list_orders(
+    user: Annotated[User, Depends(get_current_user)],
+    database: Annotated[Session, Depends(get_database)],
+    now: Annotated[datetime, Depends(get_order_clock)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    cursor: Annotated[str | None, Query(min_length=1)] = None,
+) -> OrderListResponse:
+    return OrderService(
+        repository=OrderRepository(database),
+        phone_vault=None,
+        now=lambda: now,
+    ).list_orders(user_id=user.id, limit=limit, cursor=cursor)
 
 
 @router.post(

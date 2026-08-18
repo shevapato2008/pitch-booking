@@ -5,6 +5,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.models import OrderStatus, PaymentState
+from backend.app.modules.checkout.dto import (
+    CheckoutPitchResponse,
+    CheckoutVenueResponse,
+)
 
 
 class ClosedModel(BaseModel):
@@ -60,6 +64,27 @@ class OrderDetailResponse(ClosedModel):
     closing_payment: bool
     paid_at: datetime | None
     detail_path: str = Field(pattern=r"^/api/v1/orders/[0-9a-f-]{36}$")
+
+
+class OrderSummaryResponse(ClosedModel):
+    id: uuid.UUID
+    order_number: str = Field(min_length=1)
+    status: OrderStatus
+    venue: CheckoutVenueResponse
+    pitch: CheckoutPitchResponse
+    starts_at: datetime
+    ends_at: datetime
+    price_cents: int = Field(ge=0)
+    currency: Literal["CNY"]
+    created_at: datetime
+    expires_at: datetime
+    payment_confirming: bool
+    closing_payment: bool
+
+
+class OrderListResponse(ClosedModel):
+    orders: list[OrderSummaryResponse]
+    next_cursor: str | None = Field(min_length=1)
 
 
 class CreateOrderResult(ClosedModel):

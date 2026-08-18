@@ -1,11 +1,16 @@
+import base64
+import binascii
 import hashlib
 import json
 import uuid
 from bisect import bisect_right
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 from zoneinfo import ZoneInfo
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.errors import AppError
 from backend.app.models import (
@@ -20,6 +25,10 @@ from backend.app.models import (
     SlotStatus,
     User,
 )
+from backend.app.modules.checkout.dto import (
+    CheckoutPitchResponse,
+    CheckoutVenueResponse,
+)
 from backend.app.modules.checkout.repository import CheckoutRepository
 from backend.app.modules.checkout.service import (
     CHECKOUT_LOCK_DURATION_SECONDS,
@@ -30,7 +39,9 @@ from backend.app.modules.orders.dto import (
     CreateOrderResult,
     OrderContactResponse,
     OrderDetailResponse,
+    OrderListResponse,
     OrderPitchResponse,
+    OrderSummaryResponse,
     OrderVenueResponse,
 )
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
@@ -38,6 +49,7 @@ from backend.app.modules.orders.repository import OrderRepository
 from backend.app.security.phone_vault import PhoneVault, PhoneVaultError, SealedPhone
 
 CREATE_ORDER_OPERATION = "create_order"
+ORDER_LIST_CURSOR_VERSION = 1
 # Frozen from Node 22.22.3 `/^\p{Script=Han}$/u` (Unicode 17.0). The exhaustive
 # cross-runtime parity test guards this table against frontend or backend drift.
 _NODE22_UNICODE17_HAN_INTERVALS: tuple[tuple[int, int], ...] = (
@@ -228,6 +240,60 @@ class OrderService:
             closing_payment=closing_payment,
         )
 
+    def list_orders(
+        self,
+        *,
+        user_id: uuid.UUID,
+        limit: int,
+        cursor: str | None,
+    ) -> OrderListResponse:
+        before_created_at, before_id = _decode_order_cursor(cursor)
+        try:
+            rows = self._repository.list_owned_orders(
+                user_id=user_id,
+                limit=limit + 1,
+                before_created_at=before_created_at,
+                before_id=before_id,
+            )
+            page = rows[:limit]
+            now = self._now()
+            summaries: list[OrderSummaryResponse] = []
+            for order in page:
+                closing_payment = False
+                if (
+                    order.status is OrderStatus.PENDING_PAYMENT
+                    and order.expires_at <= now
+                ):
+                    result = self._expiry_service.expire_by_order_id(
+                        self._repository.session,
+                        order.id,
+                        now,
+                    )
+                    closing_payment = (
+                        result.order_status is OrderStatus.PENDING_PAYMENT
+                    )
+                summaries.append(
+                    self._order_summary(
+                        order,
+                        order.slot,
+                        now=now,
+                        closing_payment=closing_payment,
+                    )
+                )
+
+            next_cursor = (
+                _encode_order_cursor(page[-1].created_at, page[-1].id)
+                if len(rows) > limit
+                else None
+            )
+            self._repository.flush()
+            self._repository.commit()
+            return OrderListResponse(orders=summaries, next_cursor=next_cursor)
+        except SQLAlchemyError:
+            with suppress(Exception):
+                self._repository.rollback()
+            raise _service_unavailable() from None
+
     def _resolve_existing_claim(
         self,
         record: IdempotencyRecord,
@@ -338,23 +404,12 @@ class OrderService:
         closing_payment: bool = False,
     ) -> OrderDetailResponse:
         phone = known_phone or self._order_phone(order)
-        payment = _project_payment(order.payments)
+        payment, payment_confirming, closing_payment = _project_payment_flags(
+            order,
+            now=self._now(),
+            closing_payment=closing_payment,
+        )
         payment_state = payment.status if payment is not None else None
-        past_deadline = (
-            order.status is OrderStatus.PENDING_PAYMENT and order.expires_at <= self._now()
-        )
-        payment_confirming = bool(
-            order.status is OrderStatus.PENDING_PAYMENT
-            and payment_state in {PaymentState.CONFIRMING, PaymentState.UNKNOWN}
-        )
-        if past_deadline and payment_state in {
-            PaymentState.CREATING,
-            PaymentState.PREPAY_CREATED,
-            PaymentState.CONFIRMING,
-            PaymentState.UNKNOWN,
-        }:
-            payment_confirming = True
-            closing_payment = True
         pitch = slot.pitch
         venue = pitch.venue
         timezone = ZoneInfo(cast(str, venue.timezone))
@@ -397,6 +452,38 @@ class OrderService:
                 else None
             ),
             detail_path=f"/api/v1/orders/{order.id}",
+        )
+
+    @staticmethod
+    def _order_summary(
+        order: Order,
+        slot: Slot,
+        *,
+        now: datetime,
+        closing_payment: bool,
+    ) -> OrderSummaryResponse:
+        _payment, payment_confirming, closing_payment = _project_payment_flags(
+            order,
+            now=now,
+            closing_payment=closing_payment,
+        )
+        pitch = slot.pitch
+        venue = pitch.venue
+        timezone = ZoneInfo(cast(str, venue.timezone))
+        return OrderSummaryResponse(
+            id=order.id,
+            order_number=order.order_number,
+            status=order.status,
+            venue=CheckoutVenueResponse(id=venue.id, name=venue.name),
+            pitch=CheckoutPitchResponse(id=pitch.id, name=pitch.name),
+            starts_at=slot.starts_at.astimezone(timezone),
+            ends_at=slot.ends_at.astimezone(timezone),
+            price_cents=order.price_cents,
+            currency="CNY",
+            created_at=order.created_at.astimezone(timezone),
+            expires_at=order.expires_at.astimezone(timezone),
+            payment_confirming=payment_confirming,
+            closing_payment=closing_payment,
         )
 
     def _order_phone(self, order: Order) -> str:
@@ -445,6 +532,75 @@ def _project_payment(payments: list[Payment]) -> Payment | None:
         if candidates
         else None
     )
+
+
+def _project_payment_flags(
+    order: Order,
+    *,
+    now: datetime,
+    closing_payment: bool,
+) -> tuple[Payment | None, bool, bool]:
+    payment = _project_payment(order.payments)
+    payment_state = payment.status if payment is not None else None
+    payment_confirming = bool(
+        order.status is OrderStatus.PENDING_PAYMENT
+        and payment_state in {PaymentState.CONFIRMING, PaymentState.UNKNOWN}
+    )
+    if (
+        order.status is OrderStatus.PENDING_PAYMENT
+        and order.expires_at <= now
+        and payment_state
+        in {
+            PaymentState.CREATING,
+            PaymentState.PREPAY_CREATED,
+            PaymentState.CONFIRMING,
+            PaymentState.UNKNOWN,
+        }
+    ):
+        payment_confirming = True
+        closing_payment = True
+    return payment, payment_confirming, closing_payment
+
+
+def _encode_order_cursor(created_at: datetime, order_id: uuid.UUID) -> str:
+    payload = json.dumps(
+        {
+            "v": ORDER_LIST_CURSOR_VERSION,
+            "created_at": created_at.astimezone(UTC).isoformat(),
+            "id": str(order_id),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_order_cursor(
+    cursor: str | None,
+) -> tuple[datetime | None, uuid.UUID | None]:
+    if cursor is None:
+        return None, None
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        raw = base64.b64decode(
+            cursor + padding,
+            altchars=b"-_",
+            validate=True,
+        )
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or set(payload) != {"v", "created_at", "id"}:
+            raise ValueError
+        if (
+            type(payload["v"]) is not int
+            or payload["v"] != ORDER_LIST_CURSOR_VERSION
+        ):
+            raise ValueError
+        created_at = datetime.fromisoformat(payload["created_at"])
+        if created_at.tzinfo is None or created_at.utcoffset() is None:
+            raise ValueError
+        order_id = uuid.UUID(payload["id"])
+    except (binascii.Error, json.JSONDecodeError, TypeError, ValueError):
+        raise _invalid_cursor() from None
+    return created_at, order_id
 
 
 def _normalize_contact_name(value: str) -> str:
@@ -515,6 +671,14 @@ def _venue_not_found() -> AppError:
 
 def _order_not_found() -> AppError:
     return AppError(404, "ORDER_NOT_FOUND", "订单不存在。")
+
+
+def _invalid_cursor() -> AppError:
+    return AppError(422, "INVALID_ARGUMENT", "订单列表游标无效，请重新加载。")
+
+
+def _service_unavailable() -> AppError:
+    return AppError(503, "SERVICE_UNAVAILABLE", "订单服务暂不可用，请稍后重试。")
 
 
 def _internal_error() -> AppError:
