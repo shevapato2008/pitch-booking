@@ -17,6 +17,7 @@ from backend.app.models import (
     RefundAttemptStatus,
     RefundCasePurpose,
     RefundReason,
+    Slot,
     SlotStatus,
 )
 from backend.app.modules.payments.provider import (
@@ -114,6 +115,13 @@ class PaymentConvergenceService:
                     order=order,
                     now=now,
                 )
+                self._ensure_cancel_requested_refund(
+                    session=session,
+                    repository=repository,
+                    order=order,
+                    slot_starts_at=slot.starts_at,
+                    now=now,
+                )
                 session.commit()
                 return ConvergenceResult(order.id, payment.id, True)
 
@@ -122,6 +130,12 @@ class PaymentConvergenceService:
                 and provider == payment.provider
                 and result.status is not QueryPaymentStatus.SUCCESS
             ):
+                self._cancel_after_all_payments_close(
+                    repository=repository,
+                    slot=slot,
+                    order=order,
+                    now=now,
+                )
                 session.commit()
                 return ConvergenceResult(order.id, payment.id, True)
 
@@ -219,6 +233,22 @@ class PaymentConvergenceService:
                 payment.last_error_code = None
                 payment.last_error_at = None
 
+            if payment.status is PaymentState.SUCCESS:
+                self._ensure_cancel_requested_refund(
+                    session=session,
+                    repository=repository,
+                    order=order,
+                    slot_starts_at=slot.starts_at,
+                    now=now,
+                )
+            elif payment.status is PaymentState.CLOSED:
+                self._cancel_after_all_payments_close(
+                    repository=repository,
+                    slot=slot,
+                    order=order,
+                    now=now,
+                )
+
             session.flush()
             terminal = payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}
             session.commit()
@@ -285,6 +315,94 @@ class PaymentConvergenceService:
                 order.expired_at = None
                 order.status = OrderStatus.REFUND_PENDING
             assert refund_case.payment_id == candidate.id
+
+    def _cancel_after_all_payments_close(
+        self,
+        *,
+        repository: PaymentRepository,
+        slot: Slot,
+        order: Order,
+        now: datetime,
+    ) -> None:
+        if (
+            order.cancel_requested_at is None
+            or order.status not in {OrderStatus.PENDING_PAYMENT, OrderStatus.PAYMENT_EXCEPTION}
+        ):
+            return
+        payments = repository.locked_order_payments(order_id=order.id)
+        if any(payment.applied_to_order_at is not None for payment in payments):
+            return
+        if any(payment.status is not PaymentState.CLOSED for payment in payments):
+            return
+        order.status = OrderStatus.CANCELLED
+        order.expired_at = None
+        order.cancelled_at = order.cancelled_at or now
+        if (
+            slot.status is SlotStatus.LOCKED
+            and slot.locked_by_order_id == order.id
+        ):
+            slot.status = SlotStatus.AVAILABLE
+            slot.locked_by_order_id = None
+            slot.locked_until = None
+
+    def _ensure_cancel_requested_refund(
+        self,
+        *,
+        session: Session,
+        repository: PaymentRepository,
+        order: Order,
+        slot_starts_at: datetime,
+        now: datetime,
+    ) -> None:
+        if (
+            order.cancel_requested_at is None
+            or order.status
+            not in {OrderStatus.CONFIRMED, OrderStatus.REFUND_PENDING, OrderStatus.REFUND_FAILED}
+            or slot_starts_at - now < timedelta(hours=24)
+        ):
+            return
+        applied = next(
+            (
+                payment
+                for payment in repository.locked_order_payments(order_id=order.id)
+                if payment.status is PaymentState.SUCCESS
+                and payment.applied_to_order_at is not None
+            ),
+            None,
+        )
+        if applied is None:
+            return
+        refund_repository = RefundRepository(session)
+        graph = refund_repository.lock_refund_graph(applied.id)
+        latest_attempt = graph.latest_attempt
+        if (
+            latest_attempt is not None
+            and latest_attempt.status is RefundAttemptStatus.FAILED
+        ):
+            return
+        refund_repository.get_or_create_case(
+            graph=graph,
+            purpose=RefundCasePurpose.ORDER_CANCELLATION,
+            reason=RefundReason.USER_CANCELLED,
+            reason_note=None,
+            requested_by_user_id=order.user_id,
+        )
+        merchant_refund_no = (
+            latest_attempt.merchant_refund_no
+            if latest_attempt is not None
+            else _automatic_refund_number(applied.id, 1)
+        )
+        attempt, _ = refund_repository.get_or_create_attempt(
+            graph=graph,
+            provider=applied.provider,
+            merchant_refund_no=merchant_refund_no,
+            next_reconcile_at=now,
+        )
+        if attempt.status is RefundAttemptStatus.SUCCESS:
+            return
+        order.status = OrderStatus.REFUND_PENDING
+        order.expired_at = None
+        order.cancelled_at = order.cancelled_at or now
 
     def _record_transaction_conflict(
         self, *, order_id: uuid.UUID, slot_id: uuid.UUID, payment_id: uuid.UUID
