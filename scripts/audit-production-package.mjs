@@ -424,8 +424,9 @@ function inspectVenueFulfillmentRegistration(source) {
   const sourceFile = ts.createSourceFile("app.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const moduleAliases = new Map();
   const importedBindings = new Map();
+  const declaredAttemptStores = new Set();
   const attemptStores = new Set();
-  const dataSources = new Set();
+  const dataSources = new Map();
   const attemptRegistrations = [];
   const sourceRegistrations = [];
   const startupPositions = [];
@@ -450,9 +451,14 @@ function inspectVenueFulfillmentRegistration(source) {
         const call = unwrapExpression(declaration.initializer);
         const factory = importedSymbol(call.expression);
         if (factory?.module === "./services/venue-fulfillment-attempt-store"
-          && factory.symbol === "createVenueFulfillmentAttemptStore") attemptStores.add(declaration.name.text);
+          && factory.symbol === "createVenueFulfillmentAttemptStore") {
+          declaredAttemptStores.add(declaration.name.text);
+          if (isProductionSessionStorage(call.arguments[0])) attemptStores.add(declaration.name.text);
+        }
         if (factory?.module === "./services/http-venue-fulfillment"
-          && factory.symbol === "createHttpVenueFulfillmentDataSource") dataSources.add(declaration.name.text);
+          && factory.symbol === "createHttpVenueFulfillmentDataSource") {
+          dataSources.set(declaration.name.text, dataSourceAttemptStore(call));
+        }
       }
       continue;
     }
@@ -464,22 +470,36 @@ function inspectVenueFulfillmentRegistration(source) {
     if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) startupPositions.push(expression.pos);
     if (callee?.module === "./services/venue-fulfillment-attempt-store"
       && callee.symbol === "registerVenueFulfillmentAttemptStore"
-      && isFactoryValue(expression.arguments[0], attemptStores, "./services/venue-fulfillment-attempt-store", "createVenueFulfillmentAttemptStore")) {
-      attemptRegistrations.push(expression.pos);
+      && ts.isIdentifier(unwrapExpression(expression.arguments[0]))
+      && attemptStores.has(unwrapExpression(expression.arguments[0]).text)) {
+      attemptRegistrations.push({ position: expression.pos, store: unwrapExpression(expression.arguments[0]).text });
     }
-    if (callee?.module === "./services/venue-fulfillment" && callee.symbol === "registerVenueFulfillmentDataSource"
-      && isFactoryValue(expression.arguments[0], dataSources, "./services/http-venue-fulfillment", "createHttpVenueFulfillmentDataSource")) {
-      sourceRegistrations.push(expression.pos);
+    if (callee?.module === "./services/venue-fulfillment" && callee.symbol === "registerVenueFulfillmentDataSource") {
+      const source = unwrapExpression(expression.arguments[0]);
+      const store = ts.isIdentifier(source)
+        ? dataSources.get(source.text)
+        : ts.isCallExpression(source) && importedSymbol(source.expression)?.module === "./services/http-venue-fulfillment"
+          && importedSymbol(source.expression)?.symbol === "createHttpVenueFulfillmentDataSource"
+          ? dataSourceAttemptStore(source)
+          : undefined;
+      if (store && attemptStores.has(store)) sourceRegistrations.push({ position: expression.pos, store });
     }
   }
 
   const diagnostics = [];
+  if (declaredAttemptStores.size > 0 && attemptStores.size === 0) {
+    diagnostics.push("invalid venue fulfillment registration: persistent attempt store");
+  }
   if (attemptRegistrations.length === 0) diagnostics.push("invalid venue fulfillment registration: attempt store");
   if (sourceRegistrations.length === 0) diagnostics.push("invalid venue fulfillment registration: data source");
+  if (attemptRegistrations.length > 0 && sourceRegistrations.length > 0
+    && !sourceRegistrations.some(({ store }) => attemptRegistrations.some((item) => item.store === store))) {
+    diagnostics.push("invalid venue fulfillment registration: shared attempt store");
+  }
   if (startupPositions.length > 0) {
     const startup = Math.min(...startupPositions);
-    if (attemptRegistrations.some((position) => position >= startup)
-      || sourceRegistrations.some((position) => position >= startup)) {
+    if (attemptRegistrations.some(({ position }) => position >= startup)
+      || sourceRegistrations.some(({ position }) => position >= startup)) {
       diagnostics.push("venue fulfillment registration must precede App/Page startup");
     }
   }
@@ -493,11 +513,25 @@ function inspectVenueFulfillmentRegistration(source) {
     return module ? { module, symbol: value.name.text } : undefined;
   }
 
-  function isFactoryValue(expression, known, module, symbol) {
+  function isProductionSessionStorage(expression) {
     const value = unwrapExpression(expression);
-    if (ts.isIdentifier(value)) return known.has(value.text);
-    return ts.isCallExpression(value) && importedSymbol(value.expression)?.module === module
-      && importedSymbol(value.expression)?.symbol === symbol;
+    const binding = importedSymbol(value);
+    return binding?.module === "./runtime/production" && binding.symbol === "productionSessionStorage";
+  }
+
+  function dataSourceAttemptStore(call) {
+    const options = unwrapExpression(call.arguments[0]);
+    if (!ts.isObjectLiteralExpression(options)) return undefined;
+    for (const property of options.properties) {
+      if (ts.isShorthandPropertyAssignment(property) && property.name.text === "attemptStore") {
+        return property.name.text;
+      }
+      if (!ts.isPropertyAssignment(property)) continue;
+      const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : undefined;
+      const value = unwrapExpression(property.initializer);
+      if (name === "attemptStore" && ts.isIdentifier(value)) return value.text;
+    }
+    return undefined;
   }
 }
 

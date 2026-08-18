@@ -307,6 +307,21 @@ test("strictly decodes the closed owner-only order list projection", () => {
   expect(decoded.orders[0].venue).not.toHaveProperty("address");
 });
 
+test("keeps lifecycle additions closed while preserving the existing order view", () => {
+  expect(decodeOrder(confirmedOrder)).not.toHaveProperty("allowedActions");
+  expect(() => decodeOrder({
+    ...confirmedOrder,
+    allowed_actions: { ...(confirmedOrder.allowed_actions as object), internal: true },
+  })).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodeOrderList({
+    ...myOrdersReady,
+    orders: [{
+      ...(myOrdersReady.orders as Array<Record<string, unknown>>)[0],
+      funding_alerts: [{ code: "DUPLICATE_CHARGE_REFUND", status: "UNKNOWN" }],
+    }],
+  })).toThrow("INVALID_API_RESPONSE");
+});
+
 test.each([
   ["top-level unknown", { ...myOrdersReady, debug: true }],
   ["missing next cursor", Object.fromEntries(Object.entries(myOrdersReady).filter(([key]) => key !== "next_cursor"))],

@@ -72,7 +72,18 @@ const API_ERROR_CODES = [
   "VENUE_DIRECTORY_MISCONFIGURED",
 ] as const;
 const PAYMENT_STATES = ["CREATING", "PREPAY_CREATED", "CONFIRMING", "SUCCESS", "CLOSED", "UNKNOWN"] as const;
+const ORDER_BLOCKED_REASONS = [
+  "PAYMENT_RESULT_PENDING", "CANCELLATION_WINDOW_CLOSED", "CANCELLATION_REQUIRES_SUPPORT",
+  "CHECK_IN_TOO_EARLY", "CHECK_IN_REQUIRED", "SESSION_NOT_ENDED", "ORDER_TERMINAL",
+  "REFUND_IN_PROGRESS",
+] as const;
+const FUNDING_ALERT_STATUSES = ["REFUND_PENDING", "REFUND_FAILED", "REFUNDED"] as const;
 const MASKED_PHONE = /^1[0-9]{2}\*{4}[0-9]{4}$/;
+
+const ORDER_LIFECYCLE_KEYS = [
+  "cancel_requested_at", "cancelled_at", "checked_in_at", "completed_at", "allowed_actions",
+  "funding_alerts",
+] as const;
 
 function nullableString(value: unknown, path: string, maxLength?: number): string | null {
   if (value === null) return null;
@@ -96,6 +107,33 @@ function maskedPhone(value: unknown, path: string): string {
 function booleanAt(value: unknown, path: string): boolean {
   if (typeof value !== "boolean") invalid(path);
   return value;
+}
+
+function hasOwn(value: unknown, key: string): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function decodeLifecycleProjection(object: Record<string, unknown>, path: string): void {
+  for (const key of ORDER_LIFECYCLE_KEYS.slice(0, 4)) {
+    const value = object[key];
+    if (value !== null) rfc3339At(value, `${path}.${key}`);
+  }
+  const actions = exactObject(object.allowed_actions, [
+    "can_pay", "can_cancel", "can_check_in", "can_complete", "can_refund", "blocked_reason",
+  ], `${path}.allowed_actions`);
+  for (const key of ["can_pay", "can_cancel", "can_check_in", "can_complete", "can_refund"] as const) {
+    booleanAt(actions[key], `${path}.allowed_actions.${key}`);
+  }
+  if (actions.blocked_reason !== null) {
+    enumAt(actions.blocked_reason, ORDER_BLOCKED_REASONS, `${path}.allowed_actions.blocked_reason`);
+  }
+  arrayAt(object.funding_alerts, `${path}.funding_alerts`).forEach((alert, index) => {
+    const alertPath = `${path}.funding_alerts[${index}]`;
+    const item = exactObject(alert, ["code", "status"], alertPath);
+    if (item.code !== "DUPLICATE_CHARGE_REFUND") invalid(`${alertPath}.code`);
+    enumAt(item.status, FUNDING_ALERT_STATUSES, `${alertPath}.status`);
+  });
 }
 
 export function decodeWeChatSession(value: unknown): SessionTokenView {
@@ -158,12 +196,15 @@ export function decodeCheckout(value: unknown): CheckoutView {
 }
 
 export function decodeOrder(value: unknown): OrderView {
-  const object = exactObject(value, [
+  const baseKeys = [
     "id", "order_number", "status", "slot_id", "venue", "pitch", "starts_at", "ends_at",
     "duration_minutes", "price_cents", "currency", "contact", "created_at", "expires_at",
     "expired_at", "cancellation_summary", "payment_state", "payment_confirming",
     "closing_payment", "paid_at", "detail_path",
-  ], "$");
+  ] as const;
+  const expanded = hasOwn(value, "allowed_actions");
+  const object = exactObject(value, expanded ? [...baseKeys, ...ORDER_LIFECYCLE_KEYS] : baseKeys, "$");
+  if (expanded) decodeLifecycleProjection(object, "$");
   const venue = exactObject(object.venue, ["id", "name", "address", "latitude", "longitude"], "$.venue");
   const pitch = exactObject(object.pitch, ["id", "name"], "$.pitch");
   const contact = exactObject(object.contact, ["name", "masked_phone"], "$.contact");
@@ -244,7 +285,13 @@ const ORDER_SUMMARY_KEYS = [
 ] as const;
 
 function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
-  const object = exactObject(value, ORDER_SUMMARY_KEYS, path);
+  const expanded = hasOwn(value, "allowed_actions");
+  const object = exactObject(
+    value,
+    expanded ? [...ORDER_SUMMARY_KEYS, ...ORDER_LIFECYCLE_KEYS] : ORDER_SUMMARY_KEYS,
+    path,
+  );
+  if (expanded) decodeLifecycleProjection(object, path);
   const venue = exactObject(object.venue, ["id", "name"], `${path}.venue`);
   const pitch = exactObject(object.pitch, ["id", "name"], `${path}.pitch`);
   const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);

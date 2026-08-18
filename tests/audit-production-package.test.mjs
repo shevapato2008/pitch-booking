@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -273,6 +273,40 @@ test("production audit requires compiled venue fulfillment composition", async (
   await assertAuditRejects(packageRoot, "missing venue fulfillment composition");
 });
 
+test("production audit rejects a venue fulfillment attempt store without production persistence", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace("createVenueFulfillmentAttemptStore(productionSessionStorage)", "createVenueFulfillmentAttemptStore({})"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid venue fulfillment registration: persistent attempt store");
+});
+
+test("production audit rejects a venue fulfillment source wired to a different attempt store", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source
+      .replace(
+        "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
+        "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);\n"
+          + "const differentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
+      )
+      .replace("attemptStore: venueFulfillmentAttemptStore", "attemptStore: differentAttemptStore"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid venue fulfillment registration: shared attempt store");
+});
+
 test("production audit rejects an unresolved dependency in the app closure", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
@@ -446,11 +480,11 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
     [
       'const { createHttpPaymentDataSource } = require("./services/http-payment");',
       'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
-      'const { productionPayment } = require("./runtime/production");',
+      'const { productionPayment, productionSessionStorage } = require("./runtime/production");',
       'const { createHttpVenueFulfillmentDataSource } = require("./services/http-venue-fulfillment");',
       'const { registerVenueFulfillmentDataSource } = require("./services/venue-fulfillment");',
       'const { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } = require("./services/venue-fulfillment-attempt-store");',
-      "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore({});",
+      "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
       "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
       "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({ attemptStore: venueFulfillmentAttemptStore }));",
       "registerPaymentDataSource(createHttpPaymentDataSource({}));",
