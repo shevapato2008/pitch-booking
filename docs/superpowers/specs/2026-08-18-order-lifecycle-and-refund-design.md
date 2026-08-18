@@ -83,6 +83,7 @@
 - `payment_id`，必须引用该订单的一条 `SUCCESS` payment，且全表唯一；
 - `purpose`：闭合枚举 `ORDER_CANCELLATION | DUPLICATE_CHARGE | PAYMENT_INVENTORY_CONFLICT`；
 - `reason`：闭合枚举 `USER_CANCELLED | VENUE_CANCELLED | AUTOMATIC_RECOVERY`；
+- `reason_note`：场馆发起退款时必填的去首尾空格说明，最长 500 字；其他原因必须为 null；
 - `requested_by_user_id`，用户或场馆工作人员；系统自动恢复时 nullable；
 - `amount_cents`、`currency`，必须等于所引用成功 payment 的全额；
 - `created_at`、`updated_at`。
