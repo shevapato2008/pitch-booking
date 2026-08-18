@@ -8,6 +8,14 @@ const freeze = (value) => {
 
 export const CAPTAIN_OPEN_GAME_STATE_IDS = freeze(["create-ready", "draft-manage", "published-manage", "public-readonly"]);
 export const CAPTAIN_OPEN_GAME_INTERNAL_STATE_IDS = freeze([...CAPTAIN_OPEN_GAME_STATE_IDS, "cancelled-readonly"]);
+export const CAPTAIN_OPEN_GAME_LIFECYCLES = freeze(["UNSAVED", "DRAFT", "PUBLISHED", "CANCELLED"]);
+const managementStateByLifecycle = freeze({ UNSAVED: "create-ready", DRAFT: "draft-manage", PUBLISHED: "published-manage", CANCELLED: "cancelled-readonly" });
+export const resolveFixtureRoute = (lifecycle, requestedState) => {
+  if (requestedState === "public-readonly") return "public-readonly";
+  if (lifecycle === "CANCELLED") return "cancelled-readonly";
+  if (requestedState === "create-ready") return "create-ready";
+  return managementStateByLifecycle[lifecycle];
+};
 export const CONFIRMED_ORDER = freeze({
   venue: "天津奥体足球场", pitch: "七人制 A 场", date: "2026年8月23日 周日", time: "14:00–16:00", format: "七人制", booking: "来自已确认订单，不可修改",
 });
@@ -62,9 +70,11 @@ const getRoute = () => {
   const state = CAPTAIN_OPEN_GAME_INTERNAL_STATE_IDS.includes(params.get("state")) ? params.get("state") : "create-ready";
   const from = ["draft-manage", "published-manage"].includes(params.get("from")) ? params.get("from") : "published-manage";
   const panel = ["publish", "abandon", "cancel", "share"].includes(params.get("panel")) ? params.get("panel") : null;
-  return { state, from, panel };
+  const lifecycle = state === "cancelled-readonly" ? "CANCELLED" : state === "published-manage" || (state === "public-readonly" && from === "published-manage") ? "PUBLISHED" : state === "draft-manage" || (state === "public-readonly" && from === "draft-manage") ? "DRAFT" : "UNSAVED";
+  return { state, from, panel, lifecycle };
 };
-let { state: stateId, from: returnState, panel } = getRoute();
+let { state: requestedState, from: returnState, panel, lifecycle } = getRoute();
+let stateId = resolveFixtureRoute(lifecycle, requestedState);
 let feedback = "";
 let formValues = { ...CAPTAIN_OPEN_GAME_STATES["create-ready"].values };
 
@@ -83,7 +93,7 @@ const createScreen = () => {
   const numbers = el("div"); numbers.append(stepper("计划总人数", formValues.total, "total", "范围 4–30 人"), stepper("已有固定队员", formValues.fixed, "fixed", "包含队长本人"), stepper("开放给散客", formValues.open, "open", "至少开放 1 个名额"), el("p", "quantity-copy", `计划共 ${formValues.total} 人，当前固定 ${formValues.fixed} 人，本次开放 ${formValues.open} 个名额`)); screen.append(section("人数与开放名额", numbers));
   const requirements = el("div"); requirements.append(inputRow("对抗强度", formValues.intensity), inputRow("最低经验说明", "有基本传接球经验即可"), inputRow("位置需求", formValues.positions)); screen.append(section("强度、经验与位置", requirements));
   const terms = el("div"); terms.append(inputRow("预计人均 AA", formValues.aa, "到场线下结算，平台不代收或担保"), inputRow("报名截止", formValues.deadline, "不晚于开场前 2 小时"), inputRow("可见范围", formValues.visibility, "公开与仅链接访问均展示相同脱敏详情")); screen.append(section("费用、截止与可见范围", terms));
-  screen.append(el("p", "disclosure", "装备：深浅两套球衣；提前 15 分钟到场。保存后仅创建你可见的私有草稿。"));
+  screen.append(el("p", "disclosure", lifecycle === "PUBLISHED" ? "装备：深浅两套球衣；提前 15 分钟到场。保存修改后仍保持已发布。" : "装备：深浅两套球衣；提前 15 分钟到场。保存后仅创建你可见的私有草稿。"));
   return screen;
 };
 const gameSummary = () => { const card = el("section", "card section"); const grid = el("dl", "summary-grid"); [["计划人数", "14 人"], ["开放名额", "4 人"], ["对抗强度", "休闲对抗"], ["位置需求", "门将、后卫、前锋"], ["预计 AA", "¥30 / 人"], ["可见范围", "公开"]].forEach(([term, value]) => { const item = el("div"); item.append(el("dt", "", term), el("dd", "", value)); grid.append(item); }); card.append(el("h2", "summary-title", "球局概要"), grid); return card; };
@@ -96,8 +106,9 @@ const renderPanel = () => {
   if (data.details) { const details = el("dl", "confirm-details"); data.details.forEach(([label, value]) => { const item = el("div"); item.append(el("dt", "", label), el("dd", "", value)); details.append(item); }); sheet.append(details); }
   const controls = el("div", "fixture-sheet__actions"); if (data.close) controls.append(button(data.close, "secondary")); if (data.confirm) controls.append(button(data.confirm, panel === "cancel" || panel === "abandon" ? "danger" : "primary")); sheet.append(controls); scrim.append(sheet); return scrim;
 };
-const syncUrl = () => { const params = new URLSearchParams(window.location.search); params.set("state", stateId); if (stateId === "public-readonly") params.set("from", returnState); else params.delete("from"); window.history.pushState({ state: stateId, from: returnState }, "", `${window.location.pathname}?${params}`); };
-const go = (nextState, source = stateId) => { stateId = nextState; if (["draft-manage", "published-manage"].includes(source)) returnState = source; panel = null; syncUrl(); render(); };
+const syncUrl = (historyMethod) => { const params = new URLSearchParams(window.location.search); params.set("state", stateId); params.delete("panel"); if (stateId === "public-readonly") params.set("from", returnState); else params.delete("from"); window.history[historyMethod]({ state: stateId, from: returnState, lifecycle }, "", `${window.location.pathname}?${params}`); };
+const navigate = (nextState, source = stateId) => { stateId = resolveFixtureRoute(lifecycle, nextState); if (["draft-manage", "published-manage"].includes(source)) returnState = source; panel = null; syncUrl("pushState"); render(); };
+const commitLifecycle = (nextLifecycle) => { lifecycle = nextLifecycle; stateId = managementStateByLifecycle[lifecycle]; returnState = stateId === "draft-manage" || stateId === "published-manage" ? stateId : returnState; panel = null; syncUrl("replaceState"); render(); };
 const transition = (action) => {
   const step = /^(total|fixed|open)-(increase|decrease)$/.exec(action);
   if (step) { const [, field, direction] = step; const amount = direction === "increase" ? 1 : -1; const limits = { total: [4, 30], fixed: [1, formValues.total - formValues.open], open: [1, formValues.total - formValues.fixed] }; formValues[field] = Math.min(limits[field][1], Math.max(limits[field][0], formValues[field] + amount)); feedback = "update form Fixture value"; render(); return; }
@@ -106,12 +117,14 @@ const transition = (action) => {
   if (action === "cancel") { feedback = actions.cancel.fixtureTransition; panel = "cancel"; render(); return; }
   if (action === "share") { feedback = actions.share.fixtureTransition; panel = "share"; render(); return; }
   if (action === "close-panel") { feedback = FIXTURE_PANELS[panel].close.fixtureTransition; panel = null; render(); return; }
-  if (action === "confirm-publish") { feedback = FIXTURE_PANELS.publish.confirm.fixtureTransition; go("published-manage", "draft-manage"); return; }
-  if (action === "confirm-abandon") { feedback = FIXTURE_PANELS.abandon.confirm.fixtureTransition; go("create-ready"); return; }
-  if (action === "confirm-cancel") { feedback = FIXTURE_PANELS.cancel.confirm.fixtureTransition; go("cancelled-readonly", "published-manage"); return; }
-  if (action === "return-manage") { feedback = actions.return.fixtureTransition; go(returnState, returnState); return; }
+  if (action === "confirm-publish") { feedback = FIXTURE_PANELS.publish.confirm.fixtureTransition; commitLifecycle("PUBLISHED"); return; }
+  if (action === "confirm-abandon") { feedback = FIXTURE_PANELS.abandon.confirm.fixtureTransition; commitLifecycle("UNSAVED"); return; }
+  if (action === "confirm-cancel") { feedback = FIXTURE_PANELS.cancel.confirm.fixtureTransition; commitLifecycle("CANCELLED"); return; }
+  if (action === "return-manage") { feedback = actions.return.fixtureTransition; navigate(returnState, returnState); return; }
   const found = CAPTAIN_OPEN_GAME_STATES[stateId].actions.find(({ id }) => id === action); if (!found) return;
-  feedback = found.fixtureTransition; go(found.nextState, stateId);
+  feedback = found.fixtureTransition;
+  if (action === "save-draft") { commitLifecycle(lifecycle === "PUBLISHED" ? "PUBLISHED" : "DRAFT"); return; }
+  navigate(found.nextState, stateId);
 };
-function render() { const state = CAPTAIN_OPEN_GAME_STATES[stateId]; app.replaceChildren(system(state.title)); if (feedback) app.append(el("p", "fixture-feedback", `Fixture：${feedback}`)); app.append(stateId === "create-ready" ? createScreen() : stateId === "public-readonly" ? publicScreen(state) : manageScreen(state)); if (stateId === "create-ready") { const footer = el("footer", "footer"); footer.append(button(actions.save, "primary")); app.append(footer); } const overlay = renderPanel(); if (overlay) app.append(overlay); app.querySelectorAll("button[data-action]").forEach((node) => node.addEventListener("click", () => transition(node.dataset.action))); }
-if (app) { window.addEventListener("popstate", () => { ({ state: stateId, from: returnState, panel } = getRoute()); render(); }); render(); }
+function render() { const state = CAPTAIN_OPEN_GAME_STATES[stateId]; const publishedEdit = stateId === "create-ready" && lifecycle === "PUBLISHED"; app.replaceChildren(system(publishedEdit ? "编辑球局" : state.title)); if (feedback) app.append(el("p", "fixture-feedback", `Fixture：${feedback}`)); app.append(stateId === "create-ready" ? createScreen() : stateId === "public-readonly" ? publicScreen(state) : manageScreen(state)); if (stateId === "create-ready") { const footer = el("footer", "footer"); footer.append(button(publishedEdit ? { ...actions.save, label: "保存修改" } : actions.save, "primary")); app.append(footer); } const overlay = renderPanel(); if (overlay) app.append(overlay); app.querySelectorAll("button[data-action]").forEach((node) => node.addEventListener("click", () => transition(node.dataset.action))); }
+if (app) { window.addEventListener("popstate", () => { const route = getRoute(); requestedState = route.state; returnState = route.from; stateId = resolveFixtureRoute(lifecycle, requestedState); panel = stateId === requestedState ? route.panel : null; if (stateId !== requestedState) syncUrl("replaceState"); render(); }); render(); }

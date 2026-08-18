@@ -64,6 +64,19 @@ test("captain data separates four reference states from an honest internal cance
   }
 });
 
+test("persistent Fixture lifecycle wins over stale browser history while public preview remains navigable", { skip: missing.length > 0 }, async () => {
+  const data = await import(`../${files.data}?lifecycle-test=1`);
+  assert.deepEqual(data.CAPTAIN_OPEN_GAME_LIFECYCLES, ["UNSAVED", "DRAFT", "PUBLISHED", "CANCELLED"]);
+  assert.equal(data.resolveFixtureRoute("PUBLISHED", "draft-manage"), "published-manage");
+  assert.equal(data.resolveFixtureRoute("CANCELLED", "draft-manage"), "cancelled-readonly");
+  assert.equal(data.resolveFixtureRoute("CANCELLED", "published-manage"), "cancelled-readonly");
+  assert.equal(data.resolveFixtureRoute("CANCELLED", "create-ready"), "cancelled-readonly");
+  assert.equal(data.resolveFixtureRoute("PUBLISHED", "public-readonly"), "public-readonly");
+  assert.equal(data.resolveFixtureRoute("CANCELLED", "public-readonly"), "public-readonly");
+  assert.match(read(files.data), /commitLifecycle[\s\S]*?syncUrl\("replaceState"\)/, "lifecycle commits must replace stale history");
+  assert.match(read(files.data), /navigate[\s\S]*?syncUrl\("pushState"\)/, "public-preview navigation stays in browser history");
+});
+
 test("reference preserves existing light system, real order content, and privacy boundary", { skip: missing.length > 0 }, () => {
   const source = [read(files.html), read(files.css), read(files.data)].join("\n");
   assert.match(read(files.html), /data-production-enabled="false"/);
@@ -75,7 +88,6 @@ test("reference preserves existing light system, real order content, and privacy
   assert.match(read(files.css), /display:\s*flex;[\s\S]{0,180}?align-items:\s*center;[\s\S]{0,180}?justify-content:\s*center;/);
   assert.match(read(files.css), /\.public-notice\s*\{[^}]*text-align:\s*left;/s);
   assert.doesNotMatch(read(files.css), /\.public-notice\s*\{[^}]*border:/s, "public pending copy must not look like a CTA");
-  assert.doesNotMatch(read(files.data), /replaceState/, "reference navigation must preserve browser history");
   assert.doesNotMatch(source, /(?:phone|tel:|wechat|微信号|order[_ -]?id|payment|支付流水|contact)/i);
   assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u, "emoji cannot serve as icons");
 });
