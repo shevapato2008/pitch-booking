@@ -469,10 +469,10 @@ function inspectVenueFulfillmentRegistration(source) {
     const rawCallee = unwrapExpression(expression.expression);
     if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) startupPositions.push(expression.pos);
     if (callee?.module === "./services/venue-fulfillment-attempt-store"
-      && callee.symbol === "registerVenueFulfillmentAttemptStore"
-      && ts.isIdentifier(unwrapExpression(expression.arguments[0]))
-      && attemptStores.has(unwrapExpression(expression.arguments[0]).text)) {
-      attemptRegistrations.push({ position: expression.pos, store: unwrapExpression(expression.arguments[0]).text });
+      && callee.symbol === "registerVenueFulfillmentAttemptStore") {
+      const argument = unwrapExpression(expression.arguments[0]);
+      const store = ts.isIdentifier(argument) ? argument.text : undefined;
+      attemptRegistrations.push({ position: expression.pos, store, valid: Boolean(store && attemptStores.has(store)) });
     }
     if (callee?.module === "./services/venue-fulfillment" && callee.symbol === "registerVenueFulfillmentDataSource") {
       const source = unwrapExpression(expression.arguments[0]);
@@ -482,24 +482,25 @@ function inspectVenueFulfillmentRegistration(source) {
           && importedSymbol(source.expression)?.symbol === "createHttpVenueFulfillmentDataSource"
           ? dataSourceAttemptStore(source)
           : undefined;
-      if (store && attemptStores.has(store)) sourceRegistrations.push({ position: expression.pos, store });
+      sourceRegistrations.push({ position: expression.pos, store, valid: Boolean(store && attemptStores.has(store)) });
     }
   }
 
   const diagnostics = [];
+  const effectiveAttempt = attemptRegistrations[attemptRegistrations.length - 1];
+  const effectiveSource = sourceRegistrations[sourceRegistrations.length - 1];
   if (declaredAttemptStores.size > 0 && attemptStores.size === 0) {
     diagnostics.push("invalid venue fulfillment registration: persistent attempt store");
   }
-  if (attemptRegistrations.length === 0) diagnostics.push("invalid venue fulfillment registration: attempt store");
-  if (sourceRegistrations.length === 0) diagnostics.push("invalid venue fulfillment registration: data source");
-  if (attemptRegistrations.length > 0 && sourceRegistrations.length > 0
-    && !sourceRegistrations.some(({ store }) => attemptRegistrations.some((item) => item.store === store))) {
+  if (!effectiveAttempt?.valid) diagnostics.push("invalid venue fulfillment registration: attempt store");
+  if (!effectiveSource?.valid) diagnostics.push("invalid venue fulfillment registration: data source");
+  if (effectiveAttempt?.valid && effectiveSource?.valid && effectiveAttempt.store !== effectiveSource.store) {
     diagnostics.push("invalid venue fulfillment registration: shared attempt store");
   }
   if (startupPositions.length > 0) {
     const startup = Math.min(...startupPositions);
-    if (attemptRegistrations.some(({ position }) => position >= startup)
-      || sourceRegistrations.some(({ position }) => position >= startup)) {
+    if ((effectiveAttempt && effectiveAttempt.position >= startup)
+      || (effectiveSource && effectiveSource.position >= startup)) {
       diagnostics.push("venue fulfillment registration must precede App/Page startup");
     }
   }

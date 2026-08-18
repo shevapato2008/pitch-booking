@@ -307,6 +307,52 @@ test("strictly decodes the closed owner-only order list projection", () => {
   expect(decoded.orders[0].venue).not.toHaveProperty("address");
 });
 
+test.each([
+  "CANCELLED",
+  "REFUND_PENDING",
+  "REFUND_FAILED",
+  "REFUNDED",
+  "COMPLETED",
+] as const)("decodes lifecycle order summary status %s", (status) => {
+  const original = (myOrdersReady.orders as Array<Record<string, unknown>>)[0];
+  const decoded = decodeOrderList({
+    ...myOrdersReady,
+    orders: [{
+      ...original,
+      status,
+      payment_confirming: false,
+      closing_payment: false,
+    }],
+  });
+
+  expect(decoded.orders[0]).toMatchObject({ status });
+});
+
+test("rejects payment-progress flags on lifecycle terminal summaries", () => {
+  const original = (myOrdersReady.orders as Array<Record<string, unknown>>)[0];
+  expect(() => decodeOrderList({
+    ...myOrdersReady,
+    orders: [{ ...original, status: "COMPLETED", payment_confirming: true }],
+  })).toThrow("INVALID_API_RESPONSE");
+});
+
+test.each([
+  ["CANCELLED", { payment_state: "CLOSED", paid_at: null }],
+  ["REFUND_PENDING", { payment_state: "SUCCESS", paid_at: confirmedOrder.paid_at }],
+  ["REFUND_FAILED", { payment_state: "SUCCESS", paid_at: confirmedOrder.paid_at }],
+  ["REFUNDED", { payment_state: "SUCCESS", paid_at: confirmedOrder.paid_at }],
+  ["COMPLETED", { payment_state: "SUCCESS", paid_at: confirmedOrder.paid_at }],
+] as const)("decodes lifecycle order detail status %s", (status, payment) => {
+  expect(decodeOrder({
+    ...confirmedOrder,
+    ...payment,
+    status,
+    expired_at: null,
+    payment_confirming: false,
+    closing_payment: false,
+  })).toMatchObject({ status });
+});
+
 test("keeps lifecycle additions closed while preserving the existing order view", () => {
   expect(decodeOrder(confirmedOrder)).not.toHaveProperty("allowedActions");
   expect(() => decodeOrder({
@@ -357,6 +403,11 @@ test("accepts the frozen exceptional-success and closed-expired combinations", (
   })).toMatchObject({ status: "PAYMENT_EXCEPTION", paymentState: "SUCCESS" });
   expect(decodeOrder({ ...expiredOrder, payment_state: "CLOSED" }))
     .toMatchObject({ status: "EXPIRED", paymentState: "CLOSED" });
+  expect(decodeOrder({
+    ...paymentExceptionOrder,
+    payment_state: null,
+    paid_at: null,
+  })).toMatchObject({ status: "PAYMENT_EXCEPTION", paymentState: null });
 });
 
 test.each([

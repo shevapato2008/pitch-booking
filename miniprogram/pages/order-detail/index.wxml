@@ -6,7 +6,8 @@
     <view wx:elif="{{showProgressIcon}}" class="progress-icon" role="img" aria-label="正在查询支付结果">
       <view class="progress-icon__arc"></view>
     </view>
-    <text wx:else class="eyebrow">{{eyebrow || '待支付'}}</text>
+    <text wx:elif="{{eyebrow === '待支付'}}" class="eyebrow">待支付</text>
+    <text wx:elif="{{eyebrow}}" class="eyebrow">{{eyebrow}}</text>
     <text wx:if="{{status === 'payment-confirming'}}" class="title">正在确认支付</text>
     <text wx:elif="{{status === 'payment-exception'}}" class="title">支付状态待确认</text>
     <text wx:elif="{{status === 'booking-confirmed'}}" class="title">预订成功</text>
@@ -15,6 +16,7 @@
     <text wx:if="{{status === 'payment-confirming'}}" class="hero-copy">支付结果以服务端确认为准，请勿重复付款</text>
     <text wx:elif="{{status === 'payment-exception'}}" class="hero-copy">暂未取得权威支付结果，场地仍保持锁定，请手动重新查询。</text>
     <text wx:elif="{{status === 'booking-confirmed'}}" class="hero-copy">订单已确认，场地已为你预订</text>
+    <text wx:elif="{{heroCopy}}" class="hero-copy">{{heroCopy}}</text>
     <view wx:if="{{showCashierMarker}}" class="cashier-notice" role="status">
       <text class="cashier-notice__title">{{cashierNotice}}</text>
     </view>

@@ -29,7 +29,19 @@ export interface CreateOrderInput {
   readonly contactName: string;
 }
 
-export type OrderSummaryStatus = "PENDING_PAYMENT" | "CONFIRMED" | "EXPIRED" | "PAYMENT_EXCEPTION";
+export type LifecycleTerminalOrderStatus =
+  | "CANCELLED"
+  | "REFUND_PENDING"
+  | "REFUND_FAILED"
+  | "REFUNDED"
+  | "COMPLETED";
+
+export type OrderSummaryStatus =
+  | "PENDING_PAYMENT"
+  | "CONFIRMED"
+  | "EXPIRED"
+  | "PAYMENT_EXCEPTION"
+  | LifecycleTerminalOrderStatus;
 
 export interface OrderSummaryView {
   readonly orderId: string;
@@ -135,10 +147,45 @@ export type PaymentExceptionOrderView =
       readonly paymentState: "SUCCESS";
       readonly paymentConfirming: false;
       readonly paidAt: string;
+    })
+  | (OrderViewBase & {
+      readonly status: "PAYMENT_EXCEPTION";
+      readonly expiredAt: null;
+      readonly paymentState: null;
+      readonly paymentConfirming: false;
+      readonly paidAt: null;
+    });
+
+type RefundLifecycleOrderView = {
+  [Status in "REFUND_PENDING" | "REFUND_FAILED" | "REFUNDED"]: OrderViewBase & {
+    readonly status: Status;
+    readonly expiredAt: null;
+    readonly paymentState: null | "SUCCESS";
+    readonly paymentConfirming: false;
+    readonly paidAt: string | null;
+  };
+}["REFUND_PENDING" | "REFUND_FAILED" | "REFUNDED"];
+
+export type LifecycleTerminalOrderView =
+  | (OrderViewBase & {
+      readonly status: "CANCELLED";
+      readonly expiredAt: null;
+      readonly paymentState: null | "CLOSED";
+      readonly paymentConfirming: false;
+      readonly paidAt: null;
+    })
+  | RefundLifecycleOrderView
+  | (OrderViewBase & {
+      readonly status: "COMPLETED";
+      readonly expiredAt: null;
+      readonly paymentState: "SUCCESS";
+      readonly paymentConfirming: false;
+      readonly paidAt: string;
     });
 
 export type OrderView =
   | PendingOrderView
   | ExpiredOrderView
   | ConfirmedOrderView
-  | PaymentExceptionOrderView;
+  | PaymentExceptionOrderView
+  | LifecycleTerminalOrderView;

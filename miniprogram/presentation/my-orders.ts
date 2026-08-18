@@ -2,7 +2,18 @@ import type { OrderSummaryView } from "../domain/booking";
 import { formatPriceCents } from "./availability";
 import { formatShanghaiDateLabel, formatShanghaiTimeRange } from "./shanghai-time";
 
-export type MyOrderStatus = "pending" | "confirming" | "closing" | "confirmed" | "expired" | "exception";
+export type MyOrderStatus =
+  | "pending"
+  | "confirming"
+  | "closing"
+  | "confirmed"
+  | "expired"
+  | "exception"
+  | "cancelled"
+  | "refund-pending"
+  | "refund-failed"
+  | "refunded"
+  | "completed";
 
 export interface MyOrderCardViewModel {
   readonly orderId: string;
@@ -34,6 +45,21 @@ function statusPresentation(order: OrderSummaryView): Pick<
   }
   if (order.status === "EXPIRED") {
     return { status: "expired", statusLabel: "已过期", statusDescription: "该订单已关闭" };
+  }
+  if (order.status === "CANCELLED") {
+    return { status: "cancelled", statusLabel: "已取消", statusDescription: "订单已取消" };
+  }
+  if (order.status === "REFUND_PENDING") {
+    return { status: "refund-pending", statusLabel: "退款处理中", statusDescription: "结果以服务端为准" };
+  }
+  if (order.status === "REFUND_FAILED") {
+    return { status: "refund-failed", statusLabel: "退款需处理", statusDescription: "请联系客服处理" };
+  }
+  if (order.status === "REFUNDED") {
+    return { status: "refunded", statusLabel: "已退款", statusDescription: "请留意原支付账户" };
+  }
+  if (order.status === "COMPLETED") {
+    return { status: "completed", statusLabel: "已完成", statusDescription: "场地服务已完成" };
   }
   return { status: "pending", statusLabel: "待支付", statusDescription: "请在订单关闭前完成支付" };
 }

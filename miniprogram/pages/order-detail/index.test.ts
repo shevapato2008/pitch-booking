@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 
-import type { ExpiredOrderView, PendingOrderView } from "../../domain/booking";
+import type { ExpiredOrderView, LifecycleTerminalOrderView, PendingOrderView } from "../../domain/booking";
 import type {
   PaymentCapability,
   PaymentCapabilityResult,
@@ -37,6 +37,14 @@ function loadPage(): RuntimePage {
 
 const pending: PendingOrderView = { orderId: "00000000-0000-4000-8000-000000000040", orderNumber: "PB209907280001", status: "PENDING_PAYMENT", slotId: "00000000-0000-4000-8000-000000000030", venue: { id: "venue", name: "滨江足球公园", address: "地址", latitude: 31, longitude: 121 }, pitch: { id: "pitch", name: "五人制 A 场" }, contact: { name: "张三", maskedPhone: "138****0000" }, priceCents: 36000, startsAt: "2099-07-28T19:00:00+08:00", endsAt: "2099-07-28T20:30:00+08:00", durationMinutes: 90, currency: "CNY", createdAt: "2099-07-28T18:00:00+08:00", expiresAt: "2099-07-28T18:10:00+08:00", expiredAt: null, cancellationSummary: "开场前 24 小时可取消", closingPayment: false, detailPath: "/api/v1/orders/00000000-0000-4000-8000-000000000040" };
 const expiredFrom = (order: PendingOrderView, expiredAt: string): ExpiredOrderView => ({ ...order, status: "EXPIRED", expiredAt });
+const completedFrom = (order: PendingOrderView): LifecycleTerminalOrderView => ({
+  ...order,
+  status: "COMPLETED",
+  expiredAt: null,
+  paymentState: "SUCCESS",
+  paymentConfirming: false,
+  paidAt: "2099-07-28T18:05:00+08:00",
+});
 const baseSource = (getOrder: BookingDataSource["getOrder"]): BookingDataSource => ({ async login() { throw new Error("unused"); }, async getCheckout() { throw new Error("unused"); }, async authorizePhone() { throw new Error("unused"); }, async createOrder() { throw new Error("unused"); }, getOrder });
 
 beforeEach(() => {
@@ -74,6 +82,46 @@ function registerPaymentRuntime(input: {
 }
 
 describe("order detail lifecycle orchestration", () => {
+  test("renders a completed order as read-only without payment actions", async () => {
+    const completed = completedFrom(pending);
+    registerBookingDataSource(baseSource(async () => completed));
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: pending.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "completed",
+      heroTitle: "订单已完成",
+      heroCopy: "本次场地服务已完成。",
+      showPaymentFooter: false,
+      primaryDisabled: true,
+    });
+    call(page, "onUnload");
+  });
+
+  test("a terminal projection blocks a stale payment click", async () => {
+    let createCalls = 0;
+    registerPaymentRuntime({
+      getOrder: async () => ({ ...pending, paymentState: null, paymentConfirming: false, paidAt: null }),
+      createPayment: async () => {
+        createCalls += 1;
+        throw new Error("must not be called");
+      },
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: pending.orderId });
+    await flush();
+    expect(page.data.status).toBe("payment-pending");
+
+    call(page, "applyPollState", { status: "completed", order: completedFrom(pending) });
+    await call(page, "onPay");
+
+    expect(page.data.status).toBe("completed");
+    expect(createCalls).toBe(0);
+    call(page, "onUnload");
+  });
+
   test("onShow replaces a hidden initial request and stale pending cannot overwrite newer expired", async () => {
     const first = deferred<PendingOrderView>();
     const expired = expiredFrom(pending, "2026-07-27T10:00:00.000Z");

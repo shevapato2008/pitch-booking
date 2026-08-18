@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 
-import type { ExpiredOrderView, OrderView, PendingOrderView } from "../domain/booking";
+import type { ExpiredOrderView, LifecycleTerminalOrderView, OrderView, PendingOrderView } from "../domain/booking";
 import { PAYMENT_SCENARIOS } from "../dev/payment-scenarios";
 import {
   OrderDetailPoller,
@@ -123,6 +123,38 @@ const expired: ExpiredOrderView = {
 };
 
 describe("OrderDetailPoller", () => {
+  test.each([
+    ["CANCELLED", "cancelled"],
+    ["REFUND_PENDING", "refund-pending"],
+    ["REFUND_FAILED", "refund-failed"],
+    ["REFUNDED", "refunded"],
+    ["COMPLETED", "completed"],
+  ] as const)("stops polling and presents lifecycle terminal status %s", async (orderStatus, stateStatus) => {
+    const time = new ManualTime("2026-07-28T18:00:00+08:00");
+    const states: OrderDetailPollState[] = [];
+    const terminal = {
+      ...pending,
+      status: orderStatus,
+      expiredAt: null,
+      paymentState: orderStatus === "CANCELLED" ? "CLOSED" : "SUCCESS",
+      paymentConfirming: false,
+      closingPayment: false,
+      paidAt: orderStatus === "CANCELLED" ? null : "2026-07-28T18:01:00+08:00",
+    } as LifecycleTerminalOrderView;
+    const poller = new OrderDetailPoller({
+      getOrder: async () => terminal,
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.start(pending.orderId);
+    await flush();
+
+    expect(states[states.length - 1]).toEqual({ status: stateStatus, order: terminal });
+    expect(time.pendingTaskCount).toBe(0);
+  });
+
   test("enters closing at the local deadline, polls every two seconds, and stops on EXPIRED", async () => {
     const time = new ManualTime("2026-07-28T18:09:50+08:00");
     const responses: OrderView[] = [pending, expired];

@@ -72,6 +72,10 @@ const API_ERROR_CODES = [
   "VENUE_DIRECTORY_MISCONFIGURED",
 ] as const;
 const PAYMENT_STATES = ["CREATING", "PREPAY_CREATED", "CONFIRMING", "SUCCESS", "CLOSED", "UNKNOWN"] as const;
+const ORDER_STATUSES = [
+  "PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION", "CANCELLED",
+  "REFUND_PENDING", "REFUND_FAILED", "REFUNDED", "COMPLETED",
+] as const;
 const ORDER_BLOCKED_REASONS = [
   "PAYMENT_RESULT_PENDING", "CANCELLATION_WINDOW_CLOSED", "CANCELLATION_REQUIRES_SUPPORT",
   "CHECK_IN_TOO_EARLY", "CHECK_IN_REQUIRED", "SESSION_NOT_ENDED", "ORDER_TERMINAL",
@@ -211,9 +215,12 @@ export function decodeOrder(value: unknown): OrderView {
   const orderId = uuidAt(object.id, "$.id");
   const status = enumAt(
     object.status,
-    ["PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"] as const,
+    ORDER_STATUSES,
     "$.status",
   );
+  if (!expanded && !["PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"].includes(status)) {
+    invalid("$.status");
+  }
   const startsAt = rfc3339At(object.starts_at, "$.starts_at");
   const endsAt = rfc3339At(object.ends_at, "$.ends_at");
   if (!rfc3339Before(startsAt, endsAt)) invalid("$.ends_at");
@@ -272,10 +279,29 @@ export function decodeOrder(value: unknown): OrderView {
       || paymentConfirming || closingPayment || paidAt !== null) invalid("$.status");
     return { ...common, status, expiredAt, paymentState, paymentConfirming: false, closingPayment: false, paidAt: null };
   }
+  if (status === "CANCELLED") {
+    if (expiredAt !== null || (paymentState !== null && paymentState !== "CLOSED")
+      || paymentConfirming || closingPayment || paidAt !== null) invalid("$.status");
+    return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt: null };
+  }
+  if (status === "COMPLETED") {
+    if (expiredAt !== null || paymentState !== "SUCCESS" || paymentConfirming || closingPayment || paidAt === null) {
+      invalid("$.status");
+    }
+    return { ...common, status, expiredAt: null, paymentState: "SUCCESS", paymentConfirming: false, closingPayment: false, paidAt };
+  }
+  if (status === "REFUND_PENDING" || status === "REFUND_FAILED" || status === "REFUNDED") {
+    const appliedPayment = paymentState === "SUCCESS" && paidAt !== null;
+    const inventoryConflict = paymentState === null && paidAt === null;
+    if (expiredAt !== null || paymentConfirming || closingPayment || (!appliedPayment && !inventoryConflict)) {
+      invalid("$.status");
+    }
+    return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt };
+  }
   if (expiredAt !== null || paymentConfirming || closingPayment
     || (paymentState === "UNKNOWN" && paidAt !== null)
     || (paymentState === "SUCCESS" && paidAt === null)
-    || (paymentState !== "UNKNOWN" && paymentState !== "SUCCESS")) invalid("$.status");
+    || (paymentState !== null && paymentState !== "UNKNOWN" && paymentState !== "SUCCESS")) invalid("$.status");
   return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
 }
 
@@ -298,14 +324,15 @@ function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
   const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
   if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
   if (object.currency !== "CNY") invalid(`${path}.currency`);
+  const status = enumAt<OrderSummaryStatus>(object.status, ORDER_STATUSES, `${path}.status`);
+  const paymentConfirming = booleanAt(object.payment_confirming, `${path}.payment_confirming`);
+  const closingPayment = booleanAt(object.closing_payment, `${path}.closing_payment`);
+  if (["CANCELLED", "REFUND_PENDING", "REFUND_FAILED", "REFUNDED", "COMPLETED"].includes(status)
+    && (paymentConfirming || closingPayment)) invalid(`${path}.status`);
   return {
     orderId: uuidAt(object.id, `${path}.id`),
     orderNumber: stringAt(object.order_number, `${path}.order_number`),
-    status: enumAt<OrderSummaryStatus>(
-      object.status,
-      ["PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"] as const,
-      `${path}.status`,
-    ),
+    status,
     venue: {
       id: uuidAt(venue.id, `${path}.venue.id`),
       name: stringAt(venue.name, `${path}.venue.name`),
@@ -320,8 +347,8 @@ function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
     currency: "CNY",
     createdAt: rfc3339At(object.created_at, `${path}.created_at`),
     expiresAt: rfc3339At(object.expires_at, `${path}.expires_at`),
-    paymentConfirming: booleanAt(object.payment_confirming, `${path}.payment_confirming`),
-    closingPayment: booleanAt(object.closing_payment, `${path}.closing_payment`),
+    paymentConfirming,
+    closingPayment,
   };
 }
 

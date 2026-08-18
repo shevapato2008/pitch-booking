@@ -35,6 +35,11 @@ test.each([
   [{ ...base, paymentConfirming: true }, "confirming", "支付确认中"],
   [{ ...base, status: "CONFIRMED" as const }, "confirmed", "预订成功"],
   [{ ...base, status: "EXPIRED" as const }, "expired", "已过期"],
+  [{ ...base, status: "CANCELLED" as const }, "cancelled", "已取消"],
+  [{ ...base, status: "REFUND_PENDING" as const }, "refund-pending", "退款处理中"],
+  [{ ...base, status: "REFUND_FAILED" as const }, "refund-failed", "退款需处理"],
+  [{ ...base, status: "REFUNDED" as const }, "refunded", "已退款"],
+  [{ ...base, status: "COMPLETED" as const }, "completed", "已完成"],
   [base, "pending", "待支付"],
 ] as const)("projects authoritative status priority to %s", (order, status, statusLabel) => {
   expect(presentMyOrder(order)).toMatchObject({ status, statusLabel });

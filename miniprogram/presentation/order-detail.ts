@@ -1,5 +1,5 @@
 import type { Clock } from "../runtime/interfaces";
-import type { OrderView, PendingOrderView } from "../domain/booking";
+import type { LifecycleTerminalOrderView, OrderView, PendingOrderView } from "../domain/booking";
 import type { PaymentOrderView } from "../domain/payment";
 import type { PaymentPageStatus } from "./payment";
 
@@ -14,7 +14,12 @@ export type OrderDetailPollState =
   | { readonly status: "expired"; readonly order: Extract<OrderView, { status: "EXPIRED" }> }
   | { readonly status: "payment-confirming"; readonly order: Extract<PaymentOrderView, { status: "PENDING_PAYMENT" }>; readonly showManualReconcile: boolean }
   | { readonly status: "payment-exception"; readonly order: Extract<PaymentOrderView, { status: "PAYMENT_EXCEPTION" }> }
-  | { readonly status: "booking-confirmed"; readonly order: Extract<PaymentOrderView, { status: "CONFIRMED" }> };
+  | { readonly status: "booking-confirmed"; readonly order: Extract<PaymentOrderView, { status: "CONFIRMED" }> }
+  | { readonly status: "cancelled"; readonly order: Extract<LifecycleTerminalOrderView, { status: "CANCELLED" }> }
+  | { readonly status: "refund-pending"; readonly order: Extract<LifecycleTerminalOrderView, { status: "REFUND_PENDING" }> }
+  | { readonly status: "refund-failed"; readonly order: Extract<LifecycleTerminalOrderView, { status: "REFUND_FAILED" }> }
+  | { readonly status: "refunded"; readonly order: Extract<LifecycleTerminalOrderView, { status: "REFUNDED" }> }
+  | { readonly status: "completed"; readonly order: Extract<LifecycleTerminalOrderView, { status: "COMPLETED" }> };
 
 export interface PollScheduler {
   setTimeout(callback: () => void, delayMs: number): unknown;
@@ -82,6 +87,21 @@ export function presentOrderDetailStatus(
       showClosingMessage: false,
       showClosingRetry: false,
       showReselect: true,
+    };
+  }
+  let terminalTitle: string | undefined;
+  if (status === "cancelled") terminalTitle = "订单已取消";
+  if (status === "refund-pending") terminalTitle = "退款处理中";
+  if (status === "refund-failed") terminalTitle = "退款需要处理";
+  if (status === "refunded") terminalTitle = "退款已完成";
+  if (status === "completed") terminalTitle = "订单已完成";
+  if (terminalTitle) {
+    return {
+      heroTitle: terminalTitle,
+      showClosingMessage: false,
+      showClosingRetry: false,
+      showReselect: false,
+      showPaymentRetry: false,
     };
   }
   return {
@@ -166,6 +186,31 @@ export class OrderDetailPoller {
   }
 
   private applyOrder(order: OrderDetailOrderView, generation: number): void {
+    if (order.status === "CANCELLED") {
+      this.clearTimers();
+      this.options.onState({ status: "cancelled", order });
+      return;
+    }
+    if (order.status === "REFUND_PENDING") {
+      this.clearTimers();
+      this.options.onState({ status: "refund-pending", order });
+      return;
+    }
+    if (order.status === "REFUND_FAILED") {
+      this.clearTimers();
+      this.options.onState({ status: "refund-failed", order });
+      return;
+    }
+    if (order.status === "REFUNDED") {
+      this.clearTimers();
+      this.options.onState({ status: "refunded", order });
+      return;
+    }
+    if (order.status === "COMPLETED") {
+      this.clearTimers();
+      this.options.onState({ status: "completed", order });
+      return;
+    }
     if (order.status === "EXPIRED") {
       this.clearTimers();
       this.options.onState({ status: "expired", order });

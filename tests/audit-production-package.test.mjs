@@ -307,6 +307,30 @@ test("production audit rejects a venue fulfillment source wired to a different a
   await assertAuditRejects(packageRoot, "invalid venue fulfillment registration: shared attempt store");
 });
 
+test("production audit rejects a later non-persistent attempt store override", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(
+    packageRoot,
+    "const transientAttemptStore = createVenueFulfillmentAttemptStore({});\n"
+      + "registerVenueFulfillmentAttemptStore(transientAttemptStore);",
+  );
+
+  await assertAuditRejects(packageRoot, "invalid venue fulfillment registration: attempt store");
+});
+
+test("production audit rejects a later data source override with a different store", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(
+    packageRoot,
+    "const replacementAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);\n"
+      + "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({ attemptStore: replacementAttemptStore }));",
+  );
+
+  await assertAuditRejects(packageRoot, "invalid venue fulfillment registration: shared attempt store");
+});
+
 test("production audit rejects an unresolved dependency in the app closure", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));

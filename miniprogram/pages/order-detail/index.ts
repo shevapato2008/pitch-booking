@@ -1,4 +1,4 @@
-import type { OrderView } from "../../domain/booking";
+import type { LifecycleTerminalOrderStatus, OrderView } from "../../domain/booking";
 import type { PaymentOrderView } from "../../domain/payment";
 import {
   OrderDetailPoller,
@@ -23,7 +23,9 @@ function requireUuid(value: string | undefined): string {
 }
 
 function paymentOrder(order: OrderView | PaymentOrderView): PaymentOrderView | null {
-  if (order.status === "EXPIRED") return null;
+  if (order.status === "EXPIRED" || order.status === "CANCELLED"
+    || order.status === "REFUND_PENDING" || order.status === "REFUND_FAILED"
+    || order.status === "REFUNDED" || order.status === "COMPLETED") return null;
   if (order.status === "PENDING_PAYMENT" && !("paymentState" in order)) {
     return {
       ...order,
@@ -58,6 +60,15 @@ function clearedPaymentUi() {
     paidLabel: "",
     paymentError: "",
   };
+}
+
+function lifecycleHeroCopy(status: OrderDetailPollState["status"]): string {
+  if (status === "cancelled") return "订单已取消，不会继续占用该时段。";
+  if (status === "refund-pending") return "退款申请已受理，结果以服务端为准。";
+  if (status === "refund-failed") return "退款尚未完成，请联系客服处理。";
+  if (status === "refunded") return "退款已完成，请留意原支付账户。";
+  if (status === "completed") return "本次场地服务已完成。";
+  return "";
 }
 
 const scheduler: PollScheduler = {
@@ -102,7 +113,7 @@ Page({
   paymentClickSerial: 0,
   paymentCreateKey: null as string | null,
   orderProjectionRevision: 0,
-  terminalOrderStatus: null as "CONFIRMED" | "EXPIRED" | null,
+  terminalOrderStatus: null as "CONFIRMED" | "EXPIRED" | LifecycleTerminalOrderStatus | null,
   manualReconcileInFlight: null as Promise<void> | null,
   visible: false,
 
@@ -227,6 +238,11 @@ Page({
         return;
       case "closing-payment":
       case "expired":
+      case "cancelled":
+      case "refund-pending":
+      case "refund-failed":
+      case "refunded":
+      case "completed":
         this.setData({
           ...clearedPaymentUi(),
           ...presentOrderDetailStatus(state.status),
@@ -236,6 +252,7 @@ Page({
           seconds: 0,
           countdown: "00:00",
           errorText: "",
+          heroCopy: lifecycleHeroCopy(state.status),
           showPaymentFooter: false,
         });
     }
@@ -310,7 +327,11 @@ Page({
 
   async onPay() {
     const bindings = getPaymentBindings();
-    if (!bindings || (this.paymentState.status !== "ready" && this.paymentState.status !== "payment-pending")) return;
+    if (!bindings
+      || this.terminalOrderStatus
+      || this.data.status !== "payment-pending"
+      || !this.data.showPaymentFooter
+      || (this.paymentState.status !== "ready" && this.paymentState.status !== "payment-pending")) return;
     const idempotencyKey = this.paymentCreateKey
       ?? `payment-${Date.now()}-${++this.paymentClickSerial}`;
     this.paymentCreateKey = idempotencyKey;
@@ -399,7 +420,10 @@ Page({
 
   acceptOrderProjection(order: OrderView): boolean {
     if (this.terminalOrderStatus && order.status !== this.terminalOrderStatus) return false;
-    if (order.status === "CONFIRMED" || order.status === "EXPIRED") {
+    if (order.status === "CONFIRMED" || order.status === "EXPIRED"
+      || order.status === "CANCELLED" || order.status === "REFUND_PENDING"
+      || order.status === "REFUND_FAILED" || order.status === "REFUNDED"
+      || order.status === "COMPLETED") {
       this.terminalOrderStatus = order.status;
     }
     this.orderProjectionRevision += 1;
@@ -410,6 +434,26 @@ Page({
     if (expectedRevision !== undefined && expectedRevision !== this.orderProjectionRevision) return;
     if (order.status === "EXPIRED") {
       this.applyPollState({ status: "expired", order });
+      return;
+    }
+    if (order.status === "CANCELLED") {
+      this.applyPollState({ status: "cancelled", order });
+      return;
+    }
+    if (order.status === "REFUND_PENDING") {
+      this.applyPollState({ status: "refund-pending", order });
+      return;
+    }
+    if (order.status === "REFUND_FAILED") {
+      this.applyPollState({ status: "refund-failed", order });
+      return;
+    }
+    if (order.status === "REFUNDED") {
+      this.applyPollState({ status: "refunded", order });
+      return;
+    }
+    if (order.status === "COMPLETED") {
+      this.applyPollState({ status: "completed", order });
       return;
     }
     if (!this.acceptOrderProjection(order)) return;

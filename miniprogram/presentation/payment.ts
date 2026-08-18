@@ -4,7 +4,7 @@ import type {
   PaymentOrderView,
   PaymentPendingOrderView,
 } from "../domain/payment";
-import type { OrderView } from "../domain/booking";
+import type { ExpiredOrderView } from "../domain/booking";
 
 export type PaymentPageStatus =
   | "loading"
@@ -57,7 +57,7 @@ export type PaymentPageState =
 
 export type PaymentPageEvent =
   | { readonly type: "ORDER_LOADING" }
-  | { readonly type: "ORDER_RECEIVED"; readonly order: OrderView }
+  | { readonly type: "ORDER_RECEIVED"; readonly order: PaymentOrderView | ExpiredOrderView }
   | { readonly type: "ORDER_FAILED"; readonly message: string }
   | { readonly type: "ORDER_LOAD_FAILED"; readonly message: string }
   | { readonly type: "PAY_STARTED"; readonly idempotencyKey: string }
