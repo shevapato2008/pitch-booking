@@ -2,14 +2,17 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
 from backend.app.errors import ErrorEnvelope
 from backend.app.models import User
 from backend.app.modules.auth.router import get_current_user, get_phone_vault
-from backend.app.modules.venue_fulfillment.dto import VenueFulfillmentOrdersResponse
+from backend.app.modules.venue_fulfillment.dto import (
+    VenueFulfillmentOrderResponse,
+    VenueFulfillmentOrdersResponse,
+)
 from backend.app.modules.venue_fulfillment.repository import (
     VenueFulfillmentRepository,
 )
@@ -56,4 +59,72 @@ def list_venue_fulfillment_orders(
         service_date=service_date,
         limit=limit,
         cursor=cursor,
+    )
+
+
+@router.post(
+    "/{order_id}/check-in",
+    response_model=VenueFulfillmentOrderResponse,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def check_in_venue_order(
+    venue_id: uuid.UUID,
+    order_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    database: Annotated[Session, Depends(get_database)],
+    phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
+    now: Annotated[datetime, Depends(get_fulfillment_clock)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+) -> VenueFulfillmentOrderResponse:
+    return VenueFulfillmentService(
+        repository=VenueFulfillmentRepository(database),
+        phone_vault=phone_vault,
+        now=lambda: now,
+    ).check_in_order(
+        user=user,
+        venue_id=venue_id,
+        order_id=order_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/{order_id}/complete",
+    response_model=VenueFulfillmentOrderResponse,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def complete_venue_order(
+    venue_id: uuid.UUID,
+    order_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    database: Annotated[Session, Depends(get_database)],
+    phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
+    now: Annotated[datetime, Depends(get_fulfillment_clock)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+) -> VenueFulfillmentOrderResponse:
+    return VenueFulfillmentService(
+        repository=VenueFulfillmentRepository(database),
+        phone_vault=phone_vault,
+        now=lambda: now,
+    ).complete_order(
+        user=user,
+        venue_id=venue_id,
+        order_id=order_id,
+        idempotency_key=idempotency_key,
     )

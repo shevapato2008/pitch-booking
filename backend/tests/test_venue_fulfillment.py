@@ -434,3 +434,230 @@ def test_list_rolls_back_and_returns_503_on_database_failure(
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
     assert rolled_back is True
+
+
+def test_check_in_enforces_boundary_and_is_idempotent(pg_engine: Engine) -> None:
+    starts_at = NOW + timedelta(hours=2)
+    with Session(pg_engine) as session:
+        manager = _manager(session)
+        parent = _managed_venue(session, manager)
+        order = _order(session, parent=parent, starts_at=starts_at)
+        manager_id = manager.id
+        parent_id = parent.id
+        order_id = order.id
+        slot_id = order.slot.id
+        session.commit()
+
+    path = f"/api/v1/venues/{parent_id}/fulfillment/orders/{order_id}/check-in"
+    early = starts_at - timedelta(hours=2, microseconds=1)
+    with _client(pg_engine, now=early) as client:
+        response = client.post(
+            path,
+            headers={**_auth(), "Idempotency-Key": "check-in-early-0001"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+
+    exact = starts_at - timedelta(hours=2)
+    with _client(pg_engine, now=exact) as client:
+        first = client.post(
+            path,
+            headers={**_auth(), "Idempotency-Key": "check-in-success-0001"},
+        )
+        same_key = client.post(
+            path,
+            headers={**_auth(), "Idempotency-Key": "check-in-success-0001"},
+        )
+        other_key = client.post(
+            path,
+            headers={**_auth(), "Idempotency-Key": "check-in-success-0002"},
+        )
+
+    assert first.status_code == 200
+    assert same_key.json() == first.json()
+    assert other_key.json() == first.json()
+    assert first.json()["status"] == "CONFIRMED"
+    assert first.json()["checked_in_at"] == "2026-08-18T18:00:00+08:00"
+    assert first.json()["allowed_actions"]["blocked_reason"] == "SESSION_NOT_ENDED"
+
+    with Session(pg_engine) as session:
+        persisted = session.get_one(Order, order_id)
+        slot = session.get_one(Slot, slot_id)
+        assert persisted.checked_in_at == exact
+        assert persisted.checked_in_by_user_id == manager_id
+        assert slot.status is SlotStatus.BOOKED
+
+
+def test_check_in_uses_safe_scope_and_closed_business_conflict(pg_engine: Engine) -> None:
+    with Session(pg_engine) as session:
+        manager = _manager(session)
+        parent = _managed_venue(session, manager)
+        order = _order(
+            session,
+            parent=parent,
+            starts_at=NOW + timedelta(hours=1),
+            status=OrderStatus.PENDING_PAYMENT,
+        )
+        parent_id = parent.id
+        order_id = order.id
+        membership_id = parent.memberships[0].id
+        session.commit()
+
+    with _client(pg_engine) as client:
+        terminal = client.post(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders/{order_id}/check-in",
+            headers={**_auth(), "Idempotency-Key": "check-in-terminal-01"},
+        )
+        wrong_venue = client.post(
+            f"/api/v1/venues/{uuid.uuid4()}/fulfillment/orders/{order_id}/check-in",
+            headers={**_auth(), "Idempotency-Key": "check-in-wrong-venue"},
+        )
+        unknown = client.post(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders/{uuid.uuid4()}/check-in",
+            headers={**_auth(), "Idempotency-Key": "check-in-unknown-0001"},
+        )
+
+    assert terminal.status_code == 409
+    assert terminal.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    assert wrong_venue.status_code == 404
+    assert wrong_venue.json()["error"]["code"] == "ORDER_NOT_FOUND"
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "ORDER_NOT_FOUND"
+
+    with Session(pg_engine) as session:
+        session.get_one(VenueMembership, membership_id).is_active = False
+        session.commit()
+    with _client(pg_engine) as client:
+        revoked = client.post(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders/{order_id}/check-in",
+            headers={**_auth(), "Idempotency-Key": "check-in-revoked-0001"},
+        )
+    assert revoked.status_code == 404
+    assert revoked.json()["error"]["code"] == "ORDER_NOT_FOUND"
+
+
+def test_complete_projects_specific_read_blocks_but_posts_closed_conflict(
+    pg_engine: Engine,
+) -> None:
+    starts_at = NOW - timedelta(hours=2)
+    with Session(pg_engine) as session:
+        manager = _manager(session)
+        parent = _managed_venue(session, manager)
+        missing_check_in = _order(session, parent=parent, starts_at=starts_at)
+        checked_in = _order(
+            session,
+            parent=parent,
+            starts_at=starts_at,
+            pitch_name="五人制 B 场",
+        )
+        checked_in.checked_in_at = starts_at
+        checked_in.checked_in_by_user_id = manager.id
+        parent_id = parent.id
+        missing_id = missing_check_in.id
+        checked_id = checked_in.id
+        session.commit()
+
+    missing_path = (
+        f"/api/v1/venues/{parent_id}/fulfillment/orders/{missing_id}/complete"
+    )
+    checked_path = (
+        f"/api/v1/venues/{parent_id}/fulfillment/orders/{checked_id}/complete"
+    )
+    with _client(pg_engine, now=NOW) as client:
+        missing = client.post(
+            missing_path,
+            headers={**_auth(), "Idempotency-Key": "complete-missing-checkin"},
+        )
+        read_missing = client.get(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders",
+            headers=_auth(),
+        )
+
+    assert missing.status_code == 409
+    assert missing.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    missing_projection = next(
+        row for row in read_missing.json()["orders"] if row["id"] == str(missing_id)
+    )
+    assert missing_projection["allowed_actions"]["blocked_reason"] == "CHECK_IN_REQUIRED"
+
+    early = NOW - timedelta(microseconds=1)
+    with _client(pg_engine, now=early) as client:
+        too_early = client.post(
+            checked_path,
+            headers={**_auth(), "Idempotency-Key": "complete-too-early-01"},
+        )
+        read_early = client.get(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders",
+            headers=_auth(),
+        )
+
+    assert too_early.status_code == 409
+    assert too_early.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    early_projection = next(
+        row for row in read_early.json()["orders"] if row["id"] == str(checked_id)
+    )
+    assert early_projection["allowed_actions"]["blocked_reason"] == "SESSION_NOT_ENDED"
+
+
+def test_complete_at_exact_end_is_business_idempotent_and_binds_key(
+    pg_engine: Engine,
+) -> None:
+    starts_at = NOW - timedelta(hours=2)
+    with Session(pg_engine) as session:
+        manager = _manager(session)
+        parent = _managed_venue(session, manager)
+        first_order = _order(session, parent=parent, starts_at=starts_at)
+        second_order = _order(
+            session,
+            parent=parent,
+            starts_at=starts_at,
+            pitch_name="五人制 B 场",
+        )
+        for order in (first_order, second_order):
+            order.checked_in_at = starts_at
+            order.checked_in_by_user_id = manager.id
+        manager_id = manager.id
+        parent_id = parent.id
+        first_id = first_order.id
+        second_id = second_order.id
+        slot_id = first_order.slot.id
+        session.commit()
+
+    first_path = f"/api/v1/venues/{parent_id}/fulfillment/orders/{first_id}/complete"
+    second_path = f"/api/v1/venues/{parent_id}/fulfillment/orders/{second_id}/complete"
+    with _client(pg_engine, now=NOW) as client:
+        first = client.post(
+            first_path,
+            headers={**_auth(), "Idempotency-Key": "complete-success-0001"},
+        )
+        replay = client.post(
+            first_path,
+            headers={**_auth(), "Idempotency-Key": "complete-success-0001"},
+        )
+        business_replay = client.post(
+            first_path,
+            headers={**_auth(), "Idempotency-Key": "complete-success-0002"},
+        )
+        reused = client.post(
+            second_path,
+            headers={**_auth(), "Idempotency-Key": "complete-success-0001"},
+        )
+
+    assert first.status_code == 200
+    assert replay.json() == first.json()
+    assert business_replay.json() == first.json()
+    assert first.json()["status"] == "COMPLETED"
+    assert first.json()["allowed_actions"]["blocked_reason"] == "ORDER_TERMINAL"
+    assert reused.status_code == 409
+    assert reused.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+    with Session(pg_engine) as session:
+        persisted = session.get_one(Order, first_id)
+        slot = session.get_one(Slot, slot_id)
+        assert persisted.status is OrderStatus.COMPLETED
+        assert persisted.checked_in_at == starts_at
+        assert persisted.checked_in_by_user_id == manager_id
+        assert persisted.completed_at == NOW
+        assert persisted.completed_by_user_id == manager_id
+        assert slot.status is SlotStatus.BOOKED
