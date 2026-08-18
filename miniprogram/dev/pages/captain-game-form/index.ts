@@ -31,9 +31,10 @@ const returnToManager = (state: CaptainOpenGameState) => {
 Page({
   data: { ...patch("ELIGIBLE"), headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0, headerLeftInsetPx: 0 },
   onLoad(options: Options = {}) {
-    const state = resolveCaptainOpenGameState(options.state);
+    const requested = resolveCaptainOpenGameState(options.state);
     const header = readIntentHeaderLayout();
-    if (captainOpenGameStore.current().state !== state) captainOpenGameStore.reset(state);
+    const state = captainOpenGameStore.current().state === "ELIGIBLE" ? requested : captainOpenGameStore.current().state;
+    if (captainOpenGameStore.current().state === "ELIGIBLE") captainOpenGameStore.reset(state);
     this.setData({ ...patch(state, captainOpenGameStore.current().snapshot), headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerRightInsetPx: header.rightInsetPx, headerLeftInsetPx: header.rightInsetPx });
   },
   onStepper(event: StepperEvent) {

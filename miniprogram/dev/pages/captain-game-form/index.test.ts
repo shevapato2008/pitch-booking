@@ -14,7 +14,7 @@ const loadPage = () => {
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), navigateBack: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}]); });
+beforeEach(() => { captainOpenGameStore.reset("ELIGIBLE"); (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), navigateBack: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}]); });
 
 test("eligible form loads and keeps stepper errors adjacent to the changed field", () => {
   const page = loadPage();
@@ -52,6 +52,24 @@ test("published editing reads its current snapshot without reset and keeps the p
   page.onSave();
   expect(page.data).toMatchObject({ visualState: "PUBLISHED", published: true, private: false });
   expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=PUBLISHED" });
+});
+
+test("an old DRAFT deep link cannot roll a published form back from its current Fixture snapshot", () => {
+  const published = { ...CAPTAIN_OPEN_GAME_FIXTURE.form, name: "权威已发布快照", total: 16, open: 5 };
+  captainOpenGameStore.reset("PUBLISHED");
+  captainOpenGameStore.saveDraft(published);
+  const page = loadPage();
+  page.onLoad({ state: "DRAFT" });
+  expect(page.data).toMatchObject({ visualState: "PUBLISHED", mode: "edit", form: published });
+  expect(captainOpenGameStore.current()).toMatchObject({ state: "PUBLISHED", snapshot: published });
+});
+
+test("an old PUBLISHED deep link cannot revive a cancelled form", () => {
+  captainOpenGameStore.reset("CANCELLED");
+  const page = loadPage();
+  page.onLoad({ state: "PUBLISHED" });
+  expect(page.data).toMatchObject({ visualState: "CANCELLED", canEdit: false });
+  expect(captainOpenGameStore.current().state).toBe("CANCELLED");
 });
 
 test("saving an edit returns to the existing manager instead of pushing another manager", () => {
