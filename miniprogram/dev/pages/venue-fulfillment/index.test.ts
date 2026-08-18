@@ -96,7 +96,7 @@ test("page binds every representative action to a deterministic state change", (
   page.onSelectDate({ currentTarget: { dataset: { state: "read-error" } } });
   expect(page.data.visualState).toBe("read-error");
   page.onRetry();
-  expect(page.data.visualState).toBe("refund-confirm");
+  expect(page.data).toMatchObject({ visualState: "refund-confirm", headerTopPx: 44, headerRowHeightPx: 44, headerRightInsetPx: 105 });
 });
 
 test("empty and read-error states expose real recovery and date behavior", () => {
@@ -125,7 +125,9 @@ test("native template binds every visible button and preserves approved hierarch
     expect(typeof page[handler!]).toBe("function");
   }
   expect(template).toMatch(/<textarea[^>]*aria-label="取消原因（必填）"[^>]*bindinput="onRefundReasonInput"/);
+  expect(template).not.toContain("preview-notice");
   expect(styles).toMatch(/@import\s+"\.\.\/\.\.\/\.\.\/styles\/tokens\.wxss"/);
+  expect(styles).toMatch(/\.reason-input\s*\{[^}]*height:\s*148rpx/);
   expect(styles).toMatch(/min-height:\s*88rpx/);
   expect(styles).toMatch(/align-items:\s*center/);
   expect(styles).toMatch(/justify-content:\s*center/);

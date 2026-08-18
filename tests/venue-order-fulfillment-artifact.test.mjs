@@ -14,7 +14,7 @@ const files = {
 
 const read = (path) => readFileSync(path, "utf8");
 
-test("venue fulfillment Artifact owns one pending 375x812 refund-confirm preview", () => {
+test("venue fulfillment Artifact owns one approved 375x812 refund-confirm preview", () => {
   assert.deepEqual(
     Object.values(files).filter((path) => !existsSync(path)),
     [],
@@ -26,7 +26,8 @@ test("venue fulfillment Artifact owns one pending 375x812 refund-confirm preview
   assert.match(manifest, /route:\s*pages\/venue-fulfillment\/index/);
   assert.match(manifest, /representative_state:\s*refund-confirm/);
   assert.match(manifest, /fixture:\s*miniprogram\/dev\/venue-fulfillment-fixture\.ts/);
-  assert.match(manifest, /native_fixture_visual_approval:\s*pending/);
+  assert.match(manifest, /native_fixture_visual_approval:\s*approved/);
+  assert.match(manifest, /gate:\s*passed-native-fixture-visual-approval/);
 
   const html = read(files.html);
   const css = read(files.css);
@@ -68,13 +69,19 @@ test("representative data is masked, deterministic, and operational", async () =
   assert.equal(Object.isFrozen(data.VENUE_FULFILLMENT_REFERENCE_STATE), true);
 });
 
-test("review handoff is visibly pending and reserves same-size evidence", () => {
+test("review handoff records the approved same-size evidence", () => {
   const review = read(files.review);
   const board = read(files.board);
-  assert.match(review, /Native Fixture visual approval:\s*pending/);
+  assert.match(review, /Native Fixture visual approval:\s*approved/);
   assert.match(review, /375\s*[×x]\s*812/);
+  for (const path of [
+    "artifacts/ui/reviews/venue-order-fulfillment/refund-confirm-implementation-375x812.png",
+    "artifacts/ui/reviews/venue-order-fulfillment/refund-confirm-side-by-side-750x812.png",
+    "artifacts/ui/reviews/venue-order-fulfillment/refund-confirm-overlay-375x812.png",
+    "artifacts/ui/reviews/venue-order-fulfillment/refund-confirm-difference-375x812.png",
+  ]) assert.equal(existsSync(path), true, `missing visual evidence ${path}`);
   for (const label of ["Reference", "Implementation", "Side by side", "Overlay 50%", "Difference"]) {
     assert.match(board, new RegExp(label, "i"));
   }
-  assert.doesNotMatch(review, /visual approval:\s*approved/i);
+  assert.match(review, /Visual gate conclusion:\s*approved/i);
 });

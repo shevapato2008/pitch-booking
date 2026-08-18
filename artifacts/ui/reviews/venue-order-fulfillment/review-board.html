@@ -1,11 +1,47 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>场馆履约视觉对比</title></head>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>场馆履约视觉对比</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: #0F172A; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      img { display: block; width: 375px; height: 812px; }
+      .capture { display: none; overflow: hidden; }
+      .capture--side { width: 750px; height: 812px; }
+      .capture--overlay, .capture--difference { position: relative; width: 375px; height: 812px; }
+      .capture--overlay img, .capture--difference img { position: absolute; inset: 0; }
+      .capture--overlay img:last-child { opacity: .5; }
+      .capture--difference img:last-child { mix-blend-mode: difference; }
+      .board { min-width: 1260px; padding: 24px; color: #E2E8F0; }
+      .board h1 { margin: 0 0 18px; font-size: 22px; }
+      .board table { border-collapse: collapse; background: #FFFFFF; color: #10243E; }
+      .board th, .board td { padding: 10px; border: 1px solid #CBD5E1; text-align: left; vertical-align: top; }
+      .board img { width: 188px; height: 406px; object-fit: cover; }
+      body[data-mode="side"] .board, body[data-mode="overlay"] .board, body[data-mode="difference"] .board { display: none; }
+      body[data-mode="side"] .capture--side { display: flex; }
+      body[data-mode="overlay"] .capture--overlay { display: block; }
+      body[data-mode="difference"] .capture--difference { display: block; }
+    </style>
+  </head>
   <body>
-    <h1>Venue fulfillment · 375 × 812</h1>
-    <table>
-      <thead><tr><th>Reference</th><th>Implementation</th><th>Side by side</th><th>Overlay 50%</th><th>Difference</th></tr></thead>
-      <tbody><tr><td><img src="refund-confirm-reference-375x812.png" alt="参考图" width="375" height="812" /></td><td>pending</td><td>pending</td><td>pending</td><td>pending</td></tr></tbody>
-    </table>
+    <main class="board">
+      <h1>Venue fulfillment · 375 × 812</h1>
+      <table>
+        <thead><tr><th>Reference</th><th>Implementation</th><th>Side by side</th><th>Overlay 50%</th><th>Difference</th></tr></thead>
+        <tbody><tr>
+          <td><img src="refund-confirm-reference-375x812.png" alt="参考图" /></td>
+          <td><img src="refund-confirm-implementation-375x812.png" alt="实现图" /></td>
+          <td><a href="refund-confirm-side-by-side-750x812.png">PNG</a></td>
+          <td><a href="refund-confirm-overlay-375x812.png">PNG</a></td>
+          <td><a href="refund-confirm-difference-375x812.png">PNG</a></td>
+        </tr></tbody>
+      </table>
+    </main>
+    <main class="capture capture--side"><img src="refund-confirm-reference-375x812.png" alt="" /><img src="refund-confirm-implementation-375x812.png" alt="" /></main>
+    <main class="capture capture--overlay"><img src="refund-confirm-reference-375x812.png" alt="" /><img src="refund-confirm-implementation-375x812.png" alt="" /></main>
+    <main class="capture capture--difference"><img src="refund-confirm-reference-375x812.png" alt="" /><img src="refund-confirm-implementation-375x812.png" alt="" /></main>
+    <script>document.body.dataset.mode = new URLSearchParams(location.search).get("mode") || "board";</script>
   </body>
 </html>

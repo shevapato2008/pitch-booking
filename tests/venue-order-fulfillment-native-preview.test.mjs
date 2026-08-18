@@ -45,5 +45,5 @@ test("central manifests remain untouched and production code cannot import the F
     }
   }
   const review = readFileSync("artifacts/ui/reviews/venue-order-fulfillment/README.md", "utf8");
-  assert.match(review, /Native Fixture visual approval:\s*pending/);
+  assert.match(review, /Native Fixture visual approval:\s*approved/);
 });

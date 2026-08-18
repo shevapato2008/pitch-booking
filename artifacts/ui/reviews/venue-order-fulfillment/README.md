@@ -2,42 +2,41 @@
 
 - Target viewport: 375 × 812
 - Representative state: `refund-confirm`
-- Native Fixture visual approval: pending
+- Native Fixture visual approval: approved
 - Production enabled: no
+- Visual gate conclusion: approved
 
 ## 证据
 
 | Reference | Implementation | Side by side | Overlay 50% | Difference |
 | --- | --- | --- | --- | --- |
-| `refund-confirm-reference-375x812.png` | pending | pending | pending | pending |
+| `refund-confirm-reference-375x812.png` | `refund-confirm-implementation-375x812.png` | `refund-confirm-side-by-side-750x812.png` | `refund-confirm-overlay-375x812.png` | `refund-confirm-difference-375x812.png` |
 
-## 参考图自检
+真实 WeChat DevTools 36.6.0 使用 iPhone 12/13 Pro 模拟器（运行时 viewport `390 × 844`）捕获 `refund-confirm-implementation-390x844.png`。自动化工具没有设备切换接口，因此保留该原始源图，并将其按近似相同比例规范化为 `375 × 812`，用于与同尺寸参考图进行并排、50% 叠加和 difference 检查；没有将 Chromium 图冒充原生实现。
 
-真实 Chromium 在 `375 × 812` CSS viewport、device scale 1 下捕获参考图；PNG 已独立验证为 375 × 812。
+## 视觉结论
 
-- **composition / hierarchy**：胶囊安全的场馆标题与工作人员语境固定在顶部；日期和三类订单动作形成单列工作层级；退款确认层只遮挡当前需要决策的下半屏。
-- **geometry/spacing**：三列日期按钮、订单状态/编号列和右侧动作列保持对齐；所有可见按钮至少 44px，文本均使用显式 flex 双轴居中；无水平溢出。
-- **typography/colors/materials**：沿用既有系统字体、深蓝文字、可信蓝、白色卡片和语义绿/橙/红；状态同时使用文字，不只依赖颜色。
-- **icons / copy / state meaning**：返回、关闭、提示均为一致的描边 SVG，无 emoji；手机号遮罩，退款明确为整单全额、原因必填并说明原路退回金额。
-- **safe area**：底部操作区使用 `env(safe-area-inset-bottom)`，主按钮未贴近手势区；关闭按钮和全部动作控件边界完整、未裁切。
-- **interaction pass**：日期切换、确认签到、完成服务、打开/取消退款层、确认退款和返回均产生可见、确定的参考状态；没有无效按钮或假成功 Toast。
+- **composition / hierarchy**：场馆标题、工作人员语境、日期选择、三种履约动作和退款确认层的层级与参考一致；底部 Sheet 只覆盖当前退款决策区域。
+- **geometry / spacing**：三列日期、订单卡片和操作按钮保持对齐，无水平溢出或裁切。首张原生图暴露的额外 Fixture 提示条已移除；微信 `textarea` 默认高度已用显式 `height` 对齐参考构图。
+- **typography / controls**：文字均清晰，按钮使用显式 flex 双轴居中；所有操作控件保持至少 `88rpx`，没有旧式按钮文字偏移。
+- **colors / materials / semantics**：深蓝、可信蓝、语义绿/橙/红和遮罩透明度与参考相符；状态同时有文本，不依赖颜色单独传义。
+- **safe area / native variance**：真实微信状态栏、胶囊和 iPhone 底部 Home Indicator 是参考 Chromium 中不存在的预期差异；实现为它们保留安全区，所以原生 Sheet 的按钮区相对参考上移约一个底部安全区高度。
+- **difference review**：其余可见差异主要来自微信原生字体栅格化、真实系统控件和 390→375 规范化；未发现影响可用性的层级、触控、文案或状态语义偏差。
 
-原生实现、并排图、叠加图、差异图与独立视觉结论必须由真实 WeChat DevTools 运行时产生；本切片不得自批。
+## 真实交互验证
 
-## Capture hash
+WeChat DevTools 自动化实际点击并读取 Page data：
 
-`refund-confirm-reference-375x812.png`: `bff18ff743c8fa8e5aaa8500436c7c631bef9fd758031de18fc2f1d2f04d6ada`
+- 退款原因输入成功，`refundReasonValid=true`；取消后 `sheetOpen=false`、`visualState=ready`。
+- “确认签到”后订单由“待签到”变为“已签到”，下一权威动作变为 `COMPLETE`。
+- “完成服务”后订单变为“已完成”，动作清空。
+- 再次打开退款、编辑原因并确认后，订单变为“退款处理中”，动作清空。
+- `read-error` 的“重新读取”恢复 `refund-confirm`；真实点击期间发现安全区布局值被 Fixture 重置，已通过 TDD 修复并在运行时复验 `headerTopPx=47`、`headerRightInsetPx=102`。
+- 返回按钮实际跳转至 `pages/venue-profile/index`。
 
-## Native Fixture source verification
+## TDD 与验证
 
-TDD RED was observed before the Fixture and page existed:
-
-```text
-Jest: Cannot find module '../../venue-fulfillment-fixture'
-Node: missing miniprogram/dev/venue-fulfillment-fixture.ts
-```
-
-The minimal slice-local implementation then passed:
+初始 RED：Fixture/page 尚不存在；真实视觉 RED：额外提示条、微信原生 textarea 高度过大、重试后安全区 layout 被重置。修复后 GREEN：
 
 ```text
 npx jest miniprogram/dev/pages/venue-fulfillment/index.test.ts --runInBand
@@ -53,16 +52,13 @@ npm run build:miniprogram:development
 passed; dev/pages/venue-fulfillment/index discovered without editing a central manifest
 ```
 
-The covered behavior is deterministic local Fixture state only: check-in, completion, refund-sheet open/cancel, required reason editing, full-refund confirmation, date-driven empty/read-error states, retry, native back fallback, and every visible button binding. No action uses a Toast as fake production success.
+## Capture hashes
 
-## Native capture blocker
+- reference: `bff18ff743c8fa8e5aaa8500436c7c631bef9fd758031de18fc2f1d2f04d6ada`
+- native source: `2017639e9ebb353af40967c260599485e1f73c31594167c227796ca60ba5f601`
+- implementation 375×812: `e6cb956f7e230499e2794d56ffbef50aa37836be0d117c9542f99b7843f68102`
+- side by side: `2be3973d6f88f46e71108636e92f19d1d389804c5800e01c9531ebf40c45ccee`
+- overlay 50%: `2d70dda3499bd41bc924b284821348e4428d583e7a7f764931db7d0298137490`
+- difference: `9694d17b4c7c72d8cd702782774d8e139f6c3f8edafc2898cc9ea5d483151fc7`
 
-One proportional WeChat DevTools attempt reached a healthy real environment on 2026-08-19:
-
-```text
-WeChat DevTools 36.6.0
-APPID_CONFIGURED, PROJECT_CONFIGURED, BUILD_COMPLETED,
-LOGIN_CONFIRMED, PROJECT_OPENED, AUTOMATION_ENABLED
-```
-
-The first simulator screenshot tool session then stopped at the tool's required user-authorization task (`auth_26ca59dc8b41007aec2a394b6a920cddaf9cbee5316a492d`). Because the user was unavailable and the plan forbids expanding a visual slice into toolchain repair, no second capture workaround was attempted. There is no implementation PNG, side-by-side, overlay, difference, or native approval. Root integration must consume the route fragment and complete this visual gate in an authorized WeChat DevTools session.
+本结论仅批准隔离的原生 Fixture 视觉与交互，不启用生产路由，也不代表后端 Task 4 已开始。

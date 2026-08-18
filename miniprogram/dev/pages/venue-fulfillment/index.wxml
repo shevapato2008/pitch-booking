@@ -7,7 +7,6 @@
 
   <scroll-view class="fulfillment__scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
     <view class="fulfillment__content">
-      <view class="preview-notice"><view class="preview-notice__mark">i</view><text>{{previewNotice}}</text></view>
       <view class="date-heading"><view><text class="section-label">服务日期</text><text class="date-heading__value">{{selectedDateLabel}}</text></view><text class="date-heading__count">{{orders.length}} 个订单</text></view>
       <view class="date-tabs" role="group" aria-label="切换服务日期">
         <button wx:for="{{dates}}" wx:key="id" class="date-tab {{item.selected ? 'date-tab--selected' : ''}}" data-state="{{item.state}}" disabled="{{item.selected}}" bindtap="onSelectDate"><text>{{item.weekday}}</text><text class="date-tab__day">{{item.day}}</text></button>

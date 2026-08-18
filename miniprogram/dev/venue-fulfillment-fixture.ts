@@ -46,7 +46,6 @@ export interface VenueFulfillmentPreview {
   readonly refundReason: string;
   readonly refundReasonValid: boolean;
   readonly errorMessage: string;
-  readonly previewNotice: string;
   readonly headerTopPx: number;
   readonly headerRowHeightPx: number;
   readonly headerRightInsetPx: number;
@@ -141,7 +140,6 @@ const base = {
   refundReason: "场地临时检修，无法按时提供服务",
   refundReasonValid: true,
   errorMessage: "",
-  previewNotice: "开发预览 · 操作只改变本地 Fixture",
   headerTopPx: 0,
   headerRowHeightPx: 44,
   headerRightInsetPx: 0,
@@ -199,6 +197,18 @@ export function cloneVenueFulfillmentPreview(view: VenueFulfillmentPreview): Ven
   };
 }
 
+function preserveHeaderLayout(
+  current: VenueFulfillmentPreview,
+  next: VenueFulfillmentPreview,
+): VenueFulfillmentPreview {
+  return {
+    ...next,
+    headerTopPx: current.headerTopPx,
+    headerRowHeightPx: current.headerRowHeightPx,
+    headerRightInsetPx: current.headerRightInsetPx,
+  };
+}
+
 function updateOrder(
   view: VenueFulfillmentPreview,
   orderId: string,
@@ -211,8 +221,12 @@ export function transitionVenueFulfillmentFixture(
   current: VenueFulfillmentPreview,
   event: VenueFulfillmentFixtureEvent,
 ): VenueFulfillmentPreview {
-  if (event.type === "SELECT_DATE") return cloneVenueFulfillmentPreview(states[event.state]);
-  if (event.type === "RETRY") return cloneVenueFulfillmentPreview(states["refund-confirm"]);
+  if (event.type === "SELECT_DATE") {
+    return preserveHeaderLayout(current, cloneVenueFulfillmentPreview(states[event.state]));
+  }
+  if (event.type === "RETRY") {
+    return preserveHeaderLayout(current, cloneVenueFulfillmentPreview(states["refund-confirm"]));
+  }
   if (event.type === "EDIT_REASON") {
     return { ...current, refundReason: event.value, refundReasonValid: event.value.trim().length > 0 };
   }
