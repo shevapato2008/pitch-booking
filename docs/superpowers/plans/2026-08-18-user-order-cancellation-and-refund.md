@@ -400,6 +400,13 @@ sha256(json.dumps(
 
 The no-money branch performs all changes in one transaction. The maybe-paid branch only records the shared cancellation intent and returns; it does not query/close payment, create automatic cases or call a Provider.
 
+Use these two exact lock paths; do not improvise a third order:
+
+- **No-money branch:** read only enough identifiers to locate the slot, then lock `Slot -> Order -> every Payment for the order in stable payment-id order`. Recheck owner, current lifecycle state, and slot ownership after all locks are held. Only then may the service write `CANCELLED` and release this order's own `LOCKED` slot.
+- **Applied-payment branch:** read only the applied payment id, then call `RefundRepository.lock_refund_graph(payment_id)` and recheck owner plus lifecycle facts inside that shared graph before creating or retrying a case/attempt.
+
+Never lock a payment first and then call `lock_refund_graph()`: that reverses the shared graph order and can deadlock with payment/refund convergence.
+
 - [ ] **Step 3: Add the exact route without schema edits**
 
 Add `POST /{order_id}/cancel` to `backend/app/modules/orders/router.py` with business bearer, `Idempotency-Key` length 16–128, no request body and the exact upstream 200/202/401/404/409/503 matrix. Serialize the existing shared response DTO; do not define a second cancel response schema or extend `align_order_list_openapi`.

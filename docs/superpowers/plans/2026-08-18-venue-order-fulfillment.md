@@ -4,7 +4,7 @@
 
 **Goal:** Give an authorized venue inventory manager a production WeChat Mini Program workbench for listing a venue's Shanghai-local-day orders, checking guests in, completing ended sessions, and requesting a venue-reason full refund.
 
-**Architecture:** Treat revision `0013_order_lifecycle.py`, the models, shared lifecycle policy/action projector, `RefundRepository` purpose/inventory predicates, existing owner projection, refund provider protocol, and static OpenAPI contract as already-integrated read-only authorities. Add a bounded `venue_fulfillment` FastAPI module that consumes those authorities, performs only venue-owned writes under the shared lock order, creates/retries durable venue-cancellation cases and attempts, calls an injected refund provider outside database transactions, and hands its result to the shared convergence service owned by the WeChat Provider track. Add one closed Mini Program domain/service port whose production composition uses authenticated HTTP and whose temporary development composition uses an isolated Fixture. Follow one visual-first vertical slice: one representative 375×812 Reference/native comparison and approval by the user or a user-authorized independent visual reviewer, then backend and production integration, then delete the Fixture.
+**Architecture:** Treat revision `0013_order_lifecycle.py`, the models, shared lifecycle policy/action projector, `RefundRepository` purpose/inventory predicates, existing owner projection, refund provider protocol, and static OpenAPI contract as already-integrated read-only authorities. Add a bounded `venue_fulfillment` FastAPI module that consumes those authorities, performs only venue-owned writes under the shared lock order, and creates/retries durable venue-cancellation cases and attempts for the Provider-owned refund worker. The API never calls the refund provider or convergence service; that worker remains the unique external-I/O and terminal-state author. Add one closed Mini Program domain/service port whose production composition uses authenticated HTTP and whose temporary development composition uses an isolated Fixture. Follow one visual-first vertical slice: one representative 375×812 Reference/native comparison and approval by the user or a user-authorized independent visual reviewer, then backend and production integration, then delete the Fixture.
 
 **Tech Stack:** FastAPI, SQLAlchemy 2, PostgreSQL, Pydantic, pytest, WeChat Mini Program TypeScript/WXML/WXSS, Jest, Node test runner, existing production build/audit scripts, WeChat DevTools, Pillow visual comparison.
 
@@ -26,13 +26,13 @@ It does **not** own user cancellation, partial refunds, automatic completion, no
 
 The foundation owns the shared lifecycle policy/action projection, the `RefundRepository` purpose-specific creation and inventory-ownership predicates, and the existing owner list/detail projection. This venue track calls those APIs; it must not copy their decisions into local policy branches, repository predicates, or owner presenters.
 
-The WeChat Provider track exclusively owns `backend/app/modules/refunds/convergence.py`, the refund worker, and authoritative `SUCCESS | FAILED | UNKNOWN` validation and terminal convergence. This venue track may create or retry a durable `ORDER_CANCELLATION` case/attempt through the shared repository, invoke an injected `RefundProvider` after commit, and pass the exact provider result to shared convergence. It must not implement a second authoritative-facts validator, refund worker, or terminal state machine.
+The WeChat Provider track exclusively owns `backend/app/modules/refunds/convergence.py`, the refund worker, all provider calls, and authoritative `SUCCESS | FAILED | UNKNOWN` validation and terminal convergence. This venue track may only create or retry a durable `ORDER_CANCELLATION` case/attempt through the shared repository and set `next_reconcile_at=now`. It must not inject or call `RefundProvider`/`RefundConvergenceService`, implement a second authoritative-facts validator, or write terminal refund facts.
 
 ### Integration ownership and activation gate
 
 This slice owns only its page, domain/service, Fixture, focused tests, FastAPI module, and route fragments. It must not modify `miniprogram/dev/bootstrap.ts`, `miniprogram/dev/app-pages.json`, `miniprogram/app.json`, production build/audit manifests or their central tests, or `backend/app/main.py`. After all active branches merge, the root integration coordinator serially consumes the route/composition fragments, updates those central files, runs their central checks, and performs the final Fixture cleanup.
 
-The venue refund route is a slice-local, unregistered fragment until the Provider track is integrated. The root integration coordinator may register or enable it only after `backend/app/main.py` composes the real integrated `RefundProvider` and Provider-owned convergence service and injects both into the route. If either dependency is unavailable, the route stays unregistered and unpublished; no deployment may expose a refund route that depends on an unavailable provider or convergence service.
+The module exports separate `router` (list/check-in/complete) and `refund_router` fragments. Root may mount `router` independently. It may mount `refund_router` only when the real provider configuration is available and the Provider-owned refund worker is deployed. The route itself receives only a provider-availability gate and writes durable work; it never owns a provider or convergence object.
 
 The implementation branch must not edit these shared or externally owned authorities:
 
@@ -66,10 +66,10 @@ If the foundation lacks a required enum, column (including the non-empty venue r
 - `backend/app/modules/venue_fulfillment/dto.py`: Pydantic request/result types matching the already-frozen OpenAPI schemas.
 - `backend/app/modules/venue_fulfillment/repository.py`: authorization, day query, stable cursor rows, idempotency, and adapters that call shared order/refund repository authorities without duplicating their predicates.
 - `backend/app/modules/venue_fulfillment/service.py`: list projection, check-in, and completion orchestration through the shared lifecycle policy/action projector.
-- `backend/app/modules/venue_fulfillment/refund.py`: venue refund request orchestration that creates/retries a durable attempt, calls the injected `RefundProvider`, and delegates its result to shared convergence.
-- `backend/app/modules/venue_fulfillment/router.py`: four authenticated HTTP route fragments; the refund fragment stays unregistered in this slice.
+- `backend/app/modules/venue_fulfillment/refund.py`: venue refund enqueue orchestration that creates/retries one durable attempt and schedules the Provider-owned worker.
+- `backend/app/modules/venue_fulfillment/router.py`: authenticated `router` and separately mountable `refund_router` fragments.
 - `backend/tests/test_venue_fulfillment.py`: real PostgreSQL authorization/list/check-in/complete coverage.
-- `backend/tests/test_venue_fulfillment_refund.py`: real PostgreSQL refund, idempotency, lock, and fake-provider coverage.
+- `backend/tests/test_venue_fulfillment_refund.py`: real PostgreSQL refund enqueue, idempotency, lock, and provider-availability-gate coverage.
 
 ### Mini Program
 
@@ -92,7 +92,7 @@ If the foundation lacks a required enum, column (including the non-empty venue r
 
 ### Root-integration-only composition and cleanup
 
-- `backend/app/main.py`: after the Provider track is integrated, compose the real Provider/convergence dependencies and then register the venue refund route; it may register the non-refund route fragments independently.
+- `backend/app/main.py`: after the Provider track is integrated, mount `router` independently; mount `refund_router` only when real provider configuration is available and the Provider-owned refund worker is deployed.
 - `miniprogram/app.json`, `miniprogram/dev/app-pages.json`, and `miniprogram/dev/bootstrap.ts`: serially merge the route fragments and production/development compositions after all active branches merge.
 - `scripts/build-miniprogram.mjs`, `scripts/audit-production-package.mjs`, and central build/audit tests: root-only manifest, package-isolation, and composition updates.
 - final Fixture deletion and its central-manifest/build/audit cleanup: root integration coordinator only, after the merged real HTTP journey is accepted.
@@ -350,8 +350,8 @@ Check-in cases:
 Completion cases:
 
 - requires `CONFIRMED`, the checked-in pair, and `now >= ends_at`;
-- exact end time succeeds, one microsecond early returns `SESSION_NOT_ENDED`;
-- missing check-in returns `CHECK_IN_REQUIRED`;
+- exact end time succeeds; one microsecond early returns frozen `409 ORDER_STATE_CHANGED`, while the subsequently read projection explains `SESSION_NOT_ENDED` through `allowed_actions.blocked_reason`;
+- missing check-in returns frozen `409 ORDER_STATE_CHANGED`, while the subsequently read projection explains `CHECK_IN_REQUIRED` through `allowed_actions.blocked_reason`;
 - writes `COMPLETED` and actor/time once, keeps slot `BOOKED`, and is business-idempotent with a different key;
 - same key with a different order/body returns `IDEMPOTENCY_KEY_REUSED`.
 
@@ -395,7 +395,7 @@ git commit -m "feat: check in and complete venue orders"
 
 ## Chunk 3: Venue-reason full refund request orchestration
 
-### Task 6: Request a venue refund and delegate authoritative convergence
+### Task 6: Enqueue a venue refund for Provider-owned convergence
 
 **Files:**
 
@@ -418,19 +418,18 @@ Cover:
 - case/attempt creation and retry call the foundation `RefundRepository` purpose predicate rather than reproducing the applied-payment decision locally;
 - same-key replay returns the original business response; same key/different normalized reason or resource returns 409.
 
-- [ ] **Step 2: Write failing ownership/provider/delegation boundary tests**
+- [ ] **Step 2: Write failing ownership/worker-handoff boundary tests**
 
-Use a fake implementation of the shared `RefundProvider` and a spy/stub for the Provider-track shared convergence service, never a mock production adapter or a venue-local convergence implementation. Cover:
+Do not inject a fake provider or convergence service. Cover:
 
-- request preparation commits `REFUND_PENDING` and the attempt before provider I/O;
-- the fake provider can inspect PostgreSQL and prove no business row lock/transaction remains during `create_refund`;
+- provider configuration is checked before any database mutation; unavailable configuration returns frozen 503 with no case, attempt, order, slot, or idempotency change;
+- request preparation atomically commits `REFUND_PENDING`, the case/attempt, `next_reconcile_at=now`, slot mutation, and idempotency result;
 - venue cancellation closes the owned slot at acceptance only when the foundation `RefundRepository` returns inventory-mutation authority, and never makes it `AVAILABLE`;
 - absent shared ownership proof leaves the slot unchanged; the venue repository contains no parallel inventory predicate;
-- each provider protocol result is passed unchanged, with the durable attempt identity, to the injected shared convergence service exactly once;
-- the venue module does not inspect authoritative success fields or directly write `REFUNDED`, `REFUND_FAILED`, terminal attempt facts, or any `SUCCESS | FAILED | UNKNOWN` convergence outcome;
-- returned order/actions come from the shared convergence result plus shared action projector, not a venue-local terminal-state matrix;
-- a provider protocol `UNKNOWN`/transport-uncertain result is delegated unchanged, and an endpoint retry reuses the same attempt and merchant refund number rather than creating another external refund;
-- an unavailable injected provider returns the frozen 503 before creating a case/attempt;
+- the venue module has zero imports/calls of `RefundProvider` and `RefundConvergenceService`, and never writes `REFUNDED`, `REFUND_FAILED`, terminal attempt facts, provider facts, or any `SUCCESS | FAILED | UNKNOWN` outcome;
+- a repeated endpoint request while the active attempt exists reuses the case/attempt and returns the same pending projection without another durable job;
+- an already authoritative `SUCCESS` case is a read-only `200 REFUNDED` response and creates no work;
+- a newly enqueued request returns frozen `202 REFUND_PENDING`; the Provider worker is responsible for later transitions;
 - database failures roll back and expose no provider or private error text.
 
 - [ ] **Step 3: Run RED tests**
@@ -450,19 +449,19 @@ Normalize/hash the body, claim idempotency, then use the foundation helpers to l
 Slot -> Order -> applied Payment -> RefundCase -> latest RefundAttempt
 ```
 
-Recheck venue authorization inside the transaction, then ask the shared lifecycle policy and `RefundRepository` purpose predicate to decide eligibility and the applied payment. Reuse or create the one payment-bound `ORDER_CANCELLATION` case; create a new attempt only when the shared repository permits retry after an explicitly `FAILED` latest attempt. Set only the non-terminal request/cancellation state, and close the slot only from the shared repository's locked ownership proof. Commit before returning the provider request descriptor. Do not recreate any purpose or inventory predicate in `venue_fulfillment/repository.py`.
+Recheck venue authorization inside the transaction, then ask the shared lifecycle policy and `RefundRepository` purpose predicate to decide eligibility and the applied payment. Reuse or create the one payment-bound `ORDER_CANCELLATION` case; create a new attempt only when the shared repository permits retry after an explicitly `FAILED` latest attempt. Set only the non-terminal request/cancellation state, set `next_reconcile_at=now`, and close the slot only from the shared repository's locked ownership proof. Complete idempotency and commit atomically. Do not recreate any purpose or inventory predicate in `venue_fulfillment/repository.py`.
 
-- [ ] **Step 5: Verify the Provider-track handoff before refund-route enablement**
+- [ ] **Step 5: Verify the Provider worker gate before refund-route enablement**
 
-Before any refund route is registered or enabled, the integration coordinator must either merge the Provider-track commit that owns `backend/app/modules/refunds/convergence.py`, its tests, and the refund worker, or defer the route to final root integration. In the latter case, this slice leaves its refund router fragment unregistered. In both cases, record the external SHA as `<provider-convergence-sha>` once integrated and confirm that it exposes the shared entry point for converging a provider result by durable attempt identity. If that entry point is absent or requires the venue module to validate authoritative facts or choose terminal states, stop and return an integration prerequisite; do not add a local protocol or convergence helper.
+Before `refund_router` is registered or enabled, the integration coordinator must merge the Provider-track commit that owns `backend/app/modules/refunds/convergence.py`, its tests, the refund worker, and production provider composition. Record the external SHA as `<provider-convergence-sha>` and verify that the deployed worker leases due attempts including `next_reconcile_at=now`. If the real provider is unavailable or the worker is not deployed, leave `refund_router` unpublished. Do not add a venue-local provider or convergence helper.
 
-- [ ] **Step 6: Call the provider outside the transaction and delegate the result**
+- [ ] **Step 6: Return the durable pending projection without provider I/O**
 
-`VenueRefundService` receives an injected shared `RefundProvider` and the Provider-track convergence service. After the durable request transaction commits, call `create_refund()`/`query_refund()` and pass the exact returned protocol result plus durable attempt identity to shared convergence. Use its returned durable order/attempt outcome to finish the endpoint's idempotency record and project the response. Do not import or instantiate a WeChat HTTP adapter, signer, credential loader, callback handler, or worker; do not reopen the graph to validate facts or write terminal refund state in this module.
+`VenueRefundService` receives only repositories, clock, and a fail-closed provider-availability predicate. It returns `202 REFUND_PENDING` after the atomic durable enqueue. If the shared repository already exposes an authoritative successful case, return its read-only `200 REFUNDED` projection. Do not import or instantiate a WeChat HTTP adapter, signer, credential loader, callback handler, Provider, convergence service, or worker.
 
 - [ ] **Step 7: Leave the refund route unregistered and run GREEN**
 
-The route fragment accepts only the frozen non-empty reason body and `Idempotency-Key`, receives the provider and shared convergence service through explicit injection, and serializes the service's frozen response/status. Do not add application-state composition or mount it in `backend/app/main.py` here. Its tests may spy on convergence delegation but must rely on `backend/app/modules/refunds/convergence.py` tests for authoritative fact matching, `SUCCESS | FAILED | UNKNOWN` terminal rules, worker recovery, and non-regression. Final root integration registers it only after `main.py` composes the real Provider/convergence pair; otherwise it remains unpublished.
+`refund_router` accepts only the frozen non-empty reason body and `Idempotency-Key`, receives the provider-availability predicate through explicit injection, and serializes the service's frozen 200/202 response. Do not add application-state composition or mount it in `backend/app/main.py` here. Final root integration registers it only after the real Provider is configured and the Provider-owned refund worker is deployed; otherwise it remains unpublished.
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
@@ -650,19 +649,19 @@ With an authorized venue user and prepared orders, verify:
 1. the production page loads only the selected venue/date and masks contact phone;
 2. too-early check-in is rejected by the server without a false success;
 3. an eligible order checks in once, then completes once after an injected/test end time;
-4. venue refund reason reaches the server, creates exactly one full-amount case/attempt with the slot `CLOSED` when owned, and delegates the fake provider result once to shared convergence;
+4. venue refund reason reaches the server, creates exactly one full-amount case/attempt with the slot `CLOSED` when owned, and schedules the Provider-owned worker without provider I/O in the API request;
 5. missing refund-provider configuration returns the frozen 503 without mutation.
 
-Use a fake provider only in local/integration tests. Do not make a real WeChat funds call in this slice.
+Do not make a real WeChat funds call from the venue API tests.
 
 - [ ] **Step 3: Record the external adapter completion gate honestly**
 
-Record `<provider-convergence-sha>` separately from real adapter availability; shared convergence is required for Task 6 even when the real adapter remains unavailable. The venue refund business flow is not production-complete until the separate real-WeChat-adapter work is integrated and configured. Record one of:
+Record `<provider-convergence-sha>` separately from real adapter availability. The venue refund business flow is not production-complete until the real WeChat adapter is configured and the Provider-owned worker is deployed. Record one of:
 
-- `real adapter pending`: page/API and shared convergence are production code, check-in/complete work, refund returns honest unavailable behavior; or
-- `real adapter integrated by <adapter SHA>`: one controlled adapter-owned full-refund acceptance is referenced.
+- `real adapter pending`: page/API and shared convergence are production code, check-in/complete work, and `refund_router` remains unpublished; or
+- `real adapter + worker integrated by <adapter SHA>`: the route enqueues durably and one controlled worker-owned full-refund acceptance is referenced.
 
-Never claim real refund acceptance from the fake provider.
+Never claim real refund acceptance from an API-level Fixture or fake.
 
 - [ ] **Step 4: Perform one production-page native smoke check**
 
@@ -692,9 +691,9 @@ At 375×812, open the HTTP-backed production route and compare it to the approve
 - Modify: `docs/acceptance/venue-order-fulfillment-progress.md`
 - Modify: `docs/superpowers/plans/2026-08-16-overall-slice-roadmap.md`
 
-- [ ] **Step 1: Compose routes only behind the real Provider/convergence gate**
+- [ ] **Step 1: Compose routes only behind the real Provider/worker gate**
 
-After all active branches merge, root integration merges the Mini Program route/composition fragments into the central manifests and bootstrap and adds the production route only with the real HTTP source and attempt store. It may register the list/check-in/complete router fragment independently. Before registering or enabling the venue refund route, `backend/app/main.py` must compose the integrated real `RefundProvider` and Provider-owned convergence service and inject both. If either is unavailable, leave the refund route unregistered and unpublished; do not substitute a Fixture or fake provider.
+After all active branches merge, root integration merges the Mini Program route/composition fragments into the central manifests and bootstrap and adds the production route only with the real HTTP source and attempt store. It may mount `router` (list/check-in/complete) independently. Before mounting `refund_router`, the real Provider configuration must be available and the Provider-owned refund worker must be deployed. The API receives only a provider-availability gate; do not inject a Provider/convergence service or substitute a Fixture/fake provider.
 
 - [ ] **Step 2: Change the isolation test to require Fixture deletion**
 
@@ -765,9 +764,9 @@ The slice is complete only when:
 - the active venue/membership/capability predicate protects every read and write with safe 404 privacy;
 - list date, pagination, contact masking, and action buttons are server-authoritative;
 - check-in and completion satisfy exact time/state rules, are idempotent, and keep historical slots `BOOKED`;
-- venue refund stores a non-empty reason, uses the main full payment selected by the shared repository, follows the shared lock order, performs provider I/O outside transactions, delegates the exact result to Provider-owned shared convergence, and never releases a venue-cancelled slot;
-- root integration has composed the real Provider/convergence pair in `backend/app/main.py` before registering the venue refund route; if that composition is unavailable, the route remains unregistered and unpublished;
+- venue refund stores a non-empty reason, uses the main full payment selected by the shared repository, follows the shared lock order, atomically enqueues the Provider-owned worker, and never releases a venue-cancelled slot;
+- root integration mounts `refund_router` only when real Provider configuration is available and the Provider-owned refund worker is deployed; otherwise it remains unregistered and unpublished;
 - the production Mini Program has no inert button, local action guess, development fallback, or Fixture data;
 - the one representative native visual is approved by the user or a user-authorized independent reviewer, and the temporary Fixture is deleted;
-- real provider availability is reported honestly; a fake provider is never cited as real-WeChat refund acceptance;
+- real provider/worker availability is reported honestly; an API Fixture or fake is never cited as real-WeChat refund acceptance;
 - the venue slice leaves shared lifecycle policy/projection, refund repository predicates, `0013_order_lifecycle.py`, protocols, OpenAPI schemas, Provider convergence/worker, real WeChat adapter, and central composition files untouched; root integration changes only the declared composition/manifests/cleanup after merging their owning branches.
