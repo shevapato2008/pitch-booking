@@ -1,0 +1,14 @@
+{
+  "id": "venue-fulfillment",
+  "development": {
+    "route": "dev/pages/venue-fulfillment/index",
+    "fixture": "miniprogram/dev/venue-fulfillment-fixture.ts",
+    "representative_query": "state=refund-confirm"
+  },
+  "production": {
+    "route": "pages/venue-fulfillment/index",
+    "status": "pending",
+    "fixture_imports_allowed": false
+  },
+  "central_composition_required": true
+}

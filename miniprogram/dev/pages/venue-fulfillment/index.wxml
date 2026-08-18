@@ -1,0 +1,39 @@
+<view class="fulfillment" data-state="{{visualState}}">
+  <view class="fulfillment__system" style="height: {{headerTopPx}}px"></view>
+  <view class="fulfillment__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px">
+    <button class="icon-button fulfillment__back" aria-label="返回" bindtap="onBack"><view class="icon icon--back"></view></button>
+    <view class="fulfillment__header-copy"><text class="fulfillment__venue">{{venueName}}</text><text class="fulfillment__context">今日订单 · 仅授权工作人员</text></view>
+  </view>
+
+  <scroll-view class="fulfillment__scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
+    <view class="fulfillment__content">
+      <view class="date-heading"><view><text class="section-label">服务日期</text><text class="date-heading__value">{{selectedDateLabel}}</text></view><text class="date-heading__count">{{orders.length}} 个订单</text></view>
+      <view class="date-tabs" role="group" aria-label="切换服务日期">
+        <button wx:for="{{dates}}" wx:key="id" class="date-tab {{item.selected ? 'date-tab--selected' : ''}}" data-state="{{item.state}}" disabled="{{item.selected}}" bindtap="onSelectDate"><text>{{item.weekday}}</text><text class="date-tab__day">{{item.day}}</text></button>
+      </view>
+
+      <view wx:if="{{visualState === 'read-error'}}" class="state-panel state-panel--error" role="alert"><view class="state-panel__mark">!</view><text class="state-panel__title">订单读取失败，请重试</text><text class="state-panel__copy">当前列表未更新，请重新读取权威订单状态。</text><button class="secondary-button" bindtap="onRetry">重新读取</button></view>
+      <view wx:elif="{{visualState === 'empty'}}" class="state-panel"><view class="state-panel__mark">i</view><text class="state-panel__title">当天没有待处理订单</text><text class="state-panel__copy">可切换其他日期继续查看。</text></view>
+      <view wx:else class="order-list">
+        <view wx:for="{{orders}}" wx:key="id" class="order-card">
+          <view class="order-card__top"><text class="status status--{{item.statusTone}}">{{item.statusLabel}}</text><text class="order-card__number">{{item.number}}</text></view>
+          <text class="order-card__time">{{item.time}}</text><text class="order-card__pitch">{{item.pitch}}</text>
+          <view class="order-card__guest"><text>{{item.guest}}</text><text>{{item.phone}}</text></view>
+          <button wx:if="{{item.action === 'CHECK_IN'}}" class="order-action" data-order-id="{{item.id}}" bindtap="onCheckIn">确认签到</button>
+          <button wx:elif="{{item.action === 'COMPLETE'}}" class="order-action" data-order-id="{{item.id}}" bindtap="onComplete">完成服务</button>
+          <button wx:elif="{{item.action === 'REFUND'}}" class="order-action order-action--danger" data-order-id="{{item.id}}" bindtap="onOpenRefund">取消并退款</button>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{sheetOpen}}" class="sheet-scrim"></view>
+  <view wx:if="{{sheetOpen}}" class="refund-sheet" role="dialog" aria-label="确认取消并全额退款">
+    <view class="sheet-handle"></view>
+    <view class="refund-sheet__head"><view><text class="refund-sheet__order">订单 {{refundOrderNumber}}</text><text class="refund-sheet__title">确认取消并全额退款</text></view><button class="icon-button" aria-label="关闭退款确认" bindtap="onCancelRefund"><view class="icon icon--close"></view></button></view>
+    <label class="reason-label" for="refund-reason">取消原因（必填）</label>
+    <textarea id="refund-reason" class="reason-input" value="{{refundReason}}" maxlength="500" aria-label="取消原因（必填）" bindinput="onRefundReasonInput"></textarea>
+    <view class="refund-helper"><view class="refund-helper__mark">i</view><text>提交后将关闭本订单，并原路退回 ¥360.00</text></view>
+    <view class="refund-sheet__actions"><button class="secondary-button" bindtap="onCancelRefund">取消</button><button class="danger-button" disabled="{{!refundReasonValid}}" bindtap="onConfirmRefund">确认全额退款</button></view>
+  </view>
+</view>
