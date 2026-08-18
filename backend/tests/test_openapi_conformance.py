@@ -340,6 +340,11 @@ def test_my_orders_list_contract_is_closed_owner_only_and_private() -> None:
     assert summary["properties"]["pitch"] == {
         "$ref": "#/components/schemas/PhysicalPitch"
     }
+    for nested_name in ("CheckoutVenue", "PhysicalPitch"):
+        nested = schemas[nested_name]
+        assert nested["additionalProperties"] is False
+        assert set(nested["required"]) == {"id", "name"}
+        assert set(nested["properties"]) == {"id", "name"}
 
     response_schema = schemas["OrderListResponse"]
     assert response_schema["additionalProperties"] is False

@@ -176,6 +176,12 @@ test('my orders list freezes owner-only pagination and a private closed projecti
   assert.equal(summary.additionalProperties, false);
   assert.deepEqual([...summary.required].sort(), [...expectedFields].sort());
   assert.deepEqual(Object.keys(summary.properties).sort(), [...expectedFields].sort());
+  for (const nestedName of ['CheckoutVenue', 'PhysicalPitch']) {
+    const nested = contract.components.schemas[nestedName];
+    assert.equal(nested.additionalProperties, false, nestedName);
+    assert.deepEqual([...nested.required].sort(), ['id', 'name'], nestedName);
+    assert.deepEqual(Object.keys(nested.properties).sort(), ['id', 'name'], nestedName);
+  }
   assert.equal(response.additionalProperties, false);
   assert.deepEqual(response.required, ['orders', 'next_cursor']);
   assert.deepEqual(response.properties.next_cursor, { type: ['string', 'null'], minLength: 1 });
