@@ -9,6 +9,8 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     Order,
+    Payment,
+    PaymentState,
     Pitch,
     Slot,
     Venue,
@@ -103,6 +105,18 @@ class VenueFulfillmentRepository:
             .execution_options(populate_existing=True)
         )
 
+    def list_successful_payment_ids(self, *, order_id: uuid.UUID) -> tuple[uuid.UUID, ...]:
+        return tuple(
+            self.session.scalars(
+                select(Payment.id)
+                .where(
+                    Payment.order_id == order_id,
+                    Payment.status == PaymentState.SUCCESS,
+                )
+                .order_by(Payment.id)
+            )
+        )
+
     def claim_idempotency(
         self,
         *,
@@ -145,6 +159,21 @@ class VenueFulfillmentRepository:
             raise RuntimeError("idempotency conflict has no committed record")
         return record, False
 
+    def get_idempotency(
+        self,
+        *,
+        user_id: uuid.UUID,
+        operation: str,
+        key: str,
+    ) -> IdempotencyRecord | None:
+        return self.session.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.user_id == user_id,
+                IdempotencyRecord.operation == operation,
+                IdempotencyRecord.key == key,
+            )
+        )
+
     def lock_business_graph(
         self,
         *,
@@ -157,10 +186,11 @@ class VenueFulfillmentRepository:
         self,
         record: IdempotencyRecord,
         *,
+        response_status: int = 200,
         response_body: dict[str, object],
     ) -> None:
         record.state = IdempotencyState.COMPLETED
-        record.response_status = 200
+        record.response_status = response_status
         record.response_body = response_body
         self.session.flush()
 

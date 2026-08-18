@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,3 +34,12 @@ class VenueFulfillmentOrdersResponse(ClosedModel):
     generated_at: datetime
     orders: list[VenueFulfillmentOrderResponse]
     next_cursor: str | None = Field(min_length=1)
+
+
+class VenueRefundRequest(ClosedModel):
+    reason_note: str = Field(min_length=1, max_length=500)
+
+
+class RefundAcceptedResponse(ClosedModel):
+    order_id: uuid.UUID
+    status: Literal["REFUND_PENDING", "REFUNDED"]
