@@ -1,5 +1,5 @@
-import type { ExpiredOrderView, PendingOrderView } from "../domain/booking";
-import type { BookingDataSource, CreateOrderAttempt } from "../services/booking";
+import type { ExpiredOrderView, OrderSummaryView, PendingOrderView } from "../domain/booking";
+import type { CreateOrderAttempt, OrderListBookingDataSource } from "../services/booking";
 import { packagedFixtureLoader } from "./fixture-transport";
 
 interface CheckoutFixture {
@@ -119,7 +119,28 @@ function cloneOrder<T extends PendingOrderView | ExpiredOrderView>(order: T): T 
   return { ...order, venue: { ...order.venue }, pitch: { ...order.pitch }, contact: { ...order.contact } };
 }
 
-export function createDevelopmentBookingDataSource(flags: DevelopmentBookingScenarioFlags = {}, now: () => number = Date.now): BookingDataSource {
+function summarizeOrder(order: PendingOrderView | ExpiredOrderView): OrderSummaryView {
+  return {
+    orderId: order.orderId,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    venue: { id: order.venue.id, name: order.venue.name },
+    pitch: { id: order.pitch.id, name: order.pitch.name },
+    startsAt: order.startsAt,
+    endsAt: order.endsAt,
+    priceCents: order.priceCents,
+    currency: order.currency,
+    createdAt: order.createdAt,
+    expiresAt: order.expiresAt,
+    paymentConfirming: order.paymentConfirming ?? false,
+    closingPayment: order.closingPayment,
+  };
+}
+
+export function createDevelopmentBookingDataSource(
+  flags: DevelopmentBookingScenarioFlags = {},
+  now: () => number = Date.now,
+): OrderListBookingDataSource {
   let loginCalls = 0; let checkoutCalls = 0; let createCalls = 0; let orderCalls = 0; let authorizedPhone: string | null = null;
   const ordersByKey = new Map<string, PendingOrderView>();
   const ordersById = new Map<string, PendingOrderView>();
@@ -165,6 +186,10 @@ export function createDevelopmentBookingDataSource(flags: DevelopmentBookingScen
       if ((flags.order === "closing" || flags.order === "closing-failure") && orderCalls > 1) return expired(pending);
       const closing = flags.order === "closing" || flags.order === "closing-failure";
       return cloneOrder({ ...pending, expiresAt: closing ? new Date(now() - 1000).toISOString() : pending.expiresAt });
+    },
+    async listOrders() {
+      const orders = ordersById.size > 0 ? [...ordersById.values()].map(cloneOrder) : [pendingPreview()];
+      return { orders: orders.map(summarizeOrder), nextCursor: null };
     },
   };
 }

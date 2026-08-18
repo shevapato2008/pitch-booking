@@ -1,6 +1,6 @@
 import type { WeChatIdentityCapability, WeChatPhoneCapability } from "../runtime/interfaces";
 import { productionMedia, productionTransport } from "../runtime/production";
-import type { BookingDataSource } from "../services/booking";
+import type { OrderListBookingDataSource } from "../services/booking";
 import { createHttpBookingDataSource } from "../services/http-booking";
 import { createHttpPaymentDataSource } from "../services/http-payment";
 import { createHttpPageDataSource } from "../services/http-page-data";
@@ -18,7 +18,7 @@ const DEVELOPMENT_LOGIN_CODE = "dev-login-code";
 const DEVELOPMENT_PHONE_CODE = "dev-phone-code";
 
 export interface DevelopmentHttpSources {
-  readonly booking: BookingDataSource;
+  readonly booking: OrderListBookingDataSource;
   readonly payment: PaymentDataSource;
   readonly pages: PageDataSource;
   readonly venues: VenueDirectoryDataSource;

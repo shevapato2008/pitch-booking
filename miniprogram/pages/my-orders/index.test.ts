@@ -57,6 +57,7 @@ beforeEach(() => {
   (globalThis as any).wx = {
     navigateTo: jest.fn(), navigateBack: jest.fn(), reLaunch: jest.fn(), stopPullDownRefresh: jest.fn(),
   };
+  (globalThis as any).getCurrentPages = jest.fn(() => []);
 });
 
 test("loads the first page and opens the matching existing order detail", async () => {
@@ -73,16 +74,35 @@ test("loads the first page and opens the matching existing order detail", async 
   });
 });
 
-test("empty state returns to the map with a relaunch fallback", async () => {
+test("empty state navigates back only when the previous page is the venue map", async () => {
   registerListSource(async () => list([], null));
   const target = page();
   await call(target, "onLoad");
+  (globalThis as any).getCurrentPages.mockReturnValue([
+    { route: "pages/venue-map/index" },
+    { route: "pages/my-orders/index" },
+  ]);
 
   call(target, "onGoSelectVenue");
 
   expect(wx.navigateBack).toHaveBeenCalledWith(expect.objectContaining({ delta: 1 }));
   const options = (wx.navigateBack as jest.Mock).mock.calls[0][0] as { fail(): void };
   options.fail();
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/venue-map/index" });
+});
+
+test("empty state relaunches the venue map when the previous page is not the map", async () => {
+  registerListSource(async () => list([], null));
+  const target = page();
+  await call(target, "onLoad");
+  (globalThis as any).getCurrentPages.mockReturnValue([
+    { route: "pages/intent-entry/index" },
+    { route: "pages/my-orders/index" },
+  ]);
+
+  call(target, "onGoSelectVenue");
+
+  expect(wx.navigateBack).not.toHaveBeenCalled();
   expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/venue-map/index" });
 });
 
@@ -123,6 +143,33 @@ test("a refresh invalidates an older load-more response and always ends native r
 
   expect(target.data.orders.map(({ orderId }: any) => orderId)).toEqual([secondOrder.orderId]);
   expect(wx.stopPullDownRefresh).toHaveBeenCalledTimes(1);
+});
+
+test("a failed pull refresh during initial loading ends at retryable error without a stale skeleton", async () => {
+  const initial = deferred<OrderListView>();
+  let calls = 0;
+  registerListSource(async () => {
+    calls += 1;
+    if (calls === 1) return initial.promise;
+    throw new Error("offline");
+  });
+  const target = page();
+
+  const initialLoading = call(target, "onLoad");
+  await call(target, "onPullDownRefresh");
+
+  expect(target.data).toMatchObject({
+    loading: false,
+    refreshing: false,
+    errorText: "订单暂时无法加载",
+    refreshErrorText: "",
+  });
+  expect(wx.stopPullDownRefresh).toHaveBeenCalledTimes(1);
+
+  initial.resolve(list([firstOrder], null));
+  await initialLoading;
+  expect(target.data.orders).toEqual([]);
+  expect(target.data.errorText).toBe("订单暂时无法加载");
 });
 
 test("load-more failure keeps cards and retries the same cursor without duplicates", async () => {

@@ -1,5 +1,11 @@
 import { afterEach, expect, jest, test } from "@jest/globals";
 
+jest.mock("./fixture-data", () => ({
+  FIXTURE_DATA: {
+    "order-pending": jest.requireActual("../../contracts/examples/order-pending.json"),
+  },
+}));
+
 import { getBookingDataSource, getNeutralPhoneTapCode, resetBookingDataSourceForTesting } from "../services/booking";
 import { getPageDataSource } from "../services/page-data";
 import { getPaymentBindings, resetPaymentBindingsForTesting } from "../services/payment";
@@ -143,4 +149,17 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
   });
   expect(getPaymentBindings()?.clock?.now().toISOString()).not.toBe("2026-07-27T04:00:00.000Z");
   expect(requests.every(({ url }) => url.startsWith("http://localhost:8000/api/v1/"))).toBe(true);
+});
+
+test("default fixture bootstrap registers a local order list that reopens its order detail", async () => {
+  bootstrapDevelopment();
+  const source = getBookingDataSource();
+
+  expect(source.listOrders).toBeDefined();
+  const result = await source.listOrders!();
+  expect(result.orders).toHaveLength(1);
+  await expect(source.getOrder(result.orders[0].orderId)).resolves.toMatchObject({
+    orderId: result.orders[0].orderId,
+    status: result.orders[0].status,
+  });
 });

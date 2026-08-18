@@ -41,9 +41,16 @@ Page({
 
   async loadFirstPage(refreshing: boolean) {
     const revision = this.beginRequest();
-    this.setData(refreshing
-      ? { refreshing: true, loadingMore: false, loadMoreError: false, refreshErrorText: "" }
-      : { loading: true, errorText: "", refreshErrorText: "", loadingMore: false, loadMoreError: false });
+    const preservesExistingOrders = refreshing && this.data.orders.length > 0;
+    this.setData(preservesExistingOrders
+      ? {
+          loading: false, refreshing: true, loadingMore: false,
+          loadMoreError: false, errorText: "", refreshErrorText: "",
+        }
+      : {
+          loading: true, refreshing: false, errorText: "", refreshErrorText: "",
+          loadingMore: false, loadMoreError: false,
+        });
     try {
       const source = getBookingDataSource();
       if (!source.listOrders) throw new Error("ORDER_LIST_DATA_SOURCE_NOT_CONFIGURED");
@@ -61,10 +68,15 @@ Page({
       });
     } catch {
       if (!this.isCurrent(revision)) return;
-      if (refreshing) {
+      if (preservesExistingOrders) {
         this.setData({ refreshing: false, refreshErrorText: "刷新失败，请下拉重试" });
       } else {
-        this.setData({ loading: false, errorText: "订单暂时无法加载" });
+        this.setData({
+          loading: false,
+          refreshing: false,
+          errorText: "订单暂时无法加载",
+          refreshErrorText: "",
+        });
       }
     }
   },
@@ -122,9 +134,15 @@ Page({
   },
 
   onGoSelectVenue() {
-    wx.navigateBack({
-      delta: 1,
-      fail: () => wx.reLaunch({ url: "/pages/venue-map/index" }),
-    });
+    const pages = getCurrentPages();
+    const previousPage = pages.length > 1 ? pages[pages.length - 2] : undefined;
+    if (previousPage?.route === "pages/venue-map/index") {
+      wx.navigateBack({
+        delta: 1,
+        fail: () => wx.reLaunch({ url: "/pages/venue-map/index" }),
+      });
+      return;
+    }
+    wx.reLaunch({ url: "/pages/venue-map/index" });
   },
 });
