@@ -569,6 +569,50 @@ def test_owner_lifecycle_projection_contract_and_runtime_openapi_are_closed() ->
         assert name in runtime["components"]["schemas"]
 
 
+def test_order_detail_allows_unapplied_success_without_a_primary_payment() -> None:
+    branches = _contract()["components"]["schemas"]["OrderDetail"]["oneOf"]
+    branch = next(
+        (
+            candidate
+            for candidate in branches
+            if candidate.get("properties", {})
+            .get("status", {})
+            .get("enum", [])
+            and "PAYMENT_EXCEPTION"
+            in candidate["properties"]["status"]["enum"]
+            and candidate["properties"].get("payment_state") == {"const": None}
+        ),
+        None,
+    )
+
+    assert branch == {
+        "type": "object",
+        "description": (
+            "Unapplied successful funds never become the primary payment projection."
+        ),
+        "properties": {
+            "status": {
+                "enum": [
+                    "PAYMENT_EXCEPTION",
+                    "REFUND_PENDING",
+                    "REFUND_FAILED",
+                    "REFUNDED",
+                ]
+            },
+            "payment_state": {"const": None},
+            "payment_confirming": {"const": False},
+            "closing_payment": {"const": False},
+            "paid_at": {"const": None},
+            "expired_at": {"const": None},
+        },
+    }
+    assert any(
+        candidate["properties"].get("status") == {"const": "PAYMENT_EXCEPTION"}
+        and candidate["properties"].get("payment_state") == {"const": "SUCCESS"}
+        for candidate in branches
+    )
+
+
 def test_lifecycle_operations_are_frozen_static_only() -> None:
     contract = _contract()
     runtime = create_app(
@@ -627,6 +671,49 @@ def test_lifecycle_operations_are_frozen_static_only() -> None:
     assert "requestBody" not in contract["paths"][
         "/api/v1/orders/{order_id}/cancel"
     ]["post"]
+
+
+def test_venue_fulfillment_service_date_is_an_optional_exact_date_query() -> None:
+    operation = _contract()["paths"][
+        "/api/v1/venues/{venue_id}/fulfillment/orders"
+    ]["get"]
+    service_date = next(
+        parameter
+        for parameter in operation["parameters"]
+        if parameter.get("name") == "service_date"
+    )
+
+    assert service_date == {
+        "name": "service_date",
+        "in": "query",
+        "required": False,
+        "schema": {"type": "string", "format": "date"},
+    }
+
+
+def test_venue_fulfillment_list_has_closed_venue_and_generation_context() -> None:
+    contract = _contract()
+    schema = contract["components"]["schemas"]["VenueFulfillmentOrdersResponse"]
+    example = json.loads(
+        (EXAMPLES_DIRECTORY / "venue-fulfillment-orders.json").read_text()
+    )
+    fields = ["venue", "service_date", "generated_at", "orders", "next_cursor"]
+
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == fields
+    assert list(schema["properties"]) == fields
+    assert schema["properties"]["venue"] == {
+        "$ref": "#/components/schemas/CheckoutVenue"
+    }
+    assert schema["properties"]["service_date"] == {
+        "type": "string",
+        "format": "date",
+    }
+    assert schema["properties"]["generated_at"] == {
+        "type": "string",
+        "format": "date-time",
+    }
+    assert list(example) == fields
 
 
 def test_wechat_notification_contract_requires_raw_bytes_before_json_parse() -> None:

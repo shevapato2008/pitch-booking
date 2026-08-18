@@ -3,9 +3,12 @@ import hashlib
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
@@ -44,6 +47,7 @@ NOW = datetime(2026, 8, 18, 5, tzinfo=UTC)
 APPROVED_CANCELLATION_SUMMARY = (
     "开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。"
 )
+CONTRACT_PATH = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 
 
 def _seed_detail(
@@ -257,6 +261,15 @@ def _add_refund_attempt(
 
 def _auth() -> dict[str, str]:
     return {"Authorization": f"Bearer {RAW_TOKEN}"}
+
+
+def _assert_static_order_detail(body: object) -> None:
+    contract = yaml.safe_load(CONTRACT_PATH.read_text())
+    validator = Draft202012Validator(contract).evolve(
+        schema=contract["components"]["schemas"]["OrderDetail"]
+    )
+    errors = sorted(validator.iter_errors(body), key=lambda error: list(error.path))
+    assert not errors, "\n".join(error.message for error in errors)
 
 
 def test_order_detail_declares_frozen_public_contract() -> None:
@@ -524,6 +537,7 @@ def test_detail_uses_only_applied_success_as_primary_and_projects_closed_alerts(
         for status in expected_alert_statuses
     ]
     assert body["cancellation_summary"] == APPROVED_CANCELLATION_SUMMARY
+    _assert_static_order_detail(body)
     serialized = response.text
     for forbidden in (
         "refund_case_id",
@@ -535,6 +549,68 @@ def test_detail_uses_only_applied_success_as_primary_and_projects_closed_alerts(
         "amount_cents",
     ):
         assert forbidden not in serialized
+
+
+@pytest.mark.parametrize(
+    ("status", "refund_attempt_status"),
+    [
+        (OrderStatus.PAYMENT_EXCEPTION, None),
+        (OrderStatus.REFUND_PENDING, RefundAttemptStatus.PROCESSING),
+        (OrderStatus.REFUND_FAILED, RefundAttemptStatus.FAILED),
+        (OrderStatus.REFUNDED, RefundAttemptStatus.SUCCESS),
+    ],
+)
+def test_only_unapplied_success_never_becomes_the_primary_payment_projection(
+    pg_engine: Engine,
+    status: OrderStatus,
+    refund_attempt_status: RefundAttemptStatus | None,
+) -> None:
+    order_id, _, _ = _seed_detail(pg_engine)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        slot = order.slot
+        if refund_attempt_status is not None:
+            order.cancel_requested_at = NOW - timedelta(minutes=3)
+            order.cancelled_at = NOW - timedelta(minutes=2)
+        order.status = status
+        slot.status = SlotStatus.AVAILABLE
+        slot.locked_until = None
+        slot.locked_by_order_id = None
+        payment = _add_payment(
+            session,
+            order,
+            status=PaymentState.SUCCESS,
+            paid_at=NOW - timedelta(minutes=1),
+        )
+        if refund_attempt_status is not None:
+            refund_case = _add_refund_case(
+                session,
+                order=order,
+                payment=payment,
+                purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+                created_at=NOW - timedelta(minutes=1),
+            )
+            _add_refund_attempt(
+                session,
+                refund_case=refund_case,
+                attempt_no=1,
+                status=refund_attempt_status,
+            )
+        session.commit()
+
+    with _client(pg_engine) as client:
+        response = client.get(f"/api/v1/orders/{order_id}", headers=_auth())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == status.value
+    assert body["payment_state"] is None
+    assert body["paid_at"] is None
+    assert body["payment_confirming"] is False
+    assert body["closing_payment"] is False
+    assert body["expired_at"] is None
+    assert body["funding_alerts"] == []
+    _assert_static_order_detail(body)
 
 
 def test_post_deadline_detail_commits_safe_expiry_before_reporting_it(

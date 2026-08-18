@@ -588,6 +588,41 @@ test('owner list and detail share closed lifecycle actions and funding alerts', 
   });
 });
 
+test('owner detail permits refunded inventory-conflict funds without a primary payment', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const branches = contract.components.schemas.OrderDetail.oneOf;
+  const unappliedSuccessBranch = branches.find((branch) =>
+    branch.properties?.payment_state?.const === null
+      && branch.properties?.status?.enum?.includes('PAYMENT_EXCEPTION'));
+
+  assert.deepEqual(unappliedSuccessBranch, {
+    type: 'object',
+    description: 'Unapplied successful funds never become the primary payment projection.',
+    properties: {
+      status: {
+        enum: ['PAYMENT_EXCEPTION', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED'],
+      },
+      payment_state: { const: null },
+      payment_confirming: { const: false },
+      closing_payment: { const: false },
+      paid_at: { const: null },
+      expired_at: { const: null },
+    },
+  });
+  assert.equal(
+    branches.some((branch) =>
+      branch.properties?.status?.const === 'PAYMENT_EXCEPTION'
+        && branch.properties?.payment_state?.const === 'SUCCESS'),
+    true,
+  );
+  assert.equal(
+    branches.some((branch) =>
+      branch.properties?.status?.enum?.includes('REFUND_PENDING')
+        && branch.properties?.payment_state?.const === 'SUCCESS'),
+    true,
+  );
+});
+
 test('owner cancel and venue fulfillment freeze exact auth, idempotency, and response matrices', async () => {
   const contract = YAML.parse(await readFile(contractPath, 'utf8'));
   const paths = contract.paths;
@@ -647,6 +682,47 @@ test('owner cancel and venue fulfillment freeze exact auth, idempotency, and res
   ]) {
     assert.equal(forbidden in venueOrder.properties, false, forbidden);
   }
+});
+
+test('venue fulfillment service date is an optional exact date query', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operation = contract.paths[
+    '/api/v1/venues/{venue_id}/fulfillment/orders'
+  ].get;
+  const parameter = operation.parameters.find(({ name }) => name === 'service_date');
+
+  assert.deepEqual(parameter, {
+    name: 'service_date',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', format: 'date' },
+  });
+});
+
+test('venue fulfillment list includes closed venue and generation context', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const schema = contract.components.schemas.VenueFulfillmentOrdersResponse;
+  const example = await readExample('venue-fulfillment-orders.json');
+
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, [
+    'venue', 'service_date', 'generated_at', 'orders', 'next_cursor',
+  ]);
+  assert.deepEqual(Object.keys(schema.properties), [
+    'venue', 'service_date', 'generated_at', 'orders', 'next_cursor',
+  ]);
+  assert.deepEqual(schema.properties.venue, {
+    $ref: '#/components/schemas/CheckoutVenue',
+  });
+  assert.deepEqual(schema.properties.service_date, {
+    type: 'string', format: 'date',
+  });
+  assert.deepEqual(schema.properties.generated_at, {
+    type: 'string', format: 'date-time',
+  });
+  assert.deepEqual(Object.keys(example), [
+    'venue', 'service_date', 'generated_at', 'orders', 'next_cursor',
+  ]);
 });
 
 test('WeChat payment and refund notifications require raw-body verification before JSON parsing', async () => {

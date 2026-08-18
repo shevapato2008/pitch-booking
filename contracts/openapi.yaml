@@ -350,7 +350,7 @@ paths:
         - $ref: '#/components/parameters/VenueId'
         - name: service_date
           in: query
-          required: true
+          required: false
           schema: {type: string, format: date}
         - name: limit
           in: query
@@ -4587,8 +4587,11 @@ components:
     VenueFulfillmentOrdersResponse:
       type: object
       additionalProperties: false
-      required: [orders, next_cursor]
+      required: [venue, service_date, generated_at, orders, next_cursor]
       properties:
+        venue: {$ref: '#/components/schemas/CheckoutVenue'}
+        service_date: {type: string, format: date}
+        generated_at: {type: string, format: date-time}
         orders:
           type: array
           items: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
@@ -4882,6 +4885,16 @@ components:
               const: null
             expired_at:
               const: null
+        - type: object
+          description: Unapplied successful funds never become the primary payment projection.
+          properties:
+            status:
+              enum: [PAYMENT_EXCEPTION, REFUND_PENDING, REFUND_FAILED, REFUNDED]
+            payment_state: {const: null}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {const: null}
+            expired_at: {const: null}
         - type: object
           description: Cancelled order without a successful payment requiring refund.
           properties:
