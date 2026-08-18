@@ -10,6 +10,8 @@ const checkoutFixture = jest.requireActual<Record<string, unknown>>("../../contr
 const orderFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-pending.json");
 const expiredOrderFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-expired.json");
 const priceChangedFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-price-changed.json");
+const myOrdersFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/my-orders-ready.json");
+const serviceUnavailableFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-service-unavailable.json");
 
 describe("HTTP booking adapter", () => {
   test("logs in, saves the decoded token and uses Bearer for subsequent calls", async () => {
@@ -29,6 +31,56 @@ describe("HTTP booking adapter", () => {
     expect(harness.post).toHaveBeenNthCalledWith(2, "/api/v1/auth/wechat/phone", { code: "phone-code" }, { Authorization: `Bearer ${sessionFixture.session_token}` });
     expect(harness.get).toHaveBeenNthCalledWith(1, "/api/v1/slots/slot-id/checkout", { Authorization: `Bearer ${sessionFixture.session_token}` });
     expect(harness.get).toHaveBeenNthCalledWith(2, "/api/v1/orders/order-id", { Authorization: `Bearer ${sessionFixture.session_token}` });
+  });
+
+  test("lists orders with Bearer, default limit, and an encoded opaque cursor", async () => {
+    const harness = createHarness();
+    await establishSession(harness);
+    harness.get.mockResolvedValueOnce(myOrdersFixture).mockResolvedValueOnce(myOrdersFixture);
+
+    await expect(harness.source.listOrders()).resolves.toMatchObject({ orders: expect.any(Array) });
+    await harness.source.listOrders("opaque+/= cursor", 50);
+
+    expect(harness.get).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/orders?limit=20",
+      { Authorization: `Bearer ${sessionFixture.session_token}` },
+    );
+    expect(harness.get).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/orders?limit=50&cursor=opaque%2B%2F%3D%20cursor",
+      { Authorization: `Bearer ${sessionFixture.session_token}` },
+    );
+  });
+
+  test("silently establishes one missing session before listing orders", async () => {
+    const harness = createHarness();
+    harness.post.mockResolvedValueOnce(sessionFixture);
+    harness.get.mockResolvedValueOnce(myOrdersFixture);
+
+    await expect(harness.source.listOrders()).resolves.toMatchObject({ orders: expect.any(Array) });
+
+    expect(harness.identity.login).toHaveBeenCalledTimes(1);
+    expect(harness.get).toHaveBeenCalledTimes(1);
+  });
+
+  test("retries a list once after 401 and maps a service outage to 503 semantics", async () => {
+    const harness = createHarness();
+    await establishSession(harness);
+    const authRequired = {
+      code: "HTTP_ERROR", statusCode: 401,
+      data: { error: { code: "AUTH_REQUIRED", message: "expired", request_id: "req", details: {} } },
+    };
+    harness.get.mockRejectedValueOnce(authRequired).mockResolvedValueOnce(myOrdersFixture);
+    harness.post.mockResolvedValueOnce(sessionFixture);
+
+    await expect(harness.source.listOrders()).resolves.toMatchObject({ orders: expect.any(Array) });
+    expect(harness.get).toHaveBeenCalledTimes(2);
+
+    harness.get.mockRejectedValueOnce({
+      code: "HTTP_ERROR", statusCode: 503, data: serviceUnavailableFixture,
+    });
+    await expect(harness.source.listOrders()).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
   });
 
   test("creates with only contract body plus Bearer and Idempotency-Key", async () => {

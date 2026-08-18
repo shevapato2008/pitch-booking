@@ -27,6 +27,7 @@ for (const token of [
   "DEV_ONLY_POI_SEARCH_PREVIEW",
   "poi-search-preview",
   "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+  "MY_ORDERS_RAW_FIXTURE",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -392,6 +393,7 @@ async function createProductionPackage() {
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/my-orders/index",
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",

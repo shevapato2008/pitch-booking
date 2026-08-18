@@ -260,7 +260,7 @@ test("my orders native preview routes and Fixture remain development-only", asyn
   assert.equal(existsSync(path.join(productionRoot, "dev/my-orders-fixture.js")), false);
 });
 
-test("real production build emits all twelve production routes as native artifacts", async (t) => {
+test("real production build emits all thirteen production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -275,6 +275,7 @@ test("real production build emits all twelve production routes as native artifac
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/my-orders/index",
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",

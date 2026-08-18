@@ -1,4 +1,11 @@
-import type { CheckoutView, CreateOrderInput, OrderView, PendingOrderView, UserSessionView } from "../domain/booking";
+import type {
+  CheckoutView,
+  CreateOrderInput,
+  OrderListView,
+  OrderView,
+  PendingOrderView,
+  UserSessionView,
+} from "../domain/booking";
 import type { CreateOrderAttemptStore } from "./create-order-attempt-store";
 
 export interface BookingDataSource {
@@ -7,6 +14,11 @@ export interface BookingDataSource {
   authorizePhone(rawDetail: unknown): Promise<{ maskedPhone: string }>;
   createOrder(attempt: CreateOrderAttempt): Promise<PendingOrderView>;
   getOrder(orderId: string): Promise<OrderView>;
+  listOrders?(cursor?: string, limit?: number): Promise<OrderListView>;
+}
+
+export interface OrderListBookingDataSource extends BookingDataSource {
+  listOrders(cursor?: string, limit?: number): Promise<OrderListView>;
 }
 
 export interface CreateOrderAttempt {

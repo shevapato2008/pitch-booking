@@ -17,7 +17,14 @@ import type {
   PhoneVerificationView,
   SessionTokenView,
 } from "./contracts";
-import type { CheckoutView, OrderView, PaymentState } from "./booking";
+import type {
+  CheckoutView,
+  OrderListView,
+  OrderSummaryStatus,
+  OrderSummaryView,
+  OrderView,
+  PaymentState,
+} from "./booking";
 import type { VenueDetail, VenueMapEntry, VenuePitchType as DirectoryPitchType } from "./venue-directory";
 import type {
   PaymentLaunchParams,
@@ -229,6 +236,57 @@ export function decodeOrder(value: unknown): OrderView {
     || (paymentState === "SUCCESS" && paidAt === null)
     || (paymentState !== "UNKNOWN" && paymentState !== "SUCCESS")) invalid("$.status");
   return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
+}
+
+const ORDER_SUMMARY_KEYS = [
+  "id", "order_number", "status", "venue", "pitch", "starts_at", "ends_at",
+  "price_cents", "currency", "created_at", "expires_at", "payment_confirming", "closing_payment",
+] as const;
+
+function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
+  const object = exactObject(value, ORDER_SUMMARY_KEYS, path);
+  const venue = exactObject(object.venue, ["id", "name"], `${path}.venue`);
+  const pitch = exactObject(object.pitch, ["id", "name"], `${path}.pitch`);
+  const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
+  const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
+  if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
+  if (object.currency !== "CNY") invalid(`${path}.currency`);
+  return {
+    orderId: uuidAt(object.id, `${path}.id`),
+    orderNumber: stringAt(object.order_number, `${path}.order_number`),
+    status: enumAt<OrderSummaryStatus>(
+      object.status,
+      ["PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"] as const,
+      `${path}.status`,
+    ),
+    venue: {
+      id: uuidAt(venue.id, `${path}.venue.id`),
+      name: stringAt(venue.name, `${path}.venue.name`),
+    },
+    pitch: {
+      id: uuidAt(pitch.id, `${path}.pitch.id`),
+      name: stringAt(pitch.name, `${path}.pitch.name`),
+    },
+    startsAt,
+    endsAt,
+    priceCents: integerAt(object.price_cents, `${path}.price_cents`),
+    currency: "CNY",
+    createdAt: rfc3339At(object.created_at, `${path}.created_at`),
+    expiresAt: rfc3339At(object.expires_at, `${path}.expires_at`),
+    paymentConfirming: booleanAt(object.payment_confirming, `${path}.payment_confirming`),
+    closingPayment: booleanAt(object.closing_payment, `${path}.closing_payment`),
+  };
+}
+
+export function decodeOrderList(value: unknown): OrderListView {
+  const object = exactObject(value, ["orders", "next_cursor"], "$");
+  const nextCursor = object.next_cursor === null ? null : stringAt(object.next_cursor, "$.next_cursor");
+  if (nextCursor === "") invalid("$.next_cursor");
+  return {
+    orders: arrayAt(object.orders, "$.orders")
+      .map((order, index) => decodeOrderSummary(order, `$.orders[${index}]`)),
+    nextCursor,
+  };
 }
 
 function decodePaymentLaunchParams(value: unknown, path: string): PaymentLaunchParams {

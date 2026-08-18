@@ -6,6 +6,7 @@ import {
   decodeAvailability,
   decodeCheckout,
   decodeOrder,
+  decodeOrderList,
   decodePaymentLaunch,
   decodePaymentReconciliation,
   decodePhoneVerification,
@@ -14,6 +15,8 @@ import {
   decodeVenueDetail,
   decodeVenueMap,
 } from "./decoders";
+
+const myOrdersReady = jest.requireActual<Record<string, unknown>>("../../contracts/examples/my-orders-ready.json");
 
 interface SlotExample {
   id: string;
@@ -286,6 +289,49 @@ test("strictly decodes every frozen payment order and response shape", () => {
   expect(decodePaymentReconciliation(paymentConfirming)).toMatchObject({
     outcome: "PAYMENT_CONFIRMING", order: { paymentState: "CONFIRMING" },
   });
+});
+
+test("strictly decodes the closed owner-only order list projection", () => {
+  const decoded = decodeOrderList(myOrdersReady);
+
+  expect(decoded.orders).toHaveLength(6);
+  expect(decoded.orders[0]).toMatchObject({
+    orderId: "00000000-0000-4000-8000-000000000061",
+    status: "PAYMENT_EXCEPTION",
+    venue: { name: "天津奥体足球场" },
+    pitch: { name: "七人制 A 场" },
+    priceCents: 36000,
+  });
+  expect(decoded.nextCursor).toEqual(expect.any(String));
+  expect(decoded.orders[0]).not.toHaveProperty("contact");
+  expect(decoded.orders[0].venue).not.toHaveProperty("address");
+});
+
+test.each([
+  ["top-level unknown", { ...myOrdersReady, debug: true }],
+  ["missing next cursor", Object.fromEntries(Object.entries(myOrdersReady).filter(([key]) => key !== "next_cursor"))],
+  ["private contact", {
+    ...myOrdersReady,
+    orders: [{ ...(myOrdersReady.orders as Array<Record<string, unknown>>)[0], contact: { name: "secret" } }],
+  }],
+  ["private venue address", {
+    ...myOrdersReady,
+    orders: [{
+      ...(myOrdersReady.orders as Array<Record<string, unknown>>)[0],
+      venue: {
+        ...((myOrdersReady.orders as Array<Record<string, unknown>>)[0].venue as Record<string, unknown>),
+        address: "private",
+      },
+    }],
+  }],
+  ["missing summary field", {
+    ...myOrdersReady,
+    orders: [Object.fromEntries(Object.entries(
+      (myOrdersReady.orders as Array<Record<string, unknown>>)[0],
+    ).filter(([key]) => key !== "starts_at"))],
+  }],
+] as const)("rejects a non-closed order list: %s", (_label, value) => {
+  expect(() => decodeOrderList(value)).toThrow("INVALID_API_RESPONSE");
 });
 
 test("accepts the frozen exceptional-success and closed-expired combinations", () => {

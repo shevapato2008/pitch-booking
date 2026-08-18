@@ -1,7 +1,14 @@
 import { ApiResponseError, type ApiErrorCode } from "../domain/contracts";
-import { decodeApiError, decodeCheckout, decodeOrder, decodePhoneVerification, decodeWeChatSession } from "../domain/decoders";
+import {
+  decodeApiError,
+  decodeCheckout,
+  decodeOrder,
+  decodeOrderList,
+  decodePhoneVerification,
+  decodeWeChatSession,
+} from "../domain/decoders";
 import type { Transport, TransportError, WeChatIdentityCapability, WeChatPhoneCapability } from "../runtime/interfaces";
-import type { BookingDataSource, CreateOrderAttempt } from "./booking";
+import type { CreateOrderAttempt, OrderListBookingDataSource } from "./booking";
 import type { SessionStore } from "./session-store";
 
 export class BookingApiError extends Error {
@@ -26,7 +33,7 @@ export function createHttpBookingDataSource({
   identity,
   phone,
   sessionStore,
-}: HttpBookingDataSourceOptions): BookingDataSource {
+}: HttpBookingDataSourceOptions): OrderListBookingDataSource {
   type Operation = "login" | "phone" | "read" | "create";
   interface HttpFailure {
     readonly statusCode: number;
@@ -151,6 +158,12 @@ export function createHttpBookingDataSource({
       return authorized("read", async () => {
         return decodeOrder(await transport.get(`/api/v1/orders/${orderId}`, bearer()));
       });
+    },
+    async listOrders(cursor, limit = 20) {
+      const cursorQuery = cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+      return authorized("read", async () => decodeOrderList(
+        await transport.get(`/api/v1/orders?limit=${limit}${cursorQuery}`, bearer()),
+      ));
     },
   };
 }
