@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from backend.app.models import (
     OrderStatus,
     Payment,
     PaymentState,
+    RefundAttemptStatus,
     RefundCasePurpose,
     RefundReason,
     SlotStatus,
@@ -192,6 +194,12 @@ class PaymentConvergenceService:
                 payment.next_reconcile_at = None
                 payment.last_error_code = result.safe_error_code
                 payment.last_error_at = now if result.safe_error_code else None
+                self._ensure_extra_success_refunds(
+                    session=session,
+                    repository=repository,
+                    order=order,
+                    now=now,
+                )
             elif result.status in {QueryPaymentStatus.UNKNOWN, QueryPaymentStatus.NOT_FOUND}:
                 payment.status = PaymentState.UNKNOWN
                 if payment.authority_unknown_since is None:
@@ -249,10 +257,19 @@ class PaymentConvergenceService:
                     reason_note=None,
                     requested_by_user_id=None,
                 )
+                latest_attempt = graph.latest_attempt
+                if (
+                    latest_attempt is not None
+                    and latest_attempt.status is not RefundAttemptStatus.FAILED
+                ):
+                    merchant_refund_no = latest_attempt.merchant_refund_no
+                else:
+                    attempt_no = 1 if latest_attempt is None else latest_attempt.attempt_no + 1
+                    merchant_refund_no = _automatic_refund_number(candidate.id, attempt_no)
                 RefundRepository(session).get_or_create_attempt(
                     graph=graph,
                     provider=candidate.provider,
-                    merchant_refund_no=f"PBR{candidate.id.hex[:29]}",
+                    merchant_refund_no=merchant_refund_no,
                     next_reconcile_at=now,
                 )
             except RefundPurposeMismatchError:
@@ -333,3 +350,8 @@ class PaymentConvergenceService:
 def _is_transaction_conflict(error: IntegrityError) -> bool:
     diagnostic = getattr(error.orig, "diag", None)
     return getattr(diagnostic, "constraint_name", None) == "uq_payments_provider_transaction_no"
+
+
+def _automatic_refund_number(payment_id: uuid.UUID, attempt_no: int) -> str:
+    digest = hashlib.sha256(f"{payment_id.hex}:{attempt_no}".encode()).hexdigest()
+    return f"PBR{digest[:29]}"

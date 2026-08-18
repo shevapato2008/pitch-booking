@@ -282,6 +282,139 @@ def test_inventory_conflict_success_creates_one_durable_automatic_refund(
         assert session.get_one(Slot, slot_id).status is SlotStatus.AVAILABLE
 
 
+def test_late_success_is_reclassified_after_the_last_potential_owner_closes(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, late_success_id, slot_id, _ = seed_payment(
+        pg_engine,
+        status=PaymentState.CLOSED,
+        slot_status=SlotStatus.CLOSED,
+        now=now,
+    )
+    with Session(pg_engine) as session:
+        potential_owner = Payment(
+            id=uuid.uuid4(),
+            order_id=order_id,
+            provider="mock",
+            merchant_order_no=f"PB{uuid.uuid4().hex[:30]}",
+            amount_cents=32000,
+            currency="CNY",
+            status=PaymentState.CONFIRMING,
+        )
+        session.add(potential_owner)
+        session.commit()
+        potential_owner_id = potential_owner.id
+
+    service = convergence(pg_engine)
+    service.converge(
+        payment_id=late_success_id,
+        provider="mock",
+        result=QueryPaymentResult(
+            QueryPaymentStatus.SUCCESS,
+            facts=success_facts(
+                pg_engine,
+                late_success_id,
+                transaction_no="late-success",
+                paid_at=now,
+            ),
+        ),
+    )
+    with Session(pg_engine) as session:
+        assert session.get_one(Payment, late_success_id).refund_case is None
+
+    service.converge(
+        payment_id=potential_owner_id,
+        provider="mock",
+        result=QueryPaymentResult(QueryPaymentStatus.CLOSED),
+    )
+
+    with Session(pg_engine) as session:
+        late_success = session.get_one(Payment, late_success_id)
+        assert late_success.refund_case is not None
+        assert late_success.refund_case.purpose is RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT
+        assert len(late_success.refund_case.attempts) == 1
+        assert session.get_one(Order, order_id).status is OrderStatus.REFUND_PENDING
+        assert session.get_one(Slot, slot_id).status is SlotStatus.CLOSED
+
+
+def test_failed_automatic_refund_gets_a_distinct_stable_retry_number(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    _, payment_id, _, _ = seed_payment(
+        pg_engine,
+        slot_status=SlotStatus.CLOSED,
+        now=now,
+    )
+    success = QueryPaymentResult(
+        QueryPaymentStatus.SUCCESS,
+        facts=success_facts(
+            pg_engine,
+            payment_id,
+            transaction_no="retryable-refund-success",
+            paid_at=now,
+        ),
+    )
+    service = convergence(pg_engine)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    with Session(pg_engine) as session:
+        first = session.get_one(Payment, payment_id).refund_case.attempts[0]  # type: ignore[union-attr]
+        first.status = RefundAttemptStatus.FAILED
+        first_number = first.merchant_refund_no
+        session.commit()
+
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+
+    with Session(pg_engine) as session:
+        refund_case = session.get_one(Payment, payment_id).refund_case
+        assert refund_case is not None
+        attempts = sorted(refund_case.attempts, key=lambda attempt: attempt.attempt_no)
+        assert [attempt.attempt_no for attempt in attempts] == [1, 2]
+        assert attempts[0].merchant_refund_no == first_number
+        assert attempts[1].merchant_refund_no != first_number
+        assert len(attempts[1].merchant_refund_no) <= 32
+
+
+def test_unknown_automatic_refund_reuses_the_existing_attempt_and_number(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    _, payment_id, _, _ = seed_payment(
+        pg_engine,
+        slot_status=SlotStatus.CLOSED,
+        now=now,
+    )
+    success = QueryPaymentResult(
+        QueryPaymentStatus.SUCCESS,
+        facts=success_facts(
+            pg_engine,
+            payment_id,
+            transaction_no="unknown-refund-success",
+            paid_at=now,
+        ),
+    )
+    service = convergence(pg_engine)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    with Session(pg_engine) as session:
+        first = session.get_one(Payment, payment_id).refund_case.attempts[0]  # type: ignore[union-attr]
+        first.status = RefundAttemptStatus.UNKNOWN
+        first_id = first.id
+        first_number = first.merchant_refund_no
+        session.commit()
+
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+
+    with Session(pg_engine) as session:
+        refund_case = session.get_one(Payment, payment_id).refund_case
+        assert refund_case is not None
+        assert len(refund_case.attempts) == 1
+        assert refund_case.attempts[0].id == first_id
+        assert refund_case.attempts[0].merchant_refund_no == first_number
+
+
 def test_concurrent_successes_apply_one_payment_and_refund_the_duplicate(
     pg_engine: Engine,
 ) -> None:
