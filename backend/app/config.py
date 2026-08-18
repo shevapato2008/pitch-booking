@@ -64,6 +64,18 @@ class Settings(BaseSettings):
     enable_mock_payment_provider: bool = False
     wechat_app_id: str | None = None
     wechat_app_secret: SecretStr | None = Field(default=None, repr=False)
+    wechat_pay_merchant_id: str | None = None
+    wechat_pay_merchant_cert_serial: str | None = None
+    wechat_pay_merchant_private_key_pem_base64: SecretStr | None = Field(
+        default=None, repr=False
+    )
+    wechat_pay_public_key_id: str | None = None
+    wechat_pay_public_key_pem_base64: SecretStr | None = Field(default=None, repr=False)
+    wechat_pay_api_v3_key: SecretStr | None = Field(default=None, repr=False)
+    wechat_pay_payment_notification_url: AnyHttpUrl | None = Field(
+        default=None, repr=False
+    )
+    wechat_pay_refund_notification_url: AnyHttpUrl | None = Field(default=None, repr=False)
     phone_encryption_key_base64: SecretStr | None = Field(default=None, repr=False)
     phone_encryption_key_version: int | None = None
     session_ttl_days: int = 30
@@ -124,6 +136,12 @@ class Settings(BaseSettings):
         for key in (
             "wechat_app_secret",
             "WECHAT_APP_SECRET",
+            "wechat_pay_merchant_private_key_pem_base64",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "wechat_pay_public_key_pem_base64",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "wechat_pay_api_v3_key",
+            "WECHAT_PAY_API_V3_KEY",
             "phone_encryption_key_base64",
             "PHONE_ENCRYPTION_KEY_BASE64",
             "oss_access_key_secret",
@@ -512,6 +530,112 @@ class Settings(BaseSettings):
             raise ValueError("WECHAT_APP_ID is required for staging and production")
         return value
 
+    @field_validator("wechat_pay_merchant_id")
+    @classmethod
+    def validate_wechat_pay_merchant_id(cls, value: str | None) -> str | None:
+        if value is not None and (not value.isascii() or not value.isdigit()):
+            raise cls._safe_value_error(
+                "wechat_pay_merchant_id", "WECHAT_PAY_MERCHANT_ID is invalid"
+            )
+        return value
+
+    @field_validator("wechat_pay_merchant_cert_serial")
+    @classmethod
+    def validate_wechat_pay_cert_serial(cls, value: str | None) -> str | None:
+        if value is not None and re.fullmatch(r"[0-9A-F]+", value, re.ASCII) is None:
+            raise cls._safe_value_error(
+                "wechat_pay_merchant_cert_serial",
+                "WECHAT_PAY_MERCHANT_CERT_SERIAL is invalid",
+            )
+        return value
+
+    @field_validator("wechat_pay_public_key_id")
+    @classmethod
+    def validate_wechat_pay_public_key_id(cls, value: str | None) -> str | None:
+        if value is not None and re.fullmatch(r"PUB_KEY_ID_[0-9]+", value, re.ASCII) is None:
+            raise cls._safe_value_error(
+                "wechat_pay_public_key_id", "WECHAT_PAY_PUBLIC_KEY_ID is invalid"
+            )
+        return value
+
+    @field_validator(
+        "wechat_pay_merchant_private_key_pem_base64",
+        "wechat_pay_public_key_pem_base64",
+        mode="before",
+    )
+    @classmethod
+    def validate_wechat_pay_pem_base64(
+        cls, value: object, info: ValidationInfo
+    ) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        field_name = info.field_name or "wechat_pay_pem"
+        label = "private key" if "private" in field_name else "public key"
+        if type(raw) is not str:
+            raise cls._safe_value_error(field_name, f"WeChat Pay {label} Base64 is invalid")
+        try:
+            decoded = base64.b64decode(raw, validate=True)
+        except (binascii.Error, UnicodeEncodeError, ValueError):
+            raise cls._safe_value_error(
+                field_name, f"WeChat Pay {label} Base64 is invalid"
+            ) from None
+        expected_marker = b"PRIVATE KEY" if "private" in field_name else b"PUBLIC KEY"
+        if expected_marker not in decoded:
+            raise cls._safe_value_error(field_name, f"WeChat Pay {label} PEM is invalid")
+        return SecretStr(raw)
+
+    @field_validator("wechat_pay_api_v3_key", mode="before")
+    @classmethod
+    def validate_wechat_pay_api_v3_key(cls, value: object) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if type(raw) is not str:
+            raise cls._safe_value_error("wechat_pay_api_v3_key", "WeChat Pay API v3 key is invalid")
+        try:
+            encoded = raw.encode("ascii")
+        except UnicodeEncodeError:
+            encoded = b""
+        if len(encoded) != 32:
+            raise cls._safe_value_error(
+                "wechat_pay_api_v3_key",
+                "WeChat Pay API v3 key must be exactly 32 bytes",
+            )
+        return SecretStr(raw)
+
+    @field_validator(
+        "wechat_pay_payment_notification_url",
+        "wechat_pay_refund_notification_url",
+        mode="before",
+    )
+    @classmethod
+    def validate_wechat_pay_notification_url(
+        cls, value: object, info: ValidationInfo
+    ) -> AnyHttpUrl | None:
+        if value is None:
+            return None
+        field_name = info.field_name or "wechat_pay_notification_url"
+        try:
+            validated = _PUBLIC_API_URL_ADAPTER.validate_python(value)
+        except (TypeError, ValueError, ValidationError):
+            raise cls._safe_value_error(
+                field_name, "WeChat Pay notification URL is invalid"
+            ) from None
+        if (
+            validated.scheme != "https"
+            or validated.host is None
+            or validated.username is not None
+            or validated.password is not None
+            or validated.query is not None
+            or validated.fragment is not None
+        ):
+            raise cls._safe_value_error(
+                field_name,
+                "WeChat Pay notification URL must be absolute HTTPS without query or fragment",
+            )
+        return validated
+
     @model_validator(mode="after")
     def validate_mock_payment_provider(self) -> "Settings":
         mock_selected = self.payment_provider == "mock"
@@ -526,6 +650,16 @@ class Settings(BaseSettings):
                 "Mock payment provider is allowed only when APP_ENV=development, "
                 "PAYMENT_PROVIDER=mock, and ENABLE_MOCK_PAYMENT_PROVIDER=true"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_deployed_wechat_payment_provider(self) -> "Settings":
+        if (
+            self.app_env in {"staging", "production"}
+            and self.payment_provider == "wechat"
+            and not self.wechat_payment_configured
+        ):
+            raise ValueError("WeChat payment credentials are incomplete")
         return self
 
     @model_validator(mode="after")
@@ -544,6 +678,23 @@ class Settings(BaseSettings):
             self.app_env == "development"
             and self.payment_provider == "mock"
             and self.enable_mock_payment_provider
+        )
+
+    @property
+    def wechat_payment_configured(self) -> bool:
+        return all(
+            value is not None
+            for value in (
+                self.wechat_app_id,
+                self.wechat_pay_merchant_id,
+                self.wechat_pay_merchant_cert_serial,
+                self.wechat_pay_merchant_private_key_pem_base64,
+                self.wechat_pay_public_key_id,
+                self.wechat_pay_public_key_pem_base64,
+                self.wechat_pay_api_v3_key,
+                self.wechat_pay_payment_notification_url,
+                self.wechat_pay_refund_notification_url,
+            )
         )
 
     @staticmethod

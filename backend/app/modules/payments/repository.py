@@ -22,7 +22,6 @@ from backend.app.modules.orders.locking import (
     NONTERMINAL_PAYMENT_STATES,
     lock_current_payment,
     lock_order,
-    lock_payment,
     lock_slot,
 )
 
@@ -41,11 +40,7 @@ class PaymentRepository:
         return self.session.scalar(
             select(Order)
             .where(Order.id == order_id, Order.user_id == user_id)
-            .options(
-                joinedload(Order.slot)
-                .joinedload(Slot.pitch)
-                .joinedload(Pitch.venue)
-            )
+            .options(joinedload(Order.slot).joinedload(Slot.pitch).joinedload(Pitch.venue))
         )
 
     def locate_payment(self, payment_id: uuid.UUID) -> Payment | None:
@@ -61,9 +56,7 @@ class PaymentRepository:
             )
         )
 
-    def list_due_payment_ids(
-        self, *, now: datetime, provider: str, limit: int
-    ) -> list[uuid.UUID]:
+    def list_due_payment_ids(self, *, now: datetime, provider: str, limit: int) -> list[uuid.UUID]:
         return list(
             self.session.scalars(
                 select(Payment.id)
@@ -115,10 +108,7 @@ class PaymentRepository:
         schedule_due = or_(
             Payment.next_reconcile_at.is_(None),
             Payment.next_reconcile_at <= now,
-            (
-                (Order.expires_at <= now)
-                & Payment.expiry_reconciled_at.is_(None)
-            ),
+            ((Order.expires_at <= now) & Payment.expiry_reconciled_at.is_(None)),
         )
         return lease_available & schedule_due
 
@@ -135,8 +125,26 @@ class PaymentRepository:
         self, *, order_id: uuid.UUID, slot_id: uuid.UUID, payment_id: uuid.UUID
     ) -> tuple[Slot, Order, Payment]:
         slot = lock_slot(self.session, slot_id)
-        order = lock_order(self.session, order_id)
-        payment = lock_payment(self.session, payment_id)
+        orders = tuple(
+            self.session.scalars(
+                select(Order)
+                .where(Order.slot_id == slot_id)
+                .order_by(Order.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        order = next((candidate for candidate in orders if candidate.id == order_id), None)
+        payments = tuple(
+            self.session.scalars(
+                select(Payment)
+                .where(Payment.order_id == order_id)
+                .order_by(Payment.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        payment = next((candidate for candidate in payments if candidate.id == payment_id), None)
         if (
             slot is None
             or order is None
@@ -146,6 +154,17 @@ class PaymentRepository:
         ):
             raise RuntimeError("payment lock graph changed")
         return slot, order, payment
+
+    def locked_order_payments(self, *, order_id: uuid.UUID) -> tuple[Payment, ...]:
+        return tuple(
+            self.session.scalars(
+                select(Payment)
+                .where(Payment.order_id == order_id)
+                .order_by(Payment.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
 
     def find_transaction_owner(
         self,

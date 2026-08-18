@@ -254,5 +254,5 @@ def test_runtime_provider_factory_never_falls_back_to_mock() -> None:
     )
     assert isinstance(build_payment_provider(enabled), MockPaymentProvider)
 
-    with pytest.raises(RuntimeError, match="WeChat payment provider is not implemented"):
+    with pytest.raises(RuntimeError, match="WeChat payment credentials are incomplete"):
         build_payment_provider(Settings(app_env="development", payment_provider="wechat"))
