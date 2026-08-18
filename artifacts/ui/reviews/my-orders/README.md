@@ -7,10 +7,10 @@
 - Task 2 development-only native preview: implemented and source/build checks are GREEN.
 - Representative captures: `map-entry`, `ready`, `empty`, and `error` only.
 - Additional interactive previews: `loading` and `load-more-error` remain available through the reference query and `?controls=1` control panel.
-- Production remains disabled; the native Fixture and both preview routes are excluded from the production manifest/package. No production page, service, composition, contract, backend, or migration is part of this checkpoint.
+- Production page, closed contract, owner-only backend and HTTP composition are implemented and deployed to staging at revision `2551ca5f9110f432a0ecf91636dd49bb6a99ea99`. The native Fixture and both preview routes remain excluded from the production manifest/package.
 - User explicitly deferred the A3 CREATE real-device acceptance gate for B1 MVP progress on 2026-08-18.
 - Native capture is blocked. The initial DevTools attempt returned `WECHAT_PORT_MISMATCH`; after restarting the IDE on one confirmed port, the official `miniprogram-automator` handshake received no SDK version and failed before capture. No implementation PNG, comparison image, manual native visual review, or independent native visual decision is claimed.
-- MVP continuation decision: the user explicitly prioritized a usable, broader app and allowed subsequent modules to continue. Task 3 may start based on the independently approved reference, 9/9 focused native-page tests, successful typecheck/development build, and production isolation. Native pixel comparison remains acceptance debt, not a fabricated pass.
+- MVP continuation decision: the user explicitly prioritized a usable, broader app and allowed subsequent modules to continue. The production slice has therefore progressed through contract, backend, frontend, integration and staging deployment. Native pixel comparison and one real-iPhone list journey remain acceptance debt, not fabricated passes.
 
 ## Reference sources
 
@@ -133,9 +133,10 @@ offset without horizontal overflow.
 - `empty-reference-375x812.png`: `6dbafded81fb62e72e83f7658efcc427f37a4f3f5d841a89c419113025c35fbd`
 - `error-reference-375x812.png`: `51700c34fbf3b5463001518b0b5d62d04028ca83f7239603ab9731041f09d686`
 
-## Visual gate
+## Visual and device gate
 
-The approved reference board and tested native preview source are ready. Native pixel review remains
-blocked by the installed DevTools automation protocol and is explicitly carried to Task 6. Per the
-user's MVP continuation decision, this debt does not block Task 3, but it must not be described as a
-passed native visual gate.
+The approved reference board and tested native preview source are ready, and the production package
+is deployed. Native pixel review remains blocked by the installed DevTools automation protocol and
+is explicitly carried to Task 6 together with the real-iPhone list journey. Per the user's MVP
+continuation decision, these debts do not block later MVP planning, but neither may be described as
+a passed visual or device gate. The development Fixture remains until the real-device journey passes.
