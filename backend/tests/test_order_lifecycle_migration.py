@@ -407,6 +407,43 @@ def test_refund_case_uses_payment_authority_and_is_not_unique_by_order(
 
 
 @pytest.mark.parametrize(
+    ("assignment", "value"),
+    [
+        ("amount_cents = :value", 1),
+        ("currency = :value", "USD"),
+        ("order_id = :value", "20000000-0000-0000-0000-000000000099"),
+        ("status = CAST(:value AS payment_state)", "CLOSED"),
+    ],
+)
+def test_payment_update_cannot_invalidate_existing_refund_case_authority(
+    migration_engine: Engine,
+    assignment: str,
+    value: object,
+) -> None:
+    config = _prepare_0012(
+        migration_engine,
+        order_status="CONFIRMED",
+        successful_payments=1,
+    )
+    command.upgrade(config, "0013")
+    with migration_engine.begin() as connection:
+        payment_id = str(connection.execute(text("SELECT id FROM payments")).scalar_one())
+        _insert_refund_case(
+            connection,
+            case_id="20000000-0000-0000-0000-000000000015",
+            payment_id=payment_id,
+        )
+
+    with pytest.raises(DBAPIError) as mismatch:
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(f"UPDATE payments SET {assignment} WHERE id = :id"),
+                {"id": payment_id, "value": value},
+            )
+    assert _constraint_name(mismatch.value) == "ck_payments_refund_case_authority"
+
+
+@pytest.mark.parametrize(
     ("reason", "reason_note"),
     [
         ("VENUE_CANCELLED", None),
@@ -501,6 +538,47 @@ def test_refund_attempt_allows_only_one_active_attempt_and_unique_sequence(
                 {"case_id": case_id},
             )
     assert _constraint_name(sequence.value) == "uq_refund_attempts_case_attempt_no"
+
+
+def test_refund_attempt_provider_refund_number_is_unique_when_present(
+    migration_engine: Engine,
+) -> None:
+    config = _prepare_0012(
+        migration_engine,
+        order_status="CONFIRMED",
+        successful_payments=1,
+    )
+    command.upgrade(config, "0013")
+    case_id = "20000000-0000-0000-0000-000000000040"
+    with migration_engine.begin() as connection:
+        payment_id = str(connection.execute(text("SELECT id FROM payments")).scalar_one())
+        _insert_refund_case(connection, case_id=case_id, payment_id=payment_id)
+        connection.execute(
+            text(
+                "INSERT INTO refund_attempts "
+                "(id, refund_case_id, provider, merchant_refund_no, "
+                "provider_refund_no, status, attempt_no, failure_code) VALUES "
+                "('30000000-0000-0000-0000-000000000011', :case_id, "
+                "'WECHAT_PAY', 'RF-11', 'PROVIDER-RF-1', 'FAILED', 1, "
+                "'PROVIDER_FAILED')"
+            ),
+            {"case_id": case_id},
+        )
+
+    with pytest.raises(IntegrityError) as duplicate:
+        with migration_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO refund_attempts "
+                    "(id, refund_case_id, provider, merchant_refund_no, "
+                    "provider_refund_no, status, attempt_no, failure_code) VALUES "
+                    "('30000000-0000-0000-0000-000000000012', :case_id, "
+                    "'WECHAT_PAY', 'RF-12', 'PROVIDER-RF-1', 'FAILED', 2, "
+                    "'PROVIDER_FAILED')"
+                ),
+                {"case_id": case_id},
+            )
+    assert _constraint_name(duplicate.value) == "uq_refund_attempts_provider_refund_no"
 
 
 def test_0013_downgrades_clean_data_but_refuses_new_order_states(

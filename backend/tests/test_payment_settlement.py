@@ -247,8 +247,12 @@ def test_order_projection_prefers_success_then_nonterminal_then_latest_terminal(
     assert _project_payment([payment(PaymentState.CLOSED, 1), closed]) is closed
 
 
-def test_late_success_overrides_closed_but_closed_rejects_older_unknown(pg_engine: Engine) -> None:
-    order_id, payment_id, _, _ = seed_payment(pg_engine, status=PaymentState.CLOSED)
+def test_late_success_after_closed_preserves_money_without_becoming_main_payment(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, _ = seed_payment(
+        pg_engine, status=PaymentState.CLOSED
+    )
     service = convergence(pg_engine)
     service.converge(
         payment_id=payment_id,
@@ -266,8 +270,13 @@ def test_late_success_overrides_closed_but_closed_rejects_older_unknown(pg_engin
         ),
     )
     with Session(pg_engine) as session:
-        assert session.get_one(Payment, payment_id).status is PaymentState.SUCCESS
-        assert session.get_one(Order, order_id).status is OrderStatus.CONFIRMED
+        payment = session.get_one(Payment, payment_id)
+        slot = session.get_one(Slot, slot_id)
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.applied_to_order_at is None
+        assert session.get_one(Order, order_id).status is OrderStatus.PAYMENT_EXCEPTION
+        assert slot.status is SlotStatus.LOCKED
+        assert slot.locked_by_order_id == order_id
 
 
 def test_conflicting_success_fact_is_audited_without_overwriting_first_success(

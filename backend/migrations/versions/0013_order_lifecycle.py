@@ -354,6 +354,13 @@ def _create_refund_tables() -> None:
         "ix_refund_attempts_case_id", "refund_attempts", ["refund_case_id"]
     )
     op.create_index(
+        "uq_refund_attempts_provider_refund_no",
+        "refund_attempts",
+        ["provider", "provider_refund_no"],
+        unique=True,
+        postgresql_where=sa.text("provider_refund_no IS NOT NULL"),
+    )
+    op.create_index(
         "uq_refund_attempts_one_active_per_case",
         "refund_attempts",
         ["refund_case_id"],
@@ -388,7 +395,8 @@ def _create_refund_payment_boundary() -> None:
               INTO payment_order_id, payment_amount_cents,
                    payment_currency, payment_status
             FROM payments
-            WHERE id = NEW.payment_id;
+            WHERE id = NEW.payment_id
+            FOR SHARE;
 
             IF NOT FOUND OR payment_status <> 'SUCCESS'
                OR payment_order_id IS DISTINCT FROM NEW.order_id
@@ -409,6 +417,39 @@ def _create_refund_payment_boundary() -> None:
         "BEFORE INSERT OR UPDATE OF order_id, payment_id, amount_cents, currency "
         "ON refund_cases FOR EACH ROW "
         "EXECUTE FUNCTION enforce_refund_case_payment_authority()"
+    )
+    op.execute(
+        """
+        CREATE FUNCTION enforce_payment_refund_case_authority()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM refund_cases
+                WHERE payment_id = NEW.id
+                  AND (
+                      NEW.status::text <> 'SUCCESS'
+                      OR order_id IS DISTINCT FROM NEW.order_id
+                      OR amount_cents IS DISTINCT FROM NEW.amount_cents
+                      OR currency IS DISTINCT FROM NEW.currency
+                  )
+            )
+            THEN
+                RAISE EXCEPTION 'payment update would invalidate refund case authority'
+                    USING ERRCODE = '23514',
+                          CONSTRAINT = 'ck_payments_refund_case_authority';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER trg_payments_refund_case_authority "
+        "BEFORE UPDATE OF order_id, amount_cents, currency, status ON payments "
+        "FOR EACH ROW EXECUTE FUNCTION enforce_payment_refund_case_authority()"
     )
 
 
@@ -483,10 +524,13 @@ def _downgrade_order_status() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER trg_payments_refund_case_authority ON payments")
+    op.execute("DROP FUNCTION enforce_payment_refund_case_authority()")
     op.execute("DROP TRIGGER trg_refund_cases_payment_authority ON refund_cases")
     op.execute("DROP FUNCTION enforce_refund_case_payment_authority()")
     op.drop_index("ix_refund_attempts_reconciliation_due", table_name="refund_attempts")
     op.drop_index("uq_refund_attempts_one_active_per_case", table_name="refund_attempts")
+    op.drop_index("uq_refund_attempts_provider_refund_no", table_name="refund_attempts")
     op.drop_index("ix_refund_attempts_case_id", table_name="refund_attempts")
     op.drop_table("refund_attempts")
     op.drop_index("ix_refund_cases_order_id", table_name="refund_cases")

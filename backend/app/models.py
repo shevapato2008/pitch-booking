@@ -1584,6 +1584,13 @@ class RefundAttempt(Base):
         ),
         Index("ix_refund_attempts_case_id", "refund_case_id"),
         Index(
+            "uq_refund_attempts_provider_refund_no",
+            "provider",
+            "provider_refund_no",
+            unique=True,
+            postgresql_where=text("provider_refund_no IS NOT NULL"),
+        ),
+        Index(
             "uq_refund_attempts_one_active_per_case",
             "refund_case_id",
             unique=True,
