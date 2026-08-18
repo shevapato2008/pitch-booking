@@ -12,6 +12,8 @@
 
 **Prerequisite:** 共享生命周期设计已批准并冻结 B2 资格；本计划仍不得实现生产契约、数据库、API 或启用“我要找球踢”。
 
+**Integration ownership:** 本切片只提交 slice-local 页面、Fixture、路由片段和聚焦测试。`miniprogram/dev/app-pages.json`、`miniprogram/dev/bootstrap.ts`、中央 build/audit manifests/tests 以及最终 Fixture 删除，由 root 集成协调任务在合并所有活动切片后串行完成；不得让本分支的旧中央清单覆盖其他切片路由。
+
 ---
 
 ## Task 1: Build four proportional reference frames
@@ -76,9 +78,8 @@ git commit -m "design: define captain open game journey"
 - Create: `miniprogram/dev/pages/captain-game-form/index.test.ts`
 - Create: `miniprogram/dev/pages/captain-game-manage/index.test.ts`
 - Create: `miniprogram/dev/pages/captain-game-public/index.test.ts`
+- Create: `miniprogram/dev/captain-open-game-pages.json`
 - Create: `tests/captain-open-game-native-preview.test.mjs`
-- Modify: `miniprogram/dev/app-pages.json`
-- Modify: `tests/build-miniprogram.test.mjs`
 
 - [ ] **Step 1: Write focused RED tests**
 
@@ -89,7 +90,7 @@ Cover:
 - save creates a private draft snapshot without publishing;
 - publish, preview, edit, share-failure, cancel confirmation and return all produce deterministic Fixture state or navigation;
 - published public detail is read-only and contains no application button;
-- no dev route/token is present in the production manifest/build.
+- slice-local route fragment contains the three preview pages, and no dev route/token is present in the production manifest/build.
 
 Run:
 
@@ -116,14 +117,15 @@ npx jest miniprogram/dev/captain-open-game-fixture.test.ts \
   miniprogram/dev/pages/captain-game-public/index.test.ts --runInBand
 npm run typecheck
 npm run build:miniprogram:development
-node --test tests/captain-open-game-native-preview.test.mjs tests/build-miniprogram.test.mjs
+node --test tests/captain-open-game-native-preview.test.mjs
 ```
+
+The focused Node test must validate `miniprogram/dev/captain-open-game-pages.json` and production isolation without editing the shared app-page/build manifests. A root integration task will merge this fragment with other active slice fragments and run the shared build/audit suite once.
 
 - [ ] **Step 4: Commit the isolated preview**
 
 ```bash
-git add miniprogram/dev tests/captain-open-game-native-preview.test.mjs \
-  tests/build-miniprogram.test.mjs
+git add miniprogram/dev tests/captain-open-game-native-preview.test.mjs
 git diff --cached --check
 git commit -m "feat: preview captain open game journey"
 ```
@@ -157,4 +159,4 @@ git diff --cached --check
 git commit -m "design: approve captain open game preview"
 ```
 
-Stop after this task. A separate plan must freeze the production game contract/model/API before any production page is added. Keep “我要找球踢” disabled until the C1 application journey is real.
+Stop after this task. Do not modify or clean shared route/build manifests in this branch. After all active slices are merged, the root integration task must merge `captain-open-game-pages.json` into the central development registration, verify every other route remains present, verify production exclusion, and only then own any later Fixture cleanup. A separate plan must freeze the production game contract/model/API before any production page is added. Keep “我要找球踢” disabled until the C1 application journey is real.
