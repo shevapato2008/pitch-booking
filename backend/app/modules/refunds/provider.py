@@ -22,8 +22,8 @@ def _validate_cny(currency: str) -> None:
 
 
 def _validate_amount(amount_cents: int) -> None:
-    if amount_cents < 0:
-        raise ValueError("amount_cents must be non-negative")
+    if type(amount_cents) is not int or amount_cents < 0:
+        raise ValueError("amount_cents must be a non-negative integer")
 
 
 def _validate_aware(field: str, value: datetime) -> None:
@@ -121,6 +121,8 @@ class QueryRefundResult:
     safe_error_code: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, QueryRefundStatus):
+            raise ValueError("status must be a QueryRefundStatus")
         if self.status is QueryRefundStatus.SUCCESS:
             if self.facts is None:
                 raise ValueError("SUCCESS requires facts")

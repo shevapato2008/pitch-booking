@@ -295,6 +295,101 @@ def test_case_creation_enforces_shared_purpose_predicate(
         session.rollback()
 
 
+@pytest.mark.parametrize(
+    "active_status",
+    [
+        PaymentState.CREATING,
+        PaymentState.PREPAY_CREATED,
+        PaymentState.CONFIRMING,
+        PaymentState.UNKNOWN,
+    ],
+)
+def test_inventory_conflict_purpose_denies_other_possible_applied_payment(
+    pg_engine: Engine,
+    active_status: PaymentState,
+) -> None:
+    order_id, payment_id, _ = _seed_successful_payment(pg_engine, applied=False)
+    with Session(pg_engine) as session:
+        session.add(
+            Payment(
+                id=uuid.uuid4(),
+                order_id=order_id,
+                provider="wechat",
+                merchant_order_no=_merchant_number(),
+                amount_cents=32000,
+                currency="CNY",
+                status=active_status,
+                next_reconcile_at=NOW,
+            )
+        )
+        session.commit()
+
+    with Session(pg_engine) as session:
+        repository = RefundRepository(session)
+        graph = repository.lock_refund_graph(payment_id)
+        assert (
+            repository.purpose_is_valid(
+                graph=graph,
+                purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+            )
+            is False
+        )
+        with pytest.raises(RefundPurposeMismatchError):
+            repository.get_or_create_case(
+                graph=graph,
+                purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+                reason=RefundReason.AUTOMATIC_RECOVERY,
+                reason_note=None,
+                requested_by_user_id=None,
+            )
+        session.rollback()
+
+
+def test_existing_case_is_revalidated_against_current_locked_payment_facts(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, _ = _seed_successful_payment(pg_engine, applied=False)
+    with Session(pg_engine) as session:
+        repository = RefundRepository(session)
+        graph = repository.lock_refund_graph(payment_id)
+        repository.get_or_create_case(
+            graph=graph,
+            purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+            reason=RefundReason.AUTOMATIC_RECOVERY,
+            reason_note=None,
+            requested_by_user_id=None,
+        )
+        session.commit()
+
+    with Session(pg_engine) as session:
+        session.add(
+            Payment(
+                id=uuid.uuid4(),
+                order_id=order_id,
+                provider="wechat",
+                merchant_order_no=_merchant_number(),
+                amount_cents=32000,
+                currency="CNY",
+                status=PaymentState.UNKNOWN,
+                next_reconcile_at=NOW,
+            )
+        )
+        session.commit()
+
+    with Session(pg_engine) as session:
+        repository = RefundRepository(session)
+        graph = repository.lock_refund_graph(payment_id)
+        with pytest.raises(RefundPurposeMismatchError):
+            repository.get_or_create_case(
+                graph=graph,
+                purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+                reason=RefundReason.AUTOMATIC_RECOVERY,
+                reason_note=None,
+                requested_by_user_id=None,
+            )
+        session.rollback()
+
+
 def _add_competing_order(
     engine: Engine,
     *,

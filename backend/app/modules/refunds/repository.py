@@ -25,6 +25,12 @@ _ACTIVE_ATTEMPT_STATUSES = (
     RefundAttemptStatus.PROCESSING,
     RefundAttemptStatus.UNKNOWN,
 )
+_POTENTIAL_APPLIED_PAYMENT_STATES = (
+    PaymentState.CREATING,
+    PaymentState.PREPAY_CREATED,
+    PaymentState.CONFIRMING,
+    PaymentState.UNKNOWN,
+)
 _BOOKING_OWNER_STATUSES = (
     OrderStatus.CONFIRMED,
     OrderStatus.REFUND_PENDING,
@@ -162,12 +168,21 @@ class RefundRepository:
             payment.id != graph.payment.id and payment.applied_to_order_at is not None
             for payment in graph.payments
         )
+        has_other_potential_applied = any(
+            payment.id != graph.payment.id
+            and payment.status in _POTENTIAL_APPLIED_PAYMENT_STATES
+            for payment in graph.payments
+        )
         if purpose is RefundCasePurpose.ORDER_CANCELLATION:
             return target_is_applied
         if purpose is RefundCasePurpose.DUPLICATE_CHARGE:
             return not target_is_applied and has_other_applied
         if purpose is RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT:
-            return not target_is_applied and not has_other_applied
+            return (
+                not target_is_applied
+                and not has_other_applied
+                and not has_other_potential_applied
+            )
         return False
 
     def get_or_create_case(
@@ -180,7 +195,13 @@ class RefundRepository:
         requested_by_user_id: uuid.UUID | None,
     ) -> tuple[RefundCase, bool]:
         if graph.refund_case is not None:
-            if graph.refund_case.purpose is not purpose:
+            if (
+                graph.refund_case.purpose is not purpose
+                or not self.purpose_is_valid(
+                    graph=graph,
+                    purpose=graph.refund_case.purpose,
+                )
+            ):
                 raise RefundPurposeMismatchError("refund case purpose does not match")
             return graph.refund_case, False
         if not self.purpose_is_valid(graph=graph, purpose=purpose):

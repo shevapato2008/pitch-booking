@@ -80,6 +80,20 @@ def test_refund_request_rejects_invalid_payment_identity_and_amount() -> None:
             CreateRefundRequest(**(valid | {field: value}))  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("amount_cents", [True, 1.5])
+def test_refund_amount_requires_an_actual_integer(amount_cents: object) -> None:
+    with pytest.raises(ValueError, match="amount_cents"):
+        CreateRefundRequest(
+            merchant_refund_no="PBR123",
+            merchant_order_no="PBP123",
+            provider_transaction_no="4200001",
+            amount_cents=amount_cents,  # type: ignore[arg-type]
+            currency="CNY",
+        )
+    with pytest.raises(ValueError, match="amount_cents"):
+        replace(_facts(), amount_cents=amount_cents)
+
+
 def test_authoritative_refund_facts_are_complete_and_validated() -> None:
     facts = _facts()
 
@@ -120,6 +134,11 @@ def test_only_success_query_result_can_contain_authoritative_facts() -> None:
         QueryRefundResult(QueryRefundStatus.UNKNOWN)
     with pytest.raises(ValueError, match="FAILED requires safe_error_code"):
         QueryRefundResult(QueryRefundStatus.FAILED)
+
+
+def test_query_refund_result_requires_closed_status_enum_at_runtime() -> None:
+    with pytest.raises(ValueError, match="status"):
+        QueryRefundResult("PROCESSING")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

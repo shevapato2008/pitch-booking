@@ -61,6 +61,20 @@ def test_create_prepay_requires_aware_expiry_and_valid_merchant_number() -> None
                 "openid",
                 datetime(2026, 8, 18, 9, tzinfo=UTC),
             )
+
+
+def test_query_and_close_accept_legacy_merchant_number_up_to_database_limit() -> None:
+    legacy_merchant_order_no = f"PB-PAY-{'a' * 32}"
+
+    assert len(legacy_merchant_order_no) == 39
+    assert QueryPaymentRequest(legacy_merchant_order_no).merchant_order_no == (
+        legacy_merchant_order_no
+    )
+    assert ClosePaymentRequest(legacy_merchant_order_no).merchant_order_no == (
+        legacy_merchant_order_no
+    )
+
+    for merchant_order_no in ("", " ", "x" * 129):
         with pytest.raises(ValueError, match="merchant_order_no"):
             QueryPaymentRequest(merchant_order_no)
         with pytest.raises(ValueError, match="merchant_order_no"):
