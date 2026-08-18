@@ -27,3 +27,42 @@
 ## Capture hash
 
 `refund-confirm-reference-375x812.png`: `bff18ff743c8fa8e5aaa8500436c7c631bef9fd758031de18fc2f1d2f04d6ada`
+
+## Native Fixture source verification
+
+TDD RED was observed before the Fixture and page existed:
+
+```text
+Jest: Cannot find module '../../venue-fulfillment-fixture'
+Node: missing miniprogram/dev/venue-fulfillment-fixture.ts
+```
+
+The minimal slice-local implementation then passed:
+
+```text
+npx jest miniprogram/dev/pages/venue-fulfillment/index.test.ts --runInBand
+1 suite passed, 5 tests passed
+
+node --test tests/venue-order-fulfillment-native-preview.test.mjs
+2 tests passed
+
+npm run typecheck
+passed
+
+npm run build:miniprogram:development
+passed; dev/pages/venue-fulfillment/index discovered without editing a central manifest
+```
+
+The covered behavior is deterministic local Fixture state only: check-in, completion, refund-sheet open/cancel, required reason editing, full-refund confirmation, date-driven empty/read-error states, retry, native back fallback, and every visible button binding. No action uses a Toast as fake production success.
+
+## Native capture blocker
+
+One proportional WeChat DevTools attempt reached a healthy real environment on 2026-08-19:
+
+```text
+WeChat DevTools 36.6.0
+APPID_CONFIGURED, PROJECT_CONFIGURED, BUILD_COMPLETED,
+LOGIN_CONFIRMED, PROJECT_OPENED, AUTOMATION_ENABLED
+```
+
+The first simulator screenshot tool session then stopped at the tool's required user-authorization task (`auth_26ca59dc8b41007aec2a394b6a920cddaf9cbee5316a492d`). Because the user was unavailable and the plan forbids expanding a visual slice into toolchain repair, no second capture workaround was attempted. There is no implementation PNG, side-by-side, overlay, difference, or native approval. Root integration must consume the route fragment and complete this visual gate in an authorized WeChat DevTools session.
