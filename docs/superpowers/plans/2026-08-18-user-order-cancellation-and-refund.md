@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED: Use `superpowers:subagent-driven-development` (if subagents are available) or `superpowers:executing-plans` to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让订单所有者在服务端规则允许时从真实小程序订单详情取消订单，并在“我的订单”和详情页看到权威的取消、退款中、退款失败与已退款状态。
+**Goal:** 让订单所有者从真实小程序安全取消订单，并在订单详情和“我的订单”中看到服务端权威的取消与退款状态。
 
-**Architecture:** 本切片在共享生命周期基础合并后开始，不再修改共享枚举、迁移、退款 Provider 协议或 OpenAPI schema。后端以 `Slot → Order → Payment/RefundCase → RefundAttempt` 的固定锁顺序完成 owner-only 取消，所有 Provider I/O 都在事务和行锁之外；前端只根据服务端 `status`、`allowed_actions` 和 `blocked_reason` 渲染状态与按钮，不使用本地时间猜测取消资格。
+**Architecture:** 本切片只实现 owner cancellation operation：消费共享 `orders/lifecycle.py` policy、现有详情/列表投影和共享 `RefundRepository`，在一个安全事务内完成无资金待支付取消，或创建/重试 durable `ORDER_CANCELLATION` case/attempt。它不实现退款 Provider 调用、退款终态收敛、自动重复扣款/库存冲突 case、worker 或共享投影；生产小程序只依据服务端 `status`、`allowed_actions` 和 `blocked_reason` 渲染状态与真实动作。
 
 **Tech Stack:** FastAPI、SQLAlchemy 2、PostgreSQL、Pytest、微信小程序 TypeScript/WXML/WXSS、Jest、现有 production build/audit。
 
@@ -12,142 +12,158 @@
 
 ---
 
-## Chunk 1：Owner cancellation/refund vertical slice
+## Chunk 1：Owner cancellation operation and Mini Program integration
 
-### Scope、上游假设与文件所有权
+### Scope、串行前置与文件所有权
 
-本计划只拥有：
+共享 lifecycle foundation 必须先合并，并独占以下边界；本计划只验证、消费，不修改：
 
-- owner 用户 `POST /api/v1/orders/{order_id}/cancel` 的服务、repository、路由和幂等语义；
-- `ORDER_CANCELLATION` 退款 case/attempt 的创建、重试和权威结果收敛；
-- 用户取消与支付并发时的安全收敛；
-- owner 订单详情/列表的动作投影，以及生产小程序详情/列表的状态和真实动作；
-- development-only 视觉 Fixture、聚焦自动化、最小设备验收和 Fixture 删除。
+- `backend/app/models.py` 中订单/退款状态、时间戳、`Payment.applied_to_order_at`、`RefundCase`、`RefundAttempt`；
+- `backend/migrations/versions/0013_order_lifecycle.py`；
+- `backend/app/modules/orders/lifecycle.py` 的纯 policy，包括 owner action、24 小时边界、状态—时间戳和共享 blocked reason；
+- `backend/app/modules/orders/repository.py`、`backend/app/modules/orders/service.py`、`backend/app/modules/orders/dto.py` 的现有 list/detail runtime projection；
+- `backend/app/modules/refunds/repository.py` 的共享锁顺序、case/attempt identity、purpose 与 inventory ownership predicates；
+- `backend/app/modules/payments/convergence.py` 写入且保护 `Payment.applied_to_order_at`；
+- `contracts/openapi.yaml`、`contracts/examples/*`、`scripts/validate-contract.mjs` 的共享 schema、operation 和错误码。
 
-上游共享生命周期任务必须先提供，且本计划只验证、不修改：
+WeChat Provider 轨道独占以下边界；本计划不得创建、修改或测试其实现：
 
-- `backend/app/models.py` 中新增订单状态、取消/履约时间戳、`Payment.applied_to_order_at`、`RefundCase`、`RefundAttempt` 及相关闭合枚举；
-- `backend/migrations/versions/0013_order_lifecycle_and_refunds.py`（若上游最终采用不同文件名，以 Alembic `head` 的实际文件为准）；
-- `backend/app/modules/refunds/provider.py` 中 `RefundProvider`、create/query request/result 和 `AuthoritativeRefundFacts`；
-- `backend/app/modules/orders/dto.py` 中共享 `AllowedActionsResponse`、扩展后的 `OrderDetailResponse` / `OrderSummaryResponse`；
-- `contracts/openapi.yaml` 及 `contracts/examples/` 中取消 endpoint、扩展订单投影、错误信封和状态矩阵。
+- `backend/app/modules/refunds/convergence.py` 和退款 create/query/recovery orchestration；
+- refund worker、租约、通知、真实 WeChat adapter、证书/配置和 production composition；
+- `DUPLICATE_CHARGE` / `PAYMENT_INVENTORY_CONFLICT` 自动 case；
+- 权威 `SUCCESS / FAILED / UNKNOWN` 退款终态及退款成功后的 slot 修改；
+- 支付—取消—退款全链路竞态和 Provider I/O 锁外证明。
 
-本计划不得修改：
+本计划的 owner service 只做两类写入：
 
-- `backend/app/models.py`、任何 `backend/migrations/versions/*.py`；
-- `contracts/openapi.yaml`、`contracts/examples/*`、`scripts/validate-contract.mjs`；
-- `backend/app/modules/refunds/provider.py`；
-- 真实微信支付/退款 HTTP adapter、证书、配置、通知验签解密或 worker composition；
-- 场馆履约/场馆退款 API。
+1. 待支付且不存在任何可能已付款记录时，本地写 `CANCELLED` 并只释放仍由该订单持有的 `LOCKED` slot；
+2. 其他允许的 owner cancellation，写入取消请求并创建或重试 durable `ORDER_CANCELLATION` case/attempt，返回共享投影的 `REFUND_PENDING` 或支付结果待确认状态，等待 Provider 轨道继续处理。
 
-真实 WeChat adapter 由并行 Provider 切片实现。本切片只消费注入的协议；测试使用 test-local scripted provider。不得向 production composition 注册 Mock，也不得在 Provider 缺失时伪造成功。已支付订单退款的真实小额真机验收属于 Provider 集成发布门槛；本计划自己的无资金真机验收只取消一个从未发起支付的待支付订单。
+真实 paid refund 不在本计划模拟。Provider 轨道未合并前，不把已支付取消标记为端到端完成，不向 production composition 注册 Mock，不主动制造一笔无法真实退回的设备支付。
 
-上游 schema 若没有冻结本计划所需的 200/202/409/503 响应或错误码，停止实施并回到共享基础任务；不要在本分支补改 OpenAPI。下文的测试应直接导入/断言上游已有常量，而不是在业务代码再建第二份字符串集合。
-
-### File map
+### Exact file map
 
 **Backend create:**
 
-- `backend/app/modules/orders/actions.py`：owner 视角的纯动作投影，唯一使用服务端 `now` 判断 24 小时边界。
-- `backend/app/modules/orders/cancellation.py`：用户取消三阶段 orchestration 与支付竞态后的 finalize hook。
-- `backend/app/modules/orders/cancellation_repository.py`：owner 隐藏式定位、固定顺序加锁、取消幂等记录和 slot 归属证明。
-- `backend/app/modules/refunds/repository.py`：case/attempt 定位、顺序 attempt、恢复租约和退款成功时的归属查询。
-- `backend/app/modules/refunds/service.py`：退款 create/query 的事务外 Provider I/O 和 restart-safe recovery。
-- `backend/app/modules/refunds/convergence.py`：校验权威退款事实并原子更新 attempt/order/slot。
-- `backend/tests/test_order_actions.py`：owner 动作真值表纯测试。
-- `backend/tests/test_order_cancellation.py`：owner API、幂等、权限和待支付取消 PostgreSQL 测试。
-- `backend/tests/test_order_refund.py`：全额退款、失败/UNKNOWN/重试、权威校验和锁外 I/O PostgreSQL 测试。
-- `backend/tests/test_order_cancellation_concurrency.py`：支付—取消—退款真实 PostgreSQL 竞态测试。
+- `backend/app/modules/orders/cancellation.py`：owner cancel command service；只调用共享 lifecycle policy 和 `RefundRepository`。
+- `backend/tests/test_order_cancellation.py`：owner 隔离、幂等、无资金取消、durable case/attempt 和 retry 的聚焦 PostgreSQL/API 测试。
 
 **Backend modify:**
 
-- `backend/app/modules/orders/service.py`：详情/列表复用 owner 动作投影并返回上游冻结字段；替换不可执行的 50% 退款承诺。
-- `backend/app/modules/orders/router.py`：只添加上游已冻结的 owner cancel operation；不在本切片新增或扩展 runtime schema patch。
-- `backend/app/modules/orders/repository.py`：详情/列表预加载动作投影所需的退款关系；不复制取消写路径。
-- `backend/app/modules/payments/service.py`：`cancel_requested_at` 后禁止再次创建/重放新的支付动作。
-- `backend/app/modules/payments/convergence.py`：成功主付款写 `applied_to_order_at`，并把取消竞态交给 cancellation finalize hook。
-- `backend/app/modules/payments/reconciliation.py`：取消请求使现有 payment 立即到期查单/关单；结果收敛后触发取消 finalize。
-- `backend/tests/test_order_detail.py`、`backend/tests/test_order_list.py`、`backend/tests/test_payment_settlement.py`、`backend/tests/test_payment_concurrency.py`：相邻行为回归。
+- `backend/app/modules/orders/router.py`：添加上游 OpenAPI 已冻结的 `POST /api/v1/orders/{order_id}/cancel` route；不添加 runtime schema patch。
+
+**Backend verify only:**
+
+- `backend/app/modules/orders/lifecycle.py`
+- `backend/app/modules/orders/repository.py`
+- `backend/app/modules/orders/service.py`
+- `backend/app/modules/orders/dto.py`
+- `backend/app/modules/refunds/repository.py`
+- `backend/app/modules/payments/convergence.py`
+- `backend/tests/test_order_lifecycle.py`
+- `backend/tests/test_order_detail.py`
+- `backend/tests/test_order_list.py`
+- `backend/tests/test_refund_repository.py`
+- `backend/tests/test_openapi_conformance.py`
 
 **Mini Program create:**
 
-- `miniprogram/dev/order-cancellation-fixture.ts`、`miniprogram/dev/order-cancellation-fixture.test.ts`：临时、集中、development-only 的详情/列表状态与真实 Fixture transitions。
-- `artifacts/ui/reviews/order-cancellation/README.md`：两张代表性 375×812 预览的自审和用户确认记录。
-- `docs/acceptance/user-order-cancellation-and-refund-progress.md`：自动化、设备、Provider 外部依赖和 Fixture 删除状态。
+- `miniprogram/dev/order-cancellation-fixture.ts`：临时、集中、development-only 的取消/退款视觉状态与真实本地 transitions。
+- `miniprogram/dev/order-cancellation-fixture.test.ts`：Fixture isolation 和 transition 测试。
+- `artifacts/ui/reviews/order-cancellation/README.md`：两个代表性 375×812 预览的自审和授权确认记录。
+- `docs/acceptance/user-order-cancellation-and-refund-progress.md`：自动化、设备验收和 Provider 外部 release gate。
 
 **Mini Program modify:**
 
-- `miniprogram/domain/booking.ts`：消费上游订单状态、动作和取消/退款投影。
-- `miniprogram/domain/decoders.ts`、`miniprogram/domain/decoders.test.ts`：严格解码共享闭合响应。
-- `miniprogram/services/booking.ts`：增加 owner cancel data-source operation。
-- `miniprogram/services/http-booking.ts`、`miniprogram/services/http-booking.test.ts`：Bearer、`Idempotency-Key`、一次 401 恢复和 unknown-result 语义。
-- `miniprogram/presentation/order-detail.ts`、`miniprogram/presentation/order-detail.test.ts`：新增取消/退款状态与轮询状态机。
-- `miniprogram/presentation/my-orders.ts`、`miniprogram/presentation/my-orders.test.ts`：列表状态优先级与文案。
-- `miniprogram/pages/order-detail/index.ts`、`index.wxml`、`index.wxss`、`index.test.ts`：确认弹层、取消/重试退款、禁重、unknown-result 与权威刷新。
-- `miniprogram/pages/my-orders/index.ts`、`index.wxml`、`index.wxss`、`index.test.ts`：新状态展示；卡片仍是进入详情的唯一列表动作。
-- `miniprogram/dev/payment-source.ts`、`miniprogram/dev/payment-source.test.ts`、`miniprogram/dev/bootstrap.ts`：临时挂接代表性详情 Fixture。
-- `miniprogram/dev/my-orders-fixture.ts`、`miniprogram/dev/pages/my-orders/index.test.ts`：临时增加取消/退款卡片状态。
-- `tests/build-miniprogram.test.mjs`、`tests/audit-production-package.test.mjs`、`tests/production-package-booking-audit.test.mjs`：证明 Fixture 和 preview token 不进入 production。
+- `miniprogram/domain/booking.ts`
+- `miniprogram/domain/decoders.ts`
+- `miniprogram/domain/decoders.test.ts`
+- `miniprogram/services/booking.ts`
+- `miniprogram/services/http-booking.ts`
+- `miniprogram/services/http-booking.test.ts`
+- `miniprogram/presentation/order-detail.ts`
+- `miniprogram/presentation/order-detail.test.ts`
+- `miniprogram/presentation/my-orders.ts`
+- `miniprogram/presentation/my-orders.test.ts`
+- `miniprogram/pages/order-detail/index.ts`
+- `miniprogram/pages/order-detail/index.wxml`
+- `miniprogram/pages/order-detail/index.wxss`
+- `miniprogram/pages/order-detail/index.test.ts`
+- `miniprogram/pages/my-orders/index.ts`
+- `miniprogram/pages/my-orders/index.wxml`
+- `miniprogram/pages/my-orders/index.wxss`
+- `miniprogram/pages/my-orders/index.test.ts`
+- `miniprogram/dev/payment-source.ts`
+- `miniprogram/dev/payment-source.test.ts`
+- `miniprogram/dev/bootstrap.ts`
+- `miniprogram/dev/my-orders-fixture.ts`
+- `miniprogram/dev/pages/my-orders/index.test.ts`
+- `tests/build-miniprogram.test.mjs`
+- `tests/audit-production-package.test.mjs`
+- `tests/production-package-booking-audit.test.mjs`
 
 ---
 
-### Task 0：验证共享生命周期基础并冻结并行边界
+### Task 0：验证共享基础，不在 owner 轨道复制 policy/repository/projection
 
 **Files:**
 
 - Verify only: `backend/app/models.py`
-- Verify only: `backend/migrations/versions/0013_order_lifecycle_and_refunds.py`
-- Verify only: `backend/app/modules/refunds/provider.py`
+- Verify only: `backend/migrations/versions/0013_order_lifecycle.py`
+- Verify only: `backend/app/modules/orders/lifecycle.py`
+- Verify only: `backend/app/modules/orders/repository.py`
+- Verify only: `backend/app/modules/orders/service.py`
 - Verify only: `backend/app/modules/orders/dto.py`
+- Verify only: `backend/app/modules/refunds/repository.py`
+- Verify only: `backend/app/modules/payments/convergence.py`
 - Verify only: `contracts/openapi.yaml`
-- Verify only: `contracts/examples/`
-- Verify only: `docs/superpowers/specs/2026-08-18-order-lifecycle-and-refund-design.md`
 
-- [ ] **Step 1: Rebase/merge only after the foundation branch is green**
+- [ ] **Step 1: Merge only the green shared-foundation commit**
 
-Confirm the implementation branch contains the shared lifecycle commit. Record its SHA in the implementation handoff. Do not copy shared files from another worktree.
+Record the exact foundation SHA in the implementation handoff. Do not copy files from another worktree and do not begin owner work while the migration or shared contract is still changing.
 
-- [ ] **Step 2: Assert the exact upstream surface**
-
-Run:
+- [ ] **Step 2: Assert the upstream symbols and ownership**
 
 ```bash
 rg -n "CANCELLED|REFUND_PENDING|REFUND_FAILED|REFUNDED|COMPLETED|cancel_requested_at|applied_to_order_at|class RefundCase|class RefundAttempt" backend/app/models.py
-rg -n "class RefundProvider|create_refund|query_refund|AuthoritativeRefundFacts" backend/app/modules/refunds/provider.py
-rg -n "allowed_actions|blocked_reason|/api/v1/orders/\{order_id\}/cancel" contracts/openapi.yaml backend/app/modules/orders/dto.py
+rg -n "owner|24|allowed_actions|blocked_reason|cancell" backend/app/modules/orders/lifecycle.py
+rg -n "class RefundRepository|ORDER_CANCELLATION|purpose|inventory|lock" backend/app/modules/refunds/repository.py
+rg -n "applied_to_order_at" backend/app/modules/payments/convergence.py
+rg -n "/api/v1/orders/\{order_id\}/cancel|allowed_actions|blocked_reason" contracts/openapi.yaml backend/app/modules/orders/dto.py
 ```
 
-Expected: every shared symbol exists once; no implementation-local enum or duplicate schema is needed.
+Expected: every shared responsibility has one upstream implementation. In particular, this branch must not need a new `orders/actions.py`, a second `RefundRepository`, a second runtime list/detail projector or an applied-marker write.
 
-- [ ] **Step 3: Run only the foundation contract/migration checks**
+- [ ] **Step 3: Run the focused foundation checks**
 
 ```bash
 npm run contract:validate
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
-    backend/tests/test_order_lifecycle_foundation.py \
+    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_refund_repository.py \
+    backend/tests/test_order_detail.py \
+    backend/tests/test_order_list.py \
     backend/tests/test_openapi_conformance.py -q
 ```
 
-Expected: PASS. If an upstream test file was renamed, use the actual lifecycle-foundation test selected by `rg --files backend/tests | rg 'lifecycle|refund.*schema'`; do not replace it with a new test in this branch.
+Expected: PASS before any owner-operation edit.
 
-- [ ] **Step 4: Record the implementation invariants**
+- [ ] **Step 4: Confirm the production copy is already truthful upstream**
 
-In the working notes for Task 1, copy the actual upstream response status matrix and error-code names. The behavioral invariants are fixed even if names differ:
+The shared runtime projection must return:
 
 ```text
-200 = immediate terminal CANCELLED/REFUNDED or exact idempotent replay
-202 = payment cancellation or refund authority still pending
-404 = missing and non-owner are indistinguishable
-409 = current authoritative state/window disallows the action, or key reuse differs
-503 = database/provider unavailable without fake success
+开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。
 ```
+
+If the upstream projection still promises a 50% refund, stop and report the shared-foundation prerequisite as blocked. Do not patch `orders/service.py`, fix the foundation from this branch or create a second frontend rule.
 
 Do not commit at this gate.
 
 ---
 
-### Task 1：先用隔离 Fixture 完成详情/列表动作与最小视觉确认
+### Task 1：用隔离 Fixture 完成生产页面状态/动作和最小视觉确认
 
 **Files:**
 
@@ -175,9 +191,9 @@ Do not commit at this gate.
 - Modify: `tests/build-miniprogram.test.mjs`
 - Create: `artifacts/ui/reviews/order-cancellation/README.md`
 
-- [ ] **Step 1: Write RED presentation and page tests**
+- [ ] **Step 1: Write RED presentation/page tests**
 
-Add one closed owner action type; use the upstream field names exactly:
+Consume the upstream fields exactly:
 
 ```ts
 export interface AllowedOrderActions {
@@ -190,17 +206,15 @@ export interface AllowedOrderActions {
 }
 ```
 
-Cover only these representative behaviors:
+Cover only the changed behavior:
 
-1. `PENDING_PAYMENT + can_cancel` shows a real secondary “取消订单” action while keeping “立即支付” only when `can_pay=true`.
-2. `cancel_requested_at != null` with pending payment shows “正在确认取消”, renders no pay/cancel button, and polls the server.
-3. eligible `CONFIRMED + can_cancel` shows “取消订单”; confirmation copy promises only a full refund, never 50%.
-4. `REFUND_PENDING` shows “退款处理中” and no button; `REFUND_FAILED + can_cancel` shows real “重试退款”; `REFUNDED` and `CANCELLED` are terminal ordinary views.
-5. a late cancel result after hide/unload cannot mutate the page; duplicate taps issue one request.
-6. an unknown network result keeps the same idempotency key and offers “确认取消结果”; a definitive 409 clears that attempt.
-7. list cards show `正在确认取消 / 已取消 / 退款处理中 / 退款失败 / 已退款 / 已完成` with text plus semantic color; list cards still navigate to detail and do not add nested destructive buttons.
-
-Run:
+1. `PENDING_PAYMENT + can_cancel` has a real secondary “取消订单” action; pay appears only when `can_pay=true`.
+2. pending payment with a cancel request displays “正在确认取消”, renders no pay/cancel button and uses authoritative refresh/polling.
+3. eligible `CONFIRMED + can_cancel` confirms “取消并发起全额退款”, never promises an immediate refund or slot release.
+4. `REFUND_PENDING` has no destructive action; `REFUND_FAILED + can_cancel` shows “重试退款”; `CANCELLED / REFUNDED / COMPLETED` are terminal ordinary views.
+5. duplicate taps issue one request; hide/unload invalidates a late result.
+6. an unknown network result keeps the same idempotency key and offers “确认取消结果”; a definitive business conflict clears it.
+7. list cards display `正在确认取消 / 已取消 / 退款处理中 / 退款失败 / 已退款 / 已完成`; the whole card remains the only list button and opens detail.
 
 ```bash
 npx jest \
@@ -211,25 +225,31 @@ npx jest \
   --runInBand
 ```
 
-Expected: RED because the new statuses/actions and `cancelOrder` boundary are absent.
+Expected: RED because the expanded states and cancel data-source operation are absent.
 
-- [ ] **Step 2: Implement the minimal fixture-driven UI**
+- [ ] **Step 2: Implement only the fixture-driven page boundary**
 
-`order-cancellation-fixture.ts` owns immutable `pending-cancellable → cancelling → cancelled` and `confirmed-cancellable → refund-pending → refund-failed/refunded` transitions. It may implement `cancelOrder` for development composition only. Production page code must depend solely on `BookingDataSource`, never import this fixture.
-
-Use the existing visual system: `#F8FAFC` background, `#FFFFFF` surfaces, `#10243E` primary text, existing trust blue/success/error tokens, 4/8px rhythm, 88rpx touch targets, explicit flex centering and safe-area padding. Use text plus existing CSS/vector forms; no emoji or new icon family.
-
-The detail page must confirm before the destructive request:
+`order-cancellation-fixture.ts` owns immutable development transitions:
 
 ```text
-待支付：确认取消订单？ / 取消后将释放当前场次。
-已确认：确认取消并退款？ / 将发起全额原路退款，退款成功后释放场次。
+pending-cancellable → cancelling → cancelled
+confirmed-cancellable → refund-pending
+refund-failed → refund-pending
+```
+
+It may expose read-only terminal `refunded/completed` fixtures to prove presentation, but it must not simulate Provider behavior or import into production composition. Production page code depends only on `BookingDataSource`.
+
+Confirmation copy:
+
+```text
+待支付：确认取消订单？ / 若尚未付款，取消成功后将释放当前场次。
+已确认：确认取消并发起退款？ / 将提交一笔全额退款申请，结果以服务端为准。
 退款失败：重试退款？ / 将继续处理同一笔全额退款，不会重复扣款。
 ```
 
-“释放场次”只能出现在无付款的立即取消或退款已成功的权威结果中；退款处理中不得声称已释放。
+Use the existing light system, 4/8px rhythm, 88rpx touch targets, explicit flex centering, text plus semantic color, existing icon style and safe-area padding. Do not add a new theme or full Artifact set.
 
-- [ ] **Step 3: Run focused frontend GREEN checks**
+- [ ] **Step 3: Run focused GREEN checks**
 
 ```bash
 npx jest \
@@ -246,22 +266,27 @@ npm run build:miniprogram:development
 node --test tests/build-miniprogram.test.mjs
 ```
 
-Expected: PASS; development build contains the temporary scenario and production route sources import no `miniprogram/dev` module.
+Expected: PASS; production sources import no development module.
 
-- [ ] **Step 4: Perform one proportional visual pass per changed page**
+- [ ] **Step 4: Perform the proportional visual pass**
 
-At exactly 375×812 in WeChat DevTools, capture only:
+At exactly 375×812 in WeChat DevTools capture only:
 
-- one eligible confirmed detail with the real cancel action and safe-area footer;
-- one mixed list containing refund-pending, refunded and refund-failed cards.
+- one eligible confirmed detail with the cancel action and safe footer;
+- one mixed list with refund-pending, refunded and refund-failed cards.
 
-Compare the detail geometry with `artifacts/ui/reviews/payment-confirmation/reference-confirmed-375x812.png` and the list geometry with `artifacts/ui/reviews/my-orders/ready-reference-375x812.png`. Generate one side-by-side, 50% overlay and difference image for each changed page; record intentional status/action differences in `artifacts/ui/reviews/order-cancellation/README.md`.
+Compare detail geometry with `artifacts/ui/reviews/payment-confirmation/reference-confirmed-375x812.png` and list geometry with `artifacts/ui/reviews/my-orders/ready-reference-375x812.png`. Generate one side-by-side, 50% overlay and difference image per page and record intentional changes in `artifacts/ui/reviews/order-cancellation/README.md`.
 
-Manually check button text horizontal/vertical centering, equal status badge heights, full chevrons, no clipping, no fixed-footer overlap, safe-area clearance, exact copy and honest disabled/non-button states. Do one iPhone 14 Pro safe-area smoke check without creating an extra Artifact matrix. Fix only visible blockers.
+Manually check button text dual-axis centering, badge consistency, chevrons, clipping, fixed footer/safe area, exact copy and honest non-button states. Do one iPhone 14 Pro safe-area smoke check without adding another Artifact matrix.
 
-- [ ] **Step 5: Obtain the visual gate and commit**
+- [ ] **Step 5: Record an authorized visual decision and commit**
 
-Do not start backend Task 2 until the user confirms these two representative previews. This is an extension of previously approved screens, so no full-state screenshot matrix or new design-system exploration is required.
+Before Task 2, record either:
+
+- the user's explicit confirmation; or
+- during the user's previously authorized sleep period, an independent visual reviewer's approve/reject decision, reviewer identity, viewport and reviewed evidence paths.
+
+An authorized independent approval satisfies this gate; do not block solely waiting for the sleeping user and do not falsely record it as direct user approval.
 
 ```bash
 git add \
@@ -285,137 +310,28 @@ git commit -m "feat: preview user order cancellation"
 
 ---
 
-### Task 2：实现 owner 权威动作和详情/列表投影
+### Task 2：实现无资金待支付取消和 owner-only 幂等 API
 
 **Files:**
 
-- Create: `backend/app/modules/orders/actions.py`
-- Create: `backend/tests/test_order_actions.py`
-- Modify: `backend/app/modules/orders/repository.py`
-- Modify: `backend/app/modules/orders/service.py`
-- Modify: `backend/tests/test_order_detail.py`
-- Modify: `backend/tests/test_order_list.py`
-- Verify only: `backend/app/modules/orders/dto.py`
-- Verify only: `contracts/openapi.yaml`
-
-- [ ] **Step 1: Write the pure RED action matrix**
-
-Use a timezone-aware server `now`; never pass the Mini Program clock. Freeze this owner projection:
-
-| Authoritative state | Owner action |
-| --- | --- |
-| `PENDING_PAYMENT`, no cancel request, not expired | `can_cancel=true`; `can_pay` follows existing payment authority |
-| pending payment with unresolved cancel | no action; `PAYMENT_RESULT_PENDING` |
-| `CONFIRMED`, not checked in, `starts_at - now >= 24h`, no cancellation case | `can_cancel=true` |
-| `CONFIRMED` inside 24h | no cancel; `CANCELLATION_WINDOW_CLOSED` |
-| payment won a prior cancel race inside 24h | no cancel; `CANCELLATION_REQUIRES_SUPPORT` |
-| `REFUND_PENDING` | no action; `REFUND_IN_PROGRESS` |
-| `REFUND_FAILED` for owner cancellation | `can_cancel=true`, used as “重试退款” |
-| `CANCELLED / REFUNDED / COMPLETED / EXPIRED` | no action; `ORDER_TERMINAL` |
-
-For an owner projection, `can_check_in`, `can_complete` and `can_refund` remain false; those belong to venue fulfillment. Assert the exact upstream blocked-reason enum values rather than raw duplicated strings.
-
-Run:
-
-```bash
-uv run pytest backend/tests/test_order_actions.py -q
-```
-
-Expected: RED because `project_owner_actions` does not exist.
-
-- [ ] **Step 2: Implement the pure projector and closed read projection**
-
-Recommended signature:
-
-```python
-def project_owner_actions(
-    *,
-    order: Order,
-    slot: Slot,
-    payments: Sequence[Payment],
-    refund_cases: Sequence[RefundCase],
-    now: datetime,
-) -> AllowedActionsResponse:
-    ...
-```
-
-`OrderService._order_response` and `_order_summary` call the same function. Preload only the relationships required for the closed projection; do not query per order in the list. Keep `created_at DESC, id DESC` pagination unchanged.
-
-Replace the order-detail promise “不足 24 小时收取 50%” with the actual server rule:
-
-```text
-开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。
-```
-
-Do not infer venue exception handling or partial refund support.
-
-- [ ] **Step 3: Add focused PostgreSQL read tests**
-
-Extend the existing detail/list tests to cover:
-
-- owner-only timestamps/actions and unchanged hidden-404 behavior;
-- exact 24h inclusive boundary and one microsecond inside the closed window;
-- pending cancel, cancellation-requires-support, refund pending/failed/refunded and completed list/detail projections;
-- repository eager-loads the refund data needed by the list without changing pagination order or response privacy;
-- no contact/private/refund-provider identifiers in `OrderSummaryResponse`.
-
-Run:
-
-```bash
-TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
-  uv run pytest \
-    backend/tests/test_order_actions.py \
-    backend/tests/test_order_detail.py \
-    backend/tests/test_order_list.py -q
-uv run ruff check \
-  backend/app/modules/orders/actions.py \
-  backend/app/modules/orders/repository.py \
-  backend/app/modules/orders/service.py \
-  backend/tests/test_order_actions.py
-```
-
-Expected: PASS.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add \
-  backend/app/modules/orders/actions.py \
-  backend/app/modules/orders/repository.py \
-  backend/app/modules/orders/service.py \
-  backend/tests/test_order_actions.py \
-  backend/tests/test_order_detail.py \
-  backend/tests/test_order_list.py
-git diff --cached --check
-git commit -m "feat: project owner cancellation actions"
-```
-
----
-
-### Task 3：实现待支付订单取消 API、幂等和 owner 隔离
-
-**Files:**
-
-- Create: `backend/app/modules/orders/cancellation_repository.py`
 - Create: `backend/app/modules/orders/cancellation.py`
 - Create: `backend/tests/test_order_cancellation.py`
 - Modify: `backend/app/modules/orders/router.py`
-- Modify: `backend/app/modules/payments/service.py`
-- Verify only: `backend/app/modules/orders/dto.py`
-- Verify only: `contracts/openapi.yaml`
+- Consume only: `backend/app/modules/orders/lifecycle.py`
+- Consume only: `backend/app/modules/orders/repository.py`
+- Consume only: `backend/app/modules/refunds/repository.py`
 
-- [ ] **Step 1: Write API RED tests for immediate and pending cancellation**
+- [ ] **Step 1: Write PostgreSQL/API RED tests**
 
-Use the real isolated PostgreSQL fixture and the upstream response/error schemas. Cover:
+Use the real isolated PostgreSQL fixture. Cover:
 
-- no bearer, invalid bearer, other owner and missing order;
-- pending order with no `CREATING | PREPAY_CREATED | CONFIRMING | UNKNOWN | SUCCESS` payment becomes `CANCELLED`, writes `cancel_requested_at == cancelled_at`, and releases only its own `LOCKED` slot to `AVAILABLE`;
-- a pending order with only `CLOSED` attempts is also safe to cancel immediately;
-- an active/maybe-paid attempt only writes `cancel_requested_at`, keeps order pending and slot locked, sets recovery due now, returns 202 and disables pay;
-- repeated same key returns byte-equivalent first result; same key for a different order returns upstream `IDEMPOTENCY_KEY_REUSED` 409; a new key on already cancelled business returns the same terminal projection without a second slot change;
-- database/commit failure rolls back order, slot, payment scheduling and idempotency record, returning 503.
-
-Example core assertion:
+- no bearer, invalid bearer, missing order and another owner's order;
+- pending order with no `CREATING | PREPAY_CREATED | CONFIRMING | UNKNOWN | SUCCESS` payment becomes `CANCELLED`, writes shared-policy-valid timestamps and releases only its own `LOCKED` slot;
+- pending order with only `CLOSED` payments is safe to cancel locally;
+- active/maybe-paid payment writes only `cancel_requested_at`, keeps order pending and slot locked, and returns the shared 202 projection;
+- local cancellation never releases an `AVAILABLE`, `CLOSED`, `BOOKED`, another order's lock or a slot without the shared ownership proof;
+- same idempotency key replays the first response; same key for another order is 409; a new key on already cancelled business returns the same terminal projection without a second transition;
+- commit/database failure rolls back order, slot and idempotency record and returns 503.
 
 ```python
 response = client.post(
@@ -430,20 +346,39 @@ assert response.json()["status"] == "CANCELLED"
 assert response.json()["allowed_actions"]["can_cancel"] is False
 ```
 
-Run:
-
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest backend/tests/test_order_cancellation.py -q
 ```
 
-Expected: RED with 404/405 because the cancel route and service do not exist.
+Expected: RED because the owner command service/route do not exist.
 
-- [ ] **Step 2: Implement fixed-order locks and generic idempotency**
+- [ ] **Step 2: Implement the smallest owner command service**
 
-`CancellationRepository` must first perform an unlocked owner-hidden lookup only to discover `slot_id`, then acquire `Slot → Order → all relevant Payment rows` with `FOR UPDATE` and re-check owner/state. It may consume the upstream generic idempotency helper/model, but must not alter its schema.
+Recommended boundary:
 
-Canonical digest:
+```python
+class OrderCancellationService:
+    def __init__(
+        self,
+        *,
+        order_repository: OrderRepository,
+        refund_repository: RefundRepository,
+        now: Callable[[], datetime],
+    ) -> None: ...
+
+    def cancel_owned_order(
+        self,
+        *,
+        user_id: uuid.UUID,
+        order_id: uuid.UUID,
+        idempotency_key: str,
+    ) -> CancellationResult: ...
+```
+
+The service must delegate policy decisions to `orders/lifecycle.py` and ordered locking/case predicates to `RefundRepository`. It must not reimplement the 24-hour rule, action truth table, purpose validation, inventory proof or list/detail projection.
+
+Canonical idempotency digest:
 
 ```python
 sha256(json.dumps(
@@ -453,244 +388,121 @@ sha256(json.dumps(
 ).encode()).hexdigest()
 ```
 
-Immediate cancellation changes only the order and its currently owned lock. Never release `AVAILABLE`, `CLOSED`, `BOOKED`, another order's lock, or any slot when ownership proof fails.
+The no-money branch performs all changes in one transaction. The maybe-paid branch only records the shared cancellation intent and returns; it does not query/close payment, create automatic cases or call a Provider.
 
-- [ ] **Step 3: Add the exact route without patching OpenAPI**
+- [ ] **Step 3: Add the exact route without schema edits**
 
-Add `POST /{order_id}/cancel` to the existing orders router with:
+Add `POST /{order_id}/cancel` to `backend/app/modules/orders/router.py` with business bearer, `Idempotency-Key` length 16–128, no request body and the exact upstream 200/202/401/404/409/503 matrix. Serialize the existing shared response DTO; do not define a second cancel response schema or extend `align_order_list_openapi`.
 
-- business bearer dependency;
-- `Idempotency-Key` length 16–128;
-- no request body;
-- upstream response model and exact 200/202/401/404/409/503 matrix;
-- a session factory created from the request database binding, matching the current payment router's short-transaction pattern.
-
-`PaymentCreationService._phase_one` must reject any order with `cancel_requested_at is not None` before creating or reusing a payment launch. Use the upstream-frozen conflict code and complete the payment idempotency result consistently; do not return a cashier token after cancellation starts.
-
-- [ ] **Step 4: Run GREEN and adjacent payment checks**
+- [ ] **Step 4: Run GREEN and focused shared regressions**
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
     backend/tests/test_order_cancellation.py \
+    backend/tests/test_order_lifecycle.py \
     backend/tests/test_order_detail.py \
-    backend/tests/test_payment_creation.py -q
+    backend/tests/test_order_list.py \
+    backend/tests/test_refund_repository.py \
+    backend/tests/test_openapi_conformance.py -q
 uv run ruff check \
   backend/app/modules/orders/cancellation.py \
-  backend/app/modules/orders/cancellation_repository.py \
   backend/app/modules/orders/router.py \
-  backend/app/modules/payments/service.py \
   backend/tests/test_order_cancellation.py
+uv run mypy backend/app/modules/orders/cancellation.py
 ```
 
-Expected: PASS.
+Expected: PASS and no shared foundation file changes.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add \
   backend/app/modules/orders/cancellation.py \
-  backend/app/modules/orders/cancellation_repository.py \
   backend/app/modules/orders/router.py \
-  backend/app/modules/payments/service.py \
   backend/tests/test_order_cancellation.py
 git diff --cached --check
-git commit -m "feat: cancel owned pending orders"
+git commit -m "feat: cancel owned unpaid orders"
 ```
 
 ---
 
-### Task 4：实现已确认订单全额退款、重试和权威收敛
+### Task 3：创建或重试 durable ORDER_CANCELLATION case/attempt
 
 **Files:**
 
-- Create: `backend/app/modules/refunds/repository.py`
-- Create: `backend/app/modules/refunds/service.py`
-- Create: `backend/app/modules/refunds/convergence.py`
-- Create: `backend/tests/test_order_refund.py`
 - Modify: `backend/app/modules/orders/cancellation.py`
-- Modify: `backend/app/modules/orders/cancellation_repository.py`
-- Modify: `backend/app/modules/orders/router.py`
+- Modify: `backend/tests/test_order_cancellation.py`
+- Consume only: `backend/app/modules/orders/lifecycle.py`
+- Consume only: `backend/app/modules/refunds/repository.py`
 
-- [ ] **Step 1: Write RED tests using a test-local scripted provider**
+- [ ] **Step 1: Add RED tests for durable enqueue and retry**
 
-The fake stays inside `backend/tests/test_order_refund.py`; production code imports only the upstream `RefundProvider` protocol. Cover:
+Cover only owner-operation persistence, not Provider behavior:
 
-- owner confirmed order at exactly 24h creates/reuses one `ORDER_CANCELLATION + USER_CANCELLED` case for the `SUCCESS` payment whose `applied_to_order_at` is non-null;
-- amount/currency equal the full authoritative payment; no partial amount parameter exists;
-- first attempt uses `attempt_no=1`, stable `merchant_refund_no` ≤32 characters and Provider I/O observes no business row lock;
-- processing/unknown returns 202 and keeps order `REFUND_PENDING` plus slot `BOOKED`;
-- authoritative success validates provider, merchant, merchant refund/order number, provider refund/transaction number, full amount and CNY before setting `REFUNDED`;
-- success releases to `AVAILABLE` only when the same order still proves exclusive booking ownership;
-- fact mismatch, DB failure or missing ownership proof never releases inventory;
-- explicit provider failure yields `REFUND_FAILED`; a new user action creates attempt 2 in the same case, while `UNKNOWN` queries the same merchant refund number and never creates attempt 2;
-- checked-in, completed, inside-24h, non-main payment, non-owner and duplicate main-payment corruption are rejected safely;
-- Provider unavailable returns the upstream 503 without creating a fake success. Follow the upstream contract on whether a durable case may already exist; assert the exact frozen behavior.
+- eligible confirmed order uses the shared policy and the `SUCCESS` payment whose `applied_to_order_at` is non-null;
+- the service creates/reuses one `ORDER_CANCELLATION + USER_CANCELLED` case with full payment amount/CNY and `requested_by_user_id=owner`;
+- first attempt is durable `CREATING`, `attempt_no=1`, and uses a stable `merchant_refund_no` no longer than 32 characters;
+- order becomes the shared `REFUND_PENDING` projection and slot remains `BOOKED`;
+- same idempotency key and a new key while an active attempt exists do not create another case/attempt;
+- a Provider-owned terminal `REFUND_FAILED` fixture can be retried by an allowed owner action, producing attempt 2 in the same case and returning to `REFUND_PENDING`;
+- an `UNKNOWN/PROCESSING/CREATING` active attempt is never retried as a new attempt;
+- inside-24h, checked-in, completed, non-owner, non-main payment and corrupted multiple-main-payment states are rejected by shared policy/repository predicates;
+- any database error rolls back case, attempt, order timestamps/status and idempotency together.
 
-Run:
+Explicitly assert zero imports/calls of `RefundProvider` and zero changes to `RefundAttempt` terminal facts. This command only enqueues durable work.
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
-  uv run pytest backend/tests/test_order_refund.py -q
+  uv run pytest backend/tests/test_order_cancellation.py -q
 ```
 
-Expected: RED because refund repository/service/convergence are absent.
+Expected: RED because confirmed cancellation/retry is not yet enqueued.
 
-- [ ] **Step 2: Implement three-phase refund orchestration**
+- [ ] **Step 2: Implement enqueue/retry through shared RefundRepository**
 
-Use these explicit phases:
+Inside the same ordered transaction used by Task 2:
 
 ```text
-Phase 1, short DB transaction:
-  lock Slot → Order → main Payment → RefundCase → latest RefundAttempt
-  validate owner/window/check-in/state/full amount
-  create or reuse case; create attempt only after FAILED
-  persist REFUND_PENDING and commit
-
-Phase 2, no Session and no row locks:
-  RefundProvider.create_refund(...) for CREATING
-  RefundProvider.query_refund(...) for PROCESSING/UNKNOWN recovery
-
-Phase 3, short DB transaction:
-  reacquire the same ordered graph
-  verify phase identity and sanitized authoritative facts
-  atomically converge attempt/order/slot; commit or roll back all
+locate owner-hidden order
+→ ask shared lifecycle policy for owner cancel/retry decision
+→ use RefundRepository's applied-main-payment and purpose predicates
+→ claim/replay cancel idempotency
+→ create/reuse ORDER_CANCELLATION case
+→ create attempt 1, or next attempt only after shared REFUND_FAILED retry decision
+→ write shared-policy-valid cancel timestamps/status
+→ commit case + attempt + order + idempotency together
 ```
 
-`RefundService.recover(refund_attempt_id, claim_token=None)` must be callable by the separate Provider/worker integration task after a crash. This plan does not edit `backend/app/worker.py` or production composition.
+Do not call `create_refund`/`query_refund`, set `SUCCESS/FAILED/UNKNOWN`, write Provider numbers/facts, release a `BOOKED` slot or create automatic purpose cases. Provider convergence/worker owns every step after the durable `CREATING` attempt exists.
 
-The route dependency reads the separately composed Provider defensively, for example `getattr(request.app.state, "refund_provider", None)`. Tests assign their scripted provider directly to app state; this slice does not add production settings or instantiate an adapter. A missing provider follows the upstream 503 contract.
-
-- [ ] **Step 3: Preserve case/attempt monotonicity**
-
-Rules to encode once in service/repository, not in the router:
-
-- one case per successful payment;
-- `ORDER_CANCELLATION` only for the applied main payment;
-- at most one active `CREATING | PROCESSING | UNKNOWN` attempt;
-- `SUCCESS` and provider identity facts never regress;
-- `FAILED` may produce the next `attempt_no`; `UNKNOWN` may only re-query the same number;
-- duplicate user keys replay the first business result; new keys still converge the same case.
-
-- [ ] **Step 4: Run GREEN plus schema constraints**
+- [ ] **Step 3: Run the focused owner suite**
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
-    backend/tests/test_order_refund.py \
     backend/tests/test_order_cancellation.py \
-    backend/tests/test_booking_schema_constraints.py -q
-uv run ruff check backend/app/modules/refunds backend/app/modules/orders/cancellation.py backend/tests/test_order_refund.py
-uv run mypy backend/app/modules/refunds backend/app/modules/orders/cancellation.py
+    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_refund_repository.py \
+    backend/tests/test_order_detail.py \
+    backend/tests/test_order_list.py -q
+uv run ruff check backend/app/modules/orders/cancellation.py backend/tests/test_order_cancellation.py
+uv run mypy backend/app/modules/orders/cancellation.py
 ```
 
-Expected: PASS.
+Expected: PASS; `git diff --name-only` contains no shared lifecycle, refund convergence, payment convergence, migration or OpenAPI file.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add \
-  backend/app/modules/refunds/repository.py \
-  backend/app/modules/refunds/service.py \
-  backend/app/modules/refunds/convergence.py \
-  backend/app/modules/orders/cancellation.py \
-  backend/app/modules/orders/cancellation_repository.py \
-  backend/app/modules/orders/router.py \
-  backend/tests/test_order_refund.py
+git add backend/app/modules/orders/cancellation.py backend/tests/test_order_cancellation.py
 git diff --cached --check
-git commit -m "feat: refund cancelled owner orders"
+git commit -m "feat: enqueue owner cancellation refunds"
 ```
 
 ---
 
-### Task 5：收敛支付—取消—退款竞态
-
-**Files:**
-
-- Create: `backend/tests/test_order_cancellation_concurrency.py`
-- Modify: `backend/app/modules/payments/convergence.py`
-- Modify: `backend/app/modules/payments/reconciliation.py`
-- Modify: `backend/app/modules/orders/cancellation.py`
-- Modify: `backend/app/modules/orders/cancellation_repository.py`
-- Modify: `backend/tests/test_payment_settlement.py`
-- Modify: `backend/tests/test_payment_concurrency.py`
-
-- [ ] **Step 1: Write deterministic PostgreSQL RED races**
-
-Use barriers/events and independent Sessions. Do not use SQLite. Freeze these outcomes:
-
-1. **Cancel wins before payment exists:** order becomes `CANCELLED`, slot available, later payment creation is rejected.
-2. **Maybe-paid payment exists:** cancel writes only `cancel_requested_at`; concurrent reader never sees the slot released.
-3. **Provider closes unpaid payment:** existing attempt becomes closed, cancellation finalize writes `CANCELLED` and releases only the owned lock.
-4. **Payment success wins, start ≥24h:** payment first becomes authoritative success and the applied main payment; cancellation creates one `ORDER_CANCELLATION` case and enters `REFUND_PENDING`; slot remains booked until refund success.
-5. **Payment success wins, start <24h:** order remains `CONFIRMED`, `cancel_requested_at` remains audit-only, `cancelled_at` stays null, no refund case is created and owner sees `CANCELLATION_REQUIRES_SUPPORT`.
-6. **Success cannot fulfil inventory during an existing user cancel request:** payment remains authoritative `SUCCESS`, is not applied to another booking, this cancellation-race hook creates one `PAYMENT_INVENTORY_CONFLICT + AUTOMATIC_RECOVERY` case with nullable requester and never modifies the slot. Generic inventory-conflict recovery without a user cancel request remains owned by the Provider/recovery slice.
-7. Twenty concurrent cancel keys produce one case, one active attempt and one slot transition.
-
-Run:
-
-```bash
-TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
-  uv run pytest backend/tests/test_order_cancellation_concurrency.py -q
-```
-
-Expected: RED on cancellation-aware reconciliation and `applied_to_order_at` assignment.
-
-- [ ] **Step 2: Make payment reconciliation cancellation-aware**
-
-When `cancel_requested_at` is present, existing `CREATING | PREPAY_CREATED | CONFIRMING | UNKNOWN` payments are due immediately. Query using the original `merchant_order_no`; when authority says `NOT_PAID`, close the same provider order even before order expiry. Provider I/O remains outside locks.
-
-After payment convergence:
-
-- closed/unpaid calls cancellation finalize under the standard lock order;
-- success writes `applied_to_order_at` only if that payment actually books the slot;
-- success then calls the cancellation finalize hook, which applies the ≥24h decision and creates/reuses the correct refund business;
-- unknown/payment exception leaves order/slot untouched except durable scheduling and safe error state.
-
-Do not call `RefundProvider` while payment rows are locked. A finalize hook may create/schedule the refund attempt in one transaction; `RefundService` performs external I/O afterward.
-
-- [ ] **Step 3: Prove monotonic adjacent payment behavior**
-
-Extend existing tests so old close/unknown results cannot regress a success, `applied_to_order_at` is immutable, duplicate charge processing does not overwrite the normal confirmed order, and cancel requests never make expiry release an unsafe slot.
-
-- [ ] **Step 4: Run focused race suite**
-
-```bash
-TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
-  uv run pytest \
-    backend/tests/test_order_cancellation_concurrency.py \
-    backend/tests/test_order_cancellation.py \
-    backend/tests/test_order_refund.py \
-    backend/tests/test_payment_settlement.py \
-    backend/tests/test_payment_concurrency.py \
-    backend/tests/test_order_expiry_core.py -q
-uv run ruff check \
-  backend/app/modules/payments/convergence.py \
-  backend/app/modules/payments/reconciliation.py \
-  backend/app/modules/orders/cancellation.py \
-  backend/tests/test_order_cancellation_concurrency.py
-```
-
-Expected: PASS; lock-probe tests prove zero Provider calls under business row locks.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add \
-  backend/app/modules/payments/convergence.py \
-  backend/app/modules/payments/reconciliation.py \
-  backend/app/modules/orders/cancellation.py \
-  backend/app/modules/orders/cancellation_repository.py \
-  backend/tests/test_order_cancellation_concurrency.py \
-  backend/tests/test_payment_settlement.py \
-  backend/tests/test_payment_concurrency.py
-git diff --cached --check
-git commit -m "fix: converge payment cancellation races"
-```
-
----
-
-### Task 6：接通生产小程序 decoder、HTTP 和真实页面动作
+### Task 4：接通生产小程序 decoder、HTTP 和 owner action
 
 **Files:**
 
@@ -716,41 +528,11 @@ git commit -m "fix: converge payment cancellation races"
 - Modify: `tests/audit-production-package.test.mjs`
 - Modify: `tests/production-package-booking-audit.test.mjs`
 
-- [ ] **Step 1: Write RED decoder and HTTP tests against the frozen contract**
+- [ ] **Step 1: Write RED decoder and HTTP tests**
 
-Strictly reject:
+Strictly consume the upstream closed status/action/timestamp matrix. Reject unknown fields/statuses/blocked reasons, contradictory `can_pay/can_cancel`, and private refund/provider identifiers.
 
-- unknown order status/action/blocked reason;
-- contradictory timestamp/status matrices already frozen upstream;
-- `can_pay=true` after a cancel request;
-- `can_cancel=true` on refund-pending/terminal orders;
-- unknown/private refund provider fields in owner list/detail.
-
-HTTP behavior:
-
-```ts
-cancelOrder(orderId, idempotencyKey) =>
-  POST /api/v1/orders/{encoded-id}/cancel
-  body: undefined
-  headers: Authorization + Idempotency-Key
-```
-
-Allow one existing 401 silent re-login. A decoded business 409 is definitive and displayed from the closed code mapping. Network errors, timeout, malformed 2xx or decoded 5xx become `CANCELLATION_RESULT_UNKNOWN`; the page retains the same key and refreshes `GET /orders/{id}` before offering an exact replay.
-
-Run:
-
-```bash
-npx jest \
-  miniprogram/domain/decoders.test.ts \
-  miniprogram/services/http-booking.test.ts \
-  --runInBand
-```
-
-Expected: RED because the expanded closed decoder and cancel transport are absent.
-
-- [ ] **Step 2: Implement the production adapter and page integration**
-
-Extend the existing booking source; do not create a second auth/session stack. Recommended boundary:
+HTTP boundary:
 
 ```ts
 export interface CancelOrderAttempt {
@@ -761,11 +543,39 @@ export interface CancelOrderAttempt {
 cancelOrder(attempt: CancelOrderAttempt): Promise<OrderView>;
 ```
 
-The detail page generates one key per deliberate user action, keeps it for unknown-result replay, serializes taps, cancels stale operations on hide/unload, and replaces the entire local projection with the response/refresh. It must not locally set `REFUND_PENDING`, `REFUNDED` or release copy before decoding server authority.
+Transport contract:
 
-The poller handles `cancel_requested_at` without `cancelled_at` and `REFUND_PENDING` using the existing 2-second short polling window, then shows one real manual “刷新状态” action. It does not poll terminal states. The list gains status copy only; destructive cancellation remains in detail to avoid nested buttons and accidental taps.
+```text
+POST /api/v1/orders/{encoded-order-id}/cancel
+body: undefined
+headers: Authorization + Idempotency-Key
+```
 
-- [ ] **Step 3: Run focused production page tests**
+Allow the existing one-time 401 silent login. A decoded 409 is definitive. Network error, timeout, malformed 2xx or decoded 5xx becomes `CANCELLATION_RESULT_UNKNOWN`; the page first refreshes `GET /orders/{id}` and reuses the same key only when the action remains server-authorized.
+
+```bash
+npx jest \
+  miniprogram/domain/decoders.test.ts \
+  miniprogram/services/http-booking.test.ts \
+  --runInBand
+```
+
+Expected: RED because expanded decoding and cancel transport are absent.
+
+- [ ] **Step 2: Integrate the already-reviewed page boundary**
+
+The detail page:
+
+- generates one idempotency key per deliberate confirmation;
+- serializes taps and invalidates late results on hide/unload;
+- never locally sets `CANCELLED`, `REFUND_PENDING`, `REFUNDED` or slot-release copy;
+- replaces its projection with cancel response or authoritative refresh;
+- short-polls pending cancellation/refund states using the existing bounded polling pattern, then offers one real manual refresh;
+- renders a retry refund action only when the shared owner projection returns `can_cancel=true` for `REFUND_FAILED`.
+
+The list only displays server status and remains a detail-navigation list. It does not add inline destructive buttons or infer actions from local time.
+
+- [ ] **Step 3: Run focused production Mini Program checks**
 
 ```bash
 npx jest \
@@ -793,7 +603,7 @@ node --test \
   tests/production-package-booking-audit.test.mjs
 ```
 
-Expected: PASS; production contains the real detail/list routes and HTTP adapter, but no cancellation Fixture, scripted provider, mock refund success, development route or 50% promise.
+Expected: PASS; production contains the real HTTP owner action and no cancellation Fixture, Provider Mock, development route or hard-coded 50% promise.
 
 - [ ] **Step 5: Commit**
 
@@ -820,7 +630,7 @@ git commit -m "feat: cancel orders from mini program"
 
 ---
 
-### Task 7：前后端集成、最小设备验收、Fixture 删除和诚实收口
+### Task 5：HTTP 集成、最小设备验收、Fixture 删除和诚实收口
 
 **Files:**
 
@@ -836,30 +646,27 @@ git commit -m "feat: cancel orders from mini program"
 - Modify: `miniprogram/dev/pages/my-orders/index.test.ts`
 - Modify: `tests/build-miniprogram.test.mjs`
 
-- [ ] **Step 1: Run one real local HTTP vertical slice with scripted providers**
+- [ ] **Step 1: Exercise the actual HTTP owner operation without a Provider**
 
-Start the disposable PostgreSQL/API environment through the repository's existing test/staging instructions. Scripted payment/refund providers may be injected only in this local/test process. Verify through the actual Mini Program development HTTP composition:
+Through development HTTP composition and disposable PostgreSQL:
 
-1. cancel a pending never-paid order and observe `CANCELLED` plus available slot;
-2. cancel an eligible confirmed order, observe `REFUND_PENDING`, converge scripted authoritative success, refresh to `REFUNDED`, then observe slot available;
-3. force one refund failure, keep slot booked, tap real “重试退款”, and converge attempt 2;
-4. force one unknown result, confirm same merchant refund number/key is queried and the page never claims success.
+1. cancel a pending never-paid order and observe `CANCELLED` plus only its owned slot becoming available;
+2. seed an applied successful payment directly in the isolated test database, cancel the eligible confirmed order, observe one durable `ORDER_CANCELLATION` case/attempt and the page's `REFUND_PENDING` state;
+3. seed a Provider-owned `REFUND_FAILED` attempt, tap real “重试退款”, and prove the API creates attempt 2 in the same case;
+4. leave all `CREATING/PROCESSING/UNKNOWN/SUCCESS` Provider transitions untouched.
 
-Do not add a production fallback to make this test pass.
+This integration does not instantiate a scripted/real refund Provider and does not claim terminal refund success.
 
-- [ ] **Step 2: Run focused end-to-end automation**
+- [ ] **Step 2: Run the focused cross-layer checks**
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
-    backend/tests/test_order_actions.py \
     backend/tests/test_order_cancellation.py \
-    backend/tests/test_order_refund.py \
-    backend/tests/test_order_cancellation_concurrency.py \
+    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_refund_repository.py \
     backend/tests/test_order_detail.py \
     backend/tests/test_order_list.py \
-    backend/tests/test_payment_settlement.py \
-    backend/tests/test_payment_concurrency.py \
     backend/tests/test_openapi_conformance.py -q
 npx jest \
   miniprogram/domain/decoders.test.ts \
@@ -878,35 +685,35 @@ npm run audit:miniprogram-package
 git diff --check
 ```
 
-Expected: all focused checks PASS. Do not run or repair unrelated full-suite artifact/route failures as part of this slice.
+Expected: focused checks PASS. Do not run or repair unrelated full-suite artifact/route failures in this slice.
 
 - [ ] **Step 3: Do one non-monetary iPhone acceptance journey**
 
-On a real iPhone against staging:
+Against staging on a real iPhone:
 
-1. create a pending order but never open/finalize WeChat payment;
-2. leave detail, reopen it from “我的订单”;
-3. tap “取消订单”, inspect the confirmation copy, confirm once;
-4. verify the response becomes `CANCELLED`, no pay/cancel button remains, pull the list to refresh and see “已取消”;
-5. verify the same slot is available again and every visible button used in this journey has real behavior.
+1. create a pending order and never open/finalize WeChat payment;
+2. leave detail, reopen from “我的订单”;
+3. tap “取消订单”, inspect the truthful confirmation, confirm once;
+4. verify `CANCELLED`, no pay/cancel button, refreshed list “已取消”, and the same slot available again;
+5. exercise every visible button in this journey once.
 
-At 375×812 perform one final visual self-review of the actual HTTP-backed cancelled detail/list. Check centering, badge alignment, chevrons, clipping, footer safe area, correct order data and no stale success copy. This single real preview replaces the temporary Fixture captures; do not repeat a full visual matrix.
+At 375×812 perform one final HTTP-backed visual self-review of cancelled detail/list. Check centering, badges, chevrons, clipping, safe area, real order data and stale-state absence. This is the only final live preview; do not repeat a full state matrix.
 
-- [ ] **Step 4: Record the paid-refund external gate honestly**
+- [ ] **Step 4: Record the Provider release gate honestly**
 
-`docs/acceptance/user-order-cancellation-and-refund-progress.md` must distinguish:
+`docs/acceptance/user-order-cancellation-and-refund-progress.md` must separately record:
 
-- automated PostgreSQL/scripted-provider refund evidence: complete;
-- pending no-payment iPhone cancellation: complete or exact blocker;
-- real paid WeChat refund: `BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION` until the separate adapter/config task merges.
+- owner cancel API/durable enqueue automated evidence;
+- pending no-payment iPhone cancellation;
+- paid refund terminal acceptance as `BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION` until the Provider track merges and performs exactly one controlled small payment/refund.
 
-Do not mark B1 paid refund complete and do not make a real payment in this task. After Provider integration, the release coordinator performs exactly one controlled small payment and one full refund; that later evidence may clear the gate without changing this slice's business logic.
+Do not mark paid refund complete in this task and do not make a real payment merely to test an unenforced refund worker.
 
-- [ ] **Step 5: Remove only this slice's temporary Fixture additions**
+- [ ] **Step 5: Remove only this slice's temporary Fixture**
 
-After the real HTTP pages and scripted-provider vertical slice pass, delete `order-cancellation-fixture.*` and revert the temporary scenario hooks from `payment-source.ts`, `bootstrap.ts` and `my-orders-fixture.ts`. Preserve the older my-orders Fixture that is still governed by `docs/acceptance/my-orders-progress.md`; do not delete another slice's evidence or routes.
+After actual HTTP owner operations and production pages pass, delete `order-cancellation-fixture.*` and remove only its temporary hooks from `payment-source.ts`, `bootstrap.ts` and `my-orders-fixture.ts`. Preserve the older my-orders Fixture governed by `docs/acceptance/my-orders-progress.md`.
 
-Update build tests to assert the cancellation Fixture token/path is absent from both packages while the production owner cancel endpoint remains reachable through HTTP.
+Update build tests to assert the cancellation Fixture token/path is absent from both packages.
 
 - [ ] **Step 6: Final focused verification and commit**
 
@@ -947,12 +754,12 @@ git commit -m "docs: record owner cancellation acceptance"
 
 ### Completion criteria
 
-This plan is complete only when:
+This owner track is complete when:
 
-- owner and non-owner boundaries, 24h boundary, idempotency and every listed race pass against real PostgreSQL;
-- no Provider call occurs in a transaction/row lock;
-- pending no-payment cancellation and full-refund state convergence are honest and monotonic;
-- order detail/list render only server-authorized actions and every visible button performs a real operation;
+- owner/non-owner, policy delegation, idempotency, no-money cancellation, durable case/attempt creation and retry pass against PostgreSQL;
+- the diff contains no new policy/projector/repository/convergence/worker/migration/OpenAPI ownership;
+- owner service never imports or calls a refund Provider and never writes refund authority terminal facts;
+- detail/list render only shared server-authorized actions and every visible button performs a real operation;
 - production package contains no development Fixture or refund Mock;
-- one representative 375×812 HTTP-backed preview and one non-monetary iPhone cancellation journey pass;
-- real paid WeChat refund remains explicitly gated until the separate Provider integration evidence exists.
+- one representative 375×812 HTTP-backed review and one non-monetary iPhone cancellation pass;
+- paid refund terminal acceptance remains explicitly gated to the Provider track.
