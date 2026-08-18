@@ -39,8 +39,8 @@ WECHAT_PAY_REFUND_NOTIFICATION_URL = (
 )
 
 
-def _payment_pem_values() -> tuple[str, str]:
-    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def _payment_pem_values(*, key_size: int = 2048) -> tuple[str, str]:
+    private = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
     private_pem = private.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -379,6 +379,53 @@ def test_prepare_rejects_malformed_wechat_payment_inputs_without_echoing_them(
         prepare_live_deploy(inputs(tmp_path, **override))
 
     assert supplied not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "callback",
+    [
+        "https://callback.invalid/api/v1/payments/wechat/notify",
+        "https://127.0.0.1/api/v1/payments/wechat/notify",
+        "https://192.168.1.10/api/v1/payments/wechat/notify",
+        "https://other.modelstella.com/api/v1/payments/wechat/notify",
+        "https://pitch-api-staging.modelstella.com:8443/api/v1/payments/wechat/notify",
+    ],
+)
+def test_prepare_rejects_nonpublic_or_cross_origin_payment_callbacks(
+    tmp_path: Path,
+    callback: str,
+) -> None:
+    with pytest.raises(ValueError, match="public API origin") as caught:
+        prepare_live_deploy(inputs(tmp_path, wechat_pay_payment_notification_url=callback))
+
+    assert callback not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "wechat_pay_merchant_private_key_pem_base64",
+        "wechat_pay_public_key_pem_base64",
+    ],
+)
+def test_prepare_rejects_non_2048_bit_wechat_rsa_keys(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    private_key, public_key = _payment_pem_values(key_size=1024)
+    value = private_key if "private" in field else public_key
+
+    with pytest.raises(ValueError, match="PEM/Base64 is invalid"):
+        prepare_live_deploy(inputs(tmp_path, **{field: value}))
+
+
+@pytest.mark.parametrize("unsafe_character", ["$", '"', "'", "\\", "\n"])
+def test_prepare_rejects_compose_interpolation_characters_in_api_v3_key(
+    tmp_path: Path,
+    unsafe_character: str,
+) -> None:
+    with pytest.raises(ValueError, match="deployment-safe ASCII"):
+        prepare_live_deploy(inputs(tmp_path, wechat_pay_api_v3_key="A" * 31 + unsafe_character))
 
 
 @pytest.mark.parametrize(

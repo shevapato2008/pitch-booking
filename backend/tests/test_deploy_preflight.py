@@ -11,8 +11,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from scripts.preflight_deploy import preflight
 
 
-def _payment_pem_values() -> tuple[str, str]:
-    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def _payment_pem_values(*, key_size: int = 2048) -> tuple[str, str]:
+    private = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
     private_pem = private.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -48,7 +48,7 @@ def valid_local_environment() -> dict[str, str]:
         "POSTGRES_DB": "pitch",
         "POSTGRES_USER": "pitch",
         "POSTGRES_PASSWORD": "local-password",
-        "PUBLIC_API_BASE_URL": "http://127.0.0.1:8080",
+        "PUBLIC_API_BASE_URL": "https://api.example.test",
         "PUBLIC_IMAGE_HOSTS": '["cdn.example.test"]',
         "OSS_ENDPOINT": "https://oss-cn-hangzhou.aliyuncs.com",
         "OSS_BUCKET": "venue-media-staging",
@@ -105,6 +105,8 @@ def test_preflight_rejects_validation_sentinels(tmp_path: Path) -> None:
         "POSTGRES_PASSWORD uses validation sentinel",
         "APP_REVISION is not a 40-character commit SHA",
         "PUBLIC_API_BASE_URL uses validation sentinel",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
     }
 
 
@@ -114,7 +116,11 @@ def test_preflight_rejects_malformed_or_unsafe_public_url(tmp_path: Path) -> Non
 
     result = preflight(write_env(tmp_path, values))
 
-    assert result.failures == ("PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",)
+    assert set(result.failures) == {
+        "PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+    }
 
 
 def test_preflight_rejects_non_json_image_hosts(tmp_path: Path) -> None:
@@ -250,12 +256,13 @@ def test_preflight_requires_wechat_credentials_only_for_real_provider(
         (
             "WECHAT_PAY_API_V3_KEY",
             "too-short",
-            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes",
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII",
         ),
         (
             "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
             "https://api.example.test/payment?secret=value",
-            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must be absolute HTTPS without query or fragment",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the "
+            "PUBLIC_API_BASE_URL public HTTPS origin",
         ),
     ],
 )
@@ -272,6 +279,66 @@ def test_preflight_rejects_malformed_wechat_credentials_without_echoing_them(
 
     assert result.failures == (failure,)
     assert value not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "callback",
+    [
+        "https://callback.invalid/api/v1/payments/wechat/notify",
+        "https://127.0.0.1/api/v1/payments/wechat/notify",
+        "https://10.20.30.40/api/v1/payments/wechat/notify",
+        "https://other.example.test/api/v1/payments/wechat/notify",
+        "https://api.example.test:8443/api/v1/payments/wechat/notify",
+    ],
+)
+def test_preflight_rejects_nonpublic_or_cross_origin_payment_callbacks(
+    tmp_path: Path,
+    callback: str,
+) -> None:
+    values = valid_local_environment()
+    values["WECHAT_PAY_PAYMENT_NOTIFICATION_URL"] = callback
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+    )
+    assert callback not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+    ],
+)
+def test_preflight_rejects_non_2048_bit_wechat_rsa_keys(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    private_key, public_key = _payment_pem_values(key_size=1024)
+    values = valid_local_environment()
+    values[field] = private_key if "PRIVATE" in field else public_key
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (f"{field} is invalid",)
+
+
+@pytest.mark.parametrize("unsafe_character", ["$", '"', "'", "\\", "\n"])
+def test_preflight_rejects_compose_interpolation_characters_in_api_v3_key(
+    tmp_path: Path,
+    unsafe_character: str,
+) -> None:
+    values = valid_local_environment()
+    values["WECHAT_PAY_API_V3_KEY"] = "A" * 31 + unsafe_character
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII",
+    )
 
 
 @pytest.mark.parametrize(
@@ -386,6 +453,25 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
         )
     }
     assert "postgres_data" in config["volumes"]
+
+
+def test_compose_preserves_the_exact_safe_api_v3_key(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    expected = "A_b-" * 8
+    values["WECHAT_PAY_API_V3_KEY"] = expected
+    env_file = write_env(tmp_path, values)
+
+    completed = subprocess.run(
+        ["docker", "compose", "--env-file", str(env_file), "config", "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    config = json.loads(completed.stdout)
+
+    assert len(expected.encode("ascii")) == 32
+    assert config["services"]["api"]["environment"]["WECHAT_PAY_API_V3_KEY"] == expected
+    assert config["services"]["worker"]["environment"]["WECHAT_PAY_API_V3_KEY"] == expected
 
 
 def test_deploy_environment_template_declares_all_oss_inputs() -> None:

@@ -66,7 +66,9 @@ When `PAYMENT_PROVIDER=wechat`, the generator also reads the WeChat Pay API v3 m
 merchant certificate serial, merchant private key, platform public-key ID and PEM, API v3 key, and
 the payment/refund notification URLs from the operator environment or prompts without echo. Supply
 both PEM files as canonical, single-line Base64 rather than raw multiline PEM. The API v3 key must
-be exactly 32 ASCII bytes. Valid existing payment values are preserved on reruns.
+be exactly 32 characters drawn only from `A-Z`, `a-z`, `0-9`, underscore, or hyphen so dotenv and
+Docker Compose preserve it byte-for-byte. Both merchant and platform RSA keys must be 2048-bit.
+Valid existing payment values are preserved on reruns.
 
 The default callbacks are:
 
@@ -74,7 +76,9 @@ The default callbacks are:
 - `https://pitch-api-staging.modelstella.com/api/v1/refunds/wechat/notify`
 
 Store these values only in the ignored `deploy/.env.live.local` or a secret manager. The preflight
-parses both RSA keys and validates the callback origins without printing any supplied value.
+parses both RSA keys and validates, without DNS lookups or printing any supplied value, that both
+callbacks use the same public HTTPS origin as `PUBLIC_API_BASE_URL`. Loopback, private, link-local,
+multicast, unspecified, reserved, `.invalid`, and `.localhost` hosts are rejected.
 
 ```bash
 uv run python -m scripts.prepare_live_deploy \

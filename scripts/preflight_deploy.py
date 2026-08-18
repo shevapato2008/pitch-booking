@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ipaddress
 import json
 import re
 import uuid
@@ -50,6 +51,7 @@ COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 OSS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
+WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
 
 
 @dataclass(frozen=True)
@@ -219,13 +221,11 @@ def _validate_wechat_pay(values: dict[str, str], failures: list[str]) -> None:
         failures=failures,
     )
     api_key = values.get("WECHAT_PAY_API_V3_KEY", "")
-    if api_key:
-        try:
-            encoded_api_key = api_key.encode("ascii")
-        except UnicodeEncodeError:
-            encoded_api_key = b""
-        if len(encoded_api_key) != 32:
-            failures.append("WECHAT_PAY_API_V3_KEY must be exactly 32 bytes")
+    if api_key and WECHAT_PAY_API_V3_KEY.fullmatch(api_key) is None:
+        failures.append(
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII"
+        )
+    public_origin = _public_https_origin(values.get("PUBLIC_API_BASE_URL", ""))
     for field in (
         "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
         "WECHAT_PAY_REFUND_NOTIFICATION_URL",
@@ -233,16 +233,9 @@ def _validate_wechat_pay(values: dict[str, str], failures: list[str]) -> None:
         value = values.get(field, "")
         if not value:
             continue
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-        ):
-            failures.append(f"{field} must be absolute HTTPS without query or fragment")
+        callback_origin = _public_https_origin(value)
+        if public_origin is None or callback_origin is None or callback_origin != public_origin:
+            failures.append(f"{field} must use the PUBLIC_API_BASE_URL public HTTPS origin")
 
 
 def _validate_pem(
@@ -258,14 +251,46 @@ def _validate_pem(
         decoded = base64.b64decode(value, validate=True)
         if private:
             key = serialization.load_pem_private_key(decoded, password=None)
-            if not isinstance(key, rsa.RSAPrivateKey):
+            if not isinstance(key, rsa.RSAPrivateKey) or key.key_size != 2048:
                 raise ValueError
         else:
             key = serialization.load_pem_public_key(decoded)
-            if not isinstance(key, rsa.RSAPublicKey):
+            if not isinstance(key, rsa.RSAPublicKey) or key.key_size != 2048:
                 raise ValueError
     except (TypeError, ValueError):
         failures.append(f"{field} is invalid")
+
+
+def _public_https_origin(value: str) -> tuple[str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    hostname = parsed.hostname
+    if (
+        parsed.scheme.casefold() != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or port not in {None, 443}
+    ):
+        return None
+    normalized_host = hostname.rstrip(".").casefold()
+    if normalized_host in {"invalid", "localhost"} or normalized_host.endswith(
+        (".invalid", ".localhost")
+    ):
+        return None
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            return None
+    return normalized_host, 443
 
 
 def _validate_platform_principals(value: str) -> tuple[bool, bool]:

@@ -4,6 +4,7 @@ import argparse
 import base64
 import getpass
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -51,6 +52,7 @@ API_BASE_URL = "https://pitch-api-staging.modelstella.com"
 MEDIA_HOST = "media.modelstella.com"
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
 WECHAT_PAY_KEYS = PRESERVED_KEYS[-8:]
+WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
 PAYMENT_NOTIFICATION_URL = f"{API_BASE_URL}/api/v1/payments/wechat/notify"
 REFUND_NOTIFICATION_URL = f"{API_BASE_URL}/api/v1/refunds/wechat/notify"
 
@@ -216,19 +218,19 @@ def _validated_wechat_pay_config(values: Mapping[str, str]) -> dict[str, str]:
         private=False,
     )
     api_key = _required(values.get("WECHAT_PAY_API_V3_KEY", ""), "WECHAT_PAY_API_V3_KEY")
-    try:
-        api_key_bytes = api_key.encode("ascii")
-    except UnicodeEncodeError:
-        api_key_bytes = b""
-    if len(api_key_bytes) != 32:
-        raise ValueError("WECHAT_PAY_API_V3_KEY must be exactly 32 bytes")
+    if WECHAT_PAY_API_V3_KEY.fullmatch(api_key) is None:
+        raise ValueError(
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII"
+        )
     payment_url = _validated_notification_url(
         values.get("WECHAT_PAY_PAYMENT_NOTIFICATION_URL", ""),
         "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+        public_api_base_url=API_BASE_URL,
     )
     refund_url = _validated_notification_url(
         values.get("WECHAT_PAY_REFUND_NOTIFICATION_URL", ""),
         "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+        public_api_base_url=API_BASE_URL,
     )
     return {
         "WECHAT_PAY_MERCHANT_ID": merchant_id,
@@ -249,30 +251,61 @@ def _validated_pem_base64(value: str, *, private: bool) -> str:
         decoded = base64.b64decode(normalized, validate=True)
         if private:
             key = serialization.load_pem_private_key(decoded, password=None)
-            if not isinstance(key, rsa.RSAPrivateKey):
+            if not isinstance(key, rsa.RSAPrivateKey) or key.key_size != 2048:
                 raise ValueError
         else:
             key = serialization.load_pem_public_key(decoded)
-            if not isinstance(key, rsa.RSAPublicKey):
+            if not isinstance(key, rsa.RSAPublicKey) or key.key_size != 2048:
                 raise ValueError
     except (TypeError, ValueError):
         raise ValueError(f"WeChat Pay {label} PEM/Base64 is invalid") from None
     return normalized
 
 
-def _validated_notification_url(value: str, field: str) -> str:
+def _validated_notification_url(
+    value: str,
+    field: str,
+    *,
+    public_api_base_url: str,
+) -> str:
     normalized = _required(value, field)
-    parsed = urlsplit(normalized)
+    public_origin = _public_https_origin(public_api_base_url)
+    callback_origin = _public_https_origin(normalized)
+    if public_origin is None or callback_origin is None or callback_origin != public_origin:
+        raise ValueError(f"{field} notification URL must use the public API origin")
+    return normalized
+
+
+def _public_https_origin(value: str) -> tuple[str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    hostname = parsed.hostname
     if (
-        parsed.scheme != "https"
-        or not parsed.hostname
+        parsed.scheme.casefold() != "https"
+        or hostname is None
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
+        or port not in {None, 443}
     ):
-        raise ValueError(f"{field} notification URL is invalid")
-    return normalized
+        return None
+    normalized_host = hostname.rstrip(".").casefold()
+    if normalized_host in {"invalid", "localhost"} or normalized_host.endswith(
+        (".invalid", ".localhost")
+    ):
+        return None
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            return None
+    return normalized_host, 443
 
 
 def _valid_base64_32(value: str) -> bool:
