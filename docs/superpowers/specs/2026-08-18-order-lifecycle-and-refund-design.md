@@ -38,7 +38,7 @@
 - 场馆经营报表或客服工单后台；
 - 在缺少微信商户凭证时声称真实扣款或退款已验收。
 
-现有页面中“开场前不足 24 小时收取 50%”的文案与本期能力不一致，必须改成真实规则，不得保留不可执行承诺。
+现有页面中“开场前不足 24 小时收取 50%”的文案与本期能力不一致，必须改为已批准的真实规则：“开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。”不得保留 50% 退款、立即退款或其他本期不可执行的承诺。
 
 ## 3. 订单权威状态
 
@@ -200,7 +200,7 @@
 
 锁顺序统一为：`Slot → Order → Payment/RefundCase → RefundAttempt`。
 
-## 7. 服务器权威动作投影
+## 7. 服务器权威订单投影
 
 订单详情、我的订单列表和场馆今日订单都返回闭合的 `allowed_actions`，客户端不得用本地时钟或角色猜测按钮：
 
@@ -215,7 +215,7 @@
 }
 ```
 
-`blocked_reason` 只返回安全、可展示的闭合原因，例如：
+`blocked_reason` 只返回以下安全、可展示的完整闭合集：
 
 - `PAYMENT_RESULT_PENDING`
 - `CANCELLATION_WINDOW_CLOSED`
@@ -228,12 +228,41 @@
 
 按钮仅在对应 `can_*` 为 true 时渲染；非交互状态使用普通 view，不使用空点击 button。
 
+### 7.1 Owner 查询投影与创建订单兼容边界
+
+`POST /api/v1/orders` 继续使用现有 legacy create response/schema/presenter：请求、响应字段和已持久化的幂等响应保持兼容，不加入随时间变化的 `allowed_actions` 或 `funding_alerts`。同一幂等键仍原样重放首次 legacy 业务响应，不在重放时重算动作。新创建响应、owner detail 和复用 detail 投影的 payment/reconcile wrapper 将 `cancellation_summary` 固定为“开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。”；已持久化的历史 create 幂等响应仍按原始 body 重放，不改写其中旧文案。
+
+现有 owner `GET /api/v1/orders` 和 `GET /api/v1/orders/{order_id}` 使用独立的扩展投影。列表和详情都必须返回闭合的 9 个订单状态、必填 nullable `cancel_requested_at | cancelled_at | checked_in_at | completed_at`、必填 `allowed_actions` 和必填 `funding_alerts`。详情保留已有 nullable `expired_at`；列表不为 UI 便利额外加入联系人、地址、坐标、payment/refund/provider 标识或操作人 ID。
+
+运行时投影必须遵循以下单一权威规则：
+
+- repository 为 owner list/detail 一次性 eager-load order 的 payments、refund cases 及 attempts，不在 presenter 内发出 N+1 查询；
+- 预订主付款仅能是 `status = SUCCESS AND applied_to_order_at IS NOT NULL` 的 payment；额外或迟到的 `SUCCESS` 不得覆盖 owner 的主付款时间或预订权投影；
+- `payment_may_exist` 当且仅当存在 `CREATING | PREPAY_CREATED | CONFIRMING | UNKNOWN | SUCCESS` payment，`CLOSED` 不计入；
+- `controlling_refund_purpose` 仅从 `ORDER_CANCELLATION | PAYMENT_INVENTORY_CONFLICT` case 投影；
+- `DUPLICATE_CHARGE` case 仅进入 `funding_alerts`，不改变 order status、`allowed_actions`、预订权或 B2 资格。
+
+### 7.2 闭合资金告警
+
+`funding_alerts` 是闭合数组，没有告警时返回 `[]`，每个 `DUPLICATE_CHARGE` case 最多投影一项，允许一个订单返回多项。每项只能是：
+
+```json
+{
+  "code": "DUPLICATE_CHARGE_REFUND",
+  "status": "REFUND_PENDING"
+}
+```
+
+`code` 固定为 `DUPLICATE_CHARGE_REFUND`；`status` 是 `REFUND_PENDING | REFUND_FAILED | REFUNDED`。最新 attempt 是 case 内 `attempt_no` 最大者；其状态为 `CREATING | PROCESSING | UNKNOWN` 或 case 尚无 attempt 时映射为 `REFUND_PENDING`，`FAILED` 映射为 `REFUND_FAILED`，`SUCCESS` 映射为 `REFUNDED`。数组按 case 的 `(created_at, id)` 升序稳定投影，但 wire 中不得包含 case/payment/provider/refund ID、商户单号、金额或其他内部字段。
+
 ## 8. 最小 API 边界
 
 用户：
 
 - `POST /api/v1/orders/{order_id}/cancel`
 - 现有 `GET /api/v1/orders` 和 `GET /api/v1/orders/{order_id}` 扩展状态、时间戳和 `allowed_actions`
+
+Owner cancel 使用业务 bearer、无 request body、必填 16–128 字符 `Idempotency-Key`，闭合响应矩阵为 `200 | 202 | 401 | 404 | 409 | 503`。现有 owner detail 静态与 runtime OpenAPI 都包含 `422 INVALID_ARGUMENT`，用于路径 UUID 验证失败；两者必须保持一致。
 
 场馆：
 
@@ -246,6 +275,26 @@
 
 - `POST /api/v1/payments/wechat/notify`
 - `POST /api/v1/refunds/wechat/notify`
+
+以上 owner cancel、场馆履约 list/check-in/complete/refund 以及支付/退款通知共 7 个新 path 在本共享基础阶段仅冻结静态 OpenAPI，不注册 FastAPI runtime route；runtime OpenAPI 必须继续不包含它们。
+
+### 8.1 微信支付与退款通知 wire 契约
+
+`POST /api/v1/payments/wechat/notify` 和 `POST /api/v1/refunds/wechat/notify` 共用以下闭合边界：
+
+- 显式 `security: []`，不接受业务 bearer；
+- 必填 `Wechatpay-Timestamp`、`Wechatpay-Nonce`、`Wechatpay-Signature`、`Wechatpay-Serial` 四个非空 header；
+- operation 必须声明 `x-wechatpay-raw-body-verification: required-before-json-parse`；
+- wire `Content-Type` 仍为 `application/json`，OpenAPI request schema 是闭合 `WeChatNotificationEnvelope`，仅必填 `id | create_time | event_type | resource_type | summary | resource`；
+- `resource` 是闭合对象，仅必填 `original_type | algorithm | ciphertext | associated_data | nonce`，其中 `algorithm = AEAD_AES_256_GCM`，其余字段均为字符串。
+
+OpenAPI JSON schema 只描述验签后允许解析的 envelope，不授权 runtime 在验签前绑定 DTO 或解析 JSON。实现必须先读取完整原始 bytes，使用四个 header 验签，验签成功后才能解析、解密和查询数据库。
+
+两个通知操作的闭合响应矩阵均为：
+
+- `204`：已持久化收敛并确认；合法重复通知也返回同一 204，不含 response body；
+- `400 WECHAT_NOTIFICATION_INVALID`：缺失/无效 header、过期或篡改签名、非法 envelope/密文；
+- `503 SERVICE_UNAVAILABLE`：不能确认 durable convergence，请 Provider 稍后重试。
 
 用户取消、场馆核销、完成和退款 mutation 都要求 `Idempotency-Key`：同一操作者、operation、资源和请求体重放首次业务结果；同键不同请求返回 `409 IDEMPOTENCY_KEY_REUSED`。check-in/complete 在业务层本身也幂等，响应丢失后读取或重放不得产生第二次状态变化。支付/退款通知以 provider、商户单号和 provider 单号唯一性幂等；worker 以原 payment/refund attempt 和租约恢复，不创建新业务单。资源不存在和越权都返回同一 404，数据库或 Provider 不可用返回 503；状态冲突返回闭合 409 错误码。
 
@@ -282,6 +331,8 @@
 - 无查询参数的公网 HTTPS 支付、退款回调 URL。
 
 服务端调用 `api.mch.weixin.qq.com`，不加入小程序 request 合法域名；小程序继续使用现有 `wx.requestPayment`。没有真实商户配置时，staging 必须诚实返回 `503 PAYMENT_PROVIDER_UNAVAILABLE`，不得把 Mock 作为生产降级。
+
+`POST /api/v1/orders/{order_id}/pay` 的 503 为兼容闭合枚举 `PAYMENT_CREATE_FAILED | PAYMENT_PROVIDER_UNAVAILABLE`：前者仅表示上游已明确拒绝本次预支付创建，后者表示配置缺失、transport 不可用或无法获得权威结果。微信 Provider 轨道负责在 runtime 精确映射两者，共享基础不改造 Provider 实现。
 
 可在无商户凭证时完成和测试：配置校验、RSA 请求签名/应答验签、回调验签、AES-GCM 解密、注入式 HTTP transport、通知幂等、worker 接线。真实扣款、通知、关单和退款只在用户提供商户配置后各做一次受控小额真机验收。
 
@@ -329,6 +380,9 @@
 - 取消与支付竞态、重复扣款、支付—库存冲突、退款 UNKNOWN 和无归属证明时库存不变均有真实 PostgreSQL 聚焦测试；
 - 核销窗口、幂等核销、结束前不可完成有聚焦测试；
 - 前端每个可见按钮都有真实 API 行为，非可用动作不渲染假按钮；
+- `POST /orders` legacy create 幂等重放不包含动态 actions，owner GET list/detail 的 runtime 响应和 runtime OpenAPI 与扩展静态投影一致；
+- owner 列表不泄露联系人、位置、payment/refund/provider 标识，`funding_alerts` 不泄露内部标识；
+- 支付/退款通知在 JSON 解析前使用原始 bytes 验签，合法重放幂等返回 204；
 - production 包不含支付 Mock 或 development Fixture；
 - 缺少微信商户配置时不宣称支付完成，返回明确可重试错误；
 - 只进行一笔真实小额支付和一笔退款验收，避免重复真实资金调用。

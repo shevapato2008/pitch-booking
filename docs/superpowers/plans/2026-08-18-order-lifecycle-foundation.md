@@ -253,61 +253,204 @@ git commit -m "feat: freeze payment and refund protocols"
 - Create: `contracts/examples/venue-order-checked-in.json`
 - Create: `contracts/examples/venue-order-completed.json`
 - Create: `contracts/examples/refund-accepted.json`
+- Create: `contracts/examples/error-order-state-changed.json`
+- Create: `contracts/examples/error-payment-result-pending.json`
+- Create: `contracts/examples/error-refund-in-progress.json`
+- Create: `contracts/examples/error-payment-provider-unavailable.json`
+- Create: `contracts/examples/error-wechat-notification-invalid.json`
+- Modify: `contracts/examples/order-pending.json`
+- Modify: `contracts/examples/order-expired.json`
+- Modify: `contracts/examples/order-confirmed.json`
+- Modify: `contracts/examples/order-payment-exception.json`
+- Modify: `contracts/examples/payment-confirming.json`
+- Modify: `contracts/examples/payment-already-confirmed.json`
+- Modify: `contracts/examples/my-orders-ready.json`
+- Modify: `artifacts/ui/fixtures/order-pending.json`
+- Modify: `artifacts/ui/fixtures/order-expired.json`
+- Modify: `artifacts/ui/fixtures/order-confirmed.json`
+- Modify: `artifacts/ui/fixtures/order-payment-exception.json`
+- Modify: `artifacts/ui/fixtures/order-payment-confirming.json`
 - Modify: `scripts/validate-contract.mjs`
 - Modify: `tests/contract.test.mjs`
 - Modify: `backend/tests/test_openapi_conformance.py`
+- Modify: `backend/app/modules/orders/dto.py`
 - Modify: `backend/app/modules/orders/repository.py`
 - Modify: `backend/app/modules/orders/service.py`
 - Modify: `backend/app/modules/orders/router.py`
 - Modify: `backend/tests/test_order_list.py`
 - Modify: `backend/tests/test_order_detail.py`
+- Modify: `backend/tests/test_order_creation.py`
 
-- [ ] **Step 1: Write contract RED tests**
+- [ ] **Step 0: Stabilize the existing order-detail business clock**
 
-Freeze exact closed schemas and response matrices for:
-
-- expanded order list/detail statuses, lifecycle timestamps, funding alert and `allowed_actions`;
-- owner `POST /api/v1/orders/{order_id}/cancel` with required `Idempotency-Key`;
-- venue fulfillment list/check-in/complete/refund operations with bearer auth and required idempotency headers for mutations;
-- payment and refund notification endpoints with raw-body semantics and no business bearer auth;
-- errors `AUTH_REQUIRED`, `ORDER_NOT_FOUND`, `ORDER_STATE_CHANGED`, `IDEMPOTENCY_KEY_REUSED`, `PAYMENT_RESULT_PENDING`, `REFUND_IN_PROGRESS`, `PAYMENT_PROVIDER_UNAVAILABLE`, `SERVICE_UNAVAILABLE`.
-- the complete closed policy reasons `CANCELLATION_WINDOW_CLOSED`, `CHECK_IN_TOO_EARLY`, `CHECK_IN_REQUIRED`, `SESSION_NOT_ENDED`, `ORDER_TERMINAL`, `CANCELLATION_REQUIRES_SUPPORT`.
-
-For the already existing owner list/detail routes, require runtime responses and runtime OpenAPI to match the expanded timestamps, funding alert and `allowed_actions`. New cancel/check-in/complete/refund routes remain static-only until their parallel tracks implement them.
-
-Assert list privacy remains closed: ordinary order list still has no contact, address, coordinates, provider identifiers or refund identifiers. Venue fulfillment may expose only masked phone required for arrival coordination.
+Make only the adjacent test-harness fix needed before RED/GREEN work. In `backend/tests/test_order_detail.py`, define one fixed timezone-aware business `NOW`; derive seeded order and slot times from it, override `get_order_clock` for request tests, and inject `now=lambda: NOW` into direct `OrderService` tests. Keep auth session issuance/expiry on real `datetime.now(UTC)` so the bearer remains valid independently of the fixed business date. Do not change production clock code or relax the database same-local-day constraint.
 
 Run:
 
 ```bash
-uv run pytest backend/tests/test_openapi_conformance.py -q
+TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
+  uv run pytest backend/tests/test_order_detail.py -q
+```
+
+Expected: the pre-existing detail suite passes at every Shanghai wall-clock hour, including late night.
+
+- [ ] **Step 1: Write static contract RED tests**
+
+In `tests/contract.test.mjs` and `backend/tests/test_openapi_conformance.py`, freeze these exact boundaries:
+
+- `POST /api/v1/orders` references a dedicated closed legacy `CreateOrderResponse`; `order-pending.json` remains its legacy example, has no `allowed_actions` or `funding_alerts`, and an idempotent replay is byte-for-byte the first stored business body rather than a recalculated projection;
+- owner `GET /api/v1/orders` and `GET /api/v1/orders/{order_id}` use expanded projections with all 9 statuses, four required nullable lifecycle timestamps, required closed `allowed_actions`, and required closed `funding_alerts`; detail also retains nullable `expired_at`;
+- `blocked_reason` has exactly `PAYMENT_RESULT_PENDING | CANCELLATION_WINDOW_CLOSED | CANCELLATION_REQUIRES_SUPPORT | CHECK_IN_TOO_EARLY | CHECK_IN_REQUIRED | SESSION_NOT_ENDED | ORDER_TERMINAL | REFUND_IN_PROGRESS`;
+- each `funding_alerts` item is closed and contains only `code: DUPLICATE_CHARGE_REFUND` plus `status: REFUND_PENDING | REFUND_FAILED | REFUNDED`; the array permits multiple items and exposes no case/payment/provider/refund identifier;
+- ordinary owner list stays closed and exposes no contact, address, coordinates, provider/refund/payment identifiers, or actor identifier;
+- owner cancel is bearer-authenticated, has no body, requires a 16–128 character `Idempotency-Key`, and has only `200 | 202 | 401 | 404 | 409 | 503`;
+- venue fulfillment list has only `200 | 401 | 404 | 422 | 503`; venue check-in and complete have only `200 | 401 | 404 | 409 | 503`; venue refund has only `200 | 202 | 401 | 404 | 409 | 422 | 503`; the three mutations require `Idempotency-Key`, while the venue projection exposes at most the masked phone needed for arrival;
+- both WeChat notify operations declare `security: []`, require non-empty `Wechatpay-Timestamp | Wechatpay-Nonce | Wechatpay-Signature | Wechatpay-Serial`, declare `x-wechatpay-raw-body-verification: required-before-json-parse`, accept `application/json`, and use a closed notification envelope with only required `id | create_time | event_type | resource_type | summary | resource`; closed `resource` has only required `original_type | algorithm | ciphertext | associated_data | nonce`, with `algorithm` fixed to `AEAD_AES_256_GCM`;
+- both notify response matrices are exactly bodyless `204`, `400 WECHAT_NOTIFICATION_INVALID`, and `503 SERVICE_UNAVAILABLE`; `204` also covers a valid duplicate;
+- `/api/v1/orders/{order_id}/pay` keeps `PAYMENT_CREATE_FAILED` for an explicit upstream rejection and adds `PAYMENT_PROVIDER_UNAVAILABLE` for configuration or transport unavailability under its 503 response;
+- static owner detail adds `422 INVALID_ARGUMENT`, and runtime OpenAPI matches it;
+- all 7 new static paths—owner cancel, four venue fulfillment operations, and two notification operations—remain absent from runtime OpenAPI.
+
+Extend—not replace—the validator's global error examples with the Task 4 operation set `AUTH_REQUIRED | INVALID_ARGUMENT | ORDER_NOT_FOUND | ORDER_STATE_CHANGED | IDEMPOTENCY_KEY_REUSED | PAYMENT_RESULT_PENDING | REFUND_IN_PROGRESS | PAYMENT_CREATE_FAILED | PAYMENT_PROVIDER_UNAVAILABLE | WECHAT_NOTIFICATION_INVALID | SERVICE_UNAVAILABLE`. Add canonical files for the five new codes and attach them to the corresponding responses: state-changed to lifecycle mutation 409s, payment-pending to owner-cancel 409, refund-in-progress to cancel/refund 409s, provider-unavailable only to `/pay` 503, and notification-invalid to both notify 400s. Reuse existing canonical examples for the remaining codes and attach `SERVICE_UNAVAILABLE` to every applicable new 503, including venue refund and both notifications.
+
+- [ ] **Step 2: Prove both static suites RED independently**
+
+Run each command even if the first fails:
+
+```bash
 node --test tests/contract.test.mjs
 ```
 
-Expected: RED on the new paths/status/schema assertions.
+Expected: RED on the new static paths, schema split, exact enums, response matrices, examples, and artifact bytes.
 
-- [ ] **Step 2: Add static paths, schemas and examples**
+```bash
+uv run pytest backend/tests/test_openapi_conformance.py -q
+```
 
-Keep new mutation contracts honest but implementation-independent. Do not add their runtime FastAPI routes in this foundation task. Update only the existing owner list/detail queries and presenters to project server-authoritative lifecycle facts through the pure policy, including locked payment/refund facts; do not duplicate policy in the router. Use separate owner and venue projections instead of broadening public `OrderSummary` with contact data. Preserve existing `POST /api/v1/orders` request/response compatibility.
+Expected: RED because owner GET runtime projection and runtime OpenAPI do not yet conform, while the 7 new runtime routes are still correctly absent.
 
-- [ ] **Step 3: Validate contract GREEN**
+- [ ] **Step 3: Write owner runtime projection RED tests**
+
+Add focused cases in this order:
+
+1. `backend/tests/test_order_creation.py`: a fresh create and idempotent replay keep the exact legacy field set and omit dynamic actions/alerts; a fresh response uses “开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。”, while an already persisted replay remains byte-identical to its stored historic body.
+2. `backend/tests/test_order_list.py`: every row has the expanded status/timestamp/actions/alerts shape; privacy stays closed; result ordering and pagination stay unchanged.
+3. `backend/tests/test_order_detail.py`: the applied `SUCCESS` payment is the only primary payment; a second successful but unapplied payment cannot replace `paid_at`; `payment_may_exist` is true only for `CREATING | PREPAY_CREATED | CONFIRMING | UNKNOWN | SUCCESS` and false for `CLOSED`; controlling purpose comes only from `ORDER_CANCELLATION | PAYMENT_INVENTORY_CONFLICT`; one or multiple `DUPLICATE_CHARGE` cases affect only stably ordered `funding_alerts`, selecting the highest `attempt_no` and mapping no/latest active attempt to pending, `FAILED` to failed, and `SUCCESS` to refunded. The shared owner-detail projection always emits the exact approved cancellation copy, which also governs existing payment/reconcile wrappers that embed this DTO.
+
+Run each suite independently:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
+  uv run pytest backend/tests/test_order_creation.py -q
+```
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
+  uv run pytest backend/tests/test_order_list.py -q
+```
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
+  uv run pytest backend/tests/test_order_detail.py -q
+```
+
+Expected: only the new assertions are RED; the fixed-clock pre-existing detail assertions remain GREEN.
+
+- [ ] **Step 4: Implement the static contract and canonical examples**
+
+In `contracts/openapi.yaml`, split the legacy `CreateOrderResponse` from expanded owner `OrderSummary`/`OrderDetail`; keep POST create on the former and GET routes on the latter. Remove `order-pending.json` from owner GET detail examples rather than making the legacy create example satisfy the dynamic GET schema. Add closed `OrderAllowedActions`, `FundingAlert`, venue projections, notification envelope/resource, exact headers, vendor extension, security, response matrices, owner-detail 422, and `/pay` 503 enum specified above. Define the 7 paths statically without registering runtime routes.
+
+Update `scripts/validate-contract.mjs` and canonical examples together. Expand the affected owner GET or payment-wrapper examples (`order-expired.json`, `order-confirmed.json`, `order-payment-exception.json`, `payment-confirming.json`, `payment-already-confirmed.json`, `my-orders-ready.json`), while keeping `order-pending.json` on the legacy create schema. Apply the approved cancellation copy to every fresh create, owner detail, and payment/reconcile wrapper example; historical persisted create replays remain untouched at runtime. Add the six success examples and five error examples listed in this task and no speculative payload fields.
+
+Normalize and copy exactly these five canonical sources to their checked-in artifacts so the existing byte-equality invariant remains true:
+
+```text
+contracts/examples/order-pending.json           -> artifacts/ui/fixtures/order-pending.json
+contracts/examples/order-expired.json           -> artifacts/ui/fixtures/order-expired.json
+contracts/examples/order-confirmed.json         -> artifacts/ui/fixtures/order-confirmed.json
+contracts/examples/order-payment-exception.json -> artifacts/ui/fixtures/order-payment-exception.json
+contracts/examples/payment-confirming.json      -> artifacts/ui/fixtures/order-payment-confirming.json
+```
+
+- [ ] **Step 5: Implement the compatibility split and existing owner runtime projection**
+
+- In `dto.py`, add a dedicated legacy create response and the closed alert/action types; keep expanded `OrderDetailResponse` for owner GET and the existing payment/reconcile wrappers that already embed it.
+- In `repository.py`, eager-load payments, refund cases, and attempts for list/detail in the original bounded queries; do not query from presenters.
+- In `service.py`, derive primary payment only from `SUCCESS + applied_to_order_at`, derive `payment_may_exist` from the five allowed states, derive controlling refund only from the two controlling purposes, and map duplicate cases only to stable `funding_alerts`. Reuse the Task 2 pure policy for `allowed_actions`.
+- Keep the create presenter separate and legacy-shaped. New create and shared detail bodies use the approved cancellation copy; persisted idempotent create responses are replayed unchanged and never gain time-dependent fields or rewritten historic copy.
+- In `router.py`, change the create route's 201 response model and explicit 200 model to `CreateOrderResponse`, then align existing owner list/detail runtime response models and the detail 422 declaration. Do not register any of the 7 new static routes, parse notification JSON, or implement Provider behavior in this task. The Provider track owns the more precise runtime `/pay` 503 mapping.
+
+- [ ] **Step 6: Make the static contract GREEN in exact order**
+
+```bash
+node --check scripts/validate-contract.mjs
+```
+
+Expected: exits 0.
 
 ```bash
 npm run contract:validate
-node --test tests/contract.test.mjs
-uv run pytest backend/tests/test_openapi_conformance.py -q
-node --check scripts/validate-contract.mjs
-TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
-  uv run pytest backend/tests/test_order_list.py backend/tests/test_order_detail.py -q
 ```
 
-- [ ] **Step 4: Commit**
+Expected: validator accepts every closed schema, example, operation matrix, and error mapping.
 
 ```bash
-git add contracts scripts/validate-contract.mjs tests/contract.test.mjs \
-  backend/tests/test_openapi_conformance.py backend/app/modules/orders/repository.py \
+node --test tests/contract.test.mjs
+```
+
+Expected: all contract tests pass, including all five byte-equality pairs.
+
+```bash
+uv run pytest backend/tests/test_openapi_conformance.py -q
+```
+
+Expected: runtime owner GET/create operations conform and all 7 future operations remain absent.
+
+- [ ] **Step 7: Make focused runtime tests GREEN and check the diff**
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
+  uv run pytest backend/tests/test_order_creation.py backend/tests/test_order_list.py \
+  backend/tests/test_order_detail.py -q
+```
+
+Expected: all focused owner projection and legacy create compatibility tests pass.
+
+```bash
+uv run ruff check backend/app/modules/orders/dto.py backend/app/modules/orders/repository.py \
   backend/app/modules/orders/service.py backend/app/modules/orders/router.py \
-  backend/tests/test_order_list.py backend/tests/test_order_detail.py
+  backend/tests/test_order_creation.py backend/tests/test_order_list.py \
+  backend/tests/test_order_detail.py backend/tests/test_openapi_conformance.py
+git diff --check
+```
+
+Expected: both commands exit 0. Do not expand this task into notification handlers, venue/owner mutations, Provider adapters, or new shared abstractions.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add contracts/openapi.yaml contracts/examples/order-cancelled.json \
+  contracts/examples/order-refund-pending.json \
+  contracts/examples/venue-fulfillment-orders.json \
+  contracts/examples/venue-order-checked-in.json \
+  contracts/examples/venue-order-completed.json contracts/examples/refund-accepted.json \
+  contracts/examples/error-order-state-changed.json \
+  contracts/examples/error-payment-result-pending.json \
+  contracts/examples/error-refund-in-progress.json \
+  contracts/examples/error-payment-provider-unavailable.json \
+  contracts/examples/error-wechat-notification-invalid.json \
+  contracts/examples/order-pending.json contracts/examples/order-expired.json \
+  contracts/examples/order-confirmed.json contracts/examples/order-payment-exception.json \
+  contracts/examples/payment-confirming.json contracts/examples/payment-already-confirmed.json \
+  contracts/examples/my-orders-ready.json artifacts/ui/fixtures/order-pending.json \
+  artifacts/ui/fixtures/order-expired.json artifacts/ui/fixtures/order-confirmed.json \
+  artifacts/ui/fixtures/order-payment-exception.json \
+  artifacts/ui/fixtures/order-payment-confirming.json scripts/validate-contract.mjs \
+  tests/contract.test.mjs backend/tests/test_openapi_conformance.py \
+  backend/app/modules/orders/dto.py backend/app/modules/orders/repository.py \
+  backend/app/modules/orders/service.py backend/app/modules/orders/router.py \
+  backend/tests/test_order_creation.py backend/tests/test_order_list.py \
+  backend/tests/test_order_detail.py
 git diff --cached --check
 git commit -m "feat: contract order lifecycle actions"
 ```
