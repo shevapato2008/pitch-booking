@@ -42,6 +42,24 @@ class OrderContactResponse(ClosedModel):
     masked_phone: str = Field(pattern=r"^1[0-9]{2}\*{4}[0-9]{4}$")
 
 
+class OrderAllowedActionsResponse(ClosedModel):
+    can_pay: bool
+    can_cancel: bool
+    can_check_in: bool
+    can_complete: bool
+    can_refund: bool
+    blocked_reason: Literal[
+        "PAYMENT_RESULT_PENDING",
+        "CANCELLATION_WINDOW_CLOSED",
+        "REFUND_IN_PROGRESS",
+        "CHECK_IN_TOO_EARLY",
+        "CHECK_IN_REQUIRED",
+        "SESSION_NOT_ENDED",
+        "ORDER_TERMINAL",
+        "CANCELLATION_REQUIRES_SUPPORT",
+    ] | None
+
+
 class OrderDetailResponse(ClosedModel):
     id: uuid.UUID
     order_number: str = Field(min_length=1)
