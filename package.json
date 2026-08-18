@@ -16,7 +16,9 @@
     "assets:map-markers": "swift scripts/render-map-markers.swift",
     "build:miniprogram:production": "node scripts/build-miniprogram.mjs production",
     "build:miniprogram:development": "node scripts/build-miniprogram.mjs development",
+    "prepare:miniprogram:live-preview": "node scripts/prepare-live-miniprogram-preview.mjs",
     "audit:miniprogram-package": "node scripts/audit-production-package.mjs dist/miniprogram-production",
+    "build:platform-admin": "node scripts/build-platform-admin.mjs",
     "env:wechat:check": "node scripts/check-wechat-devtools.mjs"
   },
   "overrides": {

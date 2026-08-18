@@ -1,11 +1,16 @@
+import base64
+import binascii
 import hashlib
 import json
 import uuid
 from bisect import bisect_right
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 from zoneinfo import ZoneInfo
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.errors import AppError
 from backend.app.models import (
@@ -16,9 +21,15 @@ from backend.app.models import (
     OrderStatus,
     Payment,
     PaymentState,
+    RefundAttemptStatus,
+    RefundCasePurpose,
     Slot,
     SlotStatus,
     User,
+)
+from backend.app.modules.checkout.dto import (
+    CheckoutPitchResponse,
+    CheckoutVenueResponse,
 )
 from backend.app.modules.checkout.repository import CheckoutRepository
 from backend.app.modules.checkout.service import (
@@ -27,17 +38,46 @@ from backend.app.modules.checkout.service import (
 )
 from backend.app.modules.orders.dto import (
     CreateOrderRequest,
+    CreateOrderResponse,
     CreateOrderResult,
+    FundingAlertResponse,
+    OrderAllowedActionsResponse,
     OrderContactResponse,
     OrderDetailResponse,
+    OrderListResponse,
     OrderPitchResponse,
+    OrderSummaryResponse,
     OrderVenueResponse,
 )
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
+from backend.app.modules.orders.lifecycle import (
+    OrderActorCapability,
+    OrderLifecycleFacts,
+    project_allowed_actions,
+)
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.security.phone_vault import PhoneVault, PhoneVaultError, SealedPhone
 
 CREATE_ORDER_OPERATION = "create_order"
+ORDER_LIST_CURSOR_VERSION = 1
+APPROVED_CANCELLATION_SUMMARY = (
+    "开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。"
+)
+PAYMENT_MAY_EXIST_STATES = frozenset(
+    {
+        PaymentState.CREATING,
+        PaymentState.PREPAY_CREATED,
+        PaymentState.CONFIRMING,
+        PaymentState.UNKNOWN,
+        PaymentState.SUCCESS,
+    }
+)
+CONTROLLING_REFUND_PURPOSES = frozenset(
+    {
+        RefundCasePurpose.ORDER_CANCELLATION,
+        RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+    }
+)
 # Frozen from Node 22.22.3 `/^\p{Script=Han}$/u` (Unicode 17.0). The exhaustive
 # cross-runtime parity test guards this table against frontend or backend drift.
 _NODE22_UNICODE17_HAN_INTERVALS: tuple[tuple[int, int], ...] = (
@@ -228,6 +268,60 @@ class OrderService:
             closing_payment=closing_payment,
         )
 
+    def list_orders(
+        self,
+        *,
+        user_id: uuid.UUID,
+        limit: int,
+        cursor: str | None,
+    ) -> OrderListResponse:
+        before_created_at, before_id = _decode_order_cursor(cursor)
+        try:
+            rows = self._repository.list_owned_orders(
+                user_id=user_id,
+                limit=limit + 1,
+                before_created_at=before_created_at,
+                before_id=before_id,
+            )
+            page = rows[:limit]
+            now = self._now()
+            summaries: list[OrderSummaryResponse] = []
+            for order in page:
+                closing_payment = False
+                if (
+                    order.status is OrderStatus.PENDING_PAYMENT
+                    and order.expires_at <= now
+                ):
+                    result = self._expiry_service.expire_by_order_id(
+                        self._repository.session,
+                        order.id,
+                        now,
+                    )
+                    closing_payment = (
+                        result.order_status is OrderStatus.PENDING_PAYMENT
+                    )
+                summaries.append(
+                    self._order_summary(
+                        order,
+                        order.slot,
+                        now=now,
+                        closing_payment=closing_payment,
+                    )
+                )
+
+            next_cursor = (
+                _encode_order_cursor(page[-1].created_at, page[-1].id)
+                if len(rows) > limit
+                else None
+            )
+            self._repository.flush()
+            self._repository.commit()
+            return OrderListResponse(orders=summaries, next_cursor=next_cursor)
+        except SQLAlchemyError:
+            with suppress(Exception):
+                self._repository.rollback()
+            raise _service_unavailable() from None
+
     def _resolve_existing_claim(
         self,
         record: IdempotencyRecord,
@@ -323,11 +417,60 @@ class OrderService:
         *,
         known_phone: str | None = None,
     ) -> dict[str, object]:
-        return self._order_response(
+        return self._create_order_response(
             order,
             slot,
             known_phone=known_phone,
         ).model_dump(mode="json")
+
+    def _create_order_response(
+        self,
+        order: Order,
+        slot: Slot,
+        *,
+        known_phone: str | None = None,
+    ) -> CreateOrderResponse:
+        phone = known_phone or self._order_phone(order)
+        payment, payment_confirming, closing_payment = _project_payment_flags(
+            order,
+            now=self._now(),
+            closing_payment=False,
+        )
+        pitch = slot.pitch
+        venue = pitch.venue
+        timezone = ZoneInfo(cast(str, venue.timezone))
+        return CreateOrderResponse(
+            id=order.id,
+            order_number=order.order_number,
+            status=order.status,
+            slot_id=slot.id,
+            venue=OrderVenueResponse(
+                id=venue.id,
+                name=venue.name,
+                address=venue.address,
+                latitude=venue.latitude,
+                longitude=venue.longitude,
+            ),
+            pitch=OrderPitchResponse(id=pitch.id, name=pitch.name),
+            starts_at=slot.starts_at.astimezone(timezone),
+            ends_at=slot.ends_at.astimezone(timezone),
+            duration_minutes=int((slot.ends_at - slot.starts_at).total_seconds() // 60),
+            price_cents=order.price_cents,
+            currency="CNY",
+            contact=OrderContactResponse(
+                name=order.contact_name,
+                masked_phone=PhoneVault.mask(phone),
+            ),
+            created_at=order.created_at.astimezone(timezone),
+            expires_at=order.expires_at.astimezone(timezone),
+            expired_at=None,
+            cancellation_summary=APPROVED_CANCELLATION_SUMMARY,
+            payment_state=payment.status if payment is not None else None,
+            payment_confirming=payment_confirming,
+            closing_payment=closing_payment,
+            paid_at=None,
+            detail_path=f"/api/v1/orders/{order.id}",
+        )
 
     def _order_response(
         self,
@@ -338,23 +481,13 @@ class OrderService:
         closing_payment: bool = False,
     ) -> OrderDetailResponse:
         phone = known_phone or self._order_phone(order)
-        payment = _project_payment(order.payments)
+        now = self._now()
+        payment, payment_confirming, closing_payment = _project_payment_flags(
+            order,
+            now=now,
+            closing_payment=closing_payment,
+        )
         payment_state = payment.status if payment is not None else None
-        past_deadline = (
-            order.status is OrderStatus.PENDING_PAYMENT and order.expires_at <= self._now()
-        )
-        payment_confirming = bool(
-            order.status is OrderStatus.PENDING_PAYMENT
-            and payment_state in {PaymentState.CONFIRMING, PaymentState.UNKNOWN}
-        )
-        if past_deadline and payment_state in {
-            PaymentState.CREATING,
-            PaymentState.PREPAY_CREATED,
-            PaymentState.CONFIRMING,
-            PaymentState.UNKNOWN,
-        }:
-            payment_confirming = True
-            closing_payment = True
         pitch = slot.pitch
         venue = pitch.venue
         timezone = ZoneInfo(cast(str, venue.timezone))
@@ -369,7 +502,6 @@ class OrderService:
                 address=venue.address,
                 latitude=venue.latitude,
                 longitude=venue.longitude,
-                customer_service_phone=cast(str, venue.phone),
             ),
             pitch=OrderPitchResponse(id=pitch.id, name=pitch.name),
             starts_at=slot.starts_at.astimezone(timezone),
@@ -388,7 +520,7 @@ class OrderService:
                 if order.expired_at is not None
                 else None
             ),
-            cancellation_summary=cast(str, venue.refund_policy_text),
+            cancellation_summary=APPROVED_CANCELLATION_SUMMARY,
             payment_state=payment_state,
             payment_confirming=payment_confirming,
             closing_payment=closing_payment,
@@ -397,7 +529,51 @@ class OrderService:
                 if payment is not None and payment.status is PaymentState.SUCCESS
                 else None
             ),
+            cancel_requested_at=order.cancel_requested_at,
+            cancelled_at=order.cancelled_at,
+            checked_in_at=order.checked_in_at,
+            completed_at=order.completed_at,
+            allowed_actions=_project_owner_allowed_actions(order, slot, now=now),
+            funding_alerts=_project_funding_alerts(order),
             detail_path=f"/api/v1/orders/{order.id}",
+        )
+
+    @staticmethod
+    def _order_summary(
+        order: Order,
+        slot: Slot,
+        *,
+        now: datetime,
+        closing_payment: bool,
+    ) -> OrderSummaryResponse:
+        _payment, payment_confirming, closing_payment = _project_payment_flags(
+            order,
+            now=now,
+            closing_payment=closing_payment,
+        )
+        pitch = slot.pitch
+        venue = pitch.venue
+        timezone = ZoneInfo(cast(str, venue.timezone))
+        return OrderSummaryResponse(
+            id=order.id,
+            order_number=order.order_number,
+            status=order.status,
+            venue=CheckoutVenueResponse(id=venue.id, name=venue.name),
+            pitch=CheckoutPitchResponse(id=pitch.id, name=pitch.name),
+            starts_at=slot.starts_at.astimezone(timezone),
+            ends_at=slot.ends_at.astimezone(timezone),
+            price_cents=order.price_cents,
+            currency="CNY",
+            created_at=order.created_at.astimezone(timezone),
+            expires_at=order.expires_at.astimezone(timezone),
+            payment_confirming=payment_confirming,
+            closing_payment=closing_payment,
+            cancel_requested_at=order.cancel_requested_at,
+            cancelled_at=order.cancelled_at,
+            checked_in_at=order.checked_in_at,
+            completed_at=order.completed_at,
+            allowed_actions=_project_owner_allowed_actions(order, slot, now=now),
+            funding_alerts=_project_funding_alerts(order),
         )
 
     def _order_phone(self, order: Order) -> str:
@@ -419,7 +595,12 @@ class OrderService:
 
 
 def _project_payment(payments: list[Payment]) -> Payment | None:
-    successes = [payment for payment in payments if payment.status is PaymentState.SUCCESS]
+    successes = [
+        payment
+        for payment in payments
+        if payment.status is PaymentState.SUCCESS
+        and payment.applied_to_order_at is not None
+    ]
     if successes:
         return max(
             successes,
@@ -440,12 +621,162 @@ def _project_payment(payments: list[Payment]) -> Payment | None:
             PaymentState.UNKNOWN,
         }
     ]
-    candidates = nonterminal or payments
+    closed = [payment for payment in payments if payment.status is PaymentState.CLOSED]
+    candidates = nonterminal or closed
     return (
         max(candidates, key=lambda payment: (payment.created_at, payment.id))
         if candidates
         else None
     )
+
+
+def _project_payment_flags(
+    order: Order,
+    *,
+    now: datetime,
+    closing_payment: bool,
+) -> tuple[Payment | None, bool, bool]:
+    payment = _project_payment(order.payments)
+    payment_state = payment.status if payment is not None else None
+    payment_confirming = bool(
+        order.status is OrderStatus.PENDING_PAYMENT
+        and payment_state in {PaymentState.CONFIRMING, PaymentState.UNKNOWN}
+    )
+    if (
+        order.status is OrderStatus.PENDING_PAYMENT
+        and order.expires_at <= now
+        and payment_state
+        in {
+            PaymentState.CREATING,
+            PaymentState.PREPAY_CREATED,
+            PaymentState.CONFIRMING,
+            PaymentState.UNKNOWN,
+        }
+    ):
+        payment_confirming = True
+        closing_payment = True
+    return payment, payment_confirming, closing_payment
+
+
+def _project_owner_allowed_actions(
+    order: Order,
+    slot: Slot,
+    *,
+    now: datetime,
+) -> OrderAllowedActionsResponse:
+    controlling_cases = [
+        refund_case
+        for refund_case in order.refund_cases
+        if refund_case.purpose in CONTROLLING_REFUND_PURPOSES
+    ]
+    controlling_refund_purpose = (
+        max(
+            controlling_cases,
+            key=lambda refund_case: (refund_case.created_at, refund_case.id),
+        ).purpose
+        if controlling_cases
+        else None
+    )
+    projected = project_allowed_actions(
+        OrderLifecycleFacts(
+            status=order.status,
+            starts_at=slot.starts_at,
+            ends_at=slot.ends_at,
+            cancel_requested_at=order.cancel_requested_at,
+            checked_in_at=order.checked_in_at,
+            payment_may_exist=any(
+                payment.status in PAYMENT_MAY_EXIST_STATES
+                for payment in order.payments
+            ),
+            controlling_refund_purpose=controlling_refund_purpose,
+        ),
+        actor=OrderActorCapability.OWNER,
+        now=now,
+    )
+    return OrderAllowedActionsResponse(
+        can_pay=projected.can_pay,
+        can_cancel=projected.can_cancel,
+        can_check_in=projected.can_check_in,
+        can_complete=projected.can_complete,
+        can_refund=projected.can_refund,
+        blocked_reason=projected.blocked_reason,
+    )
+
+
+def _project_funding_alerts(order: Order) -> list[FundingAlertResponse]:
+    alerts: list[FundingAlertResponse] = []
+    duplicate_cases = sorted(
+        (
+            refund_case
+            for refund_case in order.refund_cases
+            if refund_case.purpose is RefundCasePurpose.DUPLICATE_CHARGE
+        ),
+        key=lambda refund_case: (refund_case.created_at, refund_case.id),
+    )
+    for refund_case in duplicate_cases:
+        latest_attempt = max(
+            refund_case.attempts,
+            key=lambda attempt: attempt.attempt_no,
+            default=None,
+        )
+        if latest_attempt is None or latest_attempt.status in {
+            RefundAttemptStatus.CREATING,
+            RefundAttemptStatus.PROCESSING,
+            RefundAttemptStatus.UNKNOWN,
+        }:
+            alert_status = "REFUND_PENDING"
+        elif latest_attempt.status is RefundAttemptStatus.FAILED:
+            alert_status = "REFUND_FAILED"
+        else:
+            alert_status = "REFUNDED"
+        alerts.append(
+            FundingAlertResponse(
+                code="DUPLICATE_CHARGE_REFUND",
+                status=alert_status,
+            )
+        )
+    return alerts
+
+
+def _encode_order_cursor(created_at: datetime, order_id: uuid.UUID) -> str:
+    payload = json.dumps(
+        {
+            "v": ORDER_LIST_CURSOR_VERSION,
+            "created_at": created_at.astimezone(UTC).isoformat(),
+            "id": str(order_id),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_order_cursor(
+    cursor: str | None,
+) -> tuple[datetime | None, uuid.UUID | None]:
+    if cursor is None:
+        return None, None
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        raw = base64.b64decode(
+            cursor + padding,
+            altchars=b"-_",
+            validate=True,
+        )
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or set(payload) != {"v", "created_at", "id"}:
+            raise ValueError
+        if (
+            type(payload["v"]) is not int
+            or payload["v"] != ORDER_LIST_CURSOR_VERSION
+        ):
+            raise ValueError
+        created_at = datetime.fromisoformat(payload["created_at"])
+        if created_at.tzinfo is None or created_at.utcoffset() is None:
+            raise ValueError
+        order_id = uuid.UUID(payload["id"])
+    except (binascii.Error, json.JSONDecodeError, TypeError, ValueError):
+        raise _invalid_cursor() from None
+    return created_at, order_id
 
 
 def _normalize_contact_name(value: str) -> str:
@@ -516,6 +847,14 @@ def _venue_not_found() -> AppError:
 
 def _order_not_found() -> AppError:
     return AppError(404, "ORDER_NOT_FOUND", "订单不存在。")
+
+
+def _invalid_cursor() -> AppError:
+    return AppError(422, "INVALID_ARGUMENT", "订单列表游标无效，请重新加载。")
+
+
+def _service_unavailable() -> AppError:
+    return AppError(503, "SERVICE_UNAVAILABLE", "订单服务暂不可用，请稍后重试。")
 
 
 def _internal_error() -> AppError:

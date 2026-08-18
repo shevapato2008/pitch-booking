@@ -1,16 +1,23 @@
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import NoReturn, Protocol, cast
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from typing import Any, NoReturn, Protocol, cast
+from zoneinfo import ZoneInfo
 
 from backend.app.errors import AppError
 from backend.app.models import (
     BookingMode,
+    Pitch,
+    PitchStatus,
     PitchType,
     Venue,
-    VenueFacility,
-    VenueImage,
+)
+from backend.app.modules.venue_profiles.dto import (
+    AvailabilityTargetResponse,
+    LivePriceResponse,
+    PublishedFacilityResponse,
+    PublishedImageResponse,
+    PublishedProfileResponse,
 )
 from backend.app.modules.venues.dto import (
     AvailabilityWindowResponse,
@@ -20,8 +27,6 @@ from backend.app.modules.venues.dto import (
     PrimaryVenueResponse,
     PublicPitchTypeCode,
     VenueDetailResponse,
-    VenueFacilityResponse,
-    VenueImageResponse,
     VenueMapItemResponse,
     VenueMapResponse,
     VenueTransitResponse,
@@ -32,6 +37,60 @@ PITCH_TYPE_NAMES = {
     PitchType.FIVE_A_SIDE: "五人制",
     PitchType.SEVEN_A_SIDE: "七人制",
 }
+
+
+def _published_profile(
+    venue: Venue,
+    pitch_sizes: list[PublicPitchTypeCode],
+    minimum_price: int | None,
+    *,
+    availability_enabled: bool,
+) -> PublishedProfileResponse:
+    images = sorted(venue.images, key=lambda item: (item.sort_order, item.id))
+    facilities = sorted(
+        venue.facilities, key=lambda item: (item.sort_order, item.id)
+    )
+    return PublishedProfileResponse(
+        publication_state="PUBLISHED",
+        published_version=venue.profile_version,
+        description=venue.description,
+        cover_image=next(
+            (image.url for image in images if image.role.value == "COVER"), None
+        ),
+        images=[
+            PublishedImageResponse(
+                url=image.url,
+                alt=image.alt,
+                role=image.role.value,
+                sort_order=image.sort_order,
+            )
+            for image in images
+        ],
+        facilities=[
+            PublishedFacilityResponse(
+                code=facility.code.value,
+                name=facility.name,
+                sort_order=facility.sort_order,
+            )
+            for facility in facilities
+        ],
+        pitch_sizes=pitch_sizes,
+        live_price=LivePriceResponse(
+            available=minimum_price is not None,
+            from_price_cents=minimum_price,
+            currency="CNY",
+            unit="HOUR",
+        ),
+        availability_target=AvailabilityTargetResponse(
+            enabled=availability_enabled,
+            label="查看可订时段",
+            path=(
+                f"/api/v1/venues/{venue.id}/availability"
+                if availability_enabled
+                else None
+            ),
+        ),
+    )
 
 
 class PrimaryVenueService:
@@ -49,25 +108,19 @@ class PrimaryVenueService:
             self._misconfigured()
         venue = venues[0]
 
-        images = sorted(venue.images, key=lambda item: (item.sort_order, item.id))
-        facilities = sorted(venue.facilities, key=lambda item: (item.sort_order, item.id))
-        pitches = sorted(venue.pitches, key=lambda item: (item.sort_order, item.id))
-        if sum(image.role.value == "COVER" for image in images) != 1:
-            self._misconfigured()
-        if not facilities or not pitches:
+        pitches = self._active_pitches(venue)
+        if not pitches:
             self._misconfigured()
         price_advantage_text = venue.price_advantage_text
         timezone_name = venue.timezone
         business_hours_text = venue.business_hours_text
         parking_text = venue.parking_text
-        phone = venue.phone
         refund_policy_text = venue.refund_policy_text
         if (
             price_advantage_text is None
-            or timezone_name is None
+            or timezone_name != "Asia/Shanghai"
             or business_hours_text is None
             or parking_text is None
-            or phone is None
             or refund_policy_text is None
             or any(
                 not value.strip()
@@ -78,29 +131,26 @@ class PrimaryVenueService:
                     business_hours_text,
                     venue.address,
                     parking_text,
-                    phone,
                     refund_policy_text,
                 )
             )
         ):
             self._misconfigured()
-        try:
-            timezone = ZoneInfo(timezone_name)
-        except ZoneInfoNotFoundError:
-            self._misconfigured()
+        timezone = ZoneInfo(timezone_name)
 
         generated_at = self.now(timezone)
         start_date = generated_at.date()
         pitch_types: list[PitchTypeResponse] = []
         seen_types: set[PitchType] = set()
         for pitch in pitches:
-            if pitch.pitch_type in seen_types:
+            pitch_type = cast(PitchType, pitch.pitch_type)
+            if pitch_type in seen_types:
                 continue
-            seen_types.add(pitch.pitch_type)
+            seen_types.add(pitch_type)
             pitch_types.append(
                 PitchTypeResponse(
-                    code=pitch.pitch_type.value,
-                    name=PITCH_TYPE_NAMES[pitch.pitch_type],
+                    code=cast(Any, pitch_type.value),
+                    name=PITCH_TYPE_NAMES[pitch_type],
                     sort_order=pitch.sort_order,
                 )
             )
@@ -108,39 +158,38 @@ class PrimaryVenueService:
         return PrimaryVenueResponse(
             id=venue.id,
             name=venue.name,
-            description=venue.description,
+            profile=_published_profile(
+                venue,
+                [item.code for item in pitch_types],
+                self.repository.minimum_available_price(venue.id, generated_at),
+                availability_enabled=True,
+            ),
             price_advantage_text=price_advantage_text,
-            timezone=timezone_name,
+            timezone="Asia/Shanghai",
             business_hours_text=business_hours_text,
             address=venue.address,
             latitude=venue.latitude,
             longitude=venue.longitude,
             parking_text=parking_text,
-            phone=phone,
             refund_policy_summary=refund_policy_text,
-            images=[
-                VenueImageResponse(
-                    url=image.url,
-                    alt=image.alt,
-                    role=image.role.value,
-                    sort_order=image.sort_order,
-                )
-                for image in images
-            ],
-            facilities=[
-                VenueFacilityResponse(
-                    code=facility.code.value,
-                    name=facility.name,
-                    sort_order=facility.sort_order,
-                )
-                for facility in facilities
-            ],
             pitch_types=pitch_types,
             availability_window=AvailabilityWindowResponse(
                 start_date=start_date,
                 end_date=start_date + timedelta(days=13),
             ),
             generated_at=generated_at,
+        )
+
+    @staticmethod
+    def _active_pitches(venue: Venue) -> list[Pitch]:
+        return sorted(
+            (
+                pitch
+                for pitch in venue.pitches
+                if pitch.status is PitchStatus.ACTIVE
+                and pitch.pitch_type in PITCH_TYPE_NAMES
+            ),
+            key=lambda item: (item.sort_order, item.id),
         )
 
     @staticmethod
@@ -171,6 +220,7 @@ class VenueDirectoryService:
         ):
             self._misconfigured()
         return VenueMapResponse(
+            coordinate_system="GCJ02",
             venues=[self._map_item(venue) for venue in venues]
         )
 
@@ -180,16 +230,22 @@ class VenueDirectoryService:
             raise AppError(404, "VENUE_NOT_FOUND", "场馆不存在")
         if venue.booking_mode is BookingMode.ONLINE:
             return self._online_detail(venue)
+        pitch_types = self._public_pitch_types(venue.public_pitch_types)
         return DirectoryVenueDetailResponse.model_validate(
             {
-                **self._common_detail(venue),
+                **self._common_detail(
+                    venue,
+                    pitch_types,
+                    _published_profile(
+                        venue,
+                        pitch_types,
+                        None,
+                        availability_enabled=False,
+                    ),
+                ),
                 "booking_mode": "DIRECTORY_ONLY",
                 "business_hours_text": venue.business_hours_text,
                 "parking_text": venue.parking_text,
-                "images": [image.url for image in self._images(venue)],
-                "facilities": [
-                    facility.name for facility in self._facilities(venue)
-                ],
             }
         )
 
@@ -209,17 +265,17 @@ class VenueDirectoryService:
             content_verified_at=venue.content_verified_at,
         )
 
-    def _common_detail(self, venue: Venue) -> dict[str, object]:
-        pitch_types = (
-            self._online_pitch_types(venue)
-            if venue.booking_mode is BookingMode.ONLINE
-            else self._public_pitch_types(venue.public_pitch_types)
-        )
+    def _common_detail(
+        self,
+        venue: Venue,
+        pitch_types: list[PublicPitchTypeCode],
+        profile: PublishedProfileResponse,
+    ) -> dict[str, object]:
         return {
             "id": venue.id,
             "slug": venue.slug,
             "name": venue.name,
-            "description": venue.description,
+            "profile": profile,
             "address": venue.address,
             "latitude": venue.latitude,
             "longitude": venue.longitude,
@@ -228,7 +284,6 @@ class VenueDirectoryService:
             "navigation_latitude": venue.navigation_latitude,
             "navigation_longitude": venue.navigation_longitude,
             "pitch_types": pitch_types,
-            "cover_image": self._cover_image(venue),
             "nearest_transit": self._transit(venue),
             "content_verified_at": venue.content_verified_at,
         }
@@ -238,53 +293,35 @@ class VenueDirectoryService:
         timezone_name = venue.timezone
         hours = venue.business_hours_text
         parking = venue.parking_text
-        phone = venue.phone
         refund = venue.refund_policy_text
-        images = self._images(venue)
-        facilities = self._facilities(venue)
         pitch_types = self._online_pitch_types(venue)
         if (
             price is None
             or timezone_name != "Asia/Shanghai"
             or hours is None
             or parking is None
-            or phone is None
             or refund is None
-            or not images
-            or not facilities
             or not pitch_types
-            or sum(image.role.value == "COVER" for image in images) != 1
         ):
             self._misconfigured()
         timezone = ZoneInfo(timezone_name)
-        start_date = self.now(timezone).date()
+        generated_at = self.now(timezone)
+        start_date = generated_at.date()
+        profile = _published_profile(
+            venue,
+            pitch_types,
+            self.repository.minimum_available_price(venue.id, generated_at),
+            availability_enabled=True,
+        )
         return OnlineVenueDetailResponse.model_validate(
             {
-                **self._common_detail(venue),
+                **self._common_detail(venue, pitch_types, profile),
                 "booking_mode": "ONLINE",
                 "price_advantage_text": price,
                 "timezone": "Asia/Shanghai",
                 "business_hours_text": hours,
                 "parking_text": parking,
-                "phone": phone,
                 "refund_policy_summary": refund,
-                "images": [
-                    VenueImageResponse(
-                        url=image.url,
-                        alt=image.alt,
-                        role=image.role.value,
-                        sort_order=image.sort_order,
-                    )
-                    for image in images
-                ],
-                "facilities": [
-                    VenueFacilityResponse(
-                        code=facility.code.value,
-                        name=facility.name,
-                        sort_order=facility.sort_order,
-                    )
-                    for facility in facilities
-                ],
                 "availability_window": AvailabilityWindowResponse(
                     start_date=start_date,
                     end_date=start_date + timedelta(days=13),
@@ -293,29 +330,27 @@ class VenueDirectoryService:
         )
 
     @staticmethod
-    def _images(venue: Venue) -> list[VenueImage]:
-        return sorted(venue.images, key=lambda item: (item.sort_order, item.id))
-
-    @staticmethod
-    def _facilities(venue: Venue) -> list[VenueFacility]:
-        return sorted(venue.facilities, key=lambda item: (item.sort_order, item.id))
-
-    @staticmethod
     def _online_pitch_types(venue: Venue) -> list[PublicPitchTypeCode]:
         return VenueDirectoryService._public_pitch_types(
             list(
-            dict.fromkeys(
-                pitch.pitch_type.value
-                for pitch in sorted(
-                    venue.pitches, key=lambda item: (item.sort_order, item.id)
+                dict.fromkeys(
+                    pitch.pitch_type.value
+                    for pitch in sorted(
+                        venue.pitches, key=lambda item: (item.sort_order, item.id)
+                    )
+                    if pitch.status is PitchStatus.ACTIVE
+                    and pitch.pitch_type in PITCH_TYPE_NAMES
                 )
-            )
             )
         )
 
     @staticmethod
     def _public_pitch_types(values: list[str]) -> list[PublicPitchTypeCode]:
-        return cast(list[PublicPitchTypeCode], values)
+        supported = {"FIVE_A_SIDE", "SEVEN_A_SIDE", "ELEVEN_A_SIDE"}
+        return cast(
+            list[PublicPitchTypeCode],
+            list(dict.fromkeys(value for value in values if value in supported)),
+        )
 
     @staticmethod
     def _cover_image(venue: Venue) -> str | None:
@@ -358,3 +393,7 @@ class VenueDirectoryRepository(Protocol):
     def list_public(self) -> list[Venue]: ...
 
     def get_public(self, venue_id: uuid.UUID) -> Venue | None: ...
+
+    def minimum_available_price(
+        self, venue_id: uuid.UUID, now: datetime
+    ) -> int | None: ...

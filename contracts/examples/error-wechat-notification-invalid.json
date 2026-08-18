@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "WECHAT_NOTIFICATION_INVALID",
+    "message": "微信支付通知无效。",
+    "request_id": "req-contract-wechat-notification-invalid",
+    "details": {}
+  }
+}

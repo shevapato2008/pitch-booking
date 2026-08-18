@@ -1,4 +1,4 @@
-import type { AvailabilityWindow, Facility, VenueImage } from "./contracts";
+import type { AvailabilityWindow, PublishedVenueProfile } from "./contracts";
 
 export type VenueBookingMode = "ONLINE" | "DIRECTORY_ONLY";
 export type VenuePitchType = "FIVE_A_SIDE" | "SEVEN_A_SIDE" | "ELEVEN_A_SIDE";
@@ -24,15 +24,18 @@ export interface VenueTransitStop {
   readonly distanceBasis: "STRAIGHT_LINE" | "MAP_VERIFIED";
 }
 
-interface VenueEntryBase {
+interface VenueCommonBase {
   readonly id: string;
   readonly name: string;
   readonly address: string;
   readonly marker: Gcj02Coordinate;
   readonly pitchTypes: readonly VenuePitchType[];
-  readonly coverImage: string | null;
   readonly nearestTransit: readonly VenueTransitStop[];
   readonly contentVerifiedAt: string;
+}
+
+interface VenueEntryBase extends VenueCommonBase {
+  readonly coverImage: string | null;
 }
 
 interface VenueMapEntryBase extends VenueEntryBase {
@@ -53,9 +56,9 @@ export interface DirectoryVenueMapEntry extends VenueMapEntryBase {
 
 export type VenueMapEntry = OnlineVenueMapEntry | DirectoryVenueMapEntry;
 
-interface VenueDetailFields extends VenueEntryBase {
+interface VenueDetailFields extends VenueCommonBase {
   readonly slug: string;
-  readonly description: string;
+  readonly profile: PublishedVenueProfile;
   readonly navigation: VenueNavigation;
 }
 
@@ -65,10 +68,7 @@ export type OnlineVenueDetail = VenueDetailFields & {
   readonly timezone: "Asia/Shanghai";
   readonly businessHoursText: string;
   readonly parkingText: string;
-  readonly phone: string;
   readonly refundPolicySummary: string;
-  readonly images: readonly VenueImage[];
-  readonly facilities: readonly Facility[];
   readonly availabilityWindow: AvailabilityWindow;
 };
 
@@ -76,8 +76,6 @@ export type DirectoryVenueDetail = VenueDetailFields & {
   readonly bookingMode: "DIRECTORY_ONLY";
   readonly businessHoursText: string | null;
   readonly parkingText: string | null;
-  readonly images: readonly string[];
-  readonly facilities: readonly string[];
 };
 
 export type VenueDetail = OnlineVenueDetail | DirectoryVenueDetail;

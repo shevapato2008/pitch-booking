@@ -1,0 +1,75 @@
+id: venue-inventory-workbench-v2
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+entry: authorized-deep-link-only
+route: pages/venue-inventory/index
+reference_gate: reference-approved-native-approved
+native_gate: native-approved
+venue_scope:
+  venue_id: venue-bohai-yuanfeng
+  name: 渤海元丰足球场
+  booking_mode: ONLINE
+  permission: VenueMembership.can_manage_inventory
+review_slots:
+  - reference
+  - implementation
+  - side-by-side
+  - overlay-50
+  - difference
+  - observations
+fixture:
+  planned_path: miniprogram/dev/venue-inventory-fixture.ts
+  deletion_condition: delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit
+states:
+  - {id: initial-loading, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=initial-loading}
+  - {id: load-error, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=load-error}
+  - {id: day-empty, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=day-empty}
+  - {id: day-ready, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=day-ready}
+  - {id: pitch-picker-open, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=pitch-picker-open}
+  - {id: pitch-refreshing, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=pitch-refreshing}
+  - {id: pitch-load-error, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=pitch-load-error}
+  - {id: calendar-open, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=calendar-open}
+  - {id: date-refreshing, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=date-refreshing}
+  - {id: date-load-error, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=date-load-error}
+  - {id: cross-week-ready, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=cross-week-ready}
+  - {id: long-list-end, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=long-list-end}
+  - {id: create-slot-open, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=create-slot-open}
+  - {id: edit-slot-open, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=edit-slot-open}
+  - {id: save-in-progress, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=save-in-progress}
+  - {id: save-result-unknown, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=save-result-unknown}
+  - {id: create-slot-overlap, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=create-slot-overlap}
+  - {id: concurrent-change, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=concurrent-change}
+  - {id: permission-expired, reference: artifacts/ui/references/venue-inventory-workbench-v2.html?state=permission-expired}
+authority:
+  query_key: venue_id + pitch_id + local_date
+  selected_pitch: preserved while date changes
+  selected_date: preserved while pitch changes
+  response_policy: latest request_sequence only
+  date_window: 2026-08-10 through 2026-08-23 inclusive
+first_save_handoff:
+  client_ref: draft-pitch-1
+  pitch_id: pitch-7-001
+  custom_name: A场
+  system_name: 7人场 · 1号场
+  display_name: A场
+  players_per_side: 7
+  sequence: 1
+  status: ACTIVE
+default_selection:
+  pitch_id: pitch-7-001
+  local_date: 2026-08-11
+  request_sequence: 1
+date_window:
+  start: 2026-08-10
+  end: 2026-08-23
+  inclusive: true
+picker_pitches:
+  - players_per_side: 5
+    pitches:
+      - {id: pitch-5-001, custom_name: 滨河场, system_name: 5人场 · 1号场, display_name: 滨河场, players_per_side: 5, sequence: 1, status: ACTIVE}
+      - {id: pitch-5-002, custom_name: null, system_name: 5人场 · 2号场, display_name: 5人场 · 2号场, players_per_side: 5, sequence: 2, status: ACTIVE}
+  - players_per_side: 7
+    pitches:
+      - {id: pitch-7-001, custom_name: A场, system_name: 7人场 · 1号场, display_name: A场, players_per_side: 7, sequence: 1, status: ACTIVE}
+      - {id: pitch-7-002, custom_name: null, system_name: 7人场 · 2号场, display_name: 7人场 · 2号场, players_per_side: 7, sequence: 2, status: ACTIVE}
+      - {id: pitch-7-003, custom_name: null, system_name: 7人场 · 3号场, display_name: 7人场 · 3号场, players_per_side: 7, sequence: 3, status: ACTIVE}

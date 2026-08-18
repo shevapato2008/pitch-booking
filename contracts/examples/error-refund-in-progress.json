@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "REFUND_IN_PROGRESS",
+    "message": "退款正在处理中，请勿重复提交。",
+    "request_id": "req-contract-refund-in-progress",
+    "details": {}
+  }
+}

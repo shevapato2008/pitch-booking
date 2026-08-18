@@ -13,10 +13,18 @@ import type {
   Venue,
   VenueImage,
   VenuePitchType,
+  PublishedVenueProfile,
   PhoneVerificationView,
   SessionTokenView,
 } from "./contracts";
-import type { CheckoutView, OrderView, PaymentState } from "./booking";
+import type {
+  CheckoutView,
+  OrderListView,
+  OrderSummaryStatus,
+  OrderSummaryView,
+  OrderView,
+  PaymentState,
+} from "./booking";
 import type { VenueDetail, VenueMapEntry, VenuePitchType as DirectoryPitchType } from "./venue-directory";
 import type {
   PaymentLaunchParams,
@@ -41,7 +49,11 @@ import {
 const PITCH_TYPES = ["FIVE_A_SIDE", "SEVEN_A_SIDE"] as const;
 const DIRECTORY_PITCH_TYPES = ["FIVE_A_SIDE", "SEVEN_A_SIDE", "ELEVEN_A_SIDE"] as const;
 const IMAGE_ROLES = ["COVER", "GALLERY"] as const;
-const FACILITY_CODES = ["LIGHTING", "CHANGING_ROOM", "DRINKING_WATER", "PARKING"] as const;
+const FACILITY_CODES = [
+  "PARKING", "TOILET", "CHANGING_ROOM", "SHOWER", "LOCKERS", "DRINKING_WATER",
+  "BEVERAGE_SALES", "EQUIPMENT_RENTAL", "REST_AREA", "FIRST_AID", "AED", "INDOOR",
+  "OUTDOOR", "COVERED", "LIGHTING", "ARTIFICIAL_TURF", "NATURAL_GRASS",
+] as const;
 const SLOT_STATUSES = ["AVAILABLE", "TEMPORARILY_LOCKED", "BOOKED", "CLOSED", "EXPIRED"] as const;
 const STATUS_REASONS: Record<SlotStatus, UnavailableReason | null> = {
   AVAILABLE: null,
@@ -152,7 +164,7 @@ export function decodeOrder(value: unknown): OrderView {
     "expired_at", "cancellation_summary", "payment_state", "payment_confirming",
     "closing_payment", "paid_at", "detail_path",
   ], "$");
-  const venue = exactObject(object.venue, ["id", "name", "address", "latitude", "longitude", "customer_service_phone"], "$.venue");
+  const venue = exactObject(object.venue, ["id", "name", "address", "latitude", "longitude"], "$.venue");
   const pitch = exactObject(object.pitch, ["id", "name"], "$.pitch");
   const contact = exactObject(object.contact, ["name", "masked_phone"], "$.contact");
   const orderId = uuidAt(object.id, "$.id");
@@ -183,7 +195,6 @@ export function decodeOrder(value: unknown): OrderView {
       address: stringAt(venue.address, "$.venue.address"),
       latitude: numberAt(venue.latitude, "$.venue.latitude", -90, 90),
       longitude: numberAt(venue.longitude, "$.venue.longitude", -180, 180),
-      customerServicePhone: stringAt(venue.customer_service_phone, "$.venue.customer_service_phone"),
     },
     pitch: { id: uuidAt(pitch.id, "$.pitch.id"), name: stringAt(pitch.name, "$.pitch.name") },
     contact: {
@@ -225,6 +236,57 @@ export function decodeOrder(value: unknown): OrderView {
     || (paymentState === "SUCCESS" && paidAt === null)
     || (paymentState !== "UNKNOWN" && paymentState !== "SUCCESS")) invalid("$.status");
   return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
+}
+
+const ORDER_SUMMARY_KEYS = [
+  "id", "order_number", "status", "venue", "pitch", "starts_at", "ends_at",
+  "price_cents", "currency", "created_at", "expires_at", "payment_confirming", "closing_payment",
+] as const;
+
+function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
+  const object = exactObject(value, ORDER_SUMMARY_KEYS, path);
+  const venue = exactObject(object.venue, ["id", "name"], `${path}.venue`);
+  const pitch = exactObject(object.pitch, ["id", "name"], `${path}.pitch`);
+  const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
+  const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
+  if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
+  if (object.currency !== "CNY") invalid(`${path}.currency`);
+  return {
+    orderId: uuidAt(object.id, `${path}.id`),
+    orderNumber: stringAt(object.order_number, `${path}.order_number`),
+    status: enumAt<OrderSummaryStatus>(
+      object.status,
+      ["PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"] as const,
+      `${path}.status`,
+    ),
+    venue: {
+      id: uuidAt(venue.id, `${path}.venue.id`),
+      name: stringAt(venue.name, `${path}.venue.name`),
+    },
+    pitch: {
+      id: uuidAt(pitch.id, `${path}.pitch.id`),
+      name: stringAt(pitch.name, `${path}.pitch.name`),
+    },
+    startsAt,
+    endsAt,
+    priceCents: integerAt(object.price_cents, `${path}.price_cents`),
+    currency: "CNY",
+    createdAt: rfc3339At(object.created_at, `${path}.created_at`),
+    expiresAt: rfc3339At(object.expires_at, `${path}.expires_at`),
+    paymentConfirming: booleanAt(object.payment_confirming, `${path}.payment_confirming`),
+    closingPayment: booleanAt(object.closing_payment, `${path}.closing_payment`),
+  };
+}
+
+export function decodeOrderList(value: unknown): OrderListView {
+  const object = exactObject(value, ["orders", "next_cursor"], "$");
+  const nextCursor = object.next_cursor === null ? null : stringAt(object.next_cursor, "$.next_cursor");
+  if (nextCursor === "") invalid("$.next_cursor");
+  return {
+    orders: arrayAt(object.orders, "$.orders")
+      .map((order, index) => decodeOrderSummary(order, `$.orders[${index}]`)),
+    nextCursor,
+  };
 }
 
 function decodePaymentLaunchParams(value: unknown, path: string): PaymentLaunchParams {
@@ -360,6 +422,55 @@ function decodePitchType(value: unknown, path: string): VenuePitchType {
   };
 }
 
+function decodePublishedProfile(value: unknown, path: string): PublishedVenueProfile {
+  const object = exactObject(value, [
+    "publication_state", "published_version", "description", "cover_image", "images", "facilities",
+    "pitch_sizes", "live_price", "availability_target",
+  ], path);
+  if (object.publication_state !== "PUBLISHED") invalid(`${path}.publication_state`);
+  const images = arrayAt(object.images, `${path}.images`)
+    .map((image, index) => decodeImage(image, `${path}.images[${index}]`));
+  const facilities = arrayAt(object.facilities, `${path}.facilities`)
+    .map((facility, index) => decodeFacility(facility, `${path}.facilities[${index}]`));
+  const livePrice = exactObject(object.live_price, ["available", "from_price_cents", "currency", "unit"], `${path}.live_price`);
+  const available = booleanAt(livePrice.available, `${path}.live_price.available`);
+  const fromPriceCents = livePrice.from_price_cents === null
+    ? null
+    : integerAt(livePrice.from_price_cents, `${path}.live_price.from_price_cents`, 0);
+  if (livePrice.currency !== "CNY") invalid(`${path}.live_price.currency`);
+  if (livePrice.unit !== "HOUR") invalid(`${path}.live_price.unit`);
+  if (available !== (fromPriceCents !== null)) invalid(`${path}.live_price.from_price_cents`);
+  const target = exactObject(object.availability_target, ["enabled", "label", "path"], `${path}.availability_target`);
+  const enabled = booleanAt(target.enabled, `${path}.availability_target.enabled`);
+  if (target.label !== "查看可订时段") invalid(`${path}.availability_target.label`);
+  const targetPath = nullableString(target.path, `${path}.availability_target.path`);
+  if (enabled !== (targetPath !== null)) invalid(`${path}.availability_target.path`);
+  if (targetPath !== null && !/^\/api\/v1\/venues\/[0-9a-f-]+\/availability$/.test(targetPath)) {
+    invalid(`${path}.availability_target.path`);
+  }
+  if (images.length > 8) invalid(`${path}.images`);
+  if (images.filter((image) => image.role === "COVER").length > 1) invalid(`${path}.images`);
+  assertSorted(images, (image) => image.sortOrder, `${path}.images`, "sort_order");
+  assertSorted(facilities, (facility) => facility.sortOrder, `${path}.facilities`, "sort_order");
+  const pitchSizes = arrayAt(object.pitch_sizes, `${path}.pitch_sizes`).map((pitchSize, index) =>
+    enumAt(pitchSize, DIRECTORY_PITCH_TYPES, `${path}.pitch_sizes[${index}]`));
+  return {
+    publicationState: "PUBLISHED",
+    publishedVersion: integerAt(object.published_version, `${path}.published_version`, 1),
+    description: (() => {
+      const description = stringAt(object.description, `${path}.description`, true);
+      if ([...description].length > 300) invalid(`${path}.description`);
+      return description;
+    })(),
+    coverImage: nullableHttps(object.cover_image, `${path}.cover_image`),
+    images,
+    facilities,
+    pitchSizes,
+    livePrice: { available, fromPriceCents, currency: "CNY", unit: "HOUR" },
+    availabilityTarget: { enabled, label: "查看可订时段", path: targetPath },
+  };
+}
+
 function assertSorted<T>(
   items: T[],
   select: (item: T) => number | string,
@@ -374,17 +485,15 @@ function assertSorted<T>(
 export function decodeVenue(value: unknown): Venue {
   const path = "$";
   const object = exactObject(value, [
-    "id", "name", "description", "price_advantage_text", "timezone",
+    "id", "name", "profile", "price_advantage_text", "timezone",
     "business_hours_text", "address", "latitude", "longitude", "parking_text",
-    "phone", "refund_policy_summary", "images", "facilities", "pitch_types",
+    "refund_policy_summary", "pitch_types",
     "availability_window", "generated_at",
   ], path);
-  const images = arrayAt(object.images, "$.images", 1)
-    .map((image, index) => decodeImage(image, `$.images[${index}]`));
   const decoded: Venue = {
     id: uuidAt(object.id, "$.id"),
     name: stringAt(object.name, "$.name"),
-    description: stringAt(object.description, "$.description", true),
+    profile: decodePublishedProfile(object.profile, "$.profile"),
     priceAdvantageText: stringAt(object.price_advantage_text, "$.price_advantage_text"),
     timezone: enumAt(object.timezone, ["Asia/Shanghai"] as const, "$.timezone"),
     businessHoursText: stringAt(object.business_hours_text, "$.business_hours_text"),
@@ -392,19 +501,12 @@ export function decodeVenue(value: unknown): Venue {
     latitude: numberAt(object.latitude, "$.latitude", -90, 90),
     longitude: numberAt(object.longitude, "$.longitude", -180, 180),
     parkingText: stringAt(object.parking_text, "$.parking_text"),
-    phone: stringAt(object.phone, "$.phone"),
     refundPolicySummary: stringAt(object.refund_policy_summary, "$.refund_policy_summary"),
-    images,
-    facilities: arrayAt(object.facilities, "$.facilities", 1)
-      .map((facility, index) => decodeFacility(facility, `$.facilities[${index}]`)),
     pitchTypes: arrayAt(object.pitch_types, "$.pitch_types", 1)
       .map((pitchType, index) => decodePitchType(pitchType, `$.pitch_types[${index}]`)),
     availabilityWindow: decodeWindow(object.availability_window, "$.availability_window"),
     generatedAt: rfc3339At(object.generated_at, "$.generated_at"),
   };
-  if (decoded.images.filter((image) => image.role === "COVER").length !== 1) invalid("$.images");
-  assertSorted(decoded.images, (image) => image.sortOrder, "$.images", "sort_order");
-  assertSorted(decoded.facilities, (facility) => facility.sortOrder, "$.facilities", "sort_order");
   assertSorted(decoded.pitchTypes, (pitchType) => pitchType.sortOrder, "$.pitch_types", "sort_order");
   return decoded;
 }
@@ -485,24 +587,28 @@ export function decodeVenueMap(value: unknown): VenueMapEntry[] {
 }
 
 const DETAIL_COMMON_KEYS = [
-  "id", "slug", "name", "description", "address", "latitude", "longitude", "coordinate_system",
+  "id", "slug", "name", "profile", "address", "latitude", "longitude", "coordinate_system",
   "navigation_poi_name", "navigation_latitude", "navigation_longitude", "booking_mode", "pitch_types",
-  "cover_image", "nearest_transit", "content_verified_at",
+  "nearest_transit", "content_verified_at",
 ] as const;
 
 export function decodeVenueDetail(value: unknown): VenueDetail {
   if (typeof value !== "object" || value === null || Array.isArray(value)) invalid("$");
   const mode = enumAt((value as Record<string, unknown>).booking_mode, ["ONLINE", "DIRECTORY_ONLY"] as const, "$.booking_mode");
   const variantKeys = mode === "ONLINE"
-    ? ["price_advantage_text", "timezone", "business_hours_text", "parking_text", "phone", "refund_policy_summary", "images", "facilities", "availability_window"]
-    : ["business_hours_text", "parking_text", "images", "facilities"];
+    ? ["price_advantage_text", "timezone", "business_hours_text", "parking_text", "refund_policy_summary", "availability_window"]
+    : ["business_hours_text", "parking_text"];
   const object = exactObject(value, [...DETAIL_COMMON_KEYS, ...variantKeys], "$");
   const coordinateSystem = enumAt(object.coordinate_system, ["GCJ02"] as const, "$.coordinate_system");
-  const base = directoryEntryCore(object, coordinateSystem, "$");
+  const profile = decodePublishedProfile(object.profile, "$.profile");
+  const { coverImage: _coverImage, ...base } = directoryEntryCore(
+    { ...object, cover_image: profile.coverImage }, coordinateSystem, "$",
+  );
+  void _coverImage;
   const detail = {
     ...base,
     slug: stringAt(object.slug, "$.slug"),
-    description: stringAt(object.description, "$.description", true),
+    profile,
     navigation: {
       poiName: stringAt(object.navigation_poi_name, "$.navigation_poi_name"),
       coordinate: {
@@ -521,10 +627,7 @@ export function decodeVenueDetail(value: unknown): VenueDetail {
       timezone: enumAt(object.timezone, ["Asia/Shanghai"] as const, "$.timezone"),
       businessHoursText: stringAt(object.business_hours_text, "$.business_hours_text"),
       parkingText: stringAt(object.parking_text, "$.parking_text"),
-      phone: stringAt(object.phone, "$.phone"),
       refundPolicySummary: stringAt(object.refund_policy_summary, "$.refund_policy_summary"),
-      images: arrayAt(object.images, "$.images", 1).map((image, index) => decodeImage(image, `$.images[${index}]`)),
-      facilities: arrayAt(object.facilities, "$.facilities", 1).map((facility, index) => decodeFacility(facility, `$.facilities[${index}]`)),
       availabilityWindow: decodeWindow(object.availability_window, "$.availability_window"),
     };
   }
@@ -534,8 +637,6 @@ export function decodeVenueDetail(value: unknown): VenueDetail {
     bookingMode: "DIRECTORY_ONLY",
     businessHoursText: nullableString(object.business_hours_text, "$.business_hours_text"),
     parkingText: nullableString(object.parking_text, "$.parking_text"),
-    images: arrayAt(object.images, "$.images").map((image, index) => httpsUrlAt(image, `$.images[${index}]`)),
-    facilities: arrayAt(object.facilities, "$.facilities").map((facility, index) => stringAt(facility, `$.facilities[${index}]`)),
   };
 }
 

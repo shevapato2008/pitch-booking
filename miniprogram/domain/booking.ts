@@ -29,13 +29,35 @@ export interface CreateOrderInput {
   readonly contactName: string;
 }
 
+export type OrderSummaryStatus = "PENDING_PAYMENT" | "CONFIRMED" | "EXPIRED" | "PAYMENT_EXCEPTION";
+
+export interface OrderSummaryView {
+  readonly orderId: string;
+  readonly orderNumber: string;
+  readonly status: OrderSummaryStatus;
+  readonly venue: { readonly id: string; readonly name: string };
+  readonly pitch: { readonly id: string; readonly name: string };
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly priceCents: number;
+  readonly currency: "CNY";
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly paymentConfirming: boolean;
+  readonly closingPayment: boolean;
+}
+
+export interface OrderListView {
+  readonly orders: readonly OrderSummaryView[];
+  readonly nextCursor: string | null;
+}
+
 export interface OrderVenueView {
   readonly id: string;
   readonly name: string;
   readonly address: string;
   readonly latitude: number;
   readonly longitude: number;
-  readonly customerServicePhone: string;
 }
 
 export interface OrderPitchView {

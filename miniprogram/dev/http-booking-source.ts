@@ -1,10 +1,14 @@
 import type { WeChatIdentityCapability, WeChatPhoneCapability } from "../runtime/interfaces";
 import { productionMedia, productionTransport } from "../runtime/production";
-import type { BookingDataSource } from "../services/booking";
+import type { OrderListBookingDataSource } from "../services/booking";
 import { createHttpBookingDataSource } from "../services/http-booking";
 import { createHttpPaymentDataSource } from "../services/http-payment";
 import { createHttpPageDataSource } from "../services/http-page-data";
 import { createHttpVenueDirectoryDataSource } from "../services/http-venue-directory";
+import { createHttpInventoryDataSource } from "../services/http-inventory";
+import { createHttpPitchConfigurationDataSource } from "../services/http-pitch-configuration";
+import type { InventoryDataSource } from "../services/inventory";
+import type { PitchConfigurationDataSource } from "../services/pitch-configuration";
 import type { PageDataSource } from "../services/page-data";
 import type { PaymentDataSource } from "../services/payment";
 import type { VenueDirectoryDataSource } from "../services/venue-directory";
@@ -14,11 +18,13 @@ const DEVELOPMENT_LOGIN_CODE = "dev-login-code";
 const DEVELOPMENT_PHONE_CODE = "dev-phone-code";
 
 export interface DevelopmentHttpSources {
-  readonly booking: BookingDataSource;
+  readonly booking: OrderListBookingDataSource;
   readonly payment: PaymentDataSource;
   readonly pages: PageDataSource;
   readonly venues: VenueDirectoryDataSource;
   readonly neutralPhoneTapDetail: () => unknown;
+  readonly inventory: InventoryDataSource;
+  readonly pitchConfiguration: PitchConfigurationDataSource;
 }
 
 function createMemorySessionStorage(): SessionStorage {
@@ -30,7 +36,7 @@ function createMemorySessionStorage(): SessionStorage {
   };
 }
 
-const developmentIdentity: WeChatIdentityCapability = {
+export const developmentIdentity: WeChatIdentityCapability = {
   async login() {
     return { code: DEVELOPMENT_LOGIN_CODE };
   },
@@ -62,6 +68,8 @@ export function createDevelopmentHttpSources(apiBaseUrl: string): DevelopmentHtt
     }),
     pages: createHttpPageDataSource(transport, productionMedia),
     venues: createHttpVenueDirectoryDataSource(transport),
+    inventory: createHttpInventoryDataSource({ transport, identity: developmentIdentity, sessionStore }),
+    pitchConfiguration: createHttpPitchConfigurationDataSource({ transport, identity: developmentIdentity, sessionStore }),
     neutralPhoneTapDetail: () => DEVELOPMENT_PHONE_CODE,
   };
 }

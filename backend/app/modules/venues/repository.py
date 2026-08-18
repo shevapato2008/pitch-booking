@@ -1,9 +1,17 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.models import BookingMode, Venue
+from backend.app.models import (
+    BookingMode,
+    Pitch,
+    PitchStatus,
+    Slot,
+    SlotStatus,
+    Venue,
+)
 
 
 class VenueRepository:
@@ -57,3 +65,17 @@ class VenueRepository:
             )
         )
         return self.session.scalar(statement)
+
+    def minimum_available_price(
+        self, venue_id: uuid.UUID, now: datetime
+    ) -> int | None:
+        return self.session.scalar(
+            select(func.min(Slot.price_cents))
+            .join(Pitch)
+            .where(
+                Pitch.venue_id == venue_id,
+                Pitch.status == PitchStatus.ACTIVE,
+                Slot.status == SlotStatus.AVAILABLE,
+                Slot.starts_at > now,
+            )
+        )

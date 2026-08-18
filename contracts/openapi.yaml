@@ -341,6 +341,318 @@ paths:
               examples:
                 ServiceUnavailable:
                   externalValue: './examples/error-service-unavailable.json'
+  /api/v1/venues/{venue_id}/fulfillment/orders:
+    get:
+      operationId: listVenueFulfillmentOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: service_date
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Authorized venue fulfillment orders for one Shanghai service date.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueFulfillmentOrdersResponse'}
+              examples:
+                FulfillmentOrders: {externalValue: './examples/venue-fulfillment-orders.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue or authorized fulfillment resource was not found.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '422':
+          description: Service date, limit, or cursor is invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Fulfillment service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in:
+    post:
+      operationId: checkInVenueOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Order checked in, or the same authoritative check-in replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
+              examples:
+                CheckedInOrder: {externalValue: './examples/venue-order-checked-in.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue order was not found for this authorized manager.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order state or idempotency state changed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}}}}
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '503':
+          description: Fulfillment service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete:
+    post:
+      operationId: completeVenueOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Order completed, or the same authoritative completion replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
+              examples:
+                CompletedOrder: {externalValue: './examples/venue-order-completed.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue order was not found for this authorized manager.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order state or idempotency state changed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}}}}
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '503':
+          description: Fulfillment service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund:
+    post:
+      operationId: refundVenueOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueRefundRequest'}
+      responses:
+        '200':
+          description: Refund already reached its authoritative result.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RefundAccepted'}
+              examples:
+                RefundAccepted: {externalValue: './examples/refund-accepted.json'}
+        '202':
+          description: Full refund accepted for asynchronous convergence.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RefundAccepted'}
+              examples:
+                RefundAccepted: {externalValue: './examples/refund-accepted.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue order was not found for this authorized manager.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order, refund, or idempotency state conflicts with this request.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED, REFUND_IN_PROGRESS]}}}}
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+                RefundInProgress: {externalValue: './examples/error-refund-in-progress.json'}
+        '422':
+          description: Venue refund reason is invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Refund service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/auth/wechat/session:
     post:
       operationId: createWeChatSession
@@ -594,6 +906,102 @@ paths:
                 SlotNotAvailable:
                   externalValue: './examples/error-slot-not-available.json'
   /api/v1/orders:
+    get:
+      operationId: listOrders
+      description: Lists newest-first orders owned by the current authenticated user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor returned by the previous page.
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Owner-only order summaries ordered by created_at and id descending.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+              examples:
+                Ready:
+                  externalValue: './examples/my-orders-ready.json'
+                Empty:
+                  externalValue: './examples/my-orders-empty.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '422':
+          description: Cursor or limit is invalid.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INVALID_ARGUMENT
+              examples:
+                InvalidArgument:
+                  externalValue: './examples/error-invalid-argument.json'
+        '503':
+          description: Order list service is temporarily unavailable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  externalValue: './examples/error-service-unavailable.json'
     post:
       operationId: createOrder
       security:
@@ -621,7 +1029,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderDetail'
+                $ref: '#/components/schemas/CreateOrderResponse'
               examples:
                 ExistingPendingOrder:
                   externalValue: './examples/order-pending.json'
@@ -633,7 +1041,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderDetail'
+                $ref: '#/components/schemas/CreateOrderResponse'
               examples:
                 PendingOrderCreated:
                   externalValue: './examples/order-pending.json'
@@ -742,14 +1150,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OrderDetail'
               examples:
-                PendingOrder:
-                  externalValue: './examples/order-pending.json'
                 ExpiredOrder:
                   externalValue: './examples/order-expired.json'
                 ConfirmedOrder:
                   externalValue: './examples/order-confirmed.json'
                 PaymentExceptionOrder:
                   externalValue: './examples/order-payment-exception.json'
+                CancelledOrder:
+                  externalValue: './examples/order-cancelled.json'
+                RefundPendingOrder:
+                  externalValue: './examples/order-refund-pending.json'
         '401':
           description: Business session is missing, invalid, or expired.
           headers:
@@ -790,6 +1200,110 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+        '422':
+          description: Order identifier is invalid.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INVALID_ARGUMENT
+              examples:
+                InvalidArgument:
+                  externalValue: './examples/error-invalid-argument.json'
+  /api/v1/orders/{order_id}/cancel:
+    post:
+      operationId: cancelOwnedOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Order cancelled without a pending refund.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderDetail'}
+              examples:
+                CancelledOrder: {externalValue: './examples/order-cancelled.json'}
+        '202':
+          description: Cancellation accepted while payment or refund convergence continues.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderDetail'}
+              examples:
+                RefundPendingOrder: {externalValue: './examples/order-refund-pending.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Order does not exist or is not owned by this user.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order, payment, refund, or idempotency state conflicts with cancellation.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED, PAYMENT_RESULT_PENDING, REFUND_IN_PROGRESS]
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+                PaymentResultPending: {externalValue: './examples/error-payment-result-pending.json'}
+                RefundInProgress: {externalValue: './examples/error-refund-in-progress.json'}
+        '503':
+          description: Order cancellation service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/orders/{order_id}/pay:
     post:
       operationId: createPayment
@@ -917,7 +1431,7 @@ paths:
                 IdempotencyKeyReused:
                   externalValue: './examples/error-idempotency-key-reused.json'
         '503':
-          description: The payment provider definitively rejected prepay creation.
+          description: The payment provider rejected this request or is unavailable.
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
@@ -932,10 +1446,12 @@ paths:
                         type: object
                         properties:
                           code:
-                            const: PAYMENT_CREATE_FAILED
+                            enum: [PAYMENT_CREATE_FAILED, PAYMENT_PROVIDER_UNAVAILABLE]
               examples:
                 PaymentCreateFailed:
                   externalValue: './examples/error-payment-create-failed.json'
+                PaymentProviderUnavailable:
+                  externalValue: './examples/error-payment-provider-unavailable.json'
   /api/v1/orders/{order_id}/payments/{payment_id}/reconcile:
     post:
       operationId: reconcilePayment
@@ -1019,12 +1535,1185 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/payments/wechat/notify:
+    post:
+      operationId: receiveWeChatPaymentNotification
+      security: []
+      x-wechatpay-raw-body-verification: required-before-json-parse
+      parameters:
+        - {name: Wechatpay-Timestamp, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Nonce, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Signature, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Serial, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeChatNotificationEnvelope'}
+      responses:
+        '204':
+          description: Notification durably converged; a valid duplicate returns the same bodyless response.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+        '400':
+          description: Notification headers, signature, envelope, or ciphertext are invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: WECHAT_NOTIFICATION_INVALID}}}}
+              examples:
+                WeChatNotificationInvalid: {externalValue: './examples/error-wechat-notification-invalid.json'}
+        '503':
+          description: Durable notification convergence cannot be confirmed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/refunds/wechat/notify:
+    post:
+      operationId: receiveWeChatRefundNotification
+      security: []
+      x-wechatpay-raw-body-verification: required-before-json-parse
+      parameters:
+        - {name: Wechatpay-Timestamp, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Nonce, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Signature, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Serial, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeChatNotificationEnvelope'}
+      responses:
+        '204':
+          description: Notification durably converged; a valid duplicate returns the same bodyless response.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+        '400':
+          description: Notification headers, signature, envelope, or ciphertext are invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: WECHAT_NOTIFICATION_INVALID}}}}
+              examples:
+                WeChatNotificationInvalid: {externalValue: './examples/error-wechat-notification-invalid.json'}
+        '503':
+          description: Durable notification convergence cannot be confirmed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/candidates:
+    get:
+      operationId: searchVenueOnboardingCandidates
+      description: Searches only listed and active venues that are safe to expose to the authenticated applicant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: {type: string, minLength: 2, maxLength: 80}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 20, default: 20}
+      responses:
+        '200':
+          description: Cursor page of listed and active claim candidates.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingCandidates'}
+              examples:
+                Candidates: {externalValue: './examples/venue-onboarding-candidates.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '422':
+          description: Search query or cursor is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: INVALID_ARGUMENT}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/evidence/upload-intents:
+    post:
+      operationId: createVenueOnboardingEvidenceUploadIntent
+      description: >-
+        Creates an owner-bound evidence reservation and a short-lived private-object POST policy.
+        The server selects the hard MIME and byte constraints from the evidence kind.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateVenueOnboardingUploadIntent'}
+      responses:
+        '200':
+          description: Idempotent replay of the authoritative upload intent.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingUploadIntent'}
+              examples:
+                UploadIntent: {externalValue: './examples/venue-onboarding-upload-intent.json'}
+        '201':
+          description: Owner-bound upload intent created.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingUploadIntent'}
+              examples:
+                UploadIntent: {externalValue: './examples/venue-onboarding-upload-intent.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '409':
+          description: The idempotency key was reused with a different request.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: IDEMPOTENCY_KEY_REUSED}
+              examples:
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Evidence kind is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, ONBOARDING_EVIDENCE_INVALID]}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/evidence/{evidence_id}/complete:
+    post:
+      operationId: completeVenueOnboardingEvidence
+      description: >-
+        The server streams the owner-bound private object, computes authoritative size and SHA-256 under the
+        evidence-kind hard limit, and verifies actual JPEG or PNG decode or the PDF signature. Client metadata is
+        non-authoritative. The first completion and an idempotent replay both return 200; reusing the same key for
+        a different request returns 409. The closed response never exposes a private object key or reviewer-only material.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Evidence verified and closed, or the authoritative closed result replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingEvidenceClosed'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404':
+          description: Owner-bound evidence reservation was not found.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: ONBOARDING_APPLICATION_NOT_FOUND}
+        '409':
+          description: Evidence state changed or the idempotency key was reused with a different request.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Private evidence bytes fail the authoritative kind, size, digest, decode, or signature checks.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/claims:
+    post:
+      operationId: submitVenueOnboardingClaim
+      description: >-
+        Submits a claim after server-side verified-phone snapshotting. The first submission returns 201; an
+        idempotent replay returns 200; a same-key payload mismatch or conflicting application state returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitVenueClaim'}
+      responses:
+        '200':
+          description: Authoritative claim submission replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                ClaimSubmitted: {externalValue: './examples/venue-claim-submitted.json'}
+        '201':
+          description: Claim application submitted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                ClaimSubmitted: {externalValue: './examples/venue-claim-submitted.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '409':
+          description: Application state, duplicate state, or idempotency authority conflicts.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ONBOARDING_APPLICATION_EXISTS, ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Verified phone or exactly one completed item for each claim evidence kind is missing or invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                OnboardingEvidenceRequired: {externalValue: './examples/error-onboarding-evidence-required.json'}
+                PhoneAuthRequired: {externalValue: './examples/error-phone-auth-required.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/venues:
+    post:
+      operationId: submitVenueOnboardingVenue
+      description: >-
+        Submits an unlisted venue after server-side verified-phone snapshotting. The first submission returns 201;
+        an idempotent replay returns 200; a same-key payload mismatch, duplicate, or conflicting state returns 409.
+        A listed and active duplicate may return a safe claim candidate, while an unlisted match returns only a
+        generic conflict without identity or location.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitVenueCreate'}
+      responses:
+        '200':
+          description: Authoritative venue-create submission replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                VenueSubmitted: {externalValue: './examples/venue-create-submitted.json'}
+        '201':
+          description: Venue-create application submitted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                VenueSubmitted: {externalValue: './examples/venue-create-submitted.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '409':
+          description: Possible duplicate, application state, duplicate state, or idempotency authority conflicts.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PossibleDuplicateVenueError'
+                  - $ref: '#/components/schemas/VenueOnboardingSubmissionConflictError'
+              examples:
+                PossibleDuplicateVenue: {externalValue: './examples/error-possible-duplicate-venue.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Verified phone or exactly one completed item for each create evidence kind is missing or invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                OnboardingEvidenceRequired: {externalValue: './examples/error-onboarding-evidence-required.json'}
+                PhoneAuthRequired: {externalValue: './examples/error-phone-auth-required.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venue-onboarding/applications:
+    get:
+      operationId: listVenueOnboardingApplications
+      description: Lists only applications owned by the current applicant; reviewer-only material is never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 20, default: 20}
+      responses:
+        '200':
+          description: Newest-first cursor page for the current applicant.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplications'}
+              examples:
+                Applications: {externalValue: './examples/venue-onboarding-applications.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '422':
+          description: Cursor or limit is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: INVALID_ARGUMENT}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Service is temporarily unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {const: SERVICE_UNAVAILABLE}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/admin/venues:
+    get:
+      operationId: listManagedVenues
+      description: Lists active venues the authenticated user can currently manage.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active managed venues ordered by normalized name and venue ID.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagedVenuesResponse'}
+              examples:
+                ManagedVenues:
+                  externalValue: './examples/managed-venues.json'
+        '401': {$ref: '#/components/responses/AuthRequired'}
+  /api/v1/admin/venues/{venue_id}/profile:
+    get:
+      operationId: getAdminVenueProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileSnapshot'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+    put:
+      operationId: saveAdminVenueProfile
+      description: Atomically saves facilities and the description draft after checking both authoritative versions.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SaveVenueProfile'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/upload-intents:
+    post:
+      operationId: createVenueProfileImageUploadIntent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateVenueProfileUploadIntent'}
+      responses:
+        '201': {$ref: '#/components/responses/VenueProfileUploadIntentCreated'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete:
+    post:
+      operationId: completeVenueProfileImageUpload
+      description: Verifies the private upload and starts moderation using a compressed review image.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ImageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CompleteVenueProfileImageUpload'}
+      responses:
+        '202': {$ref: '#/components/responses/VenueProfileReviewStarted'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/{image_id}:
+    delete:
+      operationId: deleteVenueProfileImage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ImageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueProfileRevisionMutation'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/order:
+    put:
+      operationId: orderVenueProfileImages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderVenueProfileImages'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover:
+    put:
+      operationId: setVenueProfileImageCover
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ImageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueProfileRevisionMutation'}
+      responses:
+        '200': {$ref: '#/components/responses/VenueProfileMutationApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry:
+    post:
+      operationId: retryVenueProfileModeration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/ModerationItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueProfileRevisionMutation'}
+      responses:
+        '202': {$ref: '#/components/responses/VenueProfileReviewStarted'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/VenueProfileForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/moderation/venue-profiles/pending:
+    get:
+      operationId: listPendingVenueProfileModeration
+      description: Restricted to configured platform moderation reviewers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200': {$ref: '#/components/responses/ManualVenueProfileReviewQueue'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/ManualModerationForbidden'}
+  /api/v1/admin/moderation/venue-profiles/{item_id}/decisions:
+    post:
+      operationId: decidePendingVenueProfileModeration
+      description: Applies PASS or one fixed rejection reason only if this remains the current item version.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModerationItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ManualModerationDecision'}
+      responses:
+        '204': {$ref: '#/components/responses/ManualModerationDecisionApplied'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '403': {$ref: '#/components/responses/ManualModerationForbidden'}
+        '404': {$ref: '#/components/responses/VenueProfileNotFound'}
+        '409': {$ref: '#/components/responses/VenueProfileVersionConflict'}
+        '422': {$ref: '#/components/responses/VenueProfileValidationFailed'}
+  /api/v1/admin/venues/{venue_id}/pitch-configuration:
+    get:
+      operationId: getAdminVenuePitchConfiguration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authoritative physical pitch configuration and capability snapshot.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PitchConfiguration'}
+              examples:
+                Ready:
+                  externalValue: './examples/pitch-configuration-ready.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    put:
+      operationId: saveAdminVenuePitchConfiguration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 16, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SavePitchConfiguration'}
+      responses:
+        '200':
+          description: Atomic change set applied or replayed with the full authoritative result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PitchConfiguration'}
+              examples:
+                Saved:
+                  externalValue: './examples/pitch-configuration-saved.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403':
+          description: Inventory permission required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InventoryForbidden: {externalValue: './examples/error-inventory-forbidden.json'}
+        '404':
+          description: Venue or pitch not found.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                PitchNotFound: {externalValue: './examples/error-pitch-not-found.json'}
+        '409':
+          description: Version, idempotency, name, history, or lifecycle conflict.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ConfigurationChanged: {externalValue: './examples/error-configuration-changed.json'}
+                PitchNameConflict: {externalValue: './examples/error-pitch-name-conflict.json'}
+                PitchFormatImmutable: {externalValue: './examples/error-pitch-format-immutable.json'}
+                PitchHasBusinessHistory: {externalValue: './examples/error-pitch-has-business-history.json'}
+                PitchDeactivateBlocked: {externalValue: './examples/error-pitch-deactivate-blocked.json'}
+                LastActivePitchRequired: {externalValue: './examples/error-last-active-pitch-required.json'}
+                RequestInProgress: {externalValue: './examples/error-request-in-progress.json'}
+        '422':
+          description: Change set invalid.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InvalidPlayersPerSide: {externalValue: './examples/error-invalid-players-per-side.json'}
+                InvalidCustomName: {externalValue: './examples/error-invalid-custom-name.json'}
+                DuplicatePitchChange: {externalValue: './examples/error-duplicate-pitch-change.json'}
+  /api/v1/admin/venues/{venue_id}/inventory:
+    get:
+      operationId: getAdminVenueInventory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: local_date
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: pitch_id
+          in: query
+          required: false
+          schema:
+            type: [string, 'null']
+            format: uuid
+      responses:
+        '200':
+          description: Authorized venue, ordered pitches, and selected-pitch inventory.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInventory'}
+              examples:
+                Ready:
+                  externalValue: './examples/admin-inventory-ready.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue or pitch not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: Date or query invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /api/v1/admin/venues/{venue_id}/inventory/slots:
+    post:
+      operationId: createAdminInventorySlot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 16, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAdminInventorySlot'}
+      responses:
+        '201':
+          description: Available future slot created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInventorySlot'}
+              examples:
+                Created:
+                  externalValue: './examples/admin-inventory-slot.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Venue or pitch not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409':
+          description: Idempotency or time conflict.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                SlotTimeConflict: {externalValue: './examples/error-slot-time-conflict.json'}
+        '422': {description: Slot input invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}:
+    put:
+      operationId: updateAdminInventorySlot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: venue_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slot_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAdminInventorySlot'}
+      responses:
+        '200':
+          description: Slot price and availability state updated.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminInventorySlot'}
+              examples:
+                Updated:
+                  externalValue: './examples/admin-inventory-slot.json'
+        '401': {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Inventory permission required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404':
+          description: Venue or slot not found.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                SlotNotFound: {externalValue: './examples/error-slot-not-found.json'}
+        '409':
+          description: Version conflict or immutable slot.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InventoryVersionConflict: {externalValue: './examples/error-inventory-version-conflict.json'}
+                InventorySlotReadOnly: {externalValue: './examples/error-inventory-slot-read-only.json'}
+        '422': {description: Slot update invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /platform-admin/api/v1/auth/session:
+    post:
+      operationId: createPlatformSession
+      security: []
+      parameters:
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformSessionExchange'}
+      responses:
+        '200':
+          description: Platform staff session created.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformSession'}
+              examples:
+                PlatformSession: {externalValue: './examples/platform-session.json'}
+        '401': {description: Staff access token is invalid, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_INVALID}}}}}]}}}}
+        '403': {description: Same-origin validation failed, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_CSRF_INVALID}}}}}]}}}}
+        '422': {description: Login input is invalid, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}}]}}}}
+        '503': {description: Platform authentication is unavailable, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}}]}}}}
+    get:
+      operationId: getPlatformSession
+      security:
+        - platformSession: []
+      responses:
+        '200':
+          description: Current platform staff session.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformSession'}
+              examples:
+                PlatformSession: {externalValue: './examples/platform-session.json'}
+        '401': {description: Active platform staff session required, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_REQUIRED}}}}}]}}}}
+        '503': {description: Platform authentication is unavailable, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}}]}}}}
+    delete:
+      operationId: deletePlatformSession
+      security:
+        - platformSession: []
+      parameters:
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      responses:
+        '204': {description: Platform staff session revoked.}
+        '401': {description: Active platform staff session required, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_REQUIRED}}}}}]}}}}
+        '403': {description: Same-origin or CSRF validation failed, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: PLATFORM_CSRF_INVALID}}}}}]}}}}
+        '503': {description: Platform authentication is unavailable, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ErrorEnvelope'}, {type: object, properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}}]}}}}
+  /platform-admin/api/v1/onboarding/applications:
+    get:
+      operationId: listPlatformOnboardingApplications
+      description: Newest-first platform review queue. Private evidence storage fields and phone ciphertext are never returned.
+      security:
+        - platformSession: []
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: {type: string, enum: [CLAIM, CREATE]}
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: [string, 'null']}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: Filtered review queue.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingQueue'}
+              examples:
+                Queue: {externalValue: './examples/platform-onboarding-queue.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/onboarding/applications/{application_id}:
+    get:
+      operationId: getPlatformOnboardingApplication
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/OnboardingApplicationId'
+      responses:
+        '200':
+          description: Reviewer detail with masked phone and closed evidence metadata.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingApplicationDetail'}
+              examples:
+                Detail: {externalValue: './examples/platform-onboarding-detail.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '404': {$ref: '#/components/responses/PlatformOnboardingNotFound'}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/onboarding/evidence/{evidence_id}/download:
+    get:
+      operationId: createPlatformOnboardingEvidenceDownload
+      description: Issues a short-lived attachment-oriented GET URL for completed evidence attached to an onboarding application.
+      security:
+        - platformSession: []
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Short-lived private evidence download.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingEvidenceDownload'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '404': {$ref: '#/components/responses/PlatformOnboardingNotFound'}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/onboarding/applications/{application_id}/decisions:
+    post:
+      operationId: decidePlatformOnboardingApplication
+      description: >-
+        Atomically approves or rejects one application. An equivalent outcome and trimmed reason replays the existing
+        decision; any different decision against a decided application returns a state conflict.
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/OnboardingApplicationId'
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformOnboardingDecisionRequest'}
+      responses:
+        '200':
+          description: Decision applied or equivalently replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformOnboardingDecision'}
+              examples:
+                Decision: {externalValue: './examples/platform-onboarding-decision.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformReviewForbidden'}
+        '404': {$ref: '#/components/responses/PlatformOnboardingNotFound'}
+        '409':
+          description: Application already has a different immutable decision or a duplicate venue blocks approval.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ONBOARDING_APPLICATION_STATE_CHANGED, POSSIBLE_DUPLICATE_VENUE]}
+        '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: opaque
+    platformSession:
+      type: apiKey
+      in: cookie
+      name: pitch_platform_session
   headers:
     RequestId:
       description: Identifier used to trace the request.
@@ -1032,7 +2721,1021 @@ components:
       schema:
         type: string
         minLength: 1
+  parameters:
+    VenueId:
+      name: venue_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ImageId:
+      name: image_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ModerationItemId:
+      name: item_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Reuse the same key to recover the authoritative result after an unknown outcome.
+      schema: {type: string, minLength: 16, maxLength: 128}
+    OnboardingApplicationId:
+      name: application_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  responses:
+    PlatformAuthRequired:
+      description: Active platform staff session required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_REQUIRED}}}}
+    PlatformReviewForbidden:
+      description: Platform onboarding reviewer role or valid mutation protection required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {enum: [PLATFORM_ROLE_REQUIRED, PLATFORM_CSRF_INVALID]}}}}
+    PlatformOnboardingNotFound:
+      description: Application or attached evidence not found.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: ONBOARDING_APPLICATION_NOT_FOUND}}}}
+    PlatformOnboardingInvalid:
+      description: Filter, cursor, path, or decision input is invalid.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+    PlatformOnboardingUnavailable:
+      description: Platform onboarding review service is unavailable.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+    AuthRequired:
+      description: Authentication required.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    VenueProfileForbidden:
+      description: Venue profile management permission required.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    ManualModerationForbidden:
+      description: Configured platform moderation reviewer permission required.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    VenueProfileNotFound:
+      description: Venue, image, revision, or moderation item not found.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    VenueProfileSnapshot:
+      description: Published authority and the current private draft with fixed catalogs.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminVenueProfile'}
+          examples:
+            Ready: {externalValue: './examples/venue-profile-admin-ready.json'}
+            Reviewing: {externalValue: './examples/venue-profile-reviewing.json'}
+            Rejected: {externalValue: './examples/venue-profile-rejected.json'}
+    VenueProfileMutationApplied:
+      description: Mutation applied or replayed with the authoritative profile snapshot.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminVenueProfile'}
+          examples:
+            Ready: {externalValue: './examples/venue-profile-admin-ready.json'}
+    VenueProfileUploadIntentCreated:
+      description: Private direct-upload reservation created; the URL is short-lived and contains no credentials.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/VenueProfileUploadIntent'}
+          examples:
+            UploadIntent: {externalValue: './examples/venue-profile-upload-intent.json'}
+    VenueProfileReviewStarted:
+      description: Upload completion or moderation retry accepted with the current reviewing snapshot.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminVenueProfile'}
+          examples:
+            Reviewing: {externalValue: './examples/venue-profile-reviewing.json'}
+    ManualVenueProfileReviewQueue:
+      description: Current PENDING_MANUAL items visible only to configured reviewers.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManualReviewQueue'}
+          examples:
+            Pending: {externalValue: './examples/manual-review-queue.json'}
+    ManualModerationDecisionApplied:
+      description: Decision applied or idempotently replayed; no response body.
+    VenueProfileVersionConflict:
+      description: Facility, revision, item, or idempotency authority changed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          examples:
+            VenueProfileVersionConflict: {externalValue: './examples/error-venue-profile-version-conflict.json'}
+    VenueProfileValidationFailed:
+      description: Description, facility, image, MIME type, size, order, cover, or decision is invalid.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          examples:
+            VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    PlatformOnboardingVenueSummary:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address, district_name]
+      properties:
+        venue_id: {type: [string, 'null'], format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+    PlatformOnboardingQueueItem:
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, contact_name, venue, submitted_at, reviewed_at]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        contact_name: {type: string, minLength: 1, maxLength: 40}
+        venue: {$ref: '#/components/schemas/PlatformOnboardingVenueSummary'}
+        submitted_at: {type: string, format: date-time}
+        reviewed_at: {type: [string, 'null'], format: date-time}
+    PlatformOnboardingQueue:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformOnboardingQueueItem'}
+        next_cursor: {type: [string, 'null']}
+    PlatformOnboardingApplicant:
+      type: object
+      additionalProperties: false
+      required: [contact_name, masked_phone]
+      properties:
+        contact_name: {type: string, minLength: 1, maxLength: 40}
+        masked_phone: {type: string, pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'}
+    PlatformOnboardingTargetVenue:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address, district_code, district_name, latitude, longitude]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_code: {type: string, pattern: '^[0-9]{6}$'}
+        district_name: {type: string, minLength: 1}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    PlatformOnboardingProposedVenue:
+      type: object
+      additionalProperties: false
+      required: [name, address, district_code, district_name, latitude, longitude]
+      properties:
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_code: {type: string, pattern: '^[0-9]{6}$'}
+        district_name: {type: string, minLength: 1}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    PlatformOnboardingDuplicateCandidate:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address, district_name, is_listed, exact_address_match, distance_meters]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+        is_listed: {type: boolean}
+        exact_address_match: {type: boolean}
+        distance_meters: {type: integer, minimum: 0}
+    PlatformOnboardingEvidence:
+      description: Reviewer-safe evidence metadata without private object key or content digest.
+      type: object
+      additionalProperties: false
+      required: [evidence_id, kind, content_type, byte_size, created_at]
+      properties:
+        evidence_id: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/VenueOnboardingEvidenceKind'}
+        content_type: {type: string, enum: [image/jpeg, image/png, application/pdf]}
+        byte_size: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+    PlatformOnboardingDecision:
+      type: object
+      additionalProperties: false
+      required: [application_id, outcome, reason, reviewer_principal_id, reviewed_at, approved_venue_id]
+      properties:
+        application_id: {type: string, format: uuid}
+        outcome: {type: string, enum: [APPROVED, REJECTED]}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+        reviewer_principal_id: {type: string, minLength: 1, maxLength: 128}
+        reviewed_at: {type: string, format: date-time}
+        approved_venue_id: {type: [string, 'null'], format: uuid}
+    PlatformOnboardingDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, reason]
+      properties:
+        outcome: {type: string, enum: [APPROVED, REJECTED]}
+        reason: {type: string, minLength: 1, maxLength: 1000, pattern: '.*\S.*'}
+    PlatformOnboardingApplicationDetail:
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, submitted_at, applicant, target_venue, proposed_venue, duplicate_candidates, evidence, decision]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        submitted_at: {type: string, format: date-time}
+        applicant: {$ref: '#/components/schemas/PlatformOnboardingApplicant'}
+        target_venue:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformOnboardingTargetVenue'}
+            - {type: 'null'}
+        proposed_venue:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformOnboardingProposedVenue'}
+            - {type: 'null'}
+        duplicate_candidates:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformOnboardingDuplicateCandidate'}
+        evidence:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformOnboardingEvidence'}
+        decision:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformOnboardingDecision'}
+            - {type: 'null'}
+    PlatformOnboardingEvidenceDownload:
+      type: object
+      additionalProperties: false
+      required: [download_url, expires_at]
+      properties:
+        download_url: {type: string, format: uri, pattern: '^https://'}
+        expires_at: {type: string, format: date-time}
+    PlatformSessionExchange:
+      type: object
+      additionalProperties: false
+      required: [access_token]
+      properties:
+        access_token:
+          type: string
+          minLength: 32
+          maxLength: 256
+          writeOnly: true
+    PlatformSession:
+      type: object
+      additionalProperties: false
+      required: [principal_id, display_name, roles, csrf_token, expires_at]
+      properties:
+        principal_id: {type: string, minLength: 1, maxLength: 128}
+        display_name: {type: string, minLength: 1, maxLength: 120}
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [PLATFORM_ADMIN, ONBOARDING_REVIEWER]
+        csrf_token: {type: string, pattern: '^[0-9a-f]{64}$'}
+        expires_at: {type: string, format: date-time}
+    VenueOnboardingCandidate:
+      description: Safe claim candidate drawn only from listed and active public venues.
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, district_name, address]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+    VenueOnboardingCandidates:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/VenueOnboardingCandidate'}
+        next_cursor: {type: [string, 'null']}
+    VenueOnboardingEvidenceKind:
+      type: string
+      enum: [BUSINESS_LICENSE, MANAGEMENT_AUTHORIZATION, VENUE_EXTERIOR, VENUE_INTERIOR]
+    VenueOnboardingDocumentEvidenceConstraints:
+      type: object
+      additionalProperties: false
+      required: [kind, accepted_mime_types, maximum_bytes]
+      properties:
+        kind: {type: string, enum: [BUSINESS_LICENSE, MANAGEMENT_AUTHORIZATION]}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png, application/pdf]
+        maximum_bytes: {type: integer, const: 10485760}
+    VenueOnboardingPhotoEvidenceConstraints:
+      type: object
+      additionalProperties: false
+      required: [kind, accepted_mime_types, maximum_bytes]
+      properties:
+        kind: {type: string, enum: [VENUE_EXTERIOR, VENUE_INTERIOR]}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png]
+        maximum_bytes: {type: integer, const: 15728640}
+    VenueOnboardingEvidenceConstraints:
+      oneOf:
+        - $ref: '#/components/schemas/VenueOnboardingDocumentEvidenceConstraints'
+        - $ref: '#/components/schemas/VenueOnboardingPhotoEvidenceConstraints'
+      discriminator:
+        propertyName: kind
+        mapping:
+          BUSINESS_LICENSE: '#/components/schemas/VenueOnboardingDocumentEvidenceConstraints'
+          MANAGEMENT_AUTHORIZATION: '#/components/schemas/VenueOnboardingDocumentEvidenceConstraints'
+          VENUE_EXTERIOR: '#/components/schemas/VenueOnboardingPhotoEvidenceConstraints'
+          VENUE_INTERIOR: '#/components/schemas/VenueOnboardingPhotoEvidenceConstraints'
+    CreateVenueOnboardingUploadIntent:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: {$ref: '#/components/schemas/VenueOnboardingEvidenceKind'}
+    VenueOnboardingPostPolicy:
+      description: Short-lived form POST policy for the reserved private object; fields are opaque to the client.
+      type: object
+      additionalProperties: false
+      required: [url, method, fields, expires_at]
+      properties:
+        url: {type: string, format: uri, pattern: '^https://'}
+        method: {type: string, const: POST}
+        fields:
+          type: object
+          minProperties: 1
+          additionalProperties: {type: string, minLength: 1}
+        expires_at: {type: string, format: date-time}
+    VenueOnboardingUploadIntent:
+      description: Owner-bound evidence ID with a short-lived POST policy and server-selected hard constraints.
+      type: object
+      additionalProperties: false
+      required: [evidence_id, status, post_policy, constraints]
+      properties:
+        evidence_id: {type: string, format: uuid}
+        status: {type: string, const: PENDING_UPLOAD}
+        post_policy: {$ref: '#/components/schemas/VenueOnboardingPostPolicy'}
+        constraints: {$ref: '#/components/schemas/VenueOnboardingEvidenceConstraints'}
+    VenueOnboardingEvidenceClosed:
+      description: Closed applicant response; never contains a private object key, digest, or reviewer-only material.
+      type: object
+      additionalProperties: false
+      required: [evidence_id, status]
+      properties:
+        evidence_id: {type: string, format: uuid}
+        status: {type: string, const: COMPLETED}
+    VenueClaimEvidence:
+      description: Exactly one owner-bound completed evidence ID for every claim-required kind.
+      type: object
+      additionalProperties: false
+      required: [MANAGEMENT_AUTHORIZATION, VENUE_EXTERIOR]
+      properties:
+        MANAGEMENT_AUTHORIZATION: {type: string, format: uuid}
+        VENUE_EXTERIOR: {type: string, format: uuid}
+    VenueCreateEvidence:
+      description: Exactly one owner-bound completed evidence ID for every create-required kind.
+      type: object
+      additionalProperties: false
+      required: [BUSINESS_LICENSE, MANAGEMENT_AUTHORIZATION, VENUE_EXTERIOR, VENUE_INTERIOR]
+      properties:
+        BUSINESS_LICENSE: {type: string, format: uuid}
+        MANAGEMENT_AUTHORIZATION: {type: string, format: uuid}
+        VENUE_EXTERIOR: {type: string, format: uuid}
+        VENUE_INTERIOR: {type: string, format: uuid}
+    SubmitVenueClaim:
+      description: >-
+        Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
+      type: object
+      additionalProperties: false
+      required: [venue_id, contact_name, evidence]
+      properties:
+        venue_id: {type: string, format: uuid}
+        contact_name: {type: string, minLength: 1, maxLength: 40}
+        evidence: {$ref: '#/components/schemas/VenueClaimEvidence'}
+    SubmitVenueCreate:
+      description: >-
+        Requires the authenticated user's verified phone; the server snapshots it and the client cannot submit a phone string.
+      type: object
+      additionalProperties: false
+      required: [name, address, district_code, district_name, latitude, longitude, contact_name, evidence]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 120}
+        address: {type: string, minLength: 1, maxLength: 300}
+        district_code: {type: string, pattern: '^[0-9]{6}$'}
+        district_name: {type: string, minLength: 1, maxLength: 120}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+        contact_name: {type: string, minLength: 1, maxLength: 40}
+        evidence: {$ref: '#/components/schemas/VenueCreateEvidence'}
+    VenueOnboardingApplicationVenue:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, address]
+      properties:
+        venue_id: {type: [string, 'null'], format: uuid}
+        name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+    VenueOnboardingApplication:
+      description: Applicant-safe projection without phone snapshots, private object keys, or reviewer-only material.
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, venue, submitted_at, updated_at]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        venue: {$ref: '#/components/schemas/VenueOnboardingApplicationVenue'}
+        submitted_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    VenueOnboardingApplicantApplication:
+      description: Applicant-safe list projection without phone snapshots, private object keys, reviewer identity, or approval notes.
+      type: object
+      additionalProperties: false
+      required: [application_id, kind, status, rejection_reason, venue, submitted_at, updated_at]
+      properties:
+        application_id: {type: string, format: uuid}
+        kind: {type: string, enum: [CLAIM, CREATE]}
+        status: {type: string, enum: [SUBMITTED, APPROVED, REJECTED]}
+        rejection_reason:
+          description: Applicant-visible reason populated only for a rejected application.
+          type: [string, 'null']
+          minLength: 1
+        venue: {$ref: '#/components/schemas/VenueOnboardingApplicationVenue'}
+        submitted_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    VenueOnboardingApplications:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/VenueOnboardingApplicantApplication'}
+        next_cursor: {type: [string, 'null']}
+    PossibleDuplicateVenueDetails:
+      description: >-
+        A listed and active public match may include claim_candidate. An unlisted match must use an empty object so
+        its identity and location remain undisclosed.
+      type: object
+      additionalProperties: false
+      properties:
+        claim_candidate: {$ref: '#/components/schemas/VenueOnboardingCandidate'}
+    PossibleDuplicateVenueError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code, details]
+              properties:
+                code: {const: POSSIBLE_DUPLICATE_VENUE}
+                details: {$ref: '#/components/schemas/PossibleDuplicateVenueDetails'}
+    VenueOnboardingSubmissionConflictError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code]
+              properties:
+                code: {enum: [ONBOARDING_APPLICATION_EXISTS, ONBOARDING_APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+    ManagedVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, district_name, address]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        district_name: {type: string, minLength: 1}
+        address: {type: string, minLength: 1}
+    ManagedVenuesResponse:
+      type: object
+      additionalProperties: false
+      required: [venues]
+      properties:
+        venues:
+          type: array
+          items: {$ref: '#/components/schemas/ManagedVenue'}
+    FacilityCode:
+      type: string
+      enum:
+        - PARKING
+        - TOILET
+        - CHANGING_ROOM
+        - SHOWER
+        - LOCKERS
+        - DRINKING_WATER
+        - BEVERAGE_SALES
+        - EQUIPMENT_RENTAL
+        - REST_AREA
+        - FIRST_AID
+        - AED
+        - INDOOR
+        - OUTDOOR
+        - COVERED
+        - LIGHTING
+        - ARTIFICIAL_TURF
+        - NATURAL_GRASS
+    ModerationReasonCode:
+      type: string
+      enum:
+        - CONTACT_INFO
+        - QR_OR_PAYMENT_CODE
+        - OFF_PLATFORM_TRADE
+        - EXTERNAL_LINK
+        - UNRELATED_CONTENT
+        - IMAGE_NOT_VENUE
+        - IMAGE_QUALITY
+        - PERSONAL_PRIVACY
+        - UNSAFE_CONTENT
+    VenueProfileItemState:
+      type: string
+      enum: [UPLOADING, REVIEWING, APPROVED, REJECTED, PENDING_MANUAL]
+    VenueProfileRevisionSummaryState:
+      type: string
+      enum: [READY, REVIEWING, REJECTED, PENDING_MANUAL, PUBLISHED]
+    VenueProfileMimeType:
+      type: string
+      enum: [image/jpeg, image/png, image/webp]
+    VenueProfileCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [code, label]
+      properties:
+        code: {$ref: '#/components/schemas/FacilityCode'}
+        label: {type: string, minLength: 1}
+    VenueProfileReasonCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [code, label]
+      properties:
+        code: {$ref: '#/components/schemas/ModerationReasonCode'}
+        label: {type: string, minLength: 1}
+    LiveVenuePrice:
+      type: object
+      additionalProperties: false
+      required: [available, from_price_cents, currency, unit]
+      properties:
+        available: {type: boolean}
+        from_price_cents: {type: [integer, 'null'], minimum: 0}
+        currency: {type: string, const: CNY}
+        unit: {type: string, const: HOUR}
+    VenueAvailabilityTarget:
+      type: object
+      additionalProperties: false
+      required: [enabled, label, path]
+      properties:
+        enabled: {type: boolean}
+        label: {type: string, const: 查看可订时段}
+        path:
+          type: [string, 'null']
+          pattern: '^/api/v1/venues/[0-9a-f-]+/availability$'
+    PublishedVenueProfile:
+      type: object
+      additionalProperties: false
+      required: [publication_state, published_version, description, cover_image, images, facilities, pitch_sizes, live_price, availability_target]
+      properties:
+        publication_state: {type: string, const: PUBLISHED}
+        published_version: {type: integer, minimum: 1}
+        description: {type: string, maxLength: 300}
+        cover_image: {type: [string, 'null'], format: uri, pattern: '^https://'}
+        images:
+          type: array
+          minItems: 0
+          maxItems: 8
+          items: {$ref: '#/components/schemas/VenueImage'}
+        facilities:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/Facility'}
+        pitch_sizes:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/PublicPitchTypeCode'}
+        live_price: {$ref: '#/components/schemas/LiveVenuePrice'}
+        availability_target: {$ref: '#/components/schemas/VenueAvailabilityTarget'}
+    AdminVenueProfileVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        timezone: {type: string, const: Asia/Shanghai}
+    AdminVenueProfileImage:
+      type: object
+      additionalProperties: false
+      required: [id, alt, role, sort_order, state, reason_code, item_version]
+      properties:
+        id: {type: string, format: uuid}
+        alt: {type: string, minLength: 1}
+        role: {type: string, enum: [COVER, GALLERY]}
+        sort_order: {type: integer, minimum: 0, maximum: 7}
+        state: {$ref: '#/components/schemas/VenueProfileItemState'}
+        reason_code:
+          oneOf:
+            - {$ref: '#/components/schemas/ModerationReasonCode'}
+            - {type: 'null'}
+        item_version: {type: integer, minimum: 1}
+    CurrentVenueProfileRevision:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision_version
+        - base_published_version
+        - summary_state
+        - description
+        - description_state
+        - description_reason_code
+        - facilities
+        - images
+        - updated_at
+      properties:
+        id: {type: string, format: uuid}
+        revision_version: {type: integer, minimum: 1}
+        base_published_version: {type: integer, minimum: 1}
+        summary_state: {$ref: '#/components/schemas/VenueProfileRevisionSummaryState'}
+        description: {type: string, maxLength: 300}
+        description_state: {$ref: '#/components/schemas/VenueProfileItemState'}
+        description_reason_code:
+          oneOf:
+            - {$ref: '#/components/schemas/ModerationReasonCode'}
+            - {type: 'null'}
+        facilities:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/FacilityCode'}
+        images:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/AdminVenueProfileImage'}
+        updated_at: {type: string, format: date-time}
+    AdminVenueProfile:
+      description: >-
+        Provider boundary: image moderation requires a compressed image as real vision input plus a short policy prompt.
+        The initial configurable default is DASHSCOPE_MODERATION_MODEL=qwen3-vl-flash. Description moderation is text-only.
+        The provider API key is never exposed in responses or logs.
+      type: object
+      additionalProperties: false
+      required: [venue, facility_version, revision_version, published, current_revision, facility_catalog, rejection_reason_catalog]
+      properties:
+        venue: {$ref: '#/components/schemas/AdminVenueProfileVenue'}
+        facility_version: {type: integer, minimum: 1}
+        revision_version: {type: integer, minimum: 1}
+        published: {$ref: '#/components/schemas/PublishedVenueProfile'}
+        current_revision: {$ref: '#/components/schemas/CurrentVenueProfileRevision'}
+        facility_catalog:
+          type: array
+          minItems: 17
+          maxItems: 17
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueProfileCatalogItem'}
+        rejection_reason_catalog:
+          type: array
+          minItems: 9
+          maxItems: 9
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueProfileReasonCatalogItem'}
+    SaveVenueProfile:
+      type: object
+      additionalProperties: false
+      required: [expected_facility_version, expected_revision_version, description, facilities]
+      properties:
+        expected_facility_version: {type: integer, minimum: 1}
+        expected_revision_version: {type: integer, minimum: 1}
+        description: {type: string, maxLength: 300}
+        facilities:
+          type: array
+          uniqueItems: true
+          maxItems: 17
+          items: {$ref: '#/components/schemas/FacilityCode'}
+    CreateVenueProfileUploadIntent:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version, filename, mime_type, byte_size]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+        filename: {type: string, minLength: 1, maxLength: 255}
+        mime_type: {$ref: '#/components/schemas/VenueProfileMimeType'}
+        byte_size: {type: integer, minimum: 1, maximum: 10485760}
+    VenueProfileUploadIntent:
+      description: This private upload response never contains provider credentials or moderation-provider keys.
+      type: object
+      additionalProperties: false
+      required: [image_id, object_key, signed_put_url, required_headers, maximum_bytes, accepted_mime_types]
+      properties:
+        image_id: {type: string, format: uuid}
+        object_key: {type: string, pattern: '^private/'}
+        signed_put_url: {type: string, format: uri, pattern: '^https://'}
+        required_headers:
+          type: object
+          minProperties: 1
+          additionalProperties: {type: string, minLength: 1}
+        maximum_bytes: {type: integer, const: 10485760}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png, image/webp]
+    CompleteVenueProfileImageUpload:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+    VenueProfileRevisionMutation:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+    OrderVenueProfileImages:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_version, image_ids]
+      properties:
+        expected_revision_version: {type: integer, minimum: 1}
+        image_ids:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: {type: string, format: uuid}
+    ManualReviewItem:
+      type: object
+      additionalProperties: false
+      required: [item_id, venue_id, venue_name, revision_id, revision_version, item_version, item_type, state, review_image_url, submitted_at]
+      properties:
+        item_id: {type: string, format: uuid}
+        venue_id: {type: string, format: uuid}
+        venue_name: {type: string, minLength: 1}
+        revision_id: {type: string, format: uuid}
+        revision_version: {type: integer, minimum: 1}
+        item_version: {type: integer, minimum: 1}
+        item_type: {type: string, enum: [DESCRIPTION, IMAGE]}
+        state: {type: string, const: PENDING_MANUAL}
+        review_image_url:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+          description: Restricted reviewer-only image URL that expires after a short lifetime; null for description jobs.
+        submitted_at: {type: string, format: date-time}
+    ManualReviewQueue:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ManualReviewItem'}
+        next_cursor: {type: [string, 'null']}
+    ManualModerationDecision:
+      type: object
+      additionalProperties: false
+      required: [expected_item_version, decision]
+      properties:
+        expected_item_version: {type: integer, minimum: 1}
+        decision:
+          oneOf:
+            - {const: PASS}
+            - {$ref: '#/components/schemas/ModerationReasonCode'}
+    PitchConfigurationVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        timezone: {type: string, minLength: 1}
+    PitchCapability:
+      type: object
+      additionalProperties: false
+      required: [allowed, reason]
+      properties:
+        allowed: {type: boolean}
+        reason: {type: [string, 'null']}
+    PitchFutureBlockers:
+      type: object
+      additionalProperties: false
+      required: [AVAILABLE, LOCKED, BOOKED]
+      properties:
+        AVAILABLE: {type: integer, minimum: 0}
+        LOCKED: {type: integer, minimum: 0}
+        BOOKED: {type: integer, minimum: 0}
+    PitchCapabilities:
+      type: object
+      additionalProperties: false
+      required: [edit_format, delete, deactivate, reactivate, future_blockers]
+      properties:
+        edit_format: {$ref: '#/components/schemas/PitchCapability'}
+        delete: {$ref: '#/components/schemas/PitchCapability'}
+        deactivate: {$ref: '#/components/schemas/PitchCapability'}
+        reactivate: {$ref: '#/components/schemas/PitchCapability'}
+        future_blockers: {$ref: '#/components/schemas/PitchFutureBlockers'}
+    ConfiguredPitch:
+      type: object
+      additionalProperties: false
+      required: [id, custom_name, system_name, display_name, players_per_side, sequence, status, capabilities]
+      properties:
+        id: {type: string, format: uuid}
+        custom_name: {type: [string, 'null'], maxLength: 30}
+        system_name: {type: string, minLength: 1}
+        display_name: {type: string, minLength: 1}
+        players_per_side: {type: integer, minimum: 1, maximum: 99}
+        sequence: {type: integer, minimum: 1}
+        status: {type: string, enum: [ACTIVE, INACTIVE]}
+        capabilities: {$ref: '#/components/schemas/PitchCapabilities'}
+    CreatedPitchMapping:
+      type: object
+      additionalProperties: false
+      required: [client_ref, pitch_id, sequence, system_name]
+      properties:
+        client_ref: {type: string, minLength: 1, maxLength: 100}
+        pitch_id: {type: string, format: uuid}
+        sequence: {type: integer, minimum: 1}
+        system_name: {type: string, minLength: 1}
+    PitchConfiguration:
+      type: object
+      additionalProperties: false
+      required: [venue, configuration_version, pitches, created_pitch_mappings]
+      properties:
+        venue: {$ref: '#/components/schemas/PitchConfigurationVenue'}
+        configuration_version: {type: integer, minimum: 1}
+        pitches:
+          type: array
+          items: {$ref: '#/components/schemas/ConfiguredPitch'}
+        created_pitch_mappings:
+          type: array
+          items: {$ref: '#/components/schemas/CreatedPitchMapping'}
+    CreatePitchConfigurationChange:
+      type: object
+      additionalProperties: false
+      required: [operation, client_ref, custom_name, players_per_side]
+      properties:
+        operation: {const: CREATE}
+        client_ref: {type: string, minLength: 1, maxLength: 100}
+        custom_name: {type: [string, 'null']}
+        players_per_side: {type: integer}
+    UpdatePitchConfigurationChange:
+      type: object
+      additionalProperties: false
+      required: [operation, pitch_id, custom_name, players_per_side, status]
+      properties:
+        operation: {const: UPDATE}
+        pitch_id: {type: string, format: uuid}
+        custom_name: {type: [string, 'null']}
+        players_per_side: {type: integer}
+        status: {type: string, enum: [ACTIVE, INACTIVE]}
+    DeletePitchConfigurationChange:
+      type: object
+      additionalProperties: false
+      required: [operation, pitch_id]
+      properties:
+        operation: {const: DELETE}
+        pitch_id: {type: string, format: uuid}
+    PitchConfigurationChange:
+      oneOf:
+        - $ref: '#/components/schemas/CreatePitchConfigurationChange'
+        - $ref: '#/components/schemas/UpdatePitchConfigurationChange'
+        - $ref: '#/components/schemas/DeletePitchConfigurationChange'
+      discriminator:
+        propertyName: operation
+        mapping:
+          CREATE: '#/components/schemas/CreatePitchConfigurationChange'
+          UPDATE: '#/components/schemas/UpdatePitchConfigurationChange'
+          DELETE: '#/components/schemas/DeletePitchConfigurationChange'
+    SavePitchConfiguration:
+      type: object
+      additionalProperties: false
+      required: [expected_version, changes]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        changes:
+          type: array
+          items: {$ref: '#/components/schemas/PitchConfigurationChange'}
+    AdminInventoryVenue:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        timezone: {type: string, minLength: 1}
+    AdminInventoryPitch:
+      type: object
+      additionalProperties: false
+      required: [id, name, display_name, pitch_type, players_per_side]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        display_name: {type: string, minLength: 1}
+        pitch_type:
+          type: [string, 'null']
+          enum: [FIVE_A_SIDE, SEVEN_A_SIDE, null]
+        players_per_side: {type: integer, minimum: 1, maximum: 99}
+    AdminInventoryWindow:
+      type: object
+      additionalProperties: false
+      required: [start_date, end_date]
+      properties:
+        start_date: {type: string, format: date}
+        end_date: {type: string, format: date}
+    AdminInventorySlot:
+      type: object
+      additionalProperties: false
+      required: [id, pitch_id, starts_at, ends_at, start_time, end_time, price_cents, status, checkout_version, editable, read_only_reason]
+      properties:
+        id: {type: string, format: uuid}
+        pitch_id: {type: string, format: uuid}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        start_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        end_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        price_cents: {type: integer, minimum: 0}
+        status: {type: string, enum: [AVAILABLE, LOCKED, BOOKED, CLOSED]}
+        checkout_version: {type: integer, minimum: 1}
+        editable: {type: boolean}
+        read_only_reason:
+          type: [string, 'null']
+          enum: [HELD_FOR_PAYMENT, ALREADY_BOOKED, TIME_PASSED, null]
+    AdminInventory:
+      type: object
+      additionalProperties: false
+      required: [venue, local_date, availability_window, pitches, selected_pitch_id, slots, generated_at]
+      properties:
+        venue: {$ref: '#/components/schemas/AdminInventoryVenue'}
+        local_date: {type: string, format: date}
+        availability_window: {$ref: '#/components/schemas/AdminInventoryWindow'}
+        pitches:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInventoryPitch'}
+        selected_pitch_id: {type: string, format: uuid}
+        slots:
+          type: array
+          items: {$ref: '#/components/schemas/AdminInventorySlot'}
+        generated_at: {type: string, format: date-time}
+    CreateAdminInventorySlot:
+      type: object
+      additionalProperties: false
+      required: [pitch_id, local_date, start_time, end_time, price_cents]
+      properties:
+        pitch_id: {type: string, format: uuid}
+        local_date: {type: string, format: date}
+        start_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        end_time: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        price_cents: {type: integer, minimum: 0}
+    UpdateAdminInventorySlot:
+      type: object
+      additionalProperties: false
+      required: [price_cents, status, expected_checkout_version]
+      properties:
+        price_cents: {type: integer, minimum: 0}
+        status: {type: string, enum: [AVAILABLE, CLOSED]}
+        expected_checkout_version: {type: integer, minimum: 1}
     Health:
       type: object
       additionalProperties: false
@@ -1081,8 +3784,7 @@ components:
       required: [code, name, sort_order]
       properties:
         code:
-          type: string
-          enum: [LIGHTING, CHANGING_ROOM, DRINKING_WATER, PARKING]
+          $ref: '#/components/schemas/FacilityCode'
         name:
           type: string
           minLength: 1
@@ -1207,7 +3909,7 @@ components:
         - id
         - slug
         - name
-        - description
+        - profile
         - address
         - latitude
         - longitude
@@ -1217,17 +3919,13 @@ components:
         - navigation_longitude
         - booking_mode
         - pitch_types
-        - cover_image
         - nearest_transit
         - content_verified_at
         - price_advantage_text
         - timezone
         - business_hours_text
         - parking_text
-        - phone
         - refund_policy_summary
-        - images
-        - facilities
         - availability_window
       properties:
         id:
@@ -1239,8 +3937,8 @@ components:
         name:
           type: string
           minLength: 1
-        description:
-          type: string
+        profile:
+          $ref: '#/components/schemas/PublishedVenueProfile'
         address:
           type: string
           minLength: 1
@@ -1275,10 +3973,6 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PublicPitchTypeCode'
-        cover_image:
-          type: [string, 'null']
-          format: uri
-          pattern: '^https://'
         nearest_transit:
           type: array
           items:
@@ -1298,22 +3992,9 @@ components:
         parking_text:
           type: string
           minLength: 1
-        phone:
-          type: string
-          minLength: 1
         refund_policy_summary:
           type: string
           minLength: 1
-        images:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/VenueImage'
-        facilities:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/Facility'
         availability_window:
           $ref: '#/components/schemas/AvailabilityWindow'
     DirectoryVenueDetail:
@@ -1323,7 +4004,7 @@ components:
         - id
         - slug
         - name
-        - description
+        - profile
         - address
         - latitude
         - longitude
@@ -1333,13 +4014,10 @@ components:
         - navigation_longitude
         - booking_mode
         - pitch_types
-        - cover_image
         - nearest_transit
         - content_verified_at
         - business_hours_text
         - parking_text
-        - images
-        - facilities
       properties:
         id:
           type: string
@@ -1350,8 +4028,8 @@ components:
         name:
           type: string
           minLength: 1
-        description:
-          type: string
+        profile:
+          $ref: '#/components/schemas/PublishedVenueProfile'
         address:
           type: string
           minLength: 1
@@ -1385,10 +4063,6 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PublicPitchTypeCode'
-        cover_image:
-          type: [string, 'null']
-          format: uri
-          pattern: '^https://'
         nearest_transit:
           type: array
           items:
@@ -1400,19 +4074,6 @@ components:
           type: [string, 'null']
         parking_text:
           type: [string, 'null']
-        images:
-          type: array
-          uniqueItems: true
-          items:
-            type: string
-            format: uri
-            pattern: '^https://'
-        facilities:
-          type: array
-          uniqueItems: true
-          items:
-            type: string
-            minLength: 1
     VenueDetail:
       oneOf:
         - $ref: '#/components/schemas/OnlineVenueDetail'
@@ -1428,7 +4089,7 @@ components:
       required:
         - id
         - name
-        - description
+        - profile
         - price_advantage_text
         - timezone
         - business_hours_text
@@ -1436,10 +4097,7 @@ components:
         - latitude
         - longitude
         - parking_text
-        - phone
         - refund_policy_summary
-        - images
-        - facilities
         - pitch_types
         - availability_window
         - generated_at
@@ -1450,8 +4108,8 @@ components:
         name:
           type: string
           minLength: 1
-        description:
-          type: string
+        profile:
+          $ref: '#/components/schemas/PublishedVenueProfile'
         price_advantage_text:
           type: string
           minLength: 1
@@ -1475,22 +4133,9 @@ components:
         parking_text:
           type: string
           minLength: 1
-        phone:
-          type: string
-          minLength: 1
         refund_policy_summary:
           type: string
           minLength: 1
-        images:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/VenueImage'
-        facilities:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/Facility'
         pitch_types:
           type: array
           minItems: 1
@@ -1764,6 +4409,71 @@ components:
           type: string
           minLength: 1
           maxLength: 40
+    CreateOrderResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - order_number
+        - status
+        - slot_id
+        - venue
+        - pitch
+        - starts_at
+        - ends_at
+        - duration_minutes
+        - price_cents
+        - currency
+        - contact
+        - created_at
+        - expires_at
+        - expired_at
+        - cancellation_summary
+        - payment_state
+        - payment_confirming
+        - closing_payment
+        - paid_at
+        - detail_path
+      properties:
+        id: {type: string, format: uuid}
+        order_number: {type: string, minLength: 1}
+        status: {type: string, const: PENDING_PAYMENT}
+        slot_id: {type: string, format: uuid}
+        venue: {$ref: '#/components/schemas/OrderVenue'}
+        pitch: {$ref: '#/components/schemas/PhysicalPitch'}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 1}
+        price_cents: {type: integer, minimum: 0}
+        currency: {type: string, const: CNY}
+        contact: {$ref: '#/components/schemas/OrderContact'}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        expired_at: {type: 'null'}
+        cancellation_summary: {type: string, minLength: 1}
+        payment_state:
+          type: [string, 'null']
+          enum: [CREATING, PREPAY_CREATED, CONFIRMING, CLOSED, UNKNOWN, null]
+        payment_confirming: {type: boolean}
+        closing_payment: {type: boolean}
+        paid_at: {type: 'null'}
+        detail_path: {type: string, pattern: '^/api/v1/orders/[0-9a-f-]{36}$'}
+      oneOf:
+        - type: object
+          properties:
+            payment_state: {const: null}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+        - type: object
+          properties:
+            payment_state: {enum: [CREATING, PREPAY_CREATED, CLOSED]}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+        - type: object
+          properties:
+            payment_state: {enum: [CONFIRMING, UNKNOWN]}
+            payment_confirming: {const: true}
+            closing_payment: {type: boolean}
     PaymentLaunchParams:
       type: object
       additionalProperties: false
@@ -1829,10 +4539,180 @@ components:
           const: ALREADY_CONFIRMED
         order:
           $ref: '#/components/schemas/ConfirmedOrderDetail'
+    OrderAllowedActions:
+      type: object
+      additionalProperties: false
+      required: [can_pay, can_cancel, can_check_in, can_complete, can_refund, blocked_reason]
+      properties:
+        can_pay: {type: boolean}
+        can_cancel: {type: boolean}
+        can_check_in: {type: boolean}
+        can_complete: {type: boolean}
+        can_refund: {type: boolean}
+        blocked_reason:
+          type: [string, 'null']
+          enum:
+            - PAYMENT_RESULT_PENDING
+            - CANCELLATION_WINDOW_CLOSED
+            - CANCELLATION_REQUIRES_SUPPORT
+            - CHECK_IN_TOO_EARLY
+            - CHECK_IN_REQUIRED
+            - SESSION_NOT_ENDED
+            - ORDER_TERMINAL
+            - REFUND_IN_PROGRESS
+            - null
+    FundingAlert:
+      type: object
+      additionalProperties: false
+      required: [code, status]
+      properties:
+        code: {type: string, const: DUPLICATE_CHARGE_REFUND}
+        status: {type: string, enum: [REFUND_PENDING, REFUND_FAILED, REFUNDED]}
+    VenueFulfillmentOrder:
+      type: object
+      additionalProperties: false
+      required: [id, order_number, status, pitch, starts_at, ends_at, masked_phone, checked_in_at, allowed_actions]
+      properties:
+        id: {type: string, format: uuid}
+        order_number: {type: string, minLength: 1}
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION, CANCELLED, REFUND_PENDING, REFUND_FAILED, REFUNDED, COMPLETED]
+        pitch: {$ref: '#/components/schemas/PhysicalPitch'}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        masked_phone: {type: string, pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'}
+        checked_in_at: {type: [string, 'null'], format: date-time}
+        allowed_actions: {$ref: '#/components/schemas/OrderAllowedActions'}
+    VenueFulfillmentOrdersResponse:
+      type: object
+      additionalProperties: false
+      required: [venue, service_date, generated_at, orders, next_cursor]
+      properties:
+        venue: {$ref: '#/components/schemas/CheckoutVenue'}
+        service_date: {type: string, format: date}
+        generated_at: {type: string, format: date-time}
+        orders:
+          type: array
+          items: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
+        next_cursor: {type: [string, 'null'], minLength: 1}
+    VenueRefundRequest:
+      type: object
+      additionalProperties: false
+      required: [reason_note]
+      properties:
+        reason_note: {type: string, minLength: 1, maxLength: 500}
+    RefundAccepted:
+      type: object
+      additionalProperties: false
+      required: [order_id, status]
+      properties:
+        order_id: {type: string, format: uuid}
+        status: {type: string, enum: [REFUND_PENDING, REFUNDED]}
+    WeChatNotificationResource:
+      type: object
+      additionalProperties: false
+      required: [original_type, algorithm, ciphertext, associated_data, nonce]
+      properties:
+        original_type: {type: string}
+        algorithm: {type: string, const: AEAD_AES_256_GCM}
+        ciphertext: {type: string}
+        associated_data: {type: string}
+        nonce: {type: string}
+    WeChatNotificationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [id, create_time, event_type, resource_type, summary, resource]
+      properties:
+        id: {type: string}
+        create_time: {type: string}
+        event_type: {type: string}
+        resource_type: {type: string}
+        summary: {type: string}
+        resource: {$ref: '#/components/schemas/WeChatNotificationResource'}
+    OrderSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - order_number
+        - status
+        - venue
+        - pitch
+        - starts_at
+        - ends_at
+        - price_cents
+        - currency
+        - created_at
+        - expires_at
+        - payment_confirming
+        - closing_payment
+        - cancel_requested_at
+        - cancelled_at
+        - checked_in_at
+        - completed_at
+        - allowed_actions
+        - funding_alerts
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_number:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION, CANCELLED, REFUND_PENDING, REFUND_FAILED, REFUNDED, COMPLETED]
+        venue:
+          $ref: '#/components/schemas/CheckoutVenue'
+        pitch:
+          $ref: '#/components/schemas/PhysicalPitch'
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        price_cents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: CNY
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        payment_confirming:
+          type: boolean
+        closing_payment:
+          type: boolean
+        cancel_requested_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        checked_in_at: {type: [string, 'null'], format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+        allowed_actions: {$ref: '#/components/schemas/OrderAllowedActions'}
+        funding_alerts:
+          type: array
+          items: {$ref: '#/components/schemas/FundingAlert'}
+    OrderListResponse:
+      type: object
+      additionalProperties: false
+      required: [orders, next_cursor]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        next_cursor:
+          type: [string, 'null']
+          minLength: 1
     OrderVenue:
       type: object
       additionalProperties: false
-      required: [id, name, address, latitude, longitude, customer_service_phone]
+      required: [id, name, address, latitude, longitude]
       properties:
         id:
           type: string
@@ -1851,9 +4731,6 @@ components:
           type: number
           minimum: -180
           maximum: 180
-        customer_service_phone:
-          type: string
-          minLength: 1
     OrderContact:
       type: object
       additionalProperties: false
@@ -2008,6 +4885,52 @@ components:
               const: null
             expired_at:
               const: null
+        - type: object
+          description: Unapplied successful funds never become the primary payment projection.
+          properties:
+            status:
+              enum: [PAYMENT_EXCEPTION, REFUND_PENDING, REFUND_FAILED, REFUNDED]
+            payment_state: {const: null}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {const: null}
+            expired_at: {const: null}
+        - type: object
+          description: Cancelled order without a successful payment requiring refund.
+          properties:
+            status: {const: CANCELLED}
+            payment_state: {enum: [null, CLOSED]}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {const: null}
+            expired_at: {const: null}
+        - type: object
+          description: Cancellation or inventory-conflict refund is converging or failed.
+          properties:
+            status: {enum: [REFUND_PENDING, REFUND_FAILED]}
+            payment_state: {const: SUCCESS}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {type: string, format: date-time}
+            expired_at: {const: null}
+        - type: object
+          description: Fully refunded order.
+          properties:
+            status: {const: REFUNDED}
+            payment_state: {const: SUCCESS}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {type: string, format: date-time}
+            expired_at: {const: null}
+        - type: object
+          description: Completed fulfillment backed by the applied successful payment.
+          properties:
+            status: {const: COMPLETED}
+            payment_state: {const: SUCCESS}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {type: string, format: date-time}
+            expired_at: {const: null}
       required:
         - id
         - order_number
@@ -2029,6 +4952,12 @@ components:
         - payment_confirming
         - closing_payment
         - paid_at
+        - cancel_requested_at
+        - cancelled_at
+        - checked_in_at
+        - completed_at
+        - allowed_actions
+        - funding_alerts
         - detail_path
       properties:
         id:
@@ -2039,7 +4968,7 @@ components:
           minLength: 1
         status:
           type: string
-          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION]
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION, CANCELLED, REFUND_PENDING, REFUND_FAILED, REFUNDED, COMPLETED]
         slot_id:
           type: string
           format: uuid
@@ -2086,6 +5015,14 @@ components:
         paid_at:
           type: [string, 'null']
           format: date-time
+        cancel_requested_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        checked_in_at: {type: [string, 'null'], format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+        allowed_actions: {$ref: '#/components/schemas/OrderAllowedActions'}
+        funding_alerts:
+          type: array
+          items: {$ref: '#/components/schemas/FundingAlert'}
         detail_path:
           type: string
           pattern: '^/api/v1/orders/[0-9a-f-]{36}$'
@@ -2130,6 +5067,21 @@ components:
           format: date
         current_checkout:
           $ref: '#/components/schemas/Checkout'
+        future_blockers:
+          $ref: '#/components/schemas/PitchFutureBlockers'
+        latest_configuration:
+          $ref: '#/components/schemas/PitchConfiguration'
+        current_facility_version:
+          type: integer
+          minimum: 1
+        current_revision_version:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 1
+        claim_candidate:
+          $ref: '#/components/schemas/VenueOnboardingCandidate'
     Error:
       type: object
       additionalProperties: false
@@ -2158,7 +5110,40 @@ components:
             - ORDER_NOT_FOUND
             - ORDER_EXPIRED
             - PAYMENT_CREATE_FAILED
+            - PAYMENT_PROVIDER_UNAVAILABLE
             - PAYMENT_EXCEPTION
+            - ORDER_STATE_CHANGED
+            - PAYMENT_RESULT_PENDING
+            - REFUND_IN_PROGRESS
+            - WECHAT_NOTIFICATION_INVALID
+            - INVENTORY_FORBIDDEN
+            - PITCH_NOT_FOUND
+            - SLOT_NOT_FOUND
+            - SLOT_TIME_CONFLICT
+            - INVENTORY_VERSION_CONFLICT
+            - INVENTORY_SLOT_READ_ONLY
+            - REQUEST_IN_PROGRESS
+            - CONFIGURATION_CHANGED
+            - PITCH_NAME_CONFLICT
+            - PITCH_FORMAT_IMMUTABLE
+            - PITCH_HAS_BUSINESS_HISTORY
+            - PITCH_DEACTIVATE_BLOCKED
+            - LAST_ACTIVE_PITCH_REQUIRED
+            - INVALID_PLAYERS_PER_SIDE
+            - INVALID_CUSTOM_NAME
+            - DUPLICATE_PITCH_CHANGE
+            - VENUE_PROFILE_VERSION_CONFLICT
+            - VENUE_PROFILE_VALIDATION_FAILED
+            - POSSIBLE_DUPLICATE_VENUE
+            - ONBOARDING_EVIDENCE_REQUIRED
+            - ONBOARDING_EVIDENCE_INVALID
+            - ONBOARDING_APPLICATION_EXISTS
+            - ONBOARDING_APPLICATION_NOT_FOUND
+            - ONBOARDING_APPLICATION_STATE_CHANGED
+            - PLATFORM_AUTH_REQUIRED
+            - PLATFORM_AUTH_INVALID
+            - PLATFORM_CSRF_INVALID
+            - PLATFORM_ROLE_REQUIRED
         message:
           type: string
           minLength: 1

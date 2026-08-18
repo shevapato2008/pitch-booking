@@ -8,7 +8,6 @@
       <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" committed-query="{{committedQuery}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
       <button class="locate {{locationActive ? 'locate--active' : ''}} {{locationErrorText ? 'locate--error' : ''}}" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我"><view wx:if="{{!locating}}" class="crosshair"><view class="crosshair-dot"></view></view></button>
     </view>
-    <view class="center-note">{{centerNote}}</view>
     <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
     <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" online-only="{{filters.onlineOnly}}" district-code="{{districtCode}}" district-label="{{districtLabel}}" district-options="{{districtOptions}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" bindresetfilters="onResetFilters" bindonlinechange="onOnlineOnlyChange" binddistrictchange="onDistrictFilter" />
     <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">
@@ -19,4 +18,14 @@
       <button class="permission-secondary" bindtap="onDismissLocationDenied">继续浏览球场</button>
     </view>
   </block>
+  <view class="map-shortcuts">
+    <view class="map-shortcuts__center">
+      <text class="map-shortcuts__prefix">搜索中心</text>
+      <text class="map-shortcuts__label">{{centerNote}}</text>
+    </view>
+    <button class="map-shortcuts__orders" hover-class="map-shortcuts__orders--pressed" bindtap="onOpenMyOrders" aria-label="打开我的订单">
+      <view class="map-shortcuts__order-icon" aria-hidden="true"><view></view><view></view><view></view></view>
+      <text>我的订单</text>
+    </button>
+  </view>
 </view>

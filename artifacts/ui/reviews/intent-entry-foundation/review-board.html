@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>目的入口视觉基础 · Review Board</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #10243e; background: #f8fafc; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 32px; }
+      header, section { max-width: 1560px; margin: 0 auto 40px; }
+      h1, h2 { margin: 0 0 8px; }
+      p { color: #64748b; line-height: 1.5; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+      .slot { margin: 0; padding: 16px; border: 1px solid #dbe5ec; border-radius: 12px; background: #fff; }
+      .slot figcaption, .slot h3 { margin: 0 0 12px; font-size: 16px; }
+      .slot img { display: block; width: 100%; height: auto; border: 1px solid #edf2f7; }
+      .observations { grid-column: 1 / -1; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 10px; border-top: 1px solid #dbe5ec; text-align: left; color: #64748b; vertical-align: top; }
+      th { color: #10243e; white-space: nowrap; }
+      @media (max-width: 640px) { body { padding: 20px 12px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>目的入口视觉基础 · Review Board</h1>
+      <p>375 × 812 logical viewport；production disabled。视觉证据与用户视觉批准均已完成（2026-08-10）。</p>
+    </header>
+
+    <section data-state="first-entry">
+      <h2>first-entry</h2>
+      <div class="grid">
+        <figure class="slot" data-review-slot="reference"><figcaption>Reference</figcaption><img src="first-entry-reference-375x812.png" alt="first-entry reference" /></figure>
+        <figure class="slot" data-review-slot="implementation"><figcaption>Implementation</figcaption><img src="first-entry-implementation-375x812.png" alt="first-entry implementation" /></figure>
+        <figure class="slot" data-review-slot="side-by-side"><figcaption>Side-by-side</figcaption><img src="first-entry-side-by-side.png" alt="first-entry side-by-side" /></figure>
+        <figure class="slot" data-review-slot="overlay-50"><figcaption>Overlay 50%</figcaption><img src="first-entry-overlay-50.png" alt="first-entry overlay" /></figure>
+        <figure class="slot" data-review-slot="difference"><figcaption>Difference</figcaption><img src="first-entry-difference.png" alt="first-entry difference" /></figure>
+        <div class="slot observations" data-review-slot="observations">
+          <h3>Observations</h3>
+          <table>
+            <tr><th>composition</th><td>三个等权入口与 reference 一致；implementation 呈现真实状态栏、胶囊和 Home indicator。</td></tr>
+            <tr><th>geometry/spacing</th><td>左右边距和卡片外框接近；implementation 的图标—文案间距更紧。</td></tr>
+            <tr><th>component hierarchy</th><td>标题、说明、入口卡片和身份提示层级一致。</td></tr>
+            <tr><th>typography/color/material</th><td>原生字体渲染略有差异；海军蓝、浅灰和白卡材质一致。</td></tr>
+            <tr><th>icon assets</th><td>语义一致，implementation 使用更大的线性图标。</td></tr>
+            <tr><th>copy</th><td>三个入口标题、说明与“不是永久身份”一致。</td></tr>
+            <tr><th>state semantics</th><td>天津为当前城市；三个目的均为同一账号下的当下选择。</td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section data-state="city-picker-open">
+      <h2>city-picker-open</h2>
+      <div class="grid">
+        <figure class="slot" data-review-slot="reference"><figcaption>Reference</figcaption><img src="city-picker-open-reference-375x812.png" alt="city-picker-open reference" /></figure>
+        <figure class="slot" data-review-slot="implementation"><figcaption>Implementation</figcaption><img src="city-picker-open-implementation-375x812.png" alt="city-picker-open implementation" /></figure>
+        <figure class="slot" data-review-slot="side-by-side"><figcaption>Side-by-side</figcaption><img src="city-picker-open-side-by-side.png" alt="city-picker-open side-by-side" /></figure>
+        <figure class="slot" data-review-slot="overlay-50"><figcaption>Overlay 50%</figcaption><img src="city-picker-open-overlay-50.png" alt="city-picker-open overlay" /></figure>
+        <figure class="slot" data-review-slot="difference"><figcaption>Difference</figcaption><img src="city-picker-open-difference.png" alt="city-picker-open difference" /></figure>
+        <div class="slot observations" data-review-slot="observations">
+          <h3>Observations</h3>
+          <table>
+            <tr><th>composition</th><td>背景层级和底部面板结构一致；implementation 面板顶边约高 20px。</td></tr>
+            <tr><th>geometry/spacing</th><td>implementation 将城市状态置于名称下方，因此面板更高。</td></tr>
+            <tr><th>component hierarchy</th><td>scrim、sheet、关闭、当前城市和禁用城市层级一致。</td></tr>
+            <tr><th>typography/color/material</th><td>implementation scrim 略深；白色圆角面板与禁用灰阶一致。</td></tr>
+            <tr><th>icon assets</th><td>关闭和勾选图标语义一致。</td></tr>
+            <tr><th>copy</th><td>“选择城市”“当前 · 已开放”“其他城市”“敬请期待”一致。</td></tr>
+            <tr><th>state semantics</th><td>天津可关闭面板；其他城市禁用，未触发定位或导航。</td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section data-state="returning-home">
+      <h2>returning-home</h2>
+      <div class="grid">
+        <figure class="slot" data-review-slot="reference"><figcaption>Reference</figcaption><img src="returning-home-reference-375x812.png" alt="returning-home reference" /></figure>
+        <figure class="slot" data-review-slot="implementation"><figcaption>Implementation</figcaption><img src="returning-home-implementation-375x812.png" alt="returning-home implementation" /></figure>
+        <figure class="slot" data-review-slot="side-by-side"><figcaption>Side-by-side</figcaption><img src="returning-home-side-by-side.png" alt="returning-home side-by-side" /></figure>
+        <figure class="slot" data-review-slot="overlay-50"><figcaption>Overlay 50%</figcaption><img src="returning-home-overlay-50.png" alt="returning-home overlay" /></figure>
+        <figure class="slot" data-review-slot="difference"><figcaption>Difference</figcaption><img src="returning-home-difference.png" alt="returning-home difference" /></figure>
+        <div class="slot observations" data-review-slot="observations">
+          <h3>Observations</h3>
+          <table>
+            <tr><th>composition</th><td>问候、三入口、继续上次和待处理顺序一致；implementation 呈现真实系统栏。</td></tr>
+            <tr><th>geometry/spacing</th><td>主体间距接近；BOOK 选中态增强了中间入口的视觉面积。</td></tr>
+            <tr><th>component hierarchy</th><td>问候为主标题，快捷入口其次，后续任务层级清楚。</td></tr>
+            <tr><th>typography/color/material</th><td>色彩基线一致；implementation 的 BOOK 为浅绿底和蓝色边框。</td></tr>
+            <tr><th>icon assets</th><td>“我的”为线性用户图标；卡片无多余装饰。</td></tr>
+            <tr><th>copy</th><td>主要文案一致；implementation 明确写为 development visual Fixture data。</td></tr>
+            <tr><th>state semantics</th><td>intent=BOOK 被结构化显示为租赁场地选中态；production 仍 disabled。</td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

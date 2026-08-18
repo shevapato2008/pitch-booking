@@ -1,0 +1,10 @@
+{
+  "image_id": "9b7f1b8f-1f3b-4ecb-92ec-c6ec8be99101",
+  "object_key": "private/venue-profiles/7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f/9b7f1b8f-1f3b-4ecb-92ec-c6ec8be99101/original.webp",
+  "signed_put_url": "https://uploads.example.com/private/venue-profiles/upload?signature=short-lived",
+  "required_headers": {
+    "Content-Type": "image/webp"
+  },
+  "maximum_bytes": 10485760,
+  "accepted_mime_types": ["image/jpeg", "image/png", "image/webp"]
+}

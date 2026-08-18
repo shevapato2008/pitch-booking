@@ -90,6 +90,7 @@ class PaymentConvergenceService:
                 payment_id=payment_id,
             )
             now = self._now()
+            payment_was_closed = payment.status is PaymentState.CLOSED
 
             if payment.status is PaymentState.SUCCESS:
                 self._audit_conflicting_success(payment, provider, result, now)
@@ -131,8 +132,9 @@ class PaymentConvergenceService:
                     payment.last_error_at = None
                     payment.notification_result = "SUCCESS"
                     payment.notification_code = None
-                    can_fulfil = (
-                        slot.status is SlotStatus.LOCKED and slot.locked_by_order_id == order.id
+                    slot_can_fulfil = (
+                        slot.status is SlotStatus.LOCKED
+                        and slot.locked_by_order_id == order.id
                     ) or (
                         slot.status is SlotStatus.AVAILABLE
                         and not repository.has_other_valid_order(
@@ -140,12 +142,14 @@ class PaymentConvergenceService:
                             order_id=order.id,
                         )
                     )
+                    can_fulfil = not payment_was_closed and slot_can_fulfil
                     if can_fulfil:
                         order.status = OrderStatus.CONFIRMED
                         order.expired_at = None
                         slot.status = SlotStatus.BOOKED
                         slot.locked_by_order_id = None
                         slot.locked_until = None
+                        payment.applied_to_order_at = now
                     else:
                         order.status = OrderStatus.PAYMENT_EXCEPTION
                         payment.last_error_code = "PAYMENT_INVENTORY_CONFLICT"

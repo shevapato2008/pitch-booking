@@ -37,6 +37,12 @@ def deployed_settings(**overrides: object) -> dict[str, object]:
         "database_url": "postgresql+psycopg://pitch:password@postgres:5432/pitch",
         "public_api_base_url": "https://api.example.com",
         "public_image_hosts": ("cdn.example.com",),
+        "oss_endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
+        "oss_bucket": "venue-media-staging",
+        "oss_public_base_url": "https://cdn.example.com/media",
+        "oss_access_key_id": "staging-access-key-id",
+        "oss_access_key_secret": "staging-access-key-secret",
+        "dashscope_api_key": "staging-dashscope-key",
         "wechat_provider": "real",
         "wechat_app_id": "wx-app-id",
         "wechat_app_secret": "wechat-secret",
@@ -291,6 +297,33 @@ def test_settings_repr_and_str_redact_secret_values() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("oss_endpoint", "https://oss.example.test/path", "origin only"),
+        ("oss_endpoint", "https://oss.example.test?token=secret", "query or fragment"),
+        (
+            "oss_public_base_url",
+            "https://cdn.example.test/media#fragment",
+            "query or fragment",
+        ),
+    ],
+)
+def test_oss_settings_reject_url_components_that_break_object_paths(
+    field: str, value: str, message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Settings(**deployed_settings(**{field: value}))
+
+
+def test_complete_oss_settings_keep_access_credentials_out_of_repr() -> None:
+    settings = Settings(**deployed_settings())
+
+    assert isinstance(settings.oss_access_key_secret, SecretStr)
+    assert "staging-access-key-id" not in repr(settings)
+    assert "staging-access-key-secret" not in repr(settings)
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"phone_encryption_key_base64": "SECRET_INVALID_BASE64!"},
@@ -351,6 +384,11 @@ def production_environment(*, provider: str = "development") -> dict[str, str]:
         "DATABASE_URL": "postgresql+psycopg://pitch:password@postgres:5432/pitch",
         "PUBLIC_API_BASE_URL": "https://api.example.com",
         "PUBLIC_IMAGE_HOSTS": '["cdn.example.com"]',
+        "OSS_ENDPOINT": "https://oss-cn-hangzhou.aliyuncs.com",
+        "OSS_BUCKET": "venue-media-production",
+        "OSS_PUBLIC_BASE_URL": "https://cdn.example.com/media",
+        "OSS_ACCESS_KEY_ID": "production-access-key-id",
+        "OSS_ACCESS_KEY_SECRET": "production-access-key-secret",
         "WECHAT_PROVIDER": provider,
         "WECHAT_APP_ID": "wx-app-id",
         "WECHAT_APP_SECRET": "environment-secret",

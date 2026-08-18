@@ -10,10 +10,23 @@ export class ApiResponseError extends Error {
 export type PitchType = "FIVE_A_SIDE" | "SEVEN_A_SIDE";
 export type ImageRole = "COVER" | "GALLERY";
 export type FacilityCode =
-  | "LIGHTING"
+  | "PARKING"
+  | "TOILET"
   | "CHANGING_ROOM"
+  | "SHOWER"
+  | "LOCKERS"
   | "DRINKING_WATER"
-  | "PARKING";
+  | "BEVERAGE_SALES"
+  | "EQUIPMENT_RENTAL"
+  | "REST_AREA"
+  | "FIRST_AID"
+  | "AED"
+  | "INDOOR"
+  | "OUTDOOR"
+  | "COVERED"
+  | "LIGHTING"
+  | "ARTIFICIAL_TURF"
+  | "NATURAL_GRASS";
 export type SlotStatus =
   | "AVAILABLE"
   | "TEMPORARILY_LOCKED"
@@ -50,10 +63,31 @@ export interface VenuePitchType {
   sortOrder: number;
 }
 
+export interface PublishedVenueProfile {
+  publicationState: "PUBLISHED";
+  publishedVersion: number;
+  description: string;
+  coverImage: string | null;
+  images: readonly VenueImage[];
+  facilities: readonly Facility[];
+  pitchSizes: readonly (PitchType | "ELEVEN_A_SIDE")[];
+  livePrice: {
+    available: boolean;
+    fromPriceCents: number | null;
+    currency: "CNY";
+    unit: "HOUR";
+  };
+  availabilityTarget: {
+    enabled: boolean;
+    label: "查看可订时段";
+    path: string | null;
+  };
+}
+
 export interface Venue {
   id: string;
   name: string;
-  description: string;
+  profile: PublishedVenueProfile;
   priceAdvantageText: string;
   timezone: "Asia/Shanghai";
   businessHoursText: string;
@@ -61,10 +95,7 @@ export interface Venue {
   latitude: number;
   longitude: number;
   parkingText: string;
-  phone: string;
   refundPolicySummary: string;
-  images: VenueImage[];
-  facilities: Facility[];
   pitchTypes: VenuePitchType[];
   availabilityWindow: AvailabilityWindow;
   generatedAt: string;

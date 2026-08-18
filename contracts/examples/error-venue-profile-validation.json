@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VENUE_PROFILE_VALIDATION_FAILED",
+    "message": "场馆资料未通过输入校验。",
+    "request_id": "req_profile_validation_01",
+    "details": {"field": "description", "reason": "MAX_300_CODE_POINTS"}
+  }
+}

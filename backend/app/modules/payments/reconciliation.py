@@ -127,6 +127,7 @@ class PaymentReconciliationService:
             if payment.currency != "CNY":
                 raise RuntimeError("unsupported persisted payment currency")
             currency = cast(Literal["CNY"], payment.currency)
+            time_expire = order.expires_at
             order_expired = order.expires_at <= now
             payer = session.get_one(User, order.user_id).wechat_openid
             session.commit()
@@ -151,6 +152,7 @@ class PaymentReconciliationService:
                             amount_cents=amount_cents,
                             currency=currency,
                             payer_openid=payer,
+                            time_expire=time_expire,
                         )
                     )
                 except Exception:

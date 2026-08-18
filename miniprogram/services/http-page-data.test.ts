@@ -5,7 +5,7 @@ import { createHttpPageDataSource } from "./http-page-data";
 
 interface VenuePayload {
   name: string;
-  images: Array<{ url: string }>;
+  profile: { images: Array<{ url: string }> };
 }
 interface AvailabilityPayload { pitches: unknown[] }
 
@@ -24,6 +24,7 @@ test("loads and decodes the primary venue and its availability over HTTP", async
       return (path === "/api/v1/venues/primary" ? venuePayload : availabilityPayload) as T;
     },
     async post<T>(): Promise<T> { throw new Error("unused"); },
+    async put<T>(): Promise<T> { throw new Error("unused"); },
   };
   const media: MediaSourceResolver = {
     resolve: (role, source) => `${role}:${source}`,
@@ -43,7 +44,7 @@ test("loads and decodes the primary venue and its availability over HTTP", async
   ]);
   expect(venue.name).toBe(venuePayload.name);
   expect(availability.pitchGroups).toHaveLength(availabilityPayload.pitches.length);
-  expect(source.coverSource(venue)).toBe(`COVER:${venuePayload.images[0].url}`);
+  expect(source.coverSource(venue)).toBe(`COVER:${venuePayload.profile.images[0].url}`);
 });
 
 test("rejects malformed API data at the HTTP boundary", async () => {
@@ -52,6 +53,7 @@ test("rejects malformed API data at the HTTP boundary", async () => {
       return { id: "not-a-venue" } as T;
     },
     async post<T>(): Promise<T> { throw new Error("unused"); },
+    async put<T>(): Promise<T> { throw new Error("unused"); },
   };
 
   await expect(createHttpPageDataSource(transport).getVenue())

@@ -28,8 +28,12 @@ def test_immediate_reconcile_returns_202_then_200_and_is_repeatable(pg_engine: E
     provider = MockPaymentProvider()
     # Seed the provider using the same merchant number through the normal API.
     with Session(pg_engine) as session:
-        merchant = session.get_one(Payment, payment_id).merchant_order_no
-    provider.create_prepay(CreatePrepayRequest(merchant, "booking", 32000, "CNY", "openid"))
+        payment = session.get_one(Payment, payment_id)
+        merchant = payment.merchant_order_no
+        time_expire = payment.order.expires_at
+    provider.create_prepay(
+        CreatePrepayRequest(merchant, "booking", 32000, "CNY", "openid", time_expire)
+    )
     service = PaymentReconciliationService(
         session_factory=session_factory(pg_engine),
         provider=provider,

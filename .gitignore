@@ -5,6 +5,8 @@ dist/
 coverage/
 project.private.config.json
 backend/.env.local
+deploy/.env.live.local
+deploy/miniprogram.live.local
 .DS_Store
 .venv/
 __pycache__/

@@ -1,9 +1,17 @@
 import { afterEach, expect, jest, test } from "@jest/globals";
 
+jest.mock("./fixture-data", () => ({
+  FIXTURE_DATA: {
+    "order-pending": jest.requireActual("../../contracts/examples/order-pending.json"),
+  },
+}));
+
 import { getBookingDataSource, getNeutralPhoneTapCode, resetBookingDataSourceForTesting } from "../services/booking";
 import { getPageDataSource } from "../services/page-data";
 import { getPaymentBindings, resetPaymentBindingsForTesting } from "../services/payment";
 import { getVenueDirectoryDataSource } from "../services/venue-directory";
+import { getVenueProfileDataSource, resetVenueProfileBindingsForTesting } from "../services/venue-profile";
+import { getVenueAccessDataSource, resetVenueAccessBindingsForTesting } from "../services/venue-access";
 import { bootstrapDevelopment } from "./bootstrap";
 import { createDevelopmentHttpSources } from "./http-booking-source";
 
@@ -25,10 +33,18 @@ const confirming = jest.requireActual<PaymentExample>("../../contracts/examples/
 const confirmed = jest.requireActual<OrderExample>("../../contracts/examples/order-confirmed.json");
 const venueMap = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-map.json");
 const venueDetail = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-directory-detail.json");
+const managedVenues = {
+  venues: [{
+    id: venue.id,
+    name: "渤海元丰足球场",
+    district_name: "西青区",
+    address: "天津市西青区利达路",
+  }],
+};
 
 interface RequestOptions {
   readonly url: string;
-  readonly method: "GET" | "POST";
+  readonly method: "GET" | "POST" | "PUT";
   readonly data?: unknown;
   readonly header?: Readonly<Record<string, string>>;
   readonly success: (response: { statusCode: number; data: unknown }) => void;
@@ -37,9 +53,16 @@ interface RequestOptions {
 const requests: RequestOptions[] = [];
 
 function installRequestRuntime(): void {
+  const storage = new Map<string, unknown>();
   Object.defineProperty(globalThis, "wx", {
     configurable: true,
     value: {
+      login(options: { readonly success: (result: { readonly code: string }) => void }) {
+        options.success({ code: "real-wx-code" });
+      },
+      getStorageSync(key: string) { return storage.get(key); },
+      setStorageSync(key: string, value: unknown) { storage.set(key, value); },
+      removeStorageSync(key: string) { storage.delete(key); },
       request(options: RequestOptions) {
         requests.push(options);
         const path = new URL(options.url).pathname;
@@ -52,6 +75,7 @@ function installRequestRuntime(): void {
                     : path === "/api/v1/venues/primary" ? { statusCode: 200, data: venue }
                       : path === "/api/v1/venues/map" ? { statusCode: 200, data: venueMap }
                         : path === `/api/v1/venues/${venueDetail.id}` ? { statusCode: 200, data: venueDetail }
+                          : path === "/api/v1/admin/venues" ? { statusCode: 200, data: managedVenues }
                       : undefined;
         const normalized = "statusCode" in (response ?? {})
           ? response as { statusCode: number; data: unknown }
@@ -66,6 +90,8 @@ afterEach(() => {
   requests.length = 0;
   resetBookingDataSourceForTesting();
   resetPaymentBindingsForTesting();
+  resetVenueProfileBindingsForTesting();
+  resetVenueAccessBindingsForTesting();
   Reflect.deleteProperty(globalThis, "wx");
 });
 
@@ -107,6 +133,13 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
   bootstrapDevelopment({ source: "http", apiBaseUrl: "http://localhost:8000" });
 
   expect(getNeutralPhoneTapCode()).toBe("dev-phone-code");
+  await expect(getVenueProfileDataSource().get(String(venue.id))).rejects.toBeDefined();
+  const sessions = requests.filter(({ url }) => url.endsWith("/auth/wechat/session"));
+  expect(sessions[sessions.length - 1]?.data).toEqual({ code: "dev-login-code" });
+  await expect(getVenueAccessDataSource().listManagedVenues()).resolves.toEqual([expect.objectContaining({
+    id: venue.id,
+    districtName: "西青区",
+  })]);
   await expect(getPageDataSource().getVenue()).resolves.toMatchObject({ id: venue.id });
   await expect(getVenueDirectoryDataSource().getVenueDetail(String(venueDetail.id)))
     .resolves.toMatchObject({ id: venueDetail.id });
@@ -116,4 +149,17 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
   });
   expect(getPaymentBindings()?.clock?.now().toISOString()).not.toBe("2026-07-27T04:00:00.000Z");
   expect(requests.every(({ url }) => url.startsWith("http://localhost:8000/api/v1/"))).toBe(true);
+});
+
+test("default fixture bootstrap registers a local order list that reopens its order detail", async () => {
+  bootstrapDevelopment();
+  const source = getBookingDataSource();
+
+  expect(source.listOrders).toBeDefined();
+  const result = await source.listOrders!();
+  expect(result.orders).toHaveLength(1);
+  await expect(source.getOrder(result.orders[0].orderId)).resolves.toMatchObject({
+    orderId: result.orders[0].orderId,
+    status: result.orders[0].status,
+  });
 });

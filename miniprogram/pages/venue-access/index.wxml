@@ -1,0 +1,56 @@
+<view class="venue-access">
+  <view class="venue-access__system" style="height: {{headerTopPx}}px;"></view>
+  <view class="venue-access__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="venue-access__back venue-access__touch" hover-class="venue-access__back--pressed" bindtap="onBackToEntry" aria-label="返回目的选择入口">
+      <view class="venue-access-icon venue-access-icon--back" aria-hidden="true"></view>
+    </button>
+    <text class="venue-access__title">我的场馆</text>
+  </view>
+
+  <scroll-view class="venue-access__content" scroll-y enhanced show-scrollbar="{{false}}">
+    <text class="venue-access__eyebrow">VENUE PORTFOLIO</text>
+    <text class="venue-access__heading">管理你的场馆</text>
+    <text class="venue-access__description">选择一个已由平台核验授权的场馆，或提交新的场馆申请。</text>
+
+    <view wx:if="{{mode === 'loading'}}" class="venue-access__state"><view class="venue-access__spinner"></view><text>正在读取场馆权限</text></view>
+    <view wx:elif="{{mode === 'error'}}" class="venue-access__empty">
+      <view class="venue-access__permission-mark venue-access__permission-mark--error">!</view>
+      <text class="venue-access__empty-heading">暂时无法读取场馆权限</text>
+      <text class="venue-access__empty-copy">{{errorMessage}}</text>
+      <button class="venue-access__secondary venue-access__touch" bindtap="onRetry" disabled="{{retrying}}">{{retrying ? '正在重试' : '重试'}}</button>
+    </view>
+    <view wx:elif="{{venues.length}}" class="venue-access__list" aria-label="可管理场馆">
+      <button wx:for="{{venues}}" wx:key="id" class="venue-access__card venue-access__touch" hover-class="venue-access__card--pressed" bindtap="onChooseVenue" data-venue-id="{{item.id}}" aria-label="{{item.name}}，{{item.districtName}}，{{item.address}}，进入场馆工作台">
+        <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.name}}</text><text class="venue-access__venue-location">{{item.districtName}} · {{item.address}}</text><text class="venue-access__permission">已获得管理权限</text></view>
+        <view class="venue-access-icon venue-access-icon--chevron" aria-hidden="true"></view>
+      </button>
+    </view>
+    <view wx:else class="venue-access__empty">
+      <view class="venue-access__permission-mark" role="img" aria-label="场馆权限核验"><view class="venue-access__permission-building" aria-hidden="true"><view class="venue-access__permission-door"></view></view></view>
+      <text class="venue-access__empty-heading">暂未发现可管理的场馆</text>
+      <text class="venue-access__empty-copy">申请通过前不会创建场馆，也不会开放管理权限。</text>
+    </view>
+
+    <view wx:if="{{applications.length}}" class="venue-access__applications">
+      <text class="venue-access__onboarding-title">我的申请</text>
+      <block wx:for="{{applications}}" wx:key="applicationId">
+        <button wx:if="{{item.status === 'REJECTED'}}" class="venue-access__application venue-access__touch" hover-class="venue-access__card--pressed" bindtap="onOpenApplication" data-application-id="{{item.applicationId}}" data-kind="{{item.kind}}" data-status="{{item.status}}" aria-label="{{item.venue.name}}，申请未通过，修改并重新申请">
+          <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.venue.name}}</text><text class="venue-access__venue-location">{{item.venue.address}}</text><text wx:if="{{item.rejectionReason}}" class="venue-access__application-reason">{{item.rejectionReason}}</text><text class="venue-access__application-action">修改并重新申请</text></view>
+          <text class="venue-access__application-status venue-access__application-status--{{item.statusTone}}">{{item.statusLabel}}</text>
+        </button>
+        <view wx:else class="venue-access__application" aria-label="{{item.venue.name}}，{{item.statusLabel}}">
+          <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.venue.name}}</text><text class="venue-access__venue-location">{{item.venue.address}}</text></view>
+          <text class="venue-access__application-status venue-access__application-status--{{item.statusTone}}">{{item.statusLabel}}</text>
+        </view>
+      </block>
+    </view>
+    <view wx:if="{{applicationsError}}" class="venue-access__application-error" role="status"><text>{{applicationsError}}</text><button bindtap="onRetry" disabled="{{retrying}}">{{retrying ? '正在重试' : '重试'}}</button></view>
+
+    <view class="venue-access__onboarding">
+      <text class="venue-access__onboarding-title">添加场馆</text>
+      <text class="venue-access__onboarding-copy">申请提交不会直接创建场馆或开放管理权限。</text>
+      <button class="venue-access__secondary venue-access__touch" hover-class="venue-access__secondary--pressed" bindtap="onOpenClaim">认领已有场馆</button>
+      <button class="venue-access__primary venue-access__touch" hover-class="venue-access__primary--pressed" bindtap="onOpenCreate">创建新场馆</button>
+    </view>
+  </scroll-view>
+</view>

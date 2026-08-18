@@ -17,7 +17,11 @@ from backend.app.models import (
     User,
 )
 from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
-from backend.app.modules.payments.provider import CreatePrepayRequest, PaymentProvider
+from backend.app.modules.payments.provider import (
+    CreatePrepayRequest,
+    CreatePrepayResult,
+    PaymentProvider,
+)
 from backend.app.modules.payments.service import PaymentCreationService
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
 
@@ -25,10 +29,14 @@ pytestmark = pytest.mark.integration
 
 
 def seed_order(
-    engine: Engine, *, status: OrderStatus = OrderStatus.PENDING_PAYMENT, expired: bool = False
+    engine: Engine,
+    *,
+    status: OrderStatus = OrderStatus.PENDING_PAYMENT,
+    expired: bool = False,
+    now: datetime | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     with Session(engine) as session:
-        now = datetime.now(UTC)
+        now = now or datetime.now(UTC)
         is_expired = expired or status is OrderStatus.EXPIRED
         user = User(wechat_app_id="wx-test", wechat_openid=f"openid-{uuid.uuid4()}")
         pitch = add_pitch(session, venue())
@@ -63,12 +71,49 @@ def seed_order(
         return user.id, order.id
 
 
-def service(engine: Engine, provider: PaymentProvider) -> PaymentCreationService:
+def service(
+    engine: Engine,
+    provider: PaymentProvider,
+    *,
+    now: datetime | None = None,
+) -> PaymentCreationService:
     return PaymentCreationService(
         session_factory=lambda: Session(engine),
         provider=provider,
-        now=lambda: datetime.now(UTC),
+        now=(lambda: now) if now is not None else (lambda: datetime.now(UTC)),
     )
+
+
+class CapturingProvider(MockPaymentProvider):
+    create_request: CreatePrepayRequest | None = None
+
+    def create_prepay(self, request: CreatePrepayRequest) -> CreatePrepayResult:
+        self.create_request = request
+        return super().create_prepay(request)
+
+
+def test_new_payment_uses_short_number_and_order_expiry_for_provider(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 18, 4, tzinfo=UTC)
+    user_id, order_id = seed_order(pg_engine, now=now)
+    provider = CapturingProvider()
+
+    service(pg_engine, provider, now=now).create_payment(
+        user_id=user_id,
+        order_id=order_id,
+        idempotency_key="payment-provider-contract",
+        payer_openid="openid",
+    )
+
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        payment = session.scalar(select(Payment).where(Payment.order_id == order_id))
+        assert payment is not None
+        assert payment.merchant_order_no == f"PB{payment.id.hex[:30]}"
+        assert len(payment.merchant_order_no) == 32
+        assert provider.create_request is not None
+        assert provider.create_request.time_expire == order.expires_at
 
 
 def test_new_payment_uses_order_price_and_same_key_replays_200(pg_engine: Engine) -> None:
@@ -224,9 +269,17 @@ def test_provider_success_is_left_for_authoritative_convergence(pg_engine: Engin
         payment = session.scalar(select(Payment))
         assert payment is not None
         merchant_order_no = payment.merchant_order_no
+        time_expire = payment.order.expires_at
     now = datetime.now(UTC)
     provider.create_prepay(
-        CreatePrepayRequest(merchant_order_no, "预订场地", 32000, "CNY", "openid")
+        CreatePrepayRequest(
+            merchant_order_no,
+            "预订场地",
+            32000,
+            "CNY",
+            "openid",
+            time_expire,
+        )
     )
     provider.mark_success(merchant_order_no, provider_transaction_no="tx-success", paid_at=now)
 

@@ -1,0 +1,85 @@
+<view class="intent-home u-page">
+  <view class="intent-home__header" style="padding-top: {{headerTopPx}}px;" aria-hidden="{{isCityPickerOpen}}">
+    <view class="intent-home__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <button class="intent-city-button" hover-class="intent-city-button--pressed" bindtap="onOpenCityPicker" aria-label="当前城市天津，点击切换">
+        <text>{{currentCityName}}</text><view class="intent-city-chevron" aria-hidden="true"></view>
+      </button>
+      <button
+        class="intent-home__my-button"
+        hover-class="intent-home__my-button--pressed"
+        bindtap="onOpenMy"
+        aria-label="我的，当前仅视觉预览"
+      >
+        <view class="intent-home__my-icon" aria-hidden="true">
+          <view class="intent-home__my-head"></view>
+          <view class="intent-home__my-shoulders"></view>
+        </view>
+      </button>
+    </view>
+  </view>
+
+  <view class="intent-home__content" aria-hidden="{{isCityPickerOpen}}">
+    <view class="intent-home__greeting">
+      <view class="intent-home__title"><text>早上好</text></view>
+      <text class="intent-home__subtitle">今天想从哪里开始？</text>
+    </view>
+
+    <view class="intent-home__shortcuts" aria-label="快速入口">
+      <button
+        wx:for="{{intents}}"
+        wx:key="id"
+        class="intent-home__shortcut {{activeIntent === item.id ? 'intent-home__shortcut--active' : ''}}"
+        hover-class="intent-home__shortcut--pressed"
+        bindtap="onOpenIntent"
+        data-intent-id="{{item.id}}"
+        aria-label="{{item.title}}"
+      >
+        <text>{{item.title}}</text>
+      </button>
+    </view>
+
+    <text class="intent-home__section-label">继续上次</text>
+    <button
+      class="intent-home__card intent-home__card--recent"
+      hover-class="intent-home__card--pressed"
+      bindtap="onContinueLast"
+      aria-label="继续上次租赁场地，{{recentVenueName}}"
+    >
+      <text class="intent-home__card-kicker">租赁场地</text>
+      <text class="intent-home__card-title">{{recentVenueName}}</text>
+      <text class="intent-home__card-detail">{{recentSummary}}</text>
+    </button>
+
+    <text class="intent-home__section-label">需要处理</text>
+    <button
+      class="intent-home__card"
+      hover-class="intent-home__card--pressed"
+      bindtap="onOpenMy"
+      aria-label="{{pendingOrderSummary}}，当前仅视觉预览"
+    >
+      <text class="intent-home__card-title">{{pendingOrderSummary}}</text>
+      <text class="intent-home__card-detail">{{pendingOrderDetail}}</text>
+    </button>
+
+    <text class="intent-home__fixture-note">recent/pending 均为 development visual Fixture data。</text>
+  </view>
+
+  <block wx:if="{{isCityPickerOpen}}">
+    <view class="intent-home__city-scrim" bindtap="onCloseCityPicker" aria-hidden="true"></view>
+    <view class="intent-home__city-sheet" role="dialog" aria-modal="true" aria-label="选择城市">
+      <view class="intent-home__city-sheet-header">
+        <text class="intent-home__city-sheet-title">选择城市</text>
+        <button class="intent-home__city-close" hover-class="intent-home__city-close--pressed" bindtap="onCloseCityPicker" aria-label="关闭城市选择">
+          <view class="intent-home__city-close-icon" aria-hidden="true"></view>
+        </button>
+      </view>
+      <button class="intent-home__city-row" hover-class="intent-home__city-row--pressed" bindtap="onSelectCurrentCity" aria-label="天津，当前已开放">
+        <view class="intent-home__city-copy"><text class="intent-home__city-name">{{currentCityName}}</text><text class="intent-home__city-status">{{currentStatus}}</text></view>
+        <view class="intent-home__city-selected" aria-hidden="true"></view>
+      </button>
+      <button class="intent-home__city-row intent-home__city-row--disabled" disabled aria-label="其他城市，敬请期待">
+        <view class="intent-home__city-copy"><text class="intent-home__city-name">{{otherCityName}}</text><text class="intent-home__city-status">{{otherStatus}}</text></view>
+      </button>
+    </view>
+  </block>
+</view>

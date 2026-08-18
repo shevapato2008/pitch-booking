@@ -7,6 +7,7 @@ from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app import models as profile_models
 from backend.app.models import Payment, Pitch, Slot, Venue, VenueFacility, VenueImage
 
 pytestmark = pytest.mark.integration
@@ -187,3 +188,247 @@ def test_declared_indexes_and_overlap_constraint_exist(pg_engine: Engine) -> Non
             )
         )
         assert {row[0] for row in exclusions} == {"ex_slots_no_overlap"}
+
+
+def test_onboarding_tables_and_pending_uniqueness_indexes_exist(pg_engine: Engine) -> None:
+    inspector = inspect(pg_engine)
+
+    assert set(inspector.get_table_names()) >= {
+        "venue_onboarding_applications",
+        "venue_onboarding_evidence",
+    }
+    assert {index["name"] for index in inspector.get_indexes("venue_onboarding_applications")} >= {
+        "uq_venue_onboarding_submitted_claim",
+        "uq_venue_onboarding_submitted_create",
+    }
+    evidence_columns = {
+        column["name"]: column for column in inspector.get_columns("venue_onboarding_evidence")
+    }
+    application_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("venue_onboarding_applications")
+    }
+    assert "reviewer_principal_id" in application_columns
+    assert str(application_columns["reviewer_principal_id"]["type"]) == "VARCHAR(128)"
+    assert application_columns["reviewer_principal_id"]["nullable"] is True
+    assert "reviewer_user_id" not in application_columns
+    foreign_key_columns = {
+        column
+        for constraint in inspector.get_foreign_keys("venue_onboarding_applications")
+        for column in constraint["constrained_columns"]
+    }
+    assert "reviewer_principal_id" not in foreign_key_columns
+    assert evidence_columns["owner_user_id"]["nullable"] is False
+    assert evidence_columns["application_id"]["nullable"] is True
+    assert "url" not in evidence_columns
+
+
+def _profile_user() -> profile_models.User:
+    return profile_models.User(wechat_app_id="wx-profile", wechat_openid=f"profile-{uuid.uuid4()}")
+
+
+def _revision(
+    parent: Venue, creator: profile_models.User, **overrides: object
+) -> profile_models.VenueProfileRevision:
+    values: dict[str, object] = {
+        "venue": parent,
+        "base_published_version": 1,
+        "revision_version": 1,
+        "target_description": "Draft description",
+        "status": "READY",
+        "description_status": "APPROVED",
+        "created_by": creator,
+        "is_current_editable": True,
+    }
+    values.update(overrides)
+    return profile_models.VenueProfileRevision(**values)
+
+
+def test_profile_tables_counters_enums_and_due_index_exist(pg_engine: Engine) -> None:
+    inspector = inspect(pg_engine)
+    assert set(inspector.get_table_names()) >= {
+        "venue_profile_revisions",
+        "venue_profile_image_drafts",
+        "content_moderation_jobs",
+        "content_moderation_decisions",
+        "profile_mutation_idempotency_records",
+    }
+    venue_columns = {column["name"]: column for column in inspector.get_columns("venues")}
+    for name in ("profile_version", "facility_version"):
+        assert str(venue_columns[name]["type"]) == "BIGINT"
+        assert venue_columns[name]["nullable"] is False
+        assert venue_columns[name]["default"] in {"1", "'1'::bigint"}
+    revision_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("venue_profile_revisions")
+    }
+    description_version = revision_columns["description_item_version"]
+    assert str(description_version["type"]) == "BIGINT"
+    assert description_version["nullable"] is False
+    assert description_version["default"] in {"1", "'1'::bigint"}
+    with pg_engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT t.typname, e.enumlabel FROM pg_type t "
+                "JOIN pg_enum e ON e.enumtypid = t.oid "
+                "WHERE t.typname IN ('facility_code', 'moderation_reason_code', "
+                "'venue_profile_item_status', 'venue_profile_revision_status', "
+                "'venue_profile_mime_type', "
+                "'moderation_item_type', 'moderation_job_status', "
+                "'moderation_decision_outcome', 'moderation_decision_source', "
+                "'profile_mutation_state') ORDER BY t.typname, e.enumsortorder"
+            )
+        )
+        labels: dict[str, list[str]] = {}
+        for enum_name, label in rows:
+            labels.setdefault(enum_name, []).append(label)
+    assert labels == {
+        "facility_code": (
+            "PARKING TOILET CHANGING_ROOM SHOWER LOCKERS DRINKING_WATER BEVERAGE_SALES "
+            "EQUIPMENT_RENTAL REST_AREA FIRST_AID AED INDOOR OUTDOOR COVERED LIGHTING "
+            "ARTIFICIAL_TURF NATURAL_GRASS"
+        ).split(),
+        "moderation_reason_code": (
+            "CONTACT_INFO QR_OR_PAYMENT_CODE OFF_PLATFORM_TRADE EXTERNAL_LINK "
+            "UNRELATED_CONTENT IMAGE_NOT_VENUE IMAGE_QUALITY PERSONAL_PRIVACY UNSAFE_CONTENT"
+        ).split(),
+        "venue_profile_item_status": (
+            "UPLOADING REVIEWING APPROVED REJECTED PENDING_MANUAL"
+        ).split(),
+        "venue_profile_revision_status": (
+            "READY REVIEWING REJECTED PENDING_MANUAL PUBLISHED"
+        ).split(),
+        "venue_profile_mime_type": ["image/jpeg", "image/png", "image/webp"],
+        "moderation_item_type": "DESCRIPTION IMAGE".split(),
+        "moderation_job_status": "PENDING CLAIMED COMPLETED FAILED".split(),
+        "moderation_decision_outcome": "PASS REJECT UNCERTAIN".split(),
+        "moderation_decision_source": "PROVIDER MANUAL".split(),
+        "profile_mutation_state": "CLAIMED COMPLETED".split(),
+    }
+    due = next(
+        index
+        for index in inspector.get_indexes("content_moderation_jobs")
+        if index["name"] == "ix_content_moderation_jobs_due"
+    )
+    assert due["column_names"] == ["status", "next_run_at", "lease_until", "id"]
+
+
+def test_only_one_current_editable_revision_and_description_limit(
+    pg_session: Session,
+) -> None:
+    parent = venue()
+    creator = _profile_user()
+    pg_session.add(_revision(parent, creator))
+    pg_session.commit()
+    pg_session.add(_revision(parent, creator, revision_version=2))
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+    pg_session.rollback()
+
+    pg_session.add(_revision(venue(), creator, target_description="x" * 301))
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+
+    pg_session.rollback()
+    pg_session.add(_revision(venue(), creator, description_item_version=0))
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"published_image_id": None, "original_object_key": None},
+        {"published_image_id": uuid.uuid4(), "original_object_key": "private/new.jpg"},
+        {"original_object_key": "private/new.jpg", "item_version": 0},
+        {"original_object_key": "private/new.jpg", "byte_size": 0},
+    ],
+)
+def test_draft_image_source_versions_and_sizes_are_constrained(
+    pg_session: Session, overrides: dict[str, object]
+) -> None:
+    revision = _revision(venue(), _profile_user())
+    values: dict[str, object] = {
+        "revision": revision,
+        "published_image_id": None,
+        "original_object_key": "private/original.jpg",
+        "role": "COVER",
+        "sort_order": 0,
+        "moderation_status": "UPLOADING",
+        "item_version": 1,
+    }
+    values.update(overrides)
+    pg_session.add(profile_models.VenueProfileImageDraft(**values))
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+
+
+def test_draft_sort_job_lease_and_mutation_scope_are_constrained(
+    pg_session: Session,
+) -> None:
+    revision = _revision(venue(), _profile_user())
+    pg_session.add_all(
+        [
+            profile_models.VenueProfileImageDraft(
+                revision=revision,
+                original_object_key="private/a.jpg",
+                role="COVER",
+                sort_order=0,
+                moderation_status="UPLOADING",
+                item_version=1,
+            ),
+            profile_models.VenueProfileImageDraft(
+                revision=revision,
+                original_object_key="private/b.jpg",
+                role="GALLERY",
+                sort_order=0,
+                moderation_status="UPLOADING",
+                item_version=1,
+            ),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+    pg_session.rollback()
+
+    revision = _revision(venue(), _profile_user())
+    pg_session.add(
+        profile_models.ContentModerationJob(
+            revision=revision,
+            item_type="DESCRIPTION",
+            item_version=1,
+            status="CLAIMED",
+            attempt_count=-1,
+            next_run_at=datetime.now(UTC),
+            claim_token=uuid.uuid4(),
+            lease_until=None,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        pg_session.commit()
+    pg_session.rollback()
+
+    creator = _profile_user()
+    parent = venue()
+    pg_session.add_all(
+        [
+            profile_models.ProfileMutationIdempotencyRecord(
+                venue=parent,
+                actor=creator,
+                scope="save-profile",
+                key="same-key",
+                request_sha256="a" * 64,
+                state="CLAIMED",
+            ),
+            profile_models.ProfileMutationIdempotencyRecord(
+                venue=parent,
+                actor=creator,
+                scope="save-profile",
+                key="same-key",
+                request_sha256="a" * 64,
+                state="CLAIMED",
+            ),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        pg_session.commit()

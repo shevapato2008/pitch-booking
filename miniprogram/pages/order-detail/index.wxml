@@ -54,7 +54,6 @@
       <text class="card-kicker">联系人</text>
       <text class="detail-line">{{order.contact.name}} · {{order.contact.maskedPhone}}</text>
       <text class="detail-line">导航 · {{order.venue.address}}</text>
-      <text class="detail-line">客服电话 · {{order.venue.customerServicePhone}}</text>
     </view>
 
     <view class="detail-card">

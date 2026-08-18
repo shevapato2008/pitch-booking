@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -14,6 +14,7 @@ from backend.app.models import (
     Payment,
     PaymentState,
     Pitch,
+    RefundCase,
     Slot,
     Venue,
 )
@@ -109,10 +110,48 @@ class OrderRepository:
             select(Order)
             .where(Order.id == order_id, Order.user_id == user_id)
             .options(
-                joinedload(Order.slot).joinedload(Slot.pitch),
+                joinedload(Order.slot).joinedload(Slot.pitch).joinedload(Pitch.venue),
                 selectinload(Order.payments),
+                selectinload(Order.refund_cases).selectinload(RefundCase.attempts),
             )
             .execution_options(populate_existing=True)
+        )
+
+    def list_owned_orders(
+        self,
+        *,
+        user_id: uuid.UUID,
+        limit: int,
+        before_created_at: datetime | None,
+        before_id: uuid.UUID | None,
+    ) -> list[Order]:
+        statement = select(Order).where(Order.user_id == user_id)
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    Order.created_at < before_created_at,
+                    and_(
+                        Order.created_at == before_created_at,
+                        Order.id < before_id,
+                    ),
+                )
+            )
+        return list(
+            self.session.scalars(
+                statement
+                .options(
+                    joinedload(Order.slot)
+                    .joinedload(Slot.pitch)
+                    .joinedload(Pitch.venue),
+                    selectinload(Order.payments),
+                    selectinload(Order.refund_cases).selectinload(
+                        RefundCase.attempts
+                    ),
+                )
+                .order_by(Order.created_at.desc(), Order.id.desc())
+                .limit(limit)
+                .execution_options(populate_existing=True)
+            )
         )
 
     def list_expiry_candidate_ids(

@@ -9,7 +9,15 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 import scripts.seed_demo as seed_demo
-from backend.app.models import BookingMode, Order, Slot, SlotStatus, User, Venue
+from backend.app.models import (
+    BookingMode,
+    Order,
+    Slot,
+    SlotStatus,
+    User,
+    Venue,
+    VenueMembership,
+)
 from scripts.seed_demo import parse_anchor_date, run_seed
 
 
@@ -122,7 +130,56 @@ def test_seed_writes_all_directory_era_venue_fields_explicitly(
         "2026-07-30T18:15:00+08:00"
     )
     assert venue_values["is_listed"] is True
-    assert venue_values["public_pitch_types"] == []
+    assert venue_values["public_pitch_types"] == ["FIVE_A_SIDE", "SEVEN_A_SIDE"]
+    assert venue_values["profile_version"] == 1
+    assert venue_values["facility_version"] == 1
+    user_values = next(values for model, values in captured if model is User)
+    membership_values = next(
+        values for model, values in captured if model is VenueMembership
+    )
+    assert user_values["wechat_openid"].startswith("dev-openid-")
+    assert membership_values["venue_id"] == seed_demo.VENUE_ID
+    assert membership_values["user_id"] == user_values["id"]
+    assert membership_values["is_active"] is True
+    assert membership_values["can_manage_inventory"] is True
+    pitch_values = [values for model, values in captured if model is seed_demo.Pitch]
+    assert pitch_values == [
+        {
+            "id": seed_demo.stable_id("pitch-five-a"),
+            "venue_id": seed_demo.VENUE_ID,
+            "code": "FIVE-A",
+            "name": "五人制 A 场",
+            "pitch_type": "FIVE_A_SIDE",
+            "sort_order": 0,
+            "players_per_side": 5,
+            "system_name": "五人制 A 场",
+            "custom_name": None,
+            "sequence": 1,
+            "status": "ACTIVE",
+        },
+        {
+            "id": seed_demo.stable_id("pitch-seven-a"),
+            "venue_id": seed_demo.VENUE_ID,
+            "code": "SEVEN-A",
+            "name": "七人制 A 场",
+            "pitch_type": "SEVEN_A_SIDE",
+            "sort_order": 1,
+            "players_per_side": 7,
+            "system_name": "七人制 A 场",
+            "custom_name": None,
+            "sequence": 1,
+            "status": "ACTIVE",
+        },
+    ]
+    counter_values = [
+        values
+        for model, values in captured
+        if model is seed_demo.VenuePitchSequenceCounter
+    ]
+    assert counter_values == [
+        {"venue_id": seed_demo.VENUE_ID, "players_per_side": 5, "last_sequence": 1},
+        {"venue_id": seed_demo.VENUE_ID, "players_per_side": 7, "last_sequence": 1},
+    ]
 
 
 @pytest.mark.integration
@@ -163,7 +220,8 @@ def test_seed_is_idempotent_preserves_business_rows_and_has_future_inventory(
     with Session(pg_engine) as session:
         protected = session.get_one(Slot, protected_id)
         assert (protected.price_cents, protected.status) == (45600, SlotStatus.BOOKED)
-        assert session.scalar(select(func.count()).select_from(User)) == 0
+        assert session.scalar(select(func.count()).select_from(User)) == 1
+        assert session.scalar(select(func.count()).select_from(VenueMembership)) == 1
         assert session.scalar(select(func.count()).select_from(Order)) == 0
 
 

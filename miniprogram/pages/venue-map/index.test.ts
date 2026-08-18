@@ -196,6 +196,21 @@ test("ordinary load commits CITY, preserves platform order, and emits no distanc
   expect(target.data.viewport.mode).toBe("ALL");
 });
 
+test("keeps the fixed my-orders shortcut visible outside directory loading and error branches", () => {
+  const target = page();
+  const template = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
+
+  call(target, "onOpenMyOrders");
+
+  expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/pages/my-orders/index" });
+  expect(template.indexOf('class="map-shortcuts"')).toBeGreaterThan(template.indexOf("</block>"));
+  expect(template).toContain('bindtap="onOpenMyOrders"');
+  expect(styles).toMatch(/\.map-shortcuts\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)\s+248rpx/s);
+  expect(styles).toMatch(/\.map-shortcuts__label\s*\{[^}]*overflow:hidden[^}]*text-overflow:ellipsis[^}]*white-space:nowrap/s);
+  expect(styles).toMatch(/\.map-shortcuts__orders\s*\{[^}]*display:flex[^}]*align-items:center[^}]*justify-content:center/s);
+});
+
 test("projects ordinary and selected venue marker assets at their approved dimensions", async () => {
   const target = page();
   await call(target, "onLoad", {});

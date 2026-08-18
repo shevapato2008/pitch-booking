@@ -21,7 +21,6 @@ REQUIRED_VENUE_TEXT = (
     "business_hours_text",
     "address",
     "parking_text",
-    "phone",
     "refund_policy_summary",
 )
 
@@ -123,7 +122,8 @@ def verify(
         if not isinstance(venue.get(field), (int, float)):
             failures.append(f"venue.{field} is missing")
 
-    images = venue.get("images")
+    profile = venue.get("profile")
+    images = profile.get("images") if isinstance(profile, dict) else None
     if not isinstance(images, list) or sum(
         isinstance(image, dict) and image.get("role") == "COVER" for image in images
     ) != 1:

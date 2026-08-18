@@ -30,8 +30,9 @@ def seed_payment(
     status: PaymentState = PaymentState.CONFIRMING,
     slot_status: SlotStatus = SlotStatus.LOCKED,
     transaction_no: str | None = None,
+    now: datetime | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, datetime]:
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     with Session(engine) as session:
         user = User(wechat_app_id="mock-app-id", wechat_openid=f"owner-{uuid.uuid4()}")
         pitch = add_pitch(session, venue())
@@ -56,7 +57,7 @@ def seed_payment(
             id=uuid.uuid4(),
             order=order,
             provider="mock",
-            merchant_order_no=f"M-{uuid.uuid4().hex}",
+            merchant_order_no=f"PB{uuid.uuid4().hex[:30]}",
             provider_transaction_no=transaction_no,
             amount_cents=32000,
             currency="CNY",
@@ -132,6 +133,7 @@ def test_verified_success_atomically_books_and_duplicate_or_old_close_cannot_reg
         assert first.terminal and duplicate.terminal
         assert payment.status is PaymentState.SUCCESS
         assert payment.provider_transaction_no == "tx-1"
+        assert payment.applied_to_order_at is not None
         assert order.status is OrderStatus.CONFIRMED
         assert slot.status is SlotStatus.BOOKED
         assert slot.locked_by_order_id is None and slot.locked_until is None
@@ -246,8 +248,12 @@ def test_order_projection_prefers_success_then_nonterminal_then_latest_terminal(
     assert _project_payment([payment(PaymentState.CLOSED, 1), closed]) is closed
 
 
-def test_late_success_overrides_closed_but_closed_rejects_older_unknown(pg_engine: Engine) -> None:
-    order_id, payment_id, _, _ = seed_payment(pg_engine, status=PaymentState.CLOSED)
+def test_late_success_after_closed_preserves_money_without_becoming_main_payment(
+    pg_engine: Engine,
+) -> None:
+    order_id, payment_id, slot_id, _ = seed_payment(
+        pg_engine, status=PaymentState.CLOSED
+    )
     service = convergence(pg_engine)
     service.converge(
         payment_id=payment_id,
@@ -265,8 +271,13 @@ def test_late_success_overrides_closed_but_closed_rejects_older_unknown(pg_engin
         ),
     )
     with Session(pg_engine) as session:
-        assert session.get_one(Payment, payment_id).status is PaymentState.SUCCESS
-        assert session.get_one(Order, order_id).status is OrderStatus.CONFIRMED
+        payment = session.get_one(Payment, payment_id)
+        slot = session.get_one(Slot, slot_id)
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.applied_to_order_at is None
+        assert session.get_one(Order, order_id).status is OrderStatus.PAYMENT_EXCEPTION
+        assert slot.status is SlotStatus.LOCKED
+        assert slot.locked_by_order_id == order_id
 
 
 def test_conflicting_success_fact_is_audited_without_overwriting_first_success(
@@ -305,7 +316,9 @@ def test_success_on_closed_inventory_preserves_money_but_marks_order_exception(
         ),
     )
     with Session(pg_engine) as session:
-        assert session.get_one(Payment, payment_id).status is PaymentState.SUCCESS
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.applied_to_order_at is None
         assert session.get_one(Order, order_id).status is OrderStatus.PAYMENT_EXCEPTION
         assert session.get_one(Slot, slot_id).status is SlotStatus.CLOSED
 

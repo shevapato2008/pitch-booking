@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的场馆与入驻申请 · 视觉参考</title>
+  <style>
+    :root {
+      --page: #f8fafc;
+      --surface: #ffffff;
+      --text: #10243e;
+      --muted: #64748b;
+      --border: #dbe5ec;
+      --primary: #0284c7;
+      --primary-strong: #0369a1;
+      --primary-soft: #e0f2fe;
+      --success: #047857;
+      --success-soft: #ecfdf5;
+      --warning: #b45309;
+      --warning-soft: #fff7ed;
+      --error: #c42525;
+      --error-soft: #fef2f2;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px;
+      background: #e8eef3;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .intro { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
+    .board { display: grid; grid-template-columns: repeat(auto-fit, 375px); gap: 28px; align-items: start; }
+    figure { width: 375px; margin: 0; }
+    figcaption { margin-top: 10px; color: var(--muted); font-size: 13px; font-weight: 700; }
+    .phone {
+      position: relative;
+      width: 375px;
+      height: 812px;
+      overflow: hidden;
+      border: 1px solid #cbd5e1;
+      border-radius: 24px;
+      background: var(--page);
+      box-shadow: 0 16px 40px rgba(16, 36, 62, .12);
+    }
+    .system { height: 44px; background: var(--surface); }
+    .nav {
+      position: relative;
+      display: flex;
+      height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 18px;
+      font-weight: 750;
+    }
+    .back {
+      position: absolute;
+      left: 12px;
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+    }
+    .back::before {
+      width: 9px;
+      height: 9px;
+      border-bottom: 2px solid var(--text);
+      border-left: 2px solid var(--text);
+      content: "";
+      transform: rotate(45deg);
+    }
+    .content { height: 724px; overflow: hidden; padding: 20px 20px 116px; }
+    .kicker { display: block; color: var(--primary-strong); font-size: 12px; font-weight: 750; letter-spacing: .08em; }
+    .hero { margin: 6px 0 4px; font-size: 24px; line-height: 1.35; }
+    .sub { margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .card {
+      margin-bottom: 12px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+    .card-title { display: block; font-size: 16px; font-weight: 750; line-height: 1.5; }
+    .meta { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .venue-card { position: relative; padding-right: 48px; }
+    .venue-card::after {
+      position: absolute;
+      top: 50%;
+      right: 22px;
+      width: 9px;
+      height: 9px;
+      border-top: 2px solid var(--primary);
+      border-right: 2px solid var(--primary);
+      content: "";
+      transform: translateY(-50%) rotate(45deg);
+    }
+    .actions { display: grid; gap: 10px; margin-top: 18px; }
+    .button {
+      display: flex;
+      min-height: 44px;
+      padding: 8px 16px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--primary-strong);
+      border-radius: 12px;
+      background: var(--primary-strong);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 750;
+      text-align: center;
+    }
+    .button.secondary { background: var(--surface); color: var(--primary-strong); }
+    .section-title { display: block; margin: 18px 2px 10px; font-size: 15px; font-weight: 750; }
+    .search, .field {
+      min-height: 44px;
+      margin-bottom: 10px;
+      padding: 11px 13px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      font-size: 14px;
+    }
+    .field-label { display: block; margin: 0 2px 6px; font-size: 13px; font-weight: 700; }
+    .value { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .verified { color: var(--success); font-size: 12px; font-weight: 750; }
+    .selected { border-color: #7dd3fc; background: #f0f9ff; }
+    .selected::before { color: var(--primary); content: "已选择 · "; font-size: 12px; font-weight: 750; }
+    .evidence { display: grid; gap: 8px; }
+    .evidence-row {
+      display: flex;
+      min-height: 52px;
+      padding: 10px 12px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      font-size: 13px;
+    }
+    .evidence-row strong { display: block; line-height: 1.35; }
+    .evidence-row small { display: block; margin-top: 2px; color: var(--muted); }
+    .mini-action { color: var(--primary-strong); font-weight: 750; white-space: nowrap; }
+    .evidence-row.error { border-color: #fecaca; background: var(--error-soft); }
+    .evidence-row.error small, .evidence-row.error .mini-action { color: var(--error); }
+    .footer {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      padding: 10px 20px 22px;
+      background: var(--surface);
+      box-shadow: 0 -4px 18px rgba(16, 36, 62, .1);
+    }
+    .fixture-note { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; text-align: center; }
+    .status {
+      display: flex;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid #bae6fd;
+      border-radius: 16px;
+      background: #f0f9ff;
+    }
+    .status-mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--primary-soft);
+      color: var(--primary-strong);
+      font-weight: 800;
+    }
+    .status h2 { margin: 0; font-size: 18px; }
+    .status p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .status.rejected { border-color: #fecaca; background: var(--error-soft); }
+    .status.rejected .status-mark { background: #fee2e2; color: var(--error); }
+    .summary { margin-top: 14px; }
+    .summary-row { display: flex; padding: 9px 0; justify-content: space-between; gap: 18px; border-bottom: 1px solid #edf2f7; font-size: 13px; }
+    .summary-row span { color: var(--muted); }
+    .reason { margin-top: 14px; padding: 14px; border-left: 4px solid var(--error); border-radius: 10px; background: var(--surface); }
+    .reason strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .reason p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.55; }
+    .compact .content { padding-top: 14px; }
+    .compact .field { min-height: 40px; margin-bottom: 7px; padding: 9px 12px; }
+    .compact .field-label { margin-bottom: 4px; }
+    .compact .section-title { margin: 11px 2px 7px; }
+    .compact .evidence { gap: 6px; }
+    .compact .evidence-row { min-height: 44px; padding: 7px 10px; }
+  </style>
+</head>
+<body>
+  <h1>我的场馆与入驻申请 · 375 × 812</h1>
+  <p class="intro">静态视觉参考，不进入小程序构建；六个行为差异状态沿用已批准的场馆管理视觉系统。</p>
+
+  <main class="board">
+    <figure data-state="one-venue-portfolio">
+      <div class="phone">
+        <div class="system"></div><div class="nav">我的场馆</div>
+        <div class="content">
+          <span class="kicker">VENUE PORTFOLIO</span>
+          <h2 class="hero">管理你的场馆</h2>
+          <p class="sub">已授权场馆会显示在这里，也可以发起新的认领或创建申请。</p>
+          <div class="card venue-card"><span class="card-title">渤海元丰足球场</span><span class="meta">滨海新区 · 洞庭路 66 号</span><span class="meta">可管理库存与场馆资料</span></div>
+          <div class="actions"><div class="button secondary">认领已有场馆</div><div class="button">创建新场馆</div></div>
+        </div>
+      </div>
+      <figcaption>one-venue-portfolio · 一个授权场馆 + 两个稳定入口</figcaption>
+    </figure>
+
+    <figure data-state="selected-claim">
+      <div class="phone compact">
+        <div class="system"></div><div class="nav"><span class="back"></span>认领已有场馆</div>
+        <div class="content">
+          <label class="field-label">场馆搜索</label><div class="search">渤海元丰</div>
+          <div class="card selected"><span class="card-title">渤海元丰足球场</span><span class="meta">滨海新区 · 洞庭路 66 号</span></div>
+          <span class="section-title">申请人信息</span>
+          <label class="field-label">申请人姓名</label><div class="field">范晨</div>
+          <label class="field-label">联系电话状态</label><div class="field value"><span>138 **** 6688</span><span class="verified">已验证</span></div>
+          <span class="section-title">证明材料</span>
+          <div class="evidence"><div class="evidence-row"><span><strong>经营或管理授权证明</strong><small>authorization.pdf</small></span><span class="verified">已上传</span></div><div class="evidence-row"><span><strong>场馆现场证明</strong><small>venue-exterior.jpg</small></span><span class="verified">已上传</span></div></div>
+        </div>
+        <div class="footer"><span class="fixture-note">仅视觉预览，不会提交</span><div class="button">提交认领申请</div></div>
+      </div>
+      <figcaption>selected-claim · 已选候选 + 必需证据</figcaption>
+    </figure>
+
+    <figure data-state="ready-create">
+      <div class="phone compact">
+        <div class="system"></div><div class="nav"><span class="back"></span>创建新场馆</div>
+        <div class="content">
+          <label class="field-label">场馆名称</label><div class="field">海河运动公园足球场</div>
+          <label class="field-label">地图位置与详细地址</label><div class="field">天津市河东区海河东路 188 号</div>
+          <label class="field-label">行政区</label><div class="field value"><span>天津市 · 河东区</span><span class="mini-action">地图选点</span></div>
+          <label class="field-label">申请人姓名</label><div class="field">范晨</div>
+          <label class="field-label">联系电话状态</label><div class="field value"><span>138 **** 6688</span><span class="verified">已验证</span></div>
+          <span class="section-title">证明材料</span>
+          <div class="evidence"><div class="evidence-row"><strong>营业执照或主体证明</strong><span class="verified">已上传</span></div><div class="evidence-row"><strong>产权、租赁或管理授权证明</strong><span class="verified">已上传</span></div><div class="evidence-row"><strong>场馆外部与内部现场证明</strong><span class="verified">2 项完整</span></div></div>
+        </div>
+        <div class="footer"><span class="fixture-note">仅视觉预览，不会提交</span><div class="button">提交新场馆申请</div></div>
+      </div>
+      <figcaption>ready-create · 身份、位置、联系人、四项证据齐备</figcaption>
+    </figure>
+
+    <figure data-state="upload-error-retry">
+      <div class="phone compact">
+        <div class="system"></div><div class="nav"><span class="back"></span>认领已有场馆</div>
+        <div class="content">
+          <span class="kicker">UPLOAD NEEDS ATTENTION</span>
+          <h2 class="hero">补齐认领材料</h2>
+          <p class="sub">其他内容已保留，只需重试失败的这一项。</p>
+          <div class="card selected"><span class="card-title">渤海元丰足球场</span><span class="meta">滨海新区 · 洞庭路 66 号</span></div>
+          <span class="section-title">证明材料</span>
+          <div class="evidence"><div class="evidence-row"><span><strong>经营或管理授权证明</strong><small>authorization.pdf</small></span><span class="verified">已上传</span></div><div class="evidence-row error"><span><strong>场馆现场证明</strong><small>venue-exterior.jpg 上传失败</small></span><span class="mini-action">重试上传</span></div></div>
+          <div class="reason"><strong>未提交</strong><p>失败材料修复前，提交按钮保持禁用并说明原因。</p></div>
+        </div>
+        <div class="footer"><span class="fixture-note">请先重试“场馆现场证明”</span><div class="button" style="opacity:.46">提交认领申请</div></div>
+      </div>
+      <figcaption>upload-error-retry · 明确失败材料与单项重试</figcaption>
+    </figure>
+
+    <figure data-state="submitted-reviewing">
+      <div class="phone">
+        <div class="system"></div><div class="nav"><span class="back"></span>申请详情</div>
+        <div class="content">
+          <div class="status"><span class="status-mark">i</span><div><h2>申请已提交</h2><p>平台正在审核。审核完成前不会创建场馆或开放管理权限。</p></div></div>
+          <div class="card summary"><span class="card-title">海河运动公园足球场</span><div class="summary-row"><span>申请类型</span><strong>创建新场馆</strong></div><div class="summary-row"><span>当前状态</span><strong>审核中</strong></div><div class="summary-row"><span>提交时间</span><strong>2026-08-17 14:30</strong></div><div class="summary-row"><span>场馆地址</span><strong>河东区海河东路 188 号</strong></div><div class="summary-row"><span>证明材料</span><strong>4 项已提交</strong></div></div>
+          <p class="sub">提交后的内容只读。如需更正，请等待平台审核结果。</p>
+        </div>
+        <div class="footer"><div class="button secondary">返回我的场馆</div></div>
+      </div>
+      <figcaption>submitted-reviewing · 状态诚实 + 不可编辑摘要</figcaption>
+    </figure>
+
+    <figure data-state="rejected-retry">
+      <div class="phone">
+        <div class="system"></div><div class="nav"><span class="back"></span>申请详情</div>
+        <div class="content">
+          <div class="status rejected"><span class="status-mark">!</span><div><h2>申请未通过</h2><p>材料没有写入场馆资料，也没有开放管理权限。</p></div></div>
+          <div class="reason"><strong>审核原因</strong><p>租赁授权证明中的主体名称与营业执照不一致，请补充最新盖章文件后重新提交。</p></div>
+          <div class="card summary"><span class="card-title">海河运动公园足球场</span><div class="summary-row"><span>申请类型</span><strong>创建新场馆</strong></div><div class="summary-row"><span>审核时间</span><strong>2026-08-17 16:42</strong></div><div class="summary-row"><span>需修改</span><strong>管理授权证明</strong></div></div>
+          <p class="sub">重新编辑会保留场馆身份与地址，并允许替换被退回的证明材料。</p>
+        </div>
+        <div class="footer"><span class="fixture-note">仅视觉预览，不会提交</span><div class="button">修改材料并重新申请</div></div>
+      </div>
+      <figcaption>rejected-retry · 原因清晰 + 可编辑重试入口</figcaption>
+    </figure>
+  </main>
+</body>
+</html>

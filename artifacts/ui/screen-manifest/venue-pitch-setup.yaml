@@ -1,0 +1,104 @@
+id: venue-pitch-setup
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+entry: authorized-deep-link-only
+reference_gate: reference-approved-native-approved
+native_gate: native-approved
+venue_scope:
+  venue_id: venue-bohai-yuanfeng
+  name: 渤海元丰足球场
+  booking_mode: ONLINE
+  permission: VenueMembership.can_manage_inventory
+review_slots:
+  - reference
+  - implementation
+  - side-by-side
+  - overlay-50
+  - difference
+  - observations
+fixture:
+  planned_path: miniprogram/dev/venue-pitch-setup-fixture.ts
+  deletion_condition: delete after physical-pitch configuration and real inventory backend integration, device/user acceptance, and production package audit
+states:
+  - {id: initial-loading, reference: artifacts/ui/references/venue-pitch-setup.html?state=initial-loading}
+  - {id: load-error, reference: artifacts/ui/references/venue-pitch-setup.html?state=load-error}
+  - {id: first-entry-empty, reference: artifacts/ui/references/venue-pitch-setup.html?state=first-entry-empty}
+  - {id: inactive-only, reference: artifacts/ui/references/venue-pitch-setup.html?state=inactive-only}
+  - {id: add-first-open, reference: artifacts/ui/references/venue-pitch-setup.html?state=add-first-open}
+  - {id: first-pitch-draft, reference: artifacts/ui/references/venue-pitch-setup.html?state=first-pitch-draft}
+  - {id: unnamed-pitch-draft, reference: artifacts/ui/references/venue-pitch-setup.html?state=unnamed-pitch-draft}
+  - {id: first-save-success, reference: artifacts/ui/references/venue-pitch-setup.html?state=first-save-success}
+  - {id: six-pitch-list, reference: artifacts/ui/references/venue-pitch-setup.html?state=six-pitch-list}
+  - {id: edit-preset-open, reference: artifacts/ui/references/venue-pitch-setup.html?state=edit-preset-open}
+  - {id: edit-custom-open, reference: artifacts/ui/references/venue-pitch-setup.html?state=edit-custom-open}
+  - {id: field-validation, reference: artifacts/ui/references/venue-pitch-setup.html?state=field-validation}
+  - {id: deactivate-blocked, reference: artifacts/ui/references/venue-pitch-setup.html?state=deactivate-blocked}
+  - {id: unused-delete-confirm, reference: artifacts/ui/references/venue-pitch-setup.html?state=unused-delete-confirm}
+  - {id: unused-deleted-draft, reference: artifacts/ui/references/venue-pitch-setup.html?state=unused-deleted-draft}
+  - {id: deactivated-draft, reference: artifacts/ui/references/venue-pitch-setup.html?state=deactivated-draft}
+  - {id: reactivated-draft, reference: artifacts/ui/references/venue-pitch-setup.html?state=reactivated-draft}
+  - {id: save-in-progress, reference: artifacts/ui/references/venue-pitch-setup.html?state=save-in-progress}
+  - {id: save-failed, reference: artifacts/ui/references/venue-pitch-setup.html?state=save-failed}
+  - {id: configuration-changed, reference: artifacts/ui/references/venue-pitch-setup.html?state=configuration-changed}
+  - {id: save-result-unknown, reference: artifacts/ui/references/venue-pitch-setup.html?state=save-result-unknown}
+  - {id: unsaved-leave-confirm, reference: artifacts/ui/references/venue-pitch-setup.html?state=unsaved-leave-confirm}
+authority:
+  identity: immutable pitch_id
+  display_name: custom_name ?? system_name
+  format: players_per_side integer 1..99
+  ordering: players_per_side, sequence, id
+  editor_commit: page draft only
+  page_commit: atomic future server save
+first_save_handoff:
+  client_ref: draft-pitch-1
+  pitch_id: pitch-7-001
+  custom_name: A场
+  system_name: 7人场 · 1号场
+  display_name: A场
+  players_per_side: 7
+  sequence: 1
+  status: ACTIVE
+pitches:
+  - {id: pitch-5-001, custom_name: 滨河场, system_name: 5人场 · 1号场, display_name: 滨河场, players_per_side: 5, sequence: 1, status: ACTIVE}
+  - {id: pitch-5-002, custom_name: null, system_name: 5人场 · 2号场, display_name: 5人场 · 2号场, players_per_side: 5, sequence: 2, status: ACTIVE}
+  - {id: pitch-7-001, custom_name: A场, system_name: 7人场 · 1号场, display_name: A场, players_per_side: 7, sequence: 1, status: ACTIVE}
+  - {id: pitch-7-002, custom_name: null, system_name: 7人场 · 2号场, display_name: 7人场 · 2号场, players_per_side: 7, sequence: 2, status: ACTIVE}
+  - {id: pitch-7-003, custom_name: null, system_name: 7人场 · 3号场, display_name: 7人场 · 3号场, players_per_side: 7, sequence: 3, status: ACTIVE}
+  - {id: pitch-7-004, custom_name: 训练场, system_name: 7人场 · 4号场, display_name: 训练场, players_per_side: 7, sequence: 4, status: INACTIVE}
+capabilities:
+  pitch-5-001:
+    edit_format: {allowed: false, reason: BUSINESS_HISTORY}
+    delete: {allowed: false, reason: BUSINESS_HISTORY}
+    deactivate: {allowed: true, reason: null}
+    reactivate: {allowed: false, reason: ALREADY_ACTIVE}
+    future_blockers: {AVAILABLE: 0, LOCKED: 0, BOOKED: 0}
+  pitch-5-002:
+    edit_format: {allowed: true, reason: null}
+    delete: {allowed: true, reason: null}
+    deactivate: {allowed: true, reason: null}
+    reactivate: {allowed: false, reason: ALREADY_ACTIVE}
+    future_blockers: {AVAILABLE: 0, LOCKED: 0, BOOKED: 0}
+  pitch-7-001:
+    edit_format: {allowed: false, reason: BUSINESS_HISTORY}
+    delete: {allowed: false, reason: BUSINESS_HISTORY}
+    deactivate: {allowed: true, reason: null}
+    reactivate: {allowed: false, reason: ALREADY_ACTIVE}
+    future_blockers: {AVAILABLE: 0, LOCKED: 0, BOOKED: 0}
+  pitch-7-002:
+    edit_format: {allowed: false, reason: BUSINESS_HISTORY}
+    delete: {allowed: false, reason: BUSINESS_HISTORY}
+    deactivate: {allowed: false, reason: FUTURE_INVENTORY_BLOCKS}
+    reactivate: {allowed: false, reason: ALREADY_ACTIVE}
+    future_blockers: {AVAILABLE: 2, LOCKED: 1, BOOKED: 1}
+  pitch-7-003:
+    edit_format: {allowed: false, reason: BUSINESS_HISTORY}
+    delete: {allowed: false, reason: BUSINESS_HISTORY}
+    deactivate: {allowed: true, reason: null}
+    reactivate: {allowed: false, reason: ALREADY_ACTIVE}
+    future_blockers: {AVAILABLE: 0, LOCKED: 0, BOOKED: 0}
+  pitch-7-004:
+    edit_format: {allowed: false, reason: BUSINESS_HISTORY}
+    delete: {allowed: false, reason: BUSINESS_HISTORY}
+    deactivate: {allowed: false, reason: ALREADY_INACTIVE}
+    reactivate: {allowed: true, reason: null}
+    future_blockers: {AVAILABLE: 0, LOCKED: 0, BOOKED: 0}

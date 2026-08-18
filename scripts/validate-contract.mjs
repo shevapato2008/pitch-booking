@@ -18,6 +18,12 @@ const attachment = (pathName, status, key, method = 'get') => ({
 
 const exampleMap = [
   {
+    filename: 'managed-venues.json',
+    reference: './examples/managed-venues.json',
+    schema: 'ManagedVenuesResponse',
+    attachments: [attachment('/api/v1/admin/venues', '200', 'ManagedVenues')],
+  },
+  {
     filename: 'venue-primary.json',
     reference: './examples/venue-primary.json',
     schema: 'Venue',
@@ -61,6 +67,15 @@ const exampleMap = [
       attachment('/api/v1/venues/{venue_id}/availability', '422', 'InvalidArgument'),
       attachment('/api/v1/auth/wechat/session', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/auth/wechat/phone', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/orders', '422', 'InvalidArgument'),
+      attachment('/api/v1/orders/{order_id}', '422', 'InvalidArgument'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders', '422', 'InvalidArgument'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/candidates', '422', 'InvalidArgument'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/venue-onboarding/applications', '422', 'InvalidArgument'),
     ],
   },
   {
@@ -103,6 +118,20 @@ const exampleMap = [
       attachment('/api/v1/venues/map', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}/availability', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/orders', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/orders/{order_id}/cancel', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/payments/wechat/notify', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/refunds/wechat/notify', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/candidates', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/venue-onboarding/applications', '503', 'ServiceUnavailable'),
     ],
   },
   {
@@ -143,12 +172,23 @@ const exampleMap = [
   {
     filename: 'order-pending.json',
     reference: './examples/order-pending.json',
-    schema: 'OrderDetail',
+    schema: 'CreateOrderResponse',
     attachments: [
       attachment('/api/v1/orders', '200', 'ExistingPendingOrder', 'post'),
       attachment('/api/v1/orders', '201', 'PendingOrderCreated', 'post'),
-      attachment('/api/v1/orders/{order_id}', '200', 'PendingOrder'),
     ],
+  },
+  {
+    filename: 'my-orders-ready.json',
+    reference: './examples/my-orders-ready.json',
+    schema: 'OrderListResponse',
+    attachments: [attachment('/api/v1/orders', '200', 'Ready')],
+  },
+  {
+    filename: 'my-orders-empty.json',
+    reference: './examples/my-orders-empty.json',
+    schema: 'OrderListResponse',
+    attachments: [attachment('/api/v1/orders', '200', 'Empty')],
   },
   {
     filename: 'order-expired.json',
@@ -200,16 +240,67 @@ const exampleMap = [
     ],
   },
   {
+    filename: 'order-cancelled.json',
+    reference: './examples/order-cancelled.json',
+    schema: 'OrderDetail',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}', '200', 'CancelledOrder'),
+      attachment('/api/v1/orders/{order_id}/cancel', '200', 'CancelledOrder', 'post'),
+    ],
+  },
+  {
+    filename: 'order-refund-pending.json',
+    reference: './examples/order-refund-pending.json',
+    schema: 'OrderDetail',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}', '200', 'RefundPendingOrder'),
+      attachment('/api/v1/orders/{order_id}/cancel', '202', 'RefundPendingOrder', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-fulfillment-orders.json',
+    reference: './examples/venue-fulfillment-orders.json',
+    schema: 'VenueFulfillmentOrdersResponse',
+    attachments: [attachment('/api/v1/venues/{venue_id}/fulfillment/orders', '200', 'FulfillmentOrders')],
+  },
+  {
+    filename: 'venue-order-checked-in.json',
+    reference: './examples/venue-order-checked-in.json',
+    schema: 'VenueFulfillmentOrder',
+    attachments: [attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '200', 'CheckedInOrder', 'post')],
+  },
+  {
+    filename: 'venue-order-completed.json',
+    reference: './examples/venue-order-completed.json',
+    schema: 'VenueFulfillmentOrder',
+    attachments: [attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '200', 'CompletedOrder', 'post')],
+  },
+  {
+    filename: 'refund-accepted.json',
+    reference: './examples/refund-accepted.json',
+    schema: 'RefundAccepted',
+    attachments: [
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '200', 'RefundAccepted', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '202', 'RefundAccepted', 'post'),
+    ],
+  },
+  {
     filename: 'error-auth-required.json',
     reference: './examples/error-auth-required.json',
     schema: 'ErrorEnvelope',
     attachments: [
       attachment('/api/v1/auth/wechat/phone', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/slots/{slot_id}/checkout', '401', 'AuthRequired'),
+      attachment('/api/v1/orders', '401', 'AuthRequired'),
       attachment('/api/v1/orders', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/orders/{order_id}', '401', 'AuthRequired'),
+      attachment('/api/v1/orders/{order_id}/cancel', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/orders/{order_id}/pay', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders', '401', 'AuthRequired'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '401', 'AuthRequired', 'post'),
     ],
   },
   {
@@ -222,7 +313,11 @@ const exampleMap = [
     filename: 'error-phone-auth-required.json',
     reference: './examples/error-phone-auth-required.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/orders', '422', 'PhoneAuthRequired', 'post')],
+    attachments: [
+      attachment('/api/v1/orders', '422', 'PhoneAuthRequired', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '422', 'PhoneAuthRequired', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'PhoneAuthRequired', 'post'),
+    ],
   },
   {
     filename: 'error-phone-auth-unavailable.json',
@@ -264,6 +359,95 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/orders', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/orders/{order_id}/pay', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/orders/{order_id}/cancel', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '409', 'IdempotencyKeyReused', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-onboarding-candidates.json',
+    reference: './examples/venue-onboarding-candidates.json',
+    schema: 'VenueOnboardingCandidates',
+    attachments: [attachment('/api/v1/venue-onboarding/candidates', '200', 'Candidates')],
+  },
+  {
+    filename: 'venue-onboarding-upload-intent.json',
+    reference: './examples/venue-onboarding-upload-intent.json',
+    schema: 'VenueOnboardingUploadIntent',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '200', 'UploadIntent', 'post'),
+      attachment('/api/v1/venue-onboarding/evidence/upload-intents', '201', 'UploadIntent', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-claim-submitted.json',
+    reference: './examples/venue-claim-submitted.json',
+    schema: 'VenueOnboardingApplication',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/claims', '200', 'ClaimSubmitted', 'post'),
+      attachment('/api/v1/venue-onboarding/claims', '201', 'ClaimSubmitted', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-create-submitted.json',
+    reference: './examples/venue-create-submitted.json',
+    schema: 'VenueOnboardingApplication',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/venues', '200', 'VenueSubmitted', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '201', 'VenueSubmitted', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-onboarding-applications.json',
+    reference: './examples/venue-onboarding-applications.json',
+    schema: 'VenueOnboardingApplications',
+    attachments: [attachment('/api/v1/venue-onboarding/applications', '200', 'Applications')],
+  },
+  {
+    filename: 'platform-session.json',
+    reference: './examples/platform-session.json',
+    schema: 'PlatformSession',
+    attachments: [
+      attachment('/platform-admin/api/v1/auth/session', '200', 'PlatformSession', 'post'),
+      attachment('/platform-admin/api/v1/auth/session', '200', 'PlatformSession'),
+    ],
+  },
+  {
+    filename: 'platform-onboarding-queue.json',
+    reference: './examples/platform-onboarding-queue.json',
+    schema: 'PlatformOnboardingQueue',
+    attachments: [attachment('/platform-admin/api/v1/onboarding/applications', '200', 'Queue')],
+  },
+  {
+    filename: 'platform-onboarding-detail.json',
+    reference: './examples/platform-onboarding-detail.json',
+    schema: 'PlatformOnboardingApplicationDetail',
+    attachments: [attachment('/platform-admin/api/v1/onboarding/applications/{application_id}', '200', 'Detail')],
+  },
+  {
+    filename: 'platform-onboarding-decision.json',
+    reference: './examples/platform-onboarding-decision.json',
+    schema: 'PlatformOnboardingDecision',
+    attachments: [attachment('/platform-admin/api/v1/onboarding/applications/{application_id}/decisions', '200', 'Decision', 'post')],
+  },
+  {
+    filename: 'error-possible-duplicate-venue.json',
+    reference: './examples/error-possible-duplicate-venue.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/venue-onboarding/venues', '409', 'PossibleDuplicateVenue', 'post')],
+  },
+  {
+    filename: 'error-onboarding-evidence-required.json',
+    reference: './examples/error-onboarding-evidence-required.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/venue-onboarding/claims', '422', 'OnboardingEvidenceRequired', 'post'),
+      attachment('/api/v1/venue-onboarding/venues', '422', 'OnboardingEvidenceRequired', 'post'),
     ],
   },
   {
@@ -272,8 +456,13 @@ const exampleMap = [
     schema: 'ErrorEnvelope',
     attachments: [
       attachment('/api/v1/orders/{order_id}', '404', 'OrderNotFound'),
+      attachment('/api/v1/orders/{order_id}/cancel', '404', 'OrderNotFound', 'post'),
       attachment('/api/v1/orders/{order_id}/pay', '404', 'OrderNotFound', 'post'),
       attachment('/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', '404', 'OrderNotFound', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders', '404', 'OrderNotFound'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '404', 'OrderNotFound', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '404', 'OrderNotFound', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '404', 'OrderNotFound', 'post'),
     ],
   },
   {
@@ -289,10 +478,171 @@ const exampleMap = [
     attachments: [attachment('/api/v1/orders/{order_id}/pay', '503', 'PaymentCreateFailed', 'post')],
   },
   {
+    filename: 'error-payment-provider-unavailable.json',
+    reference: './examples/error-payment-provider-unavailable.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}/pay', '503', 'PaymentProviderUnavailable', 'post')],
+  },
+  {
+    filename: 'error-order-state-changed.json',
+    reference: './examples/error-order-state-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/cancel', '409', 'OrderStateChanged', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '409', 'OrderStateChanged', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '409', 'OrderStateChanged', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '409', 'OrderStateChanged', 'post'),
+    ],
+  },
+  {
+    filename: 'error-payment-result-pending.json',
+    reference: './examples/error-payment-result-pending.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}/cancel', '409', 'PaymentResultPending', 'post')],
+  },
+  {
+    filename: 'error-refund-in-progress.json',
+    reference: './examples/error-refund-in-progress.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/cancel', '409', 'RefundInProgress', 'post'),
+      attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '409', 'RefundInProgress', 'post'),
+    ],
+  },
+  {
+    filename: 'error-wechat-notification-invalid.json',
+    reference: './examples/error-wechat-notification-invalid.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/payments/wechat/notify', '400', 'WeChatNotificationInvalid', 'post'),
+      attachment('/api/v1/refunds/wechat/notify', '400', 'WeChatNotificationInvalid', 'post'),
+    ],
+  },
+  {
     filename: 'error-payment-exception.json',
     reference: './examples/error-payment-exception.json',
     schema: 'ErrorEnvelope',
     attachments: [attachment('/api/v1/orders/{order_id}/pay', '409', 'PaymentException', 'post')],
+  },
+  {
+    filename: 'admin-inventory-ready.json',
+    reference: './examples/admin-inventory-ready.json',
+    schema: 'AdminInventory',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory', '200', 'Ready')],
+  },
+  {
+    filename: 'admin-inventory-slot.json',
+    reference: './examples/admin-inventory-slot.json',
+    schema: 'AdminInventorySlot',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/inventory/slots', '201', 'Created', 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', '200', 'Updated', 'put'),
+    ],
+  },
+  {
+    filename: 'pitch-configuration-ready.json',
+    reference: './examples/pitch-configuration-ready.json',
+    schema: 'PitchConfiguration',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', '200', 'Ready')],
+  },
+  {
+    filename: 'pitch-configuration-saved.json',
+    reference: './examples/pitch-configuration-saved.json',
+    schema: 'PitchConfiguration',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', '200', 'Saved', 'put')],
+  },
+  {
+    filename: 'venue-profile-admin-ready.json',
+    reference: './examples/venue-profile-admin-ready.json',
+    schema: 'AdminVenueProfile',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Ready'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Ready', 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}', '200', 'Ready', 'delete'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/order', '200', 'Ready', 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', '200', 'Ready', 'put'),
+    ],
+  },
+  {
+    filename: 'venue-profile-upload-intent.json',
+    reference: './examples/venue-profile-upload-intent.json',
+    schema: 'VenueProfileUploadIntent',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/profile/images/upload-intents', '201', 'UploadIntent', 'post')],
+  },
+  {
+    filename: 'venue-profile-reviewing.json',
+    reference: './examples/venue-profile-reviewing.json',
+    schema: 'AdminVenueProfile',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Reviewing'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete', '202', 'Reviewing', 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', '202', 'Reviewing', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-profile-rejected.json',
+    reference: './examples/venue-profile-rejected.json',
+    schema: 'AdminVenueProfile',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/profile', '200', 'Rejected')],
+  },
+  {
+    filename: 'manual-review-queue.json',
+    reference: './examples/manual-review-queue.json',
+    schema: 'ManualReviewQueue',
+    attachments: [attachment('/api/v1/admin/moderation/venue-profiles/pending', '200', 'Pending')],
+  },
+  ...[
+    ['error-venue-profile-version-conflict.json', 'VenueProfileVersionConflict', '409'],
+    ['error-venue-profile-validation.json', 'VenueProfileValidationFailed', '422'],
+  ].map(([filename, key, status]) => ({
+    filename,
+    reference: `./examples/${filename}`,
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/admin/venues/{venue_id}/profile', status, key, 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/upload-intents', status, key, 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete', status, key, 'post'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}', status, key, 'delete'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/order', status, key, 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', status, key, 'put'),
+      attachment('/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', status, key, 'post'),
+      attachment('/api/v1/admin/moderation/venue-profiles/{item_id}/decisions', status, key, 'post'),
+    ],
+  })),
+  ...[
+    ['error-inventory-forbidden.json', 'InventoryForbidden', '403', 'INVENTORY_FORBIDDEN'],
+    ['error-pitch-not-found.json', 'PitchNotFound', '404', 'PITCH_NOT_FOUND'],
+    ['error-configuration-changed.json', 'ConfigurationChanged', '409', 'CONFIGURATION_CHANGED'],
+    ['error-pitch-name-conflict.json', 'PitchNameConflict', '409', 'PITCH_NAME_CONFLICT'],
+    ['error-pitch-format-immutable.json', 'PitchFormatImmutable', '409', 'PITCH_FORMAT_IMMUTABLE'],
+    ['error-pitch-has-business-history.json', 'PitchHasBusinessHistory', '409', 'PITCH_HAS_BUSINESS_HISTORY'],
+    ['error-pitch-deactivate-blocked.json', 'PitchDeactivateBlocked', '409', 'PITCH_DEACTIVATE_BLOCKED'],
+    ['error-last-active-pitch-required.json', 'LastActivePitchRequired', '409', 'LAST_ACTIVE_PITCH_REQUIRED'],
+    ['error-request-in-progress.json', 'RequestInProgress', '409', 'REQUEST_IN_PROGRESS'],
+    ['error-invalid-players-per-side.json', 'InvalidPlayersPerSide', '422', 'INVALID_PLAYERS_PER_SIDE'],
+    ['error-invalid-custom-name.json', 'InvalidCustomName', '422', 'INVALID_CUSTOM_NAME'],
+    ['error-duplicate-pitch-change.json', 'DuplicatePitchChange', '422', 'DUPLICATE_PITCH_CHANGE'],
+  ].map(([filename, key, status]) => ({
+    filename,
+    reference: `./examples/${filename}`,
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/pitch-configuration', status, key, 'put')],
+  })),
+  ...[
+    ['error-slot-not-found.json', 'SlotNotFound', '404'],
+    ['error-inventory-version-conflict.json', 'InventoryVersionConflict', '409'],
+    ['error-inventory-slot-read-only.json', 'InventorySlotReadOnly', '409'],
+  ].map(([filename, key, status]) => ({
+    filename,
+    reference: `./examples/${filename}`,
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', status, key, 'put')],
+  })),
+  {
+    filename: 'error-slot-time-conflict.json',
+    reference: './examples/error-slot-time-conflict.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory/slots', '409', 'SlotTimeConflict', 'post')],
   },
 ];
 
@@ -326,8 +676,54 @@ const requiredErrorCodes = new Set([
   'ORDER_NOT_FOUND',
   'ORDER_EXPIRED',
   'PAYMENT_CREATE_FAILED',
+  'PAYMENT_PROVIDER_UNAVAILABLE',
   'PAYMENT_EXCEPTION',
+  'ORDER_STATE_CHANGED',
+  'PAYMENT_RESULT_PENDING',
+  'REFUND_IN_PROGRESS',
+  'WECHAT_NOTIFICATION_INVALID',
+  'INVENTORY_FORBIDDEN',
+  'PITCH_NOT_FOUND',
+  'SLOT_NOT_FOUND',
+  'SLOT_TIME_CONFLICT',
+  'INVENTORY_VERSION_CONFLICT',
+  'INVENTORY_SLOT_READ_ONLY',
+  'REQUEST_IN_PROGRESS',
+  'CONFIGURATION_CHANGED',
+  'PITCH_NAME_CONFLICT',
+  'PITCH_FORMAT_IMMUTABLE',
+  'PITCH_HAS_BUSINESS_HISTORY',
+  'PITCH_DEACTIVATE_BLOCKED',
+  'LAST_ACTIVE_PITCH_REQUIRED',
+  'INVALID_PLAYERS_PER_SIDE',
+  'INVALID_CUSTOM_NAME',
+  'DUPLICATE_PITCH_CHANGE',
+  'VENUE_PROFILE_VERSION_CONFLICT',
+  'VENUE_PROFILE_VALIDATION_FAILED',
+  'POSSIBLE_DUPLICATE_VENUE',
+  'ONBOARDING_EVIDENCE_REQUIRED',
+  'ONBOARDING_EVIDENCE_INVALID',
+  'ONBOARDING_APPLICATION_EXISTS',
+  'ONBOARDING_APPLICATION_NOT_FOUND',
+  'ONBOARDING_APPLICATION_STATE_CHANGED',
+  'PLATFORM_AUTH_REQUIRED',
+  'PLATFORM_AUTH_INVALID',
+  'PLATFORM_CSRF_INVALID',
+  'PLATFORM_ROLE_REQUIRED',
 ]);
+const errorCodesWithoutCanonicalExamples = new Set([
+  'ONBOARDING_EVIDENCE_INVALID',
+  'ONBOARDING_APPLICATION_EXISTS',
+  'ONBOARDING_APPLICATION_NOT_FOUND',
+  'ONBOARDING_APPLICATION_STATE_CHANGED',
+  'PLATFORM_AUTH_REQUIRED',
+  'PLATFORM_AUTH_INVALID',
+  'PLATFORM_CSRF_INVALID',
+  'PLATFORM_ROLE_REQUIRED',
+]);
+const requiredCanonicalErrorCodes = new Set(
+  [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
+);
 const expectedOperations = new Map([
   ['/api/v1/health', new Set(['get'])],
   ['/api/v1/venues/primary', new Set(['get'])],
@@ -337,10 +733,42 @@ const expectedOperations = new Map([
   ['/api/v1/auth/wechat/session', new Set(['post'])],
   ['/api/v1/auth/wechat/phone', new Set(['post'])],
   ['/api/v1/slots/{slot_id}/checkout', new Set(['get'])],
-  ['/api/v1/orders', new Set(['post'])],
+  ['/api/v1/orders', new Set(['get', 'post'])],
   ['/api/v1/orders/{order_id}', new Set(['get'])],
+  ['/api/v1/orders/{order_id}/cancel', new Set(['post'])],
   ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
   ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
+  ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
+  ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
+  ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],
+  ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', new Set(['post'])],
+  ['/api/v1/payments/wechat/notify', new Set(['post'])],
+  ['/api/v1/refunds/wechat/notify', new Set(['post'])],
+  ['/api/v1/venue-onboarding/candidates', new Set(['get'])],
+  ['/api/v1/venue-onboarding/evidence/upload-intents', new Set(['post'])],
+  ['/api/v1/venue-onboarding/evidence/{evidence_id}/complete', new Set(['post'])],
+  ['/api/v1/venue-onboarding/claims', new Set(['post'])],
+  ['/api/v1/venue-onboarding/venues', new Set(['post'])],
+  ['/api/v1/venue-onboarding/applications', new Set(['get'])],
+  ['/platform-admin/api/v1/auth/session', new Set(['post', 'get', 'delete'])],
+  ['/platform-admin/api/v1/onboarding/applications', new Set(['get'])],
+  ['/platform-admin/api/v1/onboarding/applications/{application_id}', new Set(['get'])],
+  ['/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download', new Set(['get'])],
+  ['/platform-admin/api/v1/onboarding/applications/{application_id}/decisions', new Set(['post'])],
+  ['/api/v1/admin/venues', new Set(['get'])],
+  ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
+  ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],
+  ['/api/v1/admin/venues/{venue_id}/inventory/slots', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/inventory/slots/{slot_id}', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile', new Set(['get', 'put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/upload-intents', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/complete', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}', new Set(['delete'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/order', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', new Set(['post'])],
+  ['/api/v1/admin/moderation/venue-profiles/pending', new Set(['get'])],
+  ['/api/v1/admin/moderation/venue-profiles/{item_id}/decisions', new Set(['post'])],
 ]);
 const httpMethods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
@@ -406,12 +834,18 @@ function validateErrorCodeEnum(contract) {
   assertExactSet(new Set(declaredCodes), requiredErrorCodes, 'Error.code.enum');
 }
 
+function resolveLocalReference(contract, value) {
+  if (!value?.$ref?.startsWith('#/')) return value;
+  return value.$ref.slice(2).split('/').reduce((current, segment) => current?.[segment], contract);
+}
+
 function findAllAttachments(contract) {
   const found = [];
   for (const [pathName, pathItem] of Object.entries(contract.paths ?? {})) {
     for (const method of httpMethods) {
       const operation = pathItem[method];
-      for (const [status, response] of Object.entries(operation?.responses ?? {})) {
+      for (const [status, rawResponse] of Object.entries(operation?.responses ?? {})) {
+        const response = resolveLocalReference(contract, rawResponse);
         if (Object.hasOwn(response, 'example') || Object.hasOwn(response, 'examples')) {
           fail(`misplaced response-level example is not allowed at ${method.toUpperCase()} ${pathName} ${status}`);
         }
@@ -512,12 +946,14 @@ function toJsonSchema(value) {
 }
 
 function validateVenueBusinessRules(venue, filename) {
-  if (venue.images.filter(({ role }) => role === 'COVER').length !== 1) {
+  const published = venue.profile;
+  if (published.images.filter(({ role }) => role === 'COVER').length !== 1) {
     fail(`${filename}: images must contain exactly one COVER`);
   }
-  for (const field of ['images', 'facilities', 'pitch_types']) {
-    assertSorted(venue[field], ({ sort_order: sortOrder }) => sortOrder, `${filename}: ${field}`);
+  for (const field of ['images', 'facilities']) {
+    assertSorted(published[field], ({ sort_order: sortOrder }) => sortOrder, `${filename}: profile.${field}`);
   }
+  assertSorted(venue.pitch_types, ({ sort_order: sortOrder }) => sortOrder, `${filename}: pitch_types`);
   const pitchCodes = [...new Set(venue.pitch_types.map(({ code }) => code))].sort();
   if (!isDeepStrictEqual(pitchCodes, ['FIVE_A_SIDE', 'SEVEN_A_SIDE'])) {
     fail(`${filename}: venue must support both required pitch types`);
@@ -600,6 +1036,29 @@ function validateAvailabilityBusinessRules(availability, filename) {
   }
 }
 
+function validateOrderListBusinessRules(response, filename) {
+  if (filename === 'my-orders-empty.json') {
+    if (response.orders.length !== 0 || response.next_cursor !== null) {
+      fail(`${filename}: empty response must have no orders and a null next_cursor`);
+    }
+    return;
+  }
+
+  if (response.orders.length === 0 || response.next_cursor === null) {
+    fail(`${filename}: ready response must exercise a non-empty cursor page`);
+  }
+  for (let index = 1; index < response.orders.length; index += 1) {
+    const previous = response.orders[index - 1];
+    const current = response.orders[index];
+    if (
+      previous.created_at < current.created_at
+      || (previous.created_at === current.created_at && previous.id < current.id)
+    ) {
+      fail(`${filename}: orders must be sorted by created_at and id descending`);
+    }
+  }
+}
+
 async function readJsonWithContext(filename) {
   try {
     return JSON.parse(await readFile(filename, 'utf8'));
@@ -665,6 +1124,7 @@ export async function validateContract(contractPath = defaultContractPath) {
     if (mapping.schema === 'Venue') validateVenueBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'VenueMapResponse') validateVenueMapBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'OrderListResponse') validateOrderListBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {
       const keys = Object.keys(mapping.value.error.details).sort();
@@ -674,7 +1134,7 @@ export async function validateContract(contractPath = defaultContractPath) {
     }
   }
 
-  assertExactSet(coveredErrorCodes, requiredErrorCodes, 'canonical error example codes');
+  assertExactSet(coveredErrorCodes, requiredCanonicalErrorCodes, 'canonical error example codes');
 
   return { contract, exampleCount: exampleMap.length };
 }

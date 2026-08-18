@@ -36,3 +36,57 @@ The lightweight map venue discovery Artifact is frozen at the 375 × 812 target 
 The browser-openable review board reserves the complete Task 4 visual evidence matrix.
 Reference display fields are checked field-for-field against `deploy/venue-directory.json`;
 no canonical contract fixture is introduced by this Artifact.
+
+## Venue inventory workbench
+
+The reference-only venue inventory workbench visual gate uses one self-contained `375 × 812`
+page with five explicit query states:
+
+- `references/venue-inventory-workbench.html?state=day-ready`
+- `references/venue-inventory-workbench.html?state=create-slot-open`
+- `references/venue-inventory-workbench.html?state=edit-slot-open`
+- `references/venue-inventory-workbench.html?state=save-result-unknown`
+- `references/venue-inventory-workbench.html?state=create-slot-overlap`
+- `flows/venue-inventory-workbench.md`
+- `screen-manifest/venue-inventory-workbench.yaml`
+
+This checkpoint is production disabled and contains no native Fixture, contract, membership,
+inventory API, or backend write. Native implementation starts only after user visual approval.
+
+## Venue pitch setup and inventory revision
+
+This revision freezes reference-only contracts for physical pitch configuration and the v2
+inventory workbench at the `375 × 812` target viewport. Its sources are `docs/superpowers/specs/2026-08-10-venue-pitch-setup-and-inventory-revision-design.md`, spec sections 11–13, `miniprogram/styles/tokens.wxss`, and `artifacts/ui/design-system/README.md`. The v1
+inventory reference remains historical and is used only as a slot-status material baseline:
+`artifacts/ui/references/venue-inventory-workbench.html`.
+
+- `screen-manifest/venue-pitch-setup.yaml`
+- `flows/venue-pitch-setup.md`
+- `references/venue-pitch-setup.html?state=<id>`
+- `screen-manifest/venue-inventory-workbench-v2.yaml`
+- `flows/venue-inventory-workbench-v2.md`
+- `references/venue-inventory-workbench-v2.html?state=<id>`
+
+Both revisions are `pending-user-visual-approval`. They do not claim native readiness or
+production readiness; no native Fixture, production route, contract, or backend integration is
+created by this checkpoint.
+
+## My orders
+
+The reference-only “我的订单” visual gate uses one `375 × 812` browser Artifact with six
+explicit query states:
+
+- `references/my-orders.html?state=map-entry`
+- `references/my-orders.html?state=ready`
+- `references/my-orders.html?state=empty`
+- `references/my-orders.html?state=error`
+- `references/my-orders.html?state=loading`
+- `references/my-orders.html?state=load-more-error`
+- `flows/my-orders.md`
+- `screen-manifest/my-orders.yaml`
+- `reviews/my-orders/review-board.html`
+
+Only map entry, ready, empty, and first-load error are captured as the representative visual
+matrix. Loading and load-more error remain available in the same Artifact and its optional
+`controls=1` panel. This checkpoint is pending user visual approval and contains no native
+Fixture, production route, contract, or backend implementation.

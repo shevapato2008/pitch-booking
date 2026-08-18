@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -29,15 +30,33 @@ class ImageRole(StrEnum):
 
 
 class FacilityCode(StrEnum):
-    LIGHTING = "LIGHTING"
-    CHANGING_ROOM = "CHANGING_ROOM"
-    DRINKING_WATER = "DRINKING_WATER"
     PARKING = "PARKING"
+    TOILET = "TOILET"
+    CHANGING_ROOM = "CHANGING_ROOM"
+    SHOWER = "SHOWER"
+    LOCKERS = "LOCKERS"
+    DRINKING_WATER = "DRINKING_WATER"
+    BEVERAGE_SALES = "BEVERAGE_SALES"
+    EQUIPMENT_RENTAL = "EQUIPMENT_RENTAL"
+    REST_AREA = "REST_AREA"
+    FIRST_AID = "FIRST_AID"
+    AED = "AED"
+    INDOOR = "INDOOR"
+    OUTDOOR = "OUTDOOR"
+    COVERED = "COVERED"
+    LIGHTING = "LIGHTING"
+    ARTIFICIAL_TURF = "ARTIFICIAL_TURF"
+    NATURAL_GRASS = "NATURAL_GRASS"
 
 
 class PitchType(StrEnum):
     FIVE_A_SIDE = "FIVE_A_SIDE"
     SEVEN_A_SIDE = "SEVEN_A_SIDE"
+
+
+class PitchStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
 
 
 class BookingMode(StrEnum):
@@ -67,6 +86,11 @@ class OrderStatus(StrEnum):
     CONFIRMED = "CONFIRMED"
     EXPIRED = "EXPIRED"
     PAYMENT_EXCEPTION = "PAYMENT_EXCEPTION"
+    CANCELLED = "CANCELLED"
+    REFUND_PENDING = "REFUND_PENDING"
+    REFUND_FAILED = "REFUND_FAILED"
+    REFUNDED = "REFUNDED"
+    COMPLETED = "COMPLETED"
 
 
 class PaymentState(StrEnum):
@@ -78,9 +102,108 @@ class PaymentState(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class RefundCasePurpose(StrEnum):
+    ORDER_CANCELLATION = "ORDER_CANCELLATION"
+    DUPLICATE_CHARGE = "DUPLICATE_CHARGE"
+    PAYMENT_INVENTORY_CONFLICT = "PAYMENT_INVENTORY_CONFLICT"
+
+
+class RefundReason(StrEnum):
+    USER_CANCELLED = "USER_CANCELLED"
+    VENUE_CANCELLED = "VENUE_CANCELLED"
+    AUTOMATIC_RECOVERY = "AUTOMATIC_RECOVERY"
+
+
+class RefundAttemptStatus(StrEnum):
+    CREATING = "CREATING"
+    PROCESSING = "PROCESSING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    UNKNOWN = "UNKNOWN"
+
+
 class IdempotencyState(StrEnum):
     CLAIMED = "CLAIMED"
     PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+
+
+class ModerationReasonCode(StrEnum):
+    CONTACT_INFO = "CONTACT_INFO"
+    QR_OR_PAYMENT_CODE = "QR_OR_PAYMENT_CODE"
+    OFF_PLATFORM_TRADE = "OFF_PLATFORM_TRADE"
+    EXTERNAL_LINK = "EXTERNAL_LINK"
+    UNRELATED_CONTENT = "UNRELATED_CONTENT"
+    IMAGE_NOT_VENUE = "IMAGE_NOT_VENUE"
+    IMAGE_QUALITY = "IMAGE_QUALITY"
+    PERSONAL_PRIVACY = "PERSONAL_PRIVACY"
+    UNSAFE_CONTENT = "UNSAFE_CONTENT"
+
+
+class VenueProfileItemStatus(StrEnum):
+    UPLOADING = "UPLOADING"
+    REVIEWING = "REVIEWING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    PENDING_MANUAL = "PENDING_MANUAL"
+
+
+class VenueProfileRevisionStatus(StrEnum):
+    READY = "READY"
+    REVIEWING = "REVIEWING"
+    REJECTED = "REJECTED"
+    PENDING_MANUAL = "PENDING_MANUAL"
+    PUBLISHED = "PUBLISHED"
+
+
+class ModerationItemType(StrEnum):
+    DESCRIPTION = "DESCRIPTION"
+    IMAGE = "IMAGE"
+
+
+class ModerationJobStatus(StrEnum):
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ModerationDecisionOutcome(StrEnum):
+    PASS = "PASS"
+    REJECT = "REJECT"
+    UNCERTAIN = "UNCERTAIN"
+
+
+class ModerationDecisionSource(StrEnum):
+    PROVIDER = "PROVIDER"
+    MANUAL = "MANUAL"
+
+
+class ProfileMutationState(StrEnum):
+    CLAIMED = "CLAIMED"
+    COMPLETED = "COMPLETED"
+
+
+class VenueOnboardingKind(StrEnum):
+    CLAIM = "CLAIM"
+    CREATE = "CREATE"
+
+
+class VenueOnboardingStatus(StrEnum):
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class VenueOnboardingEvidenceKind(StrEnum):
+    BUSINESS_LICENSE = "BUSINESS_LICENSE"
+    MANAGEMENT_AUTHORIZATION = "MANAGEMENT_AUTHORIZATION"
+    VENUE_EXTERIOR = "VENUE_EXTERIOR"
+    VENUE_INTERIOR = "VENUE_INTERIOR"
+
+
+class VenueOnboardingEvidenceState(StrEnum):
+    UPLOADING = "UPLOADING"
     COMPLETED = "COMPLETED"
 
 
@@ -111,6 +234,8 @@ class Venue(Base):
             name="ck_venues_navigation_longitude",
         ),
         CheckConstraint("sort_order >= 0", name="ck_venues_sort_order"),
+        CheckConstraint("profile_version > 0", name="ck_venues_profile_version"),
+        CheckConstraint("facility_version > 0", name="ck_venues_facility_version"),
         CheckConstraint(
             "jsonb_typeof(public_pitch_types) = 'array'",
             name="ck_venues_public_pitch_types_array",
@@ -165,6 +290,15 @@ class Venue(Base):
     public_pitch_types: Mapped[list[str]] = mapped_column(JSONB, default=list)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    configuration_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
+    profile_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
+    facility_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
 
     images: Mapped[list["VenueImage"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
@@ -176,6 +310,34 @@ class Venue(Base):
     transit_stops: Mapped[list["VenueTransitStop"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
     )
+    memberships: Mapped[list["VenueMembership"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
+
+
+class VenueMembership(Base):
+    __tablename__ = "venue_memberships"
+    __table_args__ = (
+        UniqueConstraint("venue_id", "user_id", name="uq_venue_memberships_venue_user"),
+        Index("ix_venue_memberships_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    can_manage_inventory: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+
+    venue: Mapped[Venue] = relationship(back_populates="memberships")
+    user: Mapped["User"] = relationship(back_populates="venue_memberships")
 
 
 class VenueTransitStop(Base):
@@ -290,13 +452,315 @@ class VenueFacility(Base):
     venue: Mapped[Venue] = relationship(back_populates="facilities")
 
 
+class VenueProfileRevision(Base):
+    __tablename__ = "venue_profile_revisions"
+    __table_args__ = (
+        CheckConstraint(
+            "base_published_version > 0", name="ck_venue_profile_revisions_base_version"
+        ),
+        CheckConstraint("revision_version > 0", name="ck_venue_profile_revisions_revision_version"),
+        CheckConstraint(
+            "description_item_version > 0",
+            name="ck_venue_profile_revisions_description_item_version",
+        ),
+        CheckConstraint(
+            "char_length(target_description) <= 300",
+            name="ck_venue_profile_revisions_description_length",
+        ),
+        CheckConstraint(
+            "(description_status = 'REJECTED' AND description_reason_code IS NOT NULL) OR "
+            "(description_status <> 'REJECTED' AND description_reason_code IS NULL)",
+            name="ck_venue_profile_revisions_description_reason",
+        ),
+        UniqueConstraint(
+            "venue_id", "revision_version", name="uq_venue_profile_revisions_venue_version"
+        ),
+        Index(
+            "uq_venue_profile_revisions_current_editable",
+            "venue_id",
+            unique=True,
+            postgresql_where=text("is_current_editable"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    base_published_version: Mapped[int] = mapped_column(BigInteger)
+    revision_version: Mapped[int] = mapped_column(BigInteger)
+    description_item_version: Mapped[int] = mapped_column(
+        BigInteger, default=1, server_default=text("1")
+    )
+    target_description: Mapped[str] = mapped_column(Text)
+    target_facilities: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    status: Mapped[VenueProfileRevisionStatus] = mapped_column(
+        Enum(VenueProfileRevisionStatus, name="venue_profile_revision_status")
+    )
+    description_status: Mapped[VenueProfileItemStatus] = mapped_column(
+        Enum(VenueProfileItemStatus, name="venue_profile_item_status")
+    )
+    description_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    is_current_editable: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    venue: Mapped[Venue] = relationship()
+    created_by: Mapped["User"] = relationship(foreign_keys=[created_by_user_id])
+
+
+class VenueProfileImageDraft(Base):
+    __tablename__ = "venue_profile_image_drafts"
+    __table_args__ = (
+        CheckConstraint(
+            "(published_image_id IS NOT NULL) <> (original_object_key IS NOT NULL)",
+            name="ck_venue_profile_image_drafts_exactly_one_source",
+        ),
+        CheckConstraint("sort_order >= 0", name="ck_venue_profile_image_drafts_sort_order"),
+        CheckConstraint("item_version > 0", name="ck_venue_profile_image_drafts_item_version"),
+        CheckConstraint(
+            "byte_size IS NULL OR byte_size > 0", name="ck_venue_profile_image_drafts_byte_size"
+        ),
+        CheckConstraint(
+            "content_sha256 IS NULL OR content_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_venue_profile_image_drafts_sha256",
+        ),
+        CheckConstraint(
+            "(moderation_status = 'REJECTED' AND moderation_reason_code IS NOT NULL) OR "
+            "(moderation_status <> 'REJECTED' AND moderation_reason_code IS NULL)",
+            name="ck_venue_profile_image_drafts_reason",
+        ),
+        UniqueConstraint(
+            "revision_id", "sort_order", name="uq_venue_profile_image_drafts_revision_sort"
+        ),
+        Index("ix_venue_profile_image_drafts_revision_id", "revision_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_profile_revisions.id", ondelete="CASCADE")
+    )
+    published_image_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_images.id", ondelete="RESTRICT"), nullable=True
+    )
+    original_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[ImageRole] = mapped_column(Enum(ImageRole, name="image_role"))
+    sort_order: Mapped[int] = mapped_column(Integer)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actual_mime_type: Mapped[str | None] = mapped_column(
+        Enum("image/jpeg", "image/png", "image/webp", name="venue_profile_mime_type"),
+        nullable=True,
+    )
+    byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    moderation_status: Mapped[VenueProfileItemStatus] = mapped_column(
+        Enum(VenueProfileItemStatus, name="venue_profile_item_status")
+    )
+    moderation_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    item_version: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    revision: Mapped[VenueProfileRevision] = relationship()
+
+
+class ContentModerationJob(Base):
+    __tablename__ = "content_moderation_jobs"
+    __table_args__ = (
+        CheckConstraint("item_version > 0", name="ck_content_moderation_jobs_item_version"),
+        CheckConstraint("attempt_count >= 0", name="ck_content_moderation_jobs_attempt_count"),
+        CheckConstraint(
+            "content_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_content_moderation_jobs_content_sha256",
+        ),
+        CheckConstraint(
+            "length(trim(policy_version)) > 0",
+            name="ck_content_moderation_jobs_policy_version",
+        ),
+        CheckConstraint(
+            "(item_type = 'DESCRIPTION' AND image_draft_id IS NULL) OR "
+            "(item_type = 'IMAGE' AND image_draft_id IS NOT NULL)",
+            name="ck_content_moderation_jobs_item_target",
+        ),
+        CheckConstraint(
+            "(claim_token IS NULL) = (lease_until IS NULL)",
+            name="ck_content_moderation_jobs_lease_pair",
+        ),
+        Index("ix_content_moderation_jobs_due", "status", "next_run_at", "lease_until", "id"),
+        Index("ix_content_moderation_jobs_revision_id", "revision_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_profile_revisions.id", ondelete="CASCADE")
+    )
+    image_draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("venue_profile_image_drafts.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    item_type: Mapped[ModerationItemType] = mapped_column(
+        Enum(ModerationItemType, name="moderation_item_type")
+    )
+    item_version: Mapped[int] = mapped_column(BigInteger)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    policy_version: Mapped[str] = mapped_column(String(80))
+    status: Mapped[ModerationJobStatus] = mapped_column(
+        Enum(ModerationJobStatus, name="moderation_job_status")
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fixed_reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    revision: Mapped[VenueProfileRevision] = relationship()
+    image_draft: Mapped[VenueProfileImageDraft | None] = relationship()
+
+
+class ContentModerationDecision(Base):
+    __tablename__ = "content_moderation_decisions"
+    __table_args__ = (
+        CheckConstraint("item_version > 0", name="ck_content_moderation_decisions_item_version"),
+        CheckConstraint(
+            "(outcome = 'REJECT' AND reason_code IS NOT NULL) OR "
+            "(outcome <> 'REJECT' AND reason_code IS NULL)",
+            name="ck_content_moderation_decisions_reason",
+        ),
+        CheckConstraint(
+            "(source = 'PROVIDER' AND reviewer_user_id IS NULL AND provider IS NOT NULL "
+            "AND provider_model IS NOT NULL) OR "
+            "(source = 'MANUAL' AND reviewer_user_id IS NOT NULL)",
+            name="ck_content_moderation_decisions_source",
+        ),
+        CheckConstraint(
+            "provider_confidence IS NULL OR provider_confidence BETWEEN 0 AND 1",
+            name="ck_content_moderation_decisions_confidence",
+        ),
+        UniqueConstraint(
+            "job_id", "idempotency_key", name="uq_content_moderation_decisions_job_key"
+        ),
+        Index("ix_content_moderation_decisions_job_id", "job_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("content_moderation_jobs.id", ondelete="CASCADE")
+    )
+    item_type: Mapped[ModerationItemType] = mapped_column(
+        Enum(ModerationItemType, name="moderation_item_type")
+    )
+    item_version: Mapped[int] = mapped_column(BigInteger)
+    source: Mapped[ModerationDecisionSource] = mapped_column(
+        Enum(ModerationDecisionSource, name="moderation_decision_source")
+    )
+    outcome: Mapped[ModerationDecisionOutcome] = mapped_column(
+        Enum(ModerationDecisionOutcome, name="moderation_decision_outcome")
+    )
+    reason_code: Mapped[ModerationReasonCode | None] = mapped_column(
+        Enum(ModerationReasonCode, name="moderation_reason_code"), nullable=True
+    )
+    provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw_response_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class ProfileMutationIdempotencyRecord(Base):
+    __tablename__ = "profile_mutation_idempotency_records"
+    __table_args__ = (
+        CheckConstraint("length(trim(scope)) > 0", name="ck_profile_mutations_scope"),
+        CheckConstraint("length(key) > 0", name="ck_profile_mutations_key"),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'", name="ck_profile_mutations_request_sha256"
+        ),
+        CheckConstraint(
+            "(state = 'CLAIMED' AND response_status IS NULL AND response_body IS NULL) OR "
+            "(state = 'COMPLETED' AND response_status IS NOT NULL AND response_body IS NOT NULL)",
+            name="ck_profile_mutations_state_response",
+        ),
+        CheckConstraint(
+            "response_status IS NULL OR response_status BETWEEN 100 AND 599",
+            name="ck_profile_mutations_response_status",
+        ),
+        UniqueConstraint(
+            "venue_id", "actor_user_id", "scope", "key", name="uq_profile_mutations_scope_key",
+        ),
+        Index("ix_profile_mutations_venue_id", "venue_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    scope: Mapped[str] = mapped_column(String(255))
+    key: Mapped[str] = mapped_column(String(255))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[ProfileMutationState] = mapped_column(
+        Enum(ProfileMutationState, name="profile_mutation_state")
+    )
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    venue: Mapped[Venue] = relationship()
+    actor: Mapped["User"] = relationship(foreign_keys=[actor_user_id])
+
+
 class Pitch(Base):
     __tablename__ = "pitches"
     __table_args__ = (
         CheckConstraint("length(trim(code)) > 0", name="ck_pitches_code_nonempty"),
         CheckConstraint("length(trim(name)) > 0", name="ck_pitches_name_nonempty"),
         CheckConstraint("sort_order >= 0", name="ck_pitches_sort_order"),
+        CheckConstraint(
+            "players_per_side BETWEEN 1 AND 99", name="ck_pitches_players_per_side"
+        ),
+        CheckConstraint("sequence > 0", name="ck_pitches_sequence"),
         UniqueConstraint("venue_id", "code", name="uq_pitches_venue_code"),
+        UniqueConstraint(
+            "venue_id",
+            "players_per_side",
+            "sequence",
+            name="uq_pitches_venue_format_sequence",
+        ),
         Index("ix_pitches_venue_id", "venue_id"),
     )
 
@@ -306,11 +770,54 @@ class Pitch(Base):
     )
     code: Mapped[str] = mapped_column(String(80))
     name: Mapped[str] = mapped_column(String(120))
-    pitch_type: Mapped[PitchType] = mapped_column(Enum(PitchType, name="pitch_type"))
+    pitch_type: Mapped[PitchType | None] = mapped_column(
+        Enum(PitchType, name="pitch_type"), nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    players_per_side: Mapped[int] = mapped_column(Integer)
+    system_name: Mapped[str] = mapped_column(String(120))
+    custom_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    status: Mapped[PitchStatus] = mapped_column(
+        Enum(PitchStatus, name="pitch_status"), default=PitchStatus.ACTIVE
+    )
 
     venue: Mapped[Venue] = relationship(back_populates="pitches")
     slots: Mapped[list["Slot"]] = relationship(back_populates="pitch")
+
+
+class VenuePitchSequenceCounter(Base):
+    __tablename__ = "venue_pitch_sequence_counters"
+    __table_args__ = (
+        CheckConstraint(
+            "players_per_side BETWEEN 1 AND 99",
+            name="ck_venue_pitch_sequence_counters_players",
+        ),
+        CheckConstraint(
+            "last_sequence >= 0", name="ck_venue_pitch_sequence_counters_last_sequence"
+        ),
+    )
+
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE"), primary_key=True
+    )
+    players_per_side: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_sequence: Mapped[int] = mapped_column(Integer, default=0)
+
+
+@event.listens_for(Pitch, "before_insert")
+def _populate_legacy_pitch_configuration(
+    _mapper: object, _connection: object, pitch: Pitch
+) -> None:
+    """Keep legacy seed/load paths compatible during the numeric-format migration."""
+    if pitch.players_per_side is None:
+        pitch.players_per_side = 5 if pitch.pitch_type is PitchType.FIVE_A_SIDE else 7
+    if pitch.system_name is None:
+        pitch.system_name = pitch.name
+    if pitch.sequence is None:
+        pitch.sequence = pitch.sort_order + 1
+    if pitch.status is None:
+        pitch.status = PitchStatus.ACTIVE
 
 
 class Slot(Base):
@@ -412,10 +919,235 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
-    orders: Mapped[list["Order"]] = relationship(back_populates="user")
+    orders: Mapped[list["Order"]] = relationship(
+        back_populates="user", foreign_keys="Order.user_id"
+    )
     idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
         back_populates="user"
     )
+    venue_memberships: Mapped[list[VenueMembership]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class VenueOnboardingApplication(Base):
+    __tablename__ = "venue_onboarding_applications"
+    __table_args__ = (
+        CheckConstraint(
+            "(kind = 'CLAIM' AND target_venue_id IS NOT NULL "
+            "AND proposed_name IS NULL AND proposed_address IS NULL "
+            "AND proposed_district_code IS NULL AND proposed_district_name IS NULL "
+            "AND proposed_latitude IS NULL AND proposed_longitude IS NULL "
+            "AND normalized_proposed_name IS NULL "
+            "AND normalized_proposed_address IS NULL) OR "
+            "(kind = 'CREATE' AND target_venue_id IS NULL "
+            "AND proposed_name IS NOT NULL AND proposed_address IS NOT NULL "
+            "AND proposed_district_code IS NOT NULL "
+            "AND proposed_district_name IS NOT NULL "
+            "AND proposed_latitude IS NOT NULL AND proposed_longitude IS NOT NULL "
+            "AND normalized_proposed_name IS NOT NULL "
+            "AND normalized_proposed_address IS NOT NULL)",
+            name="ck_onboarding_applications_kind_fields",
+        ),
+        CheckConstraint(
+            "proposed_name IS NULL OR length(trim(proposed_name)) > 0",
+            name="ck_onboarding_applications_proposed_name",
+        ),
+        CheckConstraint(
+            "proposed_address IS NULL OR length(trim(proposed_address)) > 0",
+            name="ck_onboarding_applications_proposed_address",
+        ),
+        CheckConstraint(
+            "proposed_district_code IS NULL OR proposed_district_code ~ '^[0-9]{6}$'",
+            name="ck_onboarding_applications_district_code",
+        ),
+        CheckConstraint(
+            "proposed_district_name IS NULL OR length(trim(proposed_district_name)) > 0",
+            name="ck_onboarding_applications_district_name",
+        ),
+        CheckConstraint(
+            "proposed_latitude IS NULL OR proposed_latitude BETWEEN -90 AND 90",
+            name="ck_onboarding_applications_latitude",
+        ),
+        CheckConstraint(
+            "proposed_longitude IS NULL OR proposed_longitude BETWEEN -180 AND 180",
+            name="ck_onboarding_applications_longitude",
+        ),
+        CheckConstraint(
+            "normalized_proposed_name IS NULL OR length(trim(normalized_proposed_name)) > 0",
+            name="ck_onboarding_applications_normalized_name",
+        ),
+        CheckConstraint(
+            "normalized_proposed_address IS NULL OR length(trim(normalized_proposed_address)) > 0",
+            name="ck_onboarding_applications_normalized_address",
+        ),
+        CheckConstraint(
+            "length(trim(contact_name)) BETWEEN 1 AND 40",
+            name="ck_onboarding_applications_contact_name",
+        ),
+        CheckConstraint(
+            "contact_phone_key_version > 0",
+            name="ck_onboarding_applications_phone_key_version",
+        ),
+        CheckConstraint(
+            "octet_length(contact_phone_nonce) = 12",
+            name="ck_onboarding_applications_phone_nonce_length",
+        ),
+        CheckConstraint(
+            "octet_length(contact_phone_ciphertext) >= 16",
+            name="ck_onboarding_applications_phone_ciphertext_length",
+        ),
+        CheckConstraint(
+            "(status = 'SUBMITTED' AND reviewer_principal_id IS NULL "
+            "AND reviewed_at IS NULL AND review_reason IS NULL "
+            "AND approved_venue_id IS NULL) OR "
+            "(status = 'APPROVED' AND reviewer_principal_id IS NOT NULL "
+            "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
+            "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NOT NULL) OR "
+            "(status = 'REJECTED' AND reviewer_principal_id IS NOT NULL "
+            "AND reviewed_at IS NOT NULL AND review_reason IS NOT NULL "
+            "AND length(trim(review_reason)) > 0 AND approved_venue_id IS NULL)",
+            name="ck_onboarding_applications_review_state",
+        ),
+        CheckConstraint(
+            "reviewer_principal_id IS NULL OR length(trim(reviewer_principal_id)) > 0",
+            name="ck_onboarding_applications_reviewer_principal",
+        ),
+        CheckConstraint(
+            "reviewed_at IS NULL OR reviewed_at >= submitted_at",
+            name="ck_onboarding_applications_reviewed_at",
+        ),
+        CheckConstraint(
+            "status <> 'APPROVED' OR kind <> 'CLAIM' OR approved_venue_id = target_venue_id",
+            name="ck_onboarding_applications_claim_approval",
+        ),
+        Index(
+            "uq_venue_onboarding_submitted_claim",
+            "applicant_user_id",
+            "target_venue_id",
+            unique=True,
+            postgresql_where=text("kind = 'CLAIM' AND status = 'SUBMITTED'"),
+        ),
+        Index(
+            "uq_venue_onboarding_submitted_create",
+            "applicant_user_id",
+            "normalized_proposed_name",
+            "normalized_proposed_address",
+            unique=True,
+            postgresql_where=text("kind = 'CREATE' AND status = 'SUBMITTED'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    applicant_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_onboarding_applications_applicant_user",
+            ondelete="RESTRICT",
+        ),
+    )
+    kind: Mapped[VenueOnboardingKind] = mapped_column(
+        Enum(VenueOnboardingKind, name="venue_onboarding_kind")
+    )
+    target_venue_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venues.id",
+            name="fk_onboarding_applications_target_venue",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    proposed_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    proposed_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposed_district_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    proposed_district_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposed_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    proposed_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    normalized_proposed_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalized_proposed_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_phone_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    contact_phone_nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    contact_phone_key_version: Mapped[int] = mapped_column(Integer)
+    contact_name: Mapped[str] = mapped_column(String(40))
+    status: Mapped[VenueOnboardingStatus] = mapped_column(
+        Enum(VenueOnboardingStatus, name="venue_onboarding_status")
+    )
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    reviewer_principal_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_venue_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venues.id",
+            name="fk_onboarding_applications_approved_venue",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+
+    evidence: Mapped[list["VenueOnboardingEvidence"]] = relationship(back_populates="application")
+
+
+class VenueOnboardingEvidence(Base):
+    __tablename__ = "venue_onboarding_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(object_key)) > 0 "
+            "AND object_key !~* '^[a-z][a-z0-9+.-]*://' "
+            "AND left(object_key, 1) <> '/'",
+            name="ck_onboarding_evidence_private_object_key",
+        ),
+        CheckConstraint(
+            "length(trim(content_type)) > 0",
+            name="ck_onboarding_evidence_content_type",
+        ),
+        CheckConstraint(
+            "(state = 'UPLOADING' AND application_id IS NULL "
+            "AND byte_size IS NULL AND content_sha256 IS NULL) OR "
+            "(state = 'COMPLETED' AND byte_size IS NOT NULL AND byte_size > 0 "
+            "AND content_sha256 IS NOT NULL "
+            "AND content_sha256 ~ '^[0-9a-f]{64}$')",
+            name="ck_onboarding_evidence_state_fields",
+        ),
+        UniqueConstraint("object_key", name="uq_onboarding_evidence_object_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_onboarding_evidence_owner_user",
+            ondelete="RESTRICT",
+        ),
+    )
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venue_onboarding_applications.id",
+            name="fk_onboarding_evidence_application",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    kind: Mapped[VenueOnboardingEvidenceKind] = mapped_column(
+        Enum(VenueOnboardingEvidenceKind, name="venue_onboarding_evidence_kind")
+    )
+    state: Mapped[VenueOnboardingEvidenceState] = mapped_column(
+        Enum(VenueOnboardingEvidenceState, name="venue_onboarding_evidence_state")
+    )
+    object_key: Mapped[str] = mapped_column(Text)
+    content_type: Mapped[str] = mapped_column(String(255))
+    byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    application: Mapped[VenueOnboardingApplication | None] = relationship(back_populates="evidence")
 
 
 class UserSession(Base):
@@ -444,6 +1176,44 @@ class UserSession(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
 
+class PlatformSession(Base):
+    __tablename__ = "platform_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "token_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_platform_sessions_token_hash",
+        ),
+        CheckConstraint(
+            "length(trim(principal_id)) BETWEEN 1 AND 128",
+            name="ck_platform_sessions_principal_id",
+        ),
+        CheckConstraint(
+            "expires_at > issued_at",
+            name="ck_platform_sessions_expiry",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= issued_at",
+            name="ck_platform_sessions_revoked_at",
+        ),
+        UniqueConstraint(
+            "token_hash",
+            name="uq_platform_sessions_token_hash",
+        ),
+        Index("ix_platform_sessions_principal_id", "principal_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    token_hash: Mapped[str] = mapped_column(String(64))
+    principal_id: Mapped[str] = mapped_column(String(128))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
@@ -470,6 +1240,27 @@ class Order(Base):
             "(status <> 'EXPIRED' AND expired_at IS NULL) OR "
             "(status = 'EXPIRED' AND expired_at IS NOT NULL AND expired_at >= expires_at)",
             name="ck_orders_status_expired_at",
+        ),
+        CheckConstraint(
+            "(status IN ('CANCELLED', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED') "
+            "AND cancel_requested_at IS NOT NULL AND cancelled_at IS NOT NULL "
+            "AND cancelled_at >= cancel_requested_at) OR "
+            "(status NOT IN ('CANCELLED', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED') "
+            "AND cancelled_at IS NULL)",
+            name="ck_orders_cancellation_timestamps",
+        ),
+        CheckConstraint(
+            "((checked_in_at IS NULL) = (checked_in_by_user_id IS NULL)) AND "
+            "(checked_in_at IS NULL OR status IN ('CONFIRMED', 'COMPLETED'))",
+            name="ck_orders_check_in_pair",
+        ),
+        CheckConstraint(
+            "(status = 'COMPLETED' AND checked_in_at IS NOT NULL "
+            "AND completed_at IS NOT NULL AND completed_by_user_id IS NOT NULL "
+            "AND completed_at >= checked_in_at) OR "
+            "(status <> 'COMPLETED' AND completed_at IS NULL "
+            "AND completed_by_user_id IS NULL)",
+            name="ck_orders_completion_pair",
         ),
         UniqueConstraint("order_number", name="uq_orders_order_number"),
         Index("ix_orders_user_id", "user_id"),
@@ -503,13 +1294,44 @@ class Order(Base):
     expired_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    checked_in_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    checked_in_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_orders_checked_in_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_orders_completed_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     wechat_prepay_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    user: Mapped[User] = relationship(back_populates="orders")
+    user: Mapped[User] = relationship(back_populates="orders", foreign_keys=[user_id])
     slot: Mapped[Slot] = relationship(
         back_populates="orders", foreign_keys=[slot_id]
     )
     payments: Mapped[list["Payment"]] = relationship(back_populates="order")
+    refund_cases: Mapped[list["RefundCase"]] = relationship(back_populates="order")
 
 
 class Payment(Base):
@@ -554,6 +1376,10 @@ class Payment(Base):
             "(reconcile_claim_token IS NULL) = (reconcile_lease_until IS NULL)",
             name="ck_payments_reconcile_lease_pair",
         ),
+        CheckConstraint(
+            "applied_to_order_at IS NULL OR status = 'SUCCESS'",
+            name="ck_payments_applied_success",
+        ),
         UniqueConstraint(
             "provider",
             "merchant_order_no",
@@ -565,6 +1391,12 @@ class Payment(Base):
             name="uq_payments_provider_transaction_no",
         ),
         Index("ix_payments_order_id", "order_id"),
+        Index(
+            "uq_payments_one_applied_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("applied_to_order_at IS NOT NULL"),
+        ),
         Index(
             "uq_payments_one_nonterminal_per_order",
             "order_id",
@@ -604,6 +1436,9 @@ class Payment(Base):
     status: Mapped[PaymentState] = mapped_column(Enum(PaymentState, name="payment_state"))
     provider_prepay_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_to_order_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     authority_unknown_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -642,6 +1477,177 @@ class Payment(Base):
     idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
         back_populates="payment"
     )
+    refund_case: Mapped["RefundCase | None"] = relationship(back_populates="payment")
+
+
+class RefundCase(Base):
+    __tablename__ = "refund_cases"
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_refund_cases_amount_cents"),
+        CheckConstraint(
+            "length(trim(currency)) > 0",
+            name="ck_refund_cases_currency_nonempty",
+        ),
+        CheckConstraint(
+            "(reason = 'VENUE_CANCELLED' AND reason_note IS NOT NULL "
+            "AND length(trim(reason_note)) BETWEEN 1 AND 500 "
+            "AND reason_note = trim(reason_note)) OR "
+            "(reason <> 'VENUE_CANCELLED' AND reason_note IS NULL)",
+            name="ck_refund_cases_reason_note",
+        ),
+        UniqueConstraint("payment_id", name="uq_refund_cases_payment_id"),
+        Index("ix_refund_cases_order_id", "order_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", name="fk_refund_cases_order_id_orders", ondelete="RESTRICT"),
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "payments.id",
+            name="fk_refund_cases_payment_id_payments",
+            ondelete="RESTRICT",
+        ),
+    )
+    purpose: Mapped[RefundCasePurpose] = mapped_column(
+        Enum(RefundCasePurpose, name="refund_case_purpose")
+    )
+    reason: Mapped[RefundReason] = mapped_column(
+        Enum(RefundReason, name="refund_reason")
+    )
+    reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_refund_cases_requested_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    order: Mapped[Order] = relationship(back_populates="refund_cases")
+    payment: Mapped[Payment] = relationship(back_populates="refund_case")
+    attempts: Mapped[list["RefundAttempt"]] = relationship(back_populates="refund_case")
+
+
+class RefundAttempt(Base):
+    __tablename__ = "refund_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(provider)) > 0",
+            name="ck_refund_attempts_provider_nonempty",
+        ),
+        CheckConstraint(
+            "length(trim(merchant_refund_no)) BETWEEN 1 AND 32",
+            name="ck_refund_attempts_merchant_refund_no",
+        ),
+        CheckConstraint(
+            "provider_refund_no IS NULL OR length(trim(provider_refund_no)) > 0",
+            name="ck_refund_attempts_provider_refund_no",
+        ),
+        CheckConstraint("attempt_no >= 1", name="ck_refund_attempts_attempt_no"),
+        CheckConstraint(
+            "failure_code IS NULL OR length(trim(failure_code)) > 0",
+            name="ck_refund_attempts_failure_code",
+        ),
+        CheckConstraint(
+            "status <> 'SUCCESS' OR refunded_at IS NOT NULL",
+            name="ck_refund_attempts_success_refunded_at",
+        ),
+        CheckConstraint(
+            "(reconcile_claim_token IS NULL) = (reconcile_lease_until IS NULL)",
+            name="ck_refund_attempts_reconcile_lease_pair",
+        ),
+        UniqueConstraint(
+            "provider",
+            "merchant_refund_no",
+            name="uq_refund_attempts_provider_merchant_refund_no",
+        ),
+        UniqueConstraint(
+            "refund_case_id",
+            "attempt_no",
+            name="uq_refund_attempts_case_attempt_no",
+        ),
+        Index("ix_refund_attempts_case_id", "refund_case_id"),
+        Index(
+            "uq_refund_attempts_provider_refund_no",
+            "provider",
+            "provider_refund_no",
+            unique=True,
+            postgresql_where=text("provider_refund_no IS NOT NULL"),
+        ),
+        Index(
+            "uq_refund_attempts_one_active_per_case",
+            "refund_case_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('CREATING', 'PROCESSING', 'UNKNOWN')"
+            ),
+        ),
+        Index(
+            "ix_refund_attempts_reconciliation_due",
+            "next_reconcile_at",
+            "id",
+            postgresql_where=text(
+                "status IN ('CREATING', 'PROCESSING', 'UNKNOWN') "
+                "AND next_reconcile_at IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    refund_case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "refund_cases.id",
+            name="fk_refund_attempts_case_id_refund_cases",
+            ondelete="RESTRICT",
+        ),
+    )
+    provider: Mapped[str] = mapped_column(String(40))
+    merchant_refund_no: Mapped[str] = mapped_column(String(32))
+    provider_refund_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[RefundAttemptStatus] = mapped_column(
+        Enum(RefundAttemptStatus, name="refund_attempt_status")
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    next_reconcile_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reconcile_claim_token: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    reconcile_lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    refund_case: Mapped[RefundCase] = relationship(back_populates="attempts")
 
 
 class IdempotencyRecord(Base):

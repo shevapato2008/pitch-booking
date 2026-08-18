@@ -485,11 +485,16 @@ test("payment review reserves the complete three-state evidence contract", () =>
 test("production app registers no development pages", () => {
   const app = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
   assert.deepEqual(app.pages, [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/venue-profile/index",
+    "pages/venue-inventory/index",
+    "pages/venue-pitch-setup/index",
   ]);
   assert.equal(app.pages.some((page) => page.startsWith("dev/")), false);
 });
@@ -522,9 +527,15 @@ test("every production route has four native page files", () => {
       assert.equal(existsSync(`miniprogram/${route}.${ext}`), true);
 });
 
-test("booking development preview declares two complete native pages", () => {
+test("development preview manifest declares five complete native pages", () => {
   const manifest = JSON.parse(readFileSync("miniprogram/dev/app-pages.json", "utf8"));
-  assert.deepEqual(manifest, { pages: ["pages/booking-confirmation/index", "pages/order-detail/index"] });
+  assert.deepEqual(manifest, { pages: [
+    "pages/booking-confirmation/index",
+    "pages/order-detail/index",
+    "dev/pages/venue-profile/index",
+    "dev/pages/venue-profile-public/index",
+    "dev/pages/venue-access/index",
+  ] });
   for (const route of manifest.pages)
     for (const ext of ["ts", "json", "wxml", "wxss"])
       assert.equal(existsSync(`miniprogram/${route}.${ext}`), true, `missing ${route}.${ext}`);

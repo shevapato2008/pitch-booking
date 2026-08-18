@@ -49,7 +49,7 @@ test("checkout and order views preserve the frozen contract fields", async () =>
   expect(order).toMatchObject({
     orderNumber: "PB202607270001",
     status: "PENDING_PAYMENT",
-    venue: { name: "浦东星跃足球公园", customerServicePhone: "+86-21-5899-2608" },
+    venue: { name: "浦东星跃足球公园" },
     pitch: { name: "五人制 A 场" },
     contact: { name: "张三", maskedPhone: "138****5678" },
     priceCents: 32000,

@@ -2,7 +2,17 @@
   "id": "e03d801d-1254-5c62-9a16-9a8800280162",
   "slug": "tianjin-olympic-center-five-a-side-football-pitch",
   "name": "天津奥林匹克中心五人制足球场",
-  "description": "",
+  "profile": {
+    "publication_state": "PUBLISHED",
+    "published_version": 1,
+    "description": "",
+    "cover_image": null,
+    "images": [],
+    "facilities": [],
+    "pitch_sizes": ["FIVE_A_SIDE"],
+    "live_price": {"available": false, "from_price_cents": null, "currency": "CNY", "unit": "HOUR"},
+    "availability_target": {"enabled": false, "label": "查看可订时段", "path": null}
+  },
   "address": "天津市南开区宾水西道1号",
   "latitude": 39.074524,
   "longitude": 117.176641,
@@ -12,19 +22,8 @@
   "navigation_longitude": 117.178054,
   "booking_mode": "DIRECTORY_ONLY",
   "pitch_types": ["FIVE_A_SIDE"],
-  "cover_image": null,
-  "nearest_transit": [
-    {
-      "kind": "SUBWAY",
-      "name": "体育中心站",
-      "lines": ["5号线"],
-      "distance_meters": 420,
-      "distance_basis": "MAP_VERIFIED"
-    }
-  ],
+  "nearest_transit": [{"kind": "SUBWAY", "name": "体育中心站", "lines": ["5号线"], "distance_meters": 420, "distance_basis": "MAP_VERIFIED"}],
   "content_verified_at": "2026-07-30T18:15:00+08:00",
   "business_hours_text": null,
-  "parking_text": null,
-  "images": [],
-  "facilities": []
+  "parking_text": null
 }

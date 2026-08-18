@@ -33,6 +33,7 @@ const forbiddenContentPatterns = [
   /\bcreateDevelopmentPaymentDataSource\b/,
   /\bcreateDevelopmentPaymentCapability\b/,
   /\bshowDevelopmentCashier\b/,
+  /MY_ORDERS_RAW_FIXTURE/,
   /\bcreateDevelopmentVenueDirectoryDataSource\b/,
   /\bcreateSimulatedLocationCapability\b/,
   /\bpreviewPoiSearchCapability\b/,
@@ -111,11 +112,19 @@ try {
 
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
 const productionRoutes = [
+  "pages/intent-entry/index",
+  "pages/venue-access/index",
+  "pages/venue-claim/index",
+  "pages/venue-create/index",
   "pages/venue-map/index",
   "pages/venue/index",
   "pages/availability/index",
   "pages/booking-confirmation/index",
   "pages/order-detail/index",
+  "pages/my-orders/index",
+  "pages/venue-profile/index",
+  "pages/venue-inventory/index",
+  "pages/venue-pitch-setup/index",
 ];
 if (JSON.stringify(manifest.pages) !== JSON.stringify(productionRoutes)) {
   forbidden.push(`unexpected routes: ${JSON.stringify(manifest.pages)}`);

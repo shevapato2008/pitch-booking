@@ -42,7 +42,12 @@ FULL_PHONE = "13812345678"
 RAW_TOKEN = "order-business-token-with-at-least-256-bits-of-entropy"
 IDEMPOTENCY_KEY = "create-order-key-000000000001"
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-CANCELLATION_SUMMARY = "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。"
+APPROVED_CANCELLATION_SUMMARY = (
+    "开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。"
+)
+HISTORIC_CANCELLATION_SUMMARY = (
+    "开场前 24 小时可免费取消；不足 24 小时取消将收取订单金额的 50%。"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +133,7 @@ def _seed_order_case(
         )
         parent = venue(
             timezone="Asia/Shanghai",
-            refund_policy_text=CANCELLATION_SUMMARY,
+            refund_policy_text=HISTORIC_CANCELLATION_SUMMARY,
         )
         pitch = add_pitch(session, parent)
         if slot_in_past:
@@ -297,7 +302,18 @@ def test_create_order_operation_declares_only_frozen_public_responses() -> None:
     document = app.openapi()
     operation = document["paths"]["/api/v1/orders"]["post"]
 
-    assert set(operation["responses"]) == {"200", "201", "401", "409", "422"}
+    assert set(operation["responses"]) == {
+        "200",
+        "201",
+        "401",
+        "404",
+        "409",
+        "422",
+    }
+    for status in ("200", "201"):
+        assert operation["responses"][status]["content"]["application/json"][
+            "schema"
+        ]["$ref"].endswith("/CreateOrderResponse")
     idempotency_parameter = next(
         parameter
         for parameter in operation["parameters"]
@@ -628,7 +644,7 @@ def test_stale_available_checkout_version_returns_full_current_checkout(
     assert current["price_cents"] == 32000
     assert current["currency"] == "CNY"
     assert current["available"] is True
-    assert current["cancellation_summary"] == CANCELLATION_SUMMARY
+    assert current["cancellation_summary"] == HISTORIC_CANCELLATION_SUMMARY
     assert current["lock_duration_seconds"] == 600
     assert current["contact"] == {
         "masked_phone": "138****5678",
@@ -742,7 +758,6 @@ def test_success_creates_server_authoritative_snapshots_and_lock(pg_engine: Engi
         "address": "上海市浦东新区锦绣东路 2777 弄 18 号",
         "latitude": 31.2304,
         "longitude": 121.4737,
-        "customer_service_phone": "+86-21-5899-2608",
     }
     assert payload["pitch"] == {"id": str(seeded.pitch_id), "name": "五人制 A 场"}
     assert payload["starts_at"] == seeded.starts_at.astimezone(SHANGHAI).isoformat()
@@ -752,7 +767,7 @@ def test_success_creates_server_authoritative_snapshots_and_lock(pg_engine: Engi
     assert payload["currency"] == "CNY"
     assert payload["contact"] == {"name": "张三", "masked_phone": "138****5678"}
     assert payload["expired_at"] is None
-    assert payload["cancellation_summary"] == CANCELLATION_SUMMARY
+    assert payload["cancellation_summary"] == APPROVED_CANCELLATION_SUMMARY
     assert payload["closing_payment"] is False
     assert payload["detail_path"] == f"/api/v1/orders/{order_id}"
     assert FULL_PHONE not in response.text
@@ -895,6 +910,50 @@ def test_same_key_and_normalized_body_replays_exact_first_201(pg_engine: Engine)
         record = session.scalar(select(IdempotencyRecord))
         assert record is not None
         assert record.state is IdempotencyState.COMPLETED
+
+
+def test_persisted_create_replay_keeps_historic_legacy_body_byte_for_byte(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_order_case(pg_engine)
+
+    with _client(pg_engine) as client:
+        first = client.post(
+            "/api/v1/orders",
+            headers=_headers(),
+            json=_body(seeded, contact_name="张三"),
+        )
+        assert first.status_code == 201
+        historic_body = first.json()
+        historic_body["cancellation_summary"] = HISTORIC_CANCELLATION_SUMMARY
+        assert "allowed_actions" not in historic_body
+        assert "funding_alerts" not in historic_body
+        with Session(pg_engine) as session:
+            record = session.scalar(select(IdempotencyRecord))
+            assert record is not None
+            record.response_body = historic_body
+            order = session.scalar(select(Order))
+            assert order is not None
+            order.cancel_requested_at = datetime.now(UTC)
+            session.commit()
+
+        replay = client.post(
+            "/api/v1/orders",
+            headers=_headers(),
+            json=_body(seeded, contact_name=" 张三 "),
+        )
+
+    expected_bytes = json.dumps(
+        historic_body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert replay.status_code == 201
+    assert replay.content == expected_bytes
+    assert replay.json()["cancellation_summary"] == HISTORIC_CANCELLATION_SUMMARY
+    assert "allowed_actions" not in replay.json()
+    assert "funding_alerts" not in replay.json()
 
 
 def test_same_key_with_different_normalized_body_is_rejected(pg_engine: Engine) -> None:

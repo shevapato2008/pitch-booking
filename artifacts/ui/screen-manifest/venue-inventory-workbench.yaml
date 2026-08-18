@@ -1,0 +1,30 @@
+id: venue-inventory-workbench
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+entry: authorized-deep-link-only
+venue_scope:
+  name: 渤海元丰足球场
+  booking_mode: ONLINE
+  permission: VenueMembership.can_manage_inventory
+states:
+  - id: day-ready
+    reference: artifacts/ui/references/venue-inventory-workbench.html?state=day-ready
+  - id: create-slot-open
+    reference: artifacts/ui/references/venue-inventory-workbench.html?state=create-slot-open
+  - id: edit-slot-open
+    reference: artifacts/ui/references/venue-inventory-workbench.html?state=edit-slot-open
+  - id: save-result-unknown
+    reference: artifacts/ui/references/venue-inventory-workbench.html?state=save-result-unknown
+  - id: create-slot-overlap
+    reference: artifacts/ui/references/venue-inventory-workbench.html?state=create-slot-overlap
+review_slots:
+  - reference
+  - implementation
+  - side-by-side
+  - overlay-50
+  - difference
+  - observations
+fixture:
+  planned_path: miniprogram/dev/venue-inventory-fixture.ts
+  deletion_condition: delete after real inventory backend integration
+gate: reference-artifact-approved-native-fixture-pending

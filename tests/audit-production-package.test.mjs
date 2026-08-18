@@ -27,6 +27,7 @@ for (const token of [
   "DEV_ONLY_POI_SEARCH_PREVIEW",
   "poi-search-preview",
   "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
+  "MY_ORDERS_RAW_FIXTURE",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -383,11 +384,19 @@ test("production audit rejects payment composition hidden in an uninvoked functi
 async function createProductionPackage() {
   const packageRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-audit-"));
   const routes = [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
+    "pages/venue-claim/index",
+    "pages/venue-create/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/my-orders/index",
+    "pages/venue-profile/index",
+    "pages/venue-inventory/index",
+    "pages/venue-pitch-setup/index",
   ];
   await writeFile(
     path.join(packageRoot, "app.json"),

@@ -9,11 +9,19 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const audit = path.resolve("scripts/audit-production-package.mjs");
 const productionRoutes = [
+  "pages/intent-entry/index",
+  "pages/venue-access/index",
+  "pages/venue-claim/index",
+  "pages/venue-create/index",
   "pages/venue-map/index",
   "pages/venue/index",
   "pages/availability/index",
   "pages/booking-confirmation/index",
   "pages/order-detail/index",
+  "pages/my-orders/index",
+  "pages/venue-profile/index",
+  "pages/venue-inventory/index",
+  "pages/venue-pitch-setup/index",
 ];
 
 for (const token of ["dev-login-code", "dev-phone-code", "138****0000", "developmentBookingDataSource", "booking-fixture"]) {

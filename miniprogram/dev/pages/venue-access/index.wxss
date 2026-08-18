@@ -1,0 +1,79 @@
+@import "../../../styles/tokens.wxss";
+
+page {
+  --page: #F8FAFC;
+  --surface: #FFFFFF;
+  --text: #10243E;
+  --muted: #64748B;
+  --border: #DBE5EC;
+  --primary: #0284C7;
+  --primary-strong: #0369A1;
+  height: 100%;
+  background: var(--page);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+view, text, button, scroll-view { box-sizing: border-box; }
+button { min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; }
+button::after { border: 0; }
+
+.venue-access { display: flex; height: 100vh; flex-direction: column; overflow: hidden; background: #F8FAFC; }
+.venue-access__system { flex: 0 0 auto; background: #FFFFFF; }
+.venue-access__header {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 2rpx solid var(--border);
+  background: #FFFFFF;
+}
+.venue-access__touch { min-width: 88rpx; min-height: 88rpx; }
+.venue-access__back { position: absolute; top: 0; left: 16rpx; display: flex; align-items: center; justify-content: center; border-radius: 24rpx; }
+.venue-access__back--pressed { background: #F1F5F9; }
+.venue-access__title { overflow: hidden; font-size: 36rpx; font-weight: 750; line-height: 52rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-access__content { flex: 1 1 auto; min-height: 0; padding: 40rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px)); }
+.venue-access__eyebrow { display: block; color: var(--primary-strong); font-size: 22rpx; font-weight: 750; line-height: 32rpx; letter-spacing: 3rpx; }
+.venue-access__heading { display: block; margin-top: 12rpx; font-size: 46rpx; font-weight: 750; line-height: 64rpx; }
+.venue-access__description { display: block; margin: 8rpx 0 32rpx; color: var(--muted); font-size: 28rpx; line-height: 44rpx; }
+.venue-access__list { display: flex; flex-direction: column; gap: 20rpx; }
+.venue-access__card {
+  position: relative;
+  display: flex;
+  width: 100%;
+  padding: 28rpx 88rpx 28rpx 28rpx;
+  align-items: center;
+  justify-content: flex-start;
+  border: 2rpx solid var(--border);
+  border-radius: 28rpx;
+  background: #FFFFFF;
+  text-align: left;
+}
+.venue-access__card--pressed { border-color: #7DD3FC; background: #F0F9FF; }
+.venue-access__card-copy { display: flex; min-width: 0; flex-direction: column; }
+.venue-access__venue-name { overflow: hidden; font-size: 32rpx; font-weight: 750; line-height: 48rpx; text-overflow: ellipsis; white-space: nowrap; }
+.venue-access__venue-location, .venue-access__permission { display: block; margin-top: 4rpx; color: var(--muted); font-size: 24rpx; line-height: 36rpx; }
+.venue-access__permission { color: var(--primary-strong); }
+.venue-access__empty { display: flex; padding: 36rpx 28rpx; flex-direction: column; align-items: center; justify-content: center; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; text-align: center; }
+.venue-access__permission-mark { display: flex; width: 112rpx; height: 112rpx; margin-bottom: 24rpx; align-items: center; justify-content: center; border-radius: 56rpx; background: #E0F2FE; }
+.venue-access__permission-building { position: relative; width: 48rpx; height: 44rpx; border: 4rpx solid var(--primary); border-top-width: 10rpx; }
+.venue-access__permission-building::before, .venue-access__permission-building::after { position: absolute; top: 7rpx; width: 4rpx; height: 16rpx; background: var(--primary); content: ""; }
+.venue-access__permission-building::before { left: 9rpx; }
+.venue-access__permission-building::after { right: 9rpx; }
+.venue-access__permission-door { position: absolute; bottom: -4rpx; left: 50%; width: 12rpx; height: 16rpx; border: 4rpx solid var(--primary); border-bottom: 0; background: #E0F2FE; transform: translateX(-50%); }
+.venue-access__empty-heading { font-size: 34rpx; font-weight: 750; line-height: 50rpx; }
+.venue-access__empty-copy { display: block; margin-top: 12rpx; color: var(--muted); font-size: 26rpx; line-height: 40rpx; }
+.venue-access__onboarding { margin-top: 32rpx; padding: 28rpx; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; }
+.venue-access__onboarding-title { display: block; font-size: 30rpx; font-weight: 750; line-height: 44rpx; }
+.venue-access__onboarding-copy { display: block; margin: 6rpx 0 20rpx; color: var(--muted); font-size: 24rpx; line-height: 36rpx; }
+.venue-access__primary, .venue-access__secondary { display: flex; width: 100%; padding: 16rpx 32rpx; align-items: center; justify-content: center; border: 2rpx solid var(--primary-strong); border-radius: 24rpx; font-size: 28rpx; font-weight: 750; line-height: 40rpx; text-align: center; }
+.venue-access__primary { margin-top: 16rpx; background: var(--primary-strong); color: #FFFFFF; }
+.venue-access__secondary { background: #FFFFFF; color: var(--primary-strong); }
+.venue-access__primary--pressed { background: #075985; }
+.venue-access__secondary--pressed { background: #F0F9FF; }
+.venue-access-icon { position: relative; display: inline-flex; width: 40rpx; height: 40rpx; flex: 0 0 auto; align-items: center; justify-content: center; color: currentColor; }
+.venue-access-icon--back::before { width: 16rpx; height: 16rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; content: ""; transform: rotate(45deg); }
+.venue-access-icon--chevron { position: absolute; top: 50%; right: 24rpx; width: 64rpx; height: 64rpx; transform: translateY(-50%); }
+.venue-access-icon--chevron::before { width: 16rpx; height: 16rpx; border-top: 4rpx solid var(--primary); border-right: 4rpx solid var(--primary); content: ""; transform: rotate(45deg); }

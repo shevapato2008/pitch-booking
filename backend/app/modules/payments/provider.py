@@ -8,6 +8,18 @@ from typing import Literal, Protocol
 PAYMENT_PROVIDER_MAX_REQUEST_DURATION = timedelta(seconds=30)
 
 
+def _validate_merchant_order_no(value: str, *, max_length: int) -> None:
+    if not value.strip() or len(value) > max_length:
+        raise ValueError(
+            f"merchant_order_no must be non-empty and at most {max_length} characters"
+        )
+
+
+def _validate_aware_expiry(value: datetime) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("time_expire must be timezone-aware")
+
+
 @dataclass(frozen=True, slots=True)
 class PaymentLaunchParams:
     timeStamp: str
@@ -33,16 +45,27 @@ class CreatePrepayRequest:
     amount_cents: int
     currency: Literal["CNY"]
     payer_openid: str = field(repr=False)
+    time_expire: datetime
+
+    def __post_init__(self) -> None:
+        _validate_merchant_order_no(self.merchant_order_no, max_length=32)
+        _validate_aware_expiry(self.time_expire)
 
 
 @dataclass(frozen=True, slots=True)
 class QueryPaymentRequest:
     merchant_order_no: str
 
+    def __post_init__(self) -> None:
+        _validate_merchant_order_no(self.merchant_order_no, max_length=128)
+
 
 @dataclass(frozen=True, slots=True)
 class ClosePaymentRequest:
     merchant_order_no: str
+
+    def __post_init__(self) -> None:
+        _validate_merchant_order_no(self.merchant_order_no, max_length=128)
 
 
 @dataclass(frozen=True, slots=True)

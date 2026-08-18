@@ -6,7 +6,22 @@ import { toVenueViewModel } from "./venue";
 const venue: Venue = {
   id: "venue-1",
   name: "西青示范足球场",
-  description: "场馆介绍",
+  profile: {
+    publicationState: "PUBLISHED", publishedVersion: 1, description: "场馆介绍",
+    coverImage: "https://cdn.test/cover.jpg",
+    images: [
+      { url: "https://cdn.test/gallery-2.jpg", alt: "七人制场地", role: "GALLERY", sortOrder: 2 },
+      { url: "https://cdn.test/cover.jpg", alt: "主场地", role: "COVER", sortOrder: 0 },
+      { url: "https://cdn.test/gallery-1.jpg", alt: "五人制场地", role: "GALLERY", sortOrder: 1 },
+    ],
+    facilities: [
+      { code: "PARKING", name: "停车场", sortOrder: 1 },
+      { code: "LIGHTING", name: "专业夜场照明", sortOrder: 0 },
+    ],
+    pitchSizes: ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
+    livePrice: { available: true, fromPriceCents: 36000, currency: "CNY", unit: "HOUR" },
+    availabilityTarget: { enabled: true, label: "查看可订时段", path: "/api/v1/venues/venue-1/availability" },
+  },
   priceAdvantageText: "工作日白天低至 ¥360/小时",
   timezone: "Asia/Shanghai",
   businessHoursText: "09:00—23:00",
@@ -14,17 +29,7 @@ const venue: Venue = {
   latitude: 39,
   longitude: 117,
   parkingText: "院内停车",
-  phone: "02212345678",
   refundPolicySummary: "开场前按规则退款",
-  images: [
-    { url: "https://cdn.test/gallery-2.jpg", alt: "七人制场地", role: "GALLERY", sortOrder: 2 },
-    { url: "https://cdn.test/cover.jpg", alt: "主场地", role: "COVER", sortOrder: 0 },
-    { url: "https://cdn.test/gallery-1.jpg", alt: "五人制场地", role: "GALLERY", sortOrder: 1 },
-  ],
-  facilities: [
-    { code: "PARKING", name: "停车场", sortOrder: 1 },
-    { code: "LIGHTING", name: "专业夜场照明", sortOrder: 0 },
-  ],
   pitchTypes: [
     { code: "SEVEN_A_SIDE", name: "七人制", sortOrder: 1 },
     { code: "FIVE_A_SIDE", name: "五人制", sortOrder: 0 },
@@ -53,6 +58,19 @@ test("sorts images and display labels without mutating the decoded venue", () =>
 test("preserves the server-authored price advantage text exactly", () => {
   expect(toVenueViewModel(venue, "/cover.png").priceAdvantageText)
     .toBe("工作日白天低至 ¥360/小时");
+});
+
+test("preserves fractional yuan in the live hourly price", () => {
+  const fractionalPriceVenue: Venue = {
+    ...venue,
+    profile: {
+      ...venue.profile,
+      livePrice: { ...venue.profile.livePrice, fromPriceCents: 26050 },
+    },
+  };
+
+  expect(toVenueViewModel(fractionalPriceVenue, "/cover.png").livePriceText)
+    .toBe("¥260.50 起/小时");
 });
 
 test("derives deterministic image and fallback cover states from the injected source", () => {

@@ -1,0 +1,68 @@
+<view class="inventory-page">
+  <view class="inventory-header" style="padding-top: {{headerTopPx}}px;">
+    <view class="inventory-header__row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <button class="back-button" bindtap="onBack" disabled="{{mode === 'saving' || mode === 'save-result-unknown'}}" aria-label="返回"><view class="icon-back"></view></button>
+      <view class="inventory-header__identity">
+        <text class="inventory-header__title">{{venue.name}}</text>
+        <text class="inventory-header__subtitle">{{venueNote}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{mode === 'initial-loading' || mode === 'load-error'}}" class="initial-state">
+    <view wx:if="{{mode === 'initial-loading'}}" class="loading-mark"></view><text>{{statusMessage}}</text>
+    <button wx:if="{{recoveryLabel}}" class="secondary-button" bindtap="onRetryRead">{{recoveryLabel}}</button>
+  </view>
+
+  <view wx:else class="inventory-content">
+    <view class="month-row"><text class="month-title">{{monthTitle}}</text><button class="text-button" bindtap="onOpenCalendar" disabled="{{mode === 'save-result-unknown' || !availabilityWindow.startDate}}">更多日期</button></view>
+    <view class="week-strip" role="group" aria-label="当前自然周">
+      <button wx:for="{{week}}" wx:key="iso" class="week-day {{item.iso === selectedDate ? 'week-day--selected' : ''}}" disabled="{{!item.manageable || mode === 'save-result-unknown'}}" bindtap="onSelectDate" data-date="{{item.iso}}"><text>{{item.weekday}}</text><text class="week-day__number">{{item.day}}</text></button>
+    </view>
+    <button class="current-pitch" bindtap="onOpenPitchPicker" disabled="{{writeControlsDisabled}}" aria-label="选择物理场地">
+      <view class="current-pitch__copy"><text class="context-label">当前场地</text><text class="current-pitch__value">{{selectedPitch.displayName}} · {{selectedPitch.playersPerSide}}人制</text></view><view class="icon-chevron {{writeControlsDisabled ? 'icon-chevron--disabled' : ''}}"></view>
+    </button>
+    <view class="inventory-summary"><text class="inventory-summary__date">{{selectedDateLabel}}</text><text class="inventory-summary__count">{{slotCount === null ? '正在读取' : slotCount + ' 个时段'}}</text></view>
+    <view wx:if="{{statusMessage}}" class="status-callout status-callout--{{mode}}"><text>{{statusMessage}}</text><button wx:if="{{mode === 'save-result-unknown' && !editor}}" class="inline-retry" bindtap="onRetryMutation">重新确认</button><button wx:elif="{{recoveryLabel}}" class="inline-retry" bindtap="onRetryRead">{{recoveryLabel}}</button></view>
+    <scroll-view class="inventory-list" scroll-y enhanced show-scrollbar="false">
+      <view wx:if="{{mode === 'empty'}}" class="empty-state">当天还没有时段，可从下方新增第一条时段</view>
+      <view wx:for="{{slots}}" wx:key="id" class="slot-card {{!item.editable || writeControlsDisabled ? 'slot-card--readonly' : ''}}" bindtap="onSlotTap" data-slot-id="{{item.id}}" role="button">
+        <view class="slot-card__main"><text class="slot-card__title">{{item.start}}–{{item.end}} · ¥{{item.price}}</text><text class="slot-card__detail">{{item.detail}}</text></view>
+        <view class="status-badge status-badge--{{item.status}}"><text>{{item.statusLabel}}</text></view><view class="icon-chevron {{item.editable && !writeControlsDisabled ? '' : 'icon-chevron--placeholder'}}"></view>
+      </view>
+      <view class="list-end"></view>
+    </scroll-view>
+  </view>
+
+  <view class="inventory-footer"><button class="primary-button" bindtap="onOpenCreate" disabled="{{pageAction.disabled}}">＋ 新增时段</button></view>
+
+  <block wx:if="{{sheet}}">
+    <view class="sheet-scrim" bindtap="onCloseOverlay"></view>
+    <view class="bottom-sheet" role="dialog" aria-modal="true" aria-label="{{sheet.title}}">
+      <view class="sheet-handle"></view><view class="sheet-heading"><view><text class="sheet-title">{{sheet.title}}</text><text class="sheet-subtitle">{{sheet.kind === 'calendar' ? '未来 14 天' : '只显示使用中的物理场地'}}</text></view><button class="close-button" bindtap="onCloseOverlay" aria-label="关闭"><view class="icon-close"></view></button></view>
+      <block wx:if="{{sheet.kind === 'pitch-picker'}}">
+        <view wx:for="{{sheet.groups}}" wx:key="playersPerSide" class="pitch-group"><text class="pitch-group__title">{{item.playersPerSide}}人制</text><button wx:for="{{item.pitches}}" wx:for-item="pitch" wx:key="id" class="pitch-option {{pitch.id === sheet.selectedPitchId ? 'pitch-option--selected' : ''}}" bindtap="onSelectPitch" data-pitch-id="{{pitch.id}}"><text>{{pitch.displayName}} · {{pitch.playersPerSide}}人制</text><text>{{pitch.id === sheet.selectedPitchId ? '当前' : '选择'}}</text></button></view>
+      </block>
+      <block wx:else>
+        <view class="calendar-weekdays"><text>一</text><text>二</text><text>三</text><text>四</text><text>五</text><text>六</text><text>日</text></view>
+        <view class="calendar-grid"><button wx:for="{{sheet.days}}" wx:key="iso" class="calendar-day {{item.selected ? 'calendar-day--selected' : ''}}" disabled="{{!item.manageable}}" bindtap="onSelectDate" data-date="{{item.iso}}">{{item.day}}</button></view>
+        <view class="calendar-pending"><text>待确认日期</text><text>{{sheet.pendingLabel}}</text></view><button class="primary-button" bindtap="onConfirmDate" disabled="{{mode === 'save-result-unknown'}}">确认日期</button>
+      </block>
+    </view>
+  </block>
+
+  <block wx:if="{{editor}}">
+    <view class="sheet-scrim" bindtap="onCloseOverlay"></view>
+    <view class="bottom-sheet" role="dialog" aria-modal="true" aria-label="{{editor.title}}">
+      <view class="sheet-handle"></view><view class="sheet-heading"><view><text class="sheet-title">{{editor.title}}</text><text class="sheet-subtitle">时间按 30 分钟递增</text></view><button class="close-button" bindtap="onCloseOverlay" disabled="{{editor.closeDisabled}}" aria-label="关闭"><view class="icon-close"></view></button></view>
+      <view class="context-chips"><text wx:for="{{editor.contextChips}}" wx:key="*this">{{item}}</text></view>
+      <view class="editor-field"><text>开始时间</text><picker mode="time" value="{{editor.draft.startTime}}" start="00:00" end="23:30" bindchange="onStartTimeChange" disabled="{{editor.timeReadOnly || editor.closeDisabled}}"><view class="field-value">{{editor.draft.startTime}}<view class="icon-chevron"></view></view></picker></view>
+      <view class="editor-field"><text>结束时间</text><picker mode="time" value="{{editor.draft.endTime}}" start="00:30" end="23:30" bindchange="onEndTimeChange" disabled="{{editor.timeReadOnly || editor.closeDisabled}}"><view class="field-value">{{editor.draft.endTime}}<view class="icon-chevron"></view></view></picker></view>
+      <view class="editor-field"><text>价格</text><view class="price-input"><text>¥</text><input type="digit" value="{{editor.draft.price}}" bindinput="onPriceInput" disabled="{{editor.closeDisabled}}" /></view></view>
+      <view wx:if="{{editor.mode === 'edit'}}" class="status-selector"><text>开放状态</text><view class="status-options"><button class="status-option {{editor.draft.status === 'AVAILABLE' ? 'status-option--selected' : ''}}" data-status="AVAILABLE" bindtap="onStatusSelect" disabled="{{editor.closeDisabled}}">开放</button><button class="status-option {{editor.draft.status === 'CLOSED' ? 'status-option--selected' : ''}}" data-status="CLOSED" bindtap="onStatusSelect" disabled="{{editor.closeDisabled}}">临时关闭</button></view></view>
+      <view wx:if="{{editor.fieldError}}" class="editor-error" role="alert">{{editor.fieldError}}</view>
+      <view wx:if="{{mode === 'save-result-unknown'}}" class="editor-warning"><text>保存结果尚未确认，输入已保留。</text><button class="inline-retry" bindtap="onRetryMutation">重新确认</button></view>
+      <view class="sheet-actions"><button class="secondary-button" bindtap="onCloseOverlay" disabled="{{editor.closeDisabled}}">取消</button><button class="primary-button" bindtap="onSaveSlot" disabled="{{editor.saveDisabled}}">{{editor.saveLabel}}</button></view>
+    </view>
+  </block>
+</view>

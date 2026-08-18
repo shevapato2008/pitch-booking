@@ -11,6 +11,7 @@ import {
   productionSessionStorage,
   productionTencentPoiRequest,
   productionTransport,
+  productionVenueProfileMedia,
 } from "./production";
 
 test("maps native location success and distinct failure boundaries", async () => {
@@ -190,6 +191,48 @@ test("forwards GET headers and POST body/headers through the frozen transport bo
     data: { code: "one-time" },
     header: { "Idempotency-Key": "key-1" },
   }));
+});
+
+test("forwards PUT body and headers", async () => {
+  const request = captureRequest();
+  const response = productionTransport("https://api.example").put("/resource/one", { status: "CLOSED" }, { "Idempotency-Key": "key-1" });
+  request.options.success?.(requestResult(200, { status: "CLOSED" }));
+  await expect(response).resolves.toEqual({ status: "CLOSED" });
+  expect(request.call).toHaveBeenCalledWith(expect.objectContaining({
+    method: "PUT", data: { status: "CLOSED" }, header: { "Idempotency-Key": "key-1" },
+  }));
+});
+
+test("forwards DELETE body and headers", async () => {
+  const request = captureRequest();
+  const response = productionTransport("https://api.example").delete("/resource/one", { expected_version: 2 }, { "Idempotency-Key": "key-1" });
+  request.options.success?.(requestResult(200, { ok: true }));
+  await expect(response).resolves.toEqual({ ok: true });
+  expect(request.call).toHaveBeenCalledWith(expect.objectContaining({ method: "DELETE", data: { expected_version: 2 }, header: { "Idempotency-Key": "key-1" } }));
+});
+
+test("chooses bounded supported venue media and uploads only signed headers", async () => {
+  const bytes = new Uint8Array([1, 2, 3]).buffer;
+  const chooseMedia = jest.fn((options: WechatMiniprogram.ChooseMediaOption) => options.success?.({ tempFiles: [{ tempFilePath: "/tmp/field.webp", size: 3, fileType: "image" }], type: "image" } as WechatMiniprogram.ChooseMediaSuccessCallbackResult));
+  const readFile = jest.fn((options: WechatMiniprogram.ReadFileOption) => options.success?.({ data: bytes, errMsg: "readFile:ok" }));
+  setWx({ chooseMedia, getFileSystemManager: () => ({ readFile }) });
+  await expect(productionVenueProfileMedia.chooseImage()).resolves.toMatchObject({ filename: "field.webp", mimeType: "image/webp", byteSize: 3, bytes });
+
+  const request = captureRequest(); const upload = productionVenueProfileMedia.upload("https://oss.example.com/private?signature=x", bytes, { "Content-Type": "image/webp", "Content-Length": "3" });
+  request.options.success?.(requestResult(200, "")); await expect(upload).resolves.toBeUndefined();
+  expect(request.call).toHaveBeenCalledWith(expect.objectContaining({ url: "https://oss.example.com/private?signature=x", method: "PUT", data: bytes, header: { "Content-Type": "image/webp", "Content-Length": "3" } }));
+});
+
+test("maps venue media cancellation, invalid format, size and upload failures", async () => {
+  setWx({ chooseMedia: (options: WechatMiniprogram.ChooseMediaOption) => options.fail?.({ errMsg: "chooseMedia:fail cancel" } as WechatMiniprogram.GeneralCallbackResult) });
+  await expect(productionVenueProfileMedia.chooseImage()).rejects.toMatchObject({ code: "MEDIA_PICK_CANCELLED" });
+  for (const [path, size, code] of [["/tmp/file.gif", 3, "MEDIA_UNSUPPORTED"], ["/tmp/file.jpg", 10485761, "MEDIA_TOO_LARGE"]] as const) {
+    setWx({ chooseMedia: (options: WechatMiniprogram.ChooseMediaOption) => options.success?.({ tempFiles: [{ tempFilePath: path, size, fileType: "image" }], type: "image" } as WechatMiniprogram.ChooseMediaSuccessCallbackResult) });
+    await expect(productionVenueProfileMedia.chooseImage()).rejects.toMatchObject({ code });
+  }
+  const request = captureRequest(); const upload = productionVenueProfileMedia.upload("https://oss.example.com/object", new ArrayBuffer(1), {});
+  request.options.fail?.({ errMsg: "request:fail timeout" } as WechatMiniprogram.RequestFailCallbackErr);
+  await expect(upload).rejects.toMatchObject({ code: "MEDIA_UPLOAD_TIMEOUT" });
 });
 
 test.each([400, 404, 500, 503])("normalizes HTTP %i responses", async (statusCode) => {

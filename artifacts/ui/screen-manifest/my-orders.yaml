@@ -1,0 +1,49 @@
+id: my-orders
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+entry:
+  source_route: pages/venue-map/index
+  placement: second-row-right-pill
+  target_route: pages/my-orders/index
+references:
+  source: artifacts/ui/references/my-orders.html
+  data: artifacts/ui/references/my-orders-data.js
+  styles: artifacts/ui/references/my-orders.css
+states:
+  - {id: map-entry, reference: artifacts/ui/references/my-orders.html?state=map-entry, representative_capture: true}
+  - {id: ready, reference: artifacts/ui/references/my-orders.html?state=ready, representative_capture: true}
+  - {id: empty, reference: artifacts/ui/references/my-orders.html?state=empty, representative_capture: true}
+  - {id: error, reference: artifacts/ui/references/my-orders.html?state=error, representative_capture: true}
+  - {id: loading, reference: artifacts/ui/references/my-orders.html?state=loading, representative_capture: false}
+  - {id: load-more-error, reference: artifacts/ui/references/my-orders.html?state=load-more-error, representative_capture: false}
+ready_statuses:
+  - PENDING_PAYMENT
+  - closing_payment
+  - CONFIRMED
+  - EXPIRED
+  - PAYMENT_EXCEPTION
+status_priority:
+  - PAYMENT_EXCEPTION
+  - closing_payment
+  - payment_confirming
+  - CONFIRMED
+  - EXPIRED
+  - PENDING_PAYMENT
+interaction_targets:
+  minimum_css_pixels: 44
+  button_alignment: flex-both-axes
+scrolling:
+  direction: vertical
+  fixed_bottom_bar: false
+  safe_area_bottom: required
+review_slots:
+  - reference
+  - implementation
+  - side-by-side
+  - overlay-50
+  - difference
+  - observations
+fixture:
+  planned_path: miniprogram/dev/my-orders-fixture.ts
+  deletion_condition: delete after the production list service, pagination, retry, detail navigation, focused tests, real-device acceptance, and production package audit pass
+gate: pending-user-visual-approval

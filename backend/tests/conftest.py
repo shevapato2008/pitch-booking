@@ -60,7 +60,8 @@ def clean_postgresql_tables(request: pytest.FixtureRequest) -> Iterator[None]:
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE TABLE idempotency_records, user_sessions, orders, slots, "
+                "TRUNCATE TABLE venue_memberships, idempotency_records, user_sessions, "
+                "orders, slots, "
                 "pitches, venue_transit_stops, venue_facilities, venue_images, "
                 "venues, users CASCADE"
             )

@@ -1,0 +1,136 @@
+<view class="venue-profile" data-state="{{visualState}}">
+  <view class="venue-profile__system" style="height: {{headerTopPx}}px"></view>
+  <view class="venue-profile__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px">
+    <button class="venue-profile__back venue-profile__touch" aria-label="返回" bindtap="onBack">
+      <view class="venue-profile-icon venue-profile-icon--back" aria-hidden="true"></view>
+    </button>
+    <text class="venue-profile__title">场馆资料</text>
+  </view>
+
+  <scroll-view class="venue-profile__scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
+    <view class="venue-profile__content">
+      <text class="venue-profile__venue-heading">{{venueName}}</text>
+
+      <view class="venue-profile__status venue-profile__status--{{tone}}" role="{{tone === 'error' ? 'alert' : 'status'}}">
+        <view class="venue-profile__status-mark" aria-hidden="true">{{tone === 'error' ? '!' : 'i'}}</view>
+        <view class="venue-profile__status-copy">
+          <text class="venue-profile__status-title">{{status}}</text>
+          <text class="venue-profile__status-detail">{{statusDetail}}</text>
+        </view>
+      </view>
+
+      <view wx:if="{{rejectionLabels.length}}" class="venue-profile__card" role="alert">
+        <text class="venue-profile__label">审核原因</text>
+        <view wx:for="{{rejectionLabels}}" wx:key="*this" class="venue-profile__reason">
+          <view class="venue-profile__reason-dot" aria-hidden="true"></view>
+          <text>{{item}}</text>
+        </view>
+      </view>
+
+      <view wx:if="{{workingProfile}}">
+        <view class="venue-profile__card">
+          <view class="venue-profile__section-heading">
+            <view>
+              <text class="venue-profile__section-title">场馆图片</text>
+              <text class="venue-profile__section-help">1 张必选封面，最多 8 张；图片操作立即提交</text>
+            </view>
+            <text class="venue-profile__count">{{imageCount}} / {{maxImages}}</text>
+          </view>
+
+          <view class="venue-profile__image-grid">
+            <view wx:for="{{workingProfile.images}}" wx:key="id" wx:for-index="imageIndex" class="venue-profile__image-tile {{item.cover ? 'venue-profile__image-tile--cover' : ''}}">
+              <view class="venue-profile-scene venue-profile-scene--{{item.scene}}" role="img" aria-label="{{item.alt}}">
+                <view class="venue-profile-scene__sky"></view>
+                <view class="venue-profile-scene__field"></view>
+                <view class="venue-profile-scene__halfway"></view>
+                <view class="venue-profile-scene__circle"></view>
+                <view class="venue-profile-scene__goal"></view>
+              </view>
+              <text wx:if="{{item.cover}}" class="venue-profile__cover-label">封面</text>
+              <view wx:if="{{imageActionsEnabled && !item.cover}}" class="venue-profile__image-actions">
+                <button class="venue-profile__image-action" data-image-id="{{item.id}}" bindtap="onSetCover">设为封面</button>
+                <button class="venue-profile__image-action venue-profile__image-action--danger" data-image-id="{{item.id}}" bindtap="onRemoveImage">移除</button>
+                <button class="venue-profile__image-action" data-image-id="{{item.id}}" data-direction="-1" disabled="{{imageIndex <= 1}}" bindtap="onReorderImage">前移</button>
+              </view>
+            </view>
+
+            <button wx:if="{{imageActionsEnabled && imageCount < maxImages}}" class="venue-profile__add-image venue-profile__touch" bindtap="onChooseImage">
+              <view class="venue-profile-icon venue-profile-icon--plus" aria-hidden="true"></view>
+              <text>添加图片</text>
+            </button>
+          </view>
+        </view>
+
+        <view class="venue-profile__card">
+          <view class="venue-profile__section-heading">
+            <text class="venue-profile__section-title">场馆介绍</text>
+            <text class="venue-profile__count">最多 300 字</text>
+          </view>
+          <label class="venue-profile__label" for="venue-description">介绍内容</label>
+          <textarea
+            id="venue-description"
+            class="venue-profile__description"
+            value="{{workingProfile.description}}"
+            maxlength="-1"
+            disabled="{{!editable}}"
+            bindinput="onDescriptionInput"
+            aria-describedby="description-help description-counter"
+          ></textarea>
+          <text id="description-help" class="venue-profile__field-help">请勿填写联系方式、二维码、外链或站外交易信息。</text>
+          <text id="description-counter" class="venue-profile__counter">{{descriptionCount}} / {{descriptionMax}}</text>
+        </view>
+
+        <view class="venue-profile__card">
+          <view class="venue-profile__section-heading">
+            <text class="venue-profile__section-title">场馆设施</text>
+            <text class="venue-profile__count">{{selectedFacilityCount}} 项已选</text>
+          </view>
+          <view wx:for="{{facilityGroups}}" wx:key="title" class="venue-profile__facility-group">
+            <text class="venue-profile__facility-title">{{item.title}}</text>
+            <view class="venue-profile__chips">
+              <button
+                wx:for="{{item.items}}"
+                wx:for-item="facility"
+                wx:key="code"
+                class="venue-profile__chip {{facility.selected ? 'venue-profile__chip--selected' : ''}}"
+                data-facility-code="{{facility.code}}"
+                disabled="{{!editable}}"
+                bindtap="onToggleFacility"
+                aria-pressed="{{facility.selected}}"
+              >{{facility.label}}</button>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{stateActions.length}}" class="venue-profile__state-actions">
+          <block wx:for="{{stateActions}}" wx:key="id">
+            <button wx:if="{{item.operation === 'GET_IMAGE_REVIEW'}}" class="venue-profile__primary venue-profile__touch" bindtap="onRetryModeration">{{item.label}}</button>
+            <button wx:elif="{{item.operation === 'RETRY_IMAGE'}}" class="venue-profile__primary venue-profile__touch" bindtap="onRetryUpload">{{item.label}}</button>
+            <button wx:elif="{{item.operation === 'RELOAD_PROFILE'}}" class="venue-profile__primary venue-profile__touch" bindtap="onReload">{{item.label}}</button>
+            <button wx:elif="{{item.operation === 'CHECK_SAVE_RESULT'}}" class="venue-profile__primary venue-profile__touch" bindtap="onRetryUnknown">{{item.label}}</button>
+            <button wx:elif="{{item.id === 'edit-description'}}" class="venue-profile__secondary venue-profile__touch" bindtap="onEditDescription">{{item.label}}</button>
+            <button wx:else class="{{item.secondary ? 'venue-profile__secondary' : 'venue-profile__primary'}} venue-profile__touch" data-operation="{{item.operation}}" data-next-state="{{item.nextState}}" bindtap="onStateAction">{{item.label}}</button>
+          </block>
+        </view>
+      </view>
+
+      <view wx:else class="venue-profile__card venue-profile__error-panel" role="alert">
+        <view class="venue-profile-icon venue-profile-icon--warning" aria-hidden="true">!</view>
+        <text class="venue-profile__error-title">无法显示编辑内容</text>
+        <text class="venue-profile__error-copy">上一版公开资料不受影响</text>
+        <button class="venue-profile__primary venue-profile__touch" bindtap="onReload">重新加载</button>
+      </view>
+
+      <view class="venue-profile__audit" role="status">{{auditMessage}}</view>
+      <text class="venue-profile__artifact-note">参考页面 · Production disabled</text>
+    </view>
+  </scroll-view>
+
+  <view class="venue-profile__footer">
+    <text class="venue-profile__footer-note">保存仅提交场馆介绍与设施，不包含图片操作</text>
+    <button class="venue-profile__primary venue-profile__touch" disabled="{{footerAction.disabled}}" aria-busy="{{footerAction.busy}}" bindtap="onSave">
+      <view wx:if="{{footerAction.busy}}" class="venue-profile__spinner" aria-hidden="true"></view>
+      <text>{{footerAction.label}}</text>
+    </button>
+  </view>
+</view>

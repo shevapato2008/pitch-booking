@@ -1,0 +1,290 @@
+.system-row {
+  position: relative;
+  height: 44px;
+  background: var(--surface);
+}
+
+.status-time {
+  position: absolute;
+  top: 15px;
+  left: 20px;
+  font-weight: 700;
+}
+
+.capsule-safe {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 88px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.setup-header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.setup-header__identity {
+  min-width: 0;
+  text-align: center;
+}
+
+.setup-header h1 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.setup-venue-heading {
+  margin: 0 4px 10px;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 26px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-screen {
+  display: flex;
+  flex-direction: column;
+  height: calc(812px - 88px);
+  padding: 12px 12px 0;
+  overflow: hidden;
+}
+
+.setup-callout {
+  margin-bottom: 10px;
+}
+
+.configured-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.configured-summary strong {
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.draft-banner {
+  margin-bottom: 8px;
+}
+
+.pitch-list {
+  display: grid;
+  align-content: start;
+  flex: 1;
+  gap: 9px;
+  min-height: 0;
+  padding: 0 2px;
+  overflow-x: visible;
+  overflow-y: auto;
+  padding-bottom: 88px;
+}
+
+.pitch-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 76px;
+  padding: 10px 4px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+.pitch-card__copy {
+  min-width: 0;
+}
+
+.pitch-card__title {
+  display: block;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pitch-card__meta,
+.pitch-card__status {
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.pitch-card__status {
+  color: var(--primary-strong);
+  font-weight: 700;
+}
+
+.add-pitch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border: 1px dashed var(--primary);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--primary-strong);
+}
+
+.state-panel {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.state-panel p {
+  margin: 0;
+}
+
+.loading-mark {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary-strong);
+  border-radius: 50%;
+}
+
+.recovery-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.page-action {
+  z-index: 4;
+}
+
+.page-action .primary-action {
+  width: 100%;
+}
+
+.action-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.sheet-heading h2,
+.sheet-heading p {
+  margin: 0;
+}
+
+.editor-fields {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.editor-field {
+  display: grid;
+  gap: 6px;
+}
+
+.editor-field label,
+.editor-legend {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 19px;
+}
+
+.text-input,
+.numeric-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.format-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.format-option {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.format-option[aria-pressed="true"] {
+  border-color: var(--primary-strong);
+  color: var(--primary-strong);
+  font-weight: 700;
+}
+
+.format-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.custom-number-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-error {
+  color: var(--error);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.45fr;
+  gap: 10px;
+}
+
+.confirmation-region,
+.blocker-grid {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.blocker-grid {
+  grid-template-columns: repeat(3, 1fr);
+  text-align: center;
+}

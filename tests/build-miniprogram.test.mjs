@@ -156,7 +156,7 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
-test("production app registers HTTP data, Tencent POI, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, venue profiles, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -169,6 +169,14 @@ test("production app registers HTTP data, Tencent POI, and native payment before
   assert.match(app, /registerPageDataSource/);
   assert.match(app, /createHttpVenueDirectoryDataSource/);
   assert.match(app, /registerVenueDirectoryDataSource/);
+  assert.match(app, /createHttpVenueProfileDataSource/);
+  assert.match(app, /registerVenueProfileDataSource/);
+  assert.match(app, /createHttpVenueAccessDataSource/);
+  assert.match(app, /registerVenueAccessDataSource/);
+  assert.match(app, /createHttpVenueOnboardingDataSource/);
+  assert.match(app, /registerVenueOnboardingDataSource/);
+  assert.match(app, /registerVenueOnboardingEvidenceCapability/);
+  assert.match(app, /registerVenueProfileMediaCapability/);
   assert.match(app, /registerLocationCapability/);
   assert.match(app, /productionLocation/);
   assert.match(app, /createHttpBookingDataSource/);
@@ -185,6 +193,11 @@ test("production app registers HTTP data, Tencent POI, and native payment before
   assert.match(app, /registerPoiSearchCapability/);
   assert.equal(app.indexOf("registerPageDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerBookingDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueProfileDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueAccessDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueOnboardingDataSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueOnboardingEvidenceCapability") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueProfileMediaCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
@@ -208,6 +221,11 @@ test("temporary map previews are absent while the approved center asset remains"
   }
   assert.equal(existsSync(path.join(developmentRoot, "assets/map-search-center.png")), true);
   assert.equal(existsSync(path.join(productionRoot, "assets/map-search-center.png")), true);
+  for (const route of ["dev/pages/venue-access/index", "dev/pages/venue-claim/index", "dev/pages/venue-create/index"]) {
+    for (const extension of ["js", "json", "wxml", "wxss"])
+      assert.equal(existsSync(path.join(developmentRoot, `${route}.${extension}`)), true, `${route}.${extension}`);
+    assert.equal(existsSync(path.join(productionRoot, `${route}.js`)), false, route);
+  }
   const developmentText = (await Promise.all((await collectFiles(developmentRoot))
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");
@@ -217,19 +235,50 @@ test("temporary map previews are absent while the approved center asset remains"
   const previewSymbols = /VenueDistrictSidecar|venue-map-preview|poi-search-preview|DEV_ONLY_POI_SEARCH_PREVIEW|previewPoiSearchCapability/;
   assert.doesNotMatch(developmentText, previewSymbols);
   assert.doesNotMatch(productionText, previewSymbols);
+  assert.match(developmentText, /VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES/);
+  assert.doesNotMatch(productionText, /VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES/);
 });
 
-test("real production build emits all five production routes as native artifacts", async (t) => {
+test("my orders native preview routes and Fixture remain development-only", async (t) => {
+  await build(process.cwd(), "development");
+  await build(process.cwd(), "production");
+  const developmentRoot = path.resolve("dist/miniprogram-development");
+  const productionRoot = path.resolve("dist/miniprogram-production");
+  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
+  const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
+  const previewRoutes = ["dev/pages/my-orders-map/index", "dev/pages/my-orders/index"];
+
+  for (const route of previewRoutes) {
+    assert.equal(developmentManifest.pages.includes(route), true, `${route} is missing from development`);
+    assert.equal(productionManifest.pages.includes(route), false, `${route} leaked into production`);
+    for (const extension of ["js", "json", "wxml", "wxss"])
+      assert.equal(existsSync(path.join(developmentRoot, `${route}.${extension}`)), true, `${route}.${extension}`);
+    assert.equal(existsSync(path.join(productionRoot, `${route}.js`)), false, `${route} leaked into production`);
+  }
+  assert.equal(existsSync(path.join(developmentRoot, "dev/my-orders-fixture.js")), true);
+  assert.equal(existsSync(path.join(productionRoot, "dev/my-orders-fixture.js")), false);
+});
+
+test("real production build emits all thirteen production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   const routes = [
+    "pages/intent-entry/index",
+    "pages/venue-access/index",
+    "pages/venue-claim/index",
+    "pages/venue-create/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/my-orders/index",
+    "pages/venue-profile/index",
+    "pages/venue-inventory/index",
+    "pages/venue-pitch-setup/index",
   ];
   assert.deepEqual(manifest.pages, routes);
   for (const route of routes) {
@@ -237,6 +286,10 @@ test("real production build emits all five production routes as native artifacts
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
     assert.equal(existsSync(path.join(outputRoot, `${route}.ts`)), false);
   }
+  const productionText = (await Promise.all((await collectFiles(outputRoot))
+    .filter((file) => !file.endsWith(".png"))
+    .map((file) => readFile(file, "utf8")))).join("\n");
+  assert.doesNotMatch(productionText, /venue-onboarding-fixture|VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES|视觉预览，不会提交/);
 });
 
 test("production API URL override changes generated production config only", async (t) => {
@@ -306,6 +359,16 @@ test("built development Scenario runtime is self-contained without URL", async (
     path.join(projectRoot, "miniprogram/services/tencent-poi-search.ts"),
     "export type TencentPoiRequest = (input: { readonly url: string; readonly data: Readonly<Record<string, string>> }) => Promise<unknown>;\n",
   );
+  await writeFile(
+    path.join(projectRoot, "miniprogram/services/venue-profile.ts"),
+    [
+      "export interface VenueProfileMediaCapability {",
+      "  chooseImage(): Promise<{ readonly filename: string; readonly mimeType: 'image/jpeg' | 'image/png' | 'image/webp'; readonly byteSize: number; readonly bytes: ArrayBuffer }>;",
+      "  upload(signedPutUrl: string, bytes: ArrayBuffer, requiredHeaders: Readonly<Record<string, string>>): Promise<void>;",
+      "}",
+      "",
+    ].join("\n"),
+  );
   await mkdir(path.join(projectRoot, "miniprogram/domain"));
   await cp("miniprogram/domain/booking.ts", path.join(projectRoot, "miniprogram/domain/booking.ts"));
   await cp("miniprogram/domain/payment.ts", path.join(projectRoot, "miniprogram/domain/payment.ts"));
@@ -335,11 +398,11 @@ test("built development Scenario runtime is self-contained without URL", async (
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
       assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"]), true);
-      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].images), true);
-      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].images[0]), true);
-      const originalCover = FIXTURE_DATA["venue-ready"].images[0].url;
-      FIXTURE_DATA["venue-ready"].images[0].url = "https://mutated.invalid/cover.jpg";
-      assert.equal(FIXTURE_DATA["venue-ready"].images[0].url, originalCover);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].profile.images), true);
+      assert.equal(Object.isFrozen(FIXTURE_DATA["venue-ready"].profile.images[0]), true);
+      const originalCover = FIXTURE_DATA["venue-ready"].profile.images[0].url;
+      FIXTURE_DATA["venue-ready"].profile.images[0].url = "https://mutated.invalid/cover.jpg";
+      assert.equal(FIXTURE_DATA["venue-ready"].profile.images[0].url, originalCover);
       for (const name of names) {
         const runtime = scenarioRuntime({
           id: name,

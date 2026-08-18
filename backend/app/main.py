@@ -1,10 +1,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -20,16 +22,53 @@ from backend.app.modules.auth.provider import build_providers
 from backend.app.modules.auth.router import router as auth_router
 from backend.app.modules.availability.router import router as availability_router
 from backend.app.modules.checkout.router import router as checkout_router
+from backend.app.modules.inventory.router import router as inventory_router
+from backend.app.modules.orders.router import align_order_list_openapi
 from backend.app.modules.orders.router import router as orders_router
 from backend.app.modules.payments.development_router import router as development_payment_router
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
+from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
+from backend.app.modules.platform_auth.router import router as platform_auth_router
+from backend.app.modules.platform_onboarding.router import router as platform_onboarding_router
+from backend.app.modules.platform_web import (
+    PlatformAdminSecurityHeadersMiddleware,
+    create_platform_web_router,
+    default_platform_admin_root,
+)
+from backend.app.modules.venue_access.router import router as venue_access_router
+from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
+from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
+from backend.app.modules.venue_onboarding.storage import (
+    MemoryOnboardingStorage,
+    UnavailableOnboardingStorage,
+    VenueOnboardingStore,
+)
+from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
+from backend.app.modules.venue_profiles.oss_storage import OssMediaStorage
+from backend.app.modules.venue_profiles.router import (
+    manual_router as venue_profile_manual_router,
+)
+from backend.app.modules.venue_profiles.router import (
+    profile_request_validation_handler,
+)
+from backend.app.modules.venue_profiles.router import (
+    router as venue_profiles_router,
+)
+from backend.app.modules.venue_profiles.storage import VenueMediaStore
 from backend.app.modules.venues.router import router as venues_router
 from backend.app.request_id import RequestIdMiddleware
 from backend.app.security.phone_vault import PhoneVault
 
 
-def create_app(*, include_test_routes: bool = False, settings: Settings | None = None) -> FastAPI:
+def create_app(
+    *,
+    include_test_routes: bool = False,
+    settings: Settings | None = None,
+    venue_media_store: VenueMediaStore | None = None,
+    venue_onboarding_store: VenueOnboardingStore | None = None,
+    platform_admin_root: Path | None = None,
+) -> FastAPI:
     resolved_settings = settings or Settings()
     phone_vault = (
         PhoneVault(
@@ -43,6 +82,27 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
     payment_provider = (
         MockPaymentProvider() if resolved_settings.mock_payment_provider_enabled else None
     )
+    owns_venue_media_store = venue_media_store is None
+    owns_venue_onboarding_store = venue_onboarding_store is None
+    try:
+        resolved_media_store = venue_media_store or (
+            OssMediaStorage.from_settings(resolved_settings)
+            if resolved_settings.app_env in {"staging", "production"}
+            else LocalMediaStorage()
+        )
+        if venue_onboarding_store is not None:
+            resolved_onboarding_store = venue_onboarding_store
+        elif resolved_settings.app_env not in {"staging", "production"}:
+            resolved_onboarding_store = MemoryOnboardingStorage()
+        elif resolved_settings.onboarding_oss_bucket is None:
+            resolved_onboarding_store = UnavailableOnboardingStorage()
+        else:
+            resolved_onboarding_store = OssOnboardingStorage.from_settings(
+                resolved_settings
+            )
+    except BaseException:
+        provider_bundle.close()
+        raise
 
     @asynccontextmanager
     async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
@@ -50,6 +110,12 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
             yield
         finally:
             provider_bundle.close()
+            close_storage = getattr(resolved_media_store, "close", None)
+            if owns_venue_media_store and close_storage is not None:
+                close_storage()
+            close_onboarding_storage = getattr(resolved_onboarding_store, "close", None)
+            if owns_venue_onboarding_store and close_onboarding_storage is not None:
+                close_onboarding_storage()
 
     try:
         application = FastAPI(title="Pitch Booking API", version="0.1.0", lifespan=lifespan)
@@ -57,11 +123,19 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
             RequestIdMiddleware,
             app_revision=resolved_settings.app_revision,
         )
+        application.add_middleware(PlatformAdminSecurityHeadersMiddleware)
         application.add_exception_handler(AppError, app_error_handler)
-        application.add_exception_handler(
-            RequestValidationError,
-            request_validation_error_handler,
-        )
+
+        async def validation_handler(request: Request, error: Exception) -> JSONResponse:
+            if (
+                request.url.path.startswith("/api/v1/admin/venues/")
+                and "/profile" in request.url.path
+            ):
+                assert isinstance(error, RequestValidationError)
+                return await profile_request_validation_handler(request, error)
+            return await request_validation_error_handler(request, error)
+
+        application.add_exception_handler(RequestValidationError, validation_handler)
         application.add_exception_handler(Exception, unexpected_error_handler)
         application.state.settings = resolved_settings
         application.state.identity_provider = provider_bundle.identity_provider
@@ -69,16 +143,37 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
         application.state.phone_vault = phone_vault
         application.state.provider_bundle = provider_bundle
         application.state.payment_provider = payment_provider
+        application.state.venue_media_store = resolved_media_store
+        application.state.venue_onboarding_store = resolved_onboarding_store
         application.include_router(auth_router)
         application.include_router(availability_router)
         application.include_router(checkout_router)
+        application.include_router(inventory_router)
         application.include_router(orders_router)
         application.include_router(payments_router)
+        application.include_router(platform_auth_router)
+        application.include_router(platform_onboarding_router)
+        application.include_router(pitch_configuration_router)
+        application.include_router(venue_access_router)
+        application.include_router(venue_onboarding_router)
+        application.include_router(venue_profiles_router)
+        application.include_router(venue_profile_manual_router)
         if resolved_settings.mock_payment_provider_enabled:
             application.include_router(development_payment_router)
         application.include_router(venues_router)
+        application.include_router(
+            create_platform_web_router(
+                platform_admin_root or default_platform_admin_root()
+            )
+        )
     except BaseException:
         provider_bundle.close()
+        close_storage = getattr(resolved_media_store, "close", None)
+        if owns_venue_media_store and close_storage is not None:
+            close_storage()
+        close_onboarding_storage = getattr(resolved_onboarding_store, "close", None)
+        if owns_venue_onboarding_store and close_onboarding_storage is not None:
+            close_onboarding_storage()
         raise
 
     @application.get("/api/v1/health")
@@ -112,6 +207,53 @@ def create_app(*, include_test_routes: bool = False, settings: Settings | None =
             ):
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)
+            align_order_list_openapi(schema)
+            profile_get = (
+                schema.get("paths", {})
+                .get("/api/v1/admin/venues/{venue_id}/profile", {})
+                .get("get", {})
+            )
+            profile_get.get("responses", {}).pop("422", None)
+            platform_session_path = schema.get("paths", {}).get(
+                "/platform-admin/api/v1/auth/session", {}
+            )
+            for method, names in (
+                ("post", {"Origin"}),
+                ("delete", {"Origin", "X-CSRF-Token"}),
+            ):
+                parameters = platform_session_path.get(method, {}).get("parameters", [])
+                for parameter in parameters:
+                    if parameter.get("name") not in names:
+                        continue
+                    name = parameter["name"]
+                    parameter["required"] = True
+                    parameter["schema"] = {
+                        "type": "string",
+                        "title": parameter.get("schema", {}).get("title", name),
+                        **(
+                            {"format": "uri"}
+                            if name == "Origin"
+                            else {"pattern": "^[0-9a-f]{64}$"}
+                        ),
+                    }
+            platform_decision = schema.get("paths", {}).get(
+                "/platform-admin/api/v1/onboarding/applications/{application_id}/decisions",
+                {},
+            ).get("post", {})
+            for parameter in platform_decision.get("parameters", []):
+                if parameter.get("name") not in {"Origin", "X-CSRF-Token"}:
+                    continue
+                name = parameter["name"]
+                parameter["required"] = True
+                parameter["schema"] = {
+                    "type": "string",
+                    "title": parameter.get("schema", {}).get("title", name),
+                    **(
+                        {"format": "uri"}
+                        if name == "Origin"
+                        else {"pattern": "^[0-9a-f]{64}$"}
+                    ),
+                }
             application.openapi_schema = schema
         return application.openapi_schema
 

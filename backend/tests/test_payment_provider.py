@@ -31,6 +31,7 @@ def request(merchant_order_no: str = "merchant-1") -> CreatePrepayRequest:
         amount_cents=32000,
         currency="CNY",
         payer_openid="openid-secret",
+        time_expire=datetime(2026, 8, 18, 9, tzinfo=UTC),
     )
 
 
@@ -40,6 +41,44 @@ def test_provider_dtos_are_frozen_and_do_not_repr_openid() -> None:
     assert "openid-secret" not in repr(value)
     with pytest.raises((AttributeError, TypeError)):
         value.amount_cents = 1  # type: ignore[misc]
+
+
+def test_create_prepay_requires_aware_expiry_and_valid_merchant_number() -> None:
+    with pytest.raises(TypeError, match="time_expire"):
+        CreatePrepayRequest("order", "booking", 32000, "CNY", "openid")
+    with pytest.raises(ValueError, match="time_expire"):
+        CreatePrepayRequest(
+            "order", "booking", 32000, "CNY", "openid", datetime(2026, 8, 18, 9)
+        )
+
+    for merchant_order_no in ("", " ", "x" * 33):
+        with pytest.raises(ValueError, match="merchant_order_no"):
+            CreatePrepayRequest(
+                merchant_order_no,
+                "booking",
+                32000,
+                "CNY",
+                "openid",
+                datetime(2026, 8, 18, 9, tzinfo=UTC),
+            )
+
+
+def test_query_and_close_accept_legacy_merchant_number_up_to_database_limit() -> None:
+    legacy_merchant_order_no = f"PB-PAY-{'a' * 32}"
+
+    assert len(legacy_merchant_order_no) == 39
+    assert QueryPaymentRequest(legacy_merchant_order_no).merchant_order_no == (
+        legacy_merchant_order_no
+    )
+    assert ClosePaymentRequest(legacy_merchant_order_no).merchant_order_no == (
+        legacy_merchant_order_no
+    )
+
+    for merchant_order_no in ("", " ", "x" * 129):
+        with pytest.raises(ValueError, match="merchant_order_no"):
+            QueryPaymentRequest(merchant_order_no)
+        with pytest.raises(ValueError, match="merchant_order_no"):
+            ClosePaymentRequest(merchant_order_no)
 
 
 def test_launch_params_use_the_exact_cashier_keys() -> None:
@@ -85,6 +124,7 @@ def test_mock_rejects_same_merchant_number_with_different_core_request() -> None
             amount_cents=32001,
             currency="CNY",
             payer_openid="different-openid",
+            time_expire=datetime(2026, 8, 18, 9, tzinfo=UTC),
         )
     )
 

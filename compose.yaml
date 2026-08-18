@@ -1,3 +1,29 @@
+x-app-environment: &app-environment
+  APP_ENV: ${APP_ENV:-staging}
+  APP_REVISION: ${APP_REVISION:-uncommitted}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://pitch:change-before-deploy@postgres:5432/pitch}
+  PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-https://staging.invalid}
+  PUBLIC_IMAGE_HOSTS: ${PUBLIC_IMAGE_HOSTS:-cdn.invalid}
+  OSS_ENDPOINT: ${OSS_ENDPOINT:-https://oss.invalid}
+  OSS_BUCKET: ${OSS_BUCKET:-venue-media-staging}
+  OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL:-https://cdn.invalid/media}
+  OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-replace-before-deploy}
+  OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-replace-before-deploy}
+  ONBOARDING_OSS_BUCKET: ${ONBOARDING_OSS_BUCKET:-replace-with-dedicated-private-onboarding-bucket}
+  DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-replace-before-deploy}
+  DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+  DASHSCOPE_MODERATION_MODEL: ${DASHSCOPE_MODERATION_MODEL:-qwen3-vl-flash}
+  MODERATION_REVIEWER_USER_IDS: ${MODERATION_REVIEWER_USER_IDS:-}
+  WECHAT_PROVIDER: ${WECHAT_PROVIDER:-real}
+  WECHAT_APP_ID: ${WECHAT_APP_ID:-replace-before-deploy}
+  WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-replace-before-deploy}
+  PHONE_ENCRYPTION_KEY_BASE64: ${PHONE_ENCRYPTION_KEY_BASE64:-replace-before-deploy}
+  PHONE_ENCRYPTION_KEY_VERSION: ${PHONE_ENCRYPTION_KEY_VERSION:-1}
+  PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-wechat}
+  ENABLE_MOCK_PAYMENT_PROVIDER: ${ENABLE_MOCK_PAYMENT_PROVIDER:-false}
+  PLATFORM_STAFF_PRINCIPALS_JSON: ${PLATFORM_STAFF_PRINCIPALS_JSON:-[]}
+  PLATFORM_CSRF_SECRET: ${PLATFORM_CSRF_SECRET:-replace-before-deploy}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -13,6 +39,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # The API image also contains and serves the platform console under /platform-admin.
   api:
     build:
       context: .
@@ -21,12 +48,7 @@ services:
       - /bin/sh
       - -c
       - uv run alembic upgrade head && exec uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-    environment:
-      APP_ENV: ${APP_ENV:-staging}
-      APP_REVISION: ${APP_REVISION:-uncommitted}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://pitch:change-before-deploy@postgres:5432/pitch}
-      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-https://staging.invalid}
-      PUBLIC_IMAGE_HOSTS: ${PUBLIC_IMAGE_HOSTS:-cdn.invalid}
+    environment: *app-environment
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,6 +63,16 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: [uv, run, python, -m, backend.app.worker]
+    environment: *app-environment
+    depends_on:
+      api:
+        condition: service_healthy
 
   caddy:
     image: caddy:2.10.2-alpine

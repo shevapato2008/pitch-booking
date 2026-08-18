@@ -5,6 +5,11 @@ export interface Clock {
 export interface Transport {
   get<T>(path: string, headers?: Readonly<Record<string, string>>): Promise<T>;
   post<T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>): Promise<T>;
+  put<T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>): Promise<T>;
+}
+
+export interface DeletingTransport extends Transport {
+  delete<T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>): Promise<T>;
 }
 
 export interface TransportResponse<T> {
@@ -14,7 +19,7 @@ export interface TransportResponse<T> {
 
 export interface StatusTransport extends Transport {
   requestWithStatus<T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PUT",
     path: string,
     body: unknown,
     headers?: Readonly<Record<string, string>>,

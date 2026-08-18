@@ -69,7 +69,7 @@ const order: PendingOrderView = {
   orderNumber: "PB202607280001",
   status: "PENDING_PAYMENT",
   slotId: checkout.slotId,
-  venue: { id: checkout.venueId, name: checkout.venueName, address: "地址", latitude: 31, longitude: 121, customerServicePhone: "021-12345678" },
+  venue: { id: checkout.venueId, name: checkout.venueName, address: "地址", latitude: 31, longitude: 121 },
   pitch: { id: checkout.pitchId, name: checkout.pitchName },
   contact: { name: "张三", maskedPhone: "138****8000" },
   priceCents: checkout.priceCents,

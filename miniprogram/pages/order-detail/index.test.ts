@@ -35,7 +35,7 @@ function loadPage(): RuntimePage {
   return page;
 }
 
-const pending: PendingOrderView = { orderId: "00000000-0000-4000-8000-000000000040", orderNumber: "PB209907280001", status: "PENDING_PAYMENT", slotId: "00000000-0000-4000-8000-000000000030", venue: { id: "venue", name: "滨江足球公园", address: "地址", latitude: 31, longitude: 121, customerServicePhone: "021-12345678" }, pitch: { id: "pitch", name: "五人制 A 场" }, contact: { name: "张三", maskedPhone: "138****0000" }, priceCents: 36000, startsAt: "2099-07-28T19:00:00+08:00", endsAt: "2099-07-28T20:30:00+08:00", durationMinutes: 90, currency: "CNY", createdAt: "2099-07-28T18:00:00+08:00", expiresAt: "2099-07-28T18:10:00+08:00", expiredAt: null, cancellationSummary: "开场前 24 小时可取消", closingPayment: false, detailPath: "/api/v1/orders/00000000-0000-4000-8000-000000000040" };
+const pending: PendingOrderView = { orderId: "00000000-0000-4000-8000-000000000040", orderNumber: "PB209907280001", status: "PENDING_PAYMENT", slotId: "00000000-0000-4000-8000-000000000030", venue: { id: "venue", name: "滨江足球公园", address: "地址", latitude: 31, longitude: 121 }, pitch: { id: "pitch", name: "五人制 A 场" }, contact: { name: "张三", maskedPhone: "138****0000" }, priceCents: 36000, startsAt: "2099-07-28T19:00:00+08:00", endsAt: "2099-07-28T20:30:00+08:00", durationMinutes: 90, currency: "CNY", createdAt: "2099-07-28T18:00:00+08:00", expiresAt: "2099-07-28T18:10:00+08:00", expiredAt: null, cancellationSummary: "开场前 24 小时可取消", closingPayment: false, detailPath: "/api/v1/orders/00000000-0000-4000-8000-000000000040" };
 const expiredFrom = (order: PendingOrderView, expiredAt: string): ExpiredOrderView => ({ ...order, status: "EXPIRED", expiredAt });
 const baseSource = (getOrder: BookingDataSource["getOrder"]): BookingDataSource => ({ async login() { throw new Error("unused"); }, async getCheckout() { throw new Error("unused"); }, async authorizePhone() { throw new Error("unused"); }, async createOrder() { throw new Error("unused"); }, getOrder });
 
@@ -203,6 +203,7 @@ describe("order detail payment orchestration", () => {
     ]) expect(wxml).toContain(copy);
     expect(wxml).toMatch(/disabled="\{\{primaryDisabled\}\}"/);
     expect(wxml).toMatch(/aria-label="支付成功"/);
+    expect(wxml).not.toMatch(/客服.*电话|customerServicePhone/);
     expect(wxml).toContain("{{cashierNotice}}");
     expect(wxml).not.toContain("模拟支付，不会扣款");
     expect(wxml).not.toMatch(/取消订单|创建球局|微信支付/);

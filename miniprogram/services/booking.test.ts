@@ -53,7 +53,7 @@ describe("booking data source registry", () => {
       id: directory[0].id,
       name: directory[0].name,
       bookingMode: "ONLINE",
-      coverImage: null,
+      profile: { coverImage: null },
       availabilityWindow: { startDate: "2026-07-22", endDate: "2026-08-04" },
     });
     for (const entry of directory.slice(1)) {

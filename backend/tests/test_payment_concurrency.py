@@ -387,8 +387,16 @@ def test_crash_after_provider_acceptance_recovers_by_query(pg_engine: Engine) ->
         assert payment is not None
         merchant_order_no = payment.merchant_order_no
         amount = payment.amount_cents
+        time_expire = payment.order.expires_at
     provider.create_prepay(
-        CreatePrepayRequest(merchant_order_no, "预订场地", amount, "CNY", "openid")
+        CreatePrepayRequest(
+            merchant_order_no,
+            "预订场地",
+            amount,
+            "CNY",
+            "openid",
+            time_expire,
+        )
     )
 
     recovered = payments.create_payment(
@@ -451,6 +459,7 @@ def test_stale_unknown_for_same_key_replays_completed_prepay_without_regression(
             32000,
             "CNY",
             "openid",
+            fast.time_expire,
         )
     )
     assert isinstance(unknown, Unknown)
@@ -489,6 +498,7 @@ def test_stale_unknown_for_different_key_keeps_current_monotonic_result(
             32000,
             "CNY",
             "openid",
+            fast.time_expire,
         )
     )
     assert isinstance(unknown, Unknown)

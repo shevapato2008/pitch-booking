@@ -1,0 +1,22 @@
+id: intent-entry-foundation
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+states:
+  - id: first-entry
+    route: dev/pages/intent-entry/index
+    reference: artifacts/ui/references/intent-entry-first.html
+  - id: city-picker-open
+    route: dev/pages/intent-entry/index?cityPicker=open
+    reference: artifacts/ui/references/intent-entry-city-open.html
+  - id: returning-home
+    route: dev/pages/intent-home/index
+    reference: artifacts/ui/references/intent-home-returning.html
+review_slots:
+  - reference
+  - implementation
+  - side-by-side
+  - overlay-50
+  - difference
+  - observations
+fixture: miniprogram/dev/intent-entry-fixture.ts
+deletion_condition: delete before production intent home integration

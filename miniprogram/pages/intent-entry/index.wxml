@@ -1,0 +1,87 @@
+<view class="intent-entry u-page">
+  <view class="intent-entry__header" style="padding-top: {{headerTopPx}}px;" aria-hidden="{{isCityPickerOpen}}">
+    <view class="intent-entry__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <button class="intent-city-button" hover-class="intent-city-button--pressed" bindtap="onOpenCityPicker" aria-label="当前城市天津，点击切换">
+        <text>{{currentCityName}}</text><view class="intent-city-chevron" aria-hidden="true"></view>
+      </button>
+    </view>
+  </view>
+
+  <view class="intent-entry__content" aria-hidden="{{isCityPickerOpen}}">
+    <view class="intent-entry__intro">
+      <text class="intent-entry__title">你今天想做什么？</text>
+      <text class="intent-entry__subtitle">选择一个目的开始，之后可以随时切换。</text>
+    </view>
+
+    <view class="intent-entry__list" aria-label="选择当下目的">
+      <button
+        wx:for="{{intents}}"
+        wx:key="id"
+        class="intent-entry__card intent-entry__card--{{item.disabled ? 'disabled' : 'enabled'}}"
+        hover-class="intent-entry__card--pressed"
+        bindtap="onChooseIntent"
+        data-intent-id="{{item.id}}"
+        disabled="{{item.disabled}}"
+        aria-label="{{item.title}}，{{item.subtitle}}"
+      >
+        <view class="intent-entry__icon" aria-hidden="true">
+          <block wx:if="{{item.icon === 'venue'}}">
+            <view class="intent-icon-venue">
+              <view class="intent-icon-venue__side intent-icon-venue__side--left"></view>
+              <view class="intent-icon-venue__side intent-icon-venue__side--right"></view>
+              <view class="intent-icon-venue__divider intent-icon-venue__divider--first"></view>
+              <view class="intent-icon-venue__divider intent-icon-venue__divider--second"></view>
+              <view class="intent-icon-venue__door"></view>
+            </view>
+          </block>
+          <block wx:elif="{{item.icon === 'calendar'}}">
+            <view class="intent-icon-calendar">
+              <view class="intent-icon-calendar__ring intent-icon-calendar__ring--left"></view>
+              <view class="intent-icon-calendar__ring intent-icon-calendar__ring--right"></view>
+              <view class="intent-icon-calendar__bar"></view>
+              <view class="intent-icon-calendar__dot intent-icon-calendar__dot--one"></view>
+              <view class="intent-icon-calendar__dot intent-icon-calendar__dot--two"></view>
+              <view class="intent-icon-calendar__dot intent-icon-calendar__dot--three"></view>
+            </view>
+          </block>
+          <block wx:else>
+            <view class="intent-icon-football">
+              <view class="intent-icon-football__seam intent-icon-football__seam--one"></view>
+              <view class="intent-icon-football__seam intent-icon-football__seam--two"></view>
+              <view class="intent-icon-football__seam intent-icon-football__seam--three"></view>
+            </view>
+          </block>
+        </view>
+        <view class="intent-entry__copy">
+          <view class="intent-entry__card-heading">
+            <text class="intent-entry__card-title">{{item.title}}</text>
+            <text wx:if="{{item.disabled}}" class="intent-entry__card-status">即将开放</text>
+          </view>
+          <text class="intent-entry__card-subtitle">{{item.subtitle}}</text>
+        </view>
+        <view wx:if="{{!item.disabled}}" class="intent-entry__chevron" aria-hidden="true"></view>
+      </button>
+    </view>
+
+    <text class="intent-entry__note">{{note}}</text>
+  </view>
+
+  <block wx:if="{{isCityPickerOpen}}">
+    <view class="intent-entry__city-scrim" bindtap="onCloseCityPicker" aria-hidden="true"></view>
+    <view class="intent-entry__city-sheet" role="dialog" aria-modal="true" aria-label="选择城市">
+      <view class="intent-entry__city-sheet-header">
+        <text class="intent-entry__city-sheet-title">选择城市</text>
+        <button class="intent-entry__city-close" hover-class="intent-entry__city-close--pressed" bindtap="onCloseCityPicker" aria-label="关闭城市选择">
+          <view class="intent-entry__city-close-icon" aria-hidden="true"></view>
+        </button>
+      </view>
+      <button class="intent-entry__city-row" hover-class="intent-entry__city-row--pressed" bindtap="onSelectCurrentCity" aria-label="天津，当前已开放">
+        <view class="intent-entry__city-copy"><text class="intent-entry__city-name">{{currentCityName}}</text><text class="intent-entry__city-status">{{currentStatus}}</text></view>
+        <view class="intent-entry__city-selected" aria-hidden="true"></view>
+      </button>
+      <button class="intent-entry__city-row intent-entry__city-row--disabled" disabled aria-label="其他城市，敬请期待">
+        <view class="intent-entry__city-copy"><text class="intent-entry__city-name">{{otherCityName}}</text><text class="intent-entry__city-status">{{otherStatus}}</text></view>
+      </button>
+    </view>
+  </block>
+</view>

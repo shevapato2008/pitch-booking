@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import os
 import uuid
 from collections.abc import Iterator
@@ -11,7 +12,17 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
-from backend.app.models import BookingMode, Pitch, Slot, Venue, VenueFacility, VenueImage
+from backend.app.models import (
+    BookingMode,
+    Pitch,
+    Slot,
+    User,
+    Venue,
+    VenueFacility,
+    VenueImage,
+    VenueMembership,
+    VenuePitchSequenceCounter,
+)
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 NAMESPACE = uuid.UUID("f290c9b8-b58b-4e6e-8dff-b738e9705cd2")
@@ -68,6 +79,18 @@ def run_seed(
     with _seed_engine(database_url or settings.database_url) as engine, Session(
         engine
     ) as session:
+        development_user_id = stable_id("development-inventory-user")
+        development_suffix = hashlib.sha256(b"dev-login-code").hexdigest()[:32]
+        _insert_missing(
+            session,
+            User,
+            {
+                "id": development_user_id,
+                "wechat_app_id": settings.wechat_app_id or "development",
+                "wechat_openid": f"dev-openid-{development_suffix}",
+                "wechat_unionid": None,
+            },
+        )
         _insert_missing(
             session,
             Venue,
@@ -75,7 +98,10 @@ def run_seed(
                 "id": VENUE_ID,
                 "slug": "bohai-yuanfeng-football-pitch",
                 "name": "测试环境·渤海元丰足球场",
-                "description": "测试环境场馆数据",
+                "description": (
+                    "室外人工草足球场，配有夜场照明、更衣室和饮水设施。"
+                    "场馆资料与图片均为测试环境的确定性已发布数据。"
+                ),
                 "price_advantage_text": "测试环境透明场地价",
                 "timezone": "Asia/Shanghai",
                 "business_hours_text": "每日 09:00–23:00",
@@ -96,9 +122,22 @@ def run_seed(
                     "2026-07-30T18:15:00+08:00"
                 ),
                 "is_listed": True,
-                "public_pitch_types": [],
+                "public_pitch_types": ["FIVE_A_SIDE", "SEVEN_A_SIDE"],
                 "is_primary": True,
                 "is_active": True,
+                "profile_version": 1,
+                "facility_version": 1,
+            },
+        )
+        _insert_missing(
+            session,
+            VenueMembership,
+            {
+                "id": stable_id("development-inventory-membership"),
+                "venue_id": VENUE_ID,
+                "user_id": development_user_id,
+                "is_active": True,
+                "can_manage_inventory": True,
             },
         )
         for key, url, alt, role, sort_order in (
@@ -123,20 +162,31 @@ def run_seed(
                     "sort_order": sort_order,
                 },
             )
-        _insert_missing(
-            session,
-            VenueFacility,
-            {
-                "id": stable_id("facility-lighting"),
-                "venue_id": VENUE_ID,
-                "code": "LIGHTING",
-                "name": "专业夜场照明",
-                "sort_order": 0,
-            },
-        )
-        for pitch_id, code, name, pitch_type, sort_order in (
-            (five_id, "FIVE-A", "五人制 A 场", "FIVE_A_SIDE", 0),
-            (seven_id, "SEVEN-A", "七人制 A 场", "SEVEN_A_SIDE", 1),
+        for index, (code, name) in enumerate(
+            (
+                ("PARKING", "停车场"),
+                ("TOILET", "卫生间"),
+                ("CHANGING_ROOM", "更衣室"),
+                ("DRINKING_WATER", "饮水设施"),
+                ("OUTDOOR", "室外"),
+                ("LIGHTING", "夜场照明"),
+                ("ARTIFICIAL_TURF", "人工草"),
+            )
+        ):
+            _insert_missing(
+                session,
+                VenueFacility,
+                {
+                    "id": stable_id(f"facility-{code.lower()}"),
+                    "venue_id": VENUE_ID,
+                    "code": code,
+                    "name": name,
+                    "sort_order": index,
+                },
+            )
+        for pitch_id, code, name, pitch_type, players_per_side, sort_order in (
+            (five_id, "FIVE-A", "五人制 A 场", "FIVE_A_SIDE", 5, 0),
+            (seven_id, "SEVEN-A", "七人制 A 场", "SEVEN_A_SIDE", 7, 1),
         ):
             _insert_missing(
                 session,
@@ -148,6 +198,20 @@ def run_seed(
                     "name": name,
                     "pitch_type": pitch_type,
                     "sort_order": sort_order,
+                    "players_per_side": players_per_side,
+                    "system_name": name,
+                    "custom_name": None,
+                    "sequence": 1,
+                    "status": "ACTIVE",
+                },
+            )
+            _insert_missing(
+                session,
+                VenuePitchSequenceCounter,
+                {
+                    "venue_id": VENUE_ID,
+                    "players_per_side": players_per_side,
+                    "last_sequence": 1,
                 },
             )
 

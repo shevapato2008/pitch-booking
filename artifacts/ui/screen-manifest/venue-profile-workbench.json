@@ -1,0 +1,214 @@
+{
+  "id": "venue-profile-workbench",
+  "target_viewport": { "width": 375, "height": 812 },
+  "production_enabled": false,
+  "entry": "local-reference-only",
+  "venue_scope": {
+    "venue_id": "venue-bohai-yuanfeng",
+    "name": "渤海元丰足球场",
+    "scope": "venue-level-only"
+  },
+  "rules": {
+    "max_images": 8,
+    "required_cover_count": 1,
+    "description_max_code_points": 300,
+    "publication_policy": "whole-revision-approved-only",
+    "public_during_review": "last-approved-data-only"
+  },
+  "copy": {
+    "admin_navigation_title": "场馆资料",
+    "public_navigation_title": "场馆详情",
+    "venue_name": "渤海元丰足球场",
+    "images_heading": "场馆图片",
+    "images_help": "1 张必选封面，最多 8 张；图片操作立即提交",
+    "description_heading": "场馆介绍",
+    "description_label": "介绍内容",
+    "description_limit": "最多 300 字",
+    "description_help": "请勿填写联系方式、二维码、外链或站外交易信息。",
+    "facilities_heading": "场馆设施",
+    "save_note": "保存仅提交场馆介绍与设施，不包含图片操作",
+    "public_price_heading": "当前可订价格",
+    "public_price_note": "价格与时段以可订列表为准",
+    "public_cta": "查看可订时段",
+    "artifact_note": "参考页面 · Production disabled"
+  },
+  "facilities": [
+    {
+      "group": "基础设施",
+      "items": [
+        { "code": "PARKING", "label": "停车场" },
+        { "code": "TOILET", "label": "卫生间" },
+        { "code": "CHANGING_ROOM", "label": "更衣室" },
+        { "code": "SHOWER", "label": "淋浴" },
+        { "code": "LOCKERS", "label": "储物柜" }
+      ]
+    },
+    {
+      "group": "补给服务",
+      "items": [
+        { "code": "DRINKING_WATER", "label": "饮水设施" },
+        { "code": "BEVERAGE_SALES", "label": "饮料售卖" },
+        { "code": "EQUIPMENT_RENTAL", "label": "器材租赁" }
+      ]
+    },
+    {
+      "group": "观赛与安全",
+      "items": [
+        { "code": "REST_AREA", "label": "休息区" },
+        { "code": "FIRST_AID", "label": "急救设施" },
+        { "code": "AED", "label": "AED" }
+      ]
+    },
+    {
+      "group": "场地环境",
+      "items": [
+        { "code": "INDOOR", "label": "室内" },
+        { "code": "OUTDOOR", "label": "室外" },
+        { "code": "COVERED", "label": "有顶棚" },
+        { "code": "LIGHTING", "label": "夜场照明" }
+      ]
+    },
+    {
+      "group": "草皮类型",
+      "items": [
+        { "code": "ARTIFICIAL_TURF", "label": "人工草" },
+        { "code": "NATURAL_GRASS", "label": "天然草" }
+      ]
+    }
+  ],
+  "rejection_reasons": [
+    { "code": "CONTACT_INFO", "label": "请删除电话、微信号等联系方式" },
+    { "code": "QR_OR_PAYMENT_CODE", "label": "图片中不能包含二维码或收款码" },
+    { "code": "OFF_PLATFORM_TRADE", "label": "请删除线下交易或绕过平台付款的引导" },
+    { "code": "EXTERNAL_LINK", "label": "请删除外部网站或其他平台链接" },
+    { "code": "UNRELATED_CONTENT", "label": "内容需与当前场馆有关" },
+    { "code": "IMAGE_NOT_VENUE", "label": "请上传真实的场馆环境照片" },
+    { "code": "IMAGE_QUALITY", "label": "图片过于模糊或无法辨认" },
+    { "code": "PERSONAL_PRIVACY", "label": "图片包含清晰人物面部或其他隐私信息" },
+    { "code": "UNSAFE_CONTENT", "label": "内容不符合平台发布要求" }
+  ],
+  "operations": [
+    { "id": "UPLOAD_IMAGE", "service_operation": "POST /admin/venues/{venue_id}/profile/images", "authority": "immediate-image-write" },
+    { "id": "SET_COVER", "service_operation": "PATCH /admin/venues/{venue_id}/profile/images/{image_id}/cover", "authority": "immediate-image-write" },
+    { "id": "REMOVE_IMAGE", "service_operation": "DELETE /admin/venues/{venue_id}/profile/images/{image_id}", "authority": "immediate-image-write" },
+    { "id": "REORDER_IMAGE", "service_operation": "PATCH /admin/venues/{venue_id}/profile/images/order", "authority": "immediate-image-write" },
+    { "id": "GET_IMAGE_UPLOAD", "service_operation": "GET /admin/venues/{venue_id}/profile/images/{upload_id}", "authority": "server" },
+    { "id": "CANCEL_IMAGE_UPLOAD", "service_operation": "DELETE /admin/venues/{venue_id}/profile/images/{upload_id}", "authority": "server" },
+    { "id": "GET_IMAGE_REVIEW", "service_operation": "GET /admin/venues/{venue_id}/profile/images/{image_id}/moderation", "authority": "server" },
+    { "id": "RETRY_IMAGE", "service_operation": "POST /admin/venues/{venue_id}/profile/images", "authority": "immediate-image-write" },
+    { "id": "SAVE_PROFILE", "service_operation": "PATCH /admin/venues/{venue_id}/profile/revision", "fields": ["description", "facilities"], "authority": "whole-revision-moderation" },
+    { "id": "CHECK_SAVE_RESULT", "service_operation": "GET /admin/venues/{venue_id}/profile/revision/{revision_id}", "authority": "server" },
+    { "id": "GET_PROFILE_REVIEW", "service_operation": "GET /admin/venues/{venue_id}/profile/revision/{revision_id}/moderation", "authority": "server" },
+    { "id": "RELOAD_PROFILE", "service_operation": "GET /admin/venues/{venue_id}/profile", "authority": "server" },
+    { "id": "RESTORE_LOCAL_DRAFT", "service_operation": "LOCAL restore isolated draft", "authority": "reference-only" },
+    { "id": "EDIT_LOCAL_PROFILE", "service_operation": "LOCAL update isolated draft", "authority": "reference-only" },
+    { "id": "VIEW_PUBLIC_PROFILE", "service_operation": "GET /public/venues/{venue_id}", "authority": "last-approved-revision" },
+    { "id": "VIEW_AVAILABILITY", "service_operation": "GET /public/venues/{venue_id}/availability", "authority": "server" }
+  ],
+  "states": [
+    {
+      "id": "ready",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=ready",
+      "visible_copy": ["资料已载入，可继续编辑", "图片操作立即提交；保存只提交介绍与设施", "场馆图片", "场馆介绍", "场馆设施"],
+      "buttons": [
+        { "label": "添加图片", "operation": "UPLOAD_IMAGE", "reference_next_state": "uploading" },
+        { "label": "设为封面", "operation": "SET_COVER", "reference_next_state": "ready" },
+        { "label": "移除", "operation": "REMOVE_IMAGE", "reference_next_state": "ready" },
+        { "label": "前移", "operation": "REORDER_IMAGE", "reference_next_state": "ready" },
+        { "label": "保存场馆资料", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown", "slot": "footer" }
+      ]
+    },
+    {
+      "id": "uploading",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=uploading",
+      "visible_copy": ["图片正在上传，请勿重复提交", "已为图片区域预留空间，上传完成前不可保存", "图片上传中"],
+      "buttons": [
+        { "label": "刷新上传状态", "operation": "GET_IMAGE_UPLOAD", "reference_next_state": "image-reviewing" },
+        { "label": "取消上传", "operation": "CANCEL_IMAGE_UPLOAD", "reference_next_state": "ready" },
+        { "label": "图片上传中", "operation": "SAVE_PROFILE", "reference_next_state": "uploading", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "image-reviewing",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=image-reviewing",
+      "visible_copy": ["图片已上传，正在审核", "审核期间，公开页继续显示上一版已通过图片", "图片审核中"],
+      "buttons": [
+        { "label": "刷新审核状态", "operation": "GET_IMAGE_REVIEW", "reference_next_state": "image-reviewing" },
+        { "label": "返回继续编辑", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" },
+        { "label": "图片审核中", "operation": "SAVE_PROFILE", "reference_next_state": "image-reviewing", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "image-rejected",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=image-rejected",
+      "visible_copy": ["图片未通过审核", "请按固定原因处理后重新上传", "图片过于模糊或无法辨认", "请先处理图片"],
+      "buttons": [
+        { "label": "重新上传", "operation": "RETRY_IMAGE", "reference_next_state": "uploading" },
+        { "label": "请先处理图片", "operation": "SAVE_PROFILE", "reference_next_state": "image-rejected", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "description-reviewing",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=description-reviewing",
+      "visible_copy": ["资料已提交，正在审核", "整版通过前，公开页继续显示上一版已通过资料", "资料审核中"],
+      "buttons": [
+        { "label": "查看当前公开页", "operation": "VIEW_PUBLIC_PROFILE", "reference_next_state": "public-published" },
+        { "label": "返回继续编辑", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" },
+        { "label": "资料审核中", "operation": "SAVE_PROFILE", "reference_next_state": "description-reviewing", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "description-rejected",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=description-rejected",
+      "visible_copy": ["场馆介绍未通过审核", "草稿已保留，请修改后重新保存", "请删除电话、微信号等联系方式", "请删除外部网站或其他平台链接", "保存修改"],
+      "buttons": [
+        { "label": "修改场馆介绍", "operation": "RESTORE_LOCAL_DRAFT", "reference_next_state": "ready" },
+        { "label": "保存修改", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown", "slot": "footer" }
+      ]
+    },
+    {
+      "id": "pending-manual",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=pending-manual",
+      "trigger": "moderation-result-uncertain-after-retry-exhausted",
+      "visible_copy": ["等待人工审核", "系统暂时无法确认审核结果，已转人工处理", "人工审核中"],
+      "buttons": [
+        { "label": "刷新复核状态", "operation": "GET_PROFILE_REVIEW", "reference_next_state": "pending-manual" },
+        { "label": "查看当前公开页", "operation": "VIEW_PUBLIC_PROFILE", "reference_next_state": "public-published" },
+        { "label": "人工审核中", "operation": "SAVE_PROFILE", "reference_next_state": "pending-manual", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "load-error",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=load-error",
+      "visible_copy": ["场馆资料加载失败", "未读取到编辑数据，请重新加载", "无法显示编辑内容", "上一版公开资料不受影响"],
+      "buttons": [
+        { "label": "重新加载", "operation": "RELOAD_PROFILE", "reference_next_state": "ready" },
+        { "label": "暂时无法保存", "operation": "SAVE_PROFILE", "reference_next_state": "load-error", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "save-unknown",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=save-unknown",
+      "visible_copy": ["正在核对保存结果", "不要重复保存，先核对同一次提交", "正在核对"],
+      "buttons": [
+        { "label": "核对保存结果", "operation": "CHECK_SAVE_RESULT", "reference_next_state": "description-reviewing" },
+        { "label": "正在核对", "operation": "SAVE_PROFILE", "reference_next_state": "save-unknown", "slot": "footer", "disabled": true }
+      ]
+    },
+    {
+      "id": "public-published",
+      "reference": "artifacts/ui/references/venue-profile-workbench.html?state=public-published",
+      "visible_copy": ["当前公开资料", "仅展示最近一次整版审核通过的数据", "¥160 起 / 小时", "查看可订时段"],
+      "buttons": [{ "label": "查看可订时段", "operation": "VIEW_AVAILABILITY", "reference_next_state": "public-published" }]
+    }
+  ],
+  "public_projection": {
+    "source": "last-approved-whole-revision",
+    "includes": ["cover", "gallery", "facility_labels", "description", "live_price_summary", "availability_action"],
+    "excludes": ["draft_images", "draft_description", "draft_facilities", "moderation_details", "contact_controls"]
+  },
+  "fixture": {
+    "kind": "isolated-local-reference",
+    "deletion_condition": "delete before production implementation; replace with real service integration after visual approval"
+  }
+}

@@ -1,0 +1,1 @@
+"""Venue staff inventory management."""

@@ -341,6 +341,10 @@ Page({
   },
 
   async onOpenLocationSetting() { await getLocationCapability().openSetting(); },
+
+  onOpenMyOrders() {
+    return wx.navigateTo({ url: "/pages/my-orders/index" });
+  },
   onDismissLocationDenied() { this.setData({ locationPermissionDenied: false }); },
 
   onSearchEditStart() {

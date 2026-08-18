@@ -1,0 +1,13 @@
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "pitch_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "starts_at": "2026-08-12T09:30:00+08:00",
+  "ends_at": "2026-08-12T11:00:00+08:00",
+  "start_time": "09:30",
+  "end_time": "11:00",
+  "price_cents": 20000,
+  "status": "AVAILABLE",
+  "checkout_version": 1,
+  "editable": true,
+  "read_only_reason": null
+}

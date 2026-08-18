@@ -129,6 +129,11 @@ def test_booking_and_payment_enum_labels_are_stable(pg_engine: Engine) -> None:
             "CONFIRMED",
             "EXPIRED",
             "PAYMENT_EXCEPTION",
+            "CANCELLED",
+            "REFUND_PENDING",
+            "REFUND_FAILED",
+            "REFUNDED",
+            "COMPLETED",
         ],
         "payment_state": [
             "CREATING",
@@ -224,6 +229,16 @@ def test_booking_foreign_key_catalog_is_complete(pg_engine: Engine) -> None:
         "fk_user_sessions_user_id_users": (("user_id",), "users", "CASCADE")
     }
     assert foreign_keys("orders") == {
+        "fk_orders_checked_in_by_user_id_users": (
+            ("checked_in_by_user_id",),
+            "users",
+            "RESTRICT",
+        ),
+        "fk_orders_completed_by_user_id_users": (
+            ("completed_by_user_id",),
+            "users",
+            "RESTRICT",
+        ),
         "fk_orders_slot_id_slots": (("slot_id",), "slots", "RESTRICT"),
         "fk_orders_user_id_users": (("user_id",), "users", "RESTRICT"),
     }

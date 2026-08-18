@@ -1,0 +1,1 @@
+"""Authenticated managed-venue listing."""
