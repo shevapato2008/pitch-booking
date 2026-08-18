@@ -4,6 +4,7 @@ import argparse
 import base64
 import getpass
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -15,6 +16,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 OSS_KEYS = (
     "OSS_ENDPOINT",
@@ -31,6 +35,14 @@ PRESERVED_KEYS = (
     "ONBOARDING_OSS_BUCKET",
     "PLATFORM_STAFF_PRINCIPALS_JSON",
     "PLATFORM_CSRF_SECRET",
+    "WECHAT_PAY_MERCHANT_ID",
+    "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+    "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+    "WECHAT_PAY_PUBLIC_KEY_ID",
+    "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+    "WECHAT_PAY_API_V3_KEY",
+    "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+    "WECHAT_PAY_REFUND_NOTIFICATION_URL",
 )
 ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -39,6 +51,19 @@ TENCENT_MAP_KEY = re.compile(r"^[A-Z0-9]{5}(?:-[A-Z0-9]{5}){5}$", re.IGNORECASE)
 API_BASE_URL = "https://pitch-api-staging.modelstella.com"
 MEDIA_HOST = "media.modelstella.com"
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
+WECHAT_PAY_KEYS = PRESERVED_KEYS[-8:]
+WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
+SPECIAL_USE_DOMAIN_SUFFIXES = (
+    "invalid",
+    "localhost",
+    "test",
+    "example",
+    "example.com",
+    "example.net",
+    "example.org",
+)
+PAYMENT_NOTIFICATION_URL = f"{API_BASE_URL}/api/v1/payments/wechat/notify"
+REFUND_NOTIFICATION_URL = f"{API_BASE_URL}/api/v1/refunds/wechat/notify"
 
 
 @dataclass(frozen=True)
@@ -51,6 +76,14 @@ class PrepareInputs:
     wechat_app_secret: str
     tencent_map_key: str
     revision: str
+    wechat_pay_merchant_id: str
+    wechat_pay_merchant_cert_serial: str
+    wechat_pay_merchant_private_key_pem_base64: str
+    wechat_pay_public_key_id: str
+    wechat_pay_public_key_pem_base64: str
+    wechat_pay_api_v3_key: str
+    wechat_pay_payment_notification_url: str
+    wechat_pay_refund_notification_url: str
     onboarding_oss_bucket: str = ""
     platform_reviewer_token: str = ""
 
@@ -163,7 +196,126 @@ def _validate_preserved(values: Mapping[str, str]) -> dict[str, str]:
     csrf_secret = values.get("PLATFORM_CSRF_SECRET")
     if csrf_secret and _valid_base64_32(csrf_secret):
         preserved["PLATFORM_CSRF_SECRET"] = csrf_secret
+    try:
+        preserved.update(_validated_wechat_pay_config(values))
+    except ValueError:
+        pass
     return preserved
+
+
+def _validated_wechat_pay_config(values: Mapping[str, str]) -> dict[str, str]:
+    merchant_id = _required(values.get("WECHAT_PAY_MERCHANT_ID", ""), "WECHAT_PAY_MERCHANT_ID")
+    if not merchant_id.isascii() or not merchant_id.isdigit():
+        raise ValueError("WECHAT_PAY_MERCHANT_ID is invalid")
+    serial = _required(
+        values.get("WECHAT_PAY_MERCHANT_CERT_SERIAL", ""),
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+    )
+    if re.fullmatch(r"[0-9A-F]+", serial, re.ASCII) is None:
+        raise ValueError("WECHAT_PAY_MERCHANT_CERT_SERIAL is invalid")
+    private_key = _validated_pem_base64(
+        values.get("WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64", ""),
+        private=True,
+    )
+    public_key_id = _required(
+        values.get("WECHAT_PAY_PUBLIC_KEY_ID", ""), "WECHAT_PAY_PUBLIC_KEY_ID"
+    )
+    if re.fullmatch(r"PUB_KEY_ID_[0-9]+", public_key_id, re.ASCII) is None:
+        raise ValueError("WECHAT_PAY_PUBLIC_KEY_ID is invalid")
+    public_key = _validated_pem_base64(
+        values.get("WECHAT_PAY_PUBLIC_KEY_PEM_BASE64", ""),
+        private=False,
+    )
+    api_key = _required(values.get("WECHAT_PAY_API_V3_KEY", ""), "WECHAT_PAY_API_V3_KEY")
+    if WECHAT_PAY_API_V3_KEY.fullmatch(api_key) is None:
+        raise ValueError(
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII"
+        )
+    payment_url = _validated_notification_url(
+        values.get("WECHAT_PAY_PAYMENT_NOTIFICATION_URL", ""),
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+        public_api_base_url=API_BASE_URL,
+    )
+    refund_url = _validated_notification_url(
+        values.get("WECHAT_PAY_REFUND_NOTIFICATION_URL", ""),
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+        public_api_base_url=API_BASE_URL,
+    )
+    return {
+        "WECHAT_PAY_MERCHANT_ID": merchant_id,
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL": serial,
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64": private_key,
+        "WECHAT_PAY_PUBLIC_KEY_ID": public_key_id,
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64": public_key,
+        "WECHAT_PAY_API_V3_KEY": api_key,
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL": payment_url,
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL": refund_url,
+    }
+
+
+def _validated_pem_base64(value: str, *, private: bool) -> str:
+    label = "private key" if private else "public key"
+    normalized = _required(value, f"WeChat Pay {label}")
+    try:
+        decoded = base64.b64decode(normalized, validate=True)
+        if private:
+            key = serialization.load_pem_private_key(decoded, password=None)
+            if not isinstance(key, rsa.RSAPrivateKey) or key.key_size != 2048:
+                raise ValueError
+        else:
+            key = serialization.load_pem_public_key(decoded)
+            if not isinstance(key, rsa.RSAPublicKey) or key.key_size != 2048:
+                raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError(f"WeChat Pay {label} PEM/Base64 is invalid") from None
+    return normalized
+
+
+def _validated_notification_url(
+    value: str,
+    field: str,
+    *,
+    public_api_base_url: str,
+) -> str:
+    normalized = _required(value, field)
+    public_origin = _public_https_origin(public_api_base_url)
+    callback_origin = _public_https_origin(normalized)
+    if public_origin is None or callback_origin is None or callback_origin != public_origin:
+        raise ValueError(f"{field} notification URL must use the public API origin")
+    return normalized
+
+
+def _public_https_origin(value: str) -> tuple[str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    hostname = parsed.hostname
+    if (
+        parsed.scheme.casefold() != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or port not in {None, 443}
+    ):
+        return None
+    normalized_host = hostname.rstrip(".").casefold()
+    if any(
+        normalized_host == suffix or normalized_host.endswith(f".{suffix}")
+        for suffix in SPECIAL_USE_DOMAIN_SUFFIXES
+    ):
+        return None
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            return None
+    return normalized_host, 443
 
 
 def _valid_base64_32(value: str) -> bool:
@@ -219,9 +371,7 @@ def _valid_platform_principals(value: str) -> bool:
             return False
         principal_ids.add(principal_id)
         token_hashes.add(token_hash)
-        has_enabled_reviewer = has_enabled_reviewer or (
-            enabled and "ONBOARDING_REVIEWER" in roles
-        )
+        has_enabled_reviewer = has_enabled_reviewer or (enabled and "ONBOARDING_REVIEWER" in roles)
     return has_enabled_reviewer
 
 
@@ -311,17 +461,30 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "PLATFORM_CSRF_SECRET",
         base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
     )
-    oss_request_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], oss["OSS_BUCKET"])
-    onboarding_upload_base_url = _oss_request_base_url(
-        oss["OSS_ENDPOINT"], onboarding_bucket
+    payment_input_values = {
+        "WECHAT_PAY_MERCHANT_ID": inputs.wechat_pay_merchant_id,
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL": inputs.wechat_pay_merchant_cert_serial,
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64": (
+            inputs.wechat_pay_merchant_private_key_pem_base64
+        ),
+        "WECHAT_PAY_PUBLIC_KEY_ID": inputs.wechat_pay_public_key_id,
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64": inputs.wechat_pay_public_key_pem_base64,
+        "WECHAT_PAY_API_V3_KEY": inputs.wechat_pay_api_v3_key,
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL": (inputs.wechat_pay_payment_notification_url),
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL": inputs.wechat_pay_refund_notification_url,
+    }
+    payment_config = (
+        {key: preserved[key] for key in WECHAT_PAY_KEYS}
+        if all(key in preserved for key in WECHAT_PAY_KEYS)
+        else _validated_wechat_pay_config(payment_input_values)
     )
+    oss_request_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], oss["OSS_BUCKET"])
+    onboarding_upload_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], onboarding_bucket)
 
     deploy_values = {
         "APP_ENV": "staging",
         "APP_REVISION": inputs.revision,
-        "DATABASE_URL": (
-            f"postgresql+psycopg://pitch:{postgres_password}@postgres:5432/pitch"
-        ),
+        "DATABASE_URL": (f"postgresql+psycopg://pitch:{postgres_password}@postgres:5432/pitch"),
         "POSTGRES_DB": "pitch",
         "POSTGRES_USER": "pitch",
         "POSTGRES_PASSWORD": postgres_password,
@@ -336,6 +499,7 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "WECHAT_PROVIDER": "real",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        **payment_config,
         "MINIPROGRAM_ICP_FILING_CONFIRMED": icp_confirmed,
         "WECHAT_APP_ID": app_id,
         "WECHAT_APP_SECRET": wechat_app_secret,
@@ -410,9 +574,9 @@ def main() -> int:
         parser.error(str(error))
     onboarding_bucket = existing_bootstrap.get("ONBOARDING_OSS_BUCKET", "")
     try:
-        source_oss_bucket = read_env_file(
-            args.oss_env, "OSS environment file"
-        ).get("OSS_BUCKET", "")
+        source_oss_bucket = read_env_file(args.oss_env, "OSS environment file").get(
+            "OSS_BUCKET", ""
+        )
     except ValueError as error:
         parser.error(str(error))
     if onboarding_bucket == source_oss_bucket:
@@ -425,9 +589,18 @@ def main() -> int:
     if "PLATFORM_STAFF_PRINCIPALS_JSON" not in existing_bootstrap:
         reviewer_token = getpass.getpass("PLATFORM_REVIEWER_TOKEN: ")
 
-    wechat_secret = os.environ.get("WECHAT_APP_SECRET") or getpass.getpass(
-        "WECHAT_APP_SECRET: "
+    existing_payment = (
+        {key: existing_bootstrap[key] for key in WECHAT_PAY_KEYS}
+        if all(key in existing_bootstrap for key in WECHAT_PAY_KEYS)
+        else {}
     )
+
+    def payment_input(key: str, *, default: str = "") -> str:
+        if existing_payment:
+            return existing_payment[key]
+        return os.environ.get(key) or default or getpass.getpass(f"{key}: ")
+
+    wechat_secret = os.environ.get("WECHAT_APP_SECRET") or getpass.getpass("WECHAT_APP_SECRET: ")
     tencent_key = os.environ.get("MINIPROGRAM_TENCENT_MAP_KEY") or getpass.getpass(
         "MINIPROGRAM_TENCENT_MAP_KEY: "
     )
@@ -442,6 +615,22 @@ def main() -> int:
                 wechat_app_secret=wechat_secret,
                 tencent_map_key=tencent_key,
                 revision=_git_revision(),
+                wechat_pay_merchant_id=payment_input("WECHAT_PAY_MERCHANT_ID"),
+                wechat_pay_merchant_cert_serial=payment_input("WECHAT_PAY_MERCHANT_CERT_SERIAL"),
+                wechat_pay_merchant_private_key_pem_base64=payment_input(
+                    "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64"
+                ),
+                wechat_pay_public_key_id=payment_input("WECHAT_PAY_PUBLIC_KEY_ID"),
+                wechat_pay_public_key_pem_base64=payment_input("WECHAT_PAY_PUBLIC_KEY_PEM_BASE64"),
+                wechat_pay_api_v3_key=payment_input("WECHAT_PAY_API_V3_KEY"),
+                wechat_pay_payment_notification_url=payment_input(
+                    "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+                    default=PAYMENT_NOTIFICATION_URL,
+                ),
+                wechat_pay_refund_notification_url=payment_input(
+                    "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+                    default=REFUND_NOTIFICATION_URL,
+                ),
                 onboarding_oss_bucket=onboarding_bucket,
                 platform_reviewer_token=reviewer_token,
             )

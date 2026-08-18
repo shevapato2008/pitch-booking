@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ipaddress
 import json
 import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 REQUIRED_KEYS = (
     "APP_ENV",
@@ -33,10 +37,30 @@ REQUIRED_KEYS = (
     "PLATFORM_STAFF_PRINCIPALS_JSON",
     "PLATFORM_CSRF_SECRET",
 )
+WECHAT_PAY_REQUIRED_KEYS = (
+    "WECHAT_PAY_MERCHANT_ID",
+    "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+    "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+    "WECHAT_PAY_PUBLIC_KEY_ID",
+    "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+    "WECHAT_PAY_API_V3_KEY",
+    "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+    "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+)
 COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 OSS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
+WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
+SPECIAL_USE_DOMAIN_SUFFIXES = (
+    "invalid",
+    "localhost",
+    "test",
+    "example",
+    "example.com",
+    "example.net",
+    "example.org",
+)
 
 
 @dataclass(frozen=True)
@@ -74,7 +98,13 @@ def preflight(
     except (OSError, UnicodeError, ValueError) as error:
         return PreflightResult((f"environment file is invalid: {error}",))
 
-    failures = [f"{key} is required" for key in REQUIRED_KEYS if not values.get(key)]
+    payment_provider = values.get("PAYMENT_PROVIDER")
+    required_keys = (
+        (*REQUIRED_KEYS, *WECHAT_PAY_REQUIRED_KEYS)
+        if payment_provider == "wechat"
+        else REQUIRED_KEYS
+    )
+    failures = [f"{key} is required" for key in required_keys if not values.get(key)]
     if values.get("POSTGRES_PASSWORD") == "change-before-deploy":
         failures.append("POSTGRES_PASSWORD uses validation sentinel")
     if not COMMIT_SHA.fullmatch(values.get("APP_REVISION", "")):
@@ -83,6 +113,8 @@ def preflight(
         failures.append("PAYMENT_PROVIDER must be wechat for deployment")
     if values.get("ENABLE_MOCK_PAYMENT_PROVIDER", "").casefold() != "false":
         failures.append("ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment")
+    if payment_provider == "wechat":
+        _validate_wechat_pay(values, failures)
     if (
         require_miniprogram_acceptance
         and values.get("MINIPROGRAM_ICP_FILING_CONFIRMED", "").casefold() != "true"
@@ -155,9 +187,7 @@ def preflight(
         failures.append("MODERATION_REVIEWER_USER_IDS must be unique comma-separated UUIDs")
 
     principals_value = values.get("PLATFORM_STAFF_PRINCIPALS_JSON", "")
-    principals_valid, has_enabled_reviewer = _validate_platform_principals(
-        principals_value
-    )
+    principals_valid, has_enabled_reviewer = _validate_platform_principals(principals_value)
     if principals_value and not principals_valid:
         failures.append("PLATFORM_STAFF_PRINCIPALS_JSON is invalid")
     elif principals_value and not has_enabled_reviewer:
@@ -171,15 +201,106 @@ def preflight(
             csrf_bytes = base64.b64decode(csrf_secret, validate=True)
         except (ValueError, UnicodeError):
             csrf_bytes = b""
-        if (
-            len(csrf_bytes) != 32
-            or base64.b64encode(csrf_bytes).decode("ascii") != csrf_secret
-        ):
-            failures.append(
-                "PLATFORM_CSRF_SECRET must be canonical Base64 for exactly 32 bytes"
-            )
+        if len(csrf_bytes) != 32 or base64.b64encode(csrf_bytes).decode("ascii") != csrf_secret:
+            failures.append("PLATFORM_CSRF_SECRET must be canonical Base64 for exactly 32 bytes")
 
     return PreflightResult(tuple(failures))
+
+
+def _validate_wechat_pay(values: dict[str, str], failures: list[str]) -> None:
+    merchant_id = values.get("WECHAT_PAY_MERCHANT_ID", "")
+    if merchant_id and (not merchant_id.isascii() or not merchant_id.isdigit()):
+        failures.append("WECHAT_PAY_MERCHANT_ID is invalid")
+    serial = values.get("WECHAT_PAY_MERCHANT_CERT_SERIAL", "")
+    if serial and re.fullmatch(r"[0-9A-F]+", serial, re.ASCII) is None:
+        failures.append("WECHAT_PAY_MERCHANT_CERT_SERIAL is invalid")
+    public_key_id = values.get("WECHAT_PAY_PUBLIC_KEY_ID", "")
+    if public_key_id and re.fullmatch(r"PUB_KEY_ID_[0-9]+", public_key_id, re.ASCII) is None:
+        failures.append("WECHAT_PAY_PUBLIC_KEY_ID is invalid")
+    _validate_pem(
+        values.get("WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64", ""),
+        field="WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+        private=True,
+        failures=failures,
+    )
+    _validate_pem(
+        values.get("WECHAT_PAY_PUBLIC_KEY_PEM_BASE64", ""),
+        field="WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+        private=False,
+        failures=failures,
+    )
+    api_key = values.get("WECHAT_PAY_API_V3_KEY", "")
+    if api_key and WECHAT_PAY_API_V3_KEY.fullmatch(api_key) is None:
+        failures.append(
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII"
+        )
+    public_origin = _public_https_origin(values.get("PUBLIC_API_BASE_URL", ""))
+    for field in (
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+    ):
+        value = values.get(field, "")
+        if not value:
+            continue
+        callback_origin = _public_https_origin(value)
+        if public_origin is None or callback_origin is None or callback_origin != public_origin:
+            failures.append(f"{field} must use the PUBLIC_API_BASE_URL public HTTPS origin")
+
+
+def _validate_pem(
+    value: str,
+    *,
+    field: str,
+    private: bool,
+    failures: list[str],
+) -> None:
+    if not value:
+        return
+    try:
+        decoded = base64.b64decode(value, validate=True)
+        if private:
+            key = serialization.load_pem_private_key(decoded, password=None)
+            if not isinstance(key, rsa.RSAPrivateKey) or key.key_size != 2048:
+                raise ValueError
+        else:
+            key = serialization.load_pem_public_key(decoded)
+            if not isinstance(key, rsa.RSAPublicKey) or key.key_size != 2048:
+                raise ValueError
+    except (TypeError, ValueError):
+        failures.append(f"{field} is invalid")
+
+
+def _public_https_origin(value: str) -> tuple[str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    hostname = parsed.hostname
+    if (
+        parsed.scheme.casefold() != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or port not in {None, 443}
+    ):
+        return None
+    normalized_host = hostname.rstrip(".").casefold()
+    if any(
+        normalized_host == suffix or normalized_host.endswith(f".{suffix}")
+        for suffix in SPECIAL_USE_DOMAIN_SUFFIXES
+    ):
+        return None
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            return None
+    return normalized_host, 443
 
 
 def _validate_platform_principals(value: str) -> tuple[bool, bool]:
@@ -227,9 +348,7 @@ def _validate_platform_principals(value: str) -> tuple[bool, bool]:
             return False, False
         principal_ids.add(principal_id)
         token_hashes.add(token_hash)
-        has_enabled_reviewer = has_enabled_reviewer or (
-            enabled and "ONBOARDING_REVIEWER" in roles
-        )
+        has_enabled_reviewer = has_enabled_reviewer or (enabled and "ONBOARDING_REVIEWER" in roles)
     return True, has_enabled_reviewer
 
 

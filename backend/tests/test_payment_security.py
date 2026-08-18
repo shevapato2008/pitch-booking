@@ -8,6 +8,7 @@ from backend.app.modules.payments.dto import (
     PaymentConfirmingResponse,
     PaymentPrepayCreatedResponse,
 )
+from backend.tests.test_wechat_pay_composition import configured_settings
 
 
 def _route_paths(app: FastAPI) -> set[str | None]:
@@ -36,13 +37,11 @@ def test_development_authority_route_is_strictly_isolated_and_absent_from_openap
     assert path not in enabled.openapi()["paths"]
 
 
-def test_no_unverified_production_notification_route_is_registered() -> None:
+def test_verified_production_notification_routes_are_registered_without_bearer_auth() -> None:
     app = create_app(
-        settings=Settings(
+        settings=configured_settings(
             app_env="production",
             wechat_provider="real",
-            payment_provider="wechat",
-            wechat_app_id="wx-app",
             wechat_app_secret="secret",
             phone_encryption_key_base64="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
             phone_encryption_key_version=1,
@@ -57,7 +56,16 @@ def test_no_unverified_production_notification_route_is_registered() -> None:
             dashscope_api_key="production-dashscope-key",
         )
     )
-    assert "/api/v1/payments/wechat/notify" not in _route_paths(app)
+    paths = {
+        "/api/v1/payments/wechat/notify",
+        "/api/v1/refunds/wechat/notify",
+    }
+    assert paths <= _route_paths(app)
+    schema = app.openapi()["paths"]
+    for path in paths:
+        operation = schema[path]["post"]
+        assert "security" not in operation
+        assert set(operation["responses"]) == {"204"}
 
 
 def test_runtime_payment_openapi_has_the_frozen_response_matrix() -> None:

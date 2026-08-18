@@ -62,6 +62,26 @@ generated file. `PLATFORM_CSRF_SECRET` is generated from 32 random bytes automat
 The ordinary WeChat values are still read from the shell or prompted without echo:
 `WECHAT_APP_SECRET` and `MINIPROGRAM_TENCENT_MAP_KEY`.
 
+When `PAYMENT_PROVIDER=wechat`, the generator also reads the WeChat Pay API v3 merchant ID,
+merchant certificate serial, merchant private key, platform public-key ID and PEM, API v3 key, and
+the payment/refund notification URLs from the operator environment or prompts without echo. Supply
+both PEM files as canonical, single-line Base64 rather than raw multiline PEM. The API v3 key must
+be exactly 32 characters drawn only from `A-Z`, `a-z`, `0-9`, underscore, or hyphen so dotenv and
+Docker Compose preserve it byte-for-byte. Both merchant and platform RSA keys must be 2048-bit.
+Valid existing payment values are preserved on reruns.
+
+The default callbacks are:
+
+- `https://pitch-api-staging.modelstella.com/api/v1/payments/wechat/notify`
+- `https://pitch-api-staging.modelstella.com/api/v1/refunds/wechat/notify`
+
+Store these values only in the ignored `deploy/.env.live.local` or a secret manager. The preflight
+parses both RSA keys and validates, without DNS lookups or printing any supplied value, that both
+callbacks use the same public HTTPS origin as `PUBLIC_API_BASE_URL`. Loopback, private, link-local,
+multicast, unspecified, and reserved IPs are rejected. The static IANA/RFC special-use denylist,
+checked without DNS lookups, rejects `.invalid`, `.localhost`, `.test`, `.example`, and the
+`example.com`, `example.net`, and `example.org` documentation domains and their subdomains.
+
 ```bash
 uv run python -m scripts.prepare_live_deploy \
   --oss-env backend/.env.local \
@@ -113,3 +133,20 @@ matching domain category (the categories are not interchangeable):
 In particular, adding the onboarding OSS origin only to `request` does not authorize
 `wx.uploadFile`; it must be present in `uploadFile` before testing onboarding-evidence uploads on a
 physical iPhone. The venue-media PUT path uses `wx.request`, so its OSS origin remains in `request`.
+
+Do not add `https://api.mch.weixin.qq.com` to the Mini Program legal-domain list. The Mini Program
+calls this application's API and invokes native `wx.requestPayment`; only the server-side Provider
+calls the WeChat Pay API.
+
+## WeChat Pay smoke gate
+
+Run the offline preflight and tests before requesting any real payment:
+
+```bash
+uv run python -m scripts.preflight_deploy --env-file deploy/.env.live.local
+```
+
+The external smoke is deliberately limited to one smallest practical JSAPI payment and one full
+refund from a real iPhone/OpenID. Do not run it unless the merchant ID, merchant certificate/private
+key, platform public key, API v3 key, and callback reachability have all been confirmed by the
+merchant operator. Never substitute generated test keys or repeat charge/refund loops.

@@ -5,8 +5,30 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from scripts.preflight_deploy import preflight
+
+
+def _payment_pem_values(*, key_size: int = 2048) -> tuple[str, str]:
+    private = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+    private_pem = private.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return (
+        base64.b64encode(private_pem).decode("ascii"),
+        base64.b64encode(public_pem).decode("ascii"),
+    )
+
+
+WECHAT_PAY_PRIVATE_KEY_BASE64, WECHAT_PAY_PUBLIC_KEY_BASE64 = _payment_pem_values()
 
 
 def write_env(path: Path, values: dict[str, str]) -> Path:
@@ -26,7 +48,7 @@ def valid_local_environment() -> dict[str, str]:
         "POSTGRES_DB": "pitch",
         "POSTGRES_USER": "pitch",
         "POSTGRES_PASSWORD": "local-password",
-        "PUBLIC_API_BASE_URL": "http://127.0.0.1:8080",
+        "PUBLIC_API_BASE_URL": "https://pitch-api-staging.modelstella.com",
         "PUBLIC_IMAGE_HOSTS": '["cdn.example.test"]',
         "OSS_ENDPOINT": "https://oss-cn-hangzhou.aliyuncs.com",
         "OSS_BUCKET": "venue-media-staging",
@@ -39,6 +61,18 @@ def valid_local_environment() -> dict[str, str]:
         "MODERATION_REVIEWER_USER_IDS": "01a329c4-36b0-401a-a577-48ee1c475a37",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        "WECHAT_PAY_MERCHANT_ID": "1900000109",
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL": "0123456789ABCDEF",
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64": WECHAT_PAY_PRIVATE_KEY_BASE64,
+        "WECHAT_PAY_PUBLIC_KEY_ID": "PUB_KEY_ID_3000000001",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64": WECHAT_PAY_PUBLIC_KEY_BASE64,
+        "WECHAT_PAY_API_V3_KEY": "0123456789abcdef0123456789abcdef",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL": (
+            "https://pitch-api-staging.modelstella.com/api/v1/payments/wechat/notify"
+        ),
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL": (
+            "https://pitch-api-staging.modelstella.com/api/v1/refunds/wechat/notify"
+        ),
         "ONBOARDING_OSS_BUCKET": "venue-onboarding-private",
         "PLATFORM_STAFF_PRINCIPALS_JSON": json.dumps(
             [
@@ -71,6 +105,8 @@ def test_preflight_rejects_validation_sentinels(tmp_path: Path) -> None:
         "POSTGRES_PASSWORD uses validation sentinel",
         "APP_REVISION is not a 40-character commit SHA",
         "PUBLIC_API_BASE_URL uses validation sentinel",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
     }
 
 
@@ -80,7 +116,11 @@ def test_preflight_rejects_malformed_or_unsafe_public_url(tmp_path: Path) -> Non
 
     result = preflight(write_env(tmp_path, values))
 
-    assert result.failures == ("PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",)
+    assert set(result.failures) == {
+        "PUBLIC_API_BASE_URL must use HTTPS unless it targets loopback",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+    }
 
 
 def test_preflight_rejects_non_json_image_hosts(tmp_path: Path) -> None:
@@ -180,6 +220,158 @@ def test_preflight_rejects_mock_payment_configuration(tmp_path: Path) -> None:
     }
 
 
+def test_preflight_requires_wechat_credentials_only_for_real_provider(
+    tmp_path: Path,
+) -> None:
+    values = valid_local_environment()
+    payment_keys = tuple(key for key in values if key.startswith("WECHAT_PAY_"))
+    for key in payment_keys:
+        values.pop(key)
+    values["PAYMENT_PROVIDER"] = "mock"
+    values["ENABLE_MOCK_PAYMENT_PROVIDER"] = "true"
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert all("WECHAT_PAY_" not in failure for failure in result.failures)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "failure"),
+    [
+        (
+            "WECHAT_PAY_MERCHANT_ID",
+            "merchant-id",
+            "WECHAT_PAY_MERCHANT_ID is invalid",
+        ),
+        (
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "not-base64",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64 is invalid",
+        ),
+        (
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "not-base64",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64 is invalid",
+        ),
+        (
+            "WECHAT_PAY_API_V3_KEY",
+            "too-short",
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII",
+        ),
+        (
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+            "https://pitch-api-staging.modelstella.com/payment?secret=value",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the "
+            "PUBLIC_API_BASE_URL public HTTPS origin",
+        ),
+    ],
+)
+def test_preflight_rejects_malformed_wechat_credentials_without_echoing_them(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    failure: str,
+) -> None:
+    values = valid_local_environment()
+    values[field] = value
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (failure,)
+    assert value not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "callback",
+    [
+        "https://callback.invalid/api/v1/payments/wechat/notify",
+        "https://127.0.0.1/api/v1/payments/wechat/notify",
+        "https://10.20.30.40/api/v1/payments/wechat/notify",
+        "https://media.modelstella.com/api/v1/payments/wechat/notify",
+        "https://pitch-api-staging.modelstella.com:8443/api/v1/payments/wechat/notify",
+    ],
+)
+def test_preflight_rejects_nonpublic_or_cross_origin_payment_callbacks(
+    tmp_path: Path,
+    callback: str,
+) -> None:
+    values = valid_local_environment()
+    values["WECHAT_PAY_PAYMENT_NOTIFICATION_URL"] = callback
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+    )
+    assert callback not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    [
+        "api.test",
+        "api.example",
+        "example.com",
+        "sub.example.net",
+        "example.org",
+    ],
+)
+def test_preflight_rejects_same_origin_special_use_payment_callbacks(
+    tmp_path: Path,
+    hostname: str,
+) -> None:
+    values = valid_local_environment()
+    values["PUBLIC_API_BASE_URL"] = f"https://{hostname}"
+    values["WECHAT_PAY_PAYMENT_NOTIFICATION_URL"] = (
+        f"https://{hostname}/api/v1/payments/wechat/notify"
+    )
+    values["WECHAT_PAY_REFUND_NOTIFICATION_URL"] = (
+        f"https://{hostname}/api/v1/refunds/wechat/notify"
+    )
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert set(result.failures) == {
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+    ],
+)
+def test_preflight_rejects_non_2048_bit_wechat_rsa_keys(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    private_key, public_key = _payment_pem_values(key_size=1024)
+    values = valid_local_environment()
+    values[field] = private_key if "PRIVATE" in field else public_key
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (f"{field} is invalid",)
+
+
+@pytest.mark.parametrize("unsafe_character", ["$", '"', "'", "\\", "\n"])
+def test_preflight_rejects_compose_interpolation_characters_in_api_v3_key(
+    tmp_path: Path,
+    unsafe_character: str,
+) -> None:
+    values = valid_local_environment()
+    values["WECHAT_PAY_API_V3_KEY"] = "A" * 31 + unsafe_character
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes using deployment-safe ASCII",
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "failure"),
     [
@@ -261,6 +453,14 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
             "ONBOARDING_OSS_BUCKET",
             "PLATFORM_STAFF_PRINCIPALS_JSON",
             "PLATFORM_CSRF_SECRET",
+            "WECHAT_PAY_MERCHANT_ID",
+            "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "WECHAT_PAY_PUBLIC_KEY_ID",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "WECHAT_PAY_API_V3_KEY",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+            "WECHAT_PAY_REFUND_NOTIFICATION_URL",
         )
     } == {
         key: valid_local_environment()[key]
@@ -273,9 +473,36 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
             "ONBOARDING_OSS_BUCKET",
             "PLATFORM_STAFF_PRINCIPALS_JSON",
             "PLATFORM_CSRF_SECRET",
+            "WECHAT_PAY_MERCHANT_ID",
+            "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "WECHAT_PAY_PUBLIC_KEY_ID",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "WECHAT_PAY_API_V3_KEY",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+            "WECHAT_PAY_REFUND_NOTIFICATION_URL",
         )
     }
     assert "postgres_data" in config["volumes"]
+
+
+def test_compose_preserves_the_exact_safe_api_v3_key(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    expected = "A_b-" * 8
+    values["WECHAT_PAY_API_V3_KEY"] = expected
+    env_file = write_env(tmp_path, values)
+
+    completed = subprocess.run(
+        ["docker", "compose", "--env-file", str(env_file), "config", "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    config = json.loads(completed.stdout)
+
+    assert len(expected.encode("ascii")) == 32
+    assert config["services"]["api"]["environment"]["WECHAT_PAY_API_V3_KEY"] == expected
+    assert config["services"]["worker"]["environment"]["WECHAT_PAY_API_V3_KEY"] == expected
 
 
 def test_deploy_environment_template_declares_all_oss_inputs() -> None:
@@ -318,6 +545,23 @@ def test_deploy_configuration_passes_through_moderation_inputs() -> None:
         assert f"{key}=" in template
 
 
+def test_deploy_configuration_declares_wechat_payment_inputs() -> None:
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+    for key in (
+        "WECHAT_PAY_MERCHANT_ID",
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+        "WECHAT_PAY_PUBLIC_KEY_ID",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+        "WECHAT_PAY_API_V3_KEY",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+    ):
+        assert f"{key}:" in compose
+        assert f"{key}=" in template
+
+
 def test_runtime_image_never_syncs_development_dependencies() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
 
@@ -328,12 +572,10 @@ def test_runtime_image_explicitly_packages_verified_directory_inputs() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
     expected = {
         "deploy/venue-directory.json": (
-            "dd6bf001243aa48d8d1e0ccf84894f3d"
-            "d3924eb051fbb2c9e77391e1e5a67199"
+            "dd6bf001243aa48d8d1e0ccf84894f3dd3924eb051fbb2c9e77391e1e5a67199"
         ),
         "deploy/venue-directory.schema.json": (
-            "a0f1c0145ccff73a1699fa84efaadd36a"
-            "cfc60c4637a815ce382a3213567ee45"
+            "a0f1c0145ccff73a1699fa84efaadd36acfc60c4637a815ce382a3213567ee45"
         ),
     }
 
