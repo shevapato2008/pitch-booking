@@ -32,7 +32,7 @@ The WeChat Provider track exclusively owns `backend/app/modules/refunds/converge
 
 This slice owns only its page, domain/service, Fixture, focused tests, FastAPI module, and route fragments. It must not modify `miniprogram/dev/bootstrap.ts`, `miniprogram/dev/app-pages.json`, `miniprogram/app.json`, production build/audit manifests or their central tests, or `backend/app/main.py`. After all active branches merge, the root integration coordinator serially consumes the route/composition fragments, updates those central files, runs their central checks, and performs the final Fixture cleanup.
 
-The module exports separate `router` (list/check-in/complete) and `refund_router` fragments. Root may mount `router` independently. It may mount `refund_router` only when the real provider configuration is available and the Provider-owned refund worker is deployed. The route itself receives only a provider-availability gate and writes durable work; it never owns a provider or convergence object.
+The module exports separate `router` (list/check-in/complete) and `refund_router` fragments. Root may mount `router` independently. It may mount `refund_router` only when the real provider configuration is available and the Provider-owned refund worker is deployed. The route receives a fail-closed provider-name resolver (`Callable[[], str | None]`), not a Provider object: `None` returns 503 before mutation; a configured name is written unchanged to the durable attempt so the matching Worker can lease it.
 
 The implementation branch must not edit these shared or externally owned authorities:
 
@@ -69,7 +69,7 @@ If the foundation lacks a required enum, column (including the non-empty venue r
 - `backend/app/modules/venue_fulfillment/refund.py`: venue refund enqueue orchestration that creates/retries one durable attempt and schedules the Provider-owned worker.
 - `backend/app/modules/venue_fulfillment/router.py`: authenticated `router` and separately mountable `refund_router` fragments.
 - `backend/tests/test_venue_fulfillment.py`: real PostgreSQL authorization/list/check-in/complete coverage.
-- `backend/tests/test_venue_fulfillment_refund.py`: real PostgreSQL refund enqueue, idempotency, lock, and provider-availability-gate coverage.
+- `backend/tests/test_venue_fulfillment_refund.py`: real PostgreSQL refund enqueue, idempotency, lock, and provider-name-resolver coverage.
 
 ### Mini Program
 
@@ -422,7 +422,7 @@ Cover:
 
 Do not inject a fake provider or convergence service. Cover:
 
-- provider configuration is checked before any database mutation; unavailable configuration returns frozen 503 with no case, attempt, order, slot, or idempotency change;
+- the provider-name resolver is checked before any database mutation; `None` returns frozen 503 with no case, attempt, order, slot, or idempotency change; a configured name is written unchanged to the attempt and matches the deployed Worker's `provider_name`;
 - request preparation atomically commits `REFUND_PENDING`, the case/attempt, `next_reconcile_at=now`, slot mutation, and idempotency result;
 - venue cancellation closes the owned slot at acceptance only when the foundation `RefundRepository` returns inventory-mutation authority, and never makes it `AVAILABLE`;
 - absent shared ownership proof leaves the slot unchanged; the venue repository contains no parallel inventory predicate;
@@ -457,11 +457,11 @@ Before `refund_router` is registered or enabled, the integration coordinator mus
 
 - [ ] **Step 6: Return the durable pending projection without provider I/O**
 
-`VenueRefundService` receives only repositories, clock, and a fail-closed provider-availability predicate. It returns `202 REFUND_PENDING` after the atomic durable enqueue. If the shared repository already exposes an authoritative successful case, return its read-only `200 REFUNDED` projection. Do not import or instantiate a WeChat HTTP adapter, signer, credential loader, callback handler, Provider, convergence service, or worker.
+`VenueRefundService` receives only repositories, clock, and a fail-closed `Callable[[], str | None]` provider-name resolver. Resolve it before mutation; never hardcode `"wechat"`. Write the non-empty configured name unchanged to each newly created attempt so the matching Worker can lease it. Return `202 REFUND_PENDING` after the atomic durable enqueue. If the shared repository already exposes an authoritative successful case, return its read-only `200 REFUNDED` projection. Do not import or instantiate a WeChat HTTP adapter, signer, credential loader, callback handler, Provider, convergence service, or worker.
 
 - [ ] **Step 7: Leave the refund route unregistered and run GREEN**
 
-`refund_router` accepts only the frozen non-empty reason body and `Idempotency-Key`, receives the provider-availability predicate through explicit injection, and serializes the service's frozen 200/202 response. Do not add application-state composition or mount it in `backend/app/main.py` here. Final root integration registers it only after the real Provider is configured and the Provider-owned refund worker is deployed; otherwise it remains unpublished.
+`refund_router` accepts only the frozen non-empty reason body and `Idempotency-Key`, receives the provider-name resolver through explicit injection, and serializes the service's frozen 200/202 response. Do not add application-state composition or mount it in `backend/app/main.py` here. Final root integration registers it only after the real Provider is configured and the Provider-owned refund worker is deployed; otherwise it remains unpublished.
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
@@ -693,7 +693,7 @@ At 375×812, open the HTTP-backed production route and compare it to the approve
 
 - [ ] **Step 1: Compose routes only behind the real Provider/worker gate**
 
-After all active branches merge, root integration merges the Mini Program route/composition fragments into the central manifests and bootstrap and adds the production route only with the real HTTP source and attempt store. It may mount `router` (list/check-in/complete) independently. Before mounting `refund_router`, the real Provider configuration must be available and the Provider-owned refund worker must be deployed. The API receives only a provider-availability gate; do not inject a Provider/convergence service or substitute a Fixture/fake provider.
+After all active branches merge, root integration merges the Mini Program route/composition fragments into the central manifests and bootstrap and adds the production route only with the real HTTP source and attempt store. It may mount `router` (list/check-in/complete) independently. Before mounting `refund_router`, the real Provider configuration must be available and the Provider-owned refund worker must be deployed. The API receives only a resolver returning the exact configured provider name; do not inject a Provider/convergence service or substitute a Fixture/fake provider.
 
 - [ ] **Step 2: Change the isolation test to require Fixture deletion**
 
