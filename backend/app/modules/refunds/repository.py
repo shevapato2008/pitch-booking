@@ -84,6 +84,23 @@ class RefundRepository:
             )
         )
 
+    def locate_attempt_id_by_merchant_refund_no(
+        self, *, provider: str, merchant_refund_no: str
+    ) -> uuid.UUID | None:
+        return self.session.scalar(
+            select(RefundAttempt.id).where(
+                RefundAttempt.provider == provider,
+                RefundAttempt.merchant_refund_no == merchant_refund_no,
+            )
+        )
+
+    def locate_attempt_payment_id(self, attempt_id: uuid.UUID) -> uuid.UUID | None:
+        return self.session.scalar(
+            select(RefundCase.payment_id)
+            .join(RefundAttempt, RefundAttempt.refund_case_id == RefundCase.id)
+            .where(RefundAttempt.id == attempt_id)
+        )
+
     def lock_refund_graph(self, payment_id: uuid.UUID) -> LockedRefundGraph:
         identity = self.session.execute(
             select(Payment.order_id, Order.slot_id)
@@ -160,17 +177,14 @@ class RefundRepository:
         )
 
     @staticmethod
-    def purpose_is_valid(
-        *, graph: LockedRefundGraph, purpose: RefundCasePurpose
-    ) -> bool:
+    def purpose_is_valid(*, graph: LockedRefundGraph, purpose: RefundCasePurpose) -> bool:
         target_is_applied = graph.payment.applied_to_order_at is not None
         has_other_applied = any(
             payment.id != graph.payment.id and payment.applied_to_order_at is not None
             for payment in graph.payments
         )
         has_other_potential_applied = any(
-            payment.id != graph.payment.id
-            and payment.status in _POTENTIAL_APPLIED_PAYMENT_STATES
+            payment.id != graph.payment.id and payment.status in _POTENTIAL_APPLIED_PAYMENT_STATES
             for payment in graph.payments
         )
         if purpose is RefundCasePurpose.ORDER_CANCELLATION:
@@ -179,9 +193,7 @@ class RefundRepository:
             return not target_is_applied and has_other_applied
         if purpose is RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT:
             return (
-                not target_is_applied
-                and not has_other_applied
-                and not has_other_potential_applied
+                not target_is_applied and not has_other_applied and not has_other_potential_applied
             )
         return False
 
@@ -195,12 +207,9 @@ class RefundRepository:
         requested_by_user_id: uuid.UUID | None,
     ) -> tuple[RefundCase, bool]:
         if graph.refund_case is not None:
-            if (
-                graph.refund_case.purpose is not purpose
-                or not self.purpose_is_valid(
-                    graph=graph,
-                    purpose=graph.refund_case.purpose,
-                )
+            if graph.refund_case.purpose is not purpose or not self.purpose_is_valid(
+                graph=graph,
+                purpose=graph.refund_case.purpose,
             ):
                 raise RefundPurposeMismatchError("refund case purpose does not match")
             return graph.refund_case, False

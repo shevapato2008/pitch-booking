@@ -8,13 +8,25 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.models import Order, OrderStatus, Payment, PaymentState, SlotStatus
+from backend.app.models import (
+    Order,
+    OrderStatus,
+    Payment,
+    PaymentState,
+    RefundCasePurpose,
+    RefundReason,
+    SlotStatus,
+)
 from backend.app.modules.payments.provider import (
     AuthoritativePaymentFacts,
     QueryPaymentResult,
     QueryPaymentStatus,
 )
 from backend.app.modules.payments.repository import PaymentRepository
+from backend.app.modules.refunds.repository import (
+    RefundPurposeMismatchError,
+    RefundRepository,
+)
 
 _RETRY_DELAY = timedelta(minutes=1)
 
@@ -94,6 +106,12 @@ class PaymentConvergenceService:
 
             if payment.status is PaymentState.SUCCESS:
                 self._audit_conflicting_success(payment, provider, result, now)
+                self._ensure_extra_success_refunds(
+                    session=session,
+                    repository=repository,
+                    order=order,
+                    now=now,
+                )
                 session.commit()
                 return ConvergenceResult(order.id, payment.id, True)
 
@@ -133,8 +151,7 @@ class PaymentConvergenceService:
                     payment.notification_result = "SUCCESS"
                     payment.notification_code = None
                     slot_can_fulfil = (
-                        slot.status is SlotStatus.LOCKED
-                        and slot.locked_by_order_id == order.id
+                        slot.status is SlotStatus.LOCKED and slot.locked_by_order_id == order.id
                     ) or (
                         slot.status is SlotStatus.AVAILABLE
                         and not repository.has_other_valid_order(
@@ -151,9 +168,24 @@ class PaymentConvergenceService:
                         slot.locked_until = None
                         payment.applied_to_order_at = now
                     else:
-                        order.status = OrderStatus.PAYMENT_EXCEPTION
-                        payment.last_error_code = "PAYMENT_INVENTORY_CONFLICT"
+                        has_applied_owner = any(
+                            candidate.id != payment.id and candidate.applied_to_order_at is not None
+                            for candidate in repository.locked_order_payments(order_id=order.id)
+                        )
+                        if not has_applied_owner:
+                            order.status = OrderStatus.PAYMENT_EXCEPTION
+                        payment.last_error_code = (
+                            "DUPLICATE_CHARGE"
+                            if has_applied_owner
+                            else "PAYMENT_INVENTORY_CONFLICT"
+                        )
                         payment.last_error_at = now
+                    self._ensure_extra_success_refunds(
+                        session=session,
+                        repository=repository,
+                        order=order,
+                        now=now,
+                    )
             elif result.status is QueryPaymentStatus.CLOSED:
                 payment.status = PaymentState.CLOSED
                 payment.paid_at = None
@@ -183,6 +215,59 @@ class PaymentConvergenceService:
             terminal = payment.status in {PaymentState.SUCCESS, PaymentState.CLOSED}
             session.commit()
             return ConvergenceResult(order.id, payment.id, terminal)
+
+    def _ensure_extra_success_refunds(
+        self,
+        *,
+        session: Session,
+        repository: PaymentRepository,
+        order: Order,
+        now: datetime,
+    ) -> None:
+        payments = repository.locked_order_payments(order_id=order.id)
+        applied = next(
+            (candidate for candidate in payments if candidate.applied_to_order_at is not None),
+            None,
+        )
+        for candidate in payments:
+            if (
+                candidate.status is not PaymentState.SUCCESS
+                or candidate.applied_to_order_at is not None
+            ):
+                continue
+            purpose = (
+                RefundCasePurpose.DUPLICATE_CHARGE
+                if applied is not None
+                else RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT
+            )
+            try:
+                graph = RefundRepository(session).lock_refund_graph(candidate.id)
+                refund_case, _ = RefundRepository(session).get_or_create_case(
+                    graph=graph,
+                    purpose=purpose,
+                    reason=RefundReason.AUTOMATIC_RECOVERY,
+                    reason_note=None,
+                    requested_by_user_id=None,
+                )
+                RefundRepository(session).get_or_create_attempt(
+                    graph=graph,
+                    provider=candidate.provider,
+                    merchant_refund_no=f"PBR{candidate.id.hex[:29]}",
+                    next_reconcile_at=now,
+                )
+            except RefundPurposeMismatchError:
+                # Another unresolved payment can still become the booking owner.
+                # Leave this success durable and retry classification when that
+                # payment converges rather than selecting unsafe inventory authority.
+                continue
+            candidate.last_error_code = purpose.value
+            candidate.last_error_at = now
+            if purpose is RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT:
+                order.cancel_requested_at = order.cancel_requested_at or now
+                order.cancelled_at = order.cancelled_at or now
+                order.expired_at = None
+                order.status = OrderStatus.REFUND_PENDING
+            assert refund_case.payment_id == candidate.id
 
     def _record_transaction_conflict(
         self, *, order_id: uuid.UUID, slot_id: uuid.UUID, payment_id: uuid.UUID

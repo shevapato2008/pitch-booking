@@ -13,8 +13,16 @@ from backend.app.config import Settings
 from backend.app.database import get_engine
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
 from backend.app.modules.orders.repository import OrderRepository
-from backend.app.modules.payments.reconciliation import RECOVERY_LEASE_DURATION
+from backend.app.modules.payments import build_payment_provider
+from backend.app.modules.payments.convergence import PaymentConvergenceService
+from backend.app.modules.payments.reconciliation import (
+    RECOVERY_LEASE_DURATION,
+    PaymentReconciliationService,
+)
 from backend.app.modules.payments.repository import PaymentRepository
+from backend.app.modules.refunds.convergence import RefundConvergenceService
+from backend.app.modules.refunds.repository import RefundRepository
+from backend.app.modules.refunds.worker import RefundReconciliationService
 from backend.app.modules.venue_profiles.dashscope_moderation import DashScopeModerationProvider
 from backend.app.modules.venue_profiles.local_storage import LocalMediaStorage
 from backend.app.modules.venue_profiles.moderation import ContentModerationProvider
@@ -45,6 +53,18 @@ class ProfileModerationScan(Protocol):
     def run_once(self) -> int: ...
 
 
+class RefundRecovery(Protocol):
+    @property
+    def provider_name(self) -> str: ...
+
+    def recover(
+        self,
+        attempt_id: uuid.UUID,
+        *,
+        claim_token: uuid.UUID | None = None,
+    ) -> object: ...
+
+
 class ExpiryWorker:
     def __init__(
         self,
@@ -52,6 +72,7 @@ class ExpiryWorker:
         session_factory: SessionFactory,
         expiry_service: PendingOrderExpiryService | None = None,
         payment_reconciliation: PaymentRecovery | None = None,
+        refund_reconciliation: RefundRecovery | None = None,
         profile_moderation: ProfileModerationScan | None = None,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], None] | None = None,
@@ -65,6 +86,7 @@ class ExpiryWorker:
         self._session_factory = session_factory
         self._expiry_service = expiry_service or PendingOrderExpiryService()
         self._payment_reconciliation = payment_reconciliation
+        self._refund_reconciliation = refund_reconciliation
         self._profile_moderation = profile_moderation
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper or time.sleep
@@ -103,6 +125,31 @@ class ExpiryWorker:
                         claim.payment_id,
                     )
 
+        refund_count = 0
+        if self._refund_reconciliation is not None:
+            for _ in range(self._batch_size):
+                claim_now = self._clock()
+                with self._session_factory() as refund_claim:
+                    claim = RefundRepository(refund_claim).claim_next_due_attempt(
+                        now=claim_now,
+                        provider=self._refund_reconciliation.provider_name,
+                        lease_until=claim_now + RECOVERY_LEASE_DURATION,
+                    )
+                    refund_claim.commit()
+                if claim is None:
+                    break
+                refund_count += 1
+                try:
+                    self._refund_reconciliation.recover(
+                        claim.attempt_id,
+                        claim_token=claim.claim_token,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to reconcile refund attempt_id=%s",
+                        claim.attempt_id,
+                    )
+
         with self._session_factory() as scan_session:
             candidate_ids = self.scan_candidate_ids(
                 scan_session,
@@ -130,7 +177,7 @@ class ExpiryWorker:
                 moderation_count = self._profile_moderation.run_once()
             except Exception:
                 logger.exception("Failed to scan venue profile moderation jobs")
-        return payment_count + len(candidate_ids) + moderation_count
+        return payment_count + refund_count + len(candidate_ids) + moderation_count
 
     def run(self, *, once: bool = False) -> int:
         processed = 0
@@ -162,6 +209,7 @@ def main(
     clock: Callable[[], datetime] | None = None,
     sleeper: Callable[[float], None] | None = None,
     payment_reconciliation: PaymentRecovery | None = None,
+    refund_reconciliation: RefundRecovery | None = None,
     profile_moderation: ProfileModerationScan | None = None,
     settings: Settings | None = None,
     venue_media_store: VenueMediaStore | None = None,
@@ -177,11 +225,45 @@ def main(
     )
     arguments = parser.parse_args(argv)
     resolved_factory = session_factory or (lambda: Session(get_engine()))
+    resolved_settings = settings or Settings()
+    owned_payment_provider = None
+    resolved_payment_reconciliation = payment_reconciliation
+    resolved_refund_reconciliation = refund_reconciliation
+    if resolved_payment_reconciliation is None or resolved_refund_reconciliation is None:
+        if (
+            resolved_settings.mock_payment_provider_enabled
+            or resolved_settings.wechat_payment_configured
+        ):
+            owned_payment_provider = build_payment_provider(resolved_settings)
+            payment_convergence = PaymentConvergenceService(
+                session_factory=resolved_factory,
+                expected_app_id=owned_payment_provider.app_id,
+                expected_merchant_id=owned_payment_provider.merchant_id,
+                now=clock,
+            )
+            refund_convergence = RefundConvergenceService(
+                session_factory=resolved_factory,
+                expected_merchant_id=owned_payment_provider.merchant_id,
+                now=clock,
+            )
+            if resolved_payment_reconciliation is None:
+                resolved_payment_reconciliation = PaymentReconciliationService(
+                    session_factory=resolved_factory,
+                    provider=owned_payment_provider,
+                    convergence=payment_convergence,
+                    now=clock,
+                )
+            if resolved_refund_reconciliation is None:
+                resolved_refund_reconciliation = RefundReconciliationService(
+                    session_factory=resolved_factory,
+                    provider=owned_payment_provider,
+                    convergence=refund_convergence,
+                    now=clock,
+                )
     owned_provider: DashScopeModerationProvider | None = None
     owned_store: VenueMediaStore | None = None
     resolved_profile_moderation = profile_moderation
     if resolved_profile_moderation is None:
-        resolved_settings = settings or Settings()
         provider = moderation_provider
         if provider is None and resolved_settings.dashscope_api_key is not None:
             owned_provider = DashScopeModerationProvider(
@@ -213,7 +295,8 @@ def main(
             session_factory=resolved_factory,
             clock=clock,
             sleeper=sleeper,
-            payment_reconciliation=payment_reconciliation,
+            payment_reconciliation=resolved_payment_reconciliation,
+            refund_reconciliation=resolved_refund_reconciliation,
             profile_moderation=resolved_profile_moderation,
             batch_size=arguments.batch_size,
             interval_seconds=arguments.interval_seconds,
@@ -224,6 +307,9 @@ def main(
         close_store = getattr(owned_store, "close", None)
         if close_store is not None:
             close_store()
+        close_payment_provider = getattr(owned_payment_provider, "close", None)
+        if close_payment_provider is not None:
+            close_payment_provider()
     return 0
 
 

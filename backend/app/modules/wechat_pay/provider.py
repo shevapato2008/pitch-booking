@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 import httpx
@@ -42,6 +43,11 @@ from backend.app.modules.wechat_pay.transport import (
     WeChatPayTransport,
     WeChatPayUnavailable,
 )
+
+if TYPE_CHECKING:
+    from backend.app.modules.wechat_pay.notifications import (
+        WeChatPayNotificationAdapter,
+    )
 
 
 class WeChatPayProvider:
@@ -83,6 +89,17 @@ class WeChatPayProvider:
             self._owned_client.close()
             self._owned_client = None
 
+    def notification_adapter(self) -> WeChatPayNotificationAdapter:
+        from backend.app.modules.wechat_pay.notifications import (
+            WeChatPayNotificationAdapter,
+        )
+
+        return WeChatPayNotificationAdapter(
+            transport=self._transport,
+            app_id=self._app_id,
+            merchant_id=self._merchant_id,
+        )
+
     def create_prepay(self, request: CreatePrepayRequest) -> CreatePrepayResult:
         body = self._encode(
             {
@@ -100,9 +117,7 @@ class WeChatPayProvider:
             }
         )
         try:
-            response = self._transport.request_json(
-                "POST", "/v3/pay/transactions/jsapi", body
-            )
+            response = self._transport.request_json("POST", "/v3/pay/transactions/jsapi", body)
         except WeChatPaySignatureError:
             return Unknown("PAYMENT_PROVIDER_RESPONSE_INVALID")
         if isinstance(response, WeChatPayUnavailable):
@@ -152,10 +167,7 @@ class WeChatPayProvider:
                 QueryPaymentStatus.UNKNOWN,
                 safe_error_code="PAYMENT_PROVIDER_UNAVAILABLE",
             )
-        if (
-            response.status_code == 404
-            and self._business_code(response.data) == "ORDER_NOT_EXIST"
-        ):
+        if response.status_code == 404 and self._business_code(response.data) == "ORDER_NOT_EXIST":
             return QueryPaymentResult(QueryPaymentStatus.NOT_FOUND)
         if not 200 <= response.status_code < 300 or response.data is None:
             return QueryPaymentResult(
