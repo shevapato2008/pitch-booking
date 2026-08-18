@@ -67,6 +67,7 @@ const exampleMap = [
       attachment('/api/v1/venues/{venue_id}/availability', '422', 'InvalidArgument'),
       attachment('/api/v1/auth/wechat/session', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/auth/wechat/phone', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/orders', '422', 'InvalidArgument'),
       attachment('/api/v1/venue-onboarding/candidates', '422', 'InvalidArgument'),
       attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
@@ -114,6 +115,7 @@ const exampleMap = [
       attachment('/api/v1/venues/map', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venues/{venue_id}/availability', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/orders', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venue-onboarding/candidates', '503', 'ServiceUnavailable'),
       attachment('/api/v1/venue-onboarding/evidence/upload-intents', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '503', 'ServiceUnavailable', 'post'),
@@ -166,6 +168,18 @@ const exampleMap = [
       attachment('/api/v1/orders', '201', 'PendingOrderCreated', 'post'),
       attachment('/api/v1/orders/{order_id}', '200', 'PendingOrder'),
     ],
+  },
+  {
+    filename: 'my-orders-ready.json',
+    reference: './examples/my-orders-ready.json',
+    schema: 'OrderListResponse',
+    attachments: [attachment('/api/v1/orders', '200', 'Ready')],
+  },
+  {
+    filename: 'my-orders-empty.json',
+    reference: './examples/my-orders-empty.json',
+    schema: 'OrderListResponse',
+    attachments: [attachment('/api/v1/orders', '200', 'Empty')],
   },
   {
     filename: 'order-expired.json',
@@ -223,6 +237,7 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/auth/wechat/phone', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/slots/{slot_id}/checkout', '401', 'AuthRequired'),
+      attachment('/api/v1/orders', '401', 'AuthRequired'),
       attachment('/api/v1/orders', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/orders/{order_id}', '401', 'AuthRequired'),
       attachment('/api/v1/orders/{order_id}/pay', '401', 'AuthRequired', 'post'),
@@ -604,7 +619,7 @@ const expectedOperations = new Map([
   ['/api/v1/auth/wechat/session', new Set(['post'])],
   ['/api/v1/auth/wechat/phone', new Set(['post'])],
   ['/api/v1/slots/{slot_id}/checkout', new Set(['get'])],
-  ['/api/v1/orders', new Set(['post'])],
+  ['/api/v1/orders', new Set(['get', 'post'])],
   ['/api/v1/orders/{order_id}', new Set(['get'])],
   ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
   ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
@@ -900,6 +915,29 @@ function validateAvailabilityBusinessRules(availability, filename) {
   }
 }
 
+function validateOrderListBusinessRules(response, filename) {
+  if (filename === 'my-orders-empty.json') {
+    if (response.orders.length !== 0 || response.next_cursor !== null) {
+      fail(`${filename}: empty response must have no orders and a null next_cursor`);
+    }
+    return;
+  }
+
+  if (response.orders.length === 0 || response.next_cursor === null) {
+    fail(`${filename}: ready response must exercise a non-empty cursor page`);
+  }
+  for (let index = 1; index < response.orders.length; index += 1) {
+    const previous = response.orders[index - 1];
+    const current = response.orders[index];
+    if (
+      previous.created_at < current.created_at
+      || (previous.created_at === current.created_at && previous.id < current.id)
+    ) {
+      fail(`${filename}: orders must be sorted by created_at and id descending`);
+    }
+  }
+}
+
 async function readJsonWithContext(filename) {
   try {
     return JSON.parse(await readFile(filename, 'utf8'));
@@ -965,6 +1003,7 @@ export async function validateContract(contractPath = defaultContractPath) {
     if (mapping.schema === 'Venue') validateVenueBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'VenueMapResponse') validateVenueMapBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'OrderListResponse') validateOrderListBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {
       const keys = Object.keys(mapping.value.error.details).sort();

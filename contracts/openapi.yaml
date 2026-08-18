@@ -594,6 +594,102 @@ paths:
                 SlotNotAvailable:
                   externalValue: './examples/error-slot-not-available.json'
   /api/v1/orders:
+    get:
+      operationId: listOrders
+      description: Lists newest-first orders owned by the current authenticated user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor returned by the previous page.
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Owner-only order summaries ordered by created_at and id descending.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+              examples:
+                Ready:
+                  externalValue: './examples/my-orders-ready.json'
+                Empty:
+                  externalValue: './examples/my-orders-empty.json'
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: AUTH_REQUIRED
+              examples:
+                AuthRequired:
+                  externalValue: './examples/error-auth-required.json'
+        '422':
+          description: Cursor or limit is invalid.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INVALID_ARGUMENT
+              examples:
+                InvalidArgument:
+                  externalValue: './examples/error-invalid-argument.json'
+        '503':
+          description: Order list service is temporarily unavailable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: SERVICE_UNAVAILABLE
+              examples:
+                ServiceUnavailable:
+                  externalValue: './examples/error-service-unavailable.json'
     post:
       operationId: createOrder
       security:
@@ -3872,6 +3968,71 @@ components:
           const: ALREADY_CONFIRMED
         order:
           $ref: '#/components/schemas/ConfirmedOrderDetail'
+    OrderSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - order_number
+        - status
+        - venue
+        - pitch
+        - starts_at
+        - ends_at
+        - price_cents
+        - currency
+        - created_at
+        - expires_at
+        - payment_confirming
+        - closing_payment
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_number:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION]
+        venue:
+          $ref: '#/components/schemas/CheckoutVenue'
+        pitch:
+          $ref: '#/components/schemas/PhysicalPitch'
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        price_cents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: CNY
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        payment_confirming:
+          type: boolean
+        closing_payment:
+          type: boolean
+    OrderListResponse:
+      type: object
+      additionalProperties: false
+      required: [orders, next_cursor]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        next_cursor:
+          type: [string, 'null']
+          minLength: 1
     OrderVenue:
       type: object
       additionalProperties: false

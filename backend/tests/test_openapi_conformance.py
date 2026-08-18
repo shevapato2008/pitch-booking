@@ -213,7 +213,7 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         "/api/v1/auth/wechat/session": {"post"},
         "/api/v1/auth/wechat/phone": {"post"},
         "/api/v1/slots/{slot_id}/checkout": {"get"},
-        "/api/v1/orders": {"post"},
+        "/api/v1/orders": {"get", "post"},
         "/api/v1/orders/{order_id}": {"get"},
         "/api/v1/orders/{order_id}/pay": {"post"},
         "/api/v1/orders/{order_id}/payments/{payment_id}/reconcile": {"post"},
@@ -229,6 +229,7 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         ("/api/v1/auth/wechat/session", "post"): {"200", "422", "502"},
         ("/api/v1/auth/wechat/phone", "post"): {"200", "401", "422", "502", "503"},
         ("/api/v1/slots/{slot_id}/checkout", "get"): {"200", "401", "404", "409"},
+        ("/api/v1/orders", "get"): {"200", "401", "422", "503"},
         ("/api/v1/orders", "post"): {"200", "201", "401", "404", "409", "422"},
         ("/api/v1/orders/{order_id}", "get"): {"200", "401", "404"},
         ("/api/v1/orders/{order_id}/pay", "post"): {
@@ -256,6 +257,132 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         "scheme": "bearer",
         "bearerFormat": "opaque",
     }
+
+
+def test_my_orders_list_contract_is_closed_owner_only_and_private() -> None:
+    contract = _contract()
+    path_item = contract["paths"]["/api/v1/orders"]
+
+    assert "get" in path_item, "GET /api/v1/orders list operation is missing"
+    operation = path_item["get"]
+    schemas = contract["components"]["schemas"]
+
+    assert operation["security"] == [{"bearerAuth": []}]
+    assert "current authenticated user" in operation["description"]
+    assert operation["parameters"] == [
+        {
+            "name": "limit",
+            "in": "query",
+            "required": False,
+            "schema": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 20,
+            },
+        },
+        {
+            "name": "cursor",
+            "in": "query",
+            "required": False,
+            "description": "Opaque cursor returned by the previous page.",
+            "schema": {"type": "string", "minLength": 1},
+        },
+    ]
+    assert set(operation["responses"]) == {"200", "401", "422", "503"}
+    assert _response_schema(operation, "200") == {
+        "$ref": "#/components/schemas/OrderListResponse"
+    }
+    assert operation["responses"]["200"]["content"]["application/json"][
+        "examples"
+    ] == {
+        "Ready": {"externalValue": "./examples/my-orders-ready.json"},
+        "Empty": {"externalValue": "./examples/my-orders-empty.json"},
+    }
+
+    for status, code in (
+        ("401", "AUTH_REQUIRED"),
+        ("422", "INVALID_ARGUMENT"),
+        ("503", "SERVICE_UNAVAILABLE"),
+    ):
+        response = operation["responses"][status]
+        assert response["headers"]["X-Request-Id"] == {
+            "$ref": "#/components/headers/RequestId"
+        }
+        schema = _response_schema(operation, status)
+        assert {"$ref": "#/components/schemas/ErrorEnvelope"} in schema["allOf"]
+        assert schema["allOf"][1]["properties"]["error"]["properties"]["code"] == {
+            "const": code
+        }
+
+    summary = schemas["OrderSummary"]
+    expected_summary_fields = {
+        "id",
+        "order_number",
+        "status",
+        "venue",
+        "pitch",
+        "starts_at",
+        "ends_at",
+        "price_cents",
+        "currency",
+        "created_at",
+        "expires_at",
+        "payment_confirming",
+        "closing_payment",
+    }
+    assert summary["additionalProperties"] is False
+    assert set(summary["required"]) == expected_summary_fields
+    assert set(summary["properties"]) == expected_summary_fields
+    assert summary["properties"]["venue"] == {
+        "$ref": "#/components/schemas/CheckoutVenue"
+    }
+    assert summary["properties"]["pitch"] == {
+        "$ref": "#/components/schemas/PhysicalPitch"
+    }
+
+    response_schema = schemas["OrderListResponse"]
+    assert response_schema["additionalProperties"] is False
+    assert set(response_schema["required"]) == {"orders", "next_cursor"}
+    assert set(response_schema["properties"]) == {"orders", "next_cursor"}
+    assert response_schema["properties"]["orders"] == {
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/OrderSummary"},
+    }
+    assert response_schema["properties"]["next_cursor"] == {
+        "type": ["string", "null"],
+        "minLength": 1,
+    }
+
+    for filename in ("my-orders-ready.json", "my-orders-empty.json"):
+        example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        _assert_example_matches_schema(contract, example, response_schema)
+
+    serialized = json.dumps(
+        {
+            "summary": summary,
+            "ready": json.loads(
+                (EXAMPLES_DIRECTORY / "my-orders-ready.json").read_text()
+            ),
+            "empty": json.loads(
+                (EXAMPLES_DIRECTORY / "my-orders-empty.json").read_text()
+            ),
+        }
+    )
+    for forbidden in (
+        "contact",
+        "masked_phone",
+        "phone",
+        "address",
+        "latitude",
+        "longitude",
+        "payment_id",
+        "payment_state",
+        "paid_at",
+        "prepay_id",
+        "transaction_id",
+    ):
+        assert forbidden not in serialized, forbidden
 
 
 def test_contract_freezes_map_and_discriminated_venue_detail() -> None:
@@ -339,6 +466,7 @@ def test_every_auth_checkout_and_order_response_declares_request_id_header() -> 
         ("/api/v1/auth/wechat/session", "post"),
         ("/api/v1/auth/wechat/phone", "post"),
         ("/api/v1/slots/{slot_id}/checkout", "get"),
+        ("/api/v1/orders", "get"),
         ("/api/v1/orders", "post"),
         ("/api/v1/orders/{order_id}", "get"),
         ("/api/v1/orders/{order_id}/pay", "post"),

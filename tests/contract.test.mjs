@@ -138,6 +138,71 @@ test('OpenAPI document validates and exposes the frozen thirty-seven-path operat
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
 });
 
+test('my orders list freezes owner-only pagination and a private closed projection', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operation = contract.paths['/api/v1/orders'].get;
+  const summary = contract.components.schemas.OrderSummary;
+  const response = contract.components.schemas.OrderListResponse;
+
+  assert.deepEqual(Object.keys(contract.paths['/api/v1/orders']), ['get', 'post']);
+  assert.deepEqual(operation.security, [{ bearerAuth: [] }]);
+  assert.match(operation.description, /current authenticated user/);
+  assert.deepEqual(operation.parameters, [
+    {
+      name: 'limit',
+      in: 'query',
+      required: false,
+      schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+    },
+    {
+      name: 'cursor',
+      in: 'query',
+      required: false,
+      description: 'Opaque cursor returned by the previous page.',
+      schema: { type: 'string', minLength: 1 },
+    },
+  ]);
+  assert.deepEqual(Object.keys(operation.responses), ['200', '401', '422', '503']);
+  assert.deepEqual(
+    operation.responses['200'].content['application/json'].schema,
+    { $ref: '#/components/schemas/OrderListResponse' },
+  );
+
+  const expectedFields = [
+    'id', 'order_number', 'status', 'venue', 'pitch', 'starts_at', 'ends_at',
+    'price_cents', 'currency', 'created_at', 'expires_at', 'payment_confirming',
+    'closing_payment',
+  ];
+  assert.equal(summary.additionalProperties, false);
+  assert.deepEqual([...summary.required].sort(), [...expectedFields].sort());
+  assert.deepEqual(Object.keys(summary.properties).sort(), [...expectedFields].sort());
+  assert.equal(response.additionalProperties, false);
+  assert.deepEqual(response.required, ['orders', 'next_cursor']);
+  assert.deepEqual(response.properties.next_cursor, { type: ['string', 'null'], minLength: 1 });
+
+  const ready = await readExample('my-orders-ready.json');
+  const empty = await readExample('my-orders-empty.json');
+  assert.equal(ready.orders.length, 6);
+  assert.equal(typeof ready.next_cursor, 'string');
+  assert.deepEqual(empty, { orders: [], next_cursor: null });
+  for (const forbidden of [
+    'contact', 'masked_phone', 'phone', 'address', 'latitude', 'longitude',
+    'payment_id', 'payment_state', 'paid_at', 'prepay_id', 'transaction_id',
+  ]) {
+    assert.equal(JSON.stringify({ summary, ready, empty }).includes(forbidden), false, forbidden);
+  }
+});
+
+test('contract validator rejects private fields and unstable order-list ordering', async () => {
+  await assertMutatedExampleRejected('my-orders-ready.json', (example) => {
+    example.orders[0].contact = { name: '不应公开', masked_phone: '138****5678' };
+  }, /my-orders-ready|additional properties|contact/i);
+
+  await assertMutatedExampleRejected('my-orders-ready.json', (example) => {
+    [example.orders[0], example.orders[1]] = [example.orders[1], example.orders[0]];
+  }, /my-orders-ready|sorted|order/i);
+});
+
 test('map and venue detail schemas are closed, discriminated, and location-free', async () => {
   const contract = YAML.parse(await readFile(contractPath, 'utf8'));
   const schemas = contract.components.schemas;
@@ -481,7 +546,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 64 JSON examples/i);
+  assert.match(stdout, /validated 78 JSON examples/i);
   assert.equal(stderr, '');
 });
 
