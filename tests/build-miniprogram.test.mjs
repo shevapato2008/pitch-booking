@@ -239,6 +239,27 @@ test("temporary map previews are absent while the approved center asset remains"
   assert.doesNotMatch(productionText, /VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES/);
 });
 
+test("my orders native preview routes and Fixture remain development-only", async (t) => {
+  await build(process.cwd(), "development");
+  await build(process.cwd(), "production");
+  const developmentRoot = path.resolve("dist/miniprogram-development");
+  const productionRoot = path.resolve("dist/miniprogram-production");
+  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
+  const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
+  const previewRoutes = ["dev/pages/my-orders-map/index", "dev/pages/my-orders/index"];
+
+  for (const route of previewRoutes) {
+    assert.equal(developmentManifest.pages.includes(route), true, `${route} is missing from development`);
+    assert.equal(productionManifest.pages.includes(route), false, `${route} leaked into production`);
+    for (const extension of ["js", "json", "wxml", "wxss"])
+      assert.equal(existsSync(path.join(developmentRoot, `${route}.${extension}`)), true, `${route}.${extension}`);
+    assert.equal(existsSync(path.join(productionRoot, `${route}.js`)), false, `${route} leaked into production`);
+  }
+  assert.equal(existsSync(path.join(developmentRoot, "dev/my-orders-fixture.js")), true);
+  assert.equal(existsSync(path.join(productionRoot, "dev/my-orders-fixture.js")), false);
+});
+
 test("real production build emits all twelve production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");

@@ -3,11 +3,13 @@
 ## Status
 
 - Target viewport: 375 × 812.
-- Reference Artifact self-review: complete on 2026-08-18; final visual approval is not claimed.
+- Task 1 reference Artifact: independently approved at commit `2b438acd`.
+- Task 2 development-only native preview: implemented and source/build checks are GREEN.
 - Representative captures: `map-entry`, `ready`, `empty`, and `error` only.
 - Additional interactive previews: `loading` and `load-more-error` remain available through the reference query and `?controls=1` control panel.
-- Production remains disabled; no native Fixture, production route, contract, backend, or migration is part of this checkpoint.
+- Production remains disabled; the native Fixture and both preview routes are excluded from the production manifest/package. No production page, service, composition, contract, backend, or migration is part of this checkpoint.
 - User explicitly deferred the A3 CREATE real-device acceptance gate for B1 MVP progress on 2026-08-18.
+- Native capture is blocked. The one proportional WeChat DevTools attempt returned `WECHAT_PORT_MISMATCH` because the running IDE automation server is listening on another port. No implementation PNG, comparison image, manual native visual review, or independent visual decision is claimed.
 
 ## Reference sources
 
@@ -23,12 +25,51 @@
 
 | State | Reference | Native implementation | Side by side | Overlay 50% | Difference |
 | --- | --- | --- | --- | --- | --- |
-| `map-entry` | [map-entry-reference-375x812.png](map-entry-reference-375x812.png) | not started | not started | not started | not started |
-| `ready` | [ready-reference-375x812.png](ready-reference-375x812.png) | not started | not started | not started | not started |
-| `empty` | [empty-reference-375x812.png](empty-reference-375x812.png) | not started | not started | not started | not started |
-| `error` | [error-reference-375x812.png](error-reference-375x812.png) | not started | not started | not started | not started |
+| `map-entry` | [map-entry-reference-375x812.png](map-entry-reference-375x812.png) | blocked; not produced | blocked; not produced | blocked; not produced | blocked; not produced |
+| `ready` | [ready-reference-375x812.png](ready-reference-375x812.png) | blocked; not produced | blocked; not produced | blocked; not produced | blocked; not produced |
+| `empty` | [empty-reference-375x812.png](empty-reference-375x812.png) | blocked; not produced | blocked; not produced | blocked; not produced | blocked; not produced |
+| `error` | [error-reference-375x812.png](error-reference-375x812.png) | blocked; not produced | blocked; not produced | blocked; not produced | blocked; not produced |
 
-## Self-review record
+## Task 2 source and build verification
+
+The required TDD RED was observed before adding the Fixture or either native page:
+
+```text
+npx jest miniprogram/dev/pages/my-orders-map/index.test.ts miniprogram/dev/pages/my-orders/index.test.ts --runInBand
+2 suites failed, 9 tests failed — the two page modules and central Fixture did not exist.
+```
+
+After the smallest implementation, the focused and packaging checks passed:
+
+```text
+npx jest miniprogram/dev/pages/my-orders-map/index.test.ts miniprogram/dev/pages/my-orders/index.test.ts --runInBand
+2 suites passed, 9 tests passed
+
+npm run typecheck
+passed
+
+npm run build:miniprogram:development
+Built development mini program at dist/miniprogram-development
+
+node --test tests/build-miniprogram.test.mjs
+12 named subtests passed
+```
+
+Covered behavior includes per-card detail navigation, the map shell's fixed right column and long-label truncation, real map-to-list navigation, back/relaunch empty exit, immutable retry/refresh/pagination transitions, closing-over-confirming precedence, handler coverage for every template button, and development-only route/Fixture packaging.
+
+## Native capture blocker
+
+The installed WeChat DevTools CLI and repository-level ignored AppID config were made available to the worktree, then one attempt used the documented port:
+
+```text
+WECHAT_DEVTOOLS_CLI=/Applications/wechatwebdevtools.app/Contents/MacOS/cli \
+  npm run env:wechat:check -- --port 40842
+{"ok":false,"code":"WECHAT_PORT_MISMATCH","message":"quit Developer Tools, then rerun with one port"}
+```
+
+Per the proportional Task 2 instruction, no second tooling attempt was made. Because no fresh native pixels were available, the requested button centering, 44pt targets, long label, status alignment/contrast, chevrons, scrolling, and safe-area review could not be performed in the real runtime. Independent visual approval remains unrecorded.
+
+## Reference self-review record
 
 One uninterrupted headed Playwright CLI session used real Chromium 151 against a local static
 server at `http://127.0.0.1:8127/my-orders.html?state=<state>`. The browser viewport was
@@ -93,5 +134,6 @@ offset without horizontal overflow.
 
 ## Visual gate
 
-The reference board is ready for a visual decision. Task 2 must not start until the user
-explicitly confirms the visual or an authorized delegated decision is recorded.
+The approved reference board and tested native preview source are ready, but the Task 2 native
+visual gate remains blocked by `WECHAT_PORT_MISMATCH`. A fresh 375 × 812 native capture and manual
+review are still required before recording an independent native visual decision or entering Task 3.
