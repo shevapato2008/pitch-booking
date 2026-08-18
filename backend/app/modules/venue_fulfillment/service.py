@@ -212,6 +212,10 @@ def _decode_cursor(
         if (
             type(payload["v"]) is not int
             or payload["v"] != CURSOR_VERSION
+            or any(
+                type(payload[field]) is not str
+                for field in ("venue_id", "service_date", "starts_at", "id")
+            )
             or uuid.UUID(payload["venue_id"]) != venue_id
             or date.fromisoformat(payload["service_date"]) != service_date
         ):

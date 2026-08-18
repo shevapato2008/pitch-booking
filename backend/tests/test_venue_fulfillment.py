@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
@@ -362,6 +363,42 @@ def test_explicit_shanghai_date_uses_exact_utc_half_open_interval(
 
     assert response.status_code == 200
     assert [row["id"] for row in response.json()["orders"]] == [str(included_id)]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["venue_id", "service_date", "starts_at", "id"],
+)
+def test_list_rejects_non_string_cursor_fields(
+    pg_engine: Engine,
+    field: str,
+) -> None:
+    with Session(pg_engine) as session:
+        manager = _manager(session)
+        parent = _managed_venue(session, manager)
+        parent_id = parent.id
+        session.commit()
+
+    payload: dict[str, object] = {
+        "v": 1,
+        "venue_id": str(parent_id),
+        "service_date": "2026-08-18",
+        "starts_at": "2026-08-18T11:00:00+00:00",
+        "id": str(uuid.uuid4()),
+    }
+    payload[field] = 42
+    cursor = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode()
+    ).decode().rstrip("=")
+
+    with _client(pg_engine) as client:
+        response = client.get(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders?cursor={cursor}",
+            headers=_auth(),
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
 
 
 def test_list_rolls_back_and_returns_503_on_database_failure(
