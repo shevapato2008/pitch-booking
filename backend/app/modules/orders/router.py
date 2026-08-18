@@ -17,6 +17,7 @@ from backend.app.modules.auth.router import get_current_user, get_phone_vault
 from backend.app.modules.auth.service import resolve_authenticated_user
 from backend.app.modules.orders.dto import (
     CreateOrderRequest,
+    CreateOrderResponse,
     OrderDetailResponse,
     OrderListResponse,
 )
@@ -183,6 +184,12 @@ def align_order_list_openapi(schema: dict[str, Any]) -> None:
                     "expires_at",
                     "payment_confirming",
                     "closing_payment",
+                    "cancel_requested_at",
+                    "cancelled_at",
+                    "checked_in_at",
+                    "completed_at",
+                    "allowed_actions",
+                    "funding_alerts",
                 ],
                 "properties": {
                     "id": {"type": "string", "format": "uuid"},
@@ -194,6 +201,11 @@ def align_order_list_openapi(schema: dict[str, Any]) -> None:
                             "CONFIRMED",
                             "EXPIRED",
                             "PAYMENT_EXCEPTION",
+                            "CANCELLED",
+                            "REFUND_PENDING",
+                            "REFUND_FAILED",
+                            "REFUNDED",
+                            "COMPLETED",
                         ],
                     },
                     "venue": {"$ref": "#/components/schemas/CheckoutVenue"},
@@ -206,6 +218,77 @@ def align_order_list_openapi(schema: dict[str, Any]) -> None:
                     "expires_at": {"type": "string", "format": "date-time"},
                     "payment_confirming": {"type": "boolean"},
                     "closing_payment": {"type": "boolean"},
+                    "cancel_requested_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "cancelled_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "checked_in_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "completed_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "allowed_actions": {
+                        "$ref": "#/components/schemas/OrderAllowedActions"
+                    },
+                    "funding_alerts": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/FundingAlert"},
+                    },
+                },
+            },
+            "OrderAllowedActions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "can_pay",
+                    "can_cancel",
+                    "can_check_in",
+                    "can_complete",
+                    "can_refund",
+                    "blocked_reason",
+                ],
+                "properties": {
+                    "can_pay": {"type": "boolean"},
+                    "can_cancel": {"type": "boolean"},
+                    "can_check_in": {"type": "boolean"},
+                    "can_complete": {"type": "boolean"},
+                    "can_refund": {"type": "boolean"},
+                    "blocked_reason": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "PAYMENT_RESULT_PENDING",
+                            "CANCELLATION_WINDOW_CLOSED",
+                            "CANCELLATION_REQUIRES_SUPPORT",
+                            "CHECK_IN_TOO_EARLY",
+                            "CHECK_IN_REQUIRED",
+                            "SESSION_NOT_ENDED",
+                            "ORDER_TERMINAL",
+                            "REFUND_IN_PROGRESS",
+                            None,
+                        ],
+                    },
+                },
+            },
+            "FundingAlert": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["code", "status"],
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "const": "DUPLICATE_CHARGE_REFUND",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["REFUND_PENDING", "REFUND_FAILED", "REFUNDED"],
+                    },
                 },
             },
             "OrderListResponse": {
@@ -276,11 +359,12 @@ def list_orders(
 
 @router.post(
     "",
-    response_model=OrderDetailResponse,
+    response_model=CreateOrderResponse,
     status_code=201,
     responses={
-        200: {"model": OrderDetailResponse},
+        200: {"model": CreateOrderResponse},
         401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
         409: {"model": ErrorEnvelope},
         422: {"model": ErrorEnvelope},
     },

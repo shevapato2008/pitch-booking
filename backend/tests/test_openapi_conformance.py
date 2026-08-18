@@ -232,7 +232,7 @@ def test_contract_freezes_auth_checkout_and_order_operation_matrix() -> None:
         ("/api/v1/slots/{slot_id}/checkout", "get"): {"200", "401", "404", "409"},
         ("/api/v1/orders", "get"): {"200", "401", "422", "503"},
         ("/api/v1/orders", "post"): {"200", "201", "401", "404", "409", "422"},
-        ("/api/v1/orders/{order_id}", "get"): {"200", "401", "404"},
+        ("/api/v1/orders/{order_id}", "get"): {"200", "401", "404", "422"},
         ("/api/v1/orders/{order_id}/pay", "post"): {
             "200", "201", "202", "401", "404", "409", "503"
         },
@@ -331,6 +331,12 @@ def test_my_orders_list_contract_is_closed_owner_only_and_private() -> None:
         "expires_at",
         "payment_confirming",
         "closing_payment",
+        "cancel_requested_at",
+        "cancelled_at",
+        "checked_in_at",
+        "completed_at",
+        "allowed_actions",
+        "funding_alerts",
     }
     assert summary["additionalProperties"] is False
     assert set(summary["required"]) == expected_summary_fields
@@ -387,6 +393,16 @@ def test_my_orders_list_contract_is_closed_owner_only_and_private() -> None:
         "paid_at",
         "prepay_id",
         "transaction_id",
+        "refund_id",
+        "refund_case_id",
+        "refund_attempt_id",
+        "provider",
+        "provider_refund_no",
+        "merchant_order_no",
+        "merchant_refund_no",
+        "requested_by_user_id",
+        "checked_in_by_user_id",
+        "completed_by_user_id",
     ):
         assert forbidden not in serialized, forbidden
 
@@ -409,12 +425,302 @@ def test_my_orders_runtime_openapi_matches_the_frozen_list_operation() -> None:
     for name in (
         "OrderListResponse",
         "OrderSummary",
+        "OrderAllowedActions",
+        "FundingAlert",
         "CheckoutVenue",
         "PhysicalPitch",
     ):
         assert runtime["components"]["schemas"][name] == frozen["components"][
             "schemas"
         ][name]
+
+
+def test_order_create_and_owner_reads_use_separate_closed_projections() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    create = contract["paths"]["/api/v1/orders"]["post"]
+    list_orders = contract["paths"]["/api/v1/orders"]["get"]
+    detail = contract["paths"]["/api/v1/orders/{order_id}"]["get"]
+    pending = json.loads((EXAMPLES_DIRECTORY / "order-pending.json").read_text())
+
+    for status in ("200", "201"):
+        assert _response_schema(create, status) == {
+            "$ref": "#/components/schemas/CreateOrderResponse"
+        }
+    legacy = schemas["CreateOrderResponse"]
+    assert legacy["additionalProperties"] is False
+    assert set(legacy["required"]) == set(pending)
+    assert set(legacy["properties"]) == set(pending)
+    assert "allowed_actions" not in pending
+    assert "funding_alerts" not in pending
+
+    assert _response_schema(list_orders, "200") == {
+        "$ref": "#/components/schemas/OrderListResponse"
+    }
+    assert _response_schema(detail, "200") == {
+        "$ref": "#/components/schemas/OrderDetail"
+    }
+    detail_examples = detail["responses"]["200"]["content"]["application/json"][
+        "examples"
+    ]
+    assert "./examples/order-pending.json" not in {
+        example["externalValue"] for example in detail_examples.values()
+    }
+    assert set(detail["responses"]) == {"200", "401", "404", "422"}
+
+
+def test_owner_lifecycle_projection_contract_and_runtime_openapi_are_closed() -> None:
+    contract = _contract()
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    schemas = contract["components"]["schemas"]
+    statuses = [
+        "PENDING_PAYMENT",
+        "CONFIRMED",
+        "EXPIRED",
+        "PAYMENT_EXCEPTION",
+        "CANCELLED",
+        "REFUND_PENDING",
+        "REFUND_FAILED",
+        "REFUNDED",
+        "COMPLETED",
+    ]
+    lifecycle_fields = {
+        "cancel_requested_at",
+        "cancelled_at",
+        "checked_in_at",
+        "completed_at",
+        "allowed_actions",
+        "funding_alerts",
+    }
+
+    for name in ("OrderSummary", "OrderDetail"):
+        schema = schemas[name]
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["status"]["enum"] == statuses
+        assert lifecycle_fields <= set(schema["required"])
+        assert lifecycle_fields <= set(schema["properties"])
+        for timestamp in lifecycle_fields - {"allowed_actions", "funding_alerts"}:
+            assert schema["properties"][timestamp] == {
+                "type": ["string", "null"],
+                "format": "date-time",
+            }
+    assert schemas["OrderDetail"]["properties"]["expired_at"] == {
+        "type": ["string", "null"],
+        "format": "date-time",
+    }
+
+    actions = schemas["OrderAllowedActions"]
+    action_fields = {
+        "can_pay",
+        "can_cancel",
+        "can_check_in",
+        "can_complete",
+        "can_refund",
+        "blocked_reason",
+    }
+    assert actions["additionalProperties"] is False
+    assert set(actions["required"]) == action_fields
+    assert set(actions["properties"]) == action_fields
+    assert actions["properties"]["blocked_reason"] == {
+        "type": ["string", "null"],
+        "enum": [
+            "PAYMENT_RESULT_PENDING",
+            "CANCELLATION_WINDOW_CLOSED",
+            "CANCELLATION_REQUIRES_SUPPORT",
+            "CHECK_IN_TOO_EARLY",
+            "CHECK_IN_REQUIRED",
+            "SESSION_NOT_ENDED",
+            "ORDER_TERMINAL",
+            "REFUND_IN_PROGRESS",
+            None,
+        ],
+    }
+    alert = schemas["FundingAlert"]
+    assert alert["additionalProperties"] is False
+    assert set(alert["required"]) == {"code", "status"}
+    assert set(alert["properties"]) == {"code", "status"}
+    assert alert["properties"]["code"] == {
+        "type": "string",
+        "const": "DUPLICATE_CHARGE_REFUND",
+    }
+    assert alert["properties"]["status"] == {
+        "type": "string",
+        "enum": ["REFUND_PENDING", "REFUND_FAILED", "REFUNDED"],
+    }
+
+    for path, method in (
+        ("/api/v1/orders", "get"),
+        ("/api/v1/orders", "post"),
+        ("/api/v1/orders/{order_id}", "get"),
+    ):
+        assert set(runtime["paths"][path][method]["responses"]) == set(
+            contract["paths"][path][method]["responses"]
+        )
+    for name in (
+        "CreateOrderResponse",
+        "OrderListResponse",
+        "OrderSummary",
+        "OrderDetailResponse",
+        "OrderAllowedActionsResponse",
+        "FundingAlertResponse",
+    ):
+        assert name in runtime["components"]["schemas"]
+
+
+def test_lifecycle_operations_are_frozen_static_only() -> None:
+    contract = _contract()
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    future_operations = {
+        "/api/v1/orders/{order_id}/cancel": (
+            "post",
+            {"200", "202", "401", "404", "409", "503"},
+        ),
+        "/api/v1/venues/{venue_id}/fulfillment/orders": (
+            "get",
+            {"200", "401", "404", "422", "503"},
+        ),
+        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in": (
+            "post",
+            {"200", "401", "404", "409", "503"},
+        ),
+        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete": (
+            "post",
+            {"200", "401", "404", "409", "503"},
+        ),
+        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund": (
+            "post",
+            {"200", "202", "401", "404", "409", "422", "503"},
+        ),
+        "/api/v1/payments/wechat/notify": ("post", {"204", "400", "503"}),
+        "/api/v1/refunds/wechat/notify": ("post", {"204", "400", "503"}),
+    }
+
+    for path, (method, statuses) in future_operations.items():
+        assert set(contract["paths"][path]) == {method}
+        assert set(contract["paths"][path][method]["responses"]) == statuses
+        assert path not in runtime["paths"]
+
+    for path in (
+        "/api/v1/orders/{order_id}/cancel",
+        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in",
+        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete",
+        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund",
+    ):
+        operation = contract["paths"][path]["post"]
+        assert operation["security"] == [{"bearerAuth": []}]
+        idempotency = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter.get("name") == "Idempotency-Key"
+            or parameter.get("$ref") == "#/components/parameters/IdempotencyKey"
+        )
+        schema = (
+            contract["components"]["parameters"]["IdempotencyKey"]["schema"]
+            if "$ref" in idempotency
+            else idempotency["schema"]
+        )
+        assert schema == {"type": "string", "minLength": 16, "maxLength": 128}
+    assert "requestBody" not in contract["paths"][
+        "/api/v1/orders/{order_id}/cancel"
+    ]["post"]
+
+
+def test_wechat_notification_contract_requires_raw_bytes_before_json_parse() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    header_names = {
+        "Wechatpay-Timestamp",
+        "Wechatpay-Nonce",
+        "Wechatpay-Signature",
+        "Wechatpay-Serial",
+    }
+    for path in (
+        "/api/v1/payments/wechat/notify",
+        "/api/v1/refunds/wechat/notify",
+    ):
+        operation = contract["paths"][path]["post"]
+        assert operation["security"] == []
+        assert (
+            operation["x-wechatpay-raw-body-verification"]
+            == "required-before-json-parse"
+        )
+        headers = {parameter["name"]: parameter for parameter in operation["parameters"]}
+        assert set(headers) == header_names
+        for header in headers.values():
+            assert header["in"] == "header"
+            assert header["required"] is True
+            assert header["schema"] == {"type": "string", "minLength": 1}
+        assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/WeChatNotificationEnvelope"
+        }
+        assert "content" not in operation["responses"]["204"]
+        assert "duplicate" in operation["responses"]["204"]["description"].lower()
+
+    envelope = schemas["WeChatNotificationEnvelope"]
+    assert envelope["additionalProperties"] is False
+    assert set(envelope["required"]) == {
+        "id",
+        "create_time",
+        "event_type",
+        "resource_type",
+        "summary",
+        "resource",
+    }
+    assert set(envelope["properties"]) == set(envelope["required"])
+    resource = schemas["WeChatNotificationResource"]
+    assert resource["additionalProperties"] is False
+    assert set(resource["required"]) == {
+        "original_type",
+        "algorithm",
+        "ciphertext",
+        "associated_data",
+        "nonce",
+    }
+    assert set(resource["properties"]) == set(resource["required"])
+    assert resource["properties"]["algorithm"] == {
+        "type": "string",
+        "const": "AEAD_AES_256_GCM",
+    }
+
+
+def test_lifecycle_error_examples_and_pay_503_are_closed() -> None:
+    contract = _contract()
+    filenames_by_code = {
+        "AUTH_REQUIRED": "error-auth-required.json",
+        "INVALID_ARGUMENT": "error-invalid-argument.json",
+        "ORDER_NOT_FOUND": "error-order-not-found.json",
+        "ORDER_STATE_CHANGED": "error-order-state-changed.json",
+        "IDEMPOTENCY_KEY_REUSED": "error-idempotency-key-reused.json",
+        "PAYMENT_RESULT_PENDING": "error-payment-result-pending.json",
+        "REFUND_IN_PROGRESS": "error-refund-in-progress.json",
+        "PAYMENT_CREATE_FAILED": "error-payment-create-failed.json",
+        "PAYMENT_PROVIDER_UNAVAILABLE": "error-payment-provider-unavailable.json",
+        "WECHAT_NOTIFICATION_INVALID": "error-wechat-notification-invalid.json",
+        "SERVICE_UNAVAILABLE": "error-service-unavailable.json",
+    }
+    for code, filename in filenames_by_code.items():
+        example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        assert example["error"]["code"] == code
+
+    pay_503 = contract["paths"]["/api/v1/orders/{order_id}/pay"]["post"][
+        "responses"
+    ]["503"]
+    assert pay_503["content"]["application/json"]["schema"]["allOf"][1][
+        "properties"
+    ]["error"]["properties"]["code"] == {
+        "enum": ["PAYMENT_CREATE_FAILED", "PAYMENT_PROVIDER_UNAVAILABLE"]
+    }
+    assert set(
+        example["externalValue"]
+        for example in pay_503["content"]["application/json"]["examples"].values()
+    ) == {
+        "./examples/error-payment-create-failed.json",
+        "./examples/error-payment-provider-unavailable.json",
+    }
 
 
 def test_contract_freezes_map_and_discriminated_venue_detail() -> None:
@@ -591,7 +897,15 @@ def test_order_detail_and_price_changed_contract_are_complete() -> None:
         "paid_at",
     }
     assert order["properties"]["status"]["enum"] == [
-        "PENDING_PAYMENT", "CONFIRMED", "EXPIRED", "PAYMENT_EXCEPTION"
+        "PENDING_PAYMENT",
+        "CONFIRMED",
+        "EXPIRED",
+        "PAYMENT_EXCEPTION",
+        "CANCELLED",
+        "REFUND_PENDING",
+        "REFUND_FAILED",
+        "REFUNDED",
+        "COMPLETED",
     ]
     assert order["properties"]["payment_state"] == {
         "type": ["string", "null"],

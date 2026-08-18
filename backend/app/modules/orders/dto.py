@@ -60,6 +60,41 @@ class OrderAllowedActionsResponse(ClosedModel):
     ] | None
 
 
+class FundingAlertResponse(ClosedModel):
+    code: Literal["DUPLICATE_CHARGE_REFUND"]
+    status: Literal["REFUND_PENDING", "REFUND_FAILED", "REFUNDED"]
+
+
+class CreateOrderResponse(ClosedModel):
+    id: uuid.UUID
+    order_number: str = Field(min_length=1)
+    status: Literal[OrderStatus.PENDING_PAYMENT]
+    slot_id: uuid.UUID
+    venue: OrderVenueResponse
+    pitch: OrderPitchResponse
+    starts_at: datetime
+    ends_at: datetime
+    duration_minutes: int = Field(ge=1)
+    price_cents: int = Field(ge=0)
+    currency: Literal["CNY"]
+    contact: OrderContactResponse
+    created_at: datetime
+    expires_at: datetime
+    expired_at: None
+    cancellation_summary: str = Field(min_length=1)
+    payment_state: Literal[
+        PaymentState.CREATING,
+        PaymentState.PREPAY_CREATED,
+        PaymentState.CONFIRMING,
+        PaymentState.CLOSED,
+        PaymentState.UNKNOWN,
+    ] | None
+    payment_confirming: bool
+    closing_payment: bool
+    paid_at: None
+    detail_path: str = Field(pattern=r"^/api/v1/orders/[0-9a-f-]{36}$")
+
+
 class OrderDetailResponse(ClosedModel):
     id: uuid.UUID
     order_number: str = Field(min_length=1)
@@ -81,6 +116,12 @@ class OrderDetailResponse(ClosedModel):
     payment_confirming: bool
     closing_payment: bool
     paid_at: datetime | None
+    cancel_requested_at: datetime | None
+    cancelled_at: datetime | None
+    checked_in_at: datetime | None
+    completed_at: datetime | None
+    allowed_actions: OrderAllowedActionsResponse
+    funding_alerts: list[FundingAlertResponse]
     detail_path: str = Field(pattern=r"^/api/v1/orders/[0-9a-f-]{36}$")
 
 
@@ -98,6 +139,12 @@ class OrderSummaryResponse(ClosedModel):
     expires_at: datetime
     payment_confirming: bool
     closing_payment: bool
+    cancel_requested_at: datetime | None
+    cancelled_at: datetime | None
+    checked_in_at: datetime | None
+    completed_at: datetime | None
+    allowed_actions: OrderAllowedActionsResponse
+    funding_alerts: list[FundingAlertResponse]
 
 
 class OrderListResponse(ClosedModel):

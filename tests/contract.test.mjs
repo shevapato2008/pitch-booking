@@ -93,7 +93,7 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen thirty-seven-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen forty-four-path operation matrix', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
   assert.deepEqual(Object.keys(contract.paths).sort(), [
@@ -116,8 +116,11 @@ test('OpenAPI document validates and exposes the frozen thirty-seven-path operat
     '/api/v1/health',
     '/api/v1/orders',
     '/api/v1/orders/{order_id}',
+    '/api/v1/orders/{order_id}/cancel',
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
+    '/api/v1/payments/wechat/notify',
+    '/api/v1/refunds/wechat/notify',
     '/api/v1/slots/{slot_id}/checkout',
     '/api/v1/venue-onboarding/applications',
     '/api/v1/venue-onboarding/candidates',
@@ -129,6 +132,10 @@ test('OpenAPI document validates and exposes the frozen thirty-seven-path operat
     '/api/v1/venues/primary',
     '/api/v1/venues/{venue_id}',
     '/api/v1/venues/{venue_id}/availability',
+    '/api/v1/venues/{venue_id}/fulfillment/orders',
+    '/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in',
+    '/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete',
+    '/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund',
     '/platform-admin/api/v1/auth/session',
     '/platform-admin/api/v1/onboarding/applications',
     '/platform-admin/api/v1/onboarding/applications/{application_id}',
@@ -171,7 +178,8 @@ test('my orders list freezes owner-only pagination and a private closed projecti
   const expectedFields = [
     'id', 'order_number', 'status', 'venue', 'pitch', 'starts_at', 'ends_at',
     'price_cents', 'currency', 'created_at', 'expires_at', 'payment_confirming',
-    'closing_payment',
+    'closing_payment', 'cancel_requested_at', 'cancelled_at', 'checked_in_at',
+    'completed_at', 'allowed_actions', 'funding_alerts',
   ];
   assert.equal(summary.additionalProperties, false);
   assert.deepEqual([...summary.required].sort(), [...expectedFields].sort());
@@ -194,6 +202,9 @@ test('my orders list freezes owner-only pagination and a private closed projecti
   for (const forbidden of [
     'contact', 'masked_phone', 'phone', 'address', 'latitude', 'longitude',
     'payment_id', 'payment_state', 'paid_at', 'prepay_id', 'transaction_id',
+    'refund_id', 'refund_case_id', 'refund_attempt_id', 'provider',
+    'provider_refund_no', 'merchant_order_no', 'merchant_refund_no',
+    'requested_by_user_id', 'checked_in_by_user_id', 'completed_by_user_id',
   ]) {
     assert.equal(JSON.stringify({ summary, ready, empty }).includes(forbidden), false, forbidden);
   }
@@ -443,6 +454,11 @@ test('OrderDetail freezes payment authority fields for every visible order state
     'CONFIRMED',
     'EXPIRED',
     'PAYMENT_EXCEPTION',
+    'CANCELLED',
+    'REFUND_PENDING',
+    'REFUND_FAILED',
+    'REFUNDED',
+    'COMPLETED',
   ]);
   assert.deepEqual(order.properties.payment_state.type, ['string', 'null']);
   assert.deepEqual(order.properties.payment_state.enum, [
@@ -460,6 +476,298 @@ test('OrderDetail freezes payment authority fields for every visible order state
   for (const property of ['payment_state', 'payment_confirming', 'closing_payment', 'paid_at']) {
     assert.equal(order.required.includes(property), true, property);
   }
+});
+
+test('order creation keeps its legacy closed response while owner reads use expanded projections', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const schemas = contract.components.schemas;
+  const create = contract.paths['/api/v1/orders'].post;
+  const list = contract.paths['/api/v1/orders'].get;
+  const detail = contract.paths['/api/v1/orders/{order_id}'].get;
+  const pending = await readExample('order-pending.json');
+
+  for (const status of ['200', '201']) {
+    assert.deepEqual(create.responses[status].content['application/json'].schema, {
+      $ref: '#/components/schemas/CreateOrderResponse',
+    });
+  }
+  assert.equal(schemas.CreateOrderResponse.additionalProperties, false);
+  assert.deepEqual(
+    [...schemas.CreateOrderResponse.required].sort(),
+    Object.keys(pending).sort(),
+  );
+  assert.deepEqual(
+    Object.keys(schemas.CreateOrderResponse.properties).sort(),
+    Object.keys(pending).sort(),
+  );
+  assert.equal('allowed_actions' in pending, false);
+  assert.equal('funding_alerts' in pending, false);
+  assert.deepEqual(list.responses['200'].content['application/json'].schema, {
+    $ref: '#/components/schemas/OrderListResponse',
+  });
+  assert.deepEqual(detail.responses['200'].content['application/json'].schema, {
+    $ref: '#/components/schemas/OrderDetail',
+  });
+  assert.deepEqual(Object.keys(detail.responses), ['200', '401', '404', '422']);
+  assert.deepEqual(
+    detail.responses['422'].content['application/json'].examples,
+    { InvalidArgument: { externalValue: './examples/error-invalid-argument.json' } },
+  );
+  assert.equal(
+    Object.values(detail.responses['200'].content['application/json'].examples)
+      .some(({ externalValue }) => externalValue === './examples/order-pending.json'),
+    false,
+  );
+});
+
+test('owner list and detail share closed lifecycle actions and funding alerts', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const schemas = contract.components.schemas;
+  const statuses = [
+    'PENDING_PAYMENT', 'CONFIRMED', 'EXPIRED', 'PAYMENT_EXCEPTION', 'CANCELLED',
+    'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED', 'COMPLETED',
+  ];
+  const lifecycleFields = [
+    'cancel_requested_at', 'cancelled_at', 'checked_in_at', 'completed_at',
+    'allowed_actions', 'funding_alerts',
+  ];
+
+  for (const schemaName of ['OrderSummary', 'OrderDetail']) {
+    const schema = schemas[schemaName];
+    assert.equal(schema.additionalProperties, false, schemaName);
+    assert.deepEqual(schema.properties.status.enum, statuses, schemaName);
+    for (const field of lifecycleFields) {
+      assert.equal(schema.required.includes(field), true, `${schemaName}.${field}`);
+    }
+    for (const field of lifecycleFields.slice(0, 4)) {
+      assert.deepEqual(
+        schema.properties[field],
+        { type: ['string', 'null'], format: 'date-time' },
+        `${schemaName}.${field}`,
+      );
+    }
+    assert.deepEqual(schema.properties.allowed_actions, {
+      $ref: '#/components/schemas/OrderAllowedActions',
+    });
+    assert.deepEqual(schema.properties.funding_alerts, {
+      type: 'array', items: { $ref: '#/components/schemas/FundingAlert' },
+    });
+  }
+  assert.equal(schemas.OrderDetail.required.includes('expired_at'), true);
+  assert.deepEqual(schemas.OrderDetail.properties.expired_at, {
+    type: ['string', 'null'], format: 'date-time',
+  });
+
+  const actions = schemas.OrderAllowedActions;
+  const actionFields = [
+    'can_pay', 'can_cancel', 'can_check_in', 'can_complete', 'can_refund',
+    'blocked_reason',
+  ];
+  assert.equal(actions.additionalProperties, false);
+  assert.deepEqual([...actions.required].sort(), [...actionFields].sort());
+  assert.deepEqual(Object.keys(actions.properties).sort(), [...actionFields].sort());
+  assert.deepEqual(actions.properties.blocked_reason, {
+    type: ['string', 'null'],
+    enum: [
+      'PAYMENT_RESULT_PENDING', 'CANCELLATION_WINDOW_CLOSED',
+      'CANCELLATION_REQUIRES_SUPPORT', 'CHECK_IN_TOO_EARLY',
+      'CHECK_IN_REQUIRED', 'SESSION_NOT_ENDED', 'ORDER_TERMINAL',
+      'REFUND_IN_PROGRESS', null,
+    ],
+  });
+
+  const alert = schemas.FundingAlert;
+  assert.equal(alert.additionalProperties, false);
+  assert.deepEqual(alert.required, ['code', 'status']);
+  assert.deepEqual(Object.keys(alert.properties), ['code', 'status']);
+  assert.deepEqual(alert.properties.code, {
+    type: 'string', const: 'DUPLICATE_CHARGE_REFUND',
+  });
+  assert.deepEqual(alert.properties.status, {
+    type: 'string', enum: ['REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED'],
+  });
+});
+
+test('owner cancel and venue fulfillment freeze exact auth, idempotency, and response matrices', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const paths = contract.paths;
+  const mutationPaths = [
+    '/api/v1/orders/{order_id}/cancel',
+    '/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in',
+    '/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete',
+    '/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund',
+  ];
+  const matrices = new Map([
+    ['/api/v1/orders/{order_id}/cancel', ['200', '202', '401', '404', '409', '503']],
+    ['/api/v1/venues/{venue_id}/fulfillment/orders', ['200', '401', '404', '422', '503']],
+    ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', ['200', '401', '404', '409', '503']],
+    ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', ['200', '401', '404', '409', '503']],
+    ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', ['200', '202', '401', '404', '409', '422', '503']],
+  ]);
+
+  for (const [operationPath, responses] of matrices) {
+    const method = operationPath.endsWith('/orders') ? 'get' : 'post';
+    const operation = paths[operationPath][method];
+    assert.deepEqual(operation.security, [{ bearerAuth: [] }], operationPath);
+    assert.deepEqual(Object.keys(operation.responses), responses, operationPath);
+    const expectedErrorExamples = new Map([
+      ['401', './examples/error-auth-required.json'],
+      ['404', './examples/error-order-not-found.json'],
+      ['422', './examples/error-invalid-argument.json'],
+      ['503', './examples/error-service-unavailable.json'],
+    ]);
+    for (const [status, externalValue] of expectedErrorExamples) {
+      if (!(status in operation.responses)) continue;
+      assert.equal(
+        Object.values(operation.responses[status].content['application/json'].examples)
+          .some((example) => example.externalValue === externalValue),
+        true,
+        `${operationPath} ${status}`,
+      );
+    }
+  }
+  for (const operationPath of mutationPaths) {
+    const operation = paths[operationPath].post;
+    const parameter = operation.parameters.find(({ name, $ref }) =>
+      name === 'Idempotency-Key' || $ref === '#/components/parameters/IdempotencyKey');
+    assert.ok(parameter, operationPath);
+    const schema = parameter.$ref
+      ? contract.components.parameters.IdempotencyKey.schema
+      : parameter.schema;
+    assert.deepEqual(schema, { type: 'string', minLength: 16, maxLength: 128 });
+  }
+  assert.equal('requestBody' in paths['/api/v1/orders/{order_id}/cancel'].post, false);
+
+  const venueOrder = contract.components.schemas.VenueFulfillmentOrder;
+  assert.equal(venueOrder.additionalProperties, false);
+  assert.equal('masked_phone' in venueOrder.properties, true);
+  for (const forbidden of [
+    'contact_name', 'phone', 'address', 'latitude', 'longitude', 'payment_id',
+    'refund_id', 'provider', 'checked_in_by_user_id', 'completed_by_user_id',
+  ]) {
+    assert.equal(forbidden in venueOrder.properties, false, forbidden);
+  }
+});
+
+test('WeChat payment and refund notifications require raw-body verification before JSON parsing', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const paths = [
+    '/api/v1/payments/wechat/notify',
+    '/api/v1/refunds/wechat/notify',
+  ];
+  const headerNames = [
+    'Wechatpay-Timestamp', 'Wechatpay-Nonce', 'Wechatpay-Signature',
+    'Wechatpay-Serial',
+  ];
+
+  for (const operationPath of paths) {
+    const operation = contract.paths[operationPath].post;
+    assert.deepEqual(operation.security, []);
+    assert.equal(
+      operation['x-wechatpay-raw-body-verification'],
+      'required-before-json-parse',
+    );
+    const headers = Object.fromEntries(
+      operation.parameters.map((parameter) => [parameter.name, parameter]),
+    );
+    assert.deepEqual(Object.keys(headers), headerNames);
+    for (const name of headerNames) {
+      assert.equal(headers[name].in, 'header');
+      assert.equal(headers[name].required, true);
+      assert.deepEqual(headers[name].schema, { type: 'string', minLength: 1 });
+    }
+    assert.deepEqual(
+      operation.requestBody.content['application/json'].schema,
+      { $ref: '#/components/schemas/WeChatNotificationEnvelope' },
+    );
+    assert.deepEqual(Object.keys(operation.responses), ['204', '400', '503']);
+    assert.equal('content' in operation.responses['204'], false);
+    assert.match(operation.responses['204'].description, /duplicate/i);
+    assert.deepEqual(
+      operation.responses['400'].content['application/json'].examples,
+      { WeChatNotificationInvalid: { externalValue: './examples/error-wechat-notification-invalid.json' } },
+    );
+    assert.deepEqual(
+      operation.responses['503'].content['application/json'].examples,
+      { ServiceUnavailable: { externalValue: './examples/error-service-unavailable.json' } },
+    );
+  }
+
+  const envelope = contract.components.schemas.WeChatNotificationEnvelope;
+  const envelopeFields = [
+    'id', 'create_time', 'event_type', 'resource_type', 'summary', 'resource',
+  ];
+  assert.equal(envelope.additionalProperties, false);
+  assert.deepEqual(envelope.required, envelopeFields);
+  assert.deepEqual(Object.keys(envelope.properties), envelopeFields);
+  const resource = contract.components.schemas.WeChatNotificationResource;
+  const resourceFields = [
+    'original_type', 'algorithm', 'ciphertext', 'associated_data', 'nonce',
+  ];
+  assert.equal(resource.additionalProperties, false);
+  assert.deepEqual(resource.required, resourceFields);
+  assert.deepEqual(Object.keys(resource.properties), resourceFields);
+  assert.deepEqual(resource.properties.algorithm, {
+    type: 'string', const: 'AEAD_AES_256_GCM',
+  });
+});
+
+test('Task 4 lifecycle errors use canonical examples on the exact operations', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const filenamesByCode = {
+    AUTH_REQUIRED: 'error-auth-required.json',
+    INVALID_ARGUMENT: 'error-invalid-argument.json',
+    ORDER_NOT_FOUND: 'error-order-not-found.json',
+    ORDER_STATE_CHANGED: 'error-order-state-changed.json',
+    IDEMPOTENCY_KEY_REUSED: 'error-idempotency-key-reused.json',
+    PAYMENT_RESULT_PENDING: 'error-payment-result-pending.json',
+    REFUND_IN_PROGRESS: 'error-refund-in-progress.json',
+    PAYMENT_CREATE_FAILED: 'error-payment-create-failed.json',
+    PAYMENT_PROVIDER_UNAVAILABLE: 'error-payment-provider-unavailable.json',
+    WECHAT_NOTIFICATION_INVALID: 'error-wechat-notification-invalid.json',
+    SERVICE_UNAVAILABLE: 'error-service-unavailable.json',
+  };
+  for (const [code, filename] of Object.entries(filenamesByCode)) {
+    const example = await readExample(filename);
+    assert.equal(example.error.code, code, filename);
+  }
+
+  const cancel = contract.paths['/api/v1/orders/{order_id}/cancel'].post;
+  assert.deepEqual(
+    Object.values(cancel.responses['409'].content['application/json'].examples)
+      .map(({ externalValue }) => externalValue).sort(),
+    [
+      './examples/error-idempotency-key-reused.json',
+      './examples/error-order-state-changed.json',
+      './examples/error-payment-result-pending.json',
+      './examples/error-refund-in-progress.json',
+    ].sort(),
+  );
+  for (const suffix of ['check-in', 'complete', 'refund']) {
+    const operation = contract.paths[
+      `/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/${suffix}`
+    ].post;
+    const references = Object.values(
+      operation.responses['409'].content['application/json'].examples,
+    ).map(({ externalValue }) => externalValue);
+    assert.equal(references.includes('./examples/error-order-state-changed.json'), true);
+    assert.equal(references.includes('./examples/error-idempotency-key-reused.json'), true);
+    assert.equal(
+      references.includes('./examples/error-refund-in-progress.json'),
+      suffix === 'refund',
+    );
+  }
+
+  const pay503 = contract.paths['/api/v1/orders/{order_id}/pay'].post.responses['503'];
+  assert.deepEqual(
+    pay503.content['application/json'].schema.allOf[1]
+      .properties.error.properties.code.enum,
+    ['PAYMENT_CREATE_FAILED', 'PAYMENT_PROVIDER_UNAVAILABLE'],
+  );
+  assert.deepEqual(Object.values(pay503.content['application/json'].examples), [
+    { externalValue: './examples/error-payment-create-failed.json' },
+    { externalValue: './examples/error-payment-provider-unavailable.json' },
+  ]);
 });
 
 test('primary venue example uses a stable UUID and contains no placeholder values', async () => {
@@ -552,7 +860,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 78 JSON examples/i);
+  assert.match(stdout, /validated 89 JSON examples/i);
   assert.equal(stderr, '');
 });
 

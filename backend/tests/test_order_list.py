@@ -227,7 +227,26 @@ def test_list_is_owner_only_newest_first_and_private(pg_engine: Engine) -> None:
         "expires_at",
         "payment_confirming",
         "closing_payment",
+        "cancel_requested_at",
+        "cancelled_at",
+        "checked_in_at",
+        "completed_at",
+        "allowed_actions",
+        "funding_alerts",
     }
+    assert body["orders"][0]["cancel_requested_at"] is None
+    assert body["orders"][0]["cancelled_at"] is None
+    assert body["orders"][0]["checked_in_at"] is None
+    assert body["orders"][0]["completed_at"] is None
+    assert body["orders"][0]["allowed_actions"] == {
+        "can_pay": True,
+        "can_cancel": True,
+        "can_check_in": False,
+        "can_complete": False,
+        "can_refund": False,
+        "blocked_reason": None,
+    }
+    assert body["orders"][0]["funding_alerts"] == []
     assert set(body["orders"][0]["venue"]) == {"id", "name"}
     assert set(body["orders"][0]["pitch"]) == {"id", "name"}
     for private_field in (
@@ -240,8 +259,128 @@ def test_list_is_owner_only_newest_first_and_private(pg_engine: Engine) -> None:
         "payment_state",
         "paid_at",
         "wechat_prepay_id",
+        "payment_id",
+        "refund_id",
+        "refund_case_id",
+        "refund_attempt_id",
+        "provider",
+        "provider_refund_no",
+        "merchant_order_no",
+        "merchant_refund_no",
+        "requested_by_user_id",
+        "checked_in_by_user_id",
+        "completed_by_user_id",
     ):
         assert private_field not in response.text
+
+
+def test_list_projects_all_nine_lifecycle_statuses_and_required_timestamps(
+    pg_engine: Engine,
+) -> None:
+    statuses = list(OrderStatus)
+    assert statuses == [
+        OrderStatus.PENDING_PAYMENT,
+        OrderStatus.CONFIRMED,
+        OrderStatus.EXPIRED,
+        OrderStatus.PAYMENT_EXCEPTION,
+        OrderStatus.CANCELLED,
+        OrderStatus.REFUND_PENDING,
+        OrderStatus.REFUND_FAILED,
+        OrderStatus.REFUNDED,
+        OrderStatus.COMPLETED,
+    ]
+    with Session(pg_engine) as session:
+        owner = _add_user(session, token=RAW_TOKEN)
+        expected: dict[
+            str,
+            tuple[datetime | None, datetime | None, datetime | None, datetime | None],
+        ] = {}
+        for sequence, status in enumerate(statuses, start=1):
+            created_at = NOW - timedelta(minutes=sequence)
+            seeded_status = (
+                OrderStatus.PENDING_PAYMENT
+                if status
+                in {
+                    OrderStatus.CANCELLED,
+                    OrderStatus.REFUND_PENDING,
+                    OrderStatus.REFUND_FAILED,
+                    OrderStatus.REFUNDED,
+                }
+                else OrderStatus.CONFIRMED
+                if status is OrderStatus.COMPLETED
+                else status
+            )
+            order = _add_order(
+                session,
+                user=owner,
+                sequence=sequence,
+                created_at=created_at,
+                status=seeded_status,
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            if status in {
+                OrderStatus.CANCELLED,
+                OrderStatus.REFUND_PENDING,
+                OrderStatus.REFUND_FAILED,
+                OrderStatus.REFUNDED,
+            }:
+                order.cancel_requested_at = created_at + timedelta(minutes=1)
+                order.cancelled_at = created_at + timedelta(minutes=2)
+            if status is OrderStatus.COMPLETED:
+                order.checked_in_at = order.slot.starts_at
+                order.checked_in_by_user_id = owner.id
+                order.completed_at = order.slot.ends_at
+                order.completed_by_user_id = owner.id
+            order.status = status
+            expected[str(order.id)] = (
+                order.cancel_requested_at,
+                order.cancelled_at,
+                order.checked_in_at,
+                order.completed_at,
+            )
+        session.commit()
+
+    with _client(pg_engine) as client:
+        response = client.get("/api/v1/orders", headers=_auth())
+
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()["orders"]}
+    assert set(rows) == set(expected)
+    assert {row["status"] for row in rows.values()} == {
+        status.value for status in statuses
+    }
+    for order_id, timestamps in expected.items():
+        row = rows[order_id]
+        assert set(row["allowed_actions"]) == {
+            "can_pay",
+            "can_cancel",
+            "can_check_in",
+            "can_complete",
+            "can_refund",
+            "blocked_reason",
+        }
+        assert row["funding_alerts"] == []
+        cancel_requested_at, cancelled_at, checked_in_at, completed_at = timestamps
+        assert (
+            datetime.fromisoformat(row["cancel_requested_at"])
+            if row["cancel_requested_at"] is not None
+            else None
+        ) == cancel_requested_at
+        assert (
+            datetime.fromisoformat(row["cancelled_at"])
+            if row["cancelled_at"] is not None
+            else None
+        ) == cancelled_at
+        assert (
+            datetime.fromisoformat(row["checked_in_at"])
+            if row["checked_in_at"] is not None
+            else None
+        ) == checked_in_at
+        assert (
+            datetime.fromisoformat(row["completed_at"])
+            if row["completed_at"] is not None
+            else None
+        ) == completed_at
 
 
 def test_keyset_cursor_pages_without_duplicates(pg_engine: Engine) -> None:

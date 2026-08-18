@@ -341,6 +341,318 @@ paths:
               examples:
                 ServiceUnavailable:
                   externalValue: './examples/error-service-unavailable.json'
+  /api/v1/venues/{venue_id}/fulfillment/orders:
+    get:
+      operationId: listVenueFulfillmentOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: service_date
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Authorized venue fulfillment orders for one Shanghai service date.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueFulfillmentOrdersResponse'}
+              examples:
+                FulfillmentOrders: {externalValue: './examples/venue-fulfillment-orders.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue or authorized fulfillment resource was not found.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '422':
+          description: Service date, limit, or cursor is invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Fulfillment service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in:
+    post:
+      operationId: checkInVenueOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Order checked in, or the same authoritative check-in replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
+              examples:
+                CheckedInOrder: {externalValue: './examples/venue-order-checked-in.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue order was not found for this authorized manager.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order state or idempotency state changed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}}}}
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '503':
+          description: Fulfillment service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete:
+    post:
+      operationId: completeVenueOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Order completed, or the same authoritative completion replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
+              examples:
+                CompletedOrder: {externalValue: './examples/venue-order-completed.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue order was not found for this authorized manager.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order state or idempotency state changed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}}}}
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '503':
+          description: Fulfillment service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund:
+    post:
+      operationId: refundVenueOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VenueRefundRequest'}
+      responses:
+        '200':
+          description: Refund already reached its authoritative result.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RefundAccepted'}
+              examples:
+                RefundAccepted: {externalValue: './examples/refund-accepted.json'}
+        '202':
+          description: Full refund accepted for asynchronous convergence.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RefundAccepted'}
+              examples:
+                RefundAccepted: {externalValue: './examples/refund-accepted.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Venue order was not found for this authorized manager.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order, refund, or idempotency state conflicts with this request.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED, REFUND_IN_PROGRESS]}}}}
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+                RefundInProgress: {externalValue: './examples/error-refund-in-progress.json'}
+        '422':
+          description: Venue refund reason is invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Refund service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/auth/wechat/session:
     post:
       operationId: createWeChatSession
@@ -717,7 +1029,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderDetail'
+                $ref: '#/components/schemas/CreateOrderResponse'
               examples:
                 ExistingPendingOrder:
                   externalValue: './examples/order-pending.json'
@@ -729,7 +1041,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderDetail'
+                $ref: '#/components/schemas/CreateOrderResponse'
               examples:
                 PendingOrderCreated:
                   externalValue: './examples/order-pending.json'
@@ -838,14 +1150,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/OrderDetail'
               examples:
-                PendingOrder:
-                  externalValue: './examples/order-pending.json'
                 ExpiredOrder:
                   externalValue: './examples/order-expired.json'
                 ConfirmedOrder:
                   externalValue: './examples/order-confirmed.json'
                 PaymentExceptionOrder:
                   externalValue: './examples/order-payment-exception.json'
+                CancelledOrder:
+                  externalValue: './examples/order-cancelled.json'
+                RefundPendingOrder:
+                  externalValue: './examples/order-refund-pending.json'
         '401':
           description: Business session is missing, invalid, or expired.
           headers:
@@ -886,6 +1200,110 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+        '422':
+          description: Order identifier is invalid.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            const: INVALID_ARGUMENT
+              examples:
+                InvalidArgument:
+                  externalValue: './examples/error-invalid-argument.json'
+  /api/v1/orders/{order_id}/cancel:
+    post:
+      operationId: cancelOwnedOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Order cancelled without a pending refund.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderDetail'}
+              examples:
+                CancelledOrder: {externalValue: './examples/order-cancelled.json'}
+        '202':
+          description: Cancellation accepted while payment or refund convergence continues.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderDetail'}
+              examples:
+                RefundPendingOrder: {externalValue: './examples/order-refund-pending.json'}
+        '401':
+          description: Business session is missing, invalid, or expired.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Order does not exist or is not owned by this user.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order, payment, refund, or idempotency state conflicts with cancellation.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            enum: [ORDER_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED, PAYMENT_RESULT_PENDING, REFUND_IN_PROGRESS]
+              examples:
+                OrderStateChanged: {externalValue: './examples/error-order-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+                PaymentResultPending: {externalValue: './examples/error-payment-result-pending.json'}
+                RefundInProgress: {externalValue: './examples/error-refund-in-progress.json'}
+        '503':
+          description: Order cancellation service is temporarily unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/orders/{order_id}/pay:
     post:
       operationId: createPayment
@@ -1013,7 +1431,7 @@ paths:
                 IdempotencyKeyReused:
                   externalValue: './examples/error-idempotency-key-reused.json'
         '503':
-          description: The payment provider definitively rejected prepay creation.
+          description: The payment provider rejected this request or is unavailable.
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
@@ -1028,10 +1446,12 @@ paths:
                         type: object
                         properties:
                           code:
-                            const: PAYMENT_CREATE_FAILED
+                            enum: [PAYMENT_CREATE_FAILED, PAYMENT_PROVIDER_UNAVAILABLE]
               examples:
                 PaymentCreateFailed:
                   externalValue: './examples/error-payment-create-failed.json'
+                PaymentProviderUnavailable:
+                  externalValue: './examples/error-payment-provider-unavailable.json'
   /api/v1/orders/{order_id}/payments/{payment_id}/reconcile:
     post:
       operationId: reconcilePayment
@@ -1115,6 +1535,92 @@ paths:
               examples:
                 OrderNotFound:
                   externalValue: './examples/error-order-not-found.json'
+  /api/v1/payments/wechat/notify:
+    post:
+      operationId: receiveWeChatPaymentNotification
+      security: []
+      x-wechatpay-raw-body-verification: required-before-json-parse
+      parameters:
+        - {name: Wechatpay-Timestamp, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Nonce, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Signature, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Serial, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeChatNotificationEnvelope'}
+      responses:
+        '204':
+          description: Notification durably converged; a valid duplicate returns the same bodyless response.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+        '400':
+          description: Notification headers, signature, envelope, or ciphertext are invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: WECHAT_NOTIFICATION_INVALID}}}}
+              examples:
+                WeChatNotificationInvalid: {externalValue: './examples/error-wechat-notification-invalid.json'}
+        '503':
+          description: Durable notification convergence cannot be confirmed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/refunds/wechat/notify:
+    post:
+      operationId: receiveWeChatRefundNotification
+      security: []
+      x-wechatpay-raw-body-verification: required-before-json-parse
+      parameters:
+        - {name: Wechatpay-Timestamp, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Nonce, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Signature, in: header, required: true, schema: {type: string, minLength: 1}}
+        - {name: Wechatpay-Serial, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeChatNotificationEnvelope'}
+      responses:
+        '204':
+          description: Notification durably converged; a valid duplicate returns the same bodyless response.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+        '400':
+          description: Notification headers, signature, envelope, or ciphertext are invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: WECHAT_NOTIFICATION_INVALID}}}}
+              examples:
+                WeChatNotificationInvalid: {externalValue: './examples/error-wechat-notification-invalid.json'}
+        '503':
+          description: Durable notification convergence cannot be confirmed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/venue-onboarding/candidates:
     get:
       operationId: searchVenueOnboardingCandidates
@@ -3903,6 +4409,71 @@ components:
           type: string
           minLength: 1
           maxLength: 40
+    CreateOrderResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - order_number
+        - status
+        - slot_id
+        - venue
+        - pitch
+        - starts_at
+        - ends_at
+        - duration_minutes
+        - price_cents
+        - currency
+        - contact
+        - created_at
+        - expires_at
+        - expired_at
+        - cancellation_summary
+        - payment_state
+        - payment_confirming
+        - closing_payment
+        - paid_at
+        - detail_path
+      properties:
+        id: {type: string, format: uuid}
+        order_number: {type: string, minLength: 1}
+        status: {type: string, const: PENDING_PAYMENT}
+        slot_id: {type: string, format: uuid}
+        venue: {$ref: '#/components/schemas/OrderVenue'}
+        pitch: {$ref: '#/components/schemas/PhysicalPitch'}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 1}
+        price_cents: {type: integer, minimum: 0}
+        currency: {type: string, const: CNY}
+        contact: {$ref: '#/components/schemas/OrderContact'}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        expired_at: {type: 'null'}
+        cancellation_summary: {type: string, minLength: 1}
+        payment_state:
+          type: [string, 'null']
+          enum: [CREATING, PREPAY_CREATED, CONFIRMING, CLOSED, UNKNOWN, null]
+        payment_confirming: {type: boolean}
+        closing_payment: {type: boolean}
+        paid_at: {type: 'null'}
+        detail_path: {type: string, pattern: '^/api/v1/orders/[0-9a-f-]{36}$'}
+      oneOf:
+        - type: object
+          properties:
+            payment_state: {const: null}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+        - type: object
+          properties:
+            payment_state: {enum: [CREATING, PREPAY_CREATED, CLOSED]}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+        - type: object
+          properties:
+            payment_state: {enum: [CONFIRMING, UNKNOWN]}
+            payment_confirming: {const: true}
+            closing_payment: {type: boolean}
     PaymentLaunchParams:
       type: object
       additionalProperties: false
@@ -3968,6 +4539,94 @@ components:
           const: ALREADY_CONFIRMED
         order:
           $ref: '#/components/schemas/ConfirmedOrderDetail'
+    OrderAllowedActions:
+      type: object
+      additionalProperties: false
+      required: [can_pay, can_cancel, can_check_in, can_complete, can_refund, blocked_reason]
+      properties:
+        can_pay: {type: boolean}
+        can_cancel: {type: boolean}
+        can_check_in: {type: boolean}
+        can_complete: {type: boolean}
+        can_refund: {type: boolean}
+        blocked_reason:
+          type: [string, 'null']
+          enum:
+            - PAYMENT_RESULT_PENDING
+            - CANCELLATION_WINDOW_CLOSED
+            - CANCELLATION_REQUIRES_SUPPORT
+            - CHECK_IN_TOO_EARLY
+            - CHECK_IN_REQUIRED
+            - SESSION_NOT_ENDED
+            - ORDER_TERMINAL
+            - REFUND_IN_PROGRESS
+            - null
+    FundingAlert:
+      type: object
+      additionalProperties: false
+      required: [code, status]
+      properties:
+        code: {type: string, const: DUPLICATE_CHARGE_REFUND}
+        status: {type: string, enum: [REFUND_PENDING, REFUND_FAILED, REFUNDED]}
+    VenueFulfillmentOrder:
+      type: object
+      additionalProperties: false
+      required: [id, order_number, status, pitch, starts_at, ends_at, masked_phone, checked_in_at, allowed_actions]
+      properties:
+        id: {type: string, format: uuid}
+        order_number: {type: string, minLength: 1}
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION, CANCELLED, REFUND_PENDING, REFUND_FAILED, REFUNDED, COMPLETED]
+        pitch: {$ref: '#/components/schemas/PhysicalPitch'}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        masked_phone: {type: string, pattern: '^1[0-9]{2}\*{4}[0-9]{4}$'}
+        checked_in_at: {type: [string, 'null'], format: date-time}
+        allowed_actions: {$ref: '#/components/schemas/OrderAllowedActions'}
+    VenueFulfillmentOrdersResponse:
+      type: object
+      additionalProperties: false
+      required: [orders, next_cursor]
+      properties:
+        orders:
+          type: array
+          items: {$ref: '#/components/schemas/VenueFulfillmentOrder'}
+        next_cursor: {type: [string, 'null'], minLength: 1}
+    VenueRefundRequest:
+      type: object
+      additionalProperties: false
+      required: [reason_note]
+      properties:
+        reason_note: {type: string, minLength: 1, maxLength: 500}
+    RefundAccepted:
+      type: object
+      additionalProperties: false
+      required: [order_id, status]
+      properties:
+        order_id: {type: string, format: uuid}
+        status: {type: string, enum: [REFUND_PENDING, REFUNDED]}
+    WeChatNotificationResource:
+      type: object
+      additionalProperties: false
+      required: [original_type, algorithm, ciphertext, associated_data, nonce]
+      properties:
+        original_type: {type: string}
+        algorithm: {type: string, const: AEAD_AES_256_GCM}
+        ciphertext: {type: string}
+        associated_data: {type: string}
+        nonce: {type: string}
+    WeChatNotificationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [id, create_time, event_type, resource_type, summary, resource]
+      properties:
+        id: {type: string}
+        create_time: {type: string}
+        event_type: {type: string}
+        resource_type: {type: string}
+        summary: {type: string}
+        resource: {$ref: '#/components/schemas/WeChatNotificationResource'}
     OrderSummary:
       type: object
       additionalProperties: false
@@ -3985,6 +4644,12 @@ components:
         - expires_at
         - payment_confirming
         - closing_payment
+        - cancel_requested_at
+        - cancelled_at
+        - checked_in_at
+        - completed_at
+        - allowed_actions
+        - funding_alerts
       properties:
         id:
           type: string
@@ -3994,7 +4659,7 @@ components:
           minLength: 1
         status:
           type: string
-          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION]
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION, CANCELLED, REFUND_PENDING, REFUND_FAILED, REFUNDED, COMPLETED]
         venue:
           $ref: '#/components/schemas/CheckoutVenue'
         pitch:
@@ -4021,6 +4686,14 @@ components:
           type: boolean
         closing_payment:
           type: boolean
+        cancel_requested_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        checked_in_at: {type: [string, 'null'], format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+        allowed_actions: {$ref: '#/components/schemas/OrderAllowedActions'}
+        funding_alerts:
+          type: array
+          items: {$ref: '#/components/schemas/FundingAlert'}
     OrderListResponse:
       type: object
       additionalProperties: false
@@ -4209,6 +4882,42 @@ components:
               const: null
             expired_at:
               const: null
+        - type: object
+          description: Cancelled order without a successful payment requiring refund.
+          properties:
+            status: {const: CANCELLED}
+            payment_state: {enum: [null, CLOSED]}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {const: null}
+            expired_at: {const: null}
+        - type: object
+          description: Cancellation or inventory-conflict refund is converging or failed.
+          properties:
+            status: {enum: [REFUND_PENDING, REFUND_FAILED]}
+            payment_state: {const: SUCCESS}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {type: string, format: date-time}
+            expired_at: {const: null}
+        - type: object
+          description: Fully refunded order.
+          properties:
+            status: {const: REFUNDED}
+            payment_state: {const: SUCCESS}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {type: string, format: date-time}
+            expired_at: {const: null}
+        - type: object
+          description: Completed fulfillment backed by the applied successful payment.
+          properties:
+            status: {const: COMPLETED}
+            payment_state: {const: SUCCESS}
+            payment_confirming: {const: false}
+            closing_payment: {const: false}
+            paid_at: {type: string, format: date-time}
+            expired_at: {const: null}
       required:
         - id
         - order_number
@@ -4230,6 +4939,12 @@ components:
         - payment_confirming
         - closing_payment
         - paid_at
+        - cancel_requested_at
+        - cancelled_at
+        - checked_in_at
+        - completed_at
+        - allowed_actions
+        - funding_alerts
         - detail_path
       properties:
         id:
@@ -4240,7 +4955,7 @@ components:
           minLength: 1
         status:
           type: string
-          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION]
+          enum: [PENDING_PAYMENT, CONFIRMED, EXPIRED, PAYMENT_EXCEPTION, CANCELLED, REFUND_PENDING, REFUND_FAILED, REFUNDED, COMPLETED]
         slot_id:
           type: string
           format: uuid
@@ -4287,6 +5002,14 @@ components:
         paid_at:
           type: [string, 'null']
           format: date-time
+        cancel_requested_at: {type: [string, 'null'], format: date-time}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        checked_in_at: {type: [string, 'null'], format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+        allowed_actions: {$ref: '#/components/schemas/OrderAllowedActions'}
+        funding_alerts:
+          type: array
+          items: {$ref: '#/components/schemas/FundingAlert'}
         detail_path:
           type: string
           pattern: '^/api/v1/orders/[0-9a-f-]{36}$'
@@ -4374,7 +5097,12 @@ components:
             - ORDER_NOT_FOUND
             - ORDER_EXPIRED
             - PAYMENT_CREATE_FAILED
+            - PAYMENT_PROVIDER_UNAVAILABLE
             - PAYMENT_EXCEPTION
+            - ORDER_STATE_CHANGED
+            - PAYMENT_RESULT_PENDING
+            - REFUND_IN_PROGRESS
+            - WECHAT_NOTIFICATION_INVALID
             - INVENTORY_FORBIDDEN
             - PITCH_NOT_FOUND
             - SLOT_NOT_FOUND

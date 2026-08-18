@@ -14,6 +14,7 @@ from backend.app.models import (
     Payment,
     PaymentState,
     Pitch,
+    RefundCase,
     Slot,
     Venue,
 )
@@ -109,8 +110,9 @@ class OrderRepository:
             select(Order)
             .where(Order.id == order_id, Order.user_id == user_id)
             .options(
-                joinedload(Order.slot).joinedload(Slot.pitch),
+                joinedload(Order.slot).joinedload(Slot.pitch).joinedload(Pitch.venue),
                 selectinload(Order.payments),
+                selectinload(Order.refund_cases).selectinload(RefundCase.attempts),
             )
             .execution_options(populate_existing=True)
         )
@@ -142,6 +144,9 @@ class OrderRepository:
                     .joinedload(Slot.pitch)
                     .joinedload(Pitch.venue),
                     selectinload(Order.payments),
+                    selectinload(Order.refund_cases).selectinload(
+                        RefundCase.attempts
+                    ),
                 )
                 .order_by(Order.created_at.desc(), Order.id.desc())
                 .limit(limit)

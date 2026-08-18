@@ -1,7 +1,7 @@
 {
-  "id": "00000000-0000-4000-8000-000000000040",
-  "order_number": "PB202607270001",
-  "status": "PENDING_PAYMENT",
+  "id": "00000000-0000-4000-8000-000000000043",
+  "order_number": "PB202607270004",
+  "status": "REFUND_PENDING",
   "slot_id": "00000000-0000-4000-8000-000000000030",
   "venue": {
     "id": "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
@@ -27,9 +27,22 @@
   "expires_at": "2026-07-27T12:10:00+08:00",
   "expired_at": null,
   "cancellation_summary": "开场前至少 24 小时可自助取消并全额退款；不足 24 小时请联系客服。",
-  "payment_state": null,
+  "payment_state": "SUCCESS",
   "payment_confirming": false,
   "closing_payment": false,
-  "paid_at": null,
-  "detail_path": "/api/v1/orders/00000000-0000-4000-8000-000000000040"
+  "paid_at": "2026-07-27T12:04:00+08:00",
+  "cancel_requested_at": "2026-07-27T12:05:00+08:00",
+  "cancelled_at": "2026-07-27T12:05:00+08:00",
+  "checked_in_at": null,
+  "completed_at": null,
+  "allowed_actions": {
+    "can_pay": false,
+    "can_cancel": false,
+    "can_check_in": false,
+    "can_complete": false,
+    "can_refund": false,
+    "blocked_reason": "REFUND_IN_PROGRESS"
+  },
+  "funding_alerts": [],
+  "detail_path": "/api/v1/orders/00000000-0000-4000-8000-000000000043"
 }

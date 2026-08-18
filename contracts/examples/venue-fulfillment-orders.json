@@ -1,0 +1,26 @@
+{
+  "orders": [
+    {
+      "id": "00000000-0000-4000-8000-000000000040",
+      "order_number": "PB202607270001",
+      "status": "CONFIRMED",
+      "pitch": {
+        "id": "59c91a73-b893-4c91-9084-4f43ab16d00a",
+        "name": "五人制 A 场"
+      },
+      "starts_at": "2026-07-28T19:00:00+08:00",
+      "ends_at": "2026-07-28T21:00:00+08:00",
+      "masked_phone": "138****5678",
+      "checked_in_at": null,
+      "allowed_actions": {
+        "can_pay": false,
+        "can_cancel": false,
+        "can_check_in": false,
+        "can_complete": false,
+        "can_refund": true,
+        "blocked_reason": "CHECK_IN_TOO_EARLY"
+      }
+    }
+  ],
+  "next_cursor": null
+}
