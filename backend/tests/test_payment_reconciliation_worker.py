@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from threading import Barrier, Event
 
 import pytest
@@ -64,7 +64,14 @@ def seed_provider_order(
         payment = session.get_one(Payment, payment_id)
         merchant = payment.merchant_order_no
         provider.create_prepay(
-            CreatePrepayRequest(merchant, "booking", payment.amount_cents, "CNY", "openid")
+            CreatePrepayRequest(
+                merchant,
+                "booking",
+                payment.amount_cents,
+                "CNY",
+                "openid",
+                payment.order.expires_at,
+            )
         )
         return merchant
 
@@ -84,6 +91,14 @@ class CreateCrashesOnceProvider(MockPaymentProvider):
         if self.crash_create:
             self.crash_create = False
             raise RuntimeError("injected create timeout")
+        return super().create_prepay(request)
+
+
+class CapturingRecoveryProvider(MockPaymentProvider):
+    create_request: CreatePrepayRequest | None = None
+
+    def create_prepay(self, request: CreatePrepayRequest):  # type: ignore[no-untyped-def]
+        self.create_request = request
         return super().create_prepay(request)
 
 
@@ -138,6 +153,23 @@ class ForcedNotPaidProvider(MockPaymentProvider):
 
 def test_recovery_lease_exceeds_provider_timeout_contract() -> None:
     assert RECOVERY_LEASE_DURATION >= PAYMENT_PROVIDER_MAX_REQUEST_DURATION * 2
+
+
+def test_creation_recovery_reuses_persisted_order_expiry(pg_engine: Engine) -> None:
+    now = datetime(2026, 8, 18, 4, tzinfo=UTC)
+    order_id, payment_id, _, _ = seed_payment(
+        pg_engine,
+        status=PaymentState.CREATING,
+        now=now,
+    )
+    provider = CapturingRecoveryProvider()
+
+    recovery_service(pg_engine, provider, now=fixed_now(now)).recover(payment_id)
+
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        assert provider.create_request is not None
+        assert provider.create_request.time_expire == order.expires_at
 
 
 def test_expired_not_paid_payment_is_queried_closed_then_released(pg_engine: Engine) -> None:

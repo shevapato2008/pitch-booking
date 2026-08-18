@@ -44,6 +44,7 @@ class _PhaseOne:
     idempotency_id: uuid.UUID
     merchant_order_no: str
     amount_cents: int
+    time_expire: datetime
     payment_status: PaymentState
     new_payment: bool
 
@@ -82,6 +83,7 @@ class PaymentCreationService:
                     amount_cents=phase.amount_cents,
                     currency="CNY",
                     payer_openid=payer_openid,
+                    time_expire=phase.time_expire,
                 )
             )
             if isinstance(provider_result, Rejected):
@@ -156,7 +158,7 @@ class PaymentCreationService:
                         id=payment_id,
                         order_id=order.id,
                         provider=self._provider.name,
-                        merchant_order_no=f"PB-PAY-{payment_id.hex}",
+                        merchant_order_no=f"PB{payment_id.hex[:30]}",
                         amount_cents=order.price_cents,
                         currency="CNY",
                         status=PaymentState.CREATING,
@@ -177,6 +179,7 @@ class PaymentCreationService:
                     record.id,
                     current.merchant_order_no,
                     current.amount_cents,
+                    order.expires_at,
                     current.status,
                     new_payment,
                 )

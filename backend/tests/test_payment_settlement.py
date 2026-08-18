@@ -30,8 +30,9 @@ def seed_payment(
     status: PaymentState = PaymentState.CONFIRMING,
     slot_status: SlotStatus = SlotStatus.LOCKED,
     transaction_no: str | None = None,
+    now: datetime | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, datetime]:
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     with Session(engine) as session:
         user = User(wechat_app_id="mock-app-id", wechat_openid=f"owner-{uuid.uuid4()}")
         pitch = add_pitch(session, venue())
@@ -56,7 +57,7 @@ def seed_payment(
             id=uuid.uuid4(),
             order=order,
             provider="mock",
-            merchant_order_no=f"M-{uuid.uuid4().hex}",
+            merchant_order_no=f"PB{uuid.uuid4().hex[:30]}",
             provider_transaction_no=transaction_no,
             amount_cents=32000,
             currency="CNY",
