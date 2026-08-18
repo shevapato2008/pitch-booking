@@ -2,8 +2,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { beforeEach, expect, jest, test } from "@jest/globals";
+import { CAPTAIN_OPEN_GAME_FIXTURE, captainOpenGameStore } from "../../captain-open-game-fixture";
 
-interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onStepper(event: any): void; onSave(): void; onReturnOrder(): void; }
+interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onStepper(event: any): void; onSave(): void; onReturnOrder(): void; onHeaderBack(): void; }
 let captured: Definition | undefined;
 const loadPage = () => {
   if (!captured) {
@@ -13,7 +14,7 @@ const loadPage = () => {
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { navigateBack: jest.fn(), redirectTo: jest.fn() }; });
+beforeEach(() => { (globalThis as any).wx = { navigateBack: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}]); });
 
 test("eligible form loads and keeps stepper errors adjacent to the changed field", () => {
   const page = loadPage();
@@ -28,6 +29,7 @@ test("ineligible deep links show the reason and return to the real order", () =>
   const page = loadPage();
   page.onLoad({ state: "INELIGIBLE" });
   expect(page.data).toMatchObject({ canEdit: false, reason: "该订单当前不能用于创建开放球局", returnAction: "返回订单" });
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([{}, {}]);
   page.onReturnOrder();
   expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
 });
@@ -38,4 +40,26 @@ test("saving a form creates a local private draft and enters deterministic manag
   page.onSave();
   expect(page.data).toMatchObject({ visualState: "DRAFT", private: true, published: false });
   expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=DRAFT" });
+});
+
+test("published editing reads its current snapshot without reset and keeps the published lifecycle on save", () => {
+  const edited = { ...CAPTAIN_OPEN_GAME_FIXTURE.form, name: "保留的发布编辑", total: 16, open: 5 };
+  captainOpenGameStore.reset("PUBLISHED");
+  captainOpenGameStore.saveDraft(edited);
+  const page = loadPage();
+  page.onLoad({ state: "PUBLISHED" });
+  expect(page.data).toMatchObject({ mode: "edit", pageTitle: "编辑球局", form: edited });
+  page.onSave();
+  expect(page.data).toMatchObject({ visualState: "PUBLISHED", published: true, private: false });
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=PUBLISHED" });
+});
+
+test("returning an ineligible deep link falls back to my orders when no history exists", () => {
+  const page = loadPage();
+  page.onLoad({ state: "INELIGIBLE" });
+  page.onReturnOrder();
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/my-orders/index" });
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([{}, {}]);
+  page.onReturnOrder();
+  expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
 });

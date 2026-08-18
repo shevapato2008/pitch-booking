@@ -7,6 +7,10 @@ import {
 } from "../../captain-open-game-fixture";
 
 interface Options { state?: unknown; }
+const returnToOrder = () => {
+  if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 });
+  else wx.reLaunch({ url: "/pages/my-orders/index" });
+};
 
 const patch = (state: CaptainOpenGameState) => {
   const current = captainOpenGameStore.current();
@@ -22,6 +26,10 @@ Page({
     if (captainOpenGameStore.current().state !== state) captainOpenGameStore.reset(state);
     this.setData(patch(state));
   },
+  onShow() {
+    const current = captainOpenGameStore.current();
+    if (current.state !== this.data.visualState) this.setData(patch(current.state));
+  },
   sync() { this.setData(patch(captainOpenGameStore.current().state)); },
   onPublish() { captainOpenGameStore.beginPublish(); this.sync(); },
   onConfirmPublish() { captainOpenGameStore.confirmPublish(); this.sync(); },
@@ -30,6 +38,9 @@ Page({
   onShare() { this.setData({ shareError: "暂时无法分享" }); },
   onClosePanel() { captainOpenGameStore.closePanel(); this.sync(); },
   onCancel() { captainOpenGameStore.beginCancel(); this.sync(); },
-  onConfirmCancel() { captainOpenGameStore.confirmCancel(); this.sync(); },
-  onReturnOrder() { wx.navigateBack({ delta: 1 }); },
+  onConfirmCancel() { captainOpenGameStore.confirmCancel(); this.sync(); wx.reLaunch({ url: "/dev/pages/captain-game-manage/index?state=CANCELLED" }); },
+  onAbandon() { captainOpenGameStore.beginAbandon(); this.sync(); },
+  onConfirmAbandon() { captainOpenGameStore.confirmAbandon(); this.sync(); wx.redirectTo({ url: "/dev/pages/captain-game-form/index?state=ELIGIBLE" }); },
+  onReturnOrder() { returnToOrder(); },
+  onHeaderBack() { returnToOrder(); },
 });

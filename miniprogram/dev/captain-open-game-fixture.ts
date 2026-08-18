@@ -1,5 +1,5 @@
 export type CaptainOpenGameState = "ELIGIBLE" | "DRAFT" | "PUBLISHED" | "CANCELLED" | "INELIGIBLE" | "SUSPENDED" | "SAVE_UNKNOWN" | "LOAD_ERROR";
-export type CaptainGamePanel = "publish" | "cancel" | "share" | null;
+export type CaptainGamePanel = "publish" | "cancel" | "abandon" | "share" | null;
 
 export interface CaptainGameForm {
   readonly name: string;
@@ -112,6 +112,8 @@ export interface CaptainOpenGameStore {
   confirmPublish(): ReturnType<CaptainOpenGameStore["current"]>;
   beginCancel(): ReturnType<CaptainOpenGameStore["current"]>;
   confirmCancel(): ReturnType<CaptainOpenGameStore["current"]>;
+  beginAbandon(): ReturnType<CaptainOpenGameStore["current"]>;
+  confirmAbandon(): ReturnType<CaptainOpenGameStore["current"]>;
   closePanel(): ReturnType<CaptainOpenGameStore["current"]>;
 }
 
@@ -123,13 +125,20 @@ export const createCaptainOpenGameStore = (initial: CaptainOpenGameState = "ELIG
   return {
     current: result,
     reset(next = "ELIGIBLE") { state = next; panel = null; snapshot = deepFreeze({ ...form }); return result(); },
-    saveDraft(value) { snapshot = deepFreeze({ ...value }); state = "DRAFT"; panel = null; return result(); },
+    saveDraft(value) { snapshot = deepFreeze({ ...value }); if (state !== "PUBLISHED") state = "DRAFT"; panel = null; return result(); },
     beginPublish() { if (state === "DRAFT") panel = "publish"; return result(); },
     confirmPublish() { if (state === "DRAFT" && panel === "publish") { state = "PUBLISHED"; panel = null; } return result(); },
     beginCancel() { if (state === "PUBLISHED") panel = "cancel"; return result(); },
     confirmCancel() { if (state === "PUBLISHED" && panel === "cancel") { state = "CANCELLED"; panel = null; } return result(); },
+    beginAbandon() { if (state === "DRAFT") panel = "abandon"; return result(); },
+    confirmAbandon() { if (state === "DRAFT" && panel === "abandon") { state = "ELIGIBLE"; panel = null; snapshot = deepFreeze({ ...form }); } return result(); },
     closePanel() { panel = null; return result(); },
   };
 };
 
 export const captainOpenGameStore = createCaptainOpenGameStore();
+
+export const readCaptainOpenGameFixture = (store: CaptainOpenGameStore = captainOpenGameStore) => {
+  const current = store.current();
+  return { lifecycle: current.state, snapshot: current.snapshot };
+};

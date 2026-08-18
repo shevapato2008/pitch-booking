@@ -11,17 +11,23 @@ import {
 interface Options { state?: unknown; }
 interface StepperEvent { currentTarget?: { dataset?: { action?: unknown } }; }
 
-const patch = (state: CaptainOpenGameState, form: CaptainGameForm = CAPTAIN_OPEN_GAME_FIXTURE.form) => {
+const patch = (state: CaptainOpenGameState, form: CaptainGameForm = captainOpenGameStore.current().snapshot) => {
   const view = buildCaptainOpenGameView(state);
-  return { ...view, form, stepperError: "", fixtureNotice: CAPTAIN_OPEN_GAME_FIXTURE.notice };
+  const mode = state === "DRAFT" || state === "PUBLISHED" ? "edit" : "create";
+  return { ...view, form, mode, pageTitle: mode === "edit" ? "编辑球局" : "创建球局", saveLabel: mode === "edit" ? "保存修改" : "保存草稿", stepperError: "", fixtureNotice: CAPTAIN_OPEN_GAME_FIXTURE.notice };
+};
+
+const returnToOrder = () => {
+  if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 });
+  else wx.reLaunch({ url: "/pages/my-orders/index" });
 };
 
 Page({
   data: patch("ELIGIBLE"),
   onLoad(options: Options = {}) {
     const state = resolveCaptainOpenGameState(options.state);
-    captainOpenGameStore.reset(state);
-    this.setData(patch(state));
+    if (captainOpenGameStore.current().state !== state) captainOpenGameStore.reset(state);
+    this.setData(patch(state, captainOpenGameStore.current().snapshot));
   },
   onStepper(event: StepperEvent) {
     if (!this.data.canEdit) return;
@@ -32,7 +38,8 @@ Page({
     if (!this.data.canEdit) return;
     const result = captainOpenGameStore.saveDraft(this.data.form);
     this.setData({ visualState: result.state, private: result.private, published: result.published, snapshot: result.snapshot });
-    wx.redirectTo({ url: "/dev/pages/captain-game-manage/index?state=DRAFT" });
+    wx.redirectTo({ url: `/dev/pages/captain-game-manage/index?state=${result.state}` });
   },
-  onReturnOrder() { wx.navigateBack({ delta: 1 }); },
+  onReturnOrder() { returnToOrder(); },
+  onHeaderBack() { returnToOrder(); },
 });

@@ -6,6 +6,7 @@ import {
   applyCaptainGameStepper,
   buildCaptainOpenGameView,
   createCaptainOpenGameStore,
+  readCaptainOpenGameFixture,
   resolveCaptainOpenGameState,
 } from "./captain-open-game-fixture";
 
@@ -53,12 +54,27 @@ test("save freezes a private draft snapshot without publishing it", () => {
   expect(store.current().snapshot.total).toBe(16);
 });
 
+test("current fixture reads expose the persisted lifecycle and snapshot, including published edits", () => {
+  const store = createCaptainOpenGameStore("PUBLISHED");
+  const edited = { ...CAPTAIN_OPEN_GAME_FIXTURE.form, name: "编辑后的公开球局", total: 16, open: 5 };
+  expect(store.saveDraft(edited)).toMatchObject({ state: "PUBLISHED", published: true, private: false, snapshot: edited });
+  expect(readCaptainOpenGameFixture(store)).toMatchObject({ lifecycle: "PUBLISHED", snapshot: edited });
+});
+
 test("publish and cancellation only change local lifecycle after explicit confirmation", () => {
   const store = createCaptainOpenGameStore("DRAFT");
   expect(store.beginPublish()).toMatchObject({ state: "DRAFT", panel: "publish" });
   expect(store.confirmPublish()).toMatchObject({ state: "PUBLISHED", published: true, panel: null });
   expect(store.beginCancel()).toMatchObject({ state: "PUBLISHED", panel: "cancel" });
   expect(store.confirmCancel()).toMatchObject({ state: "CANCELLED", bookingChanged: false, panel: null });
+});
+
+test("abandoning a draft requires confirmation and closing the panel retains the draft", () => {
+  const store = createCaptainOpenGameStore("DRAFT");
+  expect(store.beginAbandon()).toMatchObject({ state: "DRAFT", panel: "abandon" });
+  expect(store.closePanel()).toMatchObject({ state: "DRAFT", panel: null, private: true });
+  store.beginAbandon();
+  expect(store.confirmAbandon()).toMatchObject({ state: "ELIGIBLE", panel: null, published: false });
 });
 
 test("published public detail remains readonly and non-applicable states retain truthful messages", () => {

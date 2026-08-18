@@ -2,15 +2,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { beforeEach, expect, jest, test } from "@jest/globals";
+import { captainOpenGameStore } from "../../captain-open-game-fixture";
 
-interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onPublish(): void; onConfirmPublish(): void; onPreview(): void; onEdit(): void; onShare(): void; onClosePanel(): void; onCancel(): void; onConfirmCancel(): void; onReturnOrder(): void; }
+interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onShow(): void; onPublish(): void; onConfirmPublish(): void; onPreview(): void; onEdit(): void; onShare(): void; onClosePanel(): void; onCancel(): void; onConfirmCancel(): void; onAbandon(): void; onConfirmAbandon(): void; onReturnOrder(): void; onHeaderBack(): void; }
 let captured: Definition | undefined;
 const loadPage = () => {
   if (!captured) { (globalThis as any).Page = (definition: Definition) => { captured = definition; }; jest.requireActual("./index"); }
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { navigateTo: jest.fn(), redirectTo: jest.fn(), navigateBack: jest.fn(), showShareMenu: jest.fn() }; });
+beforeEach(() => { (globalThis as any).wx = { navigateTo: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
 
 test("draft publish requires confirmation before it becomes published", () => {
   const page = loadPage();
@@ -44,6 +45,27 @@ test("cancellation requires confirmation and leaves the booking unchanged", () =
   expect(page.data.panel).toBe("cancel");
   page.onConfirmCancel();
   expect(page.data).toMatchObject({ visualState: "CANCELLED", panel: null, bookingChanged: false });
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=CANCELLED" });
   page.onReturnOrder();
   expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
+});
+
+test("abandoning a draft is confirmed, while closing its confirmation preserves the draft", () => {
+  const page = loadPage();
+  page.onLoad({ state: "DRAFT" });
+  page.onAbandon();
+  expect(page.data).toMatchObject({ visualState: "DRAFT", panel: "abandon" });
+  page.onClosePanel();
+  expect(page.data).toMatchObject({ visualState: "DRAFT", panel: null, private: true });
+  page.onAbandon();
+  page.onConfirmAbandon();
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-form/index?state=ELIGIBLE" });
+});
+
+test("an old manager page corrects itself from the authoritative cancelled Fixture on show", () => {
+  const page = loadPage();
+  page.onLoad({ state: "PUBLISHED" });
+  captainOpenGameStore.reset("CANCELLED");
+  page.onShow();
+  expect(page.data.visualState).toBe("CANCELLED");
 });

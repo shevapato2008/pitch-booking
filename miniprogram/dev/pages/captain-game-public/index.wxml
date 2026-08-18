@@ -1,5 +1,5 @@
 <view class="captain-game-page captain-game-public">
-  <view class="captain-game-nav"><text>公开球局</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
+  <view class="captain-game-nav"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text>公开球局</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
   <scroll-view scroll-y="true" class="captain-game-scroll">
     <view class="captain-game-notice"><text>{{fixtureNotice}}</text></view>
     <view class="captain-game-card"><text class="captain-game-card-title">真实订场已确认</text><text class="captain-game-heading">奥体周日轻松局</text><text>津门周末足球队 · {{form.intensity}}</text></view>

@@ -1,5 +1,5 @@
 <view class="captain-game-page captain-game-form">
-  <view class="captain-game-nav"><text>创建球局</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
+  <view class="captain-game-nav"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text>{{pageTitle}}</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
   <scroll-view scroll-y="true" class="captain-game-scroll">
     <view class="captain-game-notice"><text>{{fixtureNotice}}</text></view>
     <view wx:if="{{visualState === 'INELIGIBLE'}}" class="captain-game-card captain-game-error" role="alert">
@@ -19,5 +19,5 @@
       <view class="captain-game-card"><text class="captain-game-heading">强度、费用与说明</text><text>{{form.intensity}} · {{form.positions}}</text><text>预计 AA：{{form.aa}} · 到场线下结算</text><text>报名截止：{{form.deadline}} · {{form.visibility}}</text></view>
     </block>
   </scroll-view>
-  <view wx:if="{{canEdit}}" class="captain-game-footer"><button class="captain-game-primary" bindtap="onSave">保存草稿</button></view>
+  <view wx:if="{{canEdit}}" class="captain-game-footer"><button class="captain-game-primary" bindtap="onSave">{{saveLabel}}</button></view>
 </view>
