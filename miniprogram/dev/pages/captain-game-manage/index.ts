@@ -5,6 +5,7 @@ import {
   resolveCaptainOpenGameState,
   type CaptainOpenGameState,
 } from "../../captain-open-game-fixture";
+import { readIntentHeaderLayout } from "../../intent-header-layout";
 
 interface Options { state?: unknown; }
 const returnToOrder = () => {
@@ -19,12 +20,13 @@ const patch = (state: CaptainOpenGameState) => {
 };
 
 Page({
-  data: patch("DRAFT"),
+  data: { ...patch("DRAFT"), headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0, headerLeftInsetPx: 0 },
   onLoad(options: Options = {}) {
     const requested = resolveCaptainOpenGameState(options.state);
     const state = requested === "ELIGIBLE" ? "DRAFT" : requested;
+    const header = readIntentHeaderLayout();
     if (captainOpenGameStore.current().state !== state) captainOpenGameStore.reset(state);
-    this.setData(patch(state));
+    this.setData({ ...patch(state), headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerRightInsetPx: header.rightInsetPx, headerLeftInsetPx: header.rightInsetPx });
   },
   onShow() {
     const current = captainOpenGameStore.current();

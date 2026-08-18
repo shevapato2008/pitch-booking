@@ -11,12 +11,12 @@ const loadPage = () => {
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
+beforeEach(() => { (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
 
 test("published public detail is readonly, has no application action, and explains that joining is forthcoming", () => {
   const page = loadPage();
   page.onLoad({ from: "PUBLISHED" });
-  expect(page.data).toMatchObject({ visualState: "PUBLISHED", readonly: true, applicationAvailable: false, notice: "当前仅供查看，申请加入即将开放" });
+  expect(page.data).toMatchObject({ visualState: "PUBLISHED", readonly: true, applicationAvailable: false, notice: "当前仅供查看，申请加入即将开放", headerRightInsetPx: 105, headerLeftInsetPx: 105 });
   expect(Object.keys(page).filter((key) => /apply|join|signup/i.test(key))).toEqual([]);
 });
 

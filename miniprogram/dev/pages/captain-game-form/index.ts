@@ -7,6 +7,7 @@ import {
   type CaptainGameForm,
   type CaptainOpenGameState,
 } from "../../captain-open-game-fixture";
+import { readIntentHeaderLayout } from "../../intent-header-layout";
 
 interface Options { state?: unknown; }
 interface StepperEvent { currentTarget?: { dataset?: { action?: unknown } }; }
@@ -23,11 +24,12 @@ const returnToOrder = () => {
 };
 
 Page({
-  data: patch("ELIGIBLE"),
+  data: { ...patch("ELIGIBLE"), headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0, headerLeftInsetPx: 0 },
   onLoad(options: Options = {}) {
     const state = resolveCaptainOpenGameState(options.state);
+    const header = readIntentHeaderLayout();
     if (captainOpenGameStore.current().state !== state) captainOpenGameStore.reset(state);
-    this.setData(patch(state, captainOpenGameStore.current().snapshot));
+    this.setData({ ...patch(state, captainOpenGameStore.current().snapshot), headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerRightInsetPx: header.rightInsetPx, headerLeftInsetPx: header.rightInsetPx });
   },
   onStepper(event: StepperEvent) {
     if (!this.data.canEdit) return;

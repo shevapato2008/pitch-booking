@@ -1,5 +1,6 @@
 <view class="captain-game-page captain-game-manage">
-  <view class="captain-game-nav"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text>管理球局</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
+  <view class="captain-game-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="captain-game-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="captain-game-nav-title">管理球局</text><text class="captain-game-nav-subtitle">开发预览</text></view>
   <scroll-view scroll-y="true" class="captain-game-scroll">
     <view class="captain-game-notice"><text>{{fixtureNotice}}</text></view>
     <view class="captain-game-card"><text class="captain-game-heading">{{visualState === 'DRAFT' ? '私有草稿' : visualState === 'PUBLISHED' ? '已发布' : visualState === 'CANCELLED' ? '球局已取消' : visualState}}</text><text wx:if="{{visualState === 'DRAFT'}}">仅你可见，尚未公开或分享。</text><text wx:if="{{visualState === 'PUBLISHED'}}">公开详情已可查看；申请功能尚未开放。</text><text wx:if="{{visualState === 'CANCELLED'}}">本次开放球局已取消；真实订场、订单和退款状态均未改变。</text></view>

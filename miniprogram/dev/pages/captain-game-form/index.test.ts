@@ -14,12 +14,12 @@ const loadPage = () => {
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { navigateBack: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}]); });
+beforeEach(() => { (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), navigateBack: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}]); });
 
 test("eligible form loads and keeps stepper errors adjacent to the changed field", () => {
   const page = loadPage();
   page.onLoad({ state: "ELIGIBLE" });
-  expect(page.data).toMatchObject({ visualState: "ELIGIBLE", canEdit: true, stepperError: "" });
+  expect(page.data).toMatchObject({ visualState: "ELIGIBLE", canEdit: true, stepperError: "", headerTopPx: 44, headerRowHeightPx: 44, headerRightInsetPx: 105, headerLeftInsetPx: 105 });
   page.data.form = { ...page.data.form, total: 12, fixed: 8, open: 4 };
   page.onStepper({ currentTarget: { dataset: { action: "total-decrease" } } });
   expect(page.data).toMatchObject({ stepperError: "计划总人数不能少于固定队员和开放名额之和" });

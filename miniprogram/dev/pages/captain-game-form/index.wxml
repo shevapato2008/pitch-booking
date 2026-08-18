@@ -1,5 +1,6 @@
 <view class="captain-game-page captain-game-form">
-  <view class="captain-game-nav"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text>{{pageTitle}}</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
+  <view class="captain-game-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="captain-game-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="captain-game-nav-title">{{pageTitle}}</text><text class="captain-game-nav-subtitle">开发预览</text></view>
   <scroll-view scroll-y="true" class="captain-game-scroll">
     <view class="captain-game-notice"><text>{{fixtureNotice}}</text></view>
     <view wx:if="{{visualState === 'INELIGIBLE'}}" class="captain-game-card captain-game-error" role="alert">

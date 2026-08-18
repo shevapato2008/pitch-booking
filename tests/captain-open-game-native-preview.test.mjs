@@ -22,12 +22,17 @@ test("native templates preserve honest Fixture-only lifecycle and public read-on
   const manage = readFileSync("miniprogram/dev/pages/captain-game-manage/index.wxml", "utf8");
   const publicPage = readFileSync("miniprogram/dev/pages/captain-game-public/index.wxml", "utf8");
   const styles = pages.map((page) => readFileSync(`miniprogram/dev/pages/${page}/index.wxss`, "utf8")).join("\n");
-  for (const copy of ["CAPTAIN_OPEN_GAME_FIXTURE", "真实订场已确认", "{{saveLabel}}", "返回订单", "计划总人数不能少于固定队员和开放名额之和"]) assert.match(form, new RegExp(copy));
+  for (const copy of ["真实订场已确认", "{{saveLabel}}", "返回订单", "计划总人数不能少于固定队员和开放名额之和"]) assert.match(form, new RegExp(copy));
   for (const copy of ["发布前确认", "确认发布", "暂时无法分享", "确认取消球局", "只取消本次开放球局，不会取消已预订场地，也不会发起退款。", "球局已取消"]) assert.match(manage, new RegExp(copy));
   assert.match(publicPage, /当前仅供查看，申请加入即将开放/);
   assert.doesNotMatch(publicPage, /<button[^>]*>[^<]*(申请加入|我要报名|立即加入)/);
   assert.doesNotMatch(`${form}\n${manage}\n${publicPage}`, /[\u{1F300}-\u{1FAFF}]/u);
   for (const template of [form, manage, publicPage]) assert.match(template, /class="captain-game-nav-back"[^>]*bindtap="onHeaderBack"/);
+  for (const template of [form, manage, publicPage]) {
+    assert.match(template, /padding-left: \{\{headerLeftInsetPx\}\}px; padding-right: \{\{headerRightInsetPx\}\}px/);
+    assert.match(template, /class="captain-game-nav-subtitle">开发预览/);
+    assert.doesNotMatch(template.match(/class="captain-game-nav"[\s\S]*?<\/view>/)?.[0] ?? "", /CAPTAIN_OPEN_GAME_FIXTURE/);
+  }
   assert.match(manage, /bindtap="onAbandon">放弃草稿/);
   assert.match(manage, /panel === 'abandon'[\s\S]*确认放弃草稿[\s\S]*继续保留/);
   for (const selector of [".captain-game-primary", ".captain-game-secondary", ".captain-game-stepper__button"]) {
@@ -38,4 +43,8 @@ test("native templates preserve honest Fixture-only lifecycle and public read-on
   }
   assert.match(styles, /min-height:\s*88rpx/);
   assert.match(styles, /env\(safe-area-inset-bottom/);
+  for (const selector of [".captain-game-nav-back", ".captain-game-stepper__button"]) {
+    const bodies = [...styles.matchAll(new RegExp(`${selector.replace(".", "\\.")}\\s*\\{([^}]*)\\}`, "g"))].map((match) => match[1]);
+    assert.ok(bodies.some((body) => /min-width:\s*88rpx/.test(body) && /min-height:\s*88rpx/.test(body) && /display:\s*flex/.test(body) && /align-items:\s*center/.test(body) && /justify-content:\s*center/.test(body)), `${selector} must be an 88rpx centered target`);
+  }
 });

@@ -11,13 +11,13 @@ const loadPage = () => {
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { navigateTo: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
+beforeEach(() => { (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), navigateTo: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
 
 test("draft publish requires confirmation before it becomes published", () => {
   const page = loadPage();
   page.onLoad({ state: "DRAFT" });
   page.onPublish();
-  expect(page.data).toMatchObject({ visualState: "DRAFT", panel: "publish" });
+  expect(page.data).toMatchObject({ visualState: "DRAFT", panel: "publish", headerRightInsetPx: 105, headerLeftInsetPx: 105 });
   page.onConfirmPublish();
   expect(page.data).toMatchObject({ visualState: "PUBLISHED", panel: null, published: true });
 });
