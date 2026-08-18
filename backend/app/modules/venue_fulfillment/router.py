@@ -43,6 +43,10 @@ def get_refund_provider_name_resolver() -> Callable[[], str | None]:
     return lambda: None
 
 
+def get_refund_actions_enabled() -> bool:
+    return False
+
+
 @router.get(
     "",
     response_model=VenueFulfillmentOrdersResponse,
@@ -59,6 +63,7 @@ def list_venue_fulfillment_orders(
     database: Annotated[Session, Depends(get_database)],
     phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
     now: Annotated[datetime, Depends(get_fulfillment_clock)],
+    refund_actions_enabled: Annotated[bool, Depends(get_refund_actions_enabled)],
     service_date: Annotated[date | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     cursor: Annotated[str | None, Query(min_length=1)] = None,
@@ -66,6 +71,7 @@ def list_venue_fulfillment_orders(
     return VenueFulfillmentService(
         repository=VenueFulfillmentRepository(database),
         phone_vault=phone_vault,
+        refund_actions_enabled=refund_actions_enabled,
         now=lambda: now,
     ).list_orders(
         user=user,
@@ -93,6 +99,7 @@ def check_in_venue_order(
     database: Annotated[Session, Depends(get_database)],
     phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
     now: Annotated[datetime, Depends(get_fulfillment_clock)],
+    refund_actions_enabled: Annotated[bool, Depends(get_refund_actions_enabled)],
     idempotency_key: Annotated[
         str,
         Header(alias="Idempotency-Key", min_length=16, max_length=128),
@@ -101,6 +108,7 @@ def check_in_venue_order(
     return VenueFulfillmentService(
         repository=VenueFulfillmentRepository(database),
         phone_vault=phone_vault,
+        refund_actions_enabled=refund_actions_enabled,
         now=lambda: now,
     ).check_in_order(
         user=user,
@@ -127,6 +135,7 @@ def complete_venue_order(
     database: Annotated[Session, Depends(get_database)],
     phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
     now: Annotated[datetime, Depends(get_fulfillment_clock)],
+    refund_actions_enabled: Annotated[bool, Depends(get_refund_actions_enabled)],
     idempotency_key: Annotated[
         str,
         Header(alias="Idempotency-Key", min_length=16, max_length=128),
@@ -135,6 +144,7 @@ def complete_venue_order(
     return VenueFulfillmentService(
         repository=VenueFulfillmentRepository(database),
         phone_vault=phone_vault,
+        refund_actions_enabled=refund_actions_enabled,
         now=lambda: now,
     ).complete_order(
         user=user,

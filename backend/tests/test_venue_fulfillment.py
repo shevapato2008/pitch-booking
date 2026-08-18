@@ -29,6 +29,7 @@ from backend.app.modules.auth.router import get_phone_vault
 from backend.app.modules.venue_fulfillment.repository import VenueFulfillmentRepository
 from backend.app.modules.venue_fulfillment.router import (
     get_fulfillment_clock,
+    get_refund_actions_enabled,
 )
 from backend.app.modules.venue_fulfillment.router import (
     router as venue_fulfillment_router,
@@ -45,7 +46,12 @@ PHONE_KEY = base64.b64encode(bytes(range(32))).decode("ascii")
 PHONE_VAULT = PhoneVault(key_base64=PHONE_KEY, key_version=1)
 
 
-def _client(engine: Engine, *, now: datetime = NOW) -> TestClient:
+def _client(
+    engine: Engine,
+    *,
+    now: datetime = NOW,
+    refund_actions_enabled: bool | None = True,
+) -> TestClient:
     app = create_app(settings=Settings(app_env="test", wechat_provider="development"))
     app.include_router(venue_fulfillment_router)
 
@@ -56,6 +62,10 @@ def _client(engine: Engine, *, now: datetime = NOW) -> TestClient:
     app.dependency_overrides[get_database] = database_override
     app.dependency_overrides[get_phone_vault] = lambda: PHONE_VAULT
     app.dependency_overrides[get_fulfillment_clock] = lambda: now
+    if refund_actions_enabled is not None:
+        app.dependency_overrides[get_refund_actions_enabled] = (
+            lambda: refund_actions_enabled
+        )
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -267,6 +277,42 @@ def test_list_authorizes_manager_paginates_and_projects_only_safe_fields(
         "13812345678",
     ):
         assert secret not in serialized
+
+
+def test_list_refund_action_is_fail_closed_until_route_is_enabled(
+    pg_engine: Engine,
+) -> None:
+    with Session(pg_engine) as session:
+        manager = _manager(session)
+        parent = _managed_venue(session, manager)
+        order = _order(
+            session,
+            parent=parent,
+            starts_at=datetime(2026, 8, 18, 11, tzinfo=UTC),
+        )
+        parent_id = parent.id
+        order_id = order.id
+        session.commit()
+
+    with _client(pg_engine, refund_actions_enabled=None) as client:
+        disabled = client.get(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders",
+            headers=_auth(),
+        )
+    with _client(pg_engine, refund_actions_enabled=True) as client:
+        enabled = client.get(
+            f"/api/v1/venues/{parent_id}/fulfillment/orders",
+            headers=_auth(),
+        )
+
+    disabled_order = next(
+        row for row in disabled.json()["orders"] if row["id"] == str(order_id)
+    )
+    enabled_order = next(
+        row for row in enabled.json()["orders"] if row["id"] == str(order_id)
+    )
+    assert disabled_order["allowed_actions"]["can_refund"] is False
+    assert enabled_order["allowed_actions"]["can_refund"] is True
 
 
 @pytest.mark.parametrize(

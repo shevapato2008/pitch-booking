@@ -50,10 +50,12 @@ class VenueFulfillmentService:
         *,
         repository: VenueFulfillmentRepository,
         phone_vault: PhoneVault | None,
+        refund_actions_enabled: bool = False,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._phone_vault = phone_vault
+        self._refund_actions_enabled = refund_actions_enabled
         self._now = now or (lambda: datetime.now(UTC))
 
     def list_orders(
@@ -289,7 +291,9 @@ class VenueFulfillmentService:
                 can_cancel=actions.can_cancel,
                 can_check_in=actions.can_check_in,
                 can_complete=actions.can_complete,
-                can_refund=actions.can_refund,
+                can_refund=(
+                    actions.can_refund and self._refund_actions_enabled
+                ),
                 blocked_reason=actions.blocked_reason,
             ),
         )
