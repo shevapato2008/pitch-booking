@@ -70,3 +70,23 @@ inventory reference remains historical and is used only as a slot-status materia
 Both revisions are `pending-user-visual-approval`. They do not claim native readiness or
 production readiness; no native Fixture, production route, contract, or backend integration is
 created by this checkpoint.
+
+## My orders
+
+The reference-only “我的订单” visual gate uses one `375 × 812` browser Artifact with six
+explicit query states:
+
+- `references/my-orders.html?state=map-entry`
+- `references/my-orders.html?state=ready`
+- `references/my-orders.html?state=empty`
+- `references/my-orders.html?state=error`
+- `references/my-orders.html?state=loading`
+- `references/my-orders.html?state=load-more-error`
+- `flows/my-orders.md`
+- `screen-manifest/my-orders.yaml`
+- `reviews/my-orders/review-board.html`
+
+Only map entry, ready, empty, and first-load error are captured as the representative visual
+matrix. Loading and load-more error remain available in the same Artifact and its optional
+`controls=1` panel. This checkpoint is pending user visual approval and contains no native
+Fixture, production route, contract, or backend implementation.
