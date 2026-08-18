@@ -146,6 +146,7 @@ class PaymentConvergenceService:
                         slot.status = SlotStatus.BOOKED
                         slot.locked_by_order_id = None
                         slot.locked_until = None
+                        payment.applied_to_order_at = now
                     else:
                         order.status = OrderStatus.PAYMENT_EXCEPTION
                         payment.last_error_code = "PAYMENT_INVENTORY_CONFLICT"

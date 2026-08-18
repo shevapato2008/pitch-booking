@@ -86,6 +86,11 @@ class OrderStatus(StrEnum):
     CONFIRMED = "CONFIRMED"
     EXPIRED = "EXPIRED"
     PAYMENT_EXCEPTION = "PAYMENT_EXCEPTION"
+    CANCELLED = "CANCELLED"
+    REFUND_PENDING = "REFUND_PENDING"
+    REFUND_FAILED = "REFUND_FAILED"
+    REFUNDED = "REFUNDED"
+    COMPLETED = "COMPLETED"
 
 
 class PaymentState(StrEnum):
@@ -94,6 +99,26 @@ class PaymentState(StrEnum):
     CONFIRMING = "CONFIRMING"
     SUCCESS = "SUCCESS"
     CLOSED = "CLOSED"
+    UNKNOWN = "UNKNOWN"
+
+
+class RefundCasePurpose(StrEnum):
+    ORDER_CANCELLATION = "ORDER_CANCELLATION"
+    DUPLICATE_CHARGE = "DUPLICATE_CHARGE"
+    PAYMENT_INVENTORY_CONFLICT = "PAYMENT_INVENTORY_CONFLICT"
+
+
+class RefundReason(StrEnum):
+    USER_CANCELLED = "USER_CANCELLED"
+    VENUE_CANCELLED = "VENUE_CANCELLED"
+    AUTOMATIC_RECOVERY = "AUTOMATIC_RECOVERY"
+
+
+class RefundAttemptStatus(StrEnum):
+    CREATING = "CREATING"
+    PROCESSING = "PROCESSING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
     UNKNOWN = "UNKNOWN"
 
 
@@ -894,7 +919,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
-    orders: Mapped[list["Order"]] = relationship(back_populates="user")
+    orders: Mapped[list["Order"]] = relationship(
+        back_populates="user", foreign_keys="Order.user_id"
+    )
     idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
         back_populates="user"
     )
@@ -1214,6 +1241,27 @@ class Order(Base):
             "(status = 'EXPIRED' AND expired_at IS NOT NULL AND expired_at >= expires_at)",
             name="ck_orders_status_expired_at",
         ),
+        CheckConstraint(
+            "(status IN ('CANCELLED', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED') "
+            "AND cancel_requested_at IS NOT NULL AND cancelled_at IS NOT NULL "
+            "AND cancelled_at >= cancel_requested_at) OR "
+            "(status NOT IN ('CANCELLED', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED') "
+            "AND cancelled_at IS NULL)",
+            name="ck_orders_cancellation_timestamps",
+        ),
+        CheckConstraint(
+            "((checked_in_at IS NULL) = (checked_in_by_user_id IS NULL)) AND "
+            "(checked_in_at IS NULL OR status IN ('CONFIRMED', 'COMPLETED'))",
+            name="ck_orders_check_in_pair",
+        ),
+        CheckConstraint(
+            "(status = 'COMPLETED' AND checked_in_at IS NOT NULL "
+            "AND completed_at IS NOT NULL AND completed_by_user_id IS NOT NULL "
+            "AND completed_at >= checked_in_at) OR "
+            "(status <> 'COMPLETED' AND completed_at IS NULL "
+            "AND completed_by_user_id IS NULL)",
+            name="ck_orders_completion_pair",
+        ),
         UniqueConstraint("order_number", name="uq_orders_order_number"),
         Index("ix_orders_user_id", "user_id"),
         Index("ix_orders_slot_id", "slot_id"),
@@ -1246,13 +1294,44 @@ class Order(Base):
     expired_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    checked_in_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    checked_in_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_orders_checked_in_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_orders_completed_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     wechat_prepay_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    user: Mapped[User] = relationship(back_populates="orders")
+    user: Mapped[User] = relationship(back_populates="orders", foreign_keys=[user_id])
     slot: Mapped[Slot] = relationship(
         back_populates="orders", foreign_keys=[slot_id]
     )
     payments: Mapped[list["Payment"]] = relationship(back_populates="order")
+    refund_cases: Mapped[list["RefundCase"]] = relationship(back_populates="order")
 
 
 class Payment(Base):
@@ -1297,6 +1376,10 @@ class Payment(Base):
             "(reconcile_claim_token IS NULL) = (reconcile_lease_until IS NULL)",
             name="ck_payments_reconcile_lease_pair",
         ),
+        CheckConstraint(
+            "applied_to_order_at IS NULL OR status = 'SUCCESS'",
+            name="ck_payments_applied_success",
+        ),
         UniqueConstraint(
             "provider",
             "merchant_order_no",
@@ -1308,6 +1391,12 @@ class Payment(Base):
             name="uq_payments_provider_transaction_no",
         ),
         Index("ix_payments_order_id", "order_id"),
+        Index(
+            "uq_payments_one_applied_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("applied_to_order_at IS NOT NULL"),
+        ),
         Index(
             "uq_payments_one_nonterminal_per_order",
             "order_id",
@@ -1347,6 +1436,9 @@ class Payment(Base):
     status: Mapped[PaymentState] = mapped_column(Enum(PaymentState, name="payment_state"))
     provider_prepay_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_to_order_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     authority_unknown_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -1385,6 +1477,170 @@ class Payment(Base):
     idempotency_records: Mapped[list["IdempotencyRecord"]] = relationship(
         back_populates="payment"
     )
+    refund_case: Mapped["RefundCase | None"] = relationship(back_populates="payment")
+
+
+class RefundCase(Base):
+    __tablename__ = "refund_cases"
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_refund_cases_amount_cents"),
+        CheckConstraint(
+            "length(trim(currency)) > 0",
+            name="ck_refund_cases_currency_nonempty",
+        ),
+        CheckConstraint(
+            "(reason = 'VENUE_CANCELLED' AND reason_note IS NOT NULL "
+            "AND length(trim(reason_note)) BETWEEN 1 AND 500 "
+            "AND reason_note = trim(reason_note)) OR "
+            "(reason <> 'VENUE_CANCELLED' AND reason_note IS NULL)",
+            name="ck_refund_cases_reason_note",
+        ),
+        UniqueConstraint("payment_id", name="uq_refund_cases_payment_id"),
+        Index("ix_refund_cases_order_id", "order_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", name="fk_refund_cases_order_id_orders", ondelete="RESTRICT"),
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "payments.id",
+            name="fk_refund_cases_payment_id_payments",
+            ondelete="RESTRICT",
+        ),
+    )
+    purpose: Mapped[RefundCasePurpose] = mapped_column(
+        Enum(RefundCasePurpose, name="refund_case_purpose")
+    )
+    reason: Mapped[RefundReason] = mapped_column(
+        Enum(RefundReason, name="refund_reason")
+    )
+    reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_refund_cases_requested_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    order: Mapped[Order] = relationship(back_populates="refund_cases")
+    payment: Mapped[Payment] = relationship(back_populates="refund_case")
+    attempts: Mapped[list["RefundAttempt"]] = relationship(back_populates="refund_case")
+
+
+class RefundAttempt(Base):
+    __tablename__ = "refund_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(provider)) > 0",
+            name="ck_refund_attempts_provider_nonempty",
+        ),
+        CheckConstraint(
+            "length(trim(merchant_refund_no)) BETWEEN 1 AND 32",
+            name="ck_refund_attempts_merchant_refund_no",
+        ),
+        CheckConstraint(
+            "provider_refund_no IS NULL OR length(trim(provider_refund_no)) > 0",
+            name="ck_refund_attempts_provider_refund_no",
+        ),
+        CheckConstraint("attempt_no >= 1", name="ck_refund_attempts_attempt_no"),
+        CheckConstraint(
+            "failure_code IS NULL OR length(trim(failure_code)) > 0",
+            name="ck_refund_attempts_failure_code",
+        ),
+        CheckConstraint(
+            "status <> 'SUCCESS' OR refunded_at IS NOT NULL",
+            name="ck_refund_attempts_success_refunded_at",
+        ),
+        CheckConstraint(
+            "(reconcile_claim_token IS NULL) = (reconcile_lease_until IS NULL)",
+            name="ck_refund_attempts_reconcile_lease_pair",
+        ),
+        UniqueConstraint(
+            "provider",
+            "merchant_refund_no",
+            name="uq_refund_attempts_provider_merchant_refund_no",
+        ),
+        UniqueConstraint(
+            "refund_case_id",
+            "attempt_no",
+            name="uq_refund_attempts_case_attempt_no",
+        ),
+        Index("ix_refund_attempts_case_id", "refund_case_id"),
+        Index(
+            "uq_refund_attempts_one_active_per_case",
+            "refund_case_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('CREATING', 'PROCESSING', 'UNKNOWN')"
+            ),
+        ),
+        Index(
+            "ix_refund_attempts_reconciliation_due",
+            "next_reconcile_at",
+            "id",
+            postgresql_where=text(
+                "status IN ('CREATING', 'PROCESSING', 'UNKNOWN') "
+                "AND next_reconcile_at IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    refund_case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "refund_cases.id",
+            name="fk_refund_attempts_case_id_refund_cases",
+            ondelete="RESTRICT",
+        ),
+    )
+    provider: Mapped[str] = mapped_column(String(40))
+    merchant_refund_no: Mapped[str] = mapped_column(String(32))
+    provider_refund_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[RefundAttemptStatus] = mapped_column(
+        Enum(RefundAttemptStatus, name="refund_attempt_status")
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    next_reconcile_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reconcile_claim_token: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    reconcile_lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    refund_case: Mapped[RefundCase] = relationship(back_populates="attempts")
 
 
 class IdempotencyRecord(Base):

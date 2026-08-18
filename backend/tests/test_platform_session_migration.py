@@ -102,12 +102,12 @@ def test_platform_session_constraints_reject_invalid_hash_and_expiry(
                 connection.execute(insert(table).values(**{**valid, **changes}))
 
 
-def test_migration_head_is_0012(migration_engine: Engine) -> None:
+def test_migration_head_is_0013(migration_engine: Engine) -> None:
     command.upgrade(_config(migration_engine), "head")
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0012"
+        ).scalar_one() == "0013"
 
 
 def test_platform_session_migration_matches_model_metadata(

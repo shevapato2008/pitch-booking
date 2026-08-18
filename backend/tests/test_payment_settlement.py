@@ -132,6 +132,7 @@ def test_verified_success_atomically_books_and_duplicate_or_old_close_cannot_reg
         assert first.terminal and duplicate.terminal
         assert payment.status is PaymentState.SUCCESS
         assert payment.provider_transaction_no == "tx-1"
+        assert payment.applied_to_order_at is not None
         assert order.status is OrderStatus.CONFIRMED
         assert slot.status is SlotStatus.BOOKED
         assert slot.locked_by_order_id is None and slot.locked_until is None
@@ -305,7 +306,9 @@ def test_success_on_closed_inventory_preserves_money_but_marks_order_exception(
         ),
     )
     with Session(pg_engine) as session:
-        assert session.get_one(Payment, payment_id).status is PaymentState.SUCCESS
+        payment = session.get_one(Payment, payment_id)
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.applied_to_order_at is None
         assert session.get_one(Order, order_id).status is OrderStatus.PAYMENT_EXCEPTION
         assert session.get_one(Slot, slot_id).status is SlotStatus.CLOSED
 
