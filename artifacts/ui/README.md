@@ -90,3 +90,15 @@ Only map entry, ready, empty, and first-load error are captured as the represent
 matrix. Loading and load-more error remain available in the same Artifact and its optional
 `controls=1` panel. This checkpoint is pending user visual approval and contains no native
 Fixture, production route, contract, or backend implementation.
+
+## Venue order fulfillment
+
+The venue operations slice freezes one representative `375 × 812` refund-confirm workbench:
+
+- `references/venue-order-fulfillment.html`
+- `flows/venue-order-fulfillment.md`
+- `screen-manifest/venue-order-fulfillment.yaml`
+- `reviews/venue-order-fulfillment/review-board.html`
+
+It shows check-in, completion, and full-refund authority in one compact operational hierarchy.
+The production route stays disabled and native Fixture visual approval remains pending.

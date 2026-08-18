@@ -1,0 +1,19 @@
+id: venue-order-fulfillment
+target_viewport: {width: 375, height: 812}
+route: pages/venue-fulfillment/index
+representative_state: refund-confirm
+production_enabled: false
+fixture: miniprogram/dev/venue-fulfillment-fixture.ts
+native_fixture_visual_approval: pending
+reference: artifacts/ui/references/venue-order-fulfillment.html
+reference_capture: artifacts/ui/reviews/venue-order-fulfillment/refund-confirm-reference-375x812.png
+authority: allowed_actions
+operations: [CHECK_IN, COMPLETE, REFUND]
+additional_fixture_states: [empty, read-error]
+forbidden_scope: [reporting, search, partial-refund, bulk-actions, qr-scan]
+interaction:
+  minimum_css_pixels: 44
+  minimum_native_rpx: 88
+  button_alignment: flex-both-axes
+safe_area_bottom: required
+gate: pending-native-fixture-visual-approval
