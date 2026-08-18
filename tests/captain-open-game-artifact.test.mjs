@@ -72,9 +72,29 @@ test("persistent Fixture lifecycle wins over stale browser history while public 
   assert.equal(data.resolveFixtureRoute("CANCELLED", "published-manage"), "cancelled-readonly");
   assert.equal(data.resolveFixtureRoute("CANCELLED", "create-ready"), "cancelled-readonly");
   assert.equal(data.resolveFixtureRoute("PUBLISHED", "public-readonly"), "public-readonly");
-  assert.equal(data.resolveFixtureRoute("CANCELLED", "public-readonly"), "public-readonly");
+  assert.equal(data.resolveFixtureRoute("CANCELLED", "public-readonly"), "cancelled-readonly");
+  const publicReturnCancelBack = ["public-readonly", "published-manage"].map((staleHistoryRoute) => data.resolveFixtureRoute("CANCELLED", staleHistoryRoute));
+  assert.deepEqual(publicReturnCancelBack, ["cancelled-readonly", "cancelled-readonly"], "public → return → cancel → Back must remain cancelled");
   assert.match(read(files.data), /commitLifecycle[\s\S]*?syncUrl\("replaceState"\)/, "lifecycle commits must replace stale history");
   assert.match(read(files.data), /navigate[\s\S]*?syncUrl\("pushState"\)/, "public-preview navigation stays in browser history");
+});
+
+test("Fixture stepper interaction preserves capacity and saved game snapshot drives summaries", { skip: missing.length > 0 }, async () => {
+  const data = await import(`../${files.data}?form-test=1`);
+  let form = data.createGameForm();
+  for (let index = 0; index < 12; index += 1) form = data.applyFormStepperAction(form, "total-decrease");
+  assert.deepEqual([form.total, form.fixed, form.open], [12, 8, 4]);
+  form = data.applyFormStepperAction(form, "fixed-increase");
+  form = data.applyFormStepperAction(form, "open-increase");
+  assert.deepEqual([form.total, form.fixed, form.open], [12, 8, 4], "fixed + open cannot exceed total");
+  const saved = data.freezeGameSnapshot(form);
+  form = data.applyFormStepperAction(form, "open-decrease");
+  assert.equal(saved.open, 4, "saving keeps a snapshot rather than a live form reference");
+  assert.deepEqual(data.getGameSummary(saved).slice(0, 2), [
+    ["人数与名额", "计划 12 人 · 固定 8 人 · 开放 4 人"], ["对抗强度", "休闲对抗"],
+  ]);
+  assert.match(read(files.data), /applyFormStepperAction\(formValues, action\)/, "renderer must use the tested stepper interaction");
+  assert.match(read(files.data), /freezeGameSnapshot\(formValues\)/, "save must persist the current form snapshot");
 });
 
 test("reference preserves existing light system, real order content, and privacy boundary", { skip: missing.length > 0 }, () => {

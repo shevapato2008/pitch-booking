@@ -78,6 +78,8 @@ button { color: inherit; cursor: pointer; }
 .status-row--cancelled p { color: var(--danger); }
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin: 0; }
 .summary-grid div { min-width: 0; }
+.summary-grid div:first-child { display: grid; grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.summary-grid div:first-child dd { text-align: right; }
 .summary-grid dt { color: var(--muted); font-size: 11px; line-height: 17px; }
 .summary-grid dd { margin: 2px 0 0; font-size: 13px; font-weight: 700; line-height: 19px; }
 .action-list { display: grid; gap: 8px; }

@@ -11,14 +11,32 @@ export const CAPTAIN_OPEN_GAME_INTERNAL_STATE_IDS = freeze([...CAPTAIN_OPEN_GAME
 export const CAPTAIN_OPEN_GAME_LIFECYCLES = freeze(["UNSAVED", "DRAFT", "PUBLISHED", "CANCELLED"]);
 const managementStateByLifecycle = freeze({ UNSAVED: "create-ready", DRAFT: "draft-manage", PUBLISHED: "published-manage", CANCELLED: "cancelled-readonly" });
 export const resolveFixtureRoute = (lifecycle, requestedState) => {
-  if (requestedState === "public-readonly") return "public-readonly";
   if (lifecycle === "CANCELLED") return "cancelled-readonly";
+  if (requestedState === "public-readonly") return "public-readonly";
   if (requestedState === "create-ready") return "create-ready";
   return managementStateByLifecycle[lifecycle];
 };
 export const CONFIRMED_ORDER = freeze({
   venue: "天津奥体足球场", pitch: "七人制 A 场", date: "2026年8月23日 周日", time: "14:00–16:00", format: "七人制", booking: "来自已确认订单，不可修改",
 });
+export const DEFAULT_GAME_FORM = freeze({ total: 14, fixed: 8, open: 4, intensity: "休闲对抗", positions: "门将、后卫、前锋", aa: "¥30 / 人", deadline: "8月23日 12:00", visibility: "公开" });
+export const createGameForm = (source = DEFAULT_GAME_FORM) => ({ ...source });
+export const freezeGameSnapshot = (form) => freeze({ ...form });
+export const applyFormStepperAction = (form, action) => {
+  const next = createGameForm(form);
+  if (action === "total-decrease") next.total = Math.max(4, next.fixed + next.open, next.total - 1);
+  if (action === "total-increase") next.total = Math.min(30, next.total + 1);
+  if (action === "fixed-decrease") next.fixed = Math.max(1, next.fixed - 1);
+  if (action === "fixed-increase") next.fixed = Math.min(next.total - next.open, next.fixed + 1);
+  if (action === "open-decrease") next.open = Math.max(1, next.open - 1);
+  if (action === "open-increase") next.open = Math.min(next.total - next.fixed, next.open + 1);
+  return next;
+};
+export const getGameSummary = (game) => [
+  ["人数与名额", `计划 ${game.total} 人 · 固定 ${game.fixed} 人 · 开放 ${game.open} 人`],
+  ["对抗强度", game.intensity], ["位置需求", game.positions], ["预计 AA", game.aa], ["可见范围", game.visibility],
+];
+const getPublishDetails = (game) => [["真实场地", "天津奥体足球场 · 七人制 A 场"], ["开放名额", `${game.open} 人`], ["预计 AA", game.aa], ["线下结算", "到场线下结算，平台不代收或担保"], ["报名截止", game.deadline], ["可见范围", game.visibility]];
 
 const actions = {
   save: { id: "save-draft", label: "保存草稿", nextState: "draft-manage", fixtureTransition: "save private DRAFT" },
@@ -33,7 +51,7 @@ const actions = {
 };
 
 export const CAPTAIN_OPEN_GAME_STATES = freeze({
-  "create-ready": { id: "create-ready", title: "创建球局", actions: [actions.save], values: { total: 14, fixed: 8, open: 4, intensity: "休闲对抗", positions: "门将、后卫、前锋", aa: "¥30 / 人", deadline: "8月23日 12:00", visibility: "公开" } },
+  "create-ready": { id: "create-ready", title: "创建球局", actions: [actions.save], values: DEFAULT_GAME_FORM },
   "draft-manage": { id: "draft-manage", title: "管理球局", status: "私有草稿", description: "仅你可见，尚未公开或分享。", actions: [actions.preview, actions.edit, actions.abandon, actions.beginPublish] },
   "published-manage": { id: "published-manage", title: "管理球局", status: "已发布", description: "公开详情已可查看；申请功能尚未开放。", actions: [actions.share, actions.open, actions.edit, actions.cancel], cancelNotice: "只取消本次开放球局，不会取消已预订场地，也不会发起退款。" },
   "public-readonly": { id: "public-readonly", title: "公开球局", notice: "当前仅供查看，申请加入即将开放", actions: [actions.return] },
@@ -44,7 +62,6 @@ export const FIXTURE_PANELS = freeze({
   publish: {
     title: "发布前确认", message: "发布后会展示下列公开信息；平台不代收或担保线下结算。",
     items: ["真实场地", "开放名额", "预计 AA", "线下结算", "报名截止", "可见范围"],
-    details: [["真实场地", "天津奥体足球场 · 七人制 A 场"], ["开放名额", "4 人"], ["预计 AA", "¥30 / 人"], ["线下结算", "到场线下结算，平台不代收或担保"], ["报名截止", "8月23日 12:00"], ["可见范围", "公开"]],
     close: { id: "close-panel", label: "返回修改", fixtureTransition: "close publish confirmation" },
     confirm: { id: "confirm-publish", label: "确认发布", fixtureTransition: "publish Fixture game" },
   },
@@ -76,7 +93,8 @@ const getRoute = () => {
 let { state: requestedState, from: returnState, panel, lifecycle } = getRoute();
 let stateId = resolveFixtureRoute(lifecycle, requestedState);
 let feedback = "";
-let formValues = { ...CAPTAIN_OPEN_GAME_STATES["create-ready"].values };
+let formValues = createGameForm();
+let savedGame = freezeGameSnapshot(formValues);
 
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 const button = (action, className = "secondary") => { const node = el("button", className, action.label); node.type = "button"; node.dataset.action = action.id; node.setAttribute("aria-label", action.label); return node; };
@@ -96,14 +114,15 @@ const createScreen = () => {
   screen.append(el("p", "disclosure", lifecycle === "PUBLISHED" ? "装备：深浅两套球衣；提前 15 分钟到场。保存修改后仍保持已发布。" : "装备：深浅两套球衣；提前 15 分钟到场。保存后仅创建你可见的私有草稿。"));
   return screen;
 };
-const gameSummary = () => { const card = el("section", "card section"); const grid = el("dl", "summary-grid"); [["计划人数", "14 人"], ["开放名额", "4 人"], ["对抗强度", "休闲对抗"], ["位置需求", "门将、后卫、前锋"], ["预计 AA", "¥30 / 人"], ["可见范围", "公开"]].forEach(([term, value]) => { const item = el("div"); item.append(el("dt", "", term), el("dd", "", value)); grid.append(item); }); card.append(el("h2", "summary-title", "球局概要"), grid); return card; };
+const gameSummary = (game = savedGame) => { const card = el("section", "card section"); const grid = el("dl", "summary-grid"); getGameSummary(game).forEach(([term, value]) => { const item = el("div"); item.append(el("dt", "", term), el("dd", "", value)); grid.append(item); }); card.append(el("h2", "summary-title", "球局概要"), grid); return card; };
 const manageScreen = (state) => { const screen = el("section", "screen screen--manage"); const status = el("section", `status-row${state.lifecycle === "CANCELLED" ? " status-row--cancelled" : ""}`); const copy = el("div"); copy.append(el("strong", "", state.status), el("p", "", state.description)); status.append(el("span", "status-dot"), copy); screen.append(status, orderCard(), gameSummary()); if (state.actions.length) { const list = el("section", "action-list section"); state.actions.forEach((action) => list.append(button(action, action.id === "cancel" || action.id === "abandon" ? "danger" : action.id === "begin-publish" ? "primary" : "secondary"))); screen.append(section("可用操作", list)); } if (state.cancelNotice) screen.append(el("p", "disclosure", state.cancelNotice)); return screen; };
 const publicScreen = (state) => { const screen = el("section", "screen screen--public"); screen.append(el("p", "eyebrow", "真实订场已确认"), el("h2", "public-heading", "奥体周日轻松局"), el("p", "public-subtitle", "津门周末足球队 · 休闲对抗"), orderCard(), gameSummary()); const details = el("section", "card public-details section"); details.append(el("p", "", "最低经验：有基本传接球经验即可"), el("p", "", "报名截止：8月23日 12:00"), el("p", "", "装备与到场：深浅两套球衣，提前 15 分钟到场"), el("p", "", "成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。")); screen.append(details, el("p", "public-notice", state.notice), button(actions.return, "secondary")); return screen; };
 const renderPanel = () => {
   if (!panel) return null;
   const data = FIXTURE_PANELS[panel]; const scrim = el("section", "fixture-scrim"); const sheet = el("section", "fixture-sheet");
   sheet.append(el("h2", "", data.title), el("p", "", data.message));
-  if (data.details) { const details = el("dl", "confirm-details"); data.details.forEach(([label, value]) => { const item = el("div"); item.append(el("dt", "", label), el("dd", "", value)); details.append(item); }); sheet.append(details); }
+  const detailsData = panel === "publish" ? getPublishDetails(savedGame) : data.details;
+  if (detailsData) { const details = el("dl", "confirm-details"); detailsData.forEach(([label, value]) => { const item = el("div"); item.append(el("dt", "", label), el("dd", "", value)); details.append(item); }); sheet.append(details); }
   const controls = el("div", "fixture-sheet__actions"); if (data.close) controls.append(button(data.close, "secondary")); if (data.confirm) controls.append(button(data.confirm, panel === "cancel" || panel === "abandon" ? "danger" : "primary")); sheet.append(controls); scrim.append(sheet); return scrim;
 };
 const syncUrl = (historyMethod) => { const params = new URLSearchParams(window.location.search); params.set("state", stateId); params.delete("panel"); if (stateId === "public-readonly") params.set("from", returnState); else params.delete("from"); window.history[historyMethod]({ state: stateId, from: returnState, lifecycle }, "", `${window.location.pathname}?${params}`); };
@@ -111,19 +130,20 @@ const navigate = (nextState, source = stateId) => { stateId = resolveFixtureRout
 const commitLifecycle = (nextLifecycle) => { lifecycle = nextLifecycle; stateId = managementStateByLifecycle[lifecycle]; returnState = stateId === "draft-manage" || stateId === "published-manage" ? stateId : returnState; panel = null; syncUrl("replaceState"); render(); };
 const transition = (action) => {
   const step = /^(total|fixed|open)-(increase|decrease)$/.exec(action);
-  if (step) { const [, field, direction] = step; const amount = direction === "increase" ? 1 : -1; const limits = { total: [4, 30], fixed: [1, formValues.total - formValues.open], open: [1, formValues.total - formValues.fixed] }; formValues[field] = Math.min(limits[field][1], Math.max(limits[field][0], formValues[field] + amount)); feedback = "update form Fixture value"; render(); return; }
+  if (step) { formValues = applyFormStepperAction(formValues, action); feedback = "update form Fixture value"; render(); return; }
   if (action === "begin-publish") { feedback = actions.beginPublish.fixtureTransition; panel = "publish"; render(); return; }
   if (action === "abandon") { feedback = actions.abandon.fixtureTransition; panel = "abandon"; render(); return; }
   if (action === "cancel") { feedback = actions.cancel.fixtureTransition; panel = "cancel"; render(); return; }
   if (action === "share") { feedback = actions.share.fixtureTransition; panel = "share"; render(); return; }
   if (action === "close-panel") { feedback = FIXTURE_PANELS[panel].close.fixtureTransition; panel = null; render(); return; }
   if (action === "confirm-publish") { feedback = FIXTURE_PANELS.publish.confirm.fixtureTransition; commitLifecycle("PUBLISHED"); return; }
-  if (action === "confirm-abandon") { feedback = FIXTURE_PANELS.abandon.confirm.fixtureTransition; commitLifecycle("UNSAVED"); return; }
+  if (action === "confirm-abandon") { feedback = FIXTURE_PANELS.abandon.confirm.fixtureTransition; formValues = createGameForm(); savedGame = freezeGameSnapshot(formValues); commitLifecycle("UNSAVED"); return; }
   if (action === "confirm-cancel") { feedback = FIXTURE_PANELS.cancel.confirm.fixtureTransition; commitLifecycle("CANCELLED"); return; }
   if (action === "return-manage") { feedback = actions.return.fixtureTransition; navigate(returnState, returnState); return; }
   const found = CAPTAIN_OPEN_GAME_STATES[stateId].actions.find(({ id }) => id === action); if (!found) return;
   feedback = found.fixtureTransition;
-  if (action === "save-draft") { commitLifecycle(lifecycle === "PUBLISHED" ? "PUBLISHED" : "DRAFT"); return; }
+  if (action === "save-draft") { savedGame = freezeGameSnapshot(formValues); commitLifecycle(lifecycle === "PUBLISHED" ? "PUBLISHED" : "DRAFT"); return; }
+  if (action === "edit") formValues = createGameForm(savedGame);
   navigate(found.nextState, stateId);
 };
 function render() { const state = CAPTAIN_OPEN_GAME_STATES[stateId]; const publishedEdit = stateId === "create-ready" && lifecycle === "PUBLISHED"; app.replaceChildren(system(publishedEdit ? "编辑球局" : state.title)); if (feedback) app.append(el("p", "fixture-feedback", `Fixture：${feedback}`)); app.append(stateId === "create-ready" ? createScreen() : stateId === "public-readonly" ? publicScreen(state) : manageScreen(state)); if (stateId === "create-ready") { const footer = el("footer", "footer"); footer.append(button(publishedEdit ? { ...actions.save, label: "保存修改" } : actions.save, "primary")); app.append(footer); } const overlay = renderPanel(); if (overlay) app.append(overlay); app.querySelectorAll("button[data-action]").forEach((node) => node.addEventListener("click", () => transition(node.dataset.action))); }
