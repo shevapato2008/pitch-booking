@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import subprocess
+import sys
 
 import httpx
 import pytest
@@ -65,6 +67,16 @@ def test_factory_builds_one_real_adapter_for_payment_and_refund_protocols() -> N
     assert callable(adapter.query_refund)
     assert adapter.app_id == "wx6b988ca75ad753c"
     assert adapter.merchant_id == "1900000109"
+
+
+def test_wechat_provider_supports_fresh_import_before_payment_package() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-c", "import backend.app.modules.wechat_pay.provider"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_app_startup_closes_owned_payment_provider_when_later_composition_fails(

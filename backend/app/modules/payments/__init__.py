@@ -8,13 +8,17 @@ import httpx
 from backend.app.config import Settings
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.provider import PaymentProvider
-from backend.app.modules.wechat_pay.provider import WeChatPayProvider
-from backend.app.modules.wechat_pay.transport import WeChatPayTransport
 
 
 def build_payment_provider(
     settings: Settings, *, client: httpx.Client | None = None
 ) -> PaymentProvider:
+    # Keep production implementation imports inside the factory. Importing a
+    # concrete adapter first necessarily imports this package to reach the
+    # shared payment protocol, so eager imports here form a cycle.
+    from backend.app.modules.wechat_pay.provider import WeChatPayProvider
+    from backend.app.modules.wechat_pay.transport import WeChatPayTransport
+
     if settings.mock_payment_provider_enabled:
         return MockPaymentProvider()
     if settings.payment_provider != "wechat" or not settings.wechat_payment_configured:

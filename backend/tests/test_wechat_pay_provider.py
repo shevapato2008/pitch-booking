@@ -25,6 +25,7 @@ from backend.app.modules.refunds.provider import (
     RefundRejected,
     RefundUnknown,
 )
+from backend.app.modules.wechat_pay.crypto import WeChatPaySignatureError
 from backend.app.modules.wechat_pay.provider import WeChatPayProvider
 from backend.app.modules.wechat_pay.transport import (
     WeChatPayResponse,
@@ -149,6 +150,39 @@ def test_create_prepay_maps_failures_without_inventing_success(
     assert "private" not in repr(result)
 
 
+@pytest.mark.parametrize(
+    ("upstream", "expected_type"),
+    [
+        (response(500, {"code": "SYSTEM_ERROR"}), Unknown),
+        (response(429, {"code": "FREQUENCY_LIMITED"}), Unknown),
+        (response(404, {"code": "UNKNOWN_CODE"}), Unknown),
+        (response(400, {"code": "SYSTEM_ERROR"}), Unknown),
+        (response(400, {"code": "PARAM_ERROR"}), Rejected),
+        (WeChatPaySignatureError("bad signed response"), Unknown),
+    ],
+)
+def test_create_prepay_only_rejects_documented_terminal_business_codes(
+    private_key_pem: bytes, upstream: object, expected_type: type[object]
+) -> None:
+    transport = FakeTransport(upstream)
+    if isinstance(upstream, Exception):
+        def fail(*_args: object, **_kwargs: object) -> object:
+            raise upstream
+
+        transport.request_json = fail  # type: ignore[method-assign]
+    result = provider(transport, private_key_pem).create_prepay(
+        CreatePrepayRequest(
+            merchant_order_no="PBP1",
+            description="场地",
+            amount_cents=100,
+            currency="CNY",
+            payer_openid="openid",
+            time_expire=NOW + timedelta(minutes=15),
+        )
+    )
+    assert isinstance(result, expected_type)
+
+
 def test_query_payment_maps_success_with_complete_authoritative_facts(
     private_key_pem: bytes,
 ) -> None:
@@ -201,6 +235,28 @@ def test_query_payment_maps_closed_state_set(
         QueryPaymentRequest("PBP1")
     )
     assert result.status is status
+
+
+@pytest.mark.parametrize(
+    "upstream",
+    [
+        response(404, {"code": "SYSTEM_ERROR"}),
+        response(500, {"code": "SYSTEM_ERROR"}),
+        response(429, {"code": "FREQUENCY_LIMITED"}),
+        WeChatPaySignatureError("bad signed response"),
+    ],
+)
+def test_query_payment_only_maps_exact_not_exist_and_closes_signature_failures(
+    private_key_pem: bytes, upstream: object
+) -> None:
+    transport = FakeTransport(upstream)
+    if isinstance(upstream, Exception):
+        def fail(*_args: object, **_kwargs: object) -> object:
+            raise upstream
+
+        transport.request_json = fail  # type: ignore[method-assign]
+    result = provider(transport, private_key_pem).query_payment(QueryPaymentRequest("PBP1"))
+    assert result.status is QueryPaymentStatus.UNKNOWN
 
 
 def test_query_payment_rejects_mismatched_or_malformed_success(
@@ -325,6 +381,28 @@ def test_query_refund_maps_closed_status_set(
 
 
 @pytest.mark.parametrize(
+    "upstream",
+    [
+        response(404, {"code": "SYSTEM_ERROR"}),
+        response(500, {"code": "SYSTEM_ERROR"}),
+        response(429, {"code": "FREQUENCY_LIMITED"}),
+        WeChatPaySignatureError("bad signed response"),
+    ],
+)
+def test_query_refund_only_maps_exact_not_exist_and_closes_signature_failures(
+    private_key_pem: bytes, upstream: object
+) -> None:
+    transport = FakeTransport(upstream)
+    if isinstance(upstream, Exception):
+        def fail(*_args: object, **_kwargs: object) -> object:
+            raise upstream
+
+        transport.request_json = fail  # type: ignore[method-assign]
+    result = provider(transport, private_key_pem).query_refund(QueryRefundRequest("PBR1"))
+    assert result.status is QueryRefundStatus.UNKNOWN
+
+
+@pytest.mark.parametrize(
     ("upstream", "expected_type"),
     [
         (WeChatPayUnavailable("WECHAT_PAY_UNAVAILABLE"), RefundUnknown),
@@ -336,6 +414,38 @@ def test_create_refund_maps_failures_without_inventing_acceptance(
     private_key_pem: bytes, upstream: object, expected_type: type[object]
 ) -> None:
     result = provider(FakeTransport(upstream), private_key_pem).create_refund(
+        CreateRefundRequest(
+            merchant_refund_no="PBR1",
+            merchant_order_no="PBP1",
+            provider_transaction_no="42000000001",
+            amount_cents=36000,
+            currency="CNY",
+        )
+    )
+    assert isinstance(result, expected_type)
+
+
+@pytest.mark.parametrize(
+    ("upstream", "expected_type"),
+    [
+        (response(500, {"code": "SYSTEM_ERROR"}), RefundUnknown),
+        (response(429, {"code": "FREQUENCY_LIMITED"}), RefundUnknown),
+        (response(404, {"code": "UNKNOWN_CODE"}), RefundUnknown),
+        (response(400, {"code": "SYSTEM_ERROR"}), RefundUnknown),
+        (response(400, {"code": "INVALID_REQUEST"}), RefundRejected),
+        (WeChatPaySignatureError("bad signed response"), RefundUnknown),
+    ],
+)
+def test_create_refund_only_rejects_documented_terminal_business_codes(
+    private_key_pem: bytes, upstream: object, expected_type: type[object]
+) -> None:
+    transport = FakeTransport(upstream)
+    if isinstance(upstream, Exception):
+        def fail(*_args: object, **_kwargs: object) -> object:
+            raise upstream
+
+        transport.request_json = fail  # type: ignore[method-assign]
+    result = provider(transport, private_key_pem).create_refund(
         CreateRefundRequest(
             merchant_refund_no="PBR1",
             merchant_order_no="PBP1",

@@ -33,7 +33,11 @@ from backend.app.modules.refunds.provider import (
     RefundRejected,
     RefundUnknown,
 )
-from backend.app.modules.wechat_pay.crypto import load_rsa_private_key, sign_rsa_sha256
+from backend.app.modules.wechat_pay.crypto import (
+    WeChatPaySignatureError,
+    load_rsa_private_key,
+    sign_rsa_sha256,
+)
 from backend.app.modules.wechat_pay.transport import (
     WeChatPayTransport,
     WeChatPayUnavailable,
@@ -95,11 +99,19 @@ class WeChatPayProvider:
                 "payer": {"openid": request.payer_openid},
             }
         )
-        response = self._transport.request_json("POST", "/v3/pay/transactions/jsapi", body)
+        try:
+            response = self._transport.request_json(
+                "POST", "/v3/pay/transactions/jsapi", body
+            )
+        except WeChatPaySignatureError:
+            return Unknown("PAYMENT_PROVIDER_RESPONSE_INVALID")
         if isinstance(response, WeChatPayUnavailable):
             return Unknown("PAYMENT_PROVIDER_UNAVAILABLE")
         if not 200 <= response.status_code < 300:
-            return Rejected("PAYMENT_PROVIDER_REJECTED")
+            code = self._business_code(response.data)
+            if code in _PAYMENT_CREATE_REJECTION_CODES:
+                return Rejected("PAYMENT_PROVIDER_REJECTED")
+            return Unknown("PAYMENT_PROVIDER_CREATE_UNKNOWN")
         prepay_id = self._string(response.data, "prepay_id")
         if prepay_id is None:
             return Unknown("PAYMENT_PROVIDER_RESPONSE_INVALID")
@@ -125,16 +137,25 @@ class WeChatPayProvider:
     def query_payment(self, request: QueryPaymentRequest) -> QueryPaymentResult:
         merchant_order_no = quote(request.merchant_order_no, safe="")
         merchant_id = quote(self._merchant_id, safe="")
-        response = self._transport.request_json(
-            "GET",
-            f"/v3/pay/transactions/out-trade-no/{merchant_order_no}?mchid={merchant_id}",
-        )
+        try:
+            response = self._transport.request_json(
+                "GET",
+                f"/v3/pay/transactions/out-trade-no/{merchant_order_no}?mchid={merchant_id}",
+            )
+        except WeChatPaySignatureError:
+            return QueryPaymentResult(
+                QueryPaymentStatus.UNKNOWN,
+                safe_error_code="PAYMENT_PROVIDER_RESPONSE_INVALID",
+            )
         if isinstance(response, WeChatPayUnavailable):
             return QueryPaymentResult(
                 QueryPaymentStatus.UNKNOWN,
                 safe_error_code="PAYMENT_PROVIDER_UNAVAILABLE",
             )
-        if response.status_code == 404:
+        if (
+            response.status_code == 404
+            and self._business_code(response.data) == "ORDER_NOT_EXIST"
+        ):
             return QueryPaymentResult(QueryPaymentStatus.NOT_FOUND)
         if not 200 <= response.status_code < 300 or response.data is None:
             return QueryPaymentResult(
@@ -164,11 +185,17 @@ class WeChatPayProvider:
 
     def close_payment(self, request: ClosePaymentRequest) -> ClosePaymentResult:
         merchant_order_no = quote(request.merchant_order_no, safe="")
-        response = self._transport.request_json(
-            "POST",
-            f"/v3/pay/transactions/out-trade-no/{merchant_order_no}/close",
-            self._encode({"mchid": self._merchant_id}),
-        )
+        try:
+            response = self._transport.request_json(
+                "POST",
+                f"/v3/pay/transactions/out-trade-no/{merchant_order_no}/close",
+                self._encode({"mchid": self._merchant_id}),
+            )
+        except WeChatPaySignatureError:
+            return ClosePaymentResult(
+                ClosePaymentStatus.UNKNOWN,
+                safe_error_code="PAYMENT_PROVIDER_RESPONSE_INVALID",
+            )
         if isinstance(response, WeChatPayUnavailable):
             return ClosePaymentResult(
                 ClosePaymentStatus.UNKNOWN,
@@ -182,26 +209,32 @@ class WeChatPayProvider:
         )
 
     def create_refund(self, request: CreateRefundRequest) -> CreateRefundResult:
-        response = self._transport.request_json(
-            "POST",
-            "/v3/refund/domestic/refunds",
-            self._encode(
-                {
-                    "transaction_id": request.provider_transaction_no,
-                    "out_refund_no": request.merchant_refund_no,
-                    "notify_url": self._refund_notification_url,
-                    "amount": {
-                        "refund": request.amount_cents,
-                        "total": request.amount_cents,
-                        "currency": request.currency,
-                    },
-                }
-            ),
-        )
+        try:
+            response = self._transport.request_json(
+                "POST",
+                "/v3/refund/domestic/refunds",
+                self._encode(
+                    {
+                        "transaction_id": request.provider_transaction_no,
+                        "out_refund_no": request.merchant_refund_no,
+                        "notify_url": self._refund_notification_url,
+                        "amount": {
+                            "refund": request.amount_cents,
+                            "total": request.amount_cents,
+                            "currency": request.currency,
+                        },
+                    }
+                ),
+            )
+        except WeChatPaySignatureError:
+            return RefundUnknown("REFUND_PROVIDER_RESPONSE_INVALID")
         if isinstance(response, WeChatPayUnavailable):
             return RefundUnknown("REFUND_PROVIDER_UNAVAILABLE")
         if not 200 <= response.status_code < 300:
-            return RefundRejected("REFUND_PROVIDER_REJECTED")
+            code = self._business_code(response.data)
+            if code in _REFUND_CREATE_REJECTION_CODES:
+                return RefundRejected("REFUND_PROVIDER_REJECTED")
+            return RefundUnknown("REFUND_PROVIDER_CREATE_UNKNOWN")
         provider_refund_no = self._string(response.data, "refund_id")
         provider_status = response.data.get("status") if response.data else None
         if provider_refund_no is None or provider_status not in {"PROCESSING", "SUCCESS"}:
@@ -210,15 +243,24 @@ class WeChatPayProvider:
 
     def query_refund(self, request: QueryRefundRequest) -> QueryRefundResult:
         merchant_refund_no = quote(request.merchant_refund_no, safe="")
-        response = self._transport.request_json(
-            "GET", f"/v3/refund/domestic/refunds/{merchant_refund_no}"
-        )
+        try:
+            response = self._transport.request_json(
+                "GET", f"/v3/refund/domestic/refunds/{merchant_refund_no}"
+            )
+        except WeChatPaySignatureError:
+            return QueryRefundResult(
+                QueryRefundStatus.UNKNOWN,
+                safe_error_code="REFUND_PROVIDER_RESPONSE_INVALID",
+            )
         if isinstance(response, WeChatPayUnavailable):
             return QueryRefundResult(
                 QueryRefundStatus.UNKNOWN,
                 safe_error_code="REFUND_PROVIDER_UNAVAILABLE",
             )
-        if response.status_code == 404:
+        if (
+            response.status_code == 404
+            and self._business_code(response.data) == "RESOURCE_NOT_EXISTS"
+        ):
             return QueryRefundResult(QueryRefundStatus.NOT_FOUND)
         if not 200 <= response.status_code < 300 or response.data is None:
             return QueryRefundResult(
@@ -339,3 +381,36 @@ class WeChatPayProvider:
         if not isinstance(value, str) or not value:
             raise ValueError
         return value
+
+    @staticmethod
+    def _business_code(data: dict[str, object] | None) -> str | None:
+        if data is None:
+            return None
+        code = data.get("code")
+        return code if isinstance(code, str) and code else None
+
+
+_PAYMENT_CREATE_REJECTION_CODES = frozenset(
+    {
+        "APPID_MCHID_NOT_MATCH",
+        "LACK_PARAMS",
+        "MCH_NOT_EXISTS",
+        "NO_AUTH",
+        "OUT_TRADE_NO_USED",
+        "PARAM_ERROR",
+        "RULE_LIMIT",
+        "TRADE_ERROR",
+    }
+)
+_REFUND_CREATE_REJECTION_CODES = frozenset(
+    {
+        "INVALID_REQUEST",
+        "INVALID_TRANSACTIONID",
+        "MCH_NOT_EXISTS",
+        "NOT_ENOUGH",
+        "NO_AUTH",
+        "ORDER_NOT_EXIST",
+        "PARAM_ERROR",
+        "REFUND_NOT_ALLOWED",
+    }
+)
