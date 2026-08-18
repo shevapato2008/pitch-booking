@@ -25,9 +25,9 @@
           <view class="order-card__guest"><text>联系电话</text><text>{{item.phone}}</text></view>
           <text wx:if="{{item.blockedReason}}" class="order-card__blocked">{{item.blockedReason}}</text>
           <view wx:if="{{item.canCheckIn || item.canComplete || item.canRefund}}" class="order-actions">
-            <button wx:if="{{item.canCheckIn}}" class="order-action" data-order-id="{{item.orderId}}" disabled="{{mutatingOrderId || unknownAttempt}}" bindtap="onCheckIn">{{mutatingOrderId === item.orderId ? '处理中' : '确认签到'}}</button>
-            <button wx:if="{{item.canComplete}}" class="order-action" data-order-id="{{item.orderId}}" disabled="{{mutatingOrderId || unknownAttempt}}" bindtap="onComplete">{{mutatingOrderId === item.orderId ? '处理中' : '完成服务'}}</button>
-            <button wx:if="{{item.canRefund}}" class="order-action order-action--danger" data-order-id="{{item.orderId}}" disabled="{{mutatingOrderId || unknownAttempt}}" bindtap="onOpenRefund">取消并退款</button>
+            <button wx:if="{{item.canCheckIn}}" class="order-action" data-order-id="{{item.orderId}}" disabled="{{mutatingOrderId || unknownAttempt || foreignAttemptPending}}" bindtap="onCheckIn">{{mutatingOrderId === item.orderId ? '处理中' : '确认签到'}}</button>
+            <button wx:if="{{item.canComplete}}" class="order-action" data-order-id="{{item.orderId}}" disabled="{{mutatingOrderId || unknownAttempt || foreignAttemptPending}}" bindtap="onComplete">{{mutatingOrderId === item.orderId ? '处理中' : '完成服务'}}</button>
+            <button wx:if="{{item.canRefund}}" class="order-action order-action--danger" data-order-id="{{item.orderId}}" disabled="{{mutatingOrderId || unknownAttempt || foreignAttemptPending}}" bindtap="onOpenRefund">取消并退款</button>
           </view>
         </view>
         <button wx:if="{{nextCursor && !loadMoreError}}" class="secondary-button load-more" disabled="{{loadingMore}}" bindtap="onLoadMore">{{loadingMore ? '加载中' : '加载更多'}}</button>
@@ -44,6 +44,6 @@
     <textarea id="refund-reason" class="reason-input" value="{{refundReason}}" maxlength="500" aria-label="取消原因（必填）" bindinput="onRefundReasonInput"></textarea>
     <text wx:if="{{refundError}}" class="refund-error" role="alert">{{refundError}}</text>
     <view class="refund-helper"><view class="refund-helper__mark">i</view><text>提交后将关闭本订单，并按原支付路径处理退款。</text></view>
-    <view class="refund-sheet__actions"><button class="secondary-button" disabled="{{refundBusy}}" bindtap="onCancelRefund">取消</button><button class="danger-button" disabled="{{!refundReasonValid || refundBusy || unknownAttempt}}" bindtap="onConfirmRefund">{{refundBusy ? '提交中' : '确认退款'}}</button></view>
+    <view class="refund-sheet__actions"><button class="secondary-button" disabled="{{refundBusy}}" bindtap="onCancelRefund">取消</button><button class="danger-button" disabled="{{!refundReasonValid || refundBusy || unknownAttempt || foreignAttemptPending}}" bindtap="onConfirmRefund">{{refundBusy ? '提交中' : '确认退款'}}</button></view>
   </view>
 </view>

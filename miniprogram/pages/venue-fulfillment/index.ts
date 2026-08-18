@@ -6,7 +6,7 @@ import {
   presentVenueServiceDates,
 } from "../../presentation/venue-fulfillment";
 import { VenueFulfillmentApiError } from "../../services/http-venue-fulfillment";
-import { getVenueFulfillmentAttemptStore } from "../../services/venue-fulfillment-attempt-store";
+import { getVenueFulfillmentAttemptStore, VenueFulfillmentAttemptConflictError } from "../../services/venue-fulfillment-attempt-store";
 import {
   getVenueFulfillmentDataSource,
   type VenueFulfillmentMutationAttempt,
@@ -32,7 +32,7 @@ Page({
   data: {
     venueId: "", venueName: "", mode: "loading", serviceDate: "", selectedDateLabel: "", dates: [] as unknown[], orders: [] as unknown[], nextCursor: null as string | null,
     refreshing: false, loadingMore: false, loadMoreError: false, refreshErrorText: "", actionError: "", mutatingOrderId: "", mutatingKind: "",
-    unknownAttempt: null as VenueFulfillmentMutationAttempt | null, recoveryBusy: false,
+    unknownAttempt: null as VenueFulfillmentMutationAttempt | null, foreignAttemptPending: false, recoveryBusy: false,
     sheetOpen: false, refundOrderId: "", refundOrderNumber: "", refundReason: "", refundReasonValid: false, refundError: "", refundBusy: false,
     headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0,
   },
@@ -50,10 +50,33 @@ Page({
     try {
       await getVenueFulfillmentDataSource().login();
       await this.readOrders(undefined, undefined, false, true);
+      if (this.alive) this.recoverPersistedAttempt();
     } catch { if (this.alive) this.setData({ mode: "read-error" }); }
   },
 
   onUnload() { this.alive = false; this.requestRevision += 1; },
+
+  recoverPersistedAttempt() {
+    const attempt = getVenueFulfillmentAttemptStore()?.load();
+    if (!attempt) { this.setData({ unknownAttempt: null, foreignAttemptPending: false }); return; }
+    if (attempt.venueId !== this.data.venueId) {
+      this.setData({ unknownAttempt: null, foreignAttemptPending: true, actionError: "其他场馆有待核对操作，请先回到对应场馆处理" });
+      return;
+    }
+    if (this.applied(attempt)) {
+      getVenueFulfillmentAttemptStore()?.clear();
+      this.setData({ unknownAttempt: null, foreignAttemptPending: false });
+      return;
+    }
+    this.setData({ unknownAttempt: attempt, foreignAttemptPending: false, actionError: "上次操作结果尚未确认，请重新核对" });
+  },
+
+  retainConflictingAttempt() {
+    const attempt = getVenueFulfillmentAttemptStore()?.load();
+    if (!attempt || !this.alive) return;
+    if (attempt.venueId === this.data.venueId) this.setData({ unknownAttempt: attempt, foreignAttemptPending: false, actionError: "已有操作等待核对，请勿重复提交" });
+    else this.setData({ unknownAttempt: null, foreignAttemptPending: true, actionError: "其他场馆有待核对操作，请先回到对应场馆处理" });
+  },
 
   async readOrders(serviceDate?: string, cursor?: string, append = false, initial = false) {
     const revision = ++this.requestRevision;
@@ -123,27 +146,27 @@ Page({
 
   async onCheckIn(event: DatasetEvent) {
     const order = this.orderFor(event);
-    if (!order?.allowedActions.canCheckIn || this.data.mutatingOrderId || this.data.unknownAttempt || this.confirmingOrderId) return;
+    if (!order?.allowedActions.canCheckIn || this.data.mutatingOrderId || this.data.unknownAttempt || this.data.foreignAttemptPending || this.confirmingOrderId) return;
     this.confirmingOrderId = order.orderId;
     const confirmed = await this.confirm("确认签到", `确认订单 ${order.orderNumber} 的用户已到场？`);
     this.confirmingOrderId = "";
-    if (!confirmed) return;
+    if (!this.alive || !confirmed) return;
     await this.runAttempt({ kind: "checkIn", venueId: this.data.venueId, orderId: order.orderId, idempotencyKey: attemptKey("checkIn") });
   },
 
   async onComplete(event: DatasetEvent) {
     const order = this.orderFor(event);
-    if (!order?.allowedActions.canComplete || this.data.mutatingOrderId || this.data.unknownAttempt || this.confirmingOrderId) return;
+    if (!order?.allowedActions.canComplete || this.data.mutatingOrderId || this.data.unknownAttempt || this.data.foreignAttemptPending || this.confirmingOrderId) return;
     this.confirmingOrderId = order.orderId;
     const confirmed = await this.confirm("完成服务", `确认订单 ${order.orderNumber} 已完成服务？`);
     this.confirmingOrderId = "";
-    if (!confirmed) return;
+    if (!this.alive || !confirmed) return;
     await this.runAttempt({ kind: "complete", venueId: this.data.venueId, orderId: order.orderId, idempotencyKey: attemptKey("complete") });
   },
 
   onOpenRefund(event: DatasetEvent) {
     const order = this.orderFor(event);
-    if (!order?.allowedActions.canRefund || this.data.mutatingOrderId || this.data.unknownAttempt || this.confirmingOrderId) return;
+    if (!order?.allowedActions.canRefund || this.data.mutatingOrderId || this.data.unknownAttempt || this.data.foreignAttemptPending || this.confirmingOrderId) return;
     this.setData({ sheetOpen: true, refundOrderId: order.orderId, refundOrderNumber: order.orderNumber, refundReason: "", refundReasonValid: false, refundError: "" });
   },
   onRefundReasonInput(event: InputEvent) {
@@ -156,7 +179,7 @@ Page({
     const reason = this.data.refundReason.trim();
     if (!reason) { this.setData({ refundError: "请填写退款原因" }); return; }
     const order = this.authorityOrders.find((item) => item.orderId === this.data.refundOrderId);
-    if (!order?.allowedActions.canRefund || this.data.refundBusy || this.data.unknownAttempt) return;
+    if (!order?.allowedActions.canRefund || this.data.refundBusy || this.data.unknownAttempt || this.data.foreignAttemptPending) return;
     this.setData({ refundBusy: true, actionError: "" });
     const attempt = { kind: "refund", venueId: this.data.venueId, orderId: order.orderId, reason, idempotencyKey: attemptKey("refund") } as const;
     try {
@@ -164,12 +187,15 @@ Page({
       if (stable.kind !== "refund") throw new Error("REFUND_ATTEMPT_CONFLICT");
       await getVenueFulfillmentDataSource().refund(stable);
       getVenueFulfillmentAttemptStore()?.clear();
+      if (!this.alive) return;
       this.setData({ sheetOpen: false, unknownAttempt: null });
       try { await this.readOrders(this.data.serviceDate, undefined, false); }
       catch { if (this.alive) this.setData({ refreshErrorText: "退款已提交，订单刷新失败，请下拉重试" }); }
     } catch (caught) {
-      if (codeOf(caught) === "FULFILLMENT_RESULT_UNKNOWN") await this.reconcileUnknown(attempt);
-      else { getVenueFulfillmentAttemptStore()?.clear(); this.setData({ unknownAttempt: null, refundError: actionError(caught) }); }
+      if (caught instanceof VenueFulfillmentAttemptConflictError) { this.retainConflictingAttempt(); return; }
+      if (codeOf(caught) === "FULFILLMENT_RESULT_UNKNOWN") { if (this.alive) await this.reconcileUnknown(attempt); return; }
+      getVenueFulfillmentAttemptStore()?.clear();
+      if (this.alive) this.setData({ unknownAttempt: null, refundError: actionError(caught) });
     } finally { if (this.alive) this.setData({ refundBusy: false }); }
   },
 
@@ -183,12 +209,15 @@ Page({
         : stable.kind === "complete"
           ? await getVenueFulfillmentDataSource().complete(stable)
           : null;
-      if (order) this.replaceOrder(order);
       getVenueFulfillmentAttemptStore()?.clear();
+      if (!this.alive) return;
+      if (order) this.replaceOrder(order);
       this.setData({ unknownAttempt: null });
     } catch (caught) {
-      if (codeOf(caught) === "FULFILLMENT_RESULT_UNKNOWN") await this.reconcileUnknown(attempt);
-      else { getVenueFulfillmentAttemptStore()?.clear(); this.setData({ unknownAttempt: null, actionError: actionError(caught) }); }
+      if (caught instanceof VenueFulfillmentAttemptConflictError) { this.retainConflictingAttempt(); return; }
+      if (codeOf(caught) === "FULFILLMENT_RESULT_UNKNOWN") { if (this.alive) await this.reconcileUnknown(attempt); return; }
+      getVenueFulfillmentAttemptStore()?.clear();
+      if (this.alive) this.setData({ unknownAttempt: null, actionError: actionError(caught) });
     } finally { if (this.alive) this.setData({ mutatingOrderId: "", mutatingKind: "" }); }
   },
 
@@ -208,11 +237,12 @@ Page({
   async reconcileUnknown(attempt: VenueFulfillmentMutationAttempt) {
     try {
       await this.readOrders(this.data.serviceDate || undefined, undefined, false);
+      if (!this.alive) return;
       if (this.applied(attempt)) {
         getVenueFulfillmentAttemptStore()?.clear();
         this.setData({ unknownAttempt: null, sheetOpen: false });
       } else this.setData({ unknownAttempt: attempt, actionError: "操作结果尚未确认，请重试核对" });
-    } catch { this.setData({ unknownAttempt: attempt, actionError: "操作结果尚未确认，请重试核对" }); }
+    } catch { if (this.alive) this.setData({ unknownAttempt: attempt, actionError: "操作结果尚未确认，请重试核对" }); }
   },
 
   async onRetryUnknown() {
@@ -224,13 +254,16 @@ Page({
       if (attempt.kind === "refund") {
         await getVenueFulfillmentDataSource().refund(attempt);
         getVenueFulfillmentAttemptStore()?.clear();
+        if (!this.alive) return;
         this.setData({ unknownAttempt: null, sheetOpen: false });
         try { await this.readOrders(this.data.serviceDate, undefined, false); }
         catch { if (this.alive) this.setData({ refreshErrorText: "退款已提交，订单刷新失败，请下拉重试" }); }
       } else await this.runAttempt(attempt);
     } catch (caught) {
-      if (codeOf(caught) === "FULFILLMENT_RESULT_UNKNOWN") await this.reconcileUnknown(attempt);
-      else { getVenueFulfillmentAttemptStore()?.clear(); this.setData({ unknownAttempt: null, actionError: actionError(caught) }); }
+      if (caught instanceof VenueFulfillmentAttemptConflictError) { this.retainConflictingAttempt(); return; }
+      if (codeOf(caught) === "FULFILLMENT_RESULT_UNKNOWN") { if (this.alive) await this.reconcileUnknown(attempt); return; }
+      getVenueFulfillmentAttemptStore()?.clear();
+      if (this.alive) this.setData({ unknownAttempt: null, actionError: actionError(caught) });
     }
     finally { if (this.alive) this.setData({ recoveryBusy: false }); }
   },

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import type { StatusTransport, TransportError, WeChatIdentityCapability } from "../runtime/interfaces";
 import type { SessionStore } from "./session-store";
 import type { VenueFulfillmentAttemptStore } from "./venue-fulfillment-attempt-store";
+import type { VenueFulfillmentMutationAttempt } from "./venue-fulfillment";
 import { createHttpVenueFulfillmentDataSource, VenueFulfillmentApiError } from "./http-venue-fulfillment";
 
 const page = JSON.parse(readFileSync("contracts/examples/venue-fulfillment-orders.json", "utf8"));
@@ -20,7 +21,7 @@ const httpError = (statusCode: number, code: string, data: unknown = {}) => ({ c
 function harness(responses: unknown[], sessionPresent = true) {
   const calls: Call[] = [];
   let storedSession = sessionPresent ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" } : null;
-  let pending: any = null;
+  let pending: VenueFulfillmentMutationAttempt | null = null;
   const next = async () => { const value = responses.shift(); if (value instanceof Error || (value && typeof value === "object" && "code" in value)) throw value; return value; };
   const transport: StatusTransport = {
     get: async <T>() => (await next()) as T,
@@ -35,7 +36,7 @@ function harness(responses: unknown[], sessionPresent = true) {
   };
   const attemptStore: VenueFulfillmentAttemptStore = {
     load: () => pending,
-    begin: jest.fn((attempt: any) => { pending ??= structuredClone(attempt); return structuredClone(pending); }),
+    begin: jest.fn((attempt: VenueFulfillmentMutationAttempt) => { pending ??= structuredClone(attempt); return structuredClone(pending); }),
     clear: jest.fn(() => { pending = null; }),
   };
   const identity: WeChatIdentityCapability = { login: jest.fn(async () => ({ code: "wechat-code" })) };

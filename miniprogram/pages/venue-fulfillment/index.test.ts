@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { decodeVenueFulfillmentOrder, decodeVenueFulfillmentPage, type VenueFulfillmentPage } from "../../domain/venue-fulfillment";
 import { VenueFulfillmentApiError } from "../../services/http-venue-fulfillment";
 import type { VenueFulfillmentAttemptStore } from "../../services/venue-fulfillment-attempt-store";
-import { registerVenueFulfillmentAttemptStore, resetVenueFulfillmentAttemptStoreForTesting } from "../../services/venue-fulfillment-attempt-store";
+import { registerVenueFulfillmentAttemptStore, resetVenueFulfillmentAttemptStoreForTesting, VenueFulfillmentAttemptConflictError } from "../../services/venue-fulfillment-attempt-store";
 import type { VenueFulfillmentDataSource, VenueFulfillmentMutationAttempt } from "../../services/venue-fulfillment";
 import { registerVenueFulfillmentDataSource, resetVenueFulfillmentBindingsForTesting } from "../../services/venue-fulfillment";
 
@@ -16,6 +16,8 @@ let stored: VenueFulfillmentMutationAttempt | null = null;
 const response = decodeVenueFulfillmentPage(JSON.parse(readFileSync("contracts/examples/venue-fulfillment-orders.json", "utf8")));
 const checkedIn = decodeVenueFulfillmentOrder(JSON.parse(readFileSync("contracts/examples/venue-order-checked-in.json", "utf8")));
 const completed = decodeVenueFulfillmentOrder(JSON.parse(readFileSync("contracts/examples/venue-order-completed.json", "utf8")));
+const checkable = { ...response, orders: [{ ...response.orders[0], allowedActions: { ...response.orders[0].allowedActions, canCheckIn: true, canRefund: false, blockedReason: null } }] };
+const persistedCheckIn = { kind: "checkIn", venueId: response.venue.id, orderId: response.orders[0].orderId, idempotencyKey: "persisted-checkin-key-001" } as const;
 
 const store: VenueFulfillmentAttemptStore = {
   load: jest.fn(() => stored),
@@ -100,9 +102,46 @@ test("unload suppresses a late response", async () => {
   expect(page.data.venueName).toBe("");
 });
 
+test("reload reconciles a persisted same-venue attempt and replays its original key only when unapplied", async () => {
+  stored = structuredClone(persistedCheckIn); const api = source(checkable); registerVenueFulfillmentDataSource(api); const page = loadPage();
+  await page.onLoad({ venue_id: response.venue.id });
+  expect(page.data.unknownAttempt).toEqual(persistedCheckIn); expect(store.clear).not.toHaveBeenCalled();
+  await page.onRetryUnknown(); expect(api.checkIn).toHaveBeenLastCalledWith(persistedCheckIn);
+
+  stored = structuredClone(persistedCheckIn); jest.clearAllMocks(); const appliedApi = source({ ...response, orders: [checkedIn] }); registerVenueFulfillmentDataSource(appliedApi); const applied = loadPage();
+  await applied.onLoad({ venue_id: response.venue.id });
+  expect(applied.data.unknownAttempt).toBeNull(); expect(store.clear).toHaveBeenCalledTimes(1);
+});
+
+test("a persisted attempt for another venue is retained and blocks new writes", async () => {
+  const foreign = { ...persistedCheckIn, venueId: "11111111-1111-4111-8111-111111111111" }; stored = structuredClone(foreign);
+  const api = source(checkable); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  expect(page.data).toMatchObject({ foreignAttemptPending: true, unknownAttempt: null }); expect(store.clear).not.toHaveBeenCalled();
+  await page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } });
+  expect(api.checkIn).not.toHaveBeenCalled(); expect(wx.showModal).not.toHaveBeenCalled(); expect(stored).toEqual(foreign);
+});
+
+test("an attempt-store begin conflict retains the older attempt", async () => {
+  const old = structuredClone(persistedCheckIn); let loads = 0;
+  const conflictStore: VenueFulfillmentAttemptStore = {
+    load: jest.fn(() => (++loads === 1 ? null : old)),
+    begin: jest.fn(() => { throw new VenueFulfillmentAttemptConflictError(); }),
+    clear: jest.fn(),
+  };
+  registerVenueFulfillmentAttemptStore(conflictStore); const api = source(checkable); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  await page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } });
+  expect(conflictStore.clear).not.toHaveBeenCalled(); expect(page.data.unknownAttempt).toEqual(old); expect(api.checkIn).not.toHaveBeenCalled();
+});
+
+test("an awaited mutation never updates an unloaded page", async () => {
+  const pending = deferred<typeof checkedIn>(); const api = source(checkable); api.checkIn.mockImplementationOnce(() => pending.promise); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  const mutation = page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } }); await Promise.resolve();
+  const replaceOrder = jest.spyOn(page, "replaceOrder"); const setData = jest.spyOn(page, "setData"); setData.mockClear(); page.onUnload(); pending.resolve(checkedIn); await mutation;
+  expect(replaceOrder).not.toHaveBeenCalled(); expect(setData).not.toHaveBeenCalled();
+});
+
 test("check-in and completion require confirmation, persist one key, replace one card, and suppress duplicate taps", async () => {
-  const actionable = { ...response, orders: [{ ...response.orders[0], allowedActions: { ...response.orders[0].allowedActions, canCheckIn: true, canRefund: false, blockedReason: null } }] };
-  const api = source(actionable); const pending = deferred<typeof checkedIn>(); api.checkIn.mockImplementationOnce(() => pending.promise); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  const api = source(checkable); const pending = deferred<typeof checkedIn>(); api.checkIn.mockImplementationOnce(() => pending.promise); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
   const first = page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } }); await Promise.resolve();
   const key = stored?.idempotencyKey; expect(key).toBeTruthy(); expect(page.data.mutatingOrderId).toBe(response.orders[0].orderId);
   await page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } }); expect(api.checkIn).toHaveBeenCalledTimes(1);
@@ -121,7 +160,6 @@ test("refund requires a trimmed reason, preserves uncertain input, and refreshes
 });
 
 test("unknown writes refresh authority first and replay the original attempt only when still unapplied", async () => {
-  const checkable = { ...response, orders: [{ ...response.orders[0], allowedActions: { ...response.orders[0].allowedActions, canCheckIn: true, canRefund: false, blockedReason: null } }] };
   const api = source(checkable); api.checkIn.mockRejectedValueOnce(new VenueFulfillmentApiError("FULFILLMENT_RESULT_UNKNOWN")).mockResolvedValueOnce(checkedIn); api.listOrders.mockResolvedValueOnce(checkable).mockResolvedValueOnce(checkable);
   registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id }); await page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } });
   const original = structuredClone(stored as Extract<VenueFulfillmentMutationAttempt, { kind: "checkIn" }>); expect(page.data.unknownAttempt).toMatchObject({ kind: "checkIn" });
