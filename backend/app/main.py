@@ -41,6 +41,9 @@ from backend.app.modules.platform_web import (
 from backend.app.modules.refunds.convergence import RefundConvergenceService
 from backend.app.modules.refunds.repository import RefundRepository
 from backend.app.modules.venue_access.router import router as venue_access_router
+from backend.app.modules.venue_fulfillment.router import (
+    router as venue_fulfillment_router,
+)
 from backend.app.modules.venue_onboarding.oss_storage import OssOnboardingStorage
 from backend.app.modules.venue_onboarding.router import router as venue_onboarding_router
 from backend.app.modules.venue_onboarding.storage import (
@@ -219,6 +222,7 @@ def create_app(
         application.include_router(platform_onboarding_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
+        application.include_router(venue_fulfillment_router)
         application.include_router(venue_onboarding_router)
         application.include_router(venue_profiles_router)
         application.include_router(venue_profile_manual_router)
@@ -269,6 +273,8 @@ def create_app(
             for path in (
                 "/api/v1/orders/{order_id}/pay",
                 "/api/v1/orders/{order_id}/payments/{payment_id}/reconcile",
+                "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in",
+                "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete",
             ):
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)

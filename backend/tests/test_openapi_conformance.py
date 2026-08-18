@@ -613,16 +613,12 @@ def test_order_detail_allows_unapplied_success_without_a_primary_payment() -> No
     )
 
 
-def test_lifecycle_operations_are_frozen_static_only() -> None:
+def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
     contract = _contract()
     runtime = create_app(
         settings=Settings(app_env="test", wechat_provider="development")
     ).openapi()
-    future_operations = {
-        "/api/v1/orders/{order_id}/cancel": (
-            "post",
-            {"200", "202", "401", "404", "409", "503"},
-        ),
+    published_operations = {
         "/api/v1/venues/{venue_id}/fulfillment/orders": (
             "get",
             {"200", "401", "404", "422", "503"},
@@ -635,18 +631,37 @@ def test_lifecycle_operations_are_frozen_static_only() -> None:
             "post",
             {"200", "401", "404", "409", "503"},
         ),
+    }
+    notification_operations = {
+        "/api/v1/payments/wechat/notify": ("post", {"204", "400", "503"}),
+        "/api/v1/refunds/wechat/notify": ("post", {"204", "400", "503"}),
+    }
+    unpublished_operations = {
+        "/api/v1/orders/{order_id}/cancel": (
+            "post",
+            {"200", "202", "401", "404", "409", "503"},
+        ),
         "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund": (
             "post",
             {"200", "202", "401", "404", "409", "422", "503"},
         ),
-        "/api/v1/payments/wechat/notify": ("post", {"204", "400", "503"}),
-        "/api/v1/refunds/wechat/notify": ("post", {"204", "400", "503"}),
     }
 
-    for path, (method, statuses) in future_operations.items():
+    for path, (method, statuses) in published_operations.items():
+        assert set(contract["paths"][path]) == {method}
+        assert set(contract["paths"][path][method]["responses"]) == statuses
+        assert set(runtime["paths"][path]) == {method}
+        assert set(runtime["paths"][path][method]["responses"]) == statuses
+
+    for path, (method, statuses) in unpublished_operations.items():
         assert set(contract["paths"][path]) == {method}
         assert set(contract["paths"][path][method]["responses"]) == statuses
         assert path not in runtime["paths"]
+
+    for path, (method, statuses) in notification_operations.items():
+        assert set(contract["paths"][path]) == {method}
+        assert set(contract["paths"][path][method]["responses"]) == statuses
+        assert set(runtime["paths"][path]) == {method}
 
     for path in (
         "/api/v1/orders/{order_id}/cancel",

@@ -31,9 +31,6 @@ from backend.app.modules.venue_fulfillment.router import (
     get_fulfillment_clock,
     get_refund_actions_enabled,
 )
-from backend.app.modules.venue_fulfillment.router import (
-    router as venue_fulfillment_router,
-)
 from backend.app.security.phone_vault import PhoneVault
 from backend.tests.test_schema_constraints import venue
 
@@ -53,7 +50,6 @@ def _client(
     refund_actions_enabled: bool | None = True,
 ) -> TestClient:
     app = create_app(settings=Settings(app_env="test", wechat_provider="development"))
-    app.include_router(venue_fulfillment_router)
 
     def database_override() -> Iterator[Session]:
         with Session(engine) as session:
