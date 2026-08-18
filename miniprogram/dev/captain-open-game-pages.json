@@ -1,0 +1,8 @@
+{
+  "token": "CAPTAIN_OPEN_GAME_FIXTURE",
+  "pages": [
+    "dev/pages/captain-game-form/index",
+    "dev/pages/captain-game-manage/index",
+    "dev/pages/captain-game-public/index"
+  ]
+}

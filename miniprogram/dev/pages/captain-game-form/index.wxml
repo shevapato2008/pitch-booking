@@ -1,0 +1,23 @@
+<view class="captain-game-page captain-game-form">
+  <view class="captain-game-nav"><text>创建球局</text><text class="captain-game-fixture">CAPTAIN_OPEN_GAME_FIXTURE</text></view>
+  <scroll-view scroll-y="true" class="captain-game-scroll">
+    <view class="captain-game-notice"><text>{{fixtureNotice}}</text></view>
+    <view wx:if="{{visualState === 'INELIGIBLE'}}" class="captain-game-card captain-game-error" role="alert">
+      <text class="captain-game-heading">暂时不能创建球局</text><text>{{reason}}</text>
+      <button class="captain-game-secondary" bindtap="onReturnOrder">返回订单</button>
+    </view>
+    <block wx:else>
+      <view class="captain-game-card"><view class="captain-game-card-title"><text>真实订场已确认</text><text>不可修改</text></view><text class="captain-game-heading">{{order.venue}}</text><text>{{order.pitch}} · {{order.format}}</text><text>{{order.date}} · {{order.time}}</text><text>{{order.booking}}</text></view>
+      <view class="captain-game-card"><text class="captain-game-heading">球局与球队</text><text>球局名称：{{form.name}}</text><text>球队名称：{{form.team}}</text></view>
+      <view class="captain-game-card"><text class="captain-game-heading">人数与开放名额</text>
+        <view class="captain-game-stepper-row"><text>计划总人数</text><view class="captain-game-stepper"><button class="captain-game-stepper__button" data-action="total-decrease" bindtap="onStepper">−</button><text>{{form.total}}</text><button class="captain-game-stepper__button" data-action="total-increase" bindtap="onStepper">+</button></view></view>
+        <view class="captain-game-stepper-row"><text>已有固定队员</text><view class="captain-game-stepper"><button class="captain-game-stepper__button" data-action="fixed-decrease" bindtap="onStepper">−</button><text>{{form.fixed}}</text><button class="captain-game-stepper__button" data-action="fixed-increase" bindtap="onStepper">+</button></view></view>
+        <view class="captain-game-stepper-row"><text>开放给散客</text><view class="captain-game-stepper"><button class="captain-game-stepper__button" data-action="open-decrease" bindtap="onStepper">−</button><text>{{form.open}}</text><button class="captain-game-stepper__button" data-action="open-increase" bindtap="onStepper">+</button></view></view>
+        <text wx:if="{{stepperError}}" class="captain-game-inline-error" role="alert">{{stepperError}}</text><text class="captain-game-help">计划共 {{form.total}} 人，当前固定 {{form.fixed}} 人，本次开放 {{form.open}} 个名额</text>
+        <text class="captain-game-hidden-copy">计划总人数不能少于固定队员和开放名额之和</text>
+      </view>
+      <view class="captain-game-card"><text class="captain-game-heading">强度、费用与说明</text><text>{{form.intensity}} · {{form.positions}}</text><text>预计 AA：{{form.aa}} · 到场线下结算</text><text>报名截止：{{form.deadline}} · {{form.visibility}}</text></view>
+    </block>
+  </scroll-view>
+  <view wx:if="{{canEdit}}" class="captain-game-footer"><button class="captain-game-primary" bindtap="onSave">保存草稿</button></view>
+</view>
