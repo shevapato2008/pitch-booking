@@ -41,6 +41,8 @@ WeChat Provider 轨道独占以下边界；本计划不得创建、修改或测�
 
 真实 paid refund 不在本计划模拟。Provider 轨道未合并前，不把已支付取消标记为端到端完成，不向 production composition 注册 Mock，不主动制造一笔无法真实退回的设备支付。
 
+Root 集成协调任务串行独占中央小程序注册、路由汇总、build/audit 规则与最终 Fixture 删除。本 slice 不修改 `miniprogram/dev/bootstrap.ts`、`miniprogram/dev/app-pages.json`、`miniprogram/app.json`、`miniprogram/dev/payment-source.ts`、`miniprogram/dev/my-orders-fixture.ts`、`scripts/build-miniprogram.mjs`、`scripts/audit-production-package.mjs` 或对应中央测试；只提交可合并的 slice-local route/token fragment。Root 必须先合并所有活动 slice，再添加式汇总中央注册；清理前必须验证不会移除其他 slice 的路由或 token。
+
 ### Exact file map
 
 **Backend create:**
@@ -70,6 +72,8 @@ WeChat Provider 轨道独占以下边界；本计划不得创建、修改或测�
 
 - `miniprogram/dev/order-cancellation-fixture.ts`：临时、集中、development-only 的取消/退款视觉状态与真实本地 transitions。
 - `miniprogram/dev/order-cancellation-fixture.test.ts`：Fixture isolation 和 transition 测试。
+- `miniprogram/dev/order-cancellation-route-fragment.ts`：slice-local 的预览路由和 development-only token 声明，供 root 集成添加式汇总。
+- `miniprogram/dev/order-cancellation-route-fragment.test.ts`：验证 fragment 只声明本 slice 所需页面/token，且无重复、绝对路径或越界注册。
 - `artifacts/ui/reviews/order-cancellation/README.md`：两个代表性 375×812 预览的自审和授权确认记录。
 - `docs/acceptance/user-order-cancellation-and-refund-progress.md`：自动化、设备验收和 Provider 外部 release gate。
 
@@ -93,14 +97,22 @@ WeChat Provider 轨道独占以下边界；本计划不得创建、修改或测�
 - `miniprogram/pages/my-orders/index.wxml`
 - `miniprogram/pages/my-orders/index.wxss`
 - `miniprogram/pages/my-orders/index.test.ts`
+
+**Root integration modify/delete only:**
+
+- `miniprogram/dev/bootstrap.ts`
+- `miniprogram/dev/app-pages.json`
+- `miniprogram/app.json`
 - `miniprogram/dev/payment-source.ts`
 - `miniprogram/dev/payment-source.test.ts`
-- `miniprogram/dev/bootstrap.ts`
 - `miniprogram/dev/my-orders-fixture.ts`
 - `miniprogram/dev/pages/my-orders/index.test.ts`
+- `scripts/build-miniprogram.mjs`
+- `scripts/audit-production-package.mjs`
 - `tests/build-miniprogram.test.mjs`
 - `tests/audit-production-package.test.mjs`
 - `tests/production-package-booking-audit.test.mjs`
+- 所有活动 slice 的临时 Fixture 和 route fragment。
 
 ---
 
@@ -169,6 +181,8 @@ Do not commit at this gate.
 
 - Create: `miniprogram/dev/order-cancellation-fixture.ts`
 - Create: `miniprogram/dev/order-cancellation-fixture.test.ts`
+- Create: `miniprogram/dev/order-cancellation-route-fragment.ts`
+- Create: `miniprogram/dev/order-cancellation-route-fragment.test.ts`
 - Modify: `miniprogram/domain/booking.ts`
 - Modify: `miniprogram/services/booking.ts`
 - Modify: `miniprogram/presentation/order-detail.ts`
@@ -183,12 +197,6 @@ Do not commit at this gate.
 - Modify: `miniprogram/pages/my-orders/index.wxml`
 - Modify: `miniprogram/pages/my-orders/index.wxss`
 - Modify: `miniprogram/pages/my-orders/index.test.ts`
-- Modify: `miniprogram/dev/payment-source.ts`
-- Modify: `miniprogram/dev/payment-source.test.ts`
-- Modify: `miniprogram/dev/bootstrap.ts`
-- Modify: `miniprogram/dev/my-orders-fixture.ts`
-- Modify: `miniprogram/dev/pages/my-orders/index.test.ts`
-- Modify: `tests/build-miniprogram.test.mjs`
 - Create: `artifacts/ui/reviews/order-cancellation/README.md`
 
 - [ ] **Step 1: Write RED presentation/page tests**
@@ -239,6 +247,8 @@ refund-failed → refund-pending
 
 It may expose read-only terminal `refunded/completed` fixtures to prove presentation, but it must not simulate Provider behavior or import into production composition. Production page code depends only on `BookingDataSource`.
 
+`order-cancellation-route-fragment.ts` declares only the existing `pages/order-detail/index` and `pages/my-orders/index` preview routes plus this fixture's development-only import/token. It is merge input, not a second app manifest: this slice must not edit central bootstrap, `app-pages.json`, build or audit files.
+
 Confirmation copy:
 
 ```text
@@ -249,28 +259,40 @@ Confirmation copy:
 
 Use the existing light system, 4/8px rhythm, 88rpx touch targets, explicit flex centering, text plus semantic color, existing icon style and safe-area padding. Do not add a new theme or full Artifact set.
 
-- [ ] **Step 3: Run focused GREEN checks**
+- [ ] **Step 3: Run focused GREEN checks and commit the slice-local preview handoff**
 
 ```bash
 npx jest \
   miniprogram/dev/order-cancellation-fixture.test.ts \
-  miniprogram/dev/payment-source.test.ts \
-  miniprogram/dev/pages/my-orders/index.test.ts \
+  miniprogram/dev/order-cancellation-route-fragment.test.ts \
   miniprogram/presentation/order-detail.test.ts \
   miniprogram/presentation/my-orders.test.ts \
   miniprogram/pages/order-detail/index.test.ts \
   miniprogram/pages/my-orders/index.test.ts \
   --runInBand
 npm run typecheck
-npm run build:miniprogram:development
-node --test tests/build-miniprogram.test.mjs
 ```
 
-Expected: PASS; production sources import no development module.
+Expected: PASS; the fragment is valid and production sources import no development module. Do not patch central registration merely to make the slice preview boot.
+
+```bash
+git add \
+  miniprogram/domain/booking.ts \
+  miniprogram/services/booking.ts \
+  miniprogram/presentation \
+  miniprogram/pages/order-detail \
+  miniprogram/pages/my-orders \
+  miniprogram/dev/order-cancellation-fixture.ts \
+  miniprogram/dev/order-cancellation-fixture.test.ts \
+  miniprogram/dev/order-cancellation-route-fragment.ts \
+  miniprogram/dev/order-cancellation-route-fragment.test.ts
+git diff --cached --check
+git commit -m "feat: preview user order cancellation"
+```
 
 - [ ] **Step 4: Perform the proportional visual pass**
 
-At exactly 375×812 in WeChat DevTools capture only:
+Hand the committed fragment/fixture to the root integration coordinator. Only after every active slice's preview handoff commit is available, root merges those commits and additively composes the central development registration; at exactly 375×812 in WeChat DevTools, capture only:
 
 - one eligible confirmed detail with the cancel action and safe footer;
 - one mixed list with refund-pending, refunded and refund-failed cards.
@@ -278,6 +300,8 @@ At exactly 375×812 in WeChat DevTools capture only:
 Compare detail geometry with `artifacts/ui/reviews/payment-confirmation/reference-confirmed-375x812.png` and list geometry with `artifacts/ui/reviews/my-orders/ready-reference-375x812.png`. Generate one side-by-side, 50% overlay and difference image per page and record intentional changes in `artifacts/ui/reviews/order-cancellation/README.md`.
 
 Manually check button text dual-axis centering, badge consistency, chevrons, clipping, fixed footer/safe area, exact copy and honest non-button states. Do one iPhone 14 Pro safe-area smoke check without adding another Artifact matrix.
+
+Before recording approval, root compares the post-merge route/token inventory with the union of every active slice fragment and verifies no existing route/token disappeared.
 
 - [ ] **Step 5: Record an authorized visual decision and commit**
 
@@ -289,23 +313,9 @@ Before Task 2, record either:
 An authorized independent approval satisfies this gate; do not block solely waiting for the sleeping user and do not falsely record it as direct user approval.
 
 ```bash
-git add \
-  miniprogram/domain/booking.ts \
-  miniprogram/services/booking.ts \
-  miniprogram/presentation \
-  miniprogram/pages/order-detail \
-  miniprogram/pages/my-orders \
-  miniprogram/dev/order-cancellation-fixture.ts \
-  miniprogram/dev/order-cancellation-fixture.test.ts \
-  miniprogram/dev/payment-source.ts \
-  miniprogram/dev/payment-source.test.ts \
-  miniprogram/dev/bootstrap.ts \
-  miniprogram/dev/my-orders-fixture.ts \
-  miniprogram/dev/pages/my-orders/index.test.ts \
-  tests/build-miniprogram.test.mjs \
-  artifacts/ui/reviews/order-cancellation
+git add artifacts/ui/reviews/order-cancellation
 git diff --cached --check
-git commit -m "feat: preview user order cancellation"
+git commit -m "docs: approve owner cancellation preview"
 ```
 
 ---
@@ -524,9 +534,6 @@ git commit -m "feat: enqueue owner cancellation refunds"
 - Modify: `miniprogram/pages/my-orders/index.wxml`
 - Modify: `miniprogram/pages/my-orders/index.wxss`
 - Modify: `miniprogram/pages/my-orders/index.test.ts`
-- Modify: `tests/build-miniprogram.test.mjs`
-- Modify: `tests/audit-production-package.test.mjs`
-- Modify: `tests/production-package-booking-audit.test.mjs`
 
 - [ ] **Step 1: Write RED decoder and HTTP tests**
 
@@ -591,19 +598,15 @@ npm run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 4: Prove production isolation**
+- [ ] **Step 4: Prove slice-local production isolation and prepare the root handoff**
 
 ```bash
-MINIPROGRAM_TENCENT_MAP_KEY=AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF \
-  npm run build:miniprogram:production
-npm run audit:miniprogram-package
-node --test \
-  tests/build-miniprogram.test.mjs \
-  tests/audit-production-package.test.mjs \
-  tests/production-package-booking-audit.test.mjs
+rg -n "order-cancellation-fixture|order-cancellation-route-fragment" \
+  miniprogram --glob '!dev/**' && exit 1 || true
+npx jest miniprogram/dev/order-cancellation-route-fragment.test.ts --runInBand
 ```
 
-Expected: PASS; production contains the real HTTP owner action and no cancellation Fixture, Provider Mock, development route or hard-coded 50% promise.
+Expected: PASS; production code contains the real HTTP owner action and no cancellation Fixture/fragment import. Root integration, not this branch, adds central build/audit coverage for the declared route/token union.
 
 - [ ] **Step 5: Commit**
 
@@ -620,31 +623,23 @@ git add \
   miniprogram/presentation/my-orders.ts \
   miniprogram/presentation/my-orders.test.ts \
   miniprogram/pages/order-detail \
-  miniprogram/pages/my-orders \
-  tests/build-miniprogram.test.mjs \
-  tests/audit-production-package.test.mjs \
-  tests/production-package-booking-audit.test.mjs
+  miniprogram/pages/my-orders
 git diff --cached --check
 git commit -m "feat: cancel orders from mini program"
 ```
 
 ---
 
-### Task 5：HTTP 集成、最小设备验收、Fixture 删除和诚实收口
+### Task 5：HTTP 集成、最小设备验收和 root 集成交接
 
 **Files:**
 
 - Create: `docs/acceptance/user-order-cancellation-and-refund-progress.md`
-- Modify: `docs/superpowers/plans/2026-08-16-overall-slice-roadmap.md`
 - Modify: `artifacts/ui/reviews/order-cancellation/README.md`
-- Delete: `miniprogram/dev/order-cancellation-fixture.ts`
-- Delete: `miniprogram/dev/order-cancellation-fixture.test.ts`
-- Modify: `miniprogram/dev/payment-source.ts`
-- Modify: `miniprogram/dev/payment-source.test.ts`
-- Modify: `miniprogram/dev/bootstrap.ts`
-- Modify: `miniprogram/dev/my-orders-fixture.ts`
-- Modify: `miniprogram/dev/pages/my-orders/index.test.ts`
-- Modify: `tests/build-miniprogram.test.mjs`
+- Retain for root integration: `miniprogram/dev/order-cancellation-fixture.ts`
+- Retain for root integration: `miniprogram/dev/order-cancellation-fixture.test.ts`
+- Retain for root integration: `miniprogram/dev/order-cancellation-route-fragment.ts`
+- Retain for root integration: `miniprogram/dev/order-cancellation-route-fragment.test.ts`
 
 - [ ] **Step 1: Exercise the actual HTTP owner operation without a Provider**
 
@@ -678,18 +673,14 @@ npx jest \
   --runInBand
 npm run typecheck
 npm run contract:validate
-npm run build:miniprogram:development
-MINIPROGRAM_TENCENT_MAP_KEY=AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF \
-  npm run build:miniprogram:production
-npm run audit:miniprogram-package
 git diff --check
 ```
 
-Expected: focused checks PASS. Do not run or repair unrelated full-suite artifact/route failures in this slice.
+Expected: focused slice checks PASS. Do not edit central build/audit files or run and repair unrelated full-suite artifact/route failures in this slice.
 
 - [ ] **Step 3: Do one non-monetary iPhone acceptance journey**
 
-Against staging on a real iPhone:
+After root has merged every active slice and additively composed their route fragments, against staging on a real iPhone:
 
 1. create a pending order and never open/finalize WeChat payment;
 2. leave detail, reopen from “我的订单”;
@@ -709,44 +700,33 @@ At 375×812 perform one final HTTP-backed visual self-review of cancelled detail
 
 Do not mark paid refund complete in this task and do not make a real payment merely to test an unenforced refund worker.
 
-- [ ] **Step 5: Remove only this slice's temporary Fixture**
+- [ ] **Step 5: Hand central registration and cleanup to the serialized root integration task**
 
-After actual HTTP owner operations and production pages pass, delete `order-cancellation-fixture.*` and remove only its temporary hooks from `payment-source.ts`, `bootstrap.ts` and `my-orders-fixture.ts`. Preserve the older my-orders Fixture governed by `docs/acceptance/my-orders-progress.md`.
+The slice branch retains `order-cancellation-fixture.*` and `order-cancellation-route-fragment.*`; it must not edit or delete central registrations. Root integration must perform this order exactly:
 
-Update build tests to assert the cancellation Fixture token/path is absent from both packages.
+1. merge every active slice branch before touching `bootstrap.ts`, `app-pages.json`, central build/audit manifests or tests;
+2. inventory the current central routes/tokens and the union of every slice-local fragment;
+3. additively register the union in `miniprogram/dev/bootstrap.ts` and `miniprogram/dev/app-pages.json`, preserving all existing and other-slice routes;
+4. update `scripts/build-miniprogram.mjs`, `scripts/audit-production-package.mjs`, `tests/build-miniprogram.test.mjs`, `tests/audit-production-package.test.mjs` and `tests/production-package-booking-audit.test.mjs` once, in the root integration branch;
+5. run the visual/device acceptance above; only after every active slice is on real HTTP, delete its temporary Fixture/fragment and central hooks in the same root-owned cleanup;
+6. compare the post-cleanup route/token set with the pre-cleanup union and fail if any non-target route/token disappeared. Preserve the older my-orders Fixture until its own acceptance document authorizes removal.
 
-- [ ] **Step 6: Final focused verification and commit**
+- [ ] **Step 6: Let root perform central verification; commit only slice-local acceptance records here**
 
 ```bash
 npx jest \
-  miniprogram/dev/payment-source.test.ts \
-  miniprogram/dev/pages/my-orders/index.test.ts \
+  miniprogram/dev/order-cancellation-fixture.test.ts \
+  miniprogram/dev/order-cancellation-route-fragment.test.ts \
   miniprogram/pages/order-detail/index.test.ts \
-  miniprogram/pages/my-orders/index.test.ts \
-  --runInBand
-npm run typecheck
-npm run build:miniprogram:development
-MINIPROGRAM_TENCENT_MAP_KEY=AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF \
-  npm run build:miniprogram:production
-npm run audit:miniprogram-package
-node --test tests/build-miniprogram.test.mjs
+  miniprogram/pages/my-orders/index.test.ts --runInBand
 git diff --check
 ```
 
-Expected: PASS and `rg -n "order-cancellation-fixture|SCRIPTED_REFUND_SUCCESS" dist/miniprogram-*` returns no matches.
+Expected on the slice branch: PASS, with Fixture/fragment intentionally retained and no central-file diff. Root integration separately runs development/production builds and central audits after registration, then repeats them after cleanup and proves the production package contains no slice Fixture/token.
 
 ```bash
-git add -A \
-  miniprogram/dev/order-cancellation-fixture.ts \
-  miniprogram/dev/order-cancellation-fixture.test.ts \
-  miniprogram/dev/payment-source.ts \
-  miniprogram/dev/payment-source.test.ts \
-  miniprogram/dev/bootstrap.ts \
-  miniprogram/dev/my-orders-fixture.ts \
-  miniprogram/dev/pages/my-orders/index.test.ts \
-  tests/build-miniprogram.test.mjs \
+git add \
   docs/acceptance/user-order-cancellation-and-refund-progress.md \
-  docs/superpowers/plans/2026-08-16-overall-slice-roadmap.md \
   artifacts/ui/reviews/order-cancellation/README.md
 git diff --cached --check
 git commit -m "docs: record owner cancellation acceptance"
@@ -760,6 +740,7 @@ This owner track is complete when:
 - the diff contains no new policy/projector/repository/convergence/worker/migration/OpenAPI ownership;
 - owner service never imports or calls a refund Provider and never writes refund authority terminal facts;
 - detail/list render only shared server-authorized actions and every visible button performs a real operation;
-- production package contains no development Fixture or refund Mock;
+- the slice handoff retains only its local Fixture/fragment and contains no central registration/build/audit diff;
+- after all active slices merge, root integration preserves every unrelated route/token, removes this Fixture/fragment, and proves the production package contains no development Fixture or refund Mock;
 - one representative 375×812 HTTP-backed review and one non-monetary iPhone cancellation pass;
 - paid refund terminal acceptance remains explicitly gated to the Provider track.
