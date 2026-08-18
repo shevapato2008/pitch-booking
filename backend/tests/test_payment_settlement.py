@@ -18,6 +18,7 @@ from backend.app.models import (
     RefundAttemptStatus,
     RefundCase,
     RefundCasePurpose,
+    RefundReason,
     Slot,
     SlotStatus,
     User,
@@ -111,12 +112,202 @@ def success_facts(
     return AuthoritativePaymentFacts(**values)  # type: ignore[arg-type]
 
 
-def convergence(engine: Engine) -> PaymentConvergenceService:
+def convergence(engine: Engine, *, now: datetime | None = None) -> PaymentConvergenceService:
     return PaymentConvergenceService(
         session_factory=session_factory(engine),
         expected_app_id="mock-app-id",
         expected_merchant_id="mock-merchant-id",
+        now=(lambda: now) if now is not None else None,
     )
+
+
+def test_cancel_requested_closed_payment_cancels_and_releases_owned_lock(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, payment_id, slot_id, _ = seed_payment(
+        pg_engine,
+        status=PaymentState.CLOSED,
+        now=now,
+    )
+    with Session(pg_engine) as session:
+        session.get_one(Order, order_id).cancel_requested_at = now - timedelta(minutes=1)
+        session.commit()
+
+    service = convergence(pg_engine, now=now)
+    closed = QueryPaymentResult(QueryPaymentStatus.CLOSED)
+    service.converge(payment_id=payment_id, provider="mock", result=closed)
+    service.converge(payment_id=payment_id, provider="mock", result=closed)
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        order = session.get_one(Order, order_id)
+        slot = session.get_one(Slot, slot_id)
+        assert payment.status is PaymentState.CLOSED
+        assert order.status is OrderStatus.CANCELLED
+        assert order.cancel_requested_at == now - timedelta(minutes=1)
+        assert order.cancelled_at == now
+        assert slot.status is SlotStatus.AVAILABLE
+        assert slot.locked_by_order_id is None
+        assert slot.locked_until is None
+        assert payment.refund_case is None
+
+
+def test_cancel_requested_closed_payment_does_not_reopen_unowned_inventory(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, payment_id, slot_id, _ = seed_payment(
+        pg_engine,
+        slot_status=SlotStatus.CLOSED,
+        now=now,
+    )
+    with Session(pg_engine) as session:
+        session.get_one(Order, order_id).cancel_requested_at = now - timedelta(minutes=1)
+        session.commit()
+
+    convergence(pg_engine, now=now).converge(
+        payment_id=payment_id,
+        provider="mock",
+        result=QueryPaymentResult(QueryPaymentStatus.CLOSED),
+    )
+
+    with Session(pg_engine) as session:
+        assert session.get_one(Order, order_id).status is OrderStatus.CANCELLED
+        assert session.get_one(Slot, slot_id).status is SlotStatus.CLOSED
+
+
+def test_cancel_requested_success_outside_24h_queues_one_user_refund(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, payment_id, slot_id, _ = seed_payment(pg_engine, now=now)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        owner_id = order.user_id
+        order.cancel_requested_at = now - timedelta(minutes=1)
+        session.commit()
+
+    success = QueryPaymentResult(
+        QueryPaymentStatus.SUCCESS,
+        facts=success_facts(
+            pg_engine,
+            payment_id,
+            transaction_no="cancel-race-success",
+            paid_at=now,
+        ),
+    )
+    service = convergence(pg_engine, now=now)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        order = session.get_one(Order, order_id)
+        slot = session.get_one(Slot, slot_id)
+        refund_case = payment.refund_case
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.applied_to_order_at == now
+        assert order.status is OrderStatus.REFUND_PENDING
+        assert order.cancel_requested_at == now - timedelta(minutes=1)
+        assert order.cancelled_at == now
+        assert slot.status is SlotStatus.BOOKED
+        assert refund_case is not None
+        assert refund_case.purpose is RefundCasePurpose.ORDER_CANCELLATION
+        assert refund_case.reason is RefundReason.USER_CANCELLED
+        assert refund_case.requested_by_user_id == owner_id
+        assert refund_case.amount_cents == payment.amount_cents
+        assert refund_case.currency == payment.currency
+        assert len(refund_case.attempts) == 1
+        assert refund_case.attempts[0].status is RefundAttemptStatus.CREATING
+        assert refund_case.attempts[0].next_reconcile_at == now
+        assert refund_case.attempts[0].refunded_at is None
+
+
+def test_existing_success_notification_recovers_cancel_request_without_duplicate_refund(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, payment_id, slot_id, _ = seed_payment(
+        pg_engine,
+        status=PaymentState.SUCCESS,
+        transaction_no="existing-success",
+        now=now,
+    )
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        order.status = OrderStatus.CONFIRMED
+        order.cancel_requested_at = now - timedelta(minutes=1)
+        payment = session.get_one(Payment, payment_id)
+        payment.applied_to_order_at = now - timedelta(minutes=2)
+        slot = session.get_one(Slot, slot_id)
+        slot.status = SlotStatus.BOOKED
+        slot.locked_by_order_id = None
+        slot.locked_until = None
+        session.commit()
+
+    success = QueryPaymentResult(
+        QueryPaymentStatus.SUCCESS,
+        facts=success_facts(
+            pg_engine,
+            payment_id,
+            transaction_no="existing-success",
+            paid_at=now,
+        ),
+    )
+    service = convergence(pg_engine, now=now)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert session.get_one(Order, order_id).status is OrderStatus.REFUND_PENDING
+        assert payment.refund_case is not None
+        assert payment.refund_case.purpose is RefundCasePurpose.ORDER_CANCELLATION
+        assert payment.refund_case.reason is RefundReason.USER_CANCELLED
+        assert len(payment.refund_case.attempts) == 1
+        assert payment.refund_case.attempts[0].status is RefundAttemptStatus.CREATING
+        assert payment.refund_case.attempts[0].next_reconcile_at == now
+
+
+def test_cancel_requested_success_inside_24h_keeps_confirmed_booking_without_refund(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, payment_id, slot_id, _ = seed_payment(pg_engine, now=now)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        order.cancel_requested_at = now - timedelta(minutes=1)
+        slot = session.get_one(Slot, slot_id)
+        slot.starts_at = now + timedelta(hours=2)
+        slot.ends_at = now + timedelta(hours=4)
+        session.commit()
+
+    convergence(pg_engine, now=now).converge(
+        payment_id=payment_id,
+        provider="mock",
+        result=QueryPaymentResult(
+            QueryPaymentStatus.SUCCESS,
+            facts=success_facts(
+                pg_engine,
+                payment_id,
+                transaction_no="support-required-success",
+                paid_at=now,
+            ),
+        ),
+    )
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        order = session.get_one(Order, order_id)
+        slot = session.get_one(Slot, slot_id)
+        assert payment.status is PaymentState.SUCCESS
+        assert payment.applied_to_order_at == now
+        assert payment.refund_case is None
+        assert order.status is OrderStatus.CONFIRMED
+        assert order.cancel_requested_at == now - timedelta(minutes=1)
+        assert order.cancelled_at is None
+        assert slot.status is SlotStatus.BOOKED
 
 
 def test_verified_success_atomically_books_and_duplicate_or_old_close_cannot_regress(
