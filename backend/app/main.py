@@ -23,6 +23,7 @@ from backend.app.modules.auth.router import router as auth_router
 from backend.app.modules.availability.router import router as availability_router
 from backend.app.modules.checkout.router import router as checkout_router
 from backend.app.modules.inventory.router import router as inventory_router
+from backend.app.modules.orders.router import align_order_list_openapi
 from backend.app.modules.orders.router import router as orders_router
 from backend.app.modules.payments.development_router import router as development_payment_router
 from backend.app.modules.payments.mock_provider import MockPaymentProvider
@@ -206,6 +207,7 @@ def create_app(
             ):
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)
+            align_order_list_openapi(schema)
             profile_get = (
                 schema.get("paths", {})
                 .get("/api/v1/admin/venues/{venue_id}/profile", {})

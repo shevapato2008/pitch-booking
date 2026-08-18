@@ -391,39 +391,31 @@ def test_my_orders_list_contract_is_closed_owner_only_and_private() -> None:
         assert forbidden not in serialized, forbidden
 
 
-def test_my_orders_runtime_openapi_matches_the_frozen_list_shape() -> None:
-    document = create_app(
+def test_my_orders_runtime_openapi_matches_the_frozen_list_operation() -> None:
+    frozen = _contract()
+    runtime = create_app(
         settings=Settings(app_env="test", wechat_provider="development")
     ).openapi()
-    operation = document["paths"]["/api/v1/orders"]["get"]
 
-    assert set(operation["responses"]) == {"200", "401", "422", "503"}
-    assert operation["responses"]["200"]["content"]["application/json"]["schema"][
-        "$ref"
-    ].endswith("/OrderListResponse")
-    assert [parameter["name"] for parameter in operation["parameters"]] == [
-        "limit",
-        "cursor",
-    ]
+    assert runtime["paths"]["/api/v1/orders"]["get"] == frozen["paths"][
+        "/api/v1/orders"
+    ]["get"]
+    assert runtime["components"]["securitySchemes"]["bearerAuth"] == frozen[
+        "components"
+    ]["securitySchemes"]["bearerAuth"]
+    assert runtime["components"]["headers"]["RequestId"] == frozen["components"][
+        "headers"
+    ]["RequestId"]
+    for name in (
+        "OrderListResponse",
+        "OrderSummary",
+        "CheckoutVenue",
+        "PhysicalPitch",
+    ):
+        assert runtime["components"]["schemas"][name] == frozen["components"][
+            "schemas"
+        ][name]
 
-    schemas = document["components"]["schemas"]
-    summary = schemas["OrderSummaryResponse"]
-    assert summary["additionalProperties"] is False
-    assert set(summary["properties"]) == {
-        "id",
-        "order_number",
-        "status",
-        "venue",
-        "pitch",
-        "starts_at",
-        "ends_at",
-        "price_cents",
-        "currency",
-        "created_at",
-        "expires_at",
-        "payment_confirming",
-        "closing_payment",
-    }
 
 def test_contract_freezes_map_and_discriminated_venue_detail() -> None:
     contract = _contract()

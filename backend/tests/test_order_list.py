@@ -449,7 +449,33 @@ def test_commit_failure_rolls_back_expiry_and_returns_503(
 
 def test_list_requires_business_session(pg_engine: Engine) -> None:
     with _client(pg_engine) as client:
-        response = client.get("/api/v1/orders")
+        missing = client.get("/api/v1/orders")
+        invalid = client.get("/api/v1/orders", headers=_auth("invalid-session"))
 
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+    for response in (missing, invalid):
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+
+
+def test_list_auth_database_failure_rolls_back_and_returns_503() -> None:
+    class FailingAuthDatabase:
+        rollback_called = False
+
+        def scalar(self, _statement: object) -> object:
+            raise SQLAlchemyError("injected auth lookup failure")
+
+        def rollback(self) -> None:
+            self.rollback_called = True
+
+    database = FailingAuthDatabase()
+    app = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    app.dependency_overrides[get_database] = lambda: database
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/v1/orders", headers=_auth())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert database.rollback_called is True
