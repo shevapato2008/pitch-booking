@@ -34,7 +34,7 @@ test("manifest freezes exactly four 375 by 812 captain states and review slots",
   assert.match(manifest.fixture.deletion_condition, /production/i);
 });
 
-test("captain data is immutable, has truthful Fixture transitions, and keeps public readonly", { skip: missing.length > 0 }, async () => {
+test("captain data separates four reference states from an honest internal cancellation result", { skip: missing.length > 0 }, async () => {
   const data = await import(`../${files.data}?artifact-test=1`);
   assert.deepEqual(data.CAPTAIN_OPEN_GAME_STATE_IDS, states);
   assert.ok(Object.isFrozen(data.CAPTAIN_OPEN_GAME_STATES));
@@ -47,20 +47,35 @@ test("captain data is immutable, has truthful Fixture transitions, and keeps pub
       assert.ok(action.fixtureTransition, `${id}:${action.id} needs Fixture transition intent`);
     }
   }
-  assert.equal(data.CAPTAIN_OPEN_GAME_STATES["public-readonly"].actions.length, 0);
+  assert.deepEqual(data.CAPTAIN_OPEN_GAME_INTERNAL_STATE_IDS, [...states, "cancelled-readonly"]);
+  assert.equal(data.CAPTAIN_OPEN_GAME_STATES["cancelled-readonly"].lifecycle, "CANCELLED");
+  assert.equal(data.CAPTAIN_OPEN_GAME_STATES["cancelled-readonly"].actions.length, 0);
+  assert.doesNotMatch(JSON.stringify(data.CAPTAIN_OPEN_GAME_STATES["cancelled-readonly"]), /分享球局|编辑球局|取消球局/);
+  assert.deepEqual(data.CAPTAIN_OPEN_GAME_STATES["public-readonly"].actions.map(({ id }) => id), ["return-manage"]);
   assert.equal(data.CAPTAIN_OPEN_GAME_STATES["public-readonly"].notice, "当前仅供查看，申请加入即将开放");
   assert.match(JSON.stringify(data.CAPTAIN_OPEN_GAME_STATES["published-manage"]), /只取消本次开放球局，不会取消已预订场地，也不会发起退款/);
+  assert.deepEqual(data.CAPTAIN_OPEN_GAME_STATES["draft-manage"].actions.map(({ id, label }) => [id, label]), [
+    ["preview", "预览公开详情"], ["edit", "编辑球局"], ["abandon", "放弃草稿"], ["begin-publish", "发布球局"],
+  ]);
+  assert.deepEqual(data.FIXTURE_PANELS.publish.items, ["真实场地", "开放名额", "预计 AA", "线下结算", "报名截止", "可见范围"]);
+  for (const panel of [data.FIXTURE_PANELS.abandon, data.FIXTURE_PANELS.cancel]) {
+    assert.equal(panel.close.label, "继续保留");
+    assert.ok(panel.confirm.fixtureTransition);
+  }
 });
 
 test("reference preserves existing light system, real order content, and privacy boundary", { skip: missing.length > 0 }, () => {
   const source = [read(files.html), read(files.css), read(files.data)].join("\n");
   assert.match(read(files.html), /data-production-enabled="false"/);
   for (const color of ["#F8FAFC", "#FFFFFF", "#10243E", "#0284C7", "#059669"]) assert.match(read(files.css), new RegExp(esc(color), "i"));
-  for (const copy of ["天津奥体足球场", "七人制 A 场", "2026年8月23日", "计划共", "保存草稿", "私有草稿", "确认发布", "分享球局", "当前仅供查看，申请加入即将开放"]) assert.match(source, new RegExp(esc(copy)));
+  for (const copy of ["天津奥体足球场", "七人制 A 场", "2026年8月23日", "计划共", "保存草稿", "私有草稿", "发布球局", "确认发布", "分享球局", "返回管理页", "当前仅供查看，申请加入即将开放"]) assert.match(source, new RegExp(esc(copy)));
   assert.match(read(files.css), /min-height:\s*44px/);
   assert.match(read(files.css), /position:\s*fixed/);
   assert.match(read(files.css), /env\(safe-area-inset-bottom/);
   assert.match(read(files.css), /display:\s*flex;[\s\S]{0,180}?align-items:\s*center;[\s\S]{0,180}?justify-content:\s*center;/);
+  assert.match(read(files.css), /\.public-notice\s*\{[^}]*text-align:\s*left;/s);
+  assert.doesNotMatch(read(files.css), /\.public-notice\s*\{[^}]*border:/s, "public pending copy must not look like a CTA");
+  assert.doesNotMatch(read(files.data), /replaceState/, "reference navigation must preserve browser history");
   assert.doesNotMatch(source, /(?:phone|tel:|wechat|微信号|order[_ -]?id|payment|支付流水|contact)/i);
   assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u, "emoji cannot serve as icons");
 });
@@ -69,8 +84,8 @@ test("flow and review record action closures, order isolation, and four referenc
   const flow = read(files.flow);
   for (const phrase of [
     "create-ready → draft-manage", "draft-manage → public-readonly", "draft-manage → published-manage",
-    "published-manage → public-readonly", "取消球局不改订单", "公开页不暴露联系、订单或支付字段",
-    "申请加入即将开放", "Fixture transition",
+    "published-manage → public-readonly", "取消球局不改订单", "CANCELLED", "继续保留", "发布前确认",
+    "公开页不暴露联系、订单或支付字段", "返回管理页", "申请加入即将开放", "Fixture transition",
   ]) assert.match(flow, new RegExp(esc(phrase)));
   const review = read(files.review);
   for (const state of states) assert.match(review, new RegExp(`${esc(state)}-reference-375x812\\.png`));
