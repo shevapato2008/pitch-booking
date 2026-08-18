@@ -9,7 +9,8 @@
 - Additional interactive previews: `loading` and `load-more-error` remain available through the reference query and `?controls=1` control panel.
 - Production remains disabled; the native Fixture and both preview routes are excluded from the production manifest/package. No production page, service, composition, contract, backend, or migration is part of this checkpoint.
 - User explicitly deferred the A3 CREATE real-device acceptance gate for B1 MVP progress on 2026-08-18.
-- Native capture is blocked. The one proportional WeChat DevTools attempt returned `WECHAT_PORT_MISMATCH` because the running IDE automation server is listening on another port. No implementation PNG, comparison image, manual native visual review, or independent visual decision is claimed.
+- Native capture is blocked. The initial DevTools attempt returned `WECHAT_PORT_MISMATCH`; after restarting the IDE on one confirmed port, the official `miniprogram-automator` handshake received no SDK version and failed before capture. No implementation PNG, comparison image, manual native visual review, or independent native visual decision is claimed.
+- MVP continuation decision: the user explicitly prioritized a usable, broader app and allowed subsequent modules to continue. Task 3 may start based on the independently approved reference, 9/9 focused native-page tests, successful typecheck/development build, and production isolation. Native pixel comparison remains acceptance debt, not a fabricated pass.
 
 ## Reference sources
 
@@ -67,7 +68,7 @@ WECHAT_DEVTOOLS_CLI=/Applications/wechatwebdevtools.app/Contents/MacOS/cli \
 {"ok":false,"code":"WECHAT_PORT_MISMATCH","message":"quit Developer Tools, then rerun with one port"}
 ```
 
-Per the proportional Task 2 instruction, no second tooling attempt was made. Because no fresh native pixels were available, the requested button centering, 44pt targets, long label, status alignment/contrast, chevrons, scrolling, and safe-area review could not be performed in the real runtime. Independent visual approval remains unrecorded.
+One proportional recovery was then performed: DevTools was quit and reopened on a single confirmed port, the project built successfully, and the automation environment check returned all six checks as healthy. A direct official automation launch nevertheless failed before capture because `Tool.getInfo` returned no SDK version to `miniprogram-automator` (`Cannot read properties of undefined (reading 'split')`). The failure is isolated to the tooling handshake; focused page behavior, typecheck, development build and package isolation remain GREEN. No further toolchain debugging was attempted. Because no fresh native pixels were available, the requested real-runtime visual comparison could not be performed. Independent native visual approval remains unrecorded.
 
 ## Reference self-review record
 
@@ -134,6 +135,7 @@ offset without horizontal overflow.
 
 ## Visual gate
 
-The approved reference board and tested native preview source are ready, but the Task 2 native
-visual gate remains blocked by `WECHAT_PORT_MISMATCH`. A fresh 375 × 812 native capture and manual
-review are still required before recording an independent native visual decision or entering Task 3.
+The approved reference board and tested native preview source are ready. Native pixel review remains
+blocked by the installed DevTools automation protocol and is explicitly carried to Task 6. Per the
+user's MVP continuation decision, this debt does not block Task 3, but it must not be described as a
+passed native visual gate.
