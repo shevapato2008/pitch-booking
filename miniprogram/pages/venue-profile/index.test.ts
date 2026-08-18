@@ -195,6 +195,18 @@ test("normal save refreshes never leave a temporary attempt exposed as unknown",
   const api = source(); let resolveSave!: (value: typeof ready) => void; api.save.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; })); registerVenueProfileDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.onDescriptionInput({ detail: { value: "保存中" } }); const save = page.onSubmitDescription(); await page.onPullDownRefresh(); expect(page.data.unknownScope).toBe(""); resolveSave(next()); await save; expect(page.data.unknownScope).toBe(""); expect(stored).toBeNull(); page.onUnload();
 });
 
+test("the fourth two-by-two workbench entry opens today's production orders", async () => {
+  const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id });
+  page.onNavigateWorkbench({ currentTarget: { dataset: { target: "orders" } } });
+  expect(wx.navigateTo).toHaveBeenCalledWith({ url: `/pages/venue-fulfillment/index?venue_id=${ready.venue.id}` });
+  const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/venue-profile/index.wxss", "utf8");
+  expect(markup).toMatch(/data-target="orders"[^>]*bindtap="onNavigateWorkbench"[^>]*>今日订单<\/button>/);
+  expect(styles).toMatch(/\.venue-profile__workbenches\s*\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  expect(styles).toMatch(/\.venue-profile__workbench\s*\{[^}]*min-height:88rpx/);
+  page.onUnload();
+});
+
 test("successful reads and missing-attempt recovery clear stale unknown scope", async () => {
   const page = loadPage(); await page.onLoad({ venue_id: ready.venue.id }); page.setData({ unknownScope: "description" }); await page.onPullDownRefresh(); expect(page.data.unknownScope).toBe(""); page.setData({ unknownScope: "image" }); await page.onRetryUnknown(); expect(page.data.unknownScope).toBe("");
 });

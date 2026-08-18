@@ -1,0 +1,155 @@
+/// <reference types="node" />
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mini Program Page harness */
+import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import { readFileSync } from "node:fs";
+
+import { decodeVenueFulfillmentOrder, decodeVenueFulfillmentPage, type VenueFulfillmentPage } from "../../domain/venue-fulfillment";
+import { VenueFulfillmentApiError } from "../../services/http-venue-fulfillment";
+import type { VenueFulfillmentAttemptStore } from "../../services/venue-fulfillment-attempt-store";
+import { registerVenueFulfillmentAttemptStore, resetVenueFulfillmentAttemptStoreForTesting } from "../../services/venue-fulfillment-attempt-store";
+import type { VenueFulfillmentDataSource, VenueFulfillmentMutationAttempt } from "../../services/venue-fulfillment";
+import { registerVenueFulfillmentDataSource, resetVenueFulfillmentBindingsForTesting } from "../../services/venue-fulfillment";
+
+type RuntimePage = Record<string, any> & { data: Record<string, any>; setData(patch: Record<string, unknown>): void };
+let definition: Record<string, any> | undefined;
+let stored: VenueFulfillmentMutationAttempt | null = null;
+const response = decodeVenueFulfillmentPage(JSON.parse(readFileSync("contracts/examples/venue-fulfillment-orders.json", "utf8")));
+const checkedIn = decodeVenueFulfillmentOrder(JSON.parse(readFileSync("contracts/examples/venue-order-checked-in.json", "utf8")));
+const completed = decodeVenueFulfillmentOrder(JSON.parse(readFileSync("contracts/examples/venue-order-completed.json", "utf8")));
+
+const store: VenueFulfillmentAttemptStore = {
+  load: jest.fn(() => stored),
+  begin: jest.fn((attempt: VenueFulfillmentMutationAttempt): VenueFulfillmentMutationAttempt => { stored ??= structuredClone(attempt); if (JSON.stringify(stored) !== JSON.stringify(attempt)) throw new Error("conflict"); return structuredClone(stored as VenueFulfillmentMutationAttempt); }),
+  clear: jest.fn(() => { stored = null; }),
+};
+
+function source(initial: VenueFulfillmentPage = response): jest.Mocked<VenueFulfillmentDataSource> {
+  return {
+    login: jest.fn(async () => undefined),
+    listOrders: jest.fn(async () => initial),
+    checkIn: jest.fn(async () => checkedIn),
+    complete: jest.fn(async () => completed),
+    refund: jest.fn(async (attempt) => ({ orderId: attempt.orderId, status: "REFUND_PENDING" })),
+  };
+}
+
+function loadPage(): RuntimePage {
+  if (!definition) {
+    (globalThis as any).Page = (value: Record<string, any>) => { definition = value; };
+    jest.requireActual("./index");
+  }
+  return {
+    ...definition,
+    data: structuredClone(definition!.data),
+    requestRevision: 0,
+    alive: true,
+    authorityOrders: [],
+    setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); },
+  } as RuntimePage;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  return { promise: new Promise<T>((done, fail) => { resolve = done; reject = fail; }), resolve, reject };
+}
+
+beforeEach(() => {
+  resetVenueFulfillmentBindingsForTesting(); resetVenueFulfillmentAttemptStoreForTesting(); stored = null; jest.clearAllMocks(); registerVenueFulfillmentAttemptStore(store);
+  (globalThis as any).wx = {
+    getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })),
+    getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, bottom: 80, left: 278, right: 365, width: 87, height: 32 })),
+    showModal: jest.fn(({ success }: any) => success({ confirm: true, cancel: false })),
+    navigateBack: jest.fn(), reLaunch: jest.fn(), stopPullDownRefresh: jest.fn(),
+  };
+});
+afterEach(() => { jest.useRealTimers(); });
+
+test("logs in, loads the default server date, and renders server-authoritative actions", async () => {
+  const api = source(); registerVenueFulfillmentDataSource(api); const page = loadPage();
+  await page.onLoad({ venue_id: response.venue.id });
+  expect(api.login).toHaveBeenCalledTimes(1); expect(api.listOrders).toHaveBeenCalledWith(response.venue.id, undefined, undefined);
+  expect(page.data).toMatchObject({ mode: "ready", venueName: response.venue.name, serviceDate: response.serviceDate, nextCursor: null });
+  expect(page.data.orders[0]).toMatchObject({ canRefund: true, canCheckIn: false, canComplete: false });
+});
+
+test("navigates previous/current/next from the returned service date and ignores stale reads", async () => {
+  const api = source(); const old = deferred<VenueFulfillmentPage>(); const current = { ...response, serviceDate: "2026-07-29" };
+  api.listOrders.mockResolvedValueOnce(response).mockImplementationOnce(() => old.promise).mockResolvedValueOnce(current);
+  registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  const stale = page.onSelectDate({ currentTarget: { dataset: { serviceDate: "2026-07-27" } } });
+  const latest = page.onSelectDate({ currentTarget: { dataset: { serviceDate: "2026-07-29" } } }); await latest;
+  old.resolve({ ...response, serviceDate: "2026-07-27" }); await stale;
+  expect(page.data.serviceDate).toBe("2026-07-29");
+  expect(api.listOrders).toHaveBeenNthCalledWith(2, response.venue.id, "2026-07-27", undefined);
+  expect(api.listOrders).toHaveBeenNthCalledWith(3, response.venue.id, "2026-07-29", undefined);
+});
+
+test("keeps loading, empty, read-error, refresh, pagination, and load-more-error distinct", async () => {
+  const api = source({ ...response, orders: [], nextCursor: null }); registerVenueFulfillmentDataSource(api); const page = loadPage();
+  const loading = page.onLoad({ venue_id: response.venue.id }); expect(page.data.mode).toBe("loading"); await loading; expect(page.data.mode).toBe("empty");
+  api.listOrders.mockRejectedValueOnce(new Error("refresh")); await page.onPullDownRefresh(); expect(wx.stopPullDownRefresh).toHaveBeenCalledTimes(1); expect(page.data.refreshErrorText).toContain("刷新");
+  api.listOrders.mockRejectedValueOnce(new Error("read")); await page.onRetry(); expect(page.data.mode).toBe("read-error");
+  api.listOrders.mockResolvedValueOnce({ ...response, nextCursor: "next" }); await page.onRetry(); expect(page.data.mode).toBe("ready");
+  api.listOrders.mockRejectedValueOnce(new Error("more")); await page.onLoadMore(); expect(page.data).toMatchObject({ mode: "ready", loadMoreError: true });
+});
+
+test("unload suppresses a late response", async () => {
+  const api = source(); const pending = deferred<VenueFulfillmentPage>(); api.listOrders.mockImplementationOnce(() => pending.promise); registerVenueFulfillmentDataSource(api); const page = loadPage();
+  const load = page.onLoad({ venue_id: response.venue.id }); page.onUnload(); pending.resolve(response); await load;
+  expect(page.data.venueName).toBe("");
+});
+
+test("check-in and completion require confirmation, persist one key, replace one card, and suppress duplicate taps", async () => {
+  const actionable = { ...response, orders: [{ ...response.orders[0], allowedActions: { ...response.orders[0].allowedActions, canCheckIn: true, canRefund: false, blockedReason: null } }] };
+  const api = source(actionable); const pending = deferred<typeof checkedIn>(); api.checkIn.mockImplementationOnce(() => pending.promise); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  const first = page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } }); await Promise.resolve();
+  const key = stored?.idempotencyKey; expect(key).toBeTruthy(); expect(page.data.mutatingOrderId).toBe(response.orders[0].orderId);
+  await page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } }); expect(api.checkIn).toHaveBeenCalledTimes(1);
+  pending.resolve(checkedIn); await first; expect(api.checkIn).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: key })); expect(page.data.orders[0]).toMatchObject({ statusLabel: "待履约", canCheckIn: false });
+  const completable = { ...checkedIn, allowedActions: { ...checkedIn.allowedActions, canComplete: true, blockedReason: null } };
+  page.authorityOrders = [completable]; page.setData({ orders: [{ ...page.data.orders[0], canComplete: true }] }); await page.onComplete({ currentTarget: { dataset: { orderId: checkedIn.orderId } } });
+  expect(api.complete).toHaveBeenCalledTimes(1); expect(wx.showModal).toHaveBeenCalledTimes(2); expect(page.data.orders[0].statusLabel).toBe("已完成");
+});
+
+test("refund requires a trimmed reason, preserves uncertain input, and refreshes authority after acceptance", async () => {
+  const refunded = { ...response, orders: [{ ...response.orders[0], status: "REFUND_PENDING" as const, allowedActions: { ...response.orders[0].allowedActions, canRefund: false, blockedReason: "REFUND_IN_PROGRESS" as const } }] };
+  const api = source(); api.listOrders.mockResolvedValueOnce(response).mockResolvedValueOnce(refunded); registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  page.onOpenRefund({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } }); page.onRefundReasonInput({ detail: { value: "   " } }); await page.onConfirmRefund(); expect(api.refund).not.toHaveBeenCalled(); expect(page.data.refundError).toContain("原因");
+  page.onRefundReasonInput({ detail: { value: "  场地临时检修  " } }); await page.onConfirmRefund();
+  expect(api.refund).toHaveBeenCalledWith(expect.objectContaining({ reason: "场地临时检修" })); expect(api.listOrders).toHaveBeenCalledTimes(2); expect(page.data.orders[0]).toMatchObject({ statusLabel: "退款处理中", canRefund: false });
+});
+
+test("unknown writes refresh authority first and replay the original attempt only when still unapplied", async () => {
+  const checkable = { ...response, orders: [{ ...response.orders[0], allowedActions: { ...response.orders[0].allowedActions, canCheckIn: true, canRefund: false, blockedReason: null } }] };
+  const api = source(checkable); api.checkIn.mockRejectedValueOnce(new VenueFulfillmentApiError("FULFILLMENT_RESULT_UNKNOWN")).mockResolvedValueOnce(checkedIn); api.listOrders.mockResolvedValueOnce(checkable).mockResolvedValueOnce(checkable);
+  registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id }); await page.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } });
+  const original = structuredClone(stored as Extract<VenueFulfillmentMutationAttempt, { kind: "checkIn" }>); expect(page.data.unknownAttempt).toMatchObject({ kind: "checkIn" });
+  await page.onRetryUnknown(); expect(api.checkIn).toHaveBeenLastCalledWith(original); expect(page.data.unknownAttempt).toBeNull();
+
+  stored = null; const appliedApi = source(checkable); appliedApi.checkIn.mockRejectedValueOnce(new VenueFulfillmentApiError("FULFILLMENT_RESULT_UNKNOWN")); appliedApi.listOrders.mockResolvedValueOnce(checkable).mockResolvedValueOnce({ ...checkable, orders: [checkedIn] }); registerVenueFulfillmentDataSource(appliedApi);
+  const applied = loadPage(); await applied.onLoad({ venue_id: response.venue.id }); await applied.onCheckIn({ currentTarget: { dataset: { orderId: response.orders[0].orderId } } });
+  expect(applied.data.unknownAttempt).toBeNull(); expect(store.clear).toHaveBeenCalled();
+});
+
+test("production markup exposes only allowed action buttons and every visible enabled control is bound", () => {
+  const markup = readFileSync("miniprogram/pages/venue-fulfillment/index.wxml", "utf8");
+  expect(markup).toMatch(/wx:if="\{\{item\.canCheckIn\}\}"[^>]*bindtap="onCheckIn"/);
+  expect(markup).toMatch(/wx:if="\{\{item\.canComplete\}\}"[^>]*bindtap="onComplete"/);
+  expect(markup).toMatch(/wx:if="\{\{item\.canRefund\}\}"[^>]*bindtap="onOpenRefund"/);
+  for (const handler of ["onBack", "onSelectDate", "onRetry", "onLoadMore", "onRetryLoadMore", "onCheckIn", "onComplete", "onOpenRefund", "onRefundReasonInput", "onCancelRefund", "onConfirmRefund", "onRetryUnknown"]) expect(markup).toContain(handler);
+  expect(markup).not.toMatch(/disabled[^>]+bindtap="onBlocked|onFake|模拟成功/);
+});
+
+test("route fragment declares production artifacts, HTTP composition, and fixture exclusions", () => {
+  const fragment = JSON.parse(readFileSync("miniprogram/route-fragments/venue-fulfillment.json", "utf8"));
+  expect(fragment.production).toMatchObject({
+    route: "pages/venue-fulfillment/index", status: "ready",
+    artifacts: expect.arrayContaining(["index.ts", "index.wxml", "index.wxss", "index.json"]),
+    composition: expect.objectContaining({ data_source_factory: "createHttpVenueFulfillmentDataSource", attempt_store_factory: "createVenueFulfillmentAttemptStore", transport_factory: "productionTransport", identity: "productionIdentity", session_store_factory: "createSessionStore", session_storage: "productionSessionStorage" }),
+    fixture_imports_allowed: false,
+  });
+  expect(fragment.production.excludes).toEqual(expect.arrayContaining(["VENUE_FULFILLMENT_FIXTURE", "dev/pages/venue-fulfillment", "development fallback data"]));
+  expect(fragment.development.http_composition).toMatchObject({ transport_factory: "productionTransport", identity: "developmentIdentity", session_store_factory: "createSessionStore", session_storage: "productionSessionStorage" });
+  const sourceText = readFileSync("miniprogram/pages/venue-fulfillment/index.ts", "utf8"); expect(sourceText).not.toMatch(/\/dev\/|VENUE_FULFILLMENT_FIXTURE/);
+});
