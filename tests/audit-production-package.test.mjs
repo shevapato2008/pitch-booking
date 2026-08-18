@@ -28,6 +28,7 @@ for (const token of [
   "poi-search-preview",
   "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
   "MY_ORDERS_RAW_FIXTURE",
+  "VENUE_FULFILLMENT_FIXTURE",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -253,6 +254,25 @@ test("production audit requires compiled native payment composition", async (t) 
   await assertAuditRejects(packageRoot, "missing payment composition");
 });
 
+test("production audit requires compiled venue fulfillment composition", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installPaymentDependencies(packageRoot);
+  await writeFile(
+    path.join(packageRoot, "app.js"),
+    [
+      'const { createHttpPaymentDataSource } = require("./services/http-payment");',
+      'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
+      'const { productionPayment } = require("./runtime/production");',
+      "registerPaymentDataSource(createHttpPaymentDataSource({}));",
+      "registerPaymentCapability(productionPayment);",
+      "App({});",
+    ].join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "missing venue fulfillment composition");
+});
+
 test("production audit rejects an unresolved dependency in the app closure", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
@@ -397,6 +417,7 @@ async function createProductionPackage() {
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
+    "pages/venue-fulfillment/index",
   ];
   await writeFile(
     path.join(packageRoot, "app.json"),
@@ -419,19 +440,34 @@ async function createProductionPackage() {
 }
 
 async function installValidPaymentComposition(packageRoot, extraSource = "") {
-  await installPaymentDependencies(packageRoot);
+  await installProductionDependencies(packageRoot);
   await writeFile(
     path.join(packageRoot, "app.js"),
     [
       'const { createHttpPaymentDataSource } = require("./services/http-payment");',
       'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
       'const { productionPayment } = require("./runtime/production");',
+      'const { createHttpVenueFulfillmentDataSource } = require("./services/http-venue-fulfillment");',
+      'const { registerVenueFulfillmentDataSource } = require("./services/venue-fulfillment");',
+      'const { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } = require("./services/venue-fulfillment-attempt-store");',
+      "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore({});",
+      "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
+      "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({ attemptStore: venueFulfillmentAttemptStore }));",
       "registerPaymentDataSource(createHttpPaymentDataSource({}));",
       "registerPaymentCapability(productionPayment);",
       extraSource,
       "App({});",
     ].join("\n"),
   );
+}
+
+async function installProductionDependencies(packageRoot) {
+  await installPaymentDependencies(packageRoot);
+  for (const file of [
+    "services/http-venue-fulfillment.js",
+    "services/venue-fulfillment.js",
+    "services/venue-fulfillment-attempt-store.js",
+  ]) await writeFile(path.join(packageRoot, file), "\n");
 }
 
 async function installPaymentDependencies(packageRoot) {

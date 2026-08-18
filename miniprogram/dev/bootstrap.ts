@@ -18,8 +18,11 @@ import { registerVenueProfileDataSource, registerVenueProfileMediaCapability } f
 import { createHttpVenueProfileDataSource } from "../services/http-venue-profile";
 import { createHttpVenueAccessDataSource } from "../services/http-venue-access";
 import { createHttpVenueOnboardingDataSource } from "../services/http-venue-onboarding";
+import { createHttpVenueFulfillmentDataSource } from "../services/http-venue-fulfillment";
 import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
+import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "../services/venue-fulfillment-attempt-store";
+import { registerVenueFulfillmentDataSource } from "../services/venue-fulfillment";
 import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingDataSource, registerVenueOnboardingEvidenceCapability } from "../services/venue-onboarding";
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { registerPageDataSource } from "../services/page-data";
@@ -50,7 +53,9 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));
   registerPitchConfigurationAttemptStore(createPitchConfigurationAttemptStore(productionSessionStorage));
   const venueProfileAttemptStore = createVenueProfileAttemptStore(productionSessionStorage);
+  const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);
   registerVenueProfileAttemptStore(venueProfileAttemptStore);
+  registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);
   registerVenueProfileMediaCapability(productionVenueProfileMedia);
   registerPaymentCapability(createDevelopmentPaymentCapability("success", showDevelopmentCashier));
   if (options.source === "http") {
@@ -67,6 +72,12 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerVenueOnboardingDataSource(createHttpVenueOnboardingDataSource({ transport, identity: developmentIdentity, phone: productionPhone, sessionStore }));
     registerVenueOnboardingEvidenceCapability(createWeChatVenueOnboardingEvidenceCapability());
     registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport, identity: developmentIdentity, sessionStore, attemptStore: venueProfileAttemptStore }));
+    registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({
+      transport,
+      identity: developmentIdentity,
+      sessionStore,
+      attemptStore: venueFulfillmentAttemptStore,
+    }));
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);
     registerLocationCapability(productionLocation);

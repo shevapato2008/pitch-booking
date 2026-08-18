@@ -156,7 +156,7 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
-test("production app registers HTTP data, venue profiles, Tencent POI, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -186,6 +186,11 @@ test("production app registers HTTP data, venue profiles, Tencent POI, and nativ
   assert.match(app, /registerPaymentDataSource/);
   assert.match(app, /productionPayment/);
   assert.match(app, /registerPaymentCapability/);
+  assert.match(app, /createHttpVenueFulfillmentDataSource/);
+  assert.match(app, /registerVenueFulfillmentDataSource/);
+  assert.match(app, /createVenueFulfillmentAttemptStore/);
+  assert.match(app, /registerVenueFulfillmentAttemptStore/);
+  assert.match(app, /attemptStore:\s*venueFulfillmentAttemptStore/);
   assert.match(app, /productionSessionStorage/);
   assert.match(app, /productionPhone/);
   assert.match(app, /TencentPoiSearchCapability/);
@@ -200,6 +205,8 @@ test("production app registers HTTP data, venue profiles, Tencent POI, and nativ
   assert.equal(app.indexOf("registerVenueProfileMediaCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueFulfillmentAttemptStore") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerVenueFulfillmentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
@@ -260,7 +267,7 @@ test("my orders native preview routes and Fixture remain development-only", asyn
   assert.equal(existsSync(path.join(productionRoot, "dev/my-orders-fixture.js")), false);
 });
 
-test("real production build emits all thirteen production routes as native artifacts", async (t) => {
+test("real production build emits all fourteen production routes as native artifacts", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -279,6 +286,7 @@ test("real production build emits all thirteen production routes as native artif
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
+    "pages/venue-fulfillment/index",
   ];
   assert.deepEqual(manifest.pages, routes);
   for (const route of routes) {
@@ -286,6 +294,7 @@ test("real production build emits all thirteen production routes as native artif
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
     assert.equal(existsSync(path.join(outputRoot, `${route}.ts`)), false);
   }
+  assert.equal(existsSync(path.join(outputRoot, "route-fragments/venue-fulfillment.json")), false);
   const productionText = (await Promise.all((await collectFiles(outputRoot))
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");

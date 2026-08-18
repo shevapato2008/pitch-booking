@@ -34,6 +34,7 @@ const forbiddenContentPatterns = [
   /\bcreateDevelopmentPaymentCapability\b/,
   /\bshowDevelopmentCashier\b/,
   /MY_ORDERS_RAW_FIXTURE/,
+  /VENUE_FULFILLMENT_FIXTURE/,
   /\bcreateDevelopmentVenueDirectoryDataSource\b/,
   /\bcreateSimulatedLocationCapability\b/,
   /\bpreviewPoiSearchCapability\b/,
@@ -61,6 +62,17 @@ const requiredPaymentImports = [
   ["./services/http-payment", /\brequire\s*\(\s*["']\.\/services\/http-payment["']\s*\)/],
   ["./services/payment", /\brequire\s*\(\s*["']\.\/services\/payment["']\s*\)/],
   ["./runtime/production", /\brequire\s*\(\s*["']\.\/runtime\/production["']\s*\)/],
+];
+const requiredVenueFulfillmentComposition = [
+  "createHttpVenueFulfillmentDataSource",
+  "registerVenueFulfillmentDataSource",
+  "createVenueFulfillmentAttemptStore",
+  "registerVenueFulfillmentAttemptStore",
+];
+const requiredVenueFulfillmentImports = [
+  ["./services/http-venue-fulfillment", /\brequire\s*\(\s*["']\.\/services\/http-venue-fulfillment["']\s*\)/],
+  ["./services/venue-fulfillment", /\brequire\s*\(\s*["']\.\/services\/venue-fulfillment["']\s*\)/],
+  ["./services/venue-fulfillment-attempt-store", /\brequire\s*\(\s*["']\.\/services\/venue-fulfillment-attempt-store["']\s*\)/],
 ];
 
 const targetStat = await lstat(target);
@@ -98,6 +110,13 @@ for (const [specifier, pattern] of requiredPaymentImports) {
   if (!pattern.test(appContents)) forbidden.push(`missing payment import: ${specifier}`);
 }
 for (const diagnostic of inspectPaymentRegistration(appContents)) forbidden.push(diagnostic);
+for (const symbol of requiredVenueFulfillmentComposition) {
+  if (!appContents.includes(symbol)) forbidden.push(`missing venue fulfillment composition: ${symbol}`);
+}
+for (const [specifier, pattern] of requiredVenueFulfillmentImports) {
+  if (!pattern.test(appContents)) forbidden.push(`missing venue fulfillment import: ${specifier}`);
+}
+for (const diagnostic of inspectVenueFulfillmentRegistration(appContents)) forbidden.push(diagnostic);
 await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
 try {
@@ -125,6 +144,7 @@ const productionRoutes = [
   "pages/venue-profile/index",
   "pages/venue-inventory/index",
   "pages/venue-pitch-setup/index",
+  "pages/venue-fulfillment/index",
 ];
 if (JSON.stringify(manifest.pages) !== JSON.stringify(productionRoutes)) {
   forbidden.push(`unexpected routes: ${JSON.stringify(manifest.pages)}`);
@@ -397,6 +417,87 @@ function inspectPaymentRegistration(source) {
       }
     }
     return undefined;
+  }
+}
+
+function inspectVenueFulfillmentRegistration(source) {
+  const sourceFile = ts.createSourceFile("app.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const moduleAliases = new Map();
+  const importedBindings = new Map();
+  const attemptStores = new Set();
+  const dataSources = new Set();
+  const attemptRegistrations = [];
+  const sourceRegistrations = [];
+  const startupPositions = [];
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const requiredModule = requireSpecifier(declaration.initializer);
+        if (requiredModule) {
+          if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
+          if (ts.isObjectBindingPattern(declaration.name)) {
+            for (const element of declaration.name.elements) {
+              if (!ts.isIdentifier(element.name)) continue;
+              const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+                ? element.propertyName.text : element.name.text;
+              importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
+            }
+          }
+          continue;
+        }
+        if (!ts.isIdentifier(declaration.name) || !ts.isCallExpression(unwrapExpression(declaration.initializer))) continue;
+        const call = unwrapExpression(declaration.initializer);
+        const factory = importedSymbol(call.expression);
+        if (factory?.module === "./services/venue-fulfillment-attempt-store"
+          && factory.symbol === "createVenueFulfillmentAttemptStore") attemptStores.add(declaration.name.text);
+        if (factory?.module === "./services/http-venue-fulfillment"
+          && factory.symbol === "createHttpVenueFulfillmentDataSource") dataSources.add(declaration.name.text);
+      }
+      continue;
+    }
+    if (!ts.isExpressionStatement(statement)) continue;
+    const expression = unwrapExpression(statement.expression);
+    if (!ts.isCallExpression(expression)) continue;
+    const callee = importedSymbol(expression.expression);
+    const rawCallee = unwrapExpression(expression.expression);
+    if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) startupPositions.push(expression.pos);
+    if (callee?.module === "./services/venue-fulfillment-attempt-store"
+      && callee.symbol === "registerVenueFulfillmentAttemptStore"
+      && isFactoryValue(expression.arguments[0], attemptStores, "./services/venue-fulfillment-attempt-store", "createVenueFulfillmentAttemptStore")) {
+      attemptRegistrations.push(expression.pos);
+    }
+    if (callee?.module === "./services/venue-fulfillment" && callee.symbol === "registerVenueFulfillmentDataSource"
+      && isFactoryValue(expression.arguments[0], dataSources, "./services/http-venue-fulfillment", "createHttpVenueFulfillmentDataSource")) {
+      sourceRegistrations.push(expression.pos);
+    }
+  }
+
+  const diagnostics = [];
+  if (attemptRegistrations.length === 0) diagnostics.push("invalid venue fulfillment registration: attempt store");
+  if (sourceRegistrations.length === 0) diagnostics.push("invalid venue fulfillment registration: data source");
+  if (startupPositions.length > 0) {
+    const startup = Math.min(...startupPositions);
+    if (attemptRegistrations.some((position) => position >= startup)
+      || sourceRegistrations.some((position) => position >= startup)) {
+      diagnostics.push("venue fulfillment registration must precede App/Page startup");
+    }
+  }
+  return diagnostics;
+
+  function importedSymbol(expression) {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value)) return importedBindings.get(value.text);
+    if (!ts.isPropertyAccessExpression(value) || !ts.isIdentifier(value.expression)) return undefined;
+    const module = moduleAliases.get(value.expression.text);
+    return module ? { module, symbol: value.name.text } : undefined;
+  }
+
+  function isFactoryValue(expression, known, module, symbol) {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value)) return known.has(value.text);
+    return ts.isCallExpression(value) && importedSymbol(value.expression)?.module === module
+      && importedSymbol(value.expression)?.symbol === symbol;
   }
 }
 

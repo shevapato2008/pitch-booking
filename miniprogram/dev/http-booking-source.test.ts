@@ -12,6 +12,8 @@ import { getPaymentBindings, resetPaymentBindingsForTesting } from "../services/
 import { getVenueDirectoryDataSource } from "../services/venue-directory";
 import { getVenueProfileDataSource, resetVenueProfileBindingsForTesting } from "../services/venue-profile";
 import { getVenueAccessDataSource, resetVenueAccessBindingsForTesting } from "../services/venue-access";
+import { getVenueFulfillmentAttemptStore, resetVenueFulfillmentAttemptStoreForTesting } from "../services/venue-fulfillment-attempt-store";
+import { getVenueFulfillmentDataSource, resetVenueFulfillmentBindingsForTesting } from "../services/venue-fulfillment";
 import { bootstrapDevelopment } from "./bootstrap";
 import { createDevelopmentHttpSources } from "./http-booking-source";
 
@@ -33,6 +35,7 @@ const confirming = jest.requireActual<PaymentExample>("../../contracts/examples/
 const confirmed = jest.requireActual<OrderExample>("../../contracts/examples/order-confirmed.json");
 const venueMap = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-map.json");
 const venueDetail = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-directory-detail.json");
+const venueFulfillment = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-fulfillment-orders.json");
 const managedVenues = {
   venues: [{
     id: venue.id,
@@ -75,7 +78,8 @@ function installRequestRuntime(): void {
                     : path === "/api/v1/venues/primary" ? { statusCode: 200, data: venue }
                       : path === "/api/v1/venues/map" ? { statusCode: 200, data: venueMap }
                         : path === `/api/v1/venues/${venueDetail.id}` ? { statusCode: 200, data: venueDetail }
-                          : path === "/api/v1/admin/venues" ? { statusCode: 200, data: managedVenues }
+                        : path === "/api/v1/admin/venues" ? { statusCode: 200, data: managedVenues }
+                          : path.includes("/fulfillment/orders") ? { statusCode: 200, data: venueFulfillment }
                       : undefined;
         const normalized = "statusCode" in (response ?? {})
           ? response as { statusCode: number; data: unknown }
@@ -92,6 +96,8 @@ afterEach(() => {
   resetPaymentBindingsForTesting();
   resetVenueProfileBindingsForTesting();
   resetVenueAccessBindingsForTesting();
+  resetVenueFulfillmentBindingsForTesting();
+  resetVenueFulfillmentAttemptStoreForTesting();
   Reflect.deleteProperty(globalThis, "wx");
 });
 
@@ -140,6 +146,9 @@ test("HTTP bootstrap registers both sources and the neutral development phone de
     id: venue.id,
     districtName: "西青区",
   })]);
+  expect(getVenueFulfillmentAttemptStore()).toBeDefined();
+  await expect(getVenueFulfillmentDataSource().listOrders(String(venue.id), "2026-07-28"))
+    .resolves.toMatchObject({ venue: { id: venue.id }, orders: [expect.objectContaining({ maskedPhone: "138****5678" })] });
   await expect(getPageDataSource().getVenue()).resolves.toMatchObject({ id: venue.id });
   await expect(getVenueDirectoryDataSource().getVenueDetail(String(venueDetail.id)))
     .resolves.toMatchObject({ id: venueDetail.id });

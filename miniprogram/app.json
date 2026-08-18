@@ -12,7 +12,8 @@
     "pages/my-orders/index",
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
-    "pages/venue-pitch-setup/index"
+    "pages/venue-pitch-setup/index",
+    "pages/venue-fulfillment/index"
   ],
   "window": {
     "navigationBarTitleText": "球场预订",

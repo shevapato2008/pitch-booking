@@ -217,6 +217,7 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { createHttpVenueProfileDataSource } from "./services/http-venue-profile";',
     'import { createHttpVenueAccessDataSource } from "./services/http-venue-access";',
     'import { createHttpVenueOnboardingDataSource } from "./services/http-venue-onboarding";',
+    'import { createHttpVenueFulfillmentDataSource } from "./services/http-venue-fulfillment";',
     'import { registerInventoryDataSource } from "./services/inventory";',
     'import { registerPitchConfigurationDataSource } from "./services/pitch-configuration";',
     'import { createInventoryMutationAttemptStore, registerInventoryMutationAttemptStore } from "./services/inventory-attempt-store";',
@@ -224,6 +225,8 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { createVenueProfileAttemptStore, registerVenueProfileAttemptStore } from "./services/venue-profile-attempt-store";',
     'import { registerVenueProfileDataSource, registerVenueProfileMediaCapability } from "./services/venue-profile";',
     'import { registerVenueAccessDataSource } from "./services/venue-access";',
+    'import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "./services/venue-fulfillment-attempt-store";',
+    'import { registerVenueFulfillmentDataSource } from "./services/venue-fulfillment";',
     'import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingDataSource, registerVenueOnboardingEvidenceCapability } from "./services/venue-onboarding";',
     'import { registerPageDataSource } from "./services/page-data";',
     'import { registerLocationCapability } from "./services/location";',
@@ -238,7 +241,9 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     "registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));",
     "registerPitchConfigurationAttemptStore(createPitchConfigurationAttemptStore(productionSessionStorage));",
     "const venueProfileAttemptStore = createVenueProfileAttemptStore(productionSessionStorage);",
+    "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
     "registerVenueProfileAttemptStore(venueProfileAttemptStore);",
+    "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
     "registerVenueProfileMediaCapability(runtime.venueProfileMedia);",
     "registerPageDataSource(createHttpPageDataSource(runtime.transport, runtime.media));",
     "registerVenueDirectoryDataSource(createHttpVenueDirectoryDataSource(runtime.transport));",
@@ -248,6 +253,12 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     "registerVenueOnboardingDataSource(createHttpVenueOnboardingDataSource({ transport: runtime.transport, identity: productionIdentity, phone: productionPhone, sessionStore }));",
     "registerVenueOnboardingEvidenceCapability(createWeChatVenueOnboardingEvidenceCapability());",
     "registerVenueProfileDataSource(createHttpVenueProfileDataSource({ transport: runtime.transport, identity: productionIdentity, sessionStore, attemptStore: venueProfileAttemptStore }));",
+    "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({",
+    "  transport: runtime.transport,",
+    "  identity: productionIdentity,",
+    "  sessionStore,",
+    "  attemptStore: venueFulfillmentAttemptStore,",
+    "}));",
     "registerLocationCapability(productionLocation);",
     "registerPoiSearchCapability(new TencentPoiSearchCapability(productionTencentPoiRequest, MINIPROGRAM_TENCENT_MAP_KEY));",
     "registerBookingDataSource(createHttpBookingDataSource({",
@@ -376,6 +387,7 @@ async function copyTree(source, destination, includeDevelopment) {
 function shouldInclude(name, directory, sourceRoot, includeDevelopment) {
   if (includeDevelopment) return true;
   if (directory === sourceRoot && name === "dev") return false;
+  if (directory === sourceRoot && name === "route-fragments") return false;
   return !(path.relative(sourceRoot, directory) === "runtime" && name === "scenario.ts");
 }
 
