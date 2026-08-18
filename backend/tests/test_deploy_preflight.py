@@ -48,7 +48,7 @@ def valid_local_environment() -> dict[str, str]:
         "POSTGRES_DB": "pitch",
         "POSTGRES_USER": "pitch",
         "POSTGRES_PASSWORD": "local-password",
-        "PUBLIC_API_BASE_URL": "https://api.example.test",
+        "PUBLIC_API_BASE_URL": "https://pitch-api-staging.modelstella.com",
         "PUBLIC_IMAGE_HOSTS": '["cdn.example.test"]',
         "OSS_ENDPOINT": "https://oss-cn-hangzhou.aliyuncs.com",
         "OSS_BUCKET": "venue-media-staging",
@@ -68,10 +68,10 @@ def valid_local_environment() -> dict[str, str]:
         "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64": WECHAT_PAY_PUBLIC_KEY_BASE64,
         "WECHAT_PAY_API_V3_KEY": "0123456789abcdef0123456789abcdef",
         "WECHAT_PAY_PAYMENT_NOTIFICATION_URL": (
-            "https://api.example.test/api/v1/payments/wechat/notify"
+            "https://pitch-api-staging.modelstella.com/api/v1/payments/wechat/notify"
         ),
         "WECHAT_PAY_REFUND_NOTIFICATION_URL": (
-            "https://api.example.test/api/v1/refunds/wechat/notify"
+            "https://pitch-api-staging.modelstella.com/api/v1/refunds/wechat/notify"
         ),
         "ONBOARDING_OSS_BUCKET": "venue-onboarding-private",
         "PLATFORM_STAFF_PRINCIPALS_JSON": json.dumps(
@@ -260,7 +260,7 @@ def test_preflight_requires_wechat_credentials_only_for_real_provider(
         ),
         (
             "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
-            "https://api.example.test/payment?secret=value",
+            "https://pitch-api-staging.modelstella.com/payment?secret=value",
             "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the "
             "PUBLIC_API_BASE_URL public HTTPS origin",
         ),
@@ -287,8 +287,8 @@ def test_preflight_rejects_malformed_wechat_credentials_without_echoing_them(
         "https://callback.invalid/api/v1/payments/wechat/notify",
         "https://127.0.0.1/api/v1/payments/wechat/notify",
         "https://10.20.30.40/api/v1/payments/wechat/notify",
-        "https://other.example.test/api/v1/payments/wechat/notify",
-        "https://api.example.test:8443/api/v1/payments/wechat/notify",
+        "https://media.modelstella.com/api/v1/payments/wechat/notify",
+        "https://pitch-api-staging.modelstella.com:8443/api/v1/payments/wechat/notify",
     ],
 )
 def test_preflight_rejects_nonpublic_or_cross_origin_payment_callbacks(
@@ -304,6 +304,37 @@ def test_preflight_rejects_nonpublic_or_cross_origin_payment_callbacks(
         "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
     )
     assert callback not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    [
+        "api.test",
+        "api.example",
+        "example.com",
+        "sub.example.net",
+        "example.org",
+    ],
+)
+def test_preflight_rejects_same_origin_special_use_payment_callbacks(
+    tmp_path: Path,
+    hostname: str,
+) -> None:
+    values = valid_local_environment()
+    values["PUBLIC_API_BASE_URL"] = f"https://{hostname}"
+    values["WECHAT_PAY_PAYMENT_NOTIFICATION_URL"] = (
+        f"https://{hostname}/api/v1/payments/wechat/notify"
+    )
+    values["WECHAT_PAY_REFUND_NOTIFICATION_URL"] = (
+        f"https://{hostname}/api/v1/refunds/wechat/notify"
+    )
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert set(result.failures) == {
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL must use the PUBLIC_API_BASE_URL public HTTPS origin",
+    }
 
 
 @pytest.mark.parametrize(

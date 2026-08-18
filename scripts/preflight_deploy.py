@@ -52,6 +52,15 @@ OSS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
 WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
+SPECIAL_USE_DOMAIN_SUFFIXES = (
+    "invalid",
+    "localhost",
+    "test",
+    "example",
+    "example.com",
+    "example.net",
+    "example.org",
+)
 
 
 @dataclass(frozen=True)
@@ -279,8 +288,9 @@ def _public_https_origin(value: str) -> tuple[str, int] | None:
     ):
         return None
     normalized_host = hostname.rstrip(".").casefold()
-    if normalized_host in {"invalid", "localhost"} or normalized_host.endswith(
-        (".invalid", ".localhost")
+    if any(
+        normalized_host == suffix or normalized_host.endswith(f".{suffix}")
+        for suffix in SPECIAL_USE_DOMAIN_SUFFIXES
     ):
         return None
     try:

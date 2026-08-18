@@ -78,7 +78,9 @@ The default callbacks are:
 Store these values only in the ignored `deploy/.env.live.local` or a secret manager. The preflight
 parses both RSA keys and validates, without DNS lookups or printing any supplied value, that both
 callbacks use the same public HTTPS origin as `PUBLIC_API_BASE_URL`. Loopback, private, link-local,
-multicast, unspecified, reserved, `.invalid`, and `.localhost` hosts are rejected.
+multicast, unspecified, and reserved IPs are rejected. The static IANA/RFC special-use denylist,
+checked without DNS lookups, rejects `.invalid`, `.localhost`, `.test`, `.example`, and the
+`example.com`, `example.net`, and `example.org` documentation domains and their subdomains.
 
 ```bash
 uv run python -m scripts.prepare_live_deploy \

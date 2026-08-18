@@ -402,6 +402,38 @@ def test_prepare_rejects_nonpublic_or_cross_origin_payment_callbacks(
 
 
 @pytest.mark.parametrize(
+    "hostname",
+    [
+        "api.test",
+        "api.example",
+        "example.com",
+        "sub.example.net",
+        "example.org",
+    ],
+)
+def test_prepare_rejects_same_origin_special_use_payment_callbacks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    hostname: str,
+) -> None:
+    callback = f"https://{hostname}/api/v1/payments/wechat/notify"
+    monkeypatch.setattr(prepare_module, "API_BASE_URL", f"https://{hostname}")
+
+    with pytest.raises(ValueError, match="public API origin") as caught:
+        prepare_live_deploy(
+            inputs(
+                tmp_path,
+                wechat_pay_payment_notification_url=callback,
+                wechat_pay_refund_notification_url=(
+                    f"https://{hostname}/api/v1/refunds/wechat/notify"
+                ),
+            )
+        )
+
+    assert callback not in str(caught.value)
+
+
+@pytest.mark.parametrize(
     "field",
     [
         "wechat_pay_merchant_private_key_pem_base64",

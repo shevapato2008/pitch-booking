@@ -13,7 +13,8 @@ WeChat Pay merchant API and no payment/refund availability claim is made.
   keys are 2048-bit; the API v3 key is 32 characters from `A-Z`, `a-z`, `0-9`, underscore, or
   hyphen so dotenv and Docker Compose preserve it exactly.
 - Both callback URLs use the `PUBLIC_API_BASE_URL` public HTTPS origin, pass
-  `scripts.preflight_deploy`, and are reachable by WeChat Pay.
+  `scripts.preflight_deploy`, are not on its static IANA/RFC special-use denylist, and are reachable
+  by WeChat Pay.
 - A real iPhone/OpenID is available and the operator authorizes one smallest practical charge plus
   its one full refund.
 
