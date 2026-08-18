@@ -270,6 +270,44 @@ def test_existing_success_notification_recovers_cancel_request_without_duplicate
         assert payment.refund_case.attempts[0].next_reconcile_at == now
 
 
+def test_repeated_success_does_not_retry_failed_user_cancellation_refund(
+    pg_engine: Engine,
+) -> None:
+    now = datetime(2026, 8, 19, 4, tzinfo=UTC)
+    order_id, payment_id, _, _ = seed_payment(pg_engine, now=now)
+    with Session(pg_engine) as session:
+        session.get_one(Order, order_id).cancel_requested_at = now - timedelta(minutes=1)
+        session.commit()
+
+    success = QueryPaymentResult(
+        QueryPaymentStatus.SUCCESS,
+        facts=success_facts(
+            pg_engine,
+            payment_id,
+            transaction_no="failed-user-refund",
+            paid_at=now,
+        ),
+    )
+    service = convergence(pg_engine, now=now)
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        assert payment.refund_case is not None
+        payment.refund_case.attempts[0].status = RefundAttemptStatus.FAILED
+        session.get_one(Order, order_id).status = OrderStatus.REFUND_FAILED
+        session.commit()
+
+    service.converge(payment_id=payment_id, provider="mock", result=success)
+
+    with Session(pg_engine) as session:
+        payment = session.get_one(Payment, payment_id)
+        order = session.get_one(Order, order_id)
+        assert payment.refund_case is not None
+        assert order.status is OrderStatus.REFUND_FAILED
+        assert len(payment.refund_case.attempts) == 1
+        assert payment.refund_case.attempts[0].status is RefundAttemptStatus.FAILED
+
+
 def test_cancel_requested_success_inside_24h_keeps_confirmed_booking_without_refund(
     pg_engine: Engine,
 ) -> None:

@@ -374,6 +374,12 @@ class PaymentConvergenceService:
             return
         refund_repository = RefundRepository(session)
         graph = refund_repository.lock_refund_graph(applied.id)
+        latest_attempt = graph.latest_attempt
+        if (
+            latest_attempt is not None
+            and latest_attempt.status is RefundAttemptStatus.FAILED
+        ):
+            return
         refund_repository.get_or_create_case(
             graph=graph,
             purpose=RefundCasePurpose.ORDER_CANCELLATION,
@@ -381,13 +387,10 @@ class PaymentConvergenceService:
             reason_note=None,
             requested_by_user_id=order.user_id,
         )
-        latest_attempt = graph.latest_attempt
-        attempt_no = 1 if latest_attempt is None else latest_attempt.attempt_no + 1
         merchant_refund_no = (
             latest_attempt.merchant_refund_no
             if latest_attempt is not None
-            and latest_attempt.status is not RefundAttemptStatus.FAILED
-            else _automatic_refund_number(applied.id, attempt_no)
+            else _automatic_refund_number(applied.id, 1)
         )
         attempt, _ = refund_repository.get_or_create_attempt(
             graph=graph,
