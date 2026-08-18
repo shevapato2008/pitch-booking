@@ -102,3 +102,22 @@ The venue operations slice freezes one representative `375 × 812` refund-confir
 
 It shows check-in, completion, and full-refund authority in one compact operational hierarchy.
 The production route stays disabled and native Fixture visual approval remains pending.
+
+## Captain open game
+
+The captain open-game Artifact freezes exactly four `375 × 812` reference states in the existing
+Tianjin football-booking light system:
+
+- `references/captain-open-game.html?state=create-ready`
+- `references/captain-open-game.html?state=draft-manage`
+- `references/captain-open-game.html?state=published-manage`
+- `references/captain-open-game.html?state=public-readonly`
+- `flows/captain-open-game.md`
+- `screen-manifest/captain-open-game.yaml`
+- `reviews/captain-open-game/README.md`
+- `reviews/captain-open-game/review-board.html`
+
+It is reference-only and production disabled. Its local Fixture transitions make every visible
+action demonstrable; the public read-only notice “申请加入即将开放” is deliberately non-interactive.
+The Artifact does not create a Mini Program page, native Fixture, API contract, backend capability,
+or application CTA. Native work waits for user visual approval.

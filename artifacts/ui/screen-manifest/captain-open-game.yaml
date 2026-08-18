@@ -1,0 +1,24 @@
+id: captain-open-game
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+references:
+  source: artifacts/ui/references/captain-open-game.html
+  data: artifacts/ui/references/captain-open-game-data.js
+  styles: artifacts/ui/references/captain-open-game.css
+states:
+  - {id: create-ready, reference: artifacts/ui/references/captain-open-game.html?state=create-ready, representative_capture: true}
+  - {id: draft-manage, reference: artifacts/ui/references/captain-open-game.html?state=draft-manage, representative_capture: true}
+  - {id: published-manage, reference: artifacts/ui/references/captain-open-game.html?state=published-manage, representative_capture: true}
+  - {id: public-readonly, reference: artifacts/ui/references/captain-open-game.html?state=public-readonly, representative_capture: true}
+interaction_targets:
+  minimum_css_pixels: 44
+  button_alignment: flex-both-axes
+scrolling:
+  direction: vertical
+  fixed_bottom_bar: create-ready
+  safe_area_bottom: required
+review_slots: [reference, implementation, side-by-side, overlay-50, difference, observations]
+fixture:
+  planned_path: miniprogram/dev/captain-open-game-fixture.ts
+  deletion_condition: delete after production creation, save-draft, publish, share, edit, cancel, public detail, focused automation, and real-device acceptance pass
+gate: pending-user-visual-approval
