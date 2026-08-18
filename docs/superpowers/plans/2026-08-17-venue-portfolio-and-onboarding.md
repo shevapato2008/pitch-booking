@@ -8,7 +8,7 @@
 
 **Tech Stack:** WeChat Mini Program TypeScript/WXML/WXSS, FastAPI, SQLAlchemy 2, PostgreSQL, Alembic, Alibaba Cloud OSS private objects, plain TypeScript/HTML/CSS platform console, OpenAPI, Jest, Node test runner, pytest.
 
-**Implementation status (2026-08-18):** Tasks 1–11 and Task 12 Steps 1–4 are implemented, reviewed and deployed. The production entry, portfolio, create/claim forms and image selection have received focused iPhone confirmation. Task 12 Steps 5–7 remain: one controlled CLAIM approval, one controlled CREATE approval, final device/desktop audit, roadmap closeout and branch integration.
+**Implementation and acceptance status (2026-08-18):** A usable A3 version is implemented, reviewed and deployed: Tasks 1–11 and Task 12 Steps 1–4 are complete, and the production entry, portfolio, create/claim forms and image selection have received focused iPhone confirmation. A real iPhone CLAIM submission was approved in the platform console and its database invariants passed: exactly one active/manage-capable membership for the target venue and no new venue. CREATE production code and deployment exist, but the user explicitly deferred its real submit → platform approval → database-invariant and device acceptance. That evidence remains open acceptance debt, is not recorded as passed, and prevents only an A3 “complete” claim—not the start of B1 MVP development.
 
 ---
 
@@ -666,14 +666,17 @@ node --test tests/build-platform-admin.test.mjs
 
 Load ignored staff-principal hashes and private OSS settings, run Alembic, deploy one API revision, then verify health and unauthorized denial before any real decision.
 
-- [ ] **Step 5: Perform two controlled real end-to-end acceptances**
+- [ ] **Step 5: Complete the controlled real end-to-end acceptances (CLAIM passed; CREATE deferred)**
 
-Run both distinct journeys once with non-sensitive test evidence. Claim: choose an already existing venue for which the fresh applicant has no membership, confirm submission grants nothing, approve once, then confirm exactly one active/manage-capable membership and no new venue. Create: use a proposed venue absent from `venues`, confirm submission creates neither venue nor membership, approve once, then confirm exactly one unlisted venue and one active/manage-capable first membership. Reuse the minimum required evidence fixtures and do not repeat uploads beyond these two controlled applications.
+- [x] CLAIM: on a real iPhone, choose an already existing venue for which the fresh applicant has no membership, confirm submission grants nothing, approve once in the platform console, then confirm exactly one active/manage-capable membership and no new venue. Passed on 2026-08-18.
+- [ ] CREATE: use a proposed venue absent from `venues`, confirm submission creates neither venue nor membership, approve once, then confirm exactly one unlisted venue and one active/manage-capable first membership. The production implementation is deployed, but this real journey and its device evidence were explicitly deferred by the user on 2026-08-18; do not infer a pass from automated tests, deployment, or focused form previews.
 
-- [ ] **Step 6: Complete manual visual and button audit**
+Reuse the minimum required evidence fixtures when CREATE acceptance resumes and do not repeat uploads beyond that one controlled application. This deferred item remains required before A3 may be marked “complete”, but it does not block B1 MVP development.
 
-On target iPhone and desktop viewport, click every visible action once and check centering, alignment, safe areas, loading, validation, error/retry, decision confirmation, back navigation, session expiry and status truthfulness.
+- [ ] **Step 6: Complete the remaining manual visual and button audit (CREATE real-journey coverage deferred)**
+
+Existing focused iPhone and desktop checks remain valid for implemented surfaces. When CREATE acceptance resumes, exercise its real target-iPhone submission and platform decision once, checking centering, alignment, safe areas, loading, validation, error/retry, decision confirmation, back navigation, session expiry and status truthfulness. Do not treat preview or automated coverage as this deferred real-device evidence.
 
 - [ ] **Step 7: Final review and branch completion**
 
-Request one final specification review and one final code-quality/security review. Resolve Critical/Important issues, update roadmap status, then use `superpowers:finishing-a-development-branch` for integration.
+The roadmap records A3 as “usable version delivered / CREATE device acceptance deferred”, not “complete”. B1 may begin without waiting for the deferred CREATE evidence. When that debt is resumed, complete its focused acceptance, resolve any resulting Critical/Important issue, update the roadmap, and then close A3 without repeating already-passed CLAIM evidence.
