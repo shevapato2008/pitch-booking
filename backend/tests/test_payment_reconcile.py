@@ -68,6 +68,11 @@ def test_payment_http_routes_follow_frozen_201_202_200_and_401_matrix(
     pg_engine: Engine,
 ) -> None:
     order_id, _, _ = _seed_detail(pg_engine)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        order.expires_at = datetime(2036, 8, 19, 5, tzinfo=UTC)
+        order.slot.locked_until = order.expires_at
+        session.commit()
     app = create_app(
         settings=Settings(
             app_env="development",
@@ -94,6 +99,7 @@ def test_payment_http_routes_follow_frozen_201_202_200_and_401_matrix(
             f"/api/v1/orders/{order_id}/pay",
             headers=auth | {"Idempotency-Key": "payment-http-key-0001"},
         )
+        assert created.status_code == 201, created.text
         payment_id = created.json()["payment_id"]
         unresolved = client.post(
             f"/api/v1/orders/{order_id}/payments/{payment_id}/reconcile",

@@ -5,8 +5,30 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from scripts.preflight_deploy import preflight
+
+
+def _payment_pem_values() -> tuple[str, str]:
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return (
+        base64.b64encode(private_pem).decode("ascii"),
+        base64.b64encode(public_pem).decode("ascii"),
+    )
+
+
+WECHAT_PAY_PRIVATE_KEY_BASE64, WECHAT_PAY_PUBLIC_KEY_BASE64 = _payment_pem_values()
 
 
 def write_env(path: Path, values: dict[str, str]) -> Path:
@@ -39,6 +61,18 @@ def valid_local_environment() -> dict[str, str]:
         "MODERATION_REVIEWER_USER_IDS": "01a329c4-36b0-401a-a577-48ee1c475a37",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        "WECHAT_PAY_MERCHANT_ID": "1900000109",
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL": "0123456789ABCDEF",
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64": WECHAT_PAY_PRIVATE_KEY_BASE64,
+        "WECHAT_PAY_PUBLIC_KEY_ID": "PUB_KEY_ID_3000000001",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64": WECHAT_PAY_PUBLIC_KEY_BASE64,
+        "WECHAT_PAY_API_V3_KEY": "0123456789abcdef0123456789abcdef",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL": (
+            "https://api.example.test/api/v1/payments/wechat/notify"
+        ),
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL": (
+            "https://api.example.test/api/v1/refunds/wechat/notify"
+        ),
         "ONBOARDING_OSS_BUCKET": "venue-onboarding-private",
         "PLATFORM_STAFF_PRINCIPALS_JSON": json.dumps(
             [
@@ -180,6 +214,66 @@ def test_preflight_rejects_mock_payment_configuration(tmp_path: Path) -> None:
     }
 
 
+def test_preflight_requires_wechat_credentials_only_for_real_provider(
+    tmp_path: Path,
+) -> None:
+    values = valid_local_environment()
+    payment_keys = tuple(key for key in values if key.startswith("WECHAT_PAY_"))
+    for key in payment_keys:
+        values.pop(key)
+    values["PAYMENT_PROVIDER"] = "mock"
+    values["ENABLE_MOCK_PAYMENT_PROVIDER"] = "true"
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert all("WECHAT_PAY_" not in failure for failure in result.failures)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "failure"),
+    [
+        (
+            "WECHAT_PAY_MERCHANT_ID",
+            "merchant-id",
+            "WECHAT_PAY_MERCHANT_ID is invalid",
+        ),
+        (
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "not-base64",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64 is invalid",
+        ),
+        (
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "not-base64",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64 is invalid",
+        ),
+        (
+            "WECHAT_PAY_API_V3_KEY",
+            "too-short",
+            "WECHAT_PAY_API_V3_KEY must be exactly 32 bytes",
+        ),
+        (
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+            "https://api.example.test/payment?secret=value",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL must be absolute HTTPS without query or fragment",
+        ),
+    ],
+)
+def test_preflight_rejects_malformed_wechat_credentials_without_echoing_them(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    failure: str,
+) -> None:
+    values = valid_local_environment()
+    values[field] = value
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (failure,)
+    assert value not in repr(result)
+
+
 @pytest.mark.parametrize(
     ("field", "value", "failure"),
     [
@@ -261,6 +355,14 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
             "ONBOARDING_OSS_BUCKET",
             "PLATFORM_STAFF_PRINCIPALS_JSON",
             "PLATFORM_CSRF_SECRET",
+            "WECHAT_PAY_MERCHANT_ID",
+            "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "WECHAT_PAY_PUBLIC_KEY_ID",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "WECHAT_PAY_API_V3_KEY",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+            "WECHAT_PAY_REFUND_NOTIFICATION_URL",
         )
     } == {
         key: valid_local_environment()[key]
@@ -273,6 +375,14 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
             "ONBOARDING_OSS_BUCKET",
             "PLATFORM_STAFF_PRINCIPALS_JSON",
             "PLATFORM_CSRF_SECRET",
+            "WECHAT_PAY_MERCHANT_ID",
+            "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+            "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+            "WECHAT_PAY_PUBLIC_KEY_ID",
+            "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+            "WECHAT_PAY_API_V3_KEY",
+            "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+            "WECHAT_PAY_REFUND_NOTIFICATION_URL",
         )
     }
     assert "postgres_data" in config["volumes"]
@@ -318,6 +428,23 @@ def test_deploy_configuration_passes_through_moderation_inputs() -> None:
         assert f"{key}=" in template
 
 
+def test_deploy_configuration_declares_wechat_payment_inputs() -> None:
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+    for key in (
+        "WECHAT_PAY_MERCHANT_ID",
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+        "WECHAT_PAY_PUBLIC_KEY_ID",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+        "WECHAT_PAY_API_V3_KEY",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL",
+    ):
+        assert f"{key}:" in compose
+        assert f"{key}=" in template
+
+
 def test_runtime_image_never_syncs_development_dependencies() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
 
@@ -328,12 +455,10 @@ def test_runtime_image_explicitly_packages_verified_directory_inputs() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
     expected = {
         "deploy/venue-directory.json": (
-            "dd6bf001243aa48d8d1e0ccf84894f3d"
-            "d3924eb051fbb2c9e77391e1e5a67199"
+            "dd6bf001243aa48d8d1e0ccf84894f3dd3924eb051fbb2c9e77391e1e5a67199"
         ),
         "deploy/venue-directory.schema.json": (
-            "a0f1c0145ccff73a1699fa84efaadd36a"
-            "cfc60c4637a815ce382a3213567ee45"
+            "a0f1c0145ccff73a1699fa84efaadd36acfc60c4637a815ce382a3213567ee45"
         ),
     }
 

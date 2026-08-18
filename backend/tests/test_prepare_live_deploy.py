@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from scripts import prepare_live_deploy as prepare_module
 from scripts.preflight_deploy import preflight, read_env_file
@@ -25,6 +27,36 @@ TENCENT_KEY = "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY-Z1234"
 REVISION = "a" * 40
 ONBOARDING_BUCKET = "pitch-onboarding-private"
 PLATFORM_REVIEWER_TOKEN = "reviewer-token-with-at-least-32-chars"
+WECHAT_PAY_MERCHANT_ID = "1900000109"
+WECHAT_PAY_MERCHANT_CERT_SERIAL = "0123456789ABCDEF"
+WECHAT_PAY_PUBLIC_KEY_ID = "PUB_KEY_ID_3000000001"
+WECHAT_PAY_API_V3_KEY = "0123456789abcdef0123456789abcdef"
+WECHAT_PAY_PAYMENT_NOTIFICATION_URL = (
+    "https://pitch-api-staging.modelstella.com/api/v1/payments/wechat/notify"
+)
+WECHAT_PAY_REFUND_NOTIFICATION_URL = (
+    "https://pitch-api-staging.modelstella.com/api/v1/refunds/wechat/notify"
+)
+
+
+def _payment_pem_values() -> tuple[str, str]:
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return (
+        base64.b64encode(private_pem).decode("ascii"),
+        base64.b64encode(public_pem).decode("ascii"),
+    )
+
+
+WECHAT_PAY_PRIVATE_KEY_BASE64, WECHAT_PAY_PUBLIC_KEY_BASE64 = _payment_pem_values()
 
 
 def write_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -51,6 +83,14 @@ def inputs(tmp_path: Path, **overrides: object) -> PrepareInputs:
         "revision": REVISION,
         "onboarding_oss_bucket": ONBOARDING_BUCKET,
         "platform_reviewer_token": PLATFORM_REVIEWER_TOKEN,
+        "wechat_pay_merchant_id": WECHAT_PAY_MERCHANT_ID,
+        "wechat_pay_merchant_cert_serial": WECHAT_PAY_MERCHANT_CERT_SERIAL,
+        "wechat_pay_merchant_private_key_pem_base64": WECHAT_PAY_PRIVATE_KEY_BASE64,
+        "wechat_pay_public_key_id": WECHAT_PAY_PUBLIC_KEY_ID,
+        "wechat_pay_public_key_pem_base64": WECHAT_PAY_PUBLIC_KEY_BASE64,
+        "wechat_pay_api_v3_key": WECHAT_PAY_API_V3_KEY,
+        "wechat_pay_payment_notification_url": WECHAT_PAY_PAYMENT_NOTIFICATION_URL,
+        "wechat_pay_refund_notification_url": WECHAT_PAY_REFUND_NOTIFICATION_URL,
     }
     values.update(overrides)
     return PrepareInputs(**values)  # type: ignore[arg-type]
@@ -72,6 +112,14 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert deploy["WECHAT_PROVIDER"] == "real"
     assert deploy["PAYMENT_PROVIDER"] == "wechat"
     assert deploy["ENABLE_MOCK_PAYMENT_PROVIDER"] == "false"
+    assert deploy["WECHAT_PAY_MERCHANT_ID"] == WECHAT_PAY_MERCHANT_ID
+    assert deploy["WECHAT_PAY_MERCHANT_CERT_SERIAL"] == WECHAT_PAY_MERCHANT_CERT_SERIAL
+    assert deploy["WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64"] == WECHAT_PAY_PRIVATE_KEY_BASE64
+    assert deploy["WECHAT_PAY_PUBLIC_KEY_ID"] == WECHAT_PAY_PUBLIC_KEY_ID
+    assert deploy["WECHAT_PAY_PUBLIC_KEY_PEM_BASE64"] == WECHAT_PAY_PUBLIC_KEY_BASE64
+    assert deploy["WECHAT_PAY_API_V3_KEY"] == WECHAT_PAY_API_V3_KEY
+    assert deploy["WECHAT_PAY_PAYMENT_NOTIFICATION_URL"] == WECHAT_PAY_PAYMENT_NOTIFICATION_URL
+    assert deploy["WECHAT_PAY_REFUND_NOTIFICATION_URL"] == WECHAT_PAY_REFUND_NOTIFICATION_URL
     assert deploy["MINIPROGRAM_ICP_FILING_CONFIRMED"] == "false"
     assert deploy["MODERATION_REVIEWER_USER_IDS"]
     assert deploy["ONBOARDING_OSS_BUCKET"] == ONBOARDING_BUCKET
@@ -81,9 +129,7 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
         {
             "principal_id": "onboarding-reviewer",
             "display_name": "入驻审核员",
-            "token_sha256": hashlib.sha256(
-                PLATFORM_REVIEWER_TOKEN.encode("utf-8")
-            ).hexdigest(),
+            "token_sha256": hashlib.sha256(PLATFORM_REVIEWER_TOKEN.encode("utf-8")).hexdigest(),
             "enabled": True,
             "roles": ["ONBOARDING_REVIEWER"],
         }
@@ -133,6 +179,14 @@ def test_prepare_preserves_generated_and_existing_values_on_rerun(tmp_path: Path
         "ONBOARDING_OSS_BUCKET",
         "PLATFORM_STAFF_PRINCIPALS_JSON",
         "PLATFORM_CSRF_SECRET",
+        "WECHAT_PAY_MERCHANT_ID",
+        "WECHAT_PAY_MERCHANT_CERT_SERIAL",
+        "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
+        "WECHAT_PAY_PUBLIC_KEY_ID",
+        "WECHAT_PAY_PUBLIC_KEY_PEM_BASE64",
+        "WECHAT_PAY_API_V3_KEY",
+        "WECHAT_PAY_PAYMENT_NOTIFICATION_URL",
+        "WECHAT_PAY_REFUND_NOTIFICATION_URL",
     ):
         assert updated[key] == original[key]
     assert updated["MINIPROGRAM_ICP_FILING_CONFIRMED"] == "true"
@@ -155,9 +209,10 @@ def test_prepare_replaces_invalid_new_live_values_without_leaking_token(
 
     deploy = read_env_file(prepared.deploy_env)
     assert deploy["ONBOARDING_OSS_BUCKET"] == ONBOARDING_BUCKET
-    assert json.loads(deploy["PLATFORM_STAFF_PRINCIPALS_JSON"])[0][
-        "token_sha256"
-    ] == hashlib.sha256(PLATFORM_REVIEWER_TOKEN.encode("utf-8")).hexdigest()
+    assert (
+        json.loads(deploy["PLATFORM_STAFF_PRINCIPALS_JSON"])[0]["token_sha256"]
+        == hashlib.sha256(PLATFORM_REVIEWER_TOKEN.encode("utf-8")).hexdigest()
+    )
     assert len(base64.b64decode(deploy["PLATFORM_CSRF_SECRET"], validate=True)) == 32
     captured = capsys.readouterr()
     assert PLATFORM_REVIEWER_TOKEN not in captured.out
@@ -175,6 +230,14 @@ def test_prepare_cli_prompts_for_bootstrap_values_only_on_first_setup(
     monkeypatch.setenv("DASHSCOPE_API_KEY", DASHSCOPE_KEY)
     monkeypatch.setenv("WECHAT_APP_SECRET", WECHAT_SECRET)
     monkeypatch.setenv("MINIPROGRAM_TENCENT_MAP_KEY", TENCENT_KEY)
+    monkeypatch.setenv("WECHAT_PAY_MERCHANT_ID", WECHAT_PAY_MERCHANT_ID)
+    monkeypatch.setenv("WECHAT_PAY_MERCHANT_CERT_SERIAL", WECHAT_PAY_MERCHANT_CERT_SERIAL)
+    monkeypatch.setenv("WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64", WECHAT_PAY_PRIVATE_KEY_BASE64)
+    monkeypatch.setenv("WECHAT_PAY_PUBLIC_KEY_ID", WECHAT_PAY_PUBLIC_KEY_ID)
+    monkeypatch.setenv("WECHAT_PAY_PUBLIC_KEY_PEM_BASE64", WECHAT_PAY_PUBLIC_KEY_BASE64)
+    monkeypatch.setenv("WECHAT_PAY_API_V3_KEY", WECHAT_PAY_API_V3_KEY)
+    monkeypatch.setenv("WECHAT_PAY_PAYMENT_NOTIFICATION_URL", WECHAT_PAY_PAYMENT_NOTIFICATION_URL)
+    monkeypatch.setenv("WECHAT_PAY_REFUND_NOTIFICATION_URL", WECHAT_PAY_REFUND_NOTIFICATION_URL)
     monkeypatch.delenv("ONBOARDING_OSS_BUCKET", raising=False)
     monkeypatch.setenv("PLATFORM_REVIEWER_TOKEN", "environment-token-must-not-be-used")
     monkeypatch.setattr(prepare_module, "_git_revision", lambda: REVISION)
@@ -217,8 +280,7 @@ def test_prepare_cli_prompts_for_bootstrap_values_only_on_first_setup(
         "https://apis.map.qq.com"
     ) in output.out
     assert (
-        "WeChat uploadFile origin: "
-        "https://pitch-onboarding-private.oss-cn-hangzhou.aliyuncs.com"
+        "WeChat uploadFile origin: https://pitch-onboarding-private.oss-cn-hangzhou.aliyuncs.com"
     ) in output.out
 
     prompts.clear()
@@ -285,6 +347,38 @@ def test_prepare_rejects_missing_or_invalid_required_inputs_without_leaking_secr
     output = capsys.readouterr()
     rendered = f"{caught.value!r}{output.out}{output.err}"
     assert all(secret not in rendered for secret in secret_values)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"wechat_pay_merchant_id": "merchant-id"}, "WECHAT_PAY_MERCHANT_ID is invalid"),
+        (
+            {"wechat_pay_merchant_private_key_pem_base64": "not-base64"},
+            "WeChat Pay private key",
+        ),
+        ({"wechat_pay_api_v3_key": "too-short"}, "exactly 32 bytes"),
+        (
+            {
+                "wechat_pay_payment_notification_url": (
+                    WECHAT_PAY_PAYMENT_NOTIFICATION_URL + "?token=secret"
+                )
+            },
+            "notification URL",
+        ),
+    ],
+)
+def test_prepare_rejects_malformed_wechat_payment_inputs_without_echoing_them(
+    tmp_path: Path,
+    override: dict[str, str],
+    message: str,
+) -> None:
+    supplied = next(iter(override.values()))
+
+    with pytest.raises(ValueError, match=message) as caught:
+        prepare_live_deploy(inputs(tmp_path, **override))
+
+    assert supplied not in str(caught.value)
 
 
 @pytest.mark.parametrize(
