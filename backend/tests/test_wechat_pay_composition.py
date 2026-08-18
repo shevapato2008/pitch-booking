@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import ValidationError
 
+from backend.app import worker as worker_module
 from backend.app.config import Settings
 from backend.app.main import create_app
 from backend.app.modules.payments import build_payment_provider
@@ -134,6 +135,42 @@ def test_deployed_wechat_provider_requires_complete_credentials() -> None:
 
     with pytest.raises(ValidationError, match="credentials are incomplete"):
         Settings(**values)
+
+
+def test_app_restart_disabled_ignores_complete_residual_wechat_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = configured_settings(payment_provider="disabled")
+    assert settings.wechat_payment_configured is True
+    monkeypatch.setattr(
+        "backend.app.main.build_payment_provider",
+        lambda _settings: pytest.fail("disabled app must not build a payment provider"),
+    )
+
+    app = create_app(settings=settings)
+
+    assert app.state.payment_provider is None
+
+
+def test_worker_restart_disabled_ignores_complete_residual_wechat_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = configured_settings(payment_provider="disabled")
+    assert settings.wechat_payment_configured is True
+    monkeypatch.setattr(
+        worker_module,
+        "build_payment_provider",
+        lambda _settings: pytest.fail("disabled worker must not build a payment provider"),
+    )
+    monkeypatch.setattr(worker_module.ExpiryWorker, "run", lambda _worker, **_kwargs: 0)
+
+    exit_code = worker_module.main(
+        ["--once"],
+        session_factory=lambda: pytest.fail("patched worker must not open a session"),
+        settings=settings,
+    )
+
+    assert exit_code == 0
 
 
 @pytest.mark.parametrize(

@@ -94,7 +94,10 @@ def create_app(
     payment_provider = (
         build_payment_provider(resolved_settings)
         if resolved_settings.mock_payment_provider_enabled
-        or resolved_settings.wechat_payment_configured
+        or (
+            resolved_settings.payment_provider == "wechat"
+            and resolved_settings.wechat_payment_configured
+        )
         else None
     )
     payment_notification_service = None

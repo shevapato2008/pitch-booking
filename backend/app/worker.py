@@ -232,7 +232,10 @@ def main(
     if resolved_payment_reconciliation is None or resolved_refund_reconciliation is None:
         if (
             resolved_settings.mock_payment_provider_enabled
-            or resolved_settings.wechat_payment_configured
+            or (
+                resolved_settings.payment_provider == "wechat"
+                and resolved_settings.wechat_payment_configured
+            )
         ):
             owned_payment_provider = build_payment_provider(resolved_settings)
             payment_convergence = PaymentConvergenceService(
