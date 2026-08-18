@@ -397,6 +397,39 @@ def test_inventory_authority_requires_case_order_slot_ownership(pg_engine: Engin
     assert other_order_id != order_id
 
 
+@pytest.mark.parametrize(
+    ("purpose", "with_other_applied"),
+    [
+        (RefundCasePurpose.DUPLICATE_CHARGE, True),
+        (RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT, False),
+    ],
+)
+def test_inventory_authority_denies_non_cancellation_purposes(
+    pg_engine: Engine,
+    purpose: RefundCasePurpose,
+    with_other_applied: bool,
+) -> None:
+    order_id, payment_id, _ = _seed_successful_payment(
+        pg_engine,
+        applied=False,
+        with_other_applied=with_other_applied,
+    )
+    with Session(pg_engine) as session:
+        _add_case(
+            session,
+            order_id=order_id,
+            payment_id=payment_id,
+            purpose=purpose,
+        )
+        session.commit()
+
+    with Session(pg_engine) as session:
+        repository = RefundRepository(session)
+        graph = repository.lock_refund_graph(payment_id)
+        assert repository.inventory_mutation_authority(graph) is None
+        session.rollback()
+
+
 def test_latest_attempt_and_due_lease_claim(pg_engine: Engine) -> None:
     order_id, payment_id, _ = _seed_successful_payment(pg_engine, applied=True)
     with Session(pg_engine) as session:

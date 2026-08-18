@@ -241,6 +241,7 @@ class RefundRepository:
         refund_case = graph.refund_case
         if (
             refund_case is None
+            or refund_case.purpose is not RefundCasePurpose.ORDER_CANCELLATION
             or refund_case.order_id != graph.order.id
             or refund_case.payment_id != graph.payment.id
             or graph.order.slot_id != graph.slot.id
