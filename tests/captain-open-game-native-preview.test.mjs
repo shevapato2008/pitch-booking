@@ -24,6 +24,9 @@ test("native templates preserve honest Fixture-only lifecycle and public read-on
   const styles = pages.map((page) => readFileSync(`miniprogram/dev/pages/${page}/index.wxss`, "utf8")).join("\n");
   for (const copy of ["真实订场已确认", "{{saveLabel}}", "返回订单", "计划总人数不能少于固定队员和开放名额之和"]) assert.match(form, new RegExp(copy));
   for (const copy of ["发布前确认", "确认发布", "暂时无法分享", "确认取消球局", "只取消本次开放球局，不会取消已预订场地，也不会发起退款。", "球局已取消"]) assert.match(manage, new RegExp(copy));
+  for (const copy of ["订单状态变化，球局已暂停招募", "查看公开页", "正在确认保存结果，已保留你的输入", "正在重新加载球局", "重新加载"]) assert.match(`${form}\n${manage}`, new RegExp(copy));
+  assert.match(manage, /visualState === 'SUSPENDED'[\s\S]*查看公开页[\s\S]*取消球局/);
+  assert.doesNotMatch(manage.match(/visualState === 'SUSPENDED'[\s\S]*?<\/view>/)?.[0] ?? "", /分享球局|编辑球局|发布球局/);
   assert.match(publicPage, /当前仅供查看，申请加入即将开放/);
   assert.doesNotMatch(publicPage, /<button[^>]*>[^<]*(申请加入|我要报名|立即加入)/);
   assert.doesNotMatch(`${form}\n${manage}\n${publicPage}`, /[\u{1F300}-\u{1FAFF}]/u);

@@ -15,7 +15,7 @@ Page({
     const sourceState = managerState(options.from);
     const header = readIntentHeaderLayout();
     const current = captainOpenGameStore.current();
-    if (!["DRAFT", "PUBLISHED", "CANCELLED"].includes(current.state)) captainOpenGameStore.reset(resolveCaptainOpenGameState(options.state ?? sourceState));
+    if (current.state === "ELIGIBLE") captainOpenGameStore.reset(resolveCaptainOpenGameState(options.state ?? sourceState));
     const currentState = captainOpenGameStore.current().state;
     this.setData({ ...patch(currentState === "CANCELLED" ? sourceState : currentState, sourceState), headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerRightInsetPx: header.rightInsetPx, headerLeftInsetPx: header.rightInsetPx });
   },
@@ -23,8 +23,10 @@ Page({
     if (captainOpenGameStore.current().state === "CANCELLED" && this.data.visualState !== "CANCELLED") wx.reLaunch({ url: "/dev/pages/captain-game-manage/index?state=CANCELLED" });
   },
   onReturnManage() {
-    const state = captainOpenGameStore.current().state === "CANCELLED" ? "CANCELLED" : this.data.sourceState;
-    wx.redirectTo({ url: `/dev/pages/captain-game-manage/index?state=${state}` });
+    const state = captainOpenGameStore.current().state;
+    const pages = getCurrentPages() as unknown as readonly { route?: string }[];
+    if (pages[pages.length - 2]?.route === "dev/pages/captain-game-manage/index") wx.navigateBack({ delta: 1 });
+    else wx.redirectTo({ url: `/dev/pages/captain-game-manage/index?state=${state}` });
   },
   onHeaderBack() { this.onReturnManage(); },
 });

@@ -54,6 +54,25 @@ test("published editing reads its current snapshot without reset and keeps the p
   expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=PUBLISHED" });
 });
 
+test("saving an edit returns to the existing manager instead of pushing another manager", () => {
+  captainOpenGameStore.reset("PUBLISHED");
+  const page = loadPage();
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([{ route: "dev/pages/captain-game-manage/index" }, { route: "dev/pages/captain-game-form/index" }]);
+  page.onLoad({ state: "PUBLISHED" });
+  page.onSave();
+  expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
+  expect(wx.redirectTo).not.toHaveBeenCalled();
+});
+
+test("save result unknown stays visibly confirming and cannot submit again", () => {
+  const page = loadPage();
+  page.onLoad({ state: "SAVE_UNKNOWN" });
+  expect(page.data).toMatchObject({ visualState: "SAVE_UNKNOWN", canEdit: false, message: "正在确认保存结果，已保留你的输入" });
+  page.onSave();
+  expect(wx.navigateBack).not.toHaveBeenCalled();
+  expect(wx.redirectTo).not.toHaveBeenCalled();
+});
+
 test("returning an ineligible deep link falls back to my orders when no history exists", () => {
   const page = loadPage();
   page.onLoad({ state: "INELIGIBLE" });

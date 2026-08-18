@@ -114,6 +114,7 @@ export interface CaptainOpenGameStore {
   confirmCancel(): ReturnType<CaptainOpenGameStore["current"]>;
   beginAbandon(): ReturnType<CaptainOpenGameStore["current"]>;
   confirmAbandon(): ReturnType<CaptainOpenGameStore["current"]>;
+  recoverLoad(): ReturnType<CaptainOpenGameStore["current"]>;
   closePanel(): ReturnType<CaptainOpenGameStore["current"]>;
 }
 
@@ -128,10 +129,11 @@ export const createCaptainOpenGameStore = (initial: CaptainOpenGameState = "ELIG
     saveDraft(value) { snapshot = deepFreeze({ ...value }); if (state !== "PUBLISHED") state = "DRAFT"; panel = null; return result(); },
     beginPublish() { if (state === "DRAFT") panel = "publish"; return result(); },
     confirmPublish() { if (state === "DRAFT" && panel === "publish") { state = "PUBLISHED"; panel = null; } return result(); },
-    beginCancel() { if (state === "PUBLISHED") panel = "cancel"; return result(); },
-    confirmCancel() { if (state === "PUBLISHED" && panel === "cancel") { state = "CANCELLED"; panel = null; } return result(); },
+    beginCancel() { if (state === "PUBLISHED" || state === "SUSPENDED") panel = "cancel"; return result(); },
+    confirmCancel() { if ((state === "PUBLISHED" || state === "SUSPENDED") && panel === "cancel") { state = "CANCELLED"; panel = null; } return result(); },
     beginAbandon() { if (state === "DRAFT") panel = "abandon"; return result(); },
     confirmAbandon() { if (state === "DRAFT" && panel === "abandon") { state = "ELIGIBLE"; panel = null; snapshot = deepFreeze({ ...form }); } return result(); },
+    recoverLoad() { if (state === "LOAD_ERROR") state = "DRAFT"; panel = null; return result(); },
     closePanel() { panel = null; return result(); },
   };
 };

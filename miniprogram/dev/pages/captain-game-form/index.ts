@@ -22,6 +22,11 @@ const returnToOrder = () => {
   if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 });
   else wx.reLaunch({ url: "/pages/my-orders/index" });
 };
+const returnToManager = (state: CaptainOpenGameState) => {
+  const pages = getCurrentPages() as unknown as readonly { route?: string }[];
+  if (pages[pages.length - 2]?.route === "dev/pages/captain-game-manage/index") wx.navigateBack({ delta: 1 });
+  else wx.redirectTo({ url: `/dev/pages/captain-game-manage/index?state=${state}` });
+};
 
 Page({
   data: { ...patch("ELIGIBLE"), headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0, headerLeftInsetPx: 0 },
@@ -40,7 +45,7 @@ Page({
     if (!this.data.canEdit) return;
     const result = captainOpenGameStore.saveDraft(this.data.form);
     this.setData({ visualState: result.state, private: result.private, published: result.published, snapshot: result.snapshot });
-    wx.redirectTo({ url: `/dev/pages/captain-game-manage/index?state=${result.state}` });
+    returnToManager(result.state);
   },
   onReturnOrder() { returnToOrder(); },
   onHeaderBack() { returnToOrder(); },

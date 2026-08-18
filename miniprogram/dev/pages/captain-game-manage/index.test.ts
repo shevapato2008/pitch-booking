@@ -4,14 +4,14 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { captainOpenGameStore } from "../../captain-open-game-fixture";
 
-interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onShow(): void; onPublish(): void; onConfirmPublish(): void; onPreview(): void; onEdit(): void; onShare(): void; onClosePanel(): void; onCancel(): void; onConfirmCancel(): void; onAbandon(): void; onConfirmAbandon(): void; onReturnOrder(): void; onHeaderBack(): void; }
+interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onShow(): void; onPublish(): void; onConfirmPublish(): void; onPreview(): void; onEdit(): void; onShare(): void; onClosePanel(): void; onCancel(): void; onConfirmCancel(): void; onAbandon(): void; onConfirmAbandon(): void; onReload(): void; onReturnOrder(): void; onHeaderBack(): void; }
 let captured: Definition | undefined;
 const loadPage = () => {
   if (!captured) { (globalThis as any).Page = (definition: Definition) => { captured = definition; }; jest.requireActual("./index"); }
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), navigateTo: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
+beforeEach(() => { captainOpenGameStore.reset("ELIGIBLE"); (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), navigateTo: jest.fn(), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
 
 test("draft publish requires confirmation before it becomes published", () => {
   const page = loadPage();
@@ -68,4 +68,32 @@ test("an old manager page corrects itself from the authoritative cancelled Fixtu
   captainOpenGameStore.reset("CANCELLED");
   page.onShow();
   expect(page.data.visualState).toBe("CANCELLED");
+});
+
+test("onShow refreshes a same-lifecycle manager from the current Fixture snapshot", () => {
+  const page = loadPage();
+  page.onLoad({ state: "PUBLISHED" });
+  captainOpenGameStore.saveDraft({ ...captainOpenGameStore.current().snapshot, name: "同生命周期刷新", total: 16, open: 5 });
+  page.onShow();
+  expect(page.data).toMatchObject({ visualState: "PUBLISHED", snapshot: { name: "同生命周期刷新", total: 16, open: 5 } });
+});
+
+test("existing lifecycle wins over a stale manager query, and suspended exposes only truthful actions", () => {
+  captainOpenGameStore.reset("PUBLISHED");
+  const page = loadPage();
+  page.onLoad({ state: "DRAFT" });
+  expect(page.data.visualState).toBe("PUBLISHED");
+  captainOpenGameStore.reset("ELIGIBLE");
+  page.onLoad({ state: "SUSPENDED" });
+  expect(page.data).toMatchObject({ visualState: "SUSPENDED", canEdit: false, message: "订单状态变化，球局已暂停招募" });
+  page.onCancel();
+  expect(page.data.panel).toBe("cancel");
+});
+
+test("load error offers a real local reload transition", () => {
+  const page = loadPage();
+  page.onLoad({ state: "LOAD_ERROR" });
+  expect(page.data).toMatchObject({ visualState: "LOAD_ERROR", recoveryAction: "重新加载" });
+  page.onReload();
+  expect(page.data).toMatchObject({ visualState: "DRAFT", private: true });
 });

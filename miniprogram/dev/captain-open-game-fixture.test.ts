@@ -83,3 +83,11 @@ test("published public detail remains readonly and non-applicable states retain 
   expect(buildCaptainOpenGameView("SAVE_UNKNOWN").message).toMatch(/确认/);
   expect(buildCaptainOpenGameView("LOAD_ERROR").recoveryAction).toBe("重新加载");
 });
+
+test("suspended games can only be viewed or cancelled, while a load retry restores the Fixture manager", () => {
+  const store = createCaptainOpenGameStore("SUSPENDED");
+  expect(store.beginCancel()).toMatchObject({ state: "SUSPENDED", panel: "cancel" });
+  expect(store.confirmCancel()).toMatchObject({ state: "CANCELLED", bookingChanged: false });
+  store.reset("LOAD_ERROR");
+  expect(store.recoverLoad()).toMatchObject({ state: "DRAFT", panel: null, private: true });
+});

@@ -11,7 +11,7 @@ const loadPage = () => {
   return { ...captured!, data: { ...captured!.data }, setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); } } as Definition & { setData(patch: Record<string, unknown>): void };
 };
 
-beforeEach(() => { (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
+beforeEach(() => { captainOpenGameStore.reset("ELIGIBLE"); (globalThis as any).wx = { getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })), getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })), redirectTo: jest.fn(), reLaunch: jest.fn(), navigateBack: jest.fn() }; (globalThis as any).getCurrentPages = jest.fn(() => [{}, {}]); });
 
 test("published public detail is readonly, has no application action, and explains that joining is forthcoming", () => {
   const page = loadPage();
@@ -33,4 +33,16 @@ test("an old public history entry cannot revive a cancelled published page", () 
   page.onLoad({ from: "PUBLISHED" });
   page.onShow();
   expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=CANCELLED" });
+});
+
+test("public return uses the current lifecycle instead of stale source state and falls back only without a manager", () => {
+  const page = loadPage();
+  captainOpenGameStore.reset("PUBLISHED");
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([{ route: "pages/other/index" }]);
+  page.onLoad({ from: "DRAFT" });
+  page.onReturnManage();
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=PUBLISHED" });
+  captainOpenGameStore.reset("CANCELLED");
+  page.onReturnManage();
+  expect(wx.redirectTo).toHaveBeenLastCalledWith({ url: "/dev/pages/captain-game-manage/index?state=CANCELLED" });
 });
