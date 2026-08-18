@@ -6,6 +6,7 @@ import {
 } from "../../presentation/availability";
 import { getPageDataSource } from "../../services/page-data";
 import type { PitchFilterOption } from "../../components/pitch-filter/index";
+import { ONLINE_BOOKING_ENABLED } from "../../config/runtime";
 
 interface SelectionEvent<T> {
   detail: T;
@@ -23,6 +24,7 @@ Page({
     loading: true,
     errorText: "",
     navigationError: "",
+    onlineBookingEnabled: ONLINE_BOOKING_ENABLED,
   },
 
   async onLoad(query: Record<string, string | undefined>) {
@@ -77,6 +79,7 @@ Page({
   },
 
   onSlotSelect(event: SelectionEvent<{ slotId: string }>) {
+    if (!this.data.onlineBookingEnabled) return;
     const availability = this.data.availability;
     if (!availability) return;
 
@@ -97,6 +100,7 @@ Page({
   },
 
   async onConfirmSlot() {
+    if (!this.data.onlineBookingEnabled) return;
     const slotId = this.data.selectedSlotId;
     if (!slotId) return;
     this.setData({ navigationError: "" });

@@ -54,6 +54,21 @@ test("CTA does nothing until a slot is selected", async () => {
   expect(calls).toBe(0);
 });
 
+test("disabled online booking keeps browsing visible but never navigates to checkout", async () => {
+  let calls = 0;
+  (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = {
+    async navigateTo() { calls += 1; },
+  };
+  const page = loadPage();
+  page.data.onlineBookingEnabled = false;
+  page.data.selectedSlotId = "slot-disabled";
+
+  await call(page, "onConfirmSlot");
+
+  expect(calls).toBe(0);
+  expect(page.data.navigationError).toBe("");
+});
+
 test("navigation rejection is handled and keeps the selected slot retryable", async () => {
   (globalThis as unknown as { wx: { navigateTo(): Promise<void> } }).wx = {
     async navigateTo() { throw new Error("navigation failed"); },

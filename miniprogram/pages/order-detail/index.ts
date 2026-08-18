@@ -16,6 +16,7 @@ import {
 import { formatShanghaiTimeRange } from "../../presentation/shanghai-time";
 import { getBookingDataSource } from "../../services/booking";
 import { getPaymentBindings } from "../../services/payment";
+import { ONLINE_BOOKING_ENABLED } from "../../config/runtime";
 
 function requireUuid(value: string | undefined): string {
   if (!isStrictUuid(value)) throw new Error("INVALID_ORDER_ID");
@@ -80,7 +81,7 @@ Page({
   data: {
     orderId: "",
     order: null as OrderView | PaymentOrderView | null,
-    status: "loading" as OrderDetailPollState["status"] | "route-error" | "payment-pending" | "creating-prepay" | "cashier-open",
+    status: "loading" as OrderDetailPollState["status"] | "route-error" | "payment-pending" | "payment-unavailable" | "creating-prepay" | "cashier-open",
     seconds: 0,
     countdown: "10:00",
     errorText: "",
@@ -106,6 +107,7 @@ Page({
     showClosingRetry: false,
     showReselect: false,
     navigationError: "",
+    onlineBookingEnabled: ONLINE_BOOKING_ENABLED,
   },
   poller: undefined as OrderDetailPoller | undefined,
   paymentState: initialPaymentPageState() as PaymentPageState,
@@ -162,7 +164,7 @@ Page({
     if (!this.poller) {
       const bindings = getPaymentBindings();
       this.poller = new OrderDetailPoller({
-        getOrder: bindings
+        getOrder: this.data.onlineBookingEnabled && bindings
           ? (orderId) => bindings.source.getOrder(orderId)
           : (orderId) => getBookingDataSource().getOrder(orderId),
         clock: bindings?.clock ?? { now: () => new Date() },
@@ -178,6 +180,14 @@ Page({
   applyPollState(state: OrderDetailPollState) {
     if (this.terminalOrderStatus && !("order" in state)) return;
     if ("order" in state && !this.acceptOrderProjection(state.order)) return;
+    if (
+      !this.data.onlineBookingEnabled
+      && "order" in state
+      && ["pending-payment", "payment-confirming", "payment-exception"].includes(state.status)
+    ) {
+      this.applyPaymentUnavailable(state.order);
+      return;
+    }
     switch (state.status) {
       case "loading": {
         if (isActivePaymentOperation(this.paymentState)
@@ -307,6 +317,21 @@ Page({
     });
   },
 
+  applyPaymentUnavailable(order: OrderView | PaymentOrderView) {
+    this.setData({
+      ...clearedPaymentUi(),
+      ...this.orderLabels(order),
+      order,
+      status: "payment-unavailable",
+      eyebrow: "在线预订",
+      heroTitle: "在线预订暂未开放",
+      heroCopy: "你仍可查看订单信息，当前无法发起支付。",
+      primaryDisabled: true,
+      showPaymentFooter: false,
+      errorText: "",
+    });
+  },
+
   orderLabels(order: OrderView | PaymentOrderView) {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(order.startsAt);
     const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -326,6 +351,7 @@ Page({
   },
 
   async onPay() {
+    if (!this.data.onlineBookingEnabled) return;
     const bindings = getPaymentBindings();
     if (!bindings
       || this.terminalOrderStatus

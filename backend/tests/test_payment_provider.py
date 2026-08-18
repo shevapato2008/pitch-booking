@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from backend.app.config import Settings
+from backend.app.errors import AppError
+from backend.app.main import create_app
 from backend.app.modules.payments import build_payment_provider
 from backend.app.modules.payments.mock_provider import MockCreateMode, MockPaymentProvider
 from backend.app.modules.payments.provider import (
@@ -22,6 +24,7 @@ from backend.app.modules.payments.provider import (
     Rejected,
     Unknown,
 )
+from backend.app.modules.payments.router import get_payment_provider
 
 
 def request(merchant_order_no: str = "merchant-1") -> CreatePrepayRequest:
@@ -219,6 +222,12 @@ def test_mock_payment_configuration_is_rejected_outside_development(app_env: str
             database_url="postgresql+psycopg://pitch:password@postgres:5432/pitch",
             public_api_base_url="https://api.example.test",
             public_image_hosts=("cdn.example.test",),
+            oss_endpoint="https://oss-cn-beijing.aliyuncs.com",
+            oss_bucket="pitch-media",
+            oss_public_base_url="https://cdn.example.test/media",
+            oss_access_key_id="access-key-id",
+            oss_access_key_secret="access-key-secret",
+            dashscope_api_key="dashscope-key",
             wechat_provider="real",
             wechat_app_id="wx-app",
             wechat_app_secret="secret",
@@ -256,3 +265,51 @@ def test_runtime_provider_factory_never_falls_back_to_mock() -> None:
 
     with pytest.raises(RuntimeError, match="WeChat payment credentials are incomplete"):
         build_payment_provider(Settings(app_env="development", payment_provider="wechat"))
+
+
+def test_disabled_payment_provider_starts_without_merchant_credentials() -> None:
+    settings = Settings(
+        app_env="staging",
+        payment_provider="disabled",
+        database_url="postgresql+psycopg://pitch:password@postgres:5432/pitch",
+        public_api_base_url="https://api.example.test",
+        public_image_hosts=("cdn.example.test",),
+        oss_endpoint="https://oss-cn-beijing.aliyuncs.com",
+        oss_bucket="pitch-media",
+        oss_public_base_url="https://cdn.example.test/media",
+        oss_access_key_id="access-key-id",
+        oss_access_key_secret="access-key-secret",
+        dashscope_api_key="dashscope-key",
+        wechat_provider="real",
+        wechat_app_id="wx-app",
+        wechat_app_secret="secret",
+        phone_encryption_key_base64=(
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+        ),
+        phone_encryption_key_version=1,
+        wechat_pay_merchant_id="",
+        wechat_pay_merchant_cert_serial="",
+        wechat_pay_merchant_private_key_pem_base64="",
+        wechat_pay_public_key_id="",
+        wechat_pay_public_key_pem_base64="",
+        wechat_pay_api_v3_key="",
+        wechat_pay_payment_notification_url="",
+        wechat_pay_refund_notification_url="",
+    )
+
+    assert settings.payment_provider == "disabled"
+    assert settings.wechat_payment_configured is False
+    app = create_app(settings=Settings(app_env="test", payment_provider="disabled"))
+    assert app.state.payment_provider is None
+
+
+def test_missing_runtime_provider_returns_frozen_unavailable_error() -> None:
+    state = type("StateStub", (), {"payment_provider": None})()
+    app = type("AppStub", (), {"state": state})()
+    request = type("RequestStub", (), {"app": app})()
+
+    with pytest.raises(AppError) as caught:
+        get_payment_provider(request)  # type: ignore[arg-type]
+
+    assert caught.value.status_code == 503
+    assert caught.value.code == "PAYMENT_PROVIDER_UNAVAILABLE"

@@ -1,2 +1,3 @@
 @import "../../styles/tokens.wxss";
 .booking-page{box-sizing:border-box;min-height:100vh;padding:28rpx 28rpx 188rpx}.content{display:flex;flex-direction:column;gap:24rpx}.state-card{margin-bottom:24rpx;padding:24rpx;border:2rpx solid #DBE5EC;border-radius:24rpx;background:#FFF}.state-card--error,.inline-message{color:#B91C1C}.retry{min-height:88rpx;margin-top:16rpx;color:#0369A1;background:#FFF;border:2rpx solid #7DD3FC}.inline-message{display:block;margin:-8rpx 8rpx 0;font-size:24rpx}
+.booking-unavailable{display:flex;flex-direction:column;gap:8rpx;color:#64748B;text-align:center}.booking-unavailable__title{color:#10243E;font-weight:700}

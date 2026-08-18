@@ -3,13 +3,17 @@
   <view wx:elif="{{!checkout && !showNavigationRecovery}}" class="state-card u-muted">正在加载登录与结算信息…</view>
   <view wx:elif="{{checkout}}" class="content">
     <slot-summary-card checkout="{{checkout}}" dateLabel="{{dateLabel}}" timeLabel="{{timeLabel}}" durationLabel="{{durationLabel}}" priceText="{{price}}" />
-    <contact-card maskedPhone="{{maskedPhone}}" contactName="{{state.contactName}}" contactError="{{contactError}}" phoneOpenType="getPhoneNumber" showContactLabel="{{false}}" bind:authorizephone="onAuthorizePhone" bind:contactinput="onContactInput" bind:contactblur="onContactBlur" />
+    <view wx:if="{{!onlineBookingEnabled}}" class="state-card booking-unavailable" role="status">
+      <text class="booking-unavailable__title">在线预订暂未开放</text>
+      <text>你仍可查看本次场地和时段信息。</text>
+    </view>
+    <contact-card wx:else maskedPhone="{{maskedPhone}}" contactName="{{state.contactName}}" contactError="{{contactError}}" phoneOpenType="getPhoneNumber" showContactLabel="{{false}}" bind:authorizephone="onAuthorizePhone" bind:contactinput="onContactInput" bind:contactblur="onContactBlur" />
     <text wx:if="{{phoneMessage}}" class="inline-message">{{phoneMessage}}</text>
-    <booking-rules-card lockRule="提交后锁定场地 10 分钟" cancellationRule="开场前 24 小时可取消" priceRule="实际价格以服务端确认为准" />
+    <booking-rules-card wx:if="{{onlineBookingEnabled}}" lockRule="提交后锁定场地 10 分钟" cancellationRule="开场前 24 小时可取消" priceRule="实际价格以服务端确认为准" />
     <view wx:if="{{priceChanged}}" class="state-card"><text>价格已更新为 {{changedPrice}}，请确认后再次下单。</text><button class="retry" bindtap="onAcceptPriceChange">确认新价格</button></view>
     <view wx:if="{{slotUnavailable}}" class="state-card state-card--error">该时段刚刚被预订，请返回重选。</view>
     <view wx:if="{{actionError}}" class="state-card state-card--error"><text>{{actionError}}</text><button wx:if="{{reconciling}}" class="retry" bindtap="onResumeUnknown">继续确认</button></view>
   </view>
   <view wx:if="{{showNavigationRecovery}}" class="state-card state-card--error"><text>{{navigationInFlight ? '正在打开订单详情…' : navigationError}}</text><button wx:if="{{!navigationInFlight}}" class="retry" bindtap="onRetryNavigation">重新打开订单详情</button></view>
-  <order-submit-bar wx:if="{{checkout}}" price="{{price}}" disabled="{{!canSubmit}}" loading="{{submitting}}" reconciling="{{reconciling}}" cta="确认下单" disabledReason="{{!maskedPhone ? '请先授权手机号' : (!state.contactName ? '请填写联系人' : '')}}" bind:submit="onSubmit" />
+  <order-submit-bar wx:if="{{checkout && onlineBookingEnabled}}" price="{{price}}" disabled="{{!canSubmit}}" loading="{{submitting}}" reconciling="{{reconciling}}" cta="确认下单" disabledReason="{{!maskedPhone ? '请先授权手机号' : (!state.contactName ? '请填写联系人' : '')}}" bind:submit="onSubmit" />
 </view>

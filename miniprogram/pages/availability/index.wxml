@@ -18,13 +18,18 @@
       />
     </view>
 
+    <view wx:if="{{!onlineBookingEnabled}}" class="booking-unavailable u-surface u-border u-radius-md" role="status">
+      <text class="booking-unavailable__title">在线预订暂未开放</text>
+      <text class="booking-unavailable__copy">你仍可查看场地和时段信息。</text>
+    </view>
+
     <view wx:if="{{viewModel.isEmpty}}" class="empty-state u-surface u-border u-radius-md u-muted u-type-body">
       当天暂无可订时段
     </view>
     <view wx:else class="slot-section u-pad-page">
-      <slot-grid pitchGroups="{{viewModel.pitchGroups}}" bind:select="onSlotSelect" />
+      <slot-grid pitchGroups="{{viewModel.pitchGroups}}" disabled="{{!onlineBookingEnabled}}" bind:select="onSlotSelect" />
     </view>
     <text wx:if="{{navigationError}}" class="state-message state-message--error u-type-body">{{navigationError}}</text>
-    <button wx:if="{{selectedSlotId}}" class="u-control" bindtap="onConfirmSlot">确认场次</button>
+    <button wx:if="{{onlineBookingEnabled && selectedSlotId}}" class="u-control" bindtap="onConfirmSlot">确认场次</button>
   </view>
 </view>

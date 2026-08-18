@@ -34,6 +34,9 @@ async function build(selectedMode) {
   const productionApiBaseUrl = selectedMode === "production"
     ? resolveProductionApiBaseUrl(process.env.MINIPROGRAM_API_BASE_URL)
     : undefined;
+  const productionPaymentProvider = selectedMode === "production"
+    ? resolveProductionPaymentProvider(process.env.MINIPROGRAM_PAYMENT_PROVIDER)
+    : undefined;
   const tencentMapKey = selectedMode === "production" || developmentConfig?.source === "http"
     ? resolveTencentMapKey(process.env.MINIPROGRAM_TENCENT_MAP_KEY)
     : undefined;
@@ -47,7 +50,13 @@ async function build(selectedMode) {
   await mkdir(outputRoot, { recursive: true });
   await copyTree(sourceRoot, outputRoot, selectedMode === "development");
   if (tencentMapKey !== undefined) {
-    await writeRuntimeConfig(sourceRoot, outputRoot, productionApiBaseUrl, tencentMapKey);
+    await writeRuntimeConfig(
+      sourceRoot,
+      outputRoot,
+      productionApiBaseUrl,
+      tencentMapKey,
+      productionPaymentProvider,
+    );
   }
   if (developmentConfig) {
     if (developmentFixtureData) await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
@@ -68,7 +77,13 @@ async function build(selectedMode) {
   console.log(`Built ${selectedMode} mini program at ${path.relative(process.cwd(), outputRoot)}`);
 }
 
-async function writeRuntimeConfig(sourceRoot, outputRoot, apiBaseUrl, tencentMapKey) {
+async function writeRuntimeConfig(
+  sourceRoot,
+  outputRoot,
+  apiBaseUrl,
+  tencentMapKey,
+  paymentProvider,
+) {
   let source;
   try {
     source = await readFile(path.join(sourceRoot, "config/runtime.ts"), "utf8");
@@ -79,6 +94,13 @@ async function writeRuntimeConfig(sourceRoot, outputRoot, apiBaseUrl, tencentMap
   }
   if (apiBaseUrl !== undefined) {
     source = replaceRuntimeExport(source, "API_BASE_URL", apiBaseUrl);
+  }
+  if (paymentProvider !== undefined) {
+    source = replaceRuntimeExport(
+      source,
+      "ONLINE_BOOKING_ENABLED",
+      paymentProvider === "wechat",
+    );
   }
   source = source.replace(
     /export\s+const\s+MINIPROGRAM_TENCENT_MAP_KEY\s*=\s*["'][^"']*["']\s*;/,
@@ -93,7 +115,9 @@ async function writeRuntimeConfig(sourceRoot, outputRoot, apiBaseUrl, tencentMap
 }
 
 function replaceRuntimeExport(source, name, value) {
-  const pattern = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*["'][^"']*["']\\s*;`);
+  const pattern = new RegExp(
+    `export\\s+const\\s+${name}\\s*=\\s*(?:["'][^"']*["']|true|false)\\s*;`,
+  );
   const replacement = `export const ${name} = ${JSON.stringify(value)};`;
   return pattern.test(source) ? source.replace(pattern, replacement) : `${source.trimEnd()}\n${replacement}\n`;
 }
@@ -125,6 +149,14 @@ export function resolveProductionApiBaseUrl(apiBaseUrl) {
     throw new Error("production MINIPROGRAM_API_BASE_URL must not target a loopback host");
   }
   return apiBaseUrl;
+}
+
+export function resolveProductionPaymentProvider(value) {
+  const provider = value ?? "wechat";
+  if (provider !== "wechat" && provider !== "disabled") {
+    throw new Error("MINIPROGRAM_PAYMENT_PROVIDER must be wechat or disabled");
+  }
+  return provider;
 }
 
 async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {

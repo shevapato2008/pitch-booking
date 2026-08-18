@@ -35,6 +35,7 @@ PRESERVED_KEYS = (
     "ONBOARDING_OSS_BUCKET",
     "PLATFORM_STAFF_PRINCIPALS_JSON",
     "PLATFORM_CSRF_SECRET",
+    "PAYMENT_PROVIDER",
     "WECHAT_PAY_MERCHANT_ID",
     "WECHAT_PAY_MERCHANT_CERT_SERIAL",
     "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64",
@@ -84,6 +85,7 @@ class PrepareInputs:
     wechat_pay_api_v3_key: str
     wechat_pay_payment_notification_url: str
     wechat_pay_refund_notification_url: str
+    payment_provider: str = "wechat"
     onboarding_oss_bucket: str = ""
     platform_reviewer_token: str = ""
 
@@ -196,6 +198,9 @@ def _validate_preserved(values: Mapping[str, str]) -> dict[str, str]:
     csrf_secret = values.get("PLATFORM_CSRF_SECRET")
     if csrf_secret and _valid_base64_32(csrf_secret):
         preserved["PLATFORM_CSRF_SECRET"] = csrf_secret
+    payment_provider = values.get("PAYMENT_PROVIDER")
+    if payment_provider in {"wechat", "disabled"}:
+        preserved["PAYMENT_PROVIDER"] = payment_provider
     try:
         preserved.update(_validated_wechat_pay_config(values))
     except ValueError:
@@ -432,6 +437,9 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         raise ValueError("MINIPROGRAM_TENCENT_MAP_KEY is invalid")
     if COMMIT_SHA.fullmatch(inputs.revision) is None:
         raise ValueError("APP_REVISION is not a 40-character commit SHA")
+    payment_provider = inputs.payment_provider.strip().casefold()
+    if payment_provider not in {"wechat", "disabled"}:
+        raise ValueError("PAYMENT_PROVIDER must be wechat or disabled")
 
     existing: dict[str, str] = {}
     if inputs.deploy_env.exists():
@@ -473,11 +481,13 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "WECHAT_PAY_PAYMENT_NOTIFICATION_URL": (inputs.wechat_pay_payment_notification_url),
         "WECHAT_PAY_REFUND_NOTIFICATION_URL": inputs.wechat_pay_refund_notification_url,
     }
-    payment_config = (
-        {key: preserved[key] for key in WECHAT_PAY_KEYS}
-        if all(key in preserved for key in WECHAT_PAY_KEYS)
-        else _validated_wechat_pay_config(payment_input_values)
-    )
+    payment_config = {}
+    if payment_provider == "wechat":
+        payment_config = (
+            {key: preserved[key] for key in WECHAT_PAY_KEYS}
+            if all(key in preserved for key in WECHAT_PAY_KEYS)
+            else _validated_wechat_pay_config(payment_input_values)
+        )
     oss_request_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], oss["OSS_BUCKET"])
     onboarding_upload_base_url = _oss_request_base_url(oss["OSS_ENDPOINT"], onboarding_bucket)
 
@@ -497,7 +507,7 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "DASHSCOPE_MODERATION_MODEL": "qwen3-vl-flash",
         "MODERATION_REVIEWER_USER_IDS": reviewer_id,
         "WECHAT_PROVIDER": "real",
-        "PAYMENT_PROVIDER": "wechat",
+        "PAYMENT_PROVIDER": payment_provider,
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
         **payment_config,
         "MINIPROGRAM_ICP_FILING_CONFIRMED": icp_confirmed,
@@ -512,6 +522,7 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
     miniprogram_values = {
         "MINIPROGRAM_API_BASE_URL": API_BASE_URL,
         "MINIPROGRAM_TENCENT_MAP_KEY": tencent_map_key,
+        "MINIPROGRAM_PAYMENT_PROVIDER": payment_provider,
     }
     _atomic_write(
         inputs.deploy_env,
@@ -589,13 +600,23 @@ def main() -> int:
     if "PLATFORM_STAFF_PRINCIPALS_JSON" not in existing_bootstrap:
         reviewer_token = getpass.getpass("PLATFORM_REVIEWER_TOKEN: ")
 
+    payment_provider = (
+        os.environ.get("PAYMENT_PROVIDER")
+        or existing_bootstrap.get("PAYMENT_PROVIDER")
+        or "disabled"
+    ).strip().casefold()
+    if payment_provider not in {"wechat", "disabled"}:
+        parser.error("PAYMENT_PROVIDER must be wechat or disabled")
     existing_payment = (
         {key: existing_bootstrap[key] for key in WECHAT_PAY_KEYS}
-        if all(key in existing_bootstrap for key in WECHAT_PAY_KEYS)
+        if payment_provider == "wechat"
+        and all(key in existing_bootstrap for key in WECHAT_PAY_KEYS)
         else {}
     )
 
     def payment_input(key: str, *, default: str = "") -> str:
+        if payment_provider == "disabled":
+            return ""
         if existing_payment:
             return existing_payment[key]
         return os.environ.get(key) or default or getpass.getpass(f"{key}: ")
@@ -615,6 +636,7 @@ def main() -> int:
                 wechat_app_secret=wechat_secret,
                 tencent_map_key=tencent_key,
                 revision=_git_revision(),
+                payment_provider=payment_provider,
                 wechat_pay_merchant_id=payment_input("WECHAT_PAY_MERCHANT_ID"),
                 wechat_pay_merchant_cert_serial=payment_input("WECHAT_PAY_MERCHANT_CERT_SERIAL"),
                 wechat_pay_merchant_private_key_pem_base64=payment_input(

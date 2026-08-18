@@ -233,6 +233,27 @@ describe("order detail lifecycle orchestration", () => {
 });
 
 describe("order detail payment orchestration", () => {
+  test("disabled online booking shows an honest unavailable state without a payment action", async () => {
+    registerPaymentRuntime({});
+    registerBookingDataSource(baseSource(async () => structuredClone(pending)));
+    const page = loadPage();
+    page.data.onlineBookingEnabled = false;
+
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.pending.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "payment-unavailable",
+      heroTitle: "在线预订暂未开放",
+      showPaymentFooter: false,
+      primaryDisabled: true,
+    });
+    expect(readFileSync("miniprogram/pages/order-detail/index.wxml", "utf8")).toContain(
+      "showPaymentFooter && (onlineBookingEnabled || status === 'booking-confirmed')",
+    );
+    call(page, "onUnload");
+  });
+
   test("native template exposes the approved payment semantics without fake actions or branding", () => {
     const wxml = readFileSync("miniprogram/pages/order-detail/index.wxml", "utf8");
     const wxss = readFileSync("miniprogram/pages/order-detail/index.wxss", "utf8");

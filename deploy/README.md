@@ -62,6 +62,12 @@ generated file. `PLATFORM_CSRF_SECRET` is generated from 32 random bytes automat
 The ordinary WeChat values are still read from the shell or prompted without echo:
 `WECHAT_APP_SECRET` and `MINIPROGRAM_TENCENT_MAP_KEY`.
 
+The live generator defaults to `PAYMENT_PROVIDER=disabled` until merchant credentials are available.
+In that mode it does not prompt for or write any WeChat Pay merchant values, and it writes
+`MINIPROGRAM_PAYMENT_PROVIDER=disabled` to the generated Mini Program build inputs. The resulting
+production Mini Program keeps venue, slot and existing-order browsing available while showing
+“在线预订暂未开放” instead of exposing new-order or payment actions.
+
 When `PAYMENT_PROVIDER=wechat`, the generator also reads the WeChat Pay API v3 merchant ID,
 merchant certificate serial, merchant private key, platform public-key ID and PEM, API v3 key, and
 the payment/refund notification URLs from the operator environment or prompts without echo. Supply
@@ -69,6 +75,10 @@ both PEM files as canonical, single-line Base64 rather than raw multiline PEM. T
 be exactly 32 characters drawn only from `A-Z`, `a-z`, `0-9`, underscore, or hyphen so dotenv and
 Docker Compose preserve it byte-for-byte. Both merchant and platform RSA keys must be 2048-bit.
 Valid existing payment values are preserved on reruns.
+
+Set `PAYMENT_PROVIDER=wechat` in the operator environment only after the complete merchant
+configuration is ready. Staging/production then continue to fail closed on any missing or malformed
+merchant value; Mock remains development-only.
 
 The default callbacks are:
 

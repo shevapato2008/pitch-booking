@@ -5,3 +5,6 @@
 .state-message { padding: 96rpx 32rpx; line-height: 1.5; text-align: center; }
 .state-message--error { color: #10243E; }
 .empty-state { margin: 40rpx 24rpx 0; padding: 64rpx 24rpx; line-height: 1.5; text-align: center; }
+.booking-unavailable { display: flex; flex-direction: column; gap: 8rpx; margin: 32rpx 24rpx 0; padding: 24rpx; text-align: center; }
+.booking-unavailable__title { color: #10243E; font-weight: 700; }
+.booking-unavailable__copy { color: #64748B; font-size: 24rpx; }

@@ -6,11 +6,47 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { readDevelopmentPreviewRoutes } from "../scripts/build-miniprogram.mjs";
+import {
+  readDevelopmentPreviewRoutes,
+  resolveProductionPaymentProvider,
+} from "../scripts/build-miniprogram.mjs";
 
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+
+test("production payment provider accepts only wechat or disabled", () => {
+  assert.equal(resolveProductionPaymentProvider(undefined), "wechat");
+  assert.equal(resolveProductionPaymentProvider("wechat"), "wechat");
+  assert.equal(resolveProductionPaymentProvider("disabled"), "disabled");
+  assert.throws(
+    () => resolveProductionPaymentProvider("mock"),
+    /MINIPROGRAM_PAYMENT_PROVIDER must be wechat or disabled/,
+  );
+});
+
+test("disabled production build freezes online booking off in runtime config", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "disabled-payment-build-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) {
+    await cp(entry, path.join(root, entry), { recursive: true });
+  }
+
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      MINIPROGRAM_TENCENT_MAP_KEY: TEST_TENCENT_MAP_KEY,
+      MINIPROGRAM_PAYMENT_PROVIDER: "disabled",
+    },
+  });
+
+  const runtime = await readFile(
+    path.join(root, "dist/miniprogram-production/config/runtime.js"),
+    "utf8",
+  );
+  assert.match(runtime, /exports\.ONLINE_BOOKING_ENABLED = false/);
+});
 
 test("development preview manifest has the two booking, two venue-profile, and venue-access routes", async () => {
   assert.deepEqual(await readDevelopmentPreviewRoutes("miniprogram"), [

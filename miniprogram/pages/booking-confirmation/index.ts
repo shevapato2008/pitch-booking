@@ -4,6 +4,7 @@ import { formatPriceCents } from "../../presentation/availability";
 import { AsyncGenerationGate, canRetryUnknownSubmission, isStrictUuid } from "../../presentation/lifecycle";
 import { formatShanghaiDateLabel, formatShanghaiTimeRange } from "../../presentation/shanghai-time";
 import { getBookingDataSource, getCreateOrderAttemptStore, getNeutralPhoneTapCode, type CreateOrderAttempt } from "../../services/booking";
+import { ONLINE_BOOKING_ENABLED } from "../../config/runtime";
 
 type PhoneEvent = WechatMiniprogram.CustomEvent<{
   source: "tap" | "getphonenumber";
@@ -39,6 +40,7 @@ Page({
     loadError: "", actionError: "", navigationError: "", phoneMessage: "", dateLabel: "", timeLabel: "", durationLabel: "", price: "",
     canSubmit: false, submitting: false, reconciling: false, priceChanged: false, changedPrice: "", slotUnavailable: false, navigationInFlight: false,
     showNavigationRecovery: false,
+    onlineBookingEnabled: ONLINE_BOOKING_ENABLED,
   },
   loadGate: new AsyncGenerationGate(),
   phoneGate: new AsyncGenerationGate(),
@@ -62,7 +64,7 @@ Page({
     if (this.disposed) return;
     const checkout = state.checkout.status === "ready" ? state.checkout.value : null;
     const labels = checkoutLabels(checkout);
-    this.setData({ state, checkout, maskedPhone: state.session.status === "ready" ? (state.session.value.maskedPhone ?? "") : "", canSubmit: canSubmit(state), submitting: state.submission.status === "submitting", reconciling: state.submission.status === "result-reconciling", priceChanged: state.submission.status === "price-changed", changedPrice: state.submission.status === "price-changed" ? priceText(state.submission.checkout.priceCents) : "", slotUnavailable: state.submission.status === "slot-unavailable", ...labels, ...extras });
+    this.setData({ state, checkout, maskedPhone: state.session.status === "ready" ? (state.session.value.maskedPhone ?? "") : "", canSubmit: this.data.onlineBookingEnabled && canSubmit(state), submitting: state.submission.status === "submitting", reconciling: state.submission.status === "result-reconciling", priceChanged: state.submission.status === "price-changed", changedPrice: state.submission.status === "price-changed" ? priceText(state.submission.checkout.priceCents) : "", slotUnavailable: state.submission.status === "slot-unavailable", ...labels, ...extras });
   },
   async loadSessionThenCheckout() {
     const generation = this.loadGate.begin();
@@ -123,7 +125,7 @@ Page({
     this.setData({ contactError });
   },
   async onSubmit() {
-    if (this.createInFlight) return;
+    if (!this.data.onlineBookingEnabled || this.createInFlight) return;
     const checkout = this.data.state.checkout; if (checkout.status !== "ready" || !canSubmit(this.data.state)) return;
     const validation = validateContactName(this.data.state.contactName); if (!validation.ok) { this.setData({ contactError: "请检查联系人姓名" }); return; }
     const request: CreateOrderInput = { slotId: checkout.value.slotId, checkoutVersion: checkout.value.version, contactName: validation.normalized };

@@ -109,8 +109,8 @@ def preflight(
         failures.append("POSTGRES_PASSWORD uses validation sentinel")
     if not COMMIT_SHA.fullmatch(values.get("APP_REVISION", "")):
         failures.append("APP_REVISION is not a 40-character commit SHA")
-    if values.get("PAYMENT_PROVIDER") != "wechat":
-        failures.append("PAYMENT_PROVIDER must be wechat for deployment")
+    if values.get("PAYMENT_PROVIDER") not in {"wechat", "disabled"}:
+        failures.append("PAYMENT_PROVIDER must be wechat or disabled for deployment")
     if values.get("ENABLE_MOCK_PAYMENT_PROVIDER", "").casefold() != "false":
         failures.append("ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment")
     if payment_provider == "wechat":

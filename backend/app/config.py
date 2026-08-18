@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     dashscope_moderation_model: str = "qwen3-vl-flash"
     moderation_reviewer_user_ids: Annotated[tuple[uuid.UUID, ...], NoDecode] = ()
     wechat_provider: Literal["development", "real"] = "development"
-    payment_provider: Literal["wechat", "mock"] = "wechat"
+    payment_provider: Literal["wechat", "mock", "disabled"] = "wechat"
     enable_mock_payment_provider: bool = False
     wechat_app_id: str | None = None
     wechat_app_secret: SecretStr | None = Field(default=None, repr=False)
@@ -530,29 +530,49 @@ class Settings(BaseSettings):
             raise ValueError("WECHAT_APP_ID is required for staging and production")
         return value
 
-    @field_validator("wechat_pay_merchant_id")
+    @field_validator("wechat_pay_merchant_id", mode="before")
     @classmethod
-    def validate_wechat_pay_merchant_id(cls, value: str | None) -> str | None:
-        if value is not None and (not value.isascii() or not value.isdigit()):
+    def validate_wechat_pay_merchant_id(
+        cls, value: object, info: ValidationInfo
+    ) -> str | None:
+        if cls._disabled_payment_empty(value, info):
+            return None
+        if value is not None and (
+            type(value) is not str or not value.isascii() or not value.isdigit()
+        ):
             raise cls._safe_value_error(
                 "wechat_pay_merchant_id", "WECHAT_PAY_MERCHANT_ID is invalid"
             )
         return value
 
-    @field_validator("wechat_pay_merchant_cert_serial")
+    @field_validator("wechat_pay_merchant_cert_serial", mode="before")
     @classmethod
-    def validate_wechat_pay_cert_serial(cls, value: str | None) -> str | None:
-        if value is not None and re.fullmatch(r"[0-9A-F]+", value, re.ASCII) is None:
+    def validate_wechat_pay_cert_serial(
+        cls, value: object, info: ValidationInfo
+    ) -> str | None:
+        if cls._disabled_payment_empty(value, info):
+            return None
+        if value is not None and (
+            type(value) is not str
+            or re.fullmatch(r"[0-9A-F]+", value, re.ASCII) is None
+        ):
             raise cls._safe_value_error(
                 "wechat_pay_merchant_cert_serial",
                 "WECHAT_PAY_MERCHANT_CERT_SERIAL is invalid",
             )
         return value
 
-    @field_validator("wechat_pay_public_key_id")
+    @field_validator("wechat_pay_public_key_id", mode="before")
     @classmethod
-    def validate_wechat_pay_public_key_id(cls, value: str | None) -> str | None:
-        if value is not None and re.fullmatch(r"PUB_KEY_ID_[0-9]+", value, re.ASCII) is None:
+    def validate_wechat_pay_public_key_id(
+        cls, value: object, info: ValidationInfo
+    ) -> str | None:
+        if cls._disabled_payment_empty(value, info):
+            return None
+        if value is not None and (
+            type(value) is not str
+            or re.fullmatch(r"PUB_KEY_ID_[0-9]+", value, re.ASCII) is None
+        ):
             raise cls._safe_value_error(
                 "wechat_pay_public_key_id", "WECHAT_PAY_PUBLIC_KEY_ID is invalid"
             )
@@ -570,6 +590,8 @@ class Settings(BaseSettings):
         if value is None:
             return None
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if cls._disabled_payment_empty(raw, info):
+            return None
         field_name = info.field_name or "wechat_pay_pem"
         label = "private key" if "private" in field_name else "public key"
         if type(raw) is not str:
@@ -587,10 +609,14 @@ class Settings(BaseSettings):
 
     @field_validator("wechat_pay_api_v3_key", mode="before")
     @classmethod
-    def validate_wechat_pay_api_v3_key(cls, value: object) -> SecretStr | None:
+    def validate_wechat_pay_api_v3_key(
+        cls, value: object, info: ValidationInfo
+    ) -> SecretStr | None:
         if value is None:
             return None
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if cls._disabled_payment_empty(raw, info):
+            return None
         if type(raw) is not str:
             raise cls._safe_value_error("wechat_pay_api_v3_key", "WeChat Pay API v3 key is invalid")
         try:
@@ -614,6 +640,8 @@ class Settings(BaseSettings):
         cls, value: object, info: ValidationInfo
     ) -> AnyHttpUrl | None:
         if value is None:
+            return None
+        if cls._disabled_payment_empty(value, info):
             return None
         field_name = info.field_name or "wechat_pay_notification_url"
         try:
@@ -700,6 +728,10 @@ class Settings(BaseSettings):
     @staticmethod
     def _is_deployed(info: ValidationInfo) -> bool:
         return info.data.get("app_env") in {"staging", "production"}
+
+    @staticmethod
+    def _disabled_payment_empty(value: object, info: ValidationInfo) -> bool:
+        return info.data.get("payment_provider") == "disabled" and value == ""
 
     @staticmethod
     def _normalize_host(value: str) -> str | None:

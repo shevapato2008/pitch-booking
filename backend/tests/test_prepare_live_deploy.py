@@ -139,6 +139,7 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert read_env_file(paths.miniprogram_env) == {
         "MINIPROGRAM_API_BASE_URL": "https://pitch-api-staging.modelstella.com",
         "MINIPROGRAM_TENCENT_MAP_KEY": TENCENT_KEY,
+        "MINIPROGRAM_PAYMENT_PROVIDER": "wechat",
     }
     assert stat.S_IMODE(paths.deploy_env.stat().st_mode) == 0o600
     assert stat.S_IMODE(paths.miniprogram_env.stat().st_mode) == 0o600
@@ -148,6 +149,31 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert paths.onboarding_upload_base_url == (
         "https://pitch-onboarding-private.oss-cn-hangzhou.aliyuncs.com"
     )
+    assert preflight(paths.deploy_env).ok is True
+
+
+def test_prepare_disabled_payment_omits_merchant_credentials_and_closes_miniprogram_booking(
+    tmp_path: Path,
+) -> None:
+    paths = prepare_live_deploy(
+        inputs(
+            tmp_path,
+            payment_provider="disabled",
+            wechat_pay_merchant_id="",
+            wechat_pay_merchant_cert_serial="",
+            wechat_pay_merchant_private_key_pem_base64="",
+            wechat_pay_public_key_id="",
+            wechat_pay_public_key_pem_base64="",
+            wechat_pay_api_v3_key="",
+            wechat_pay_payment_notification_url="",
+            wechat_pay_refund_notification_url="",
+        )
+    )
+
+    deploy = read_env_file(paths.deploy_env)
+    assert deploy["PAYMENT_PROVIDER"] == "disabled"
+    assert not any(key.startswith("WECHAT_PAY_") for key in deploy)
+    assert read_env_file(paths.miniprogram_env)["MINIPROGRAM_PAYMENT_PROVIDER"] == "disabled"
     assert preflight(paths.deploy_env).ok is True
 
 

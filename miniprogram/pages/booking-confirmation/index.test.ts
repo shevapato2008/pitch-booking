@@ -25,6 +25,25 @@ const sourceWith = (login: BookingDataSource["login"], createOrder: BookingDataS
 beforeEach(() => { resetBookingDataSourceForTesting(); });
 
 describe("booking confirmation lifecycle orchestration", () => {
+  test("disabled online booking never creates an order", async () => {
+    const createOrder = jest.fn<BookingDataSource["createOrder"]>();
+    registerBookingDataSource(sourceWith(
+      async () => ({ userId: "user", maskedPhone: "138****0000" }),
+      createOrder,
+    ));
+    const page = loadPage();
+    page.data.onlineBookingEnabled = false;
+    call(page, "onLoad", { slot_id: slotId });
+    await flush();
+    call(page, "onContactInput", { detail: { value: "张三" } });
+
+    await call(page, "onSubmit");
+
+    expect(createOrder).not.toHaveBeenCalled();
+    expect(page.data.canSubmit).toBe(false);
+    call(page, "onUnload");
+  });
+
   test("formats the frozen visual-reference checkout labels", async () => {
     registerBookingDataSource(sourceWith(async () => ({ userId: "user", maskedPhone: null })));
     const page = loadPage();

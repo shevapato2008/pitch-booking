@@ -139,6 +139,21 @@ def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> No
     assert result.failures == ()
 
 
+def test_preflight_accepts_disabled_payment_without_merchant_credentials(
+    tmp_path: Path,
+) -> None:
+    values = valid_local_environment()
+    values["PAYMENT_PROVIDER"] = "disabled"
+    for key in tuple(values):
+        if key.startswith("WECHAT_PAY_"):
+            values.pop(key)
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.ok is True
+    assert result.failures == ()
+
+
 def test_device_qr_preflight_rejects_unconfirmed_icp_filing(tmp_path: Path) -> None:
     result = preflight(
         write_env(tmp_path, valid_local_environment()),
@@ -215,7 +230,7 @@ def test_preflight_rejects_mock_payment_configuration(tmp_path: Path) -> None:
     result = preflight(write_env(tmp_path, values))
 
     assert set(result.failures) == {
-        "PAYMENT_PROVIDER must be wechat for deployment",
+        "PAYMENT_PROVIDER must be wechat or disabled for deployment",
         "ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment",
     }
 

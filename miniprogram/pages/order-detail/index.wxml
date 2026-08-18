@@ -72,7 +72,7 @@
     <button wx:if="{{showReselect}}" class="secondary-button" bindtap="onReselectSlot">重新选择时段</button>
   </view>
 
-  <view wx:if="{{showPaymentFooter}}" class="payment-footer">
+  <view wx:if="{{showPaymentFooter && (onlineBookingEnabled || status === 'booking-confirmed')}}" class="payment-footer">
     <view wx:if="{{status !== 'booking-confirmed'}}" class="footer-total">
       <text class="footer-total__label">合计</text>
       <text class="footer-total__amount">{{priceText}}</text>

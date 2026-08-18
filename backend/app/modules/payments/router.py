@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/v1/orders", tags=["payments"])
 def get_payment_provider(request: Request) -> PaymentProvider:
     provider = request.app.state.payment_provider
     if provider is None:
-        raise AppError(503, "PAYMENT_CREATE_FAILED", "支付创建失败，请稍后重试。")
+        raise AppError(503, "PAYMENT_PROVIDER_UNAVAILABLE", "在线支付暂未开放。")
     return cast(PaymentProvider, provider)
 
 
