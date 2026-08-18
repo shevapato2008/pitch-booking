@@ -25,8 +25,8 @@ from backend.app.modules.checkout.router import router as checkout_router
 from backend.app.modules.inventory.router import router as inventory_router
 from backend.app.modules.orders.router import align_order_list_openapi
 from backend.app.modules.orders.router import router as orders_router
+from backend.app.modules.payments import build_payment_provider
 from backend.app.modules.payments.development_router import router as development_payment_router
-from backend.app.modules.payments.mock_provider import MockPaymentProvider
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
 from backend.app.modules.platform_auth.router import router as platform_auth_router
@@ -80,7 +80,10 @@ def create_app(
     )
     provider_bundle = build_providers(resolved_settings)
     payment_provider = (
-        MockPaymentProvider() if resolved_settings.mock_payment_provider_enabled else None
+        build_payment_provider(resolved_settings)
+        if resolved_settings.mock_payment_provider_enabled
+        or resolved_settings.wechat_payment_configured
+        else None
     )
     owns_venue_media_store = venue_media_store is None
     owns_venue_onboarding_store = venue_onboarding_store is None
@@ -102,6 +105,9 @@ def create_app(
             )
     except BaseException:
         provider_bundle.close()
+        close_payment_provider = getattr(payment_provider, "close", None)
+        if close_payment_provider is not None:
+            close_payment_provider()
         raise
 
     @asynccontextmanager
@@ -110,6 +116,9 @@ def create_app(
             yield
         finally:
             provider_bundle.close()
+            close_payment_provider = getattr(payment_provider, "close", None)
+            if close_payment_provider is not None:
+                close_payment_provider()
             close_storage = getattr(resolved_media_store, "close", None)
             if owns_venue_media_store and close_storage is not None:
                 close_storage()
@@ -143,6 +152,7 @@ def create_app(
         application.state.phone_vault = phone_vault
         application.state.provider_bundle = provider_bundle
         application.state.payment_provider = payment_provider
+        application.state.refund_provider = payment_provider
         application.state.venue_media_store = resolved_media_store
         application.state.venue_onboarding_store = resolved_onboarding_store
         application.include_router(auth_router)
@@ -168,6 +178,9 @@ def create_app(
         )
     except BaseException:
         provider_bundle.close()
+        close_payment_provider = getattr(payment_provider, "close", None)
+        if close_payment_provider is not None:
+            close_payment_provider()
         close_storage = getattr(resolved_media_store, "close", None)
         if owns_venue_media_store and close_storage is not None:
             close_storage()
