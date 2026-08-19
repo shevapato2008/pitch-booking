@@ -48,6 +48,9 @@ button::after { border: 0; }
 .empty-state, .initial-state { display: flex; align-items: center; justify-content: center; border: 1rpx solid #d8e2eb; border-radius: 22rpx; background: #fff; color: #6f8296; text-align: center; }
 .empty-state { min-height: 180rpx; }
 .initial-state { min-height: 320rpx; margin: 36rpx 28rpx; flex-direction: column; gap: 24rpx; }
+.initial-state__title { color: #10243e; font-size: 34rpx; font-weight: 800; }
+.initial-state__copy { color: #6f8296; font-size: 25rpx; }
+.initial-state__action { width: 360rpx; }
 .loading-mark { width: 44rpx; height: 10rpx; border-radius: 999rpx; background: #38bdf8; }
 .list-end { height: 24rpx; }
 .inventory-footer { position: fixed; z-index: 4; right: 0; bottom: 0; left: 0; padding: 12rpx 28rpx calc(16rpx + env(safe-area-inset-bottom, 0px)); border-top: 1rpx solid #d9e3ec; background: rgba(255,255,255,.98); }

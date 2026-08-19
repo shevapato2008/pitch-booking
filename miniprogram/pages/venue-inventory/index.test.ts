@@ -30,7 +30,7 @@ beforeEach(() => {
   (globalThis as any).wx = {
     getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })),
     getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, bottom: 80, left: 278, right: 365, width: 87, height: 32 })),
-    navigateBack: jest.fn(async () => undefined), showToast: jest.fn(),
+    navigateBack: jest.fn(async () => undefined), redirectTo: jest.fn(async () => undefined), showToast: jest.fn(),
   };
 });
 
@@ -74,6 +74,28 @@ test("shows a first-load permission failure as a complete non-retryable error st
   registerInventoryDataSource(source);
   const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-16" });
   expect(page.data).toMatchObject({ mode: "load-error", statusMessage: "当前账号没有该场馆的库存管理权限", recoveryLabel: "", writeControlsDisabled: true, pageAction: { disabled: true } });
+});
+
+test("explains that inventory needs a physical pitch and links to pitch setup", async () => {
+  const source = sourceHarness();
+  source.getDay.mockRejectedValueOnce(Object.assign(new Error("pitch not found"), { code: "PITCH_NOT_FOUND" }));
+  registerInventoryDataSource(source);
+  const page = loadPage(); await page.onLoad({ venue_id: venueId, local_date: "2026-08-16" });
+
+  expect(page.data).toMatchObject({
+    mode: "pitch-required",
+    statusMessage: "尚未配置物理场地",
+    recoveryLabel: "",
+    writeControlsDisabled: true,
+    selectedPitch: null,
+    pageAction: { disabled: true },
+  });
+  page.onOpenPitchConfiguration();
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: `/pages/venue-pitch-setup/index?venue_id=${venueId}` });
+
+  const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
+  expect(markup).toContain("请先添加场地，再设置库存时段。");
+  expect(markup).toMatch(/mode === 'pitch-required'[\s\S]*bindtap="onOpenPitchConfiguration"/);
 });
 
 test("drops stale pitch/date responses and keeps the latest tuple", async () => {
@@ -135,7 +157,7 @@ test("production markup has real handlers and no preview-only controls", () => {
   const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/venue-inventory/index.wxss", "utf8");
   expect(markup).not.toContain("仅视觉预览"); expect(markup).not.toContain("onPreview");
-  for (const handler of ["onBack", "onOpenCalendar", "onSelectDate", "onConfirmDate", "onOpenPitchPicker", "onSelectPitch", "onSlotTap", "onOpenCreate", "onStartTimeChange", "onEndTimeChange", "onPriceInput", "onStatusSelect", "onCloseOverlay", "onSaveSlot", "onRetryRead", "onRetryMutation"]) expect(markup).toContain(handler);
+  for (const handler of ["onBack", "onOpenPitchConfiguration", "onOpenCalendar", "onSelectDate", "onConfirmDate", "onOpenPitchPicker", "onSelectPitch", "onSlotTap", "onOpenCreate", "onStartTimeChange", "onEndTimeChange", "onPriceInput", "onStatusSelect", "onCloseOverlay", "onSaveSlot", "onRetryRead", "onRetryMutation"]) expect(markup).toContain(handler);
   expect(styles).toMatch(/\.calendar-day\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
 });
 

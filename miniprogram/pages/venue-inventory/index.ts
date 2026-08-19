@@ -63,7 +63,7 @@ Page({
     try { await getInventoryDataSource().login(); await this.selectAndLoad(options.pitch_id, options.local_date || formatShanghaiLocalDate(new Date())); }
     catch (caught) { this.handleReadError(caught, true); }
     const pending = getInventoryMutationAttemptStore()?.load();
-    if (pending?.venueId === venueId && !this.mutationInFlight) { this.openEditorFromAttempt(pending); await this.runMutation(pending); }
+    if (this.data.mode !== "pitch-required" && pending?.venueId === venueId && !this.mutationInFlight) { this.openEditorFromAttempt(pending); await this.runMutation(pending); }
   },
   onUnload() { this.disposed = true; this.requestSequence += 1; },
   onBack() { if (!this.mutationInFlight && this.data.mode !== "save-result-unknown") void wx.navigateBack(); },
@@ -89,12 +89,16 @@ Page({
   },
   handleReadError(caught: unknown, initial: boolean) {
     const code = (caught as PageError).code;
+    if (code === "PITCH_NOT_FOUND") {
+      this.setData({ mode: "pitch-required", writeControlsDisabled: true, editor: null, sheet: null, selectedPitch: null, pitches: [], slots: [], slotCount: null, statusMessage: "尚未配置物理场地", recoveryLabel: "", pageAction: { disabled: true } }); return;
+    }
     if (code === "INVENTORY_FORBIDDEN") {
       this.setData({ mode: initial ? "load-error" : "permission-error", writeControlsDisabled: true, editor: null, sheet: null, slots: [], slotCount: null, statusMessage: "当前账号没有该场馆的库存管理权限", recoveryLabel: "", pageAction: { disabled: true } }); return;
     }
     this.setData({ mode: initial ? "load-error" : "partial-error", statusMessage: "库存加载失败，请重试", recoveryLabel: "重试", pageAction: { disabled: initial } });
   },
   onRetryRead() { if (this.data.mode !== "save-result-unknown" && this.lastRead) return this.selectAndLoad(this.lastRead.pitchId, this.lastRead.localDate); },
+  onOpenPitchConfiguration() { if (this.data.mode === "pitch-required" && this.data.venueId) void wx.redirectTo({ url: `/pages/venue-pitch-setup/index?venue_id=${encodeURIComponent(this.data.venueId)}` }); },
 
   onOpenPitchPicker() { if (!this.data.writeControlsDisabled) this.setData({ sheet: { kind: "pitch-picker", title: "选择物理场地", groups: groupsFor(this.data.pitches), selectedPitchId: this.data.selectedPitch?.id } }); },
   onSelectPitch(event: DatasetEvent) { const pitchId = event.currentTarget?.dataset?.pitchId; if (this.data.mode !== "save-result-unknown" && typeof pitchId === "string" && pitchId !== this.data.selectedPitch?.id) void this.selectAndLoad(pitchId, this.data.selectedDate); },

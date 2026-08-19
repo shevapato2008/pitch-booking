@@ -9,9 +9,17 @@
     </view>
   </view>
 
-  <view wx:if="{{mode === 'initial-loading' || mode === 'load-error'}}" class="initial-state">
-    <view wx:if="{{mode === 'initial-loading'}}" class="loading-mark"></view><text>{{statusMessage}}</text>
-    <button wx:if="{{recoveryLabel}}" class="secondary-button" bindtap="onRetryRead">{{recoveryLabel}}</button>
+  <view wx:if="{{mode === 'initial-loading' || mode === 'load-error' || mode === 'pitch-required'}}" class="initial-state">
+    <view wx:if="{{mode === 'initial-loading'}}" class="loading-mark"></view>
+    <block wx:if="{{mode === 'pitch-required'}}">
+      <text class="initial-state__title">{{statusMessage}}</text>
+      <text class="initial-state__copy">请先添加场地，再设置库存时段。</text>
+      <button class="secondary-button initial-state__action" bindtap="onOpenPitchConfiguration">去配置场地</button>
+    </block>
+    <block wx:else>
+      <text>{{statusMessage}}</text>
+      <button wx:if="{{recoveryLabel}}" class="secondary-button" bindtap="onRetryRead">{{recoveryLabel}}</button>
+    </block>
   </view>
 
   <view wx:else class="inventory-content">
@@ -34,7 +42,7 @@
     </scroll-view>
   </view>
 
-  <view class="inventory-footer"><button class="primary-button" bindtap="onOpenCreate" disabled="{{pageAction.disabled}}">＋ 新增时段</button></view>
+  <view wx:if="{{mode !== 'pitch-required'}}" class="inventory-footer"><button class="primary-button" bindtap="onOpenCreate" disabled="{{pageAction.disabled}}">＋ 新增时段</button></view>
 
   <block wx:if="{{sheet}}">
     <view class="sheet-scrim" bindtap="onCloseOverlay"></view>
