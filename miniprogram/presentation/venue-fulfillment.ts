@@ -44,7 +44,7 @@ export function presentVenueServiceDates(serviceDate: string): readonly VenueSer
   return [-1, 0, 1].map((offset) => {
     const value = shiftServiceDate(serviceDate, offset);
     const parts = dateParts(value);
-    return { serviceDate: value, weekday: offset === 0 ? "今天" : parts.weekday, day: parts.day, selected: offset === 0 };
+    return { serviceDate: value, weekday: parts.weekday, day: parts.day, selected: offset === 0 };
   });
 }
 

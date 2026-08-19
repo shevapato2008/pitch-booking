@@ -11,9 +11,9 @@ test("presents dates from the server service date without local eligibility", ()
   expect(shiftServiceDate("2026-03-01", -1)).toBe("2026-02-28");
   expect(shiftServiceDate("2024-03-01", -1)).toBe("2024-02-29");
   expect(presentVenueServiceDates(decoded.serviceDate)).toEqual([
-    expect.objectContaining({ serviceDate: "2026-07-27", selected: false }),
-    expect.objectContaining({ serviceDate: "2026-07-28", selected: true, weekday: "今天" }),
-    expect.objectContaining({ serviceDate: "2026-07-29", selected: false }),
+    expect.objectContaining({ serviceDate: "2026-07-27", selected: false, weekday: "周一" }),
+    expect.objectContaining({ serviceDate: "2026-07-28", selected: true, weekday: "周二" }),
+    expect.objectContaining({ serviceDate: "2026-07-29", selected: false, weekday: "周三" }),
   ]);
 });
 
