@@ -52,6 +52,7 @@ from backend.app.security.phone_vault import (
 
 DOWNLOAD_TTL_SECONDS = 300
 DOWNLOAD_TOKEN_PURPOSE = "platform-onboarding-evidence-download:v1"
+_MANAGEMENT_TIMEZONE = "Asia/Shanghai"
 
 
 @dataclass(frozen=True)
@@ -272,6 +273,7 @@ class PlatformOnboardingService:
         venue = self.repository.lock_venue(application.target_venue_id)
         if venue is None or not venue.is_active:
             raise _state_changed()
+        venue.timezone = _MANAGEMENT_TIMEZONE
         membership = self.repository.get_membership_for_update(
             venue_id=venue.id,
             user_id=application.applicant_user_id,
@@ -315,7 +317,7 @@ class PlatformOnboardingService:
             name=proposed.name,
             description="",
             price_advantage_text=None,
-            timezone=None,
+            timezone=_MANAGEMENT_TIMEZONE,
             business_hours_text=None,
             address=proposed.address,
             district_code=proposed.district_code,

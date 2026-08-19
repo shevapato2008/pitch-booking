@@ -414,11 +414,14 @@ def test_download_requires_evidence_attached_to_application_and_is_short_lived(
         assert missing.value.code == "ONBOARDING_APPLICATION_NOT_FOUND"
 
 
+@pytest.mark.parametrize("initial_timezone", [None, "", "UTC", "Asia/Shanghai"])
 def test_claim_approval_reactivates_one_membership_without_creating_venue(
     pg_engine: Engine,
+    initial_timezone: str | None,
 ) -> None:
     with Session(pg_engine) as session:
         target = _venue(name="可认领球场", address="天津市和平区认领路 1 号")
+        target.timezone = initial_timezone
         session.add(target)
         session.commit()
         application = _application(session, kind=VenueOnboardingKind.CLAIM, target=target)
@@ -457,6 +460,7 @@ def test_claim_approval_reactivates_one_membership_without_creating_venue(
         assert len(memberships) == 1
         assert memberships[0].is_active is True
         assert memberships[0].can_manage_inventory is True
+        assert target.timezone == "Asia/Shanghai"
 
 
 def test_create_approval_is_atomic_unlisted_and_decisions_are_immutable(
@@ -486,6 +490,7 @@ def test_create_approval_is_atomic_unlisted_and_decisions_are_immutable(
         assert first.approved_venue_id is not None
         venue = session.get_one(Venue, first.approved_venue_id)
         assert venue.booking_mode is BookingMode.DIRECTORY_ONLY
+        assert venue.timezone == "Asia/Shanghai"
         assert venue.is_listed is False
         assert venue.is_active is True
         assert venue.slug == f"venue-{application.id.hex}"
