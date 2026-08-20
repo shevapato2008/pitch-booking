@@ -47,3 +47,17 @@ viewport.
 
 This visual approval opens the backend phase only. It does not claim a production
 cancellation backend, Provider refund completion, or slot release on refund acceptance.
+
+## Post-approval implementation status
+
+The owner cancel API, durable refund enqueue/retry, strict Mini Program decoder and real
+HTTP adapter are now implemented through `d714cda`. A disposable-PostgreSQL, real-Uvicorn
+network smoke verified unpaid cancellation, paid refund enqueue and failed-attempt retry
+with `PAYMENT_PROVIDER=disabled`, zero Provider calls and zero terminal refund-success
+writes.
+
+This does not upgrade the Fixture screenshots into HTTP-backed visual evidence. The one
+required 375×812 HTTP-backed review and non-monetary iPhone cancellation journey remain
+pending on staging. Paid terminal refund acceptance remains
+`BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`; the current experience version must continue to
+hide refund entry points until its release boundary is deliberately changed and verified.
