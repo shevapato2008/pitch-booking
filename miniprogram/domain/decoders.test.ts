@@ -7,6 +7,7 @@ import {
   decodeCheckout,
   decodeOrder,
   decodeOrderList,
+  decodeOwnerOrder,
   decodePaymentLaunch,
   decodePaymentReconciliation,
   decodePhoneVerification,
@@ -81,6 +82,8 @@ const paymentPrepay = jest.requireActual<Record<string, unknown>>("../../contrac
 const paymentConfirming = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-confirming.json");
 const paymentAlreadyConfirmed = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-already-confirmed.json");
 const confirmedOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-confirmed.json");
+const cancelledOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-cancelled.json");
+const refundPendingOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-refund-pending.json");
 const paymentExceptionOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-payment-exception.json");
 const priceChanged = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-price-changed.json");
 const venueMap = jest.requireActual<Record<string, unknown>>("../../contracts/examples/venue-map.json");
@@ -97,6 +100,12 @@ const withoutKey = <T extends object>(value: T, key: keyof T): object => {
   Reflect.deleteProperty(copy, key);
   return copy;
 };
+const withoutKeys = (value: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+const lifecycleKeys = [
+  "cancel_requested_at", "cancelled_at", "checked_in_at", "completed_at", "allowed_actions",
+  "funding_alerts",
+] as const;
 const venueWithProfile = (patch: Partial<VenueExample["profile"]>) => ({
   ...venue,
   profile: { ...venue.profile, ...patch },
@@ -317,6 +326,32 @@ test.each([
   "COMPLETED",
 ] as const)("decodes lifecycle order summary status %s", (status) => {
   const original = (myOrdersReady.orders as Array<Record<string, unknown>>)[0];
+  const cancellation = ["CANCELLED", "REFUND_PENDING", "REFUND_FAILED", "REFUNDED"].includes(status)
+    ? {
+        cancel_requested_at: "2026-08-18T10:00:00+08:00",
+        cancelled_at: "2026-08-18T10:00:01+08:00",
+      }
+    : {};
+  const completion = status === "COMPLETED"
+    ? {
+        checked_in_at: "2026-08-23T19:00:00+08:00",
+        completed_at: "2026-08-23T20:00:00+08:00",
+      }
+    : {};
+  const allowedActions = status === "REFUND_PENDING"
+    ? {
+        can_pay: false, can_cancel: false, can_check_in: false, can_complete: false,
+        can_refund: false, blocked_reason: "REFUND_IN_PROGRESS",
+      }
+    : status === "REFUND_FAILED"
+      ? {
+          can_pay: false, can_cancel: true, can_check_in: false, can_complete: false,
+          can_refund: false, blocked_reason: null,
+        }
+      : {
+          can_pay: false, can_cancel: false, can_check_in: false, can_complete: false,
+          can_refund: false, blocked_reason: "ORDER_TERMINAL",
+        };
   const decoded = decodeOrderList({
     ...myOrdersReady,
     orders: [{
@@ -324,6 +359,9 @@ test.each([
       status,
       payment_confirming: false,
       closing_payment: false,
+      ...cancellation,
+      ...completion,
+      allowed_actions: allowedActions,
     }],
   });
 
@@ -382,6 +420,72 @@ test("keeps lifecycle additions closed while exposing the owner action boundary"
       funding_alerts: [{ code: "DUPLICATE_CHARGE_REFUND", status: "UNKNOWN" }],
     }],
   })).toThrow("INVALID_API_RESPONSE");
+});
+
+test("requires the complete closed owner lifecycle projection for detail and list reads", () => {
+  expect(decodeOwnerOrder(confirmedOrder)).toMatchObject({
+    status: "CONFIRMED",
+    cancelRequestedAt: null,
+    allowedActions: { canPay: false, canCancel: true },
+  });
+  expect(() => decodeOwnerOrder(pendingOrder)).toThrow("INVALID_API_RESPONSE");
+
+  const summary = (myOrdersReady.orders as Array<Record<string, unknown>>)[0];
+  expect(() => decodeOrderList({
+    ...myOrdersReady,
+    orders: [withoutKeys(summary, lifecycleKeys)],
+  })).toThrow("INVALID_API_RESPONSE");
+});
+
+test.each([
+  ["unknown status", { ...confirmedOrder, status: "CANCEL_REQUESTED" }],
+  ["unknown blocked reason", {
+    ...confirmedOrder,
+    allowed_actions: { ...(confirmedOrder.allowed_actions as object), can_cancel: false, blocked_reason: "LOCAL_GUESS" },
+  }],
+  ["private refund id", { ...refundPendingOrder, refund_case_id: "private" }],
+  ["private provider id", { ...refundPendingOrder, provider_refund_no: "private" }],
+] as const)("rejects non-closed owner detail data: %s", (_label, value) => {
+  expect(() => decodeOwnerOrder(value)).toThrow("INVALID_API_RESPONSE");
+});
+
+test.each([
+  ["confirmed can pay", {
+    ...confirmedOrder,
+    allowed_actions: { ...(confirmedOrder.allowed_actions as object), can_pay: true },
+  }],
+  ["pending actions disagree", {
+    ...confirmedOrder,
+    status: "PENDING_PAYMENT",
+    payment_state: null,
+    paid_at: null,
+    allowed_actions: { ...(confirmedOrder.allowed_actions as object), can_pay: true, can_cancel: false },
+  }],
+  ["confirming payment still exposes actions", {
+    ...confirmedOrder,
+    status: "PENDING_PAYMENT",
+    payment_state: "CONFIRMING",
+    payment_confirming: true,
+    paid_at: null,
+    allowed_actions: { ...(confirmedOrder.allowed_actions as object), can_pay: true, can_cancel: true },
+  }],
+  ["cancelled misses request time", { ...cancelledOrder, cancel_requested_at: null }],
+  ["refund pending misses cancellation time", { ...refundPendingOrder, cancelled_at: null }],
+  ["confirmed has cancellation time", {
+    ...confirmedOrder,
+    cancelled_at: "2026-07-27T12:05:00+08:00",
+  }],
+  ["completed misses check-in", {
+    ...confirmedOrder,
+    status: "COMPLETED",
+    completed_at: "2026-07-28T21:00:00+08:00",
+    allowed_actions: {
+      can_pay: false, can_cancel: false, can_check_in: false, can_complete: false,
+      can_refund: false, blocked_reason: "ORDER_TERMINAL",
+    },
+  }],
+] as const)("rejects contradictory owner lifecycle data: %s", (_label, value) => {
+  expect(() => decodeOwnerOrder(value)).toThrow("INVALID_API_RESPONSE");
 });
 
 test.each([

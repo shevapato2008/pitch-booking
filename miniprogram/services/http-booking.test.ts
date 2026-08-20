@@ -8,16 +8,41 @@ const sessionFixture = jest.requireActual<Record<string, unknown>>("../../contra
 const phoneFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/phone-verified.json");
 const checkoutFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/checkout-ready.json");
 const orderFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-pending.json");
+const ownerPendingFixture = {
+  ...orderFixture,
+  cancel_requested_at: null,
+  cancelled_at: null,
+  checked_in_at: null,
+  completed_at: null,
+  allowed_actions: {
+    can_pay: true,
+    can_cancel: true,
+    can_check_in: false,
+    can_complete: false,
+    can_refund: false,
+    blocked_reason: null,
+  },
+  funding_alerts: [],
+};
 const expiredOrderFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-expired.json");
 const priceChangedFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-price-changed.json");
 const myOrdersFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/my-orders-ready.json");
+const refundPendingFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-refund-pending.json");
 const serviceUnavailableFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-service-unavailable.json");
+const authRequiredFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-auth-required.json");
+const orderNotFoundFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-order-not-found.json");
+const cancellationConflicts = [
+  jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-order-state-changed.json"),
+  jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-idempotency-key-reused.json"),
+  jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-payment-result-pending.json"),
+  jest.requireActual<Record<string, unknown>>("../../contracts/examples/error-refund-in-progress.json"),
+] as const;
 
 describe("HTTP booking adapter", () => {
   test("logs in, saves the decoded token and uses Bearer for subsequent calls", async () => {
     const harness = createHarness();
     harness.post.mockResolvedValueOnce(sessionFixture).mockResolvedValueOnce(phoneFixture);
-    harness.get.mockResolvedValueOnce(checkoutFixture).mockResolvedValueOnce(orderFixture);
+    harness.get.mockResolvedValueOnce(checkoutFixture).mockResolvedValueOnce(ownerPendingFixture);
 
     await expect(harness.source.login()).resolves.toMatchObject({ userId: expect.any(String), maskedPhone: null });
     const rawPhoneDetail = { code: "phone-code", errMsg: "getPhoneNumber:ok" };
@@ -98,6 +123,90 @@ describe("HTTP booking adapter", () => {
     );
   });
 
+  test("cancels through the encoded owner route with no body and stable authorization headers", async () => {
+    const harness = createHarness();
+    await establishSession(harness);
+    harness.post.mockResolvedValueOnce(refundPendingFixture);
+    const attempt = { orderId: "order/id with space", idempotencyKey: "cancel-key-123456" };
+
+    await expect(harness.source.cancelOrder!(attempt)).resolves.toMatchObject({ status: "REFUND_PENDING" });
+
+    expect(harness.post).toHaveBeenLastCalledWith(
+      "/api/v1/orders/order%2Fid%20with%20space/cancel",
+      undefined,
+      {
+        Authorization: `Bearer ${sessionFixture.session_token}`,
+        "Idempotency-Key": "cancel-key-123456",
+      },
+    );
+  });
+
+  test("replays cancellation once after a decoded 401 without rotating the idempotency key", async () => {
+    const harness = createHarness();
+    await establishSession(harness);
+    const authRequired = { code: "HTTP_ERROR", statusCode: 401, data: authRequiredFixture };
+    harness.post
+      .mockRejectedValueOnce(authRequired)
+      .mockResolvedValueOnce(sessionFixture)
+      .mockResolvedValueOnce(refundPendingFixture);
+    const attempt = { orderId: "order-id", idempotencyKey: "same-cancel-key-123" };
+
+    await expect(harness.source.cancelOrder!(attempt)).resolves.toMatchObject({ status: "REFUND_PENDING" });
+
+    const calls = harness.post.mock.calls.filter(([path]) => path === "/api/v1/orders/order-id/cancel");
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual(calls[0]);
+  });
+
+  test.each(cancellationConflicts)("keeps decoded 409 cancellation conflict %# definitive", async (data) => {
+    const harness = createHarness();
+    await establishSession(harness);
+    harness.post.mockRejectedValueOnce({ code: "HTTP_ERROR", statusCode: 409, data });
+    const code = (data.error as { code: string }).code;
+
+    await expect(harness.source.cancelOrder!({
+      orderId: "order-id",
+      idempotencyKey: "conflict-key-123456",
+    })).rejects.toMatchObject({ code });
+  });
+
+  test("keeps a decoded 404 cancellation failure definitive", async () => {
+    const harness = createHarness();
+    await establishSession(harness);
+    harness.post.mockRejectedValueOnce({ code: "HTTP_ERROR", statusCode: 404, data: orderNotFoundFixture });
+
+    await expect(harness.source.cancelOrder!({
+      orderId: "order-id",
+      idempotencyKey: "missing-key-123456",
+    })).rejects.toMatchObject({ code: "ORDER_NOT_FOUND" });
+  });
+
+  test.each([
+    ["network failure", { code: "NETWORK_ERROR", errMsg: "offline" }],
+    ["timeout", { code: "REQUEST_TIMEOUT", errMsg: "timeout" }],
+    ["decoded 5xx", { code: "HTTP_ERROR", statusCode: 503, data: serviceUnavailableFixture }],
+    ["malformed 409", { code: "HTTP_ERROR", statusCode: 409, data: { malformed: true } }],
+  ] as const)("maps cancellation %s to an unknown result", async (_label, failure) => {
+    const harness = createHarness();
+    await establishSession(harness);
+    harness.post.mockRejectedValueOnce(failure);
+
+    await expect(harness.source.cancelOrder!({
+      orderId: "order-id",
+      idempotencyKey: "unknown-key-123456",
+    })).rejects.toMatchObject({ code: "CANCELLATION_RESULT_UNKNOWN" });
+  });
+
+  test("maps a malformed cancellation 2xx to unknown so the exact attempt can be resolved", async () => {
+    const harness = createHarness();
+    await establishSession(harness);
+    harness.post.mockResolvedValueOnce({ malformed: true });
+    const attempt = { orderId: "order-id", idempotencyKey: "malformed-key-123456" };
+
+    await expect(harness.source.cancelOrder!(attempt))
+      .rejects.toMatchObject({ code: "CANCELLATION_RESULT_UNKNOWN" });
+  });
+
   test("decodes every success and error response before exposing it", async () => {
     const harness = createHarness();
     await establishSession(harness);
@@ -138,7 +247,7 @@ describe("HTTP booking adapter", () => {
     harness.get.mockRejectedValueOnce({
       code: "HTTP_ERROR", statusCode: 401,
       data: { error: { code: "AUTH_REQUIRED", message: "do not parse me", request_id: "req", details: {} } },
-    }).mockResolvedValueOnce(orderFixture);
+    }).mockResolvedValueOnce(ownerPendingFixture);
     harness.post.mockResolvedValueOnce(sessionFixture);
 
     await expect(harness.source.getOrder("order")).resolves.toMatchObject({ status: "PENDING_PAYMENT" });
@@ -185,7 +294,7 @@ describe("HTTP booking adapter", () => {
         harness.post.mockResolvedValueOnce(sessionFixture);
         await expect(harness.source.getCheckout("slot")).resolves.toMatchObject({ version: 12 });
       } else if (operation === "detail") {
-        harness.get.mockRejectedValueOnce(authRequired).mockResolvedValueOnce(orderFixture);
+        harness.get.mockRejectedValueOnce(authRequired).mockResolvedValueOnce(ownerPendingFixture);
         harness.post.mockResolvedValueOnce(sessionFixture);
         await expect(harness.source.getOrder("order")).resolves.toMatchObject({ status: "PENDING_PAYMENT" });
       } else if (operation === "phone") {
@@ -231,7 +340,7 @@ describe("HTTP booking adapter", () => {
       .mockRejectedValueOnce(authRequired)
       .mockRejectedValueOnce(authRequired)
       .mockResolvedValueOnce(checkoutFixture)
-      .mockResolvedValueOnce(orderFixture);
+      .mockResolvedValueOnce(ownerPendingFixture);
     const refresh = deferred<unknown>();
     harness.post.mockImplementationOnce(() => refresh.promise);
 

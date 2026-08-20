@@ -299,6 +299,48 @@ describe("OrderDetailPoller", () => {
     expect(time.pendingTaskCount).toBe(0);
   });
 
+  test("keeps owner lifecycle manual refresh available after a failed authoritative read", async () => {
+    const time = new ManualTime("2026-07-28T18:00:00+08:00");
+    const refundPending = {
+      ...PAYMENT_SCENARIOS.confirmed,
+      status: "REFUND_PENDING",
+      cancelRequestedAt: "2026-07-28T18:01:00+08:00",
+      cancelledAt: "2026-07-28T18:01:00+08:00",
+      allowedActions: {
+        canPay: false,
+        canCancel: false,
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: "REFUND_IN_PROGRESS",
+      },
+    } as OrderView;
+    const states: OrderDetailPollState[] = [];
+    const poller = new OrderDetailPoller({
+      getOrder: async () => { throw new Error("offline"); },
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.followOwnerLifecycle(refundPending);
+    await time.advance(30_000);
+    expect(states[states.length - 1]).toMatchObject({
+      status: "refund-pending",
+      showManualRefresh: true,
+    });
+
+    const statesBeforeRefresh = states.length;
+    poller.reconcile();
+    await flush();
+
+    expect(states).toHaveLength(statesBeforeRefresh + 1);
+    expect(states[states.length - 1]).toMatchObject({
+      status: "refund-pending",
+      showManualRefresh: true,
+    });
+  });
+
   test.each([
     ["CANCELLED", "cancelled"],
     ["REFUND_FAILED", "refund-failed"],

@@ -129,6 +129,96 @@ interface DecodedLifecycleProjection {
   readonly fundingAlerts: readonly FundingAlert[];
 }
 
+const OWNER_CANCELLATION_ERROR_CODES = [
+  "AUTH_REQUIRED",
+  "ORDER_NOT_FOUND",
+  "ORDER_STATE_CHANGED",
+  "IDEMPOTENCY_KEY_REUSED",
+  "PAYMENT_RESULT_PENDING",
+  "REFUND_IN_PROGRESS",
+  "SERVICE_UNAVAILABLE",
+] as const;
+
+export type OwnerCancellationErrorCode = typeof OWNER_CANCELLATION_ERROR_CODES[number];
+
+function isOwnerActionProjection(
+  status: OrderSummaryStatus,
+  cancelRequestedAt: string | null,
+  actions: AllowedOrderActions,
+  paymentConfirming: boolean,
+  closingPayment: boolean,
+): boolean {
+  if (actions.canCheckIn || actions.canComplete || actions.canRefund) return false;
+  const blocked = actions.blockedReason;
+  if (status === "PENDING_PAYMENT") {
+    if (paymentConfirming || closingPayment) {
+      return !actions.canPay && !actions.canCancel && blocked === "PAYMENT_RESULT_PENDING";
+    }
+    if (cancelRequestedAt !== null) {
+      return !actions.canPay && !actions.canCancel && blocked === "PAYMENT_RESULT_PENDING";
+    }
+    return (actions.canPay && actions.canCancel && blocked === null)
+      || (!actions.canPay && !actions.canCancel && blocked === "PAYMENT_RESULT_PENDING");
+  }
+  if (status === "CONFIRMED") {
+    if (actions.canPay) return false;
+    if (cancelRequestedAt !== null) {
+      return !actions.canCancel
+        && (blocked === "REFUND_IN_PROGRESS" || blocked === "CANCELLATION_REQUIRES_SUPPORT");
+    }
+    return (actions.canCancel && blocked === null)
+      || (!actions.canCancel && blocked === "CANCELLATION_WINDOW_CLOSED");
+  }
+  if (status === "REFUND_FAILED") {
+    return !actions.canPay && actions.canCancel && blocked === null;
+  }
+  if (status === "REFUND_PENDING") {
+    return !actions.canPay && !actions.canCancel && blocked === "REFUND_IN_PROGRESS";
+  }
+  return !actions.canPay && !actions.canCancel && blocked === "ORDER_TERMINAL";
+}
+
+function validateOwnerLifecycleProjection(
+  status: OrderSummaryStatus,
+  lifecycle: DecodedLifecycleProjection,
+  paymentConfirming: boolean,
+  closingPayment: boolean,
+  path: string,
+): void {
+  const cancellationStatus = status === "CANCELLED" || status === "REFUND_PENDING"
+    || status === "REFUND_FAILED" || status === "REFUNDED";
+  if (cancellationStatus) {
+    if (lifecycle.cancelRequestedAt === null) invalid(`${path}.cancel_requested_at`);
+    if (lifecycle.cancelledAt === null) invalid(`${path}.cancelled_at`);
+    if (rfc3339Before(lifecycle.cancelledAt, lifecycle.cancelRequestedAt)) {
+      invalid(`${path}.cancelled_at`);
+    }
+  } else if (lifecycle.cancelledAt !== null) {
+    invalid(`${path}.cancelled_at`);
+  }
+
+  if (lifecycle.checkedInAt !== null && status !== "CONFIRMED" && status !== "COMPLETED") {
+    invalid(`${path}.checked_in_at`);
+  }
+  if (status === "COMPLETED") {
+    if (lifecycle.checkedInAt === null) invalid(`${path}.checked_in_at`);
+    if (lifecycle.completedAt === null) invalid(`${path}.completed_at`);
+    if (rfc3339Before(lifecycle.completedAt, lifecycle.checkedInAt)) invalid(`${path}.completed_at`);
+  } else if (lifecycle.completedAt !== null) {
+    invalid(`${path}.completed_at`);
+  }
+
+  if (!isOwnerActionProjection(
+    status,
+    lifecycle.cancelRequestedAt,
+    lifecycle.allowedActions,
+    paymentConfirming,
+    closingPayment,
+  )) {
+    invalid(`${path}.allowed_actions`);
+  }
+}
+
 function decodeLifecycleProjection(object: Record<string, unknown>, path: string): DecodedLifecycleProjection {
   const timestamp = (key: typeof ORDER_LIFECYCLE_KEYS[number]): string | null => {
     const value = object[key];
@@ -331,19 +421,39 @@ export function decodeOrder(value: unknown): OrderView {
   return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
 }
 
+export function decodeOwnerOrder(value: unknown): OrderView {
+  for (const key of ORDER_LIFECYCLE_KEYS) {
+    if (!hasOwn(value, key)) invalid(`$.${key}`);
+  }
+  const order = decodeOrder(value);
+  if (order.cancelRequestedAt === undefined || order.cancelledAt === undefined
+    || order.checkedInAt === undefined || order.completedAt === undefined
+    || order.allowedActions === undefined || order.fundingAlerts === undefined) {
+    invalid("$");
+  }
+  validateOwnerLifecycleProjection(order.status, {
+    cancelRequestedAt: order.cancelRequestedAt,
+    cancelledAt: order.cancelledAt,
+    checkedInAt: order.checkedInAt,
+    completedAt: order.completedAt,
+    allowedActions: order.allowedActions,
+    fundingAlerts: order.fundingAlerts,
+  }, order.paymentConfirming ?? false, order.closingPayment, "$");
+  return order;
+}
+
 const ORDER_SUMMARY_KEYS = [
   "id", "order_number", "status", "venue", "pitch", "starts_at", "ends_at",
   "price_cents", "currency", "created_at", "expires_at", "payment_confirming", "closing_payment",
 ] as const;
 
 function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
-  const expanded = hasOwn(value, "allowed_actions");
   const object = exactObject(
     value,
-    expanded ? [...ORDER_SUMMARY_KEYS, ...ORDER_LIFECYCLE_KEYS] : ORDER_SUMMARY_KEYS,
+    [...ORDER_SUMMARY_KEYS, ...ORDER_LIFECYCLE_KEYS],
     path,
   );
-  const lifecycle = expanded ? decodeLifecycleProjection(object, path) : {};
+  const lifecycle = decodeLifecycleProjection(object, path);
   const venue = exactObject(object.venue, ["id", "name"], `${path}.venue`);
   const pitch = exactObject(object.pitch, ["id", "name"], `${path}.pitch`);
   const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
@@ -355,6 +465,7 @@ function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
   const closingPayment = booleanAt(object.closing_payment, `${path}.closing_payment`);
   if (["CANCELLED", "REFUND_PENDING", "REFUND_FAILED", "REFUNDED", "COMPLETED"].includes(status)
     && (paymentConfirming || closingPayment)) invalid(`${path}.status`);
+  validateOwnerLifecycleProjection(status, lifecycle, paymentConfirming, closingPayment, path);
   return {
     orderId: uuidAt(object.id, `${path}.id`),
     orderNumber: stringAt(object.order_number, `${path}.order_number`),
@@ -377,6 +488,16 @@ function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
     closingPayment,
     ...lifecycle,
   };
+}
+
+export function decodeOwnerCancellationError(value: unknown): { readonly code: OwnerCancellationErrorCode } {
+  const envelope = exactObject(value, ["error"], "$");
+  const error = exactObject(envelope.error, ["code", "message", "request_id", "details"], "$.error");
+  const code = enumAt(error.code, OWNER_CANCELLATION_ERROR_CODES, "$.error.code");
+  stringAt(error.message, "$.error.message");
+  stringAt(error.request_id, "$.error.request_id");
+  exactObject(error.details, [], "$.error.details");
+  return { code };
 }
 
 export function decodeOrderList(value: unknown): OrderListView {

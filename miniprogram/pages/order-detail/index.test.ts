@@ -181,9 +181,8 @@ describe("owner cancellation orchestration", () => {
     call(page, "onUnload");
   });
 
-  test("requires a later authoritative read before displaying a cancellation terminal state", async () => {
+  test("accepts a decoded 200 CANCELLED response without locally inventing a terminal state", async () => {
     const pendingOrder = ownerPending(false);
-    const confirmedOrder = ownerConfirmed();
     const cancelled = {
       ...pendingOrder,
       status: "CANCELLED",
@@ -194,35 +193,50 @@ describe("owner cancellation orchestration", () => {
       cancelledAt: "2026-08-18T12:00:01+08:00",
       allowedActions: ownerActions(false, false, "ORDER_TERMINAL"),
     } as Extract<OrderView, { status: "CANCELLED" }>;
+
+    registerBookingDataSource({
+      ...baseSource(async () => pendingOrder),
+      cancelOrder: async () => cancelled,
+    });
+    (globalThis as unknown as { wx: object }).wx = {
+      showModal: jest.fn(async () => ({ confirm: true, cancel: false })),
+    };
+    const page = loadPage();
+    call(page, "onLoad", { order_id: pendingOrder.orderId });
+    await flush();
+
+    await call(page, "onCancelOrder");
+
+    expect(page.data).toMatchObject({ status: "cancelled", cancellationUnknown: false });
+    expect(page.data.order).toBe(cancelled);
+    expect(page.cancellationKey).toBeNull();
+    call(page, "onUnload");
+  });
+
+  test("requires a later authoritative read for an out-of-contract terminal cancellation response", async () => {
+    const confirmedOrder = ownerConfirmed();
     const refunded = {
       ...refundPendingFrom(confirmedOrder),
       status: "REFUNDED",
       allowedActions: ownerActions(false, false, "ORDER_TERMINAL"),
     } as Extract<OrderView, { status: "REFUNDED" }>;
+    registerBookingDataSource({
+      ...baseSource(async () => confirmedOrder),
+      cancelOrder: async () => refunded,
+    });
+    (globalThis as unknown as { wx: object }).wx = {
+      showModal: jest.fn(async () => ({ confirm: true, cancel: false })),
+    };
+    const page = loadPage();
+    call(page, "onLoad", { order_id: confirmedOrder.orderId });
+    await flush();
 
-    for (const [initial, immediateTerminal, expectedStatus] of [
-      [pendingOrder, cancelled, "pending-payment"],
-      [confirmedOrder, refunded, "booking-confirmed"],
-    ] as const) {
-      resetBookingDataSourceForTesting();
-      registerBookingDataSource({
-        ...baseSource(async () => initial),
-        cancelOrder: async () => immediateTerminal,
-      });
-      (globalThis as unknown as { wx: object }).wx = {
-        showModal: jest.fn(async () => ({ confirm: true, cancel: false })),
-      };
-      const page = loadPage();
-      call(page, "onLoad", { order_id: initial.orderId });
-      await flush();
+    await call(page, "onCancelOrder");
 
-      await call(page, "onCancelOrder");
-
-      expect(page.data).toMatchObject({ status: expectedStatus, cancellationUnknown: true });
-      expect(page.cancellationKey).not.toBeNull();
-      expect((page.data.order as OrderView).status).not.toBe(immediateTerminal.status);
-      call(page, "onUnload");
-    }
+    expect(page.data).toMatchObject({ status: "booking-confirmed", cancellationUnknown: true });
+    expect(page.cancellationKey).not.toBeNull();
+    expect((page.data.order as OrderView).status).not.toBe("REFUNDED");
+    call(page, "onUnload");
   });
 
   test("shows pay only when canPay while retaining a real secondary cancellation", async () => {
@@ -359,6 +373,130 @@ describe("owner cancellation orchestration", () => {
     await operation;
 
     expect(page.data.status).toBe("booking-confirmed");
+    call(page, "onUnload");
+  });
+
+  test("hide and show invalidate a confirmation modal opened by the older page visibility", async () => {
+    const confirmed = ownerConfirmed();
+    const oldModal = deferred<{ confirm: boolean; cancel: boolean }>();
+    const currentModal = deferred<{ confirm: boolean; cancel: boolean }>();
+    const cancelOrder = jest.fn(async () => refundPendingFrom(confirmed));
+    registerBookingDataSource({ ...baseSource(async () => confirmed), cancelOrder });
+    (globalThis as unknown as { wx: object }).wx = {
+      showModal: jest.fn()
+        .mockImplementationOnce(() => oldModal.promise)
+        .mockImplementationOnce(() => currentModal.promise),
+    };
+    const page = loadPage();
+    call(page, "onLoad", { order_id: confirmed.orderId });
+    await flush();
+
+    const operation = call(page, "onCancelOrder") as Promise<void>;
+    await flush();
+    call(page, "onHide");
+    call(page, "onShow");
+    await flush();
+    const currentOperation = call(page, "onCancelOrder") as Promise<void>;
+    await flush();
+    oldModal.resolve({ confirm: true, cancel: false });
+    await operation;
+
+    expect(cancelOrder).not.toHaveBeenCalled();
+    expect(page.cancellationInFlight).toBe(true);
+    expect(page.data.cancellationBusy).toBe(true);
+    currentModal.resolve({ confirm: false, cancel: true });
+    await currentOperation;
+    call(page, "onUnload");
+  });
+
+  test("clears a retained cancellation key when any authoritative projection removes cancel authority", async () => {
+    const confirmed = ownerConfirmed();
+    const page = loadPage();
+    page.visible = true;
+    page.cancellationKey = "retained-cancel-key";
+
+    call(page, "applyPollState", {
+      status: "refund-pending",
+      order: refundPendingFrom(confirmed),
+      showManualRefresh: false,
+    });
+
+    expect(page.cancellationKey).toBeNull();
+  });
+
+  test("keeps the real lifecycle refresh button after its authoritative GET fails", async () => {
+    jest.useFakeTimers();
+    const confirmed = ownerConfirmed();
+    const refundPending = refundPendingFrom(confirmed);
+    let reads = 0;
+    registerBookingDataSource({
+      ...baseSource(async () => {
+        reads += 1;
+        if (reads === 1) return refundPending;
+        throw new Error("offline");
+      }),
+      cancelOrder: async () => refundPending,
+    });
+    const page = loadPage();
+    call(page, "onLoad", { order_id: confirmed.orderId });
+    await flush();
+    jest.advanceTimersByTime(30_000);
+    await flush();
+    expect(page.data.showLifecycleRefresh).toBe(true);
+
+    call(page, "onRefreshLifecycle");
+    await flush();
+
+    expect(page.data.showLifecycleRefresh).toBe(true);
+    call(page, "onUnload");
+    jest.useRealTimers();
+  });
+
+  test("does not start payment while a cancellation confirmation is in flight", async () => {
+    const initial = ownerPending(true);
+    const modal = deferred<{ confirm: boolean; cancel: boolean }>();
+    const createPayment = jest.fn<PaymentDataSource["createPayment"]>();
+    registerPaymentRuntime({ getOrder: async () => initial, createPayment });
+    registerBookingDataSource({
+      ...baseSource(async () => initial),
+      cancelOrder: async () => initial,
+    });
+    (globalThis as unknown as { wx: object }).wx = { showModal: jest.fn(() => modal.promise) };
+    const page = loadPage();
+    call(page, "onLoad", { order_id: initial.orderId });
+    await flush();
+
+    const cancellation = call(page, "onCancelOrder") as Promise<void>;
+    await flush();
+    await call(page, "onPay");
+
+    expect(createPayment).not.toHaveBeenCalled();
+    modal.resolve({ confirm: false, cancel: true });
+    await cancellation;
+    call(page, "onUnload");
+  });
+
+  test("hides and guards cancellation while payment creation is active", async () => {
+    const initial = ownerPending(true);
+    const payment = deferred<PaymentLaunchResult>();
+    const cancelOrder = jest.fn(async () => initial);
+    const showModal = jest.fn(async () => ({ confirm: true, cancel: false }));
+    registerPaymentRuntime({ getOrder: async () => initial, createPayment: () => payment.promise });
+    registerBookingDataSource({ ...baseSource(async () => initial), cancelOrder });
+    (globalThis as unknown as { wx: object }).wx = { showModal };
+    const page = loadPage();
+    call(page, "onLoad", { order_id: initial.orderId });
+    await flush();
+
+    const paying = call(page, "onPay") as Promise<void>;
+    expect(page.data.showCancelAction).toBe(false);
+    await call(page, "onCancelOrder");
+    expect(showModal).not.toHaveBeenCalled();
+    expect(cancelOrder).not.toHaveBeenCalled();
+
+    call(page, "onHide");
+    payment.resolve({ outcome: "PAYMENT_CONFIRMING", paymentId: "payment-current" });
+    await paying;
     call(page, "onUnload");
   });
 

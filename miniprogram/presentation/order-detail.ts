@@ -438,6 +438,12 @@ export class OrderDetailPoller {
       }
       if (this.isCurrent(generation) && this.pollMode === "owner-lifecycle") {
         this.ownerLifecycleManual = true;
+        const order = this.ownerLifecycleOrder;
+        if (order?.status === "PENDING_PAYMENT") {
+          this.options.onState({ status: "cancellation-confirming", order, showManualRefresh: true });
+        } else if (order?.status === "REFUND_PENDING") {
+          this.options.onState({ status: "refund-pending", order, showManualRefresh: true });
+        }
       }
     } finally {
       if (this.isCurrent(generation)) this.requestInFlight = false;

@@ -70,7 +70,8 @@ function isCancellationAcknowledgement(
 ): boolean {
   if (result.orderId !== before.orderId) return false;
   if (before.status === "PENDING_PAYMENT") {
-    return result.status === "PENDING_PAYMENT" && result.cancelRequestedAt != null;
+    return result.status === "CANCELLED"
+      || (result.status === "PENDING_PAYMENT" && result.cancelRequestedAt != null);
   }
   return (before.status === "CONFIRMED" || before.status === "REFUND_FAILED")
     && result.status === "REFUND_PENDING";
@@ -246,7 +247,9 @@ Page({
 
   ownerActionUi(order: OrderView | PaymentOrderView, showPaymentFooter: boolean) {
     const lifecycle = presentOwnerOrderLifecycle(order);
-    const cancelAction = getCancellationSource() ? lifecycle.cancelAction : null;
+    const cancelAction = getCancellationSource() && !isActivePaymentOperation(this.paymentState)
+      ? lifecycle.cancelAction
+      : null;
     return {
       heroTitle: lifecycle.heroTitle,
       showPaymentFooter,
@@ -476,6 +479,7 @@ Page({
     if (!this.data.onlineBookingEnabled) return;
     const bindings = getPaymentBindings();
     if (!bindings
+      || this.cancellationInFlight
       || this.terminalOrderStatus
       || this.data.status !== "payment-pending"
       || !this.data.showPaymentFooter
@@ -563,7 +567,8 @@ Page({
   },
 
   async onCancelOrder(): Promise<void> {
-    if (this.cancellationInFlight || this.data.cancellationUnknown) return;
+    if (this.cancellationInFlight || this.data.cancellationUnknown
+      || isActivePaymentOperation(this.paymentState)) return;
     const source = getCancellationSource();
     const order = this.data.order;
     if (!source || !order) return;
@@ -571,6 +576,7 @@ Page({
     if (!action) return;
 
     this.cancellationInFlight = true;
+    let operationGeneration = this.cancellationOperationGeneration;
     this.setData({ cancellationBusy: true, cancellationError: "" });
     try {
       const decision = await wx.showModal({
@@ -579,12 +585,13 @@ Page({
         confirmText: "确认",
         cancelText: "暂不",
       });
-      if (!decision.confirm || !this.visible) return;
+      if (!decision.confirm || !this.isCurrentCancellationOperation(operationGeneration)) return;
       this.poller?.cancel();
       const idempotencyKey = this.cancellationKey
         ?? `cancel-order-${Date.now()}-${++this.cancellationClickSerial}`;
       this.cancellationKey = idempotencyKey;
       const generation = ++this.cancellationOperationGeneration;
+      operationGeneration = generation;
       try {
         const result = await source.cancelOrder({ orderId: order.orderId, idempotencyKey });
         if (!this.isCurrentCancellationOperation(generation)) return;
@@ -625,8 +632,10 @@ Page({
         }
       }
     } finally {
-      this.cancellationInFlight = false;
-      if (this.visible) this.setData({ cancellationBusy: false });
+      if (this.isCurrentCancellationOperation(operationGeneration)) {
+        this.cancellationInFlight = false;
+        if (this.visible) this.setData({ cancellationBusy: false });
+      }
     }
   },
 
@@ -694,6 +703,9 @@ Page({
       || order.status === "REFUND_FAILED" || order.status === "REFUNDED"
       || order.status === "COMPLETED") {
       this.terminalOrderStatus = order.status;
+    }
+    if (order.allowedActions && order.allowedActions.canCancel !== true) {
+      this.cancellationKey = null;
     }
     this.orderProjectionRevision += 1;
     return true;
