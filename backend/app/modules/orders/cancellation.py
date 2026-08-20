@@ -200,6 +200,18 @@ class OrderCancellationService:
         ):
             raise _order_not_found()
 
+        request_sha256 = _request_sha256(order_id)
+        record, claimed = self._order_repository.claim_idempotency(
+            user_id=user_id,
+            operation=CANCEL_ORDER_OPERATION,
+            key=idempotency_key,
+            request_sha256=request_sha256,
+        )
+        if not claimed:
+            result = _replay_idempotency(record, request_sha256)
+            self._order_repository.commit()
+            return result
+
         applied_payments = tuple(
             payment
             for payment in graph.payments
@@ -222,18 +234,6 @@ class OrderCancellationService:
             user_id=user_id,
         ):
             raise _order_state_changed()
-
-        request_sha256 = _request_sha256(order_id)
-        record, claimed = self._order_repository.claim_idempotency(
-            user_id=user_id,
-            operation=CANCEL_ORDER_OPERATION,
-            key=idempotency_key,
-            request_sha256=request_sha256,
-        )
-        if not claimed:
-            result = _replay_idempotency(record, request_sha256)
-            self._order_repository.commit()
-            return result
 
         now = self._now()
         decision = decide_owner_cancellation(

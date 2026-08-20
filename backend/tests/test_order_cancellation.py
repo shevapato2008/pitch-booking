@@ -823,6 +823,46 @@ def test_confirmed_refund_replays_same_key_and_rejects_new_key_while_active(
         assert attempt.merchant_refund_no == first_merchant_refund_no
 
 
+def test_confirmed_refund_replays_same_key_after_authoritative_completion(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+
+    with _client(pg_engine) as client:
+        first = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+        assert first.status_code == 202
+
+        with Session(pg_engine) as session:
+            order = session.get_one(Order, seeded.order_id)
+            slot = session.get_one(Slot, seeded.slot_id)
+            attempt = session.scalar(select(RefundAttempt))
+            assert attempt is not None
+            order.status = OrderStatus.REFUNDED
+            slot.status = SlotStatus.AVAILABLE
+            attempt.status = RefundAttemptStatus.SUCCESS
+            attempt.provider_refund_no = "authoritative-refund-number"
+            attempt.refunded_at = NOW + timedelta(minutes=1)
+            attempt.next_reconcile_at = None
+            session.commit()
+
+        replay = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert replay.status_code == 202
+    assert replay.content == first.content
+    with Session(pg_engine) as session:
+        assert session.get_one(Order, seeded.order_id).status is OrderStatus.REFUNDED
+        assert session.get_one(Slot, seeded.slot_id).status is SlotStatus.AVAILABLE
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 1
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 1
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 1
+
+
 def test_failed_owner_refund_retries_in_the_same_case_without_mutating_attempt_one(
     pg_engine: Engine,
 ) -> None:
@@ -1022,6 +1062,7 @@ def test_confirmed_cancellation_rejects_a_corrupted_multiple_main_graph(
         graph_calls += 1
         graph = original_lock(repository, payment_id)
         extra = next(payment for payment in graph.payments if payment.id != payment_id)
+        repository.session.expunge(extra)
         extra.applied_to_order_at = NOW
         return graph
 
