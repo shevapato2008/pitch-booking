@@ -10,13 +10,40 @@
 
 **Design:** `docs/superpowers/specs/2026-08-18-order-lifecycle-and-refund-design.md`；延续 `docs/superpowers/specs/2026-08-18-my-orders-design.md` 已确认的 375×812 视觉系统。
 
+### 2026-08-20 root integration execution correction
+
+本次从综合分支 `feature/order-wave-integration` 继续执行。旧预览分支
+`feature/user-order-cancellation-refund@5cd06af` 仅作为已提交 handoff 参考，不直接 merge 或
+整文件复制：它早于订单详情无效 CTA 修复和 My Orders / Venue Fulfillment Fixture 清理，三方合并
+存在真实内容冲突。root 必须在当前综合基线手工移植 cancellation 专属 Fixture、fragment、测试和仍适用的
+presentation/page 增量，保留上述两项既有结果。
+
+当前代码还有三项机械计划漂移，按以下最小边界校正，产品规格不变：
+
+1. 计划中的 `backend/tests/test_order_lifecycle.py` 已拆分为
+   `backend/tests/test_order_lifecycle_policy.py`；所有聚焦命令使用实际文件名。
+2. 发布 owner cancel runtime 必然需要把静态 OpenAPI 中已冻结的 cancel operation 从 runtime
+   “未发布”集合移动到“已发布”集合，并移除 FastAPI 自动生成、静态契约未声明的 `422`。因此 root
+   可最小修改 `backend/tests/test_openapi_conformance.py` 和 `backend/app/main.py`；不得改静态
+   `contracts/openapi.yaml` 或共享 response schema。
+3. 现有 `orders/lifecycle.py` 只有查询投影，没有 owner cancel command 的纯决策入口，无法在不复制规则的
+   前提下处理 `PENDING_PAYMENT + payment_may_exist` 取消竞态。root 可在该模块增加一个窄的纯决策 helper
+   及 `test_order_lifecycle_policy.py` 聚焦测试，使 24 小时、待确认支付和退款重试规则仍只有一个权威；
+   不增加状态、迁移、repository、projector 或 Provider 行为。
+
+预览阶段仍不得让 production 暴露无后端能力的按钮：取消 CTA 只有在服务端 `can_cancel=true` 且当前
+`BookingDataSource` 真正提供 `cancelOrder` 时才渲染。development cancellation Fixture 提供该能力；
+Task 4 接通真实 HTTP 前，production source 不提供该能力。待支付 Fixture 必须先投影“正在确认取消”，
+再由权威刷新进入 `CANCELLED`，不得从点击直接伪造终态。
+
 ---
 
 ## Chunk 1：Owner cancellation operation and Mini Program integration
 
 ### Scope、串行前置与文件所有权
 
-共享 lifecycle foundation 必须先合并，并独占以下边界；本计划只验证、消费，不修改：
+共享 lifecycle foundation 必须先合并，并独占以下边界；除上方执行校正授权的窄 owner cancel
+command helper 外，本计划只验证、消费，不修改：
 
 - `backend/app/models.py` 中订单/退款状态、时间戳、`Payment.applied_to_order_at`、`RefundCase`、`RefundAttempt`；
 - `backend/migrations/versions/0013_order_lifecycle.py`；
@@ -53,16 +80,18 @@ Root 集成协调任务串行独占中央小程序注册、路由汇总、build/
 **Backend modify:**
 
 - `backend/app/modules/orders/router.py`：添加上游 OpenAPI 已冻结的 `POST /api/v1/orders/{order_id}/cancel` route；不添加 runtime schema patch。
+- `backend/app/modules/orders/lifecycle.py`：只增加 owner cancel command 的纯决策 helper；不改既有状态/动作投影语义。
+- `backend/tests/test_order_lifecycle_policy.py`：冻结该 helper 的 24 小时、支付待确认和退款重试决策。
+- `backend/app/main.py`：仅将 cancel POST 纳入现有 runtime OpenAPI `422` 清理集合。
+- `backend/tests/test_openapi_conformance.py`：仅把已发布的 cancel operation 与冻结静态契约对齐。
 
 **Backend verify only:**
 
-- `backend/app/modules/orders/lifecycle.py`
 - `backend/app/modules/orders/repository.py`
 - `backend/app/modules/orders/service.py`
 - `backend/app/modules/orders/dto.py`
 - `backend/app/modules/refunds/repository.py`
 - `backend/app/modules/payments/convergence.py`
-- `backend/tests/test_order_lifecycle.py`
 - `backend/tests/test_order_detail.py`
 - `backend/tests/test_order_list.py`
 - `backend/tests/test_refund_repository.py`
@@ -152,7 +181,7 @@ Expected: every shared responsibility has one upstream implementation. In partic
 npm run contract:validate
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
-    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_order_lifecycle_policy.py \
     backend/tests/test_refund_repository.py \
     backend/tests/test_order_detail.py \
     backend/tests/test_order_list.py \
@@ -249,6 +278,12 @@ It may expose read-only terminal `refunded/completed` fixtures to prove presenta
 
 `order-cancellation-route-fragment.ts` declares only the existing `pages/order-detail/index` and `pages/my-orders/index` preview routes plus this fixture's development-only import/token. It is merge input, not a second app manifest: this slice must not edit central bootstrap, `app-pages.json`, build or audit files.
 
+On the root integration branch, manually port this boundary onto the current production pages. Preserve the
+confirmed-order stable detail state introduced after the old handoff: do not restore the inert “查看预订详情” CTA.
+Hide cancellation actions whenever the configured source lacks a real `cancelOrder` capability. For
+`pending-cancellable`, the first cancel result remains `PENDING_PAYMENT` with `cancel_requested_at` and
+`PAYMENT_RESULT_PENDING`; a subsequent authoritative read may return `CANCELLED`.
+
 Confirmation copy:
 
 ```text
@@ -327,7 +362,7 @@ git commit -m "docs: approve owner cancellation preview"
 - Create: `backend/app/modules/orders/cancellation.py`
 - Create: `backend/tests/test_order_cancellation.py`
 - Modify: `backend/app/modules/orders/router.py`
-- Consume only: `backend/app/modules/orders/lifecycle.py`
+- Modify only as authorized above: `backend/app/modules/orders/lifecycle.py`
 - Consume only: `backend/app/modules/orders/repository.py`
 - Consume only: `backend/app/modules/refunds/repository.py`
 
@@ -417,7 +452,7 @@ Add `POST /{order_id}/cancel` to `backend/app/modules/orders/router.py` with bus
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
     backend/tests/test_order_cancellation.py \
-    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_order_lifecycle_policy.py \
     backend/tests/test_order_detail.py \
     backend/tests/test_order_list.py \
     backend/tests/test_refund_repository.py \
@@ -425,11 +460,13 @@ TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test 
 uv run ruff check \
   backend/app/modules/orders/cancellation.py \
   backend/app/modules/orders/router.py \
+  backend/app/modules/orders/lifecycle.py \
   backend/tests/test_order_cancellation.py
-uv run mypy backend/app/modules/orders/cancellation.py
+uv run mypy backend/app/modules/orders/cancellation.py backend/app/modules/orders/lifecycle.py
 ```
 
-Expected: PASS and no shared foundation file changes.
+Expected: PASS；共享基础改动仅限已授权的纯 owner cancel command helper 及其 policy 测试，
+runtime OpenAPI 改动仅发布既有静态 cancel operation 并移除多余 `422`。
 
 - [ ] **Step 5: Commit**
 
@@ -437,6 +474,10 @@ Expected: PASS and no shared foundation file changes.
 git add \
   backend/app/modules/orders/cancellation.py \
   backend/app/modules/orders/router.py \
+  backend/app/modules/orders/lifecycle.py \
+  backend/app/main.py \
+  backend/tests/test_order_lifecycle_policy.py \
+  backend/tests/test_openapi_conformance.py \
   backend/tests/test_order_cancellation.py
 git diff --cached --check
 git commit -m "feat: cancel owned unpaid orders"
@@ -499,7 +540,7 @@ Do not call `create_refund`/`query_refund`, set `SUCCESS/FAILED/UNKNOWN`, write 
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
     backend/tests/test_order_cancellation.py \
-    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_order_lifecycle_policy.py \
     backend/tests/test_refund_repository.py \
     backend/tests/test_order_detail.py \
     backend/tests/test_order_list.py -q
@@ -507,7 +548,8 @@ uv run ruff check backend/app/modules/orders/cancellation.py backend/tests/test_
 uv run mypy backend/app/modules/orders/cancellation.py
 ```
 
-Expected: PASS; `git diff --name-only` contains no shared lifecycle, refund convergence, payment convergence, migration or OpenAPI file.
+Expected: PASS；Task 3 的新增 diff 不再修改 shared lifecycle、refund convergence、payment
+convergence、migration 或 OpenAPI 文件。
 
 - [ ] **Step 4: Commit**
 
@@ -665,7 +707,7 @@ This integration does not instantiate a scripted/real refund Provider and does n
 TEST_DATABASE_URL=postgresql+psycopg://pitch:booking@127.0.0.1:55432/pitch_test \
   uv run pytest \
     backend/tests/test_order_cancellation.py \
-    backend/tests/test_order_lifecycle.py \
+    backend/tests/test_order_lifecycle_policy.py \
     backend/tests/test_refund_repository.py \
     backend/tests/test_order_detail.py \
     backend/tests/test_order_list.py \
@@ -716,7 +758,7 @@ The slice branch retains `order-cancellation-fixture.*` and `order-cancellation-
 3. additively register the union in `miniprogram/dev/bootstrap.ts` and `miniprogram/dev/app-pages.json`, preserving all existing and other-slice routes;
 4. update `scripts/build-miniprogram.mjs`, `scripts/audit-production-package.mjs`, `tests/build-miniprogram.test.mjs`, `tests/audit-production-package.test.mjs` and `tests/production-package-booking-audit.test.mjs` once, in the root integration branch;
 5. run the visual/device acceptance above; only after every active slice is on real HTTP, delete its temporary Fixture/fragment and central hooks in the same root-owned cleanup;
-6. compare the post-cleanup route/token set with the pre-cleanup union and fail if any non-target route/token disappeared. Preserve the older my-orders Fixture until its own acceptance document authorizes removal.
+6. compare the post-cleanup route/token set with the pre-cleanup union and fail if any non-target route/token disappeared. My Orders Fixture 已在 2026-08-20 真机验收后授权删除；不得从旧 cancellation worktree 复活它或旧 routes。
 
 - [ ] **Step 6: Let root perform central verification; commit only slice-local acceptance records here**
 
