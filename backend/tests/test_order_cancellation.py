@@ -1,3 +1,4 @@
+import ast
 import base64
 import hashlib
 import json
@@ -5,6 +6,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,7 +25,10 @@ from backend.app.models import (
     Payment,
     PaymentState,
     RefundAttempt,
+    RefundAttemptStatus,
     RefundCase,
+    RefundCasePurpose,
+    RefundReason,
     Slot,
     SlotStatus,
     User,
@@ -33,6 +38,11 @@ from backend.app.models import (
 from backend.app.modules.auth.router import get_phone_vault
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.modules.orders.router import get_order_clock
+from backend.app.modules.refunds.repository import (
+    LockedRefundGraph,
+    RefundPurposeMismatchError,
+    RefundRepository,
+)
 from backend.app.security.phone_vault import PhoneVault
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
 
@@ -54,6 +64,7 @@ class SeededCancellation:
     order_id: uuid.UUID
     slot_id: uuid.UUID
     checkout_version: int
+    payment_id: uuid.UUID | None = None
 
 
 def _add_session(session: Session, *, user: User, token: str) -> None:
@@ -88,12 +99,15 @@ def _add_payment(
     *,
     order: Order,
     status: PaymentState,
+    applied: bool = False,
+    provider: str = "mock",
+    currency: str = "CNY",
 ) -> Payment:
     payment_id = uuid.uuid4()
     row = Payment(
         id=payment_id,
         order=order,
-        provider="mock",
+        provider=provider,
         merchant_order_no=f"P{payment_id.hex}",
         provider_prepay_id=(
             f"wx-{payment_id.hex}"
@@ -109,7 +123,7 @@ def _add_payment(
             f"txn-{payment_id.hex}" if status is PaymentState.SUCCESS else None
         ),
         amount_cents=order.price_cents,
-        currency="CNY",
+        currency=currency,
         status=status,
         created_at=NOW - timedelta(minutes=4),
         paid_at=(
@@ -117,7 +131,11 @@ def _add_payment(
             if status is PaymentState.SUCCESS
             else None
         ),
-        applied_to_order_at=None,
+        applied_to_order_at=(
+            NOW - timedelta(minutes=2)
+            if applied and status is PaymentState.SUCCESS
+            else None
+        ),
     )
     session.add(row)
     session.flush()
@@ -240,6 +258,60 @@ def _seed_pending_order(
             order_id=order.id,
             slot_id=slot.id,
             checkout_version=slot.checkout_version,
+        )
+
+
+def _seed_confirmed_order(
+    engine: Engine,
+    *,
+    starts_at: datetime = NOW + timedelta(days=3),
+    applied: bool = True,
+    checked_in: bool = False,
+    completed: bool = False,
+    currency: str = "CNY",
+    add_extra_success: bool = False,
+) -> SeededCancellation:
+    seeded = _seed_pending_order(engine)
+    with Session(engine) as session:
+        order = session.get_one(Order, seeded.order_id)
+        slot = session.get_one(Slot, seeded.slot_id)
+        slot.starts_at = starts_at
+        slot.ends_at = starts_at + timedelta(hours=2)
+        slot.status = SlotStatus.BOOKED
+        slot.locked_until = None
+        slot.locked_by_order_id = None
+        order.status = OrderStatus.COMPLETED if completed else OrderStatus.CONFIRMED
+        if checked_in or completed:
+            order.checked_in_at = NOW - timedelta(hours=1)
+            order.checked_in_by_user_id = seeded.owner_id
+        if completed:
+            order.completed_at = NOW
+            order.completed_by_user_id = seeded.owner_id
+        payment = _add_payment(
+            session,
+            order=order,
+            status=PaymentState.SUCCESS,
+            applied=applied,
+            provider="wechatpay-test",
+            currency=currency,
+        )
+        if add_extra_success:
+            _add_payment(
+                session,
+                order=order,
+                status=PaymentState.SUCCESS,
+                applied=False,
+                provider="wechatpay-test",
+                currency=currency,
+            )
+        session.commit()
+        return SeededCancellation(
+            owner_id=seeded.owner_id,
+            stranger_id=seeded.stranger_id,
+            order_id=seeded.order_id,
+            slot_id=seeded.slot_id,
+            checkout_version=seeded.checkout_version,
+            payment_id=payment.id,
         )
 
 
@@ -638,3 +710,444 @@ def test_projection_failure_rolls_back_cancellation_and_returns_503(
         assert slot.locked_by_order_id == order.id
         assert slot.checkout_version == seeded.checkout_version
         assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_confirmed_owner_cancellation_enqueues_one_full_main_payment_refund(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine, add_extra_success=True)
+    assert seeded.payment_id is not None
+    predicate_calls = 0
+    original_predicate = RefundRepository.purpose_is_valid
+
+    def record_purpose_check(
+        *, graph: LockedRefundGraph, purpose: RefundCasePurpose
+    ) -> bool:
+        nonlocal predicate_calls
+        predicate_calls += 1
+        return original_predicate(graph=graph, purpose=purpose)
+
+    monkeypatch.setattr(
+        RefundRepository,
+        "purpose_is_valid",
+        staticmethod(record_purpose_check),
+    )
+
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "REFUND_PENDING"
+    assert response.json()["cancel_requested_at"] is not None
+    assert response.json()["cancelled_at"] is not None
+    assert response.json()["allowed_actions"]["blocked_reason"] == "REFUND_IN_PROGRESS"
+    assert predicate_calls >= 1
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, seeded.order_id)
+        slot = session.get_one(Slot, seeded.slot_id)
+        refund_case = session.scalar(select(RefundCase))
+        assert refund_case is not None
+        attempt = session.scalar(
+            select(RefundAttempt).where(
+                RefundAttempt.refund_case_id == refund_case.id
+            )
+        )
+        assert attempt is not None
+        assert order.status is OrderStatus.REFUND_PENDING
+        assert order.cancel_requested_at == NOW
+        assert order.cancelled_at == NOW
+        assert order.expired_at is None
+        assert slot.status is SlotStatus.BOOKED
+        assert slot.locked_until is None
+        assert slot.locked_by_order_id is None
+        assert refund_case.order_id == seeded.order_id
+        assert refund_case.payment_id == seeded.payment_id
+        assert refund_case.purpose is RefundCasePurpose.ORDER_CANCELLATION
+        assert refund_case.reason is RefundReason.USER_CANCELLED
+        assert refund_case.reason_note is None
+        assert refund_case.requested_by_user_id == seeded.owner_id
+        assert refund_case.amount_cents == 36000
+        assert refund_case.currency == "CNY"
+        assert attempt.provider == "wechatpay-test"
+        assert attempt.status is RefundAttemptStatus.CREATING
+        assert attempt.attempt_no == 1
+        assert attempt.next_reconcile_at == NOW
+        assert len(attempt.merchant_refund_no) <= 32
+        assert attempt.provider_refund_no is None
+        assert attempt.failure_code is None
+        assert attempt.refunded_at is None
+        record = session.scalar(select(IdempotencyRecord))
+        assert record is not None
+        assert record.state is IdempotencyState.COMPLETED
+        assert record.response_status == 202
+        assert record.response_body == response.json()
+
+
+def test_confirmed_refund_replays_same_key_and_rejects_new_key_while_active(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+
+    with _client(pg_engine) as client:
+        first = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+        with Session(pg_engine) as session:
+            first_attempt = session.scalar(select(RefundAttempt))
+            assert first_attempt is not None
+            first_merchant_refund_no = first_attempt.merchant_refund_no
+        replay = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+        active = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(key="cancel-order-active-new-key-0001"),
+        )
+
+    assert first.status_code == replay.status_code == 202
+    assert first.content == replay.content
+    assert active.status_code == 409
+    assert active.json()["error"]["code"] == "REFUND_IN_PROGRESS"
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 1
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 1
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 1
+        attempt = session.scalar(select(RefundAttempt))
+        assert attempt is not None
+        assert attempt.merchant_refund_no == first_merchant_refund_no
+
+
+def test_failed_owner_refund_retries_in_the_same_case_without_mutating_attempt_one(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+    with _client(pg_engine) as client:
+        first = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+    assert first.status_code == 202
+
+    with Session(pg_engine) as session:
+        refund_case = session.scalar(select(RefundCase))
+        first_attempt = session.scalar(select(RefundAttempt))
+        assert refund_case is not None
+        assert first_attempt is not None
+        case_id = refund_case.id
+        first_number = first_attempt.merchant_refund_no
+        first_attempt.status = RefundAttemptStatus.FAILED
+        first_attempt.failure_code = "PROVIDER_REJECTED"
+        first_attempt.provider_refund_no = "provider-terminal-failure"
+        first_attempt.next_reconcile_at = None
+        order = session.get_one(Order, seeded.order_id)
+        order.status = OrderStatus.REFUND_FAILED
+        session.commit()
+
+    with _client(pg_engine) as client:
+        retried = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(key="cancel-order-retry-new-key-0001"),
+        )
+
+    assert retried.status_code == 202
+    assert retried.json()["status"] == "REFUND_PENDING"
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 1
+        refund_case = session.get_one(RefundCase, case_id)
+        assert refund_case.reason is RefundReason.USER_CANCELLED
+        assert refund_case.requested_by_user_id == seeded.owner_id
+        attempts = list(
+            session.scalars(select(RefundAttempt).order_by(RefundAttempt.attempt_no))
+        )
+        assert [attempt.attempt_no for attempt in attempts] == [1, 2]
+        assert attempts[0].status is RefundAttemptStatus.FAILED
+        assert attempts[0].merchant_refund_no == first_number
+        assert attempts[0].failure_code == "PROVIDER_REJECTED"
+        assert attempts[0].provider_refund_no == "provider-terminal-failure"
+        assert attempts[0].refunded_at is None
+        assert attempts[1].status is RefundAttemptStatus.CREATING
+        assert attempts[1].merchant_refund_no != first_number
+        assert len(attempts[1].merchant_refund_no) <= 32
+        assert attempts[1].provider == "wechatpay-test"
+        assert attempts[1].provider_refund_no is None
+        assert attempts[1].failure_code is None
+        assert attempts[1].refunded_at is None
+        assert session.get_one(Order, seeded.order_id).status is OrderStatus.REFUND_PENDING
+        assert session.get_one(Slot, seeded.slot_id).status is SlotStatus.BOOKED
+
+
+@pytest.mark.parametrize(
+    "active_status",
+    [
+        RefundAttemptStatus.CREATING,
+        RefundAttemptStatus.PROCESSING,
+        RefundAttemptStatus.UNKNOWN,
+    ],
+)
+def test_active_owner_refund_attempt_is_never_retried(
+    pg_engine: Engine,
+    active_status: RefundAttemptStatus,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+    with _client(pg_engine) as client:
+        first = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+    assert first.status_code == 202
+    with Session(pg_engine) as session:
+        attempt = session.scalar(select(RefundAttempt))
+        assert attempt is not None
+        attempt.status = active_status
+        attempt.provider_refund_no = f"provider-{active_status.value.lower()}"
+        original = (
+            attempt.id,
+            attempt.merchant_refund_no,
+            attempt.provider_refund_no,
+            attempt.failure_code,
+            attempt.refunded_at,
+        )
+        session.commit()
+
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(key=f"cancel-order-active-{active_status.value.lower()}-key"),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "REFUND_IN_PROGRESS"
+    with Session(pg_engine) as session:
+        attempts = list(session.scalars(select(RefundAttempt)))
+        assert len(attempts) == 1
+        attempt = attempts[0]
+        assert (
+            attempt.id,
+            attempt.merchant_refund_no,
+            attempt.provider_refund_no,
+            attempt.failure_code,
+            attempt.refunded_at,
+        ) == original
+
+
+@pytest.mark.parametrize("ineligible", ["inside-window", "checked-in", "completed"])
+def test_owner_refund_rejects_ineligible_order_states(
+    pg_engine: Engine,
+    ineligible: str,
+) -> None:
+    if ineligible == "inside-window":
+        seeded = _seed_confirmed_order(
+            pg_engine,
+            starts_at=NOW + timedelta(hours=24) - timedelta(microseconds=1),
+        )
+    elif ineligible == "checked-in":
+        seeded = _seed_confirmed_order(pg_engine, checked_in=True)
+    else:
+        seeded = _seed_confirmed_order(pg_engine, completed=True)
+
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+        assert session.get_one(Slot, seeded.slot_id).status is SlotStatus.BOOKED
+
+
+def test_confirmed_cancellation_hides_non_owner_without_refund_writes(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(token=STRANGER_TOKEN),
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "ORDER_NOT_FOUND"
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+        assert session.get_one(Order, seeded.order_id).status is OrderStatus.CONFIRMED
+
+
+def test_confirmed_cancellation_rejects_a_success_payment_that_is_not_main(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine, applied=False)
+
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+        assert session.get_one(Order, seeded.order_id).status is OrderStatus.CONFIRMED
+
+
+def test_confirmed_cancellation_rejects_a_corrupted_multiple_main_graph(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine, add_extra_success=True)
+    original_lock = RefundRepository.lock_refund_graph
+    graph_calls = 0
+
+    def corrupt_graph(
+        repository: RefundRepository,
+        payment_id: uuid.UUID,
+    ) -> LockedRefundGraph:
+        nonlocal graph_calls
+        graph_calls += 1
+        graph = original_lock(repository, payment_id)
+        extra = next(payment for payment in graph.payments if payment.id != payment_id)
+        extra.applied_to_order_at = NOW
+        return graph
+
+    monkeypatch.setattr(RefundRepository, "lock_refund_graph", corrupt_graph)
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    assert graph_calls == 1
+    with Session(pg_engine) as session:
+        payments = list(
+            session.scalars(select(Payment).where(Payment.order_id == seeded.order_id))
+        )
+        assert sum(payment.applied_to_order_at is not None for payment in payments) == 1
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_refund_enqueue_database_error_rolls_back_the_whole_owner_command(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+
+    def fail_commit(_repository: OrderRepository) -> None:
+        raise SQLAlchemyError("private durable enqueue failure")
+
+    monkeypatch.setattr(OrderRepository, "commit", fail_commit)
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert "private durable" not in response.text
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, seeded.order_id)
+        assert order.status is OrderStatus.CONFIRMED
+        assert order.cancel_requested_at is None
+        assert order.cancelled_at is None
+        assert session.get_one(Slot, seeded.slot_id).status is SlotStatus.BOOKED
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_refund_purpose_mismatch_rolls_back_and_uses_the_closed_409_error(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+
+    def reject_purpose(*_args: object, **_kwargs: object) -> object:
+        raise RefundPurposeMismatchError("private purpose mismatch")
+
+    monkeypatch.setattr(RefundRepository, "get_or_create_case", reject_purpose)
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    assert "private purpose" not in response.text
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, seeded.order_id)
+        assert order.status is OrderStatus.CONFIRMED
+        assert order.cancel_requested_at is None
+        assert order.cancelled_at is None
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_refund_graph_change_rolls_back_and_uses_the_closed_409_error(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = _seed_confirmed_order(pg_engine)
+
+    def missing_payment(*_args: object, **_kwargs: object) -> object:
+        raise LookupError("private successful payment disappeared")
+
+    monkeypatch.setattr(RefundRepository, "lock_refund_graph", missing_payment)
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_STATE_CHANGED"
+    assert "private successful" not in response.text
+    with Session(pg_engine) as session:
+        assert session.get_one(Order, seeded.order_id).status is OrderStatus.CONFIRMED
+        assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
+        assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_owner_cancellation_module_only_enqueues_refund_work() -> None:
+    source = Path("backend/app/modules/orders/cancellation.py").read_text()
+    tree = ast.parse(source)
+    imported_modules = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        node.module or ""
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    called_attributes = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert not any(name.endswith(".provider") for name in imported_modules)
+    assert not any(name.endswith(".convergence") for name in imported_modules)
+    assert {"create_refund", "query_refund"}.isdisjoint(called_attributes)
