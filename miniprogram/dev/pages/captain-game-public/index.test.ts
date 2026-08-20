@@ -1,6 +1,7 @@
 /// <reference types="node" />
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { captainOpenGameStore } from "../../captain-open-game-fixture";
 
@@ -18,6 +19,19 @@ test("published public detail is readonly, has no application action, and explai
   page.onLoad({ from: "PUBLISHED" });
   expect(page.data).toMatchObject({ visualState: "PUBLISHED", readonly: true, applicationAvailable: false, notice: "当前仅供查看，申请加入即将开放", headerRightInsetPx: 105, headerLeftInsetPx: 105 });
   expect(Object.keys(page).filter((key) => /apply|join|signup/i.test(key))).toEqual([]);
+});
+
+test("public detail renders the current saved game and team names", () => {
+  const page = loadPage();
+  captainOpenGameStore.saveDraft({ ...captainOpenGameStore.current().snapshot, name: "周五晚七人局", team: "津门蓝队" });
+  page.onLoad({ from: "DRAFT" });
+  expect(page.data.form).toMatchObject({ name: "周五晚七人局", team: "津门蓝队" });
+
+  const wxml = readFileSync("miniprogram/dev/pages/captain-game-public/index.wxml", "utf8");
+  expect(wxml).toContain("{{form.name}}");
+  expect(wxml).toContain("{{form.team}}");
+  expect(wxml).not.toContain("奥体周日轻松局");
+  expect(wxml).not.toContain("津门周末足球队");
 });
 
 test("return routes precisely to the manager that opened the public detail", () => {

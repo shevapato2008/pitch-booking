@@ -3,7 +3,7 @@
   <view class="captain-game-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;"><button class="captain-game-nav-back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="captain-game-nav-title">公开球局</text><text class="captain-game-nav-subtitle">开发预览</text></view>
   <scroll-view scroll-y="true" class="captain-game-scroll">
     <view class="captain-game-notice"><text>{{fixtureNotice}}</text></view>
-    <view class="captain-game-card"><text class="captain-game-card-title">真实订场已确认</text><text class="captain-game-heading">奥体周日轻松局</text><text>津门周末足球队 · {{form.intensity}}</text></view>
+    <view class="captain-game-card"><text class="captain-game-card-title">真实订场已确认</text><text class="captain-game-heading">{{form.name}}</text><text>{{form.team}} · {{form.intensity}}</text></view>
     <view class="captain-game-card"><text class="captain-game-heading">{{order.venue}}</text><text>{{order.pitch}} · {{order.format}}</text><text>{{order.date}} · {{order.time}}</text></view>
     <view class="captain-game-card"><text>计划 {{form.total}} 人 · 固定 {{form.fixed}} 人 · 开放 {{form.open}} 人</text><text>位置需求：{{form.positions}}</text><text>预计 AA：{{form.aa}}</text><text>报名截止：{{form.deadline}}</text><text>装备与到场：深浅两套球衣，提前 15 分钟到场</text><text>成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。</text></view>
     <view class="captain-game-readonly-note"><text>当前仅供查看，申请加入即将开放</text></view>
