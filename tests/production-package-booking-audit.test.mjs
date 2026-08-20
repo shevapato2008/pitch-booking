@@ -22,6 +22,7 @@ const productionRoutes = [
   "pages/venue-profile/index",
   "pages/venue-inventory/index",
   "pages/venue-pitch-setup/index",
+  "pages/venue-fulfillment/index",
 ];
 
 for (const token of ["dev-login-code", "dev-phone-code", "138****0000", "developmentBookingDataSource", "booking-fixture", "order-cancellation"]) {
