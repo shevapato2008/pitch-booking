@@ -56,8 +56,23 @@ network smoke verified unpaid cancellation, paid refund enqueue and failed-attem
 with `PAYMENT_PROVIDER=disabled`, zero Provider calls and zero terminal refund-success
 writes.
 
-This does not upgrade the Fixture screenshots into HTTP-backed visual evidence. The one
-required 375×812 HTTP-backed review and non-monetary iPhone cancellation journey remain
-pending on staging. Paid terminal refund acceptance remains
-`BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`; the current experience version must continue to
-hide refund entry points until its release boundary is deliberately changed and verified.
+## HTTP-backed device acceptance and preview retirement
+
+On 2026-08-20, an experience member used version `0.1.2` against the real staging API and
+completed the nine-step non-monetary iPhone journey. The order appeared as pending, exposed
+the real cancel confirmation without a payment action, became cancelled after confirmation,
+and remained cancelled after list refresh and detail reopen. The representative 375×812
+review also passed button centering, badge/chevron integrity, clipping and bottom safe-area
+checks.
+
+The post-journey authoritative check found `CANCELLED`, the slot `AVAILABLE`, and zero
+Payment, RefundCase or RefundAttempt rows. The controlled acceptance Order, Slot and
+idempotency record were then removed without changing the user/membership/venue/pitch
+identity graph.
+
+The development-only cancellation Fixture, route fragment and temporary bootstrap/build
+selector have now been retired. Production order detail/My Orders pages, real HTTP wiring,
+backend route and audit deny rules remain. Online booking, payment and real refund stay
+disabled, and paid terminal refund acceptance remains
+`BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`; this review does not claim a successful paid
+refund or Provider settlement.

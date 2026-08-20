@@ -156,25 +156,37 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
-test("owner cancellation preview source is selectable in development and excluded from production", async (t) => {
-  await build(process.cwd(), "development", {
-    MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation",
-  });
+test("retired owner cancellation preview stays absent while production order routes remain", async (t) => {
+  const retiredSourcePaths = [
+    "miniprogram/dev/order-cancellation-fixture.ts",
+    "miniprogram/dev/order-cancellation-fixture.test.ts",
+    "miniprogram/dev/order-cancellation-route-fragment.ts",
+    "miniprogram/dev/order-cancellation-route-fragment.test.ts",
+  ];
+  for (const sourcePath of retiredSourcePaths) {
+    assert.equal(existsSync(sourcePath), false, `temporary asset still exists: ${sourcePath}`);
+  }
+
+  await assert.rejects(
+    build(process.cwd(), "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation" }),
+    /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http/,
+  );
+
+  await build(process.cwd(), "development");
   const developmentRoot = path.resolve("dist/miniprogram-development");
-  const developmentApp = await readFile(path.join(developmentRoot, "app.js"), "utf8");
-
-  assert.match(developmentApp, /bootstrapDevelopment\)\(\{\s*source:\s*["']order-cancellation["']/s);
-  assert.equal(existsSync(path.join(developmentRoot, "dev/order-cancellation-fixture.js")), true);
-  assert.equal(existsSync(path.join(developmentRoot, "dev/order-cancellation-route-fragment.js")), true);
-
   await build(process.cwd(), "production");
   const productionRoot = path.resolve("dist/miniprogram-production");
-  const productionFiles = await collectFiles(productionRoot);
-  const productionText = (await Promise.all(productionFiles
+  const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
+  const developmentText = (await Promise.all((await collectFiles(developmentRoot))
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");
-  assert.equal(existsSync(path.join(productionRoot, "dev/order-cancellation-fixture.js")), false);
-  assert.equal(existsSync(path.join(productionRoot, "dev/order-cancellation-route-fragment.js")), false);
+  const productionText = (await Promise.all((await collectFiles(productionRoot))
+    .filter((file) => !file.endsWith(".png"))
+    .map((file) => readFile(file, "utf8")))).join("\n");
+
+  assert.equal(productionManifest.pages.includes("pages/order-detail/index"), true);
+  assert.equal(productionManifest.pages.includes("pages/my-orders/index"), true);
+  assert.doesNotMatch(developmentText, /order-cancellation|createOrderCancellationFixture/);
   assert.doesNotMatch(productionText, /order-cancellation|createOrderCancellationFixture/);
 
   t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));

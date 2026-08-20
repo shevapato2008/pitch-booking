@@ -56,7 +56,7 @@ test("development booking source defaults to the existing Fixture composition", 
   );
 });
 
-test("development native order detail contains all three payment state semantics", async (t) => {
+test("development native order detail contains payment states without the retired inert action", async (t) => {
   const projectRoot = await createBuildProject(t);
   const developmentOutput = path.join(projectRoot, "dist/miniprogram-development");
 
@@ -73,11 +73,10 @@ test("development native order detail contains all three payment state semantics
     "支付确认中…",
     "预订成功",
     "已支付",
-    "查看预订详情",
   ]) assert.match(wxml, new RegExp(copy));
   assert.match(wxml, /aria-label="支付成功"/);
   assert.match(wxss, /env\(safe-area-inset-bottom/);
-  assert.doesNotMatch(wxml, /取消订单|创建球局|微信支付/);
+  assert.doesNotMatch(wxml, /查看预订详情|创建球局|微信支付/);
 });
 
 test("development HTTP build injects an explicit localhost API URL into the typed composition root", async (t) => {
@@ -180,7 +179,7 @@ test("development rejects an unknown booking source instead of silently falling 
   const projectRoot = await createBuildProject(t);
   await assert.rejects(
     build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "remote" }),
-    /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture, http, or order-cancellation/,
+    /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http/,
   );
 });
 

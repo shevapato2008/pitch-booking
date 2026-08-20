@@ -1,6 +1,6 @@
 # 用户订单取消与退款验收进度
 
-状态：`STAGING_BACKEND_DEPLOYED_DEVICE_PENDING`
+状态：`STAGING_DEPLOYED_NO_PAYMENT_DEVICE_ACCEPTED_FIXTURE_REMOVED`
 
 更新时间：2026-08-20
 
@@ -48,21 +48,43 @@
 - API、worker、PostgreSQL 和 Caddy 均运行，API/PostgreSQL 健康；Alembic 保持 `0014`。
 - 公网 health 返回 `200` 且 revision 为 `d905b72`；平台后台返回 `200`；无 Bearer 的订单读取与取消写入均返回 `401`。
 - `PAYMENT_PROVIDER=disabled`、Mock Provider 关闭；部署后五分钟 API/worker 日志未命中 Traceback、CRITICAL 或未处理异常。
-- 此次只部署 backend，没有上传、替换或设置新的微信体验版。
+- 体验版 `0.1.2` 已在用户明确确认后上传，并由体验成员通过既有体验二维码进入；没有提交正式审核或公开发布。
+
+## 真实 iPhone 验收：9/9 PASS
+
+2026-08-20，体验成员使用体验版 `0.1.2` 和真实 staging API 完成一笔受控、零金额且从未进入支付流程的待支付订单取消：
+
+1. “我要租赁场地 → 我的订单”进入与下拉刷新正常；
+2. 受控订单显示“待支付”；
+3. 详情页显示服务端权威“待支付”；
+4. 底部显示“取消订单”，且没有“立即支付”；
+5. 点击取消后显示真实确认框；
+6. 确认后详情变为“订单已取消”；
+7. 返回列表并刷新后显示“已取消”；
+8. 再次进入详情仍为“订单已取消”，且没有取消或支付按钮；
+9. 375×812 代表性检查中，按钮居中、状态徽标和箭头完整，内容无裁切，底部安全区正常。
+
+验收后服务端匿名化权威核验为：订单 `CANCELLED`、目标 slot `AVAILABLE`，并且
+`Payment / RefundCase / RefundAttempt = 0`。随后仅删除本次受控验收产生的 Order、Slot 和取消幂等记录；用户、membership、场馆和场地身份图未改变。未记录订单号、用户标识、手机号、Token、数据库地址、密钥或二维码。
+
+## Fixture 清理
+
+真机 PASS 后已删除 `order-cancellation` Fixture、route fragment 及其测试，并移除 development bootstrap 和构建选择器中的临时 source 分支。生产 `pages/order-detail/index`、`pages/my-orders/index`、真实 HTTP source、生产路由以及 production audit deny rules 均保留；清理门禁完成 RED → GREEN，production build、支付关闭检查和 package audit 重新通过。
 
 ## 当前诚实边界
 
-- backend 已部署到共享 staging；尚未完成真实 iPhone 的无资金取消、列表回读和时段回收验收。
-- 当前体验版仍保持在线预订、支付和退款入口关闭；本切片不得直接替换体验版。
+- owner 无资金取消已部署到共享 staging，并完成真实 iPhone 的取消、详情重开、列表刷新和时段回收验收。
+- 当前体验版仍保持在线预订、支付和真实退款入口关闭。
 - `MINIPROGRAM_PAYMENT_PROVIDER=disabled`，未启用真实微信支付或退款。
-- `order-cancellation` Fixture/route fragment 当前由 root 有意保留。本切片不得自行删除或改写中央注册；只有所有 active slice 已合并并接入真实 HTTP、root 先盘点并加法注册完整 route/token union、设备验收通过后，才能由 root 统一清理并证明没有非目标 route/token 丢失。
+- 已确认此前删除的 my-orders 和 venue-fulfillment 临时资产仍保持缺席；本次清理没有移除任何生产 route/token。
 - paid refund terminal acceptance：`BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`。只有微信 Provider 轨道获得完整商户凭据并完成一次受控小额支付/退款后，才能验收通知或主动查询收敛及最终 `REFUNDED`。
-- 本地 HTTP 验收不等于退款到账，也不等于整个 B1 完成。
+- durable paid-refund enqueue/retry 的实现与本地 HTTP 证据不等于退款到账，也不等于整个 B1 完成。
 
 ## 待完成
 
 - [x] 在保持在线预订、支付与真实退款关闭的前提下，将本切片 backend 部署到共享 staging；
-- [ ] 用受控无资金待支付订单完成真实 iPhone 取消、详情重开、列表刷新和同一 slot 可用性回读；
-- [ ] 在 375×812 做一次 HTTP-backed 详情/列表人工视觉自审，覆盖按钮居中、徽标、箭头、裁切、底部安全区和真实状态；
-- [ ] 所有 active slice 合并、真实 HTTP 接通并完成真机 PASS 后，由 root 按完整 route/token union 串行删除 `order-cancellation` 临时 Fixture/route fragment，再证明非目标 route/token 未丢失，并重跑 production build、disabled-payment 检查和 package audit；
-- [ ] 任何新体验版上传前暂停，并由用户明确确认；不提交正式审核、不公开发布。
+- [x] 用受控无资金待支付订单完成真实 iPhone 取消、详情重开、列表刷新和同一 slot 可用性回读；
+- [x] 在 375×812 完成一次 HTTP-backed 详情/列表人工视觉自审，覆盖按钮居中、徽标、箭头、裁切、底部安全区和真实状态；
+- [x] 按完整 route/token union 串行删除 `order-cancellation` 临时 Fixture/route fragment，证明非目标 route/token 未丢失，并重跑 production build、disabled-payment 检查和 package audit；
+- [ ] paid refund terminal acceptance 保持 `BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`；
+- [x] 体验版 `0.1.2` 上传前取得用户明确确认；未提交正式审核、未公开发布。
