@@ -8,7 +8,7 @@
       <button class="captain-game-secondary" bindtap="onReturnOrder">返回订单</button>
     </view>
     <view wx:elif="{{visualState === 'SAVE_UNKNOWN'}}" class="captain-game-card captain-game-error" role="status" aria-busy="true"><text class="captain-game-heading">正在确认保存结果</text><text>正在确认保存结果，已保留你的输入</text></view>
-    <block wx:else>
+    <block wx:elif="{{canEdit}}">
       <view class="captain-game-card"><view class="captain-game-card-title"><text>真实订场已确认</text><text>不可修改</text></view><text class="captain-game-heading">{{order.venue}}</text><text>{{order.pitch}} · {{order.format}}</text><text>{{order.date}} · {{order.time}}</text><text>{{order.booking}}</text></view>
       <view class="captain-game-card"><text class="captain-game-heading">球局与球队</text><text>球局名称：{{form.name}}</text><text>球队名称：{{form.team}}</text></view>
       <view class="captain-game-card"><text class="captain-game-heading">人数与开放名额</text>

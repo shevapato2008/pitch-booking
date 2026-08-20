@@ -1,6 +1,7 @@
 /// <reference types="node" />
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { CAPTAIN_OPEN_GAME_FIXTURE, captainOpenGameStore } from "../../captain-open-game-fixture";
 
@@ -70,6 +71,14 @@ test("an old PUBLISHED deep link cannot revive a cancelled form", () => {
   page.onLoad({ state: "PUBLISHED" });
   expect(page.data).toMatchObject({ visualState: "CANCELLED", canEdit: false });
   expect(captainOpenGameStore.current().state).toBe("CANCELLED");
+});
+
+test("a cancelled form deep link leaves for management without retaining inert steppers", () => {
+  const page = loadPage();
+  page.onLoad({ state: "CANCELLED" });
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-manage/index?state=CANCELLED" });
+  expect(readFileSync("miniprogram/dev/pages/captain-game-form/index.wxml", "utf8"))
+    .toMatch(/<block wx:elif="\{\{canEdit\}\}">/);
 });
 
 test("saving an edit returns to the existing manager instead of pushing another manager", () => {

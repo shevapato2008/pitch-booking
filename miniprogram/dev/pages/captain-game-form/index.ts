@@ -36,6 +36,7 @@ Page({
     const state = captainOpenGameStore.current().state === "ELIGIBLE" ? requested : captainOpenGameStore.current().state;
     if (captainOpenGameStore.current().state === "ELIGIBLE") captainOpenGameStore.reset(state);
     this.setData({ ...patch(state, captainOpenGameStore.current().snapshot), headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerRightInsetPx: header.rightInsetPx, headerLeftInsetPx: header.rightInsetPx });
+    if (state === "CANCELLED" || state === "SUSPENDED" || state === "LOAD_ERROR") returnToManager(state);
   },
   onStepper(event: StepperEvent) {
     if (!this.data.canEdit) return;
