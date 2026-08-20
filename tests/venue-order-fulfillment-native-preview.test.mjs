@@ -6,44 +6,34 @@ const pageRoot = "miniprogram/dev/pages/venue-fulfillment/index";
 const fixturePath = "miniprogram/dev/venue-fulfillment-fixture.ts";
 const fragmentPath = "miniprogram/route-fragments/venue-fulfillment.json";
 
-test("slice owns a development-only preview and pending production declaration", () => {
-  for (const path of [fixturePath, fragmentPath, ...["ts", "wxml", "wxss", "json"].map((ext) => `${pageRoot}.${ext}`)]) {
-    assert.equal(existsSync(path), true, `missing ${path}`);
-  }
+test("device acceptance retires the venue fulfillment preview assets", () => {
+  const retiredPaths = [
+    fixturePath,
+    fragmentPath,
+    ...["ts", "wxml", "wxss", "json", "test.ts"].map((extension) => `${pageRoot}.${extension}`),
+  ];
 
-  const fixture = readFileSync(fixturePath, "utf8");
-  const controller = readFileSync(`${pageRoot}.ts`, "utf8");
-  const fragment = JSON.parse(readFileSync(fragmentPath, "utf8"));
-  assert.match(fixture, /VENUE_FULFILLMENT_FIXTURE/);
-  assert.match(fixture, /delete after production venue fulfillment HTTP integration/i);
-  assert.match(controller, /readInventoryHeaderLayout\(\)/);
-  assert.doesNotMatch(controller, /showToast|request\s*\(|fetch\s*\(/);
-  assert.deepEqual(fragment, {
-    id: "venue-fulfillment",
-    development: {
-      route: "dev/pages/venue-fulfillment/index",
-      fixture: fixturePath,
-      representative_query: "state=refund-confirm",
-    },
-    production: {
-      route: "pages/venue-fulfillment/index",
-      status: "pending",
-      fixture_imports_allowed: false,
-    },
-    central_composition_required: true,
-  });
+  for (const path of retiredPaths) {
+    assert.equal(existsSync(path), false, `temporary asset still exists: ${path}`);
+  }
 });
 
-test("central manifests remain untouched and production code cannot import the Fixture", () => {
-  for (const path of ["miniprogram/app.json", "miniprogram/dev/app-pages.json", "miniprogram/dev/bootstrap.ts"]) {
-    assert.doesNotMatch(readFileSync(path, "utf8"), /venue-fulfillment/);
+test("production venue fulfillment route and real HTTP composition remain", () => {
+  const manifest = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
+  const build = readFileSync("scripts/build-miniprogram.mjs", "utf8");
+  const productionPage = readFileSync("miniprogram/pages/venue-fulfillment/index.ts", "utf8");
+
+  assert.equal(manifest.pages.includes("pages/venue-fulfillment/index"), true);
+  for (const symbol of [
+    "createHttpVenueFulfillmentDataSource",
+    "registerVenueFulfillmentDataSource",
+    "createVenueFulfillmentAttemptStore",
+    "registerVenueFulfillmentAttemptStore",
+  ]) {
+    assert.match(build, new RegExp(`\\b${symbol}\\b`));
   }
-  const productionRoot = "miniprogram/pages/venue-fulfillment";
-  if (existsSync(productionRoot)) {
-    for (const file of ["index.ts", "index.wxml", "index.wxss"].map((name) => `${productionRoot}/${name}`).filter(existsSync)) {
-      assert.doesNotMatch(readFileSync(file, "utf8"), /VENUE_FULFILLMENT_FIXTURE|dev\/venue-fulfillment-fixture/);
-    }
-  }
+  assert.doesNotMatch(productionPage, /VENUE_FULFILLMENT_FIXTURE|dev\/venue-fulfillment-fixture/);
+
   const review = readFileSync("artifacts/ui/reviews/venue-order-fulfillment/README.md", "utf8");
   assert.match(review, /Native Fixture visual approval:\s*approved/);
 });

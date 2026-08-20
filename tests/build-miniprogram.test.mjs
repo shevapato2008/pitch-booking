@@ -246,7 +246,21 @@ test("temporary map previews are absent while the approved center asset remains"
   assert.doesNotMatch(productionText, /VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES/);
 });
 
-test("my orders native preview routes and Fixture remain development-only", async (t) => {
+test("retired my orders previews stay absent while the production route remains", async (t) => {
+  const previewRoutes = ["dev/pages/my-orders-map/index", "dev/pages/my-orders/index"];
+  const retiredSourcePaths = [
+    "miniprogram/dev/my-orders-fixture.ts",
+    ...previewRoutes.flatMap((route) => ["ts", "json", "wxml", "wxss", "test.ts"].map((extension) => `miniprogram/${route}.${extension}`)),
+  ];
+  const developmentSourceManifest = JSON.parse(await readFile("miniprogram/dev/app-pages.json", "utf8"));
+
+  for (const sourcePath of retiredSourcePaths) {
+    assert.equal(existsSync(sourcePath), false, `temporary asset still exists: ${sourcePath}`);
+  }
+  for (const route of previewRoutes) {
+    assert.equal(developmentSourceManifest.pages.includes(route), false, `${route} remains in the development manifest`);
+  }
+
   await build(process.cwd(), "development");
   await build(process.cwd(), "production");
   const developmentRoot = path.resolve("dist/miniprogram-development");
@@ -254,16 +268,19 @@ test("my orders native preview routes and Fixture remain development-only", asyn
   t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
-  const previewRoutes = ["dev/pages/my-orders-map/index", "dev/pages/my-orders/index"];
 
   for (const route of previewRoutes) {
-    assert.equal(developmentManifest.pages.includes(route), true, `${route} is missing from development`);
+    assert.equal(developmentManifest.pages.includes(route), false, `${route} remains in development`);
     assert.equal(productionManifest.pages.includes(route), false, `${route} leaked into production`);
-    for (const extension of ["js", "json", "wxml", "wxss"])
-      assert.equal(existsSync(path.join(developmentRoot, `${route}.${extension}`)), true, `${route}.${extension}`);
-    assert.equal(existsSync(path.join(productionRoot, `${route}.js`)), false, `${route} leaked into production`);
+    for (const root of [developmentRoot, productionRoot]) {
+      for (const extension of ["js", "json", "wxml", "wxss"]) {
+        assert.equal(existsSync(path.join(root, `${route}.${extension}`)), false, `${route}.${extension} remains in ${root}`);
+      }
+    }
   }
-  assert.equal(existsSync(path.join(developmentRoot, "dev/my-orders-fixture.js")), true);
+  assert.equal(developmentManifest.pages.includes("pages/my-orders/index"), true);
+  assert.equal(productionManifest.pages.includes("pages/my-orders/index"), true);
+  assert.equal(existsSync(path.join(developmentRoot, "dev/my-orders-fixture.js")), false);
   assert.equal(existsSync(path.join(productionRoot, "dev/my-orders-fixture.js")), false);
 });
 

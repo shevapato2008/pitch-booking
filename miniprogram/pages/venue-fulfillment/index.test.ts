@@ -179,15 +179,14 @@ test("production markup exposes only allowed action buttons and every visible en
   expect(markup).not.toMatch(/disabled[^>]+bindtap="onBlocked|onFake|模拟成功/);
 });
 
-test("route fragment declares production artifacts, HTTP composition, and fixture exclusions", () => {
-  const fragment = JSON.parse(readFileSync("miniprogram/route-fragments/venue-fulfillment.json", "utf8"));
-  expect(fragment.production).toMatchObject({
-    route: "pages/venue-fulfillment/index", status: "ready",
-    artifacts: expect.arrayContaining(["index.ts", "index.wxml", "index.wxss", "index.json"]),
-    composition: expect.objectContaining({ data_source_factory: "createHttpVenueFulfillmentDataSource", attempt_store_factory: "createVenueFulfillmentAttemptStore", transport_factory: "productionTransport", identity: "productionIdentity", session_store_factory: "createSessionStore", session_storage: "productionSessionStorage" }),
-    fixture_imports_allowed: false,
-  });
-  expect(fragment.production.excludes).toEqual(expect.arrayContaining(["VENUE_FULFILLMENT_FIXTURE", "dev/pages/venue-fulfillment", "development fallback data"]));
-  expect(fragment.development.http_composition).toMatchObject({ transport_factory: "productionTransport", identity: "developmentIdentity", session_store_factory: "createSessionStore", session_storage: "productionSessionStorage" });
-  const sourceText = readFileSync("miniprogram/pages/venue-fulfillment/index.ts", "utf8"); expect(sourceText).not.toMatch(/\/dev\/|VENUE_FULFILLMENT_FIXTURE/);
+test("production route keeps real HTTP composition after preview cleanup", () => {
+  const manifest = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
+  const build = readFileSync("scripts/build-miniprogram.mjs", "utf8");
+  const sourceText = readFileSync("miniprogram/pages/venue-fulfillment/index.ts", "utf8");
+
+  expect(manifest.pages).toContain("pages/venue-fulfillment/index");
+  for (const symbol of ["createHttpVenueFulfillmentDataSource", "registerVenueFulfillmentDataSource", "createVenueFulfillmentAttemptStore", "registerVenueFulfillmentAttemptStore"]) {
+    expect(build).toMatch(new RegExp(`\\b${symbol}\\b`));
+  }
+  expect(sourceText).not.toMatch(/\/dev\/|VENUE_FULFILLMENT_FIXTURE/);
 });

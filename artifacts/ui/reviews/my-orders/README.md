@@ -4,13 +4,14 @@
 
 - Target viewport: 375 × 812.
 - Task 1 reference Artifact: independently approved at commit `2b438acd`.
-- Task 2 development-only native preview: implemented and source/build checks are GREEN.
+- Task 2 development-only native preview: historical implementation evidence retained; temporary source is now removed.
 - Representative captures: `map-entry`, `ready`, `empty`, and `error` only.
-- Additional interactive previews: `loading` and `load-more-error` remain available through the reference query and `?controls=1` control panel.
-- Production page, closed contract, owner-only backend and HTTP composition are implemented and deployed to staging at revision `2551ca5f9110f432a0ecf91636dd49bb6a99ea99`. The native Fixture and both preview routes remain excluded from the production manifest/package.
+- Additional interactive reference states: `loading` and `load-more-error` remain available through the reference query and `?controls=1` control panel.
+- Production page, closed contract, owner-only backend and HTTP composition are implemented and deployed to staging at revision `2551ca5f9110f432a0ecf91636dd49bb6a99ea99`.
 - User explicitly deferred the A3 CREATE real-device acceptance gate for B1 MVP progress on 2026-08-18.
-- Native capture is blocked. The initial DevTools attempt returned `WECHAT_PORT_MISMATCH`; after restarting the IDE on one confirmed port, the official `miniprogram-automator` handshake received no SDK version and failed before capture. No implementation PNG, comparison image, manual native visual review, or independent native visual decision is claimed.
-- MVP continuation decision: the user explicitly prioritized a usable, broader app and allowed subsequent modules to continue. The production slice has therefore progressed through contract, backend, frontend, integration and staging deployment. Native pixel comparison and one real-iPhone list journey remain acceptance debt, not fabricated passes.
+- Historical automated native capture remained blocked: the official `miniprogram-automator` handshake received no SDK version, so no implementation/comparison PNG is claimed.
+- Device gate: PASS on 2026-08-20. An experience member used uploaded experience build `0.1.1` on a real iPhone against a controlled staging zero-amount order; refresh, expired/completed details, buttons, scrolling, safe area and back behavior passed.
+- Cleanup gate: the temporary Fixture and both preview routes have been deleted after device acceptance; production route and real HTTP composition remain.
 
 ## Reference sources
 
@@ -58,7 +59,7 @@ node --test tests/build-miniprogram.test.mjs
 
 Covered behavior includes per-card detail navigation, the map shell's fixed right column and long-label truncation, real map-to-list navigation, back/relaunch empty exit, immutable retry/refresh/pagination transitions, closing-over-confirming precedence, handler coverage for every template button, and development-only route/Fixture packaging.
 
-## Native capture blocker
+## Historical native capture blocker
 
 The installed WeChat DevTools CLI and repository-level ignored AppID config were made available to the worktree, then one attempt used the documented port:
 
@@ -135,8 +136,15 @@ offset without horizontal overflow.
 
 ## Visual and device gate
 
-The approved reference board and tested native preview source are ready, and the production package
-is deployed. Native pixel review remains blocked by the installed DevTools automation protocol and
-is explicitly carried to Task 6 together with the real-iPhone list journey. Per the user's MVP
-continuation decision, these debts do not block later MVP planning, but neither may be described as
-a passed visual or device gate. The development Fixture remains until the real-device journey passes.
+The production package is deployed, and the real-iPhone journey passed on 2026-08-20 using
+experience build `0.1.1`. “我的订单” refresh worked; an expired detail exposed no payment action;
+after venue check-in and completion, refresh showed “已完成” and the detail exposed no action.
+Buttons, scrolling, safe area and back behavior were also checked on-device.
+
+No network failure was manufactured during this controlled staging run. The page displayed
+“已经到底了”, so no load-more control was visible. Existing page automation covers first-load
+error/retry, refresh failure, pagination and load-more failure/retry; this is accepted proportionally
+without manufacturing a staging outage or extra data. The missing automated 375 × 812 native pixel
+matrix remains honestly recorded above and is not replaced by fabricated screenshots. This device
+acceptance closes the temporary preview gate only; it does not approve real payment, refund, owner
+cancel, or B1 as a whole.

@@ -3,8 +3,10 @@
 - Target viewport: 375 × 812
 - Representative state: `refund-confirm`
 - Native Fixture visual approval: approved
-- Production enabled: no
-- Visual gate conclusion: approved
+- Historical Fixture visual evidence: retained
+- Production list/check-in/complete: enabled and device accepted
+- Payment/refund: disabled; refund route unpublished
+- Visual gate conclusion: approved for the recorded Fixture comparison and real-iPhone operational smoke
 
 ## 证据
 
@@ -13,6 +15,13 @@
 | `refund-confirm-reference-375x812.png` | `refund-confirm-implementation-375x812.png` | `refund-confirm-side-by-side-750x812.png` | `refund-confirm-overlay-375x812.png` | `refund-confirm-difference-375x812.png` |
 
 真实 WeChat DevTools 36.6.0 使用 iPhone 12/13 Pro 模拟器（运行时 viewport `390 × 844`）捕获 `refund-confirm-implementation-390x844.png`。自动化工具没有设备切换接口，因此保留该原始源图，并将其按近似相同比例规范化为 `375 × 812`，用于与同尺寸参考图进行并排、50% 叠加和 difference 检查；没有将 Chromium 图冒充原生实现。
+
+## 真实 iPhone 生产旅程
+
+2026-08-20，体验成员使用已成功上传的体验版 `0.1.1`，在受控 staging
+零金额订单上完成 9 项 PASS：“我的订单”刷新；打开已过期订单且无支付动作；进入授权场馆“今日订单”；无取消/退款按钮；确认签到；完成服务；场馆列表刷新后仍为“已完成”；“我的订单”刷新后为“已完成”且详情无操作；按钮、滚动、底部安全区和返回正常。
+
+该次验收时 `ONLINE_BOOKING_ENABLED=false`，`MINIPROGRAM_PAYMENT_PROVIDER=disabled`，场馆退款路由保持未发布。因而设备 PASS 只覆盖今日订单、签到、完成及相邻订单状态回读，不覆盖真实支付、退款或 owner 取消。
 
 ## 视觉结论
 
@@ -52,6 +61,8 @@ npm run build:miniprogram:development
 passed; dev/pages/venue-fulfillment/index discovered without editing a central manifest
 ```
 
+以上命令记录的是历史 preview 阶段。真机生产旅程通过后，删除门禁先在旧资产仍存在时得到预期 RED，再删除临时 Fixture、dev page 与 route fragment；随后门禁 GREEN，同时继续保护生产 route、真实 HTTP data source 与持久化 attempt store。
+
 ## Capture hashes
 
 - reference: `bff18ff743c8fa8e5aaa8500436c7c631bef9fd758031de18fc2f1d2f04d6ada`
@@ -61,4 +72,4 @@ passed; dev/pages/venue-fulfillment/index discovered without editing a central m
 - overlay 50%: `2d70dda3499bd41bc924b284821348e4428d583e7a7f764931db7d0298137490`
 - difference: `9694d17b4c7c72d8cd702782774d8e139f6c3f8edafc2898cc9ea5d483151fc7`
 
-本结论仅批准隔离的原生 Fixture 视觉与交互，不启用生产路由，也不代表后端 Task 4 已开始。
+历史 Fixture 证据继续保留，但临时 Fixture 源已在真机验收后删除。生产今日订单、签到和完成使用真实 HTTP 并已通过设备 smoke；真实支付/退款仍等待外部商户凭据与资金 smoke，场馆退款路由继续保持未发布，整个 B1 未标记完成。
