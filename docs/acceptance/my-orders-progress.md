@@ -49,6 +49,10 @@
 development manifest 移除两条 route。生产 `pages/my-orders/index`、真实 HTTP composition
 和历史视觉证据保留；删除门禁已完成 RED → GREEN。
 
+九项验收结束后，受控 staging 零金额验收图先通过完整回滚演练，再按同一组断言原子清理：
+仅删除 1 条临时订单、1 条合成零额 Payment、2 条签到/完成幂等记录和 1 个临时时段。
+提交后 marker 零残留检查通过；既有用户、场馆、场地和成员关系均保留，清理前备份仍可恢复。
+
 ## 仍不在本次完成范围
 
 - `ONLINE_BOOKING_ENABLED=false`，`MINIPROGRAM_PAYMENT_PROVIDER=disabled`；本次没有真实支付、退款或资金 smoke；
