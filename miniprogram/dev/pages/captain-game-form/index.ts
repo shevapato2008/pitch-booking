@@ -11,6 +11,7 @@ import { readIntentHeaderLayout } from "../../intent-header-layout";
 
 interface Options { state?: unknown; }
 interface StepperEvent { currentTarget?: { dataset?: { action?: unknown } }; }
+interface TextInputEvent { detail?: { value?: unknown }; }
 
 const patch = (state: CaptainOpenGameState, form: CaptainGameForm = captainOpenGameStore.current().snapshot) => {
   const view = buildCaptainOpenGameView(state);
@@ -42,6 +43,14 @@ Page({
     if (!this.data.canEdit) return;
     const changed = applyCaptainGameStepper(this.data.form, event.currentTarget?.dataset?.action);
     this.setData({ form: changed.form, stepperError: changed.error });
+  },
+  onNameInput(event: TextInputEvent) {
+    const name = typeof event.detail?.value === "string" ? event.detail.value : "";
+    this.setData({ form: { ...this.data.form, name } });
+  },
+  onTeamInput(event: TextInputEvent) {
+    const team = typeof event.detail?.value === "string" ? event.detail.value : "";
+    this.setData({ form: { ...this.data.form, team } });
   },
   onSave() {
     if (!this.data.canEdit) return;

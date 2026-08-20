@@ -4,6 +4,7 @@
 .captain-game-scroll { box-sizing: border-box; flex: 1 1 auto; height: auto; padding: 20rpx 24rpx 196rpx; }
 .captain-game-notice { padding: 0 8rpx 12rpx; }
 .captain-game-card { display: flex; flex-direction: column; gap: 10rpx; margin-bottom: 16rpx; padding: 24rpx; border: 1rpx solid #DBE5EC; border-radius: 16rpx; background: #FFFFFF; }
+.captain-game-field { display: flex; flex-direction: column; gap: 10rpx; }.captain-game-field__label { font-weight: 700; }.captain-game-field__input { box-sizing: border-box; width: 100%; min-height: 88rpx; padding: 0 24rpx; border: 1rpx solid #B8C8D6; border-radius: 12rpx; background: #FFFFFF; color: #10243E; }
 .captain-game-card-title, .captain-game-stepper-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
 .captain-game-card-title { color: #0369A1; font-size: 24rpx; }.captain-game-heading { font-size: 30rpx; font-weight: 700; }.captain-game-error { border-color: #FECACA; color: #B91C1C; }
 .captain-game-stepper { display: flex; align-items: center; gap: 16rpx; }.captain-game-stepper__button { display: flex; align-items: center; justify-content: center; width: 88rpx; min-width: 88rpx; min-height: 88rpx; margin: 0; padding: 0; border: 1rpx solid #B8C8D6; border-radius: 12rpx; background: #FFFFFF; color: #0369A1; }

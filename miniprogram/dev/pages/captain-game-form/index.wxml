@@ -10,7 +10,10 @@
     <view wx:elif="{{visualState === 'SAVE_UNKNOWN'}}" class="captain-game-card captain-game-error" role="status" aria-busy="true"><text class="captain-game-heading">正在确认保存结果</text><text>正在确认保存结果，已保留你的输入</text></view>
     <block wx:elif="{{canEdit}}">
       <view class="captain-game-card"><view class="captain-game-card-title"><text>真实订场已确认</text><text>不可修改</text></view><text class="captain-game-heading">{{order.venue}}</text><text>{{order.pitch}} · {{order.format}}</text><text>{{order.date}} · {{order.time}}</text><text>{{order.booking}}</text></view>
-      <view class="captain-game-card"><text class="captain-game-heading">球局与球队</text><text>球局名称：{{form.name}}</text><text>球队名称：{{form.team}}</text></view>
+      <view class="captain-game-card"><text class="captain-game-heading">球局与球队</text>
+        <label class="captain-game-field" for="captain-game-name"><text class="captain-game-field__label">球局名称</text><input id="captain-game-name" class="captain-game-field__input" value="{{form.name}}" maxlength="30" bindinput="onNameInput" cursor-spacing="112" aria-label="球局名称" /></label>
+        <label class="captain-game-field" for="captain-team-name"><text class="captain-game-field__label">球队名称</text><input id="captain-team-name" class="captain-game-field__input" value="{{form.team}}" maxlength="24" bindinput="onTeamInput" cursor-spacing="112" aria-label="球队名称" /></label>
+      </view>
       <view class="captain-game-card"><text class="captain-game-heading">人数与开放名额</text>
         <view class="captain-game-stepper-row"><text>计划总人数</text><view class="captain-game-stepper"><button class="captain-game-stepper__button" data-action="total-decrease" bindtap="onStepper">−</button><text>{{form.total}}</text><button class="captain-game-stepper__button" data-action="total-increase" bindtap="onStepper">+</button></view></view>
         <view class="captain-game-stepper-row"><text>已有固定队员</text><view class="captain-game-stepper"><button class="captain-game-stepper__button" data-action="fixed-decrease" bindtap="onStepper">−</button><text>{{form.fixed}}</text><button class="captain-game-stepper__button" data-action="fixed-increase" bindtap="onStepper">+</button></view></view>

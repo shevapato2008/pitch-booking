@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { CAPTAIN_OPEN_GAME_FIXTURE, captainOpenGameStore } from "../../captain-open-game-fixture";
 
-interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onStepper(event: any): void; onSave(): void; onReturnOrder(): void; onHeaderBack(): void; }
+interface Definition { data: Record<string, any>; onLoad(options?: { state?: unknown }): void; onNameInput(event: any): void; onTeamInput(event: any): void; onStepper(event: any): void; onSave(): void; onReturnOrder(): void; onHeaderBack(): void; }
 let captured: Definition | undefined;
 const loadPage = () => {
   if (!captured) {
@@ -24,6 +24,22 @@ test("eligible form loads and keeps stepper errors adjacent to the changed field
   page.data.form = { ...page.data.form, total: 12, fixed: 8, open: 4 };
   page.onStepper({ currentTarget: { dataset: { action: "total-decrease" } } });
   expect(page.data).toMatchObject({ stepperError: "计划总人数不能少于固定队员和开放名额之和" });
+});
+
+test("editable names use native inputs and save the current draft values", () => {
+  const page = loadPage();
+  page.onLoad({ state: "ELIGIBLE" });
+
+  page.onNameInput({ detail: { value: "周五晚七人局" } });
+  page.onTeamInput({ detail: { value: "津门蓝队" } });
+  expect(page.data.form).toMatchObject({ name: "周五晚七人局", team: "津门蓝队" });
+
+  page.onSave();
+  expect(captainOpenGameStore.current().snapshot).toMatchObject({ name: "周五晚七人局", team: "津门蓝队" });
+
+  const wxml = readFileSync("miniprogram/dev/pages/captain-game-form/index.wxml", "utf8");
+  expect(wxml).toMatch(/<input[^>]+maxlength="30"[^>]+bindinput="onNameInput"/);
+  expect(wxml).toMatch(/<input[^>]+maxlength="24"[^>]+bindinput="onTeamInput"/);
 });
 
 test("ineligible deep links show the reason and return to the real order", () => {
