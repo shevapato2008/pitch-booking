@@ -261,7 +261,11 @@ def _add_second_pending_order(
         return order.id, slot.id
 
 
-def _client(engine: Engine) -> TestClient:
+def _client(
+    engine: Engine,
+    *,
+    phone_vault_available: bool = True,
+) -> TestClient:
     app = create_app(
         settings=Settings(
             app_env="test",
@@ -276,10 +280,15 @@ def _client(engine: Engine) -> TestClient:
             yield session
 
     app.dependency_overrides[get_database] = database_override
-    app.dependency_overrides[get_phone_vault] = lambda: PhoneVault(
-        key_base64=KEY_BASE64,
-        key_version=KEY_VERSION,
+    phone_vault = (
+        PhoneVault(
+            key_base64=KEY_BASE64,
+            key_version=KEY_VERSION,
+        )
+        if phone_vault_available
+        else None
     )
+    app.dependency_overrides[get_phone_vault] = lambda: phone_vault
     app.dependency_overrides[get_order_clock] = lambda: NOW
     return TestClient(app, raise_server_exceptions=False)
 
@@ -587,6 +596,31 @@ def test_commit_failure_rolls_back_order_slot_and_idempotency_and_returns_503(
 
     monkeypatch.setattr(OrderRepository, "commit", fail_commit)
     with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/orders/{seeded.order_id}/cancel",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, seeded.order_id)
+        slot = session.get_one(Slot, seeded.slot_id)
+        assert order.status is OrderStatus.PENDING_PAYMENT
+        assert order.cancel_requested_at is None
+        assert order.cancelled_at is None
+        assert slot.status is SlotStatus.LOCKED
+        assert slot.locked_by_order_id == order.id
+        assert slot.checkout_version == seeded.checkout_version
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_projection_failure_rolls_back_cancellation_and_returns_503(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_pending_order(pg_engine)
+
+    with _client(pg_engine, phone_vault_available=False) as client:
         response = client.post(
             f"/api/v1/orders/{seeded.order_id}/cancel",
             headers=_headers(),

@@ -131,9 +131,11 @@ class OrderCancellationService:
             )
             self._order_repository.commit()
             return CancellationResult(status_code=status_code, response=response)
-        except AppError:
+        except AppError as error:
             with suppress(Exception):
                 self._order_repository.rollback()
+            if error.status_code >= 500:
+                raise _service_unavailable() from None
             raise
         except (RuntimeError, SQLAlchemyError):
             with suppress(Exception):
