@@ -23,6 +23,7 @@ from backend.app.models import (
     PaymentState,
     RefundAttemptStatus,
     RefundCasePurpose,
+    RefundReason,
     Slot,
     SlotStatus,
     User,
@@ -693,13 +694,67 @@ def _project_owner_allowed_actions(
         actor=OrderActorCapability.OWNER,
         now=now,
     )
+    can_cancel = projected.can_cancel
+    blocked_reason = projected.blocked_reason
+    if (
+        order.status is OrderStatus.REFUND_FAILED
+        and not _owner_refund_retry_is_available(order, slot)
+    ):
+        can_cancel = False
+        blocked_reason = "ORDER_TERMINAL"
     return OrderAllowedActionsResponse(
         can_pay=projected.can_pay,
-        can_cancel=projected.can_cancel,
+        can_cancel=can_cancel,
         can_check_in=projected.can_check_in,
         can_complete=projected.can_complete,
         can_refund=projected.can_refund,
-        blocked_reason=projected.blocked_reason,
+        blocked_reason=blocked_reason,
+    )
+
+
+def _owner_refund_retry_is_available(order: Order, slot: Slot) -> bool:
+    applied_payments = [
+        payment
+        for payment in order.payments
+        if payment.status is PaymentState.SUCCESS
+        and payment.applied_to_order_at is not None
+    ]
+    if (
+        len(applied_payments) != 1
+        or applied_payments[0].currency != "CNY"
+        or slot.status is not SlotStatus.BOOKED
+    ):
+        return False
+
+    payment = applied_payments[0]
+    refund_case = next(
+        (
+            candidate
+            for candidate in order.refund_cases
+            if candidate.payment_id == payment.id
+        ),
+        None,
+    )
+    if (
+        refund_case is None
+        or refund_case.order_id != order.id
+        or refund_case.purpose is not RefundCasePurpose.ORDER_CANCELLATION
+        or refund_case.reason is not RefundReason.USER_CANCELLED
+        or refund_case.reason_note is not None
+        or refund_case.requested_by_user_id != order.user_id
+        or refund_case.amount_cents != payment.amount_cents
+        or refund_case.currency != payment.currency
+    ):
+        return False
+
+    latest_attempt = max(
+        refund_case.attempts,
+        key=lambda attempt: (attempt.attempt_no, attempt.id),
+        default=None,
+    )
+    return (
+        latest_attempt is not None
+        and latest_attempt.status is RefundAttemptStatus.FAILED
     )
 
 

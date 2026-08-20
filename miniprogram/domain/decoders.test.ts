@@ -393,6 +393,26 @@ test.each([
   })).toMatchObject({ status });
 });
 
+test("decodes refund failure without inventing an unavailable owner retry", () => {
+  expect(decodeOwnerOrder({
+    ...confirmedOrder,
+    status: "REFUND_FAILED",
+    cancel_requested_at: "2026-08-18T10:00:00+08:00",
+    cancelled_at: "2026-08-18T10:00:01+08:00",
+    allowed_actions: {
+      can_pay: false,
+      can_cancel: false,
+      can_check_in: false,
+      can_complete: false,
+      can_refund: false,
+      blocked_reason: "ORDER_TERMINAL",
+    },
+  })).toMatchObject({
+    status: "REFUND_FAILED",
+    allowedActions: { canCancel: false, blockedReason: "ORDER_TERMINAL" },
+  });
+});
+
 test("keeps lifecycle additions closed while exposing the owner action boundary", () => {
   expect(decodeOrder(confirmedOrder)).toMatchObject({
     cancelRequestedAt: null,

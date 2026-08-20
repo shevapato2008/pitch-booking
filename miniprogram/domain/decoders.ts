@@ -170,7 +170,9 @@ function isOwnerActionProjection(
       || (!actions.canCancel && blocked === "CANCELLATION_WINDOW_CLOSED");
   }
   if (status === "REFUND_FAILED") {
-    return !actions.canPay && actions.canCancel && blocked === null;
+    return !actions.canPay
+      && ((actions.canCancel && blocked === null)
+        || (!actions.canCancel && blocked === "ORDER_TERMINAL"));
   }
   if (status === "REFUND_PENDING") {
     return !actions.canPay && !actions.canCancel && blocked === "REFUND_IN_PROGRESS";

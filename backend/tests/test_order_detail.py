@@ -210,15 +210,18 @@ def _add_refund_case(
     payment: Payment,
     purpose: RefundCasePurpose,
     created_at: datetime,
+    reason: RefundReason = RefundReason.AUTOMATIC_RECOVERY,
+    reason_note: str | None = None,
+    requested_by_user_id: uuid.UUID | None = None,
 ) -> RefundCase:
     refund_case = RefundCase(
         id=uuid.uuid4(),
         order=order,
         payment=payment,
         purpose=purpose,
-        reason=RefundReason.AUTOMATIC_RECOVERY,
-        reason_note=None,
-        requested_by_user_id=None,
+        reason=reason,
+        reason_note=reason_note,
+        requested_by_user_id=requested_by_user_id,
         amount_cents=payment.amount_cents,
         currency=payment.currency,
         created_at=created_at,
@@ -257,6 +260,94 @@ def _add_refund_attempt(
     session.add(attempt)
     session.flush()
     return attempt
+
+
+@pytest.mark.parametrize(
+    (
+        "purpose",
+        "reason",
+        "payment_applied",
+        "slot_status",
+        "expected_can_cancel",
+    ),
+    [
+        (
+            RefundCasePurpose.ORDER_CANCELLATION,
+            RefundReason.USER_CANCELLED,
+            True,
+            SlotStatus.BOOKED,
+            True,
+        ),
+        (
+            RefundCasePurpose.ORDER_CANCELLATION,
+            RefundReason.VENUE_CANCELLED,
+            True,
+            SlotStatus.BOOKED,
+            False,
+        ),
+        (
+            RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
+            RefundReason.AUTOMATIC_RECOVERY,
+            False,
+            SlotStatus.AVAILABLE,
+            False,
+        ),
+    ],
+)
+def test_refund_failed_retry_requires_an_exact_owner_refund_graph(
+    pg_engine: Engine,
+    purpose: RefundCasePurpose,
+    reason: RefundReason,
+    payment_applied: bool,
+    slot_status: SlotStatus,
+    expected_can_cancel: bool,
+) -> None:
+    order_id, owner_id, _ = _seed_detail(pg_engine)
+    with Session(pg_engine) as session:
+        order = session.get_one(Order, order_id)
+        order.status = OrderStatus.REFUND_FAILED
+        order.cancel_requested_at = NOW - timedelta(minutes=3)
+        order.cancelled_at = NOW - timedelta(minutes=2)
+        order.slot.status = slot_status
+        order.slot.locked_until = None
+        order.slot.locked_by_order_id = None
+        payment = _add_payment(
+            session,
+            order,
+            status=PaymentState.SUCCESS,
+            paid_at=NOW - timedelta(minutes=4),
+            applied=payment_applied,
+        )
+        refund_case = _add_refund_case(
+            session,
+            order=order,
+            payment=payment,
+            purpose=purpose,
+            reason=reason,
+            reason_note="场馆无法履约" if reason is RefundReason.VENUE_CANCELLED else None,
+            requested_by_user_id=owner_id,
+            created_at=NOW - timedelta(minutes=2),
+        )
+        _add_refund_attempt(
+            session,
+            refund_case=refund_case,
+            attempt_no=1,
+            status=RefundAttemptStatus.FAILED,
+        )
+        session.commit()
+
+    with _client(pg_engine) as client:
+        response = client.get(f"/api/v1/orders/{order_id}", headers=_auth())
+
+    assert response.status_code == 200
+    assert response.json()["allowed_actions"] == {
+        "can_pay": False,
+        "can_cancel": expected_can_cancel,
+        "can_check_in": False,
+        "can_complete": False,
+        "can_refund": False,
+        "blocked_reason": None if expected_can_cancel else "ORDER_TERMINAL",
+    }
 
 
 def _auth() -> dict[str, str]:
