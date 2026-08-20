@@ -254,10 +254,6 @@
   color: #FFFFFF;
 }
 
-.primary-button--wide {
-  width: 100%;
-}
-
 .primary-button[disabled] {
   background: #DBE5EC;
   color: #475569;

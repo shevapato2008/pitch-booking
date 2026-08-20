@@ -72,13 +72,12 @@
     <button wx:if="{{showReselect}}" class="secondary-button" bindtap="onReselectSlot">重新选择时段</button>
   </view>
 
-  <view wx:if="{{showPaymentFooter && (onlineBookingEnabled || status === 'booking-confirmed')}}" class="payment-footer">
-    <view wx:if="{{status !== 'booking-confirmed'}}" class="footer-total">
+  <view wx:if="{{showPaymentFooter && onlineBookingEnabled}}" class="payment-footer">
+    <view class="footer-total">
       <text class="footer-total__label">合计</text>
       <text class="footer-total__amount">{{priceText}}</text>
     </view>
-    <button wx:if="{{status === 'booking-confirmed'}}" class="primary-button primary-button--wide" bindtap="onViewBookingDetails">查看预订详情</button>
-    <button wx:elif="{{status === 'payment-exception'}}" class="primary-button" bindtap="onReconcilePayment">重新查询</button>
+    <button wx:if="{{status === 'payment-exception'}}" class="primary-button" bindtap="onReconcilePayment">重新查询</button>
     <button wx:else class="primary-button" disabled="{{primaryDisabled}}" bindtap="onPay">
       <text wx:if="{{status === 'creating-prepay'}}">正在发起支付…</text>
       <text wx:elif="{{status === 'cashier-open'}}">收银台处理中…</text>

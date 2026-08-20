@@ -301,10 +301,10 @@ Page({
           : exception
             ? "重新查询"
             : confirmed
-              ? "查看预订详情"
+              ? ""
               : "立即支付",
       primaryDisabled: creating || cashierOpen || confirming,
-      showPaymentFooter: true,
+      showPaymentFooter: !confirmed,
       showPaymentRetry: exception,
       showCashierMarker: cashierOpen,
       cashierNotice: getPaymentBindings()?.capability.cashierNotice ?? "",
@@ -529,14 +529,6 @@ Page({
     } catch {
       if (this.isCurrentPaymentOperation(generation)
         && projectionRevision === this.orderProjectionRevision) this.ensurePoller().reconcile();
-    }
-  },
-
-  async onViewBookingDetails() {
-    try {
-      await wx.pageScrollTo({ scrollTop: 0, duration: 200 });
-    } catch {
-      // The user is already on the stable booking detail page.
     }
   },
 

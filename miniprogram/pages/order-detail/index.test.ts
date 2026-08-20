@@ -233,6 +233,26 @@ describe("order detail lifecycle orchestration", () => {
 });
 
 describe("order detail payment orchestration", () => {
+  test("confirmed order detail does not expose a redundant footer action", async () => {
+    registerPaymentRuntime({
+      getOrder: async () => structuredClone(PAYMENT_SCENARIOS.confirmed),
+    });
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: PAYMENT_SCENARIOS.confirmed.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "booking-confirmed",
+      primaryText: "",
+      showPaymentFooter: false,
+    });
+    expect(readFileSync("miniprogram/pages/order-detail/index.wxml", "utf8")).not.toContain(
+      "onViewBookingDetails",
+    );
+    call(page, "onUnload");
+  });
+
   test("disabled online booking shows an honest unavailable state without a payment action", async () => {
     registerPaymentRuntime({});
     registerBookingDataSource(baseSource(async () => structuredClone(pending)));
@@ -249,7 +269,7 @@ describe("order detail payment orchestration", () => {
       primaryDisabled: true,
     });
     expect(readFileSync("miniprogram/pages/order-detail/index.wxml", "utf8")).toContain(
-      "showPaymentFooter && (onlineBookingEnabled || status === 'booking-confirmed')",
+      "showPaymentFooter && onlineBookingEnabled",
     );
     call(page, "onUnload");
   });
@@ -268,8 +288,8 @@ describe("order detail payment orchestration", () => {
       "重新查询",
       "预订成功",
       "已支付",
-      "查看预订详情",
     ]) expect(wxml).toContain(copy);
+    expect(wxml).not.toContain("查看预订详情");
     expect(wxml).toMatch(/disabled="\{\{primaryDisabled\}\}"/);
     expect(wxml).toMatch(/aria-label="支付成功"/);
     expect(wxml).not.toMatch(/客服.*电话|customerServicePhone/);
@@ -653,7 +673,12 @@ describe("order detail payment orchestration", () => {
 
     expect(page.data).toMatchObject({ status, heroTitle });
     if (status === "booking-confirmed") {
-      expect(page.data).toMatchObject({ paidLabel: "已支付", primaryText: "查看预订详情", primaryDisabled: false });
+      expect(page.data).toMatchObject({
+        paidLabel: "已支付",
+        primaryText: "",
+        primaryDisabled: false,
+        showPaymentFooter: false,
+      });
     } else {
       expect(page.data).toMatchObject({ primaryText: "重新查询", primaryDisabled: false });
     }

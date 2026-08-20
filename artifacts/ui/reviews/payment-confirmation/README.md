@@ -8,6 +8,9 @@
 - Browser review board: `review-board.html`
 - Active order cancellation belongs to the next slice.
 - Real WeChat integration and final production delivery remain deferred.
+- 2026-08-20 device acceptance correction: the confirmed production page is already the
+  stable order detail, so its redundant no-op footer action was removed. The frozen reference
+  below remains historical visual evidence; the approved design also permits a no-action detail state.
 
 ## Frozen references
 
@@ -53,14 +56,14 @@ Complete every row for pending, confirming, and confirmed before requesting visu
 | Category | Pending | Confirming | Confirmed |
 | --- | --- | --- | --- |
 | Composition | Body hierarchy matches; native WeChat status/navigation chrome is visible only in implementation | Body hierarchy matches; native WeChat chrome adds top height | Body hierarchy matches; native WeChat chrome adds top height |
-| Geometry / spacing | Cards, hero and fixed footer align closely; implementation uses slightly denser vertical rhythm | Cards and confirmation hero align closely | Success hero and cards align; implementation footer sits above Home Indicator |
+| Geometry / spacing | Cards, hero and fixed footer align closely; implementation uses slightly denser vertical rhythm | Cards and confirmation hero align closely | Success hero and cards align; production omits the frozen reference's redundant footer |
 | Hierarchy | Status → order → contact → rules → payment action matches | Progress → authoritative copy → snapshot → disabled action matches | Success → paid snapshot → contact → cancellation → details action matches |
 | Typography | Native font rasterization is slightly heavier | Native font rasterization is slightly heavier | Native font rasterization is slightly heavier |
-| Colors / materials | Background, cards, blue CTA and borders match the approved roles | Progress blue, disabled surface and neutral copy match | Green success accent, cards and blue CTA match |
+| Colors / materials | Background, cards, blue CTA and borders match the approved roles | Progress blue, disabled surface and neutral copy match | Green success accent and cards match; production has no confirmed-state CTA |
 | Vector assets | No custom asset in pending state; WeChat supplies native chrome icons | CSS progress ring is present in both | CSS success check is present in both |
 | Copy | Runtime countdown is `10:00` versus frozen visual `09:34`; runtime phone includes the fixture's `+86` prefix | State and authority copy match; runtime phone includes `+86` | State, paid snapshot and cancellation copy match; runtime phone includes `+86` |
-| Interaction / state semantics | CTA is active and opens the explicitly labelled development cashier | CTA is truly disabled while server reconciliation is pending | Stable confirmed state exposes only “查看预订详情” |
-| Accessibility | Native button and semantic status labels retained | Disabled native button and progress label retained | Success icon label and native action retained |
+| Interaction / state semantics | CTA is active and opens the explicitly labelled development cashier | CTA is truly disabled while server reconciliation is pending | Stable confirmed state is already the order detail and exposes no redundant footer action |
+| Accessibility | Native button and semantic status labels retained | Disabled native button and progress label retained | Success icon label retained; no inactive control is exposed |
 
 Automated layout checks do not constitute visual approval. Compare the reference,
 implementation, side-by-side, 50% overlay, and difference images at the same target viewport;
