@@ -1,6 +1,7 @@
 /// <reference types="node" />
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { captainOpenGameStore } from "../../captain-open-game-fixture";
 
@@ -29,6 +30,10 @@ test("preview and edit have deterministic Fixture navigation", () => {
   expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-public/index?from=DRAFT" });
   page.onEdit();
   expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/dev/pages/captain-game-form/index?state=DRAFT" });
+
+  const wxml = readFileSync("miniprogram/dev/pages/captain-game-manage/index.wxml", "utf8");
+  expect(wxml).toContain('id="captain-game-preview"');
+  expect(wxml).toContain('id="captain-game-edit"');
 });
 
 test("share failure is visible without changing published lifecycle", () => {
