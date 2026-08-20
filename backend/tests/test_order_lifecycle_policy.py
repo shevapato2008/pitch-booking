@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from backend.app.models import OrderStatus, RefundCasePurpose
+from backend.app.modules.orders import lifecycle as order_lifecycle
 from backend.app.modules.orders.lifecycle import (
     OrderActorCapability,
     OrderLifecycleFacts,
@@ -112,6 +113,66 @@ def test_owner_action_projection(
     assert actions.can_complete is False
     assert actions.can_refund is False
     assert actions.blocked_reason == blocked_reason
+
+
+@pytest.mark.parametrize(
+    ("case", "facts", "expected"),
+    [
+        (
+            "pending without possible funds cancels locally",
+            _facts(status=OrderStatus.PENDING_PAYMENT),
+            "CANCEL_LOCALLY",
+        ),
+        (
+            "pending with possible funds records intent and waits",
+            _facts(status=OrderStatus.PENDING_PAYMENT, payment_may_exist=True),
+            "WAIT_FOR_PAYMENT_RESULT",
+        ),
+        (
+            "confirmed at the 24 hour boundary enqueues a refund",
+            _facts(status=OrderStatus.CONFIRMED, starts_at=NOW + timedelta(hours=24)),
+            "ENQUEUE_REFUND",
+        ),
+        (
+            "confirmed inside 24 hours is rejected",
+            _facts(
+                status=OrderStatus.CONFIRMED,
+                starts_at=NOW + timedelta(hours=24) - timedelta(microseconds=1),
+            ),
+            "REJECT_ORDER_STATE",
+        ),
+        (
+            "checked in confirmed order is rejected",
+            _facts(
+                status=OrderStatus.CONFIRMED,
+                checked_in_at=NOW - timedelta(minutes=1),
+            ),
+            "REJECT_ORDER_STATE",
+        ),
+        (
+            "failed owner refund can be retried",
+            _facts(status=OrderStatus.REFUND_FAILED),
+            "RETRY_REFUND",
+        ),
+        (
+            "active owner refund is not duplicated",
+            _facts(status=OrderStatus.REFUND_PENDING),
+            "REFUND_IN_PROGRESS",
+        ),
+        (
+            "cancelled order returns its terminal projection",
+            _facts(status=OrderStatus.CANCELLED),
+            "RETURN_CANCELLED",
+        ),
+    ],
+    ids=lambda case: case,
+)
+def test_owner_cancellation_command_decision(
+    case: str,
+    facts: OrderLifecycleFacts,
+    expected: str,
+) -> None:
+    assert order_lifecycle.decide_owner_cancellation(facts, now=NOW) == expected
 
 
 @pytest.mark.parametrize(

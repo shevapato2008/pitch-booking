@@ -13,6 +13,16 @@ class OrderActorCapability(StrEnum):
     VENUE_MANAGER = "VENUE_MANAGER"
 
 
+class OwnerCancellationDecision(StrEnum):
+    CANCEL_LOCALLY = "CANCEL_LOCALLY"
+    WAIT_FOR_PAYMENT_RESULT = "WAIT_FOR_PAYMENT_RESULT"
+    ENQUEUE_REFUND = "ENQUEUE_REFUND"
+    RETRY_REFUND = "RETRY_REFUND"
+    RETURN_CANCELLED = "RETURN_CANCELLED"
+    REFUND_IN_PROGRESS = "REFUND_IN_PROGRESS"
+    REJECT_ORDER_STATE = "REJECT_ORDER_STATE"
+
+
 BlockedReason = Literal[
     "PAYMENT_RESULT_PENDING",
     "CANCELLATION_WINDOW_CLOSED",
@@ -76,6 +86,37 @@ def is_b2_open_game_eligible(facts: OrderLifecycleFacts, *, now: datetime) -> bo
         }
         and facts.starts_at > now + timedelta(hours=2)
     )
+
+
+def decide_owner_cancellation(
+    facts: OrderLifecycleFacts,
+    *,
+    now: datetime,
+) -> OwnerCancellationDecision:
+    """Choose the owner cancellation command without performing any writes."""
+    if facts.status is OrderStatus.PENDING_PAYMENT:
+        if facts.payment_may_exist:
+            return OwnerCancellationDecision.WAIT_FOR_PAYMENT_RESULT
+        return OwnerCancellationDecision.CANCEL_LOCALLY
+
+    if facts.status is OrderStatus.CANCELLED:
+        return OwnerCancellationDecision.RETURN_CANCELLED
+    if facts.status is OrderStatus.REFUND_PENDING:
+        return OwnerCancellationDecision.REFUND_IN_PROGRESS
+    if facts.status is OrderStatus.REFUND_FAILED:
+        return OwnerCancellationDecision.RETRY_REFUND
+
+    if facts.status is OrderStatus.CONFIRMED:
+        if (
+            facts.checked_in_at is not None
+            or facts.starts_at - now < timedelta(hours=24)
+        ):
+            return OwnerCancellationDecision.REJECT_ORDER_STATE
+        if facts.controlling_refund_purpose is not None:
+            return OwnerCancellationDecision.REFUND_IN_PROGRESS
+        return OwnerCancellationDecision.ENQUEUE_REFUND
+
+    return OwnerCancellationDecision.REJECT_ORDER_STATE
 
 
 def _project_owner_actions(

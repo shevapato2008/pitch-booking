@@ -15,6 +15,7 @@ from backend.app.models import User
 from backend.app.modules.auth.repository import AuthRepository
 from backend.app.modules.auth.router import get_current_user, get_phone_vault
 from backend.app.modules.auth.service import resolve_authenticated_user
+from backend.app.modules.orders.cancellation import OrderCancellationService
 from backend.app.modules.orders.dto import (
     CreateOrderRequest,
     CreateOrderResponse,
@@ -23,6 +24,7 @@ from backend.app.modules.orders.dto import (
 )
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.modules.orders.service import OrderService
+from backend.app.modules.refunds.repository import RefundRepository
 from backend.app.security.phone_vault import PhoneVault
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -389,6 +391,61 @@ def create_order(
     )
     content = json.dumps(
         result.body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return Response(
+        content=content,
+        status_code=result.status_code,
+        media_type="application/json",
+    )
+
+
+@router.post(
+    "/{order_id}/cancel",
+    operation_id="cancelOwnedOrder",
+    response_model=OrderDetailResponse,
+    responses={
+        202: {"model": OrderDetailResponse},
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def cancel_owned_order(
+    order_id: uuid.UUID,
+    user: Annotated[User, Depends(get_order_list_current_user)],
+    database: Annotated[Session, Depends(get_database)],
+    phone_vault: Annotated[PhoneVault | None, Depends(get_phone_vault)],
+    now: Annotated[datetime, Depends(get_order_clock)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+) -> Response:
+    order_repository = OrderRepository(database)
+    detail_service = OrderService(
+        repository=order_repository,
+        phone_vault=phone_vault,
+        now=lambda: now,
+    )
+    result = OrderCancellationService(
+        order_repository=order_repository,
+        refund_repository=RefundRepository(database),
+        project_order_detail=lambda order, slot: detail_service._order_response(
+            order,
+            slot,
+        ),
+        now=lambda: now,
+    ).cancel_owned_order(
+        user_id=user.id,
+        order_id=order_id,
+        idempotency_key=idempotency_key,
+    )
+    content = json.dumps(
+        result.response.model_dump(mode="json"),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

@@ -274,6 +274,7 @@ def create_app(
                 routes=application.routes,
             )
             for path in (
+                "/api/v1/orders/{order_id}/cancel",
                 "/api/v1/orders/{order_id}/pay",
                 "/api/v1/orders/{order_id}/payments/{payment_id}/reconcile",
                 "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in",

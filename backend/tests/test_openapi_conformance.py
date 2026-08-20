@@ -619,6 +619,10 @@ def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
         settings=Settings(app_env="test", wechat_provider="development")
     ).openapi()
     published_operations = {
+        "/api/v1/orders/{order_id}/cancel": (
+            "post",
+            {"200", "202", "401", "404", "409", "503"},
+        ),
         "/api/v1/venues/{venue_id}/fulfillment/orders": (
             "get",
             {"200", "401", "404", "422", "503"},
@@ -637,10 +641,6 @@ def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
         "/api/v1/refunds/wechat/notify": ("post", {"204", "400", "503"}),
     }
     unpublished_operations = {
-        "/api/v1/orders/{order_id}/cancel": (
-            "post",
-            {"200", "202", "401", "404", "409", "503"},
-        ),
         "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund": (
             "post",
             {"200", "202", "401", "404", "409", "422", "503"},
