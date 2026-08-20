@@ -6,6 +6,9 @@
     "dev/pages/venue-profile-public/index",
     "dev/pages/venue-access/index",
     "dev/pages/venue-claim/index",
-    "dev/pages/venue-create/index"
+    "dev/pages/venue-create/index",
+    "dev/pages/captain-game-form/index",
+    "dev/pages/captain-game-manage/index",
+    "dev/pages/captain-game-public/index"
   ]
 }

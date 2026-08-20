@@ -12,6 +12,8 @@
 
 **Prerequisite:** 共享生命周期设计已批准并冻结 B2 资格；本计划仍不得实现生产契约、数据库、API 或启用“我要找球踢”。
 
+**Current status (2026-08-21 root integration):** Task 1 reference Artifact and Task 2 development-only native Fixture have been migrated onto the current baseline. The root integration registers the three preview routes only in the central development manifest. Task 3 native capture and visual decision remain pending; no visual approval or production readiness is claimed.
+
 **Integration ownership:** 本切片只提交 slice-local 页面、Fixture、路由片段和聚焦测试。`miniprogram/dev/app-pages.json`、`miniprogram/dev/bootstrap.ts`、中央 build/audit manifests/tests 以及最终 Fixture 删除，由 root 集成协调任务在合并所有活动切片后串行完成；不得让本分支的旧中央清单覆盖其他切片路由。
 
 ---
@@ -30,7 +32,7 @@
 - Create: `tests/captain-open-game-artifact.test.mjs`
 - Modify: `artifacts/ui/README.md`
 
-- [ ] **Step 1: Write the Artifact RED test**
+- [x] **Step 1: Write the Artifact RED test**
 
 Require exactly four `375×812` reference states:
 
@@ -49,15 +51,15 @@ node --test tests/captain-open-game-artifact.test.mjs
 
 Expected: RED because the files do not exist.
 
-- [ ] **Step 2: Implement the reference using existing tokens**
+- [x] **Step 2: Implement the reference using existing tokens**
 
 Use the product palette and 4/8px rhythm already listed in the design. Keep the create frame focused: one column, visible labels, compact steppers, immutable booking card and safe-area footer. Do not add chat, teams dashboard, applications, reports, animations or a new icon family.
 
-- [ ] **Step 3: Capture and self-review four reference PNGs**
+- [x] **Step 3: Capture and self-review four reference PNGs**
 
 Capture each state at exactly 375×812. Check composition, geometry, hierarchy, typography/color/material, icons, copy/status honesty, text wrapping, dual-axis button/stepper centering and safe-area clearance. Record only visible issues and their disposition.
 
-- [ ] **Step 4: Run the focused check and commit**
+- [x] **Step 4: Run the focused check and commit**
 
 ```bash
 node --test tests/captain-open-game-artifact.test.mjs
@@ -81,7 +83,7 @@ git commit -m "design: define captain open game journey"
 - Create: `miniprogram/dev/captain-open-game-pages.json`
 - Create: `tests/captain-open-game-native-preview.test.mjs`
 
-- [ ] **Step 1: Write focused RED tests**
+- [x] **Step 1: Write focused RED tests**
 
 Cover:
 
@@ -104,11 +106,11 @@ node --test tests/captain-open-game-native-preview.test.mjs
 
 Expected: RED because the Fixture/pages do not exist.
 
-- [ ] **Step 2: Implement the minimal immutable Fixture**
+- [x] **Step 2: Implement the minimal immutable Fixture**
 
 Use one unmistakable `CAPTAIN_OPEN_GAME_FIXTURE` token under `miniprogram/dev`. The state machine may cover `ELIGIBLE → DRAFT → PUBLISHED → CANCELLED` plus `INELIGIBLE`, `SUSPENDED`, `SAVE_UNKNOWN` and `LOAD_ERROR`, but only the four representative states require visual capture. All business success is local and visibly development-only; production modules must not import it.
 
-- [ ] **Step 3: Run native preview GREEN checks**
+- [x] **Step 3: Run native preview GREEN checks**
 
 ```bash
 npx jest miniprogram/dev/captain-open-game-fixture.test.ts \
@@ -122,7 +124,7 @@ node --test tests/captain-open-game-native-preview.test.mjs
 
 The focused Node test must validate `miniprogram/dev/captain-open-game-pages.json` and production isolation without editing the shared app-page/build manifests. A root integration task will merge this fragment with other active slice fragments and run the shared build/audit suite once.
 
-- [ ] **Step 4: Commit the isolated preview**
+- [x] **Step 4: Commit the isolated preview**
 
 ```bash
 git add miniprogram/dev tests/captain-open-game-native-preview.test.mjs
