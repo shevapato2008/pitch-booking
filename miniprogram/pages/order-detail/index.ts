@@ -2,6 +2,7 @@ import type { LifecycleTerminalOrderStatus, OrderView } from "../../domain/booki
 import type { PaymentOrderView } from "../../domain/payment";
 import {
   OrderDetailPoller,
+  presentOwnerOrderLifecycle,
   presentOrderDetailStatus,
   type OrderDetailPollState,
   type PollScheduler,
@@ -14,7 +15,7 @@ import {
   type PaymentPageState,
 } from "../../presentation/payment";
 import { formatShanghaiTimeRange } from "../../presentation/shanghai-time";
-import { getBookingDataSource } from "../../services/booking";
+import { getBookingDataSource, type BookingDataSource } from "../../services/booking";
 import { getPaymentBindings } from "../../services/payment";
 import { ONLINE_BOOKING_ENABLED } from "../../config/runtime";
 
@@ -46,6 +47,35 @@ function isUnknownPaymentResult(error: unknown): boolean {
   return (error as { code?: unknown } | null)?.code === "PAYMENT_RESULT_UNKNOWN";
 }
 
+type CancellationCapableSource = BookingDataSource & {
+  cancelOrder: NonNullable<BookingDataSource["cancelOrder"]>;
+};
+
+function getCancellationSource(): CancellationCapableSource | null {
+  try {
+    const source = getBookingDataSource();
+    return typeof source.cancelOrder === "function" ? source as CancellationCapableSource : null;
+  } catch {
+    return null;
+  }
+}
+
+function isUnknownCancellationResult(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "CANCELLATION_RESULT_UNKNOWN";
+}
+
+function isCancellationAcknowledgement(
+  before: OrderView | PaymentOrderView,
+  result: OrderView,
+): boolean {
+  if (result.orderId !== before.orderId) return false;
+  if (before.status === "PENDING_PAYMENT") {
+    return result.status === "PENDING_PAYMENT" && result.cancelRequestedAt != null;
+  }
+  return (before.status === "CONFIRMED" || before.status === "REFUND_FAILED")
+    && result.status === "REFUND_PENDING";
+}
+
 function clearedPaymentUi() {
   return {
     eyebrow: "",
@@ -60,6 +90,13 @@ function clearedPaymentUi() {
     showSuccessIcon: false,
     paidLabel: "",
     paymentError: "",
+    cancelActionLabel: "",
+    cancelModalTitle: "",
+    cancelModalContent: "",
+    showCancelAction: false,
+    showActionFooter: false,
+    showLifecycleRefresh: false,
+    cancellationUnknown: false,
   };
 }
 
@@ -107,6 +144,15 @@ Page({
     showClosingRetry: false,
     showReselect: false,
     navigationError: "",
+    cancellationError: "",
+    cancellationUnknown: false,
+    cancellationBusy: false,
+    cancelActionLabel: "",
+    cancelModalTitle: "",
+    cancelModalContent: "",
+    showCancelAction: false,
+    showActionFooter: false,
+    showLifecycleRefresh: false,
     onlineBookingEnabled: ONLINE_BOOKING_ENABLED,
   },
   poller: undefined as OrderDetailPoller | undefined,
@@ -117,6 +163,11 @@ Page({
   orderProjectionRevision: 0,
   terminalOrderStatus: null as "CONFIRMED" | "EXPIRED" | LifecycleTerminalOrderStatus | null,
   manualReconcileInFlight: null as Promise<void> | null,
+  cancellationOperationGeneration: 0,
+  cancellationClickSerial: 0,
+  cancellationKey: null as string | null,
+  cancellationInFlight: false,
+  cancellationRefreshInFlight: null as Promise<void> | null,
   visible: false,
 
   onLoad(options: Record<string, string | undefined>) {
@@ -126,6 +177,10 @@ Page({
     this.orderProjectionRevision = 0;
     this.terminalOrderStatus = null;
     this.manualReconcileInFlight = null;
+    this.cancellationOperationGeneration += 1;
+    this.cancellationKey = null;
+    this.cancellationInFlight = false;
+    this.cancellationRefreshInFlight = null;
     this.paymentOperationGeneration += 1;
     try {
       const orderId = requireUuid(options.order_id);
@@ -148,23 +203,34 @@ Page({
   onHide() {
     this.visible = false;
     this.paymentOperationGeneration += 1;
+    this.cancellationOperationGeneration += 1;
     this.poller?.cancel();
     this.manualReconcileInFlight = null;
+    this.cancellationInFlight = false;
+    this.cancellationRefreshInFlight = null;
+    this.setData({ cancellationBusy: false });
   },
 
   onUnload() {
     this.visible = false;
     this.paymentOperationGeneration += 1;
+    this.cancellationOperationGeneration += 1;
     this.poller?.cancel();
     this.paymentCreateKey = null;
     this.manualReconcileInFlight = null;
+    this.cancellationKey = null;
+    this.cancellationInFlight = false;
+    this.cancellationRefreshInFlight = null;
   },
 
   ensurePoller(): OrderDetailPoller {
     if (!this.poller) {
       const bindings = getPaymentBindings();
+      const cancellationSource = getCancellationSource();
       this.poller = new OrderDetailPoller({
-        getOrder: this.data.onlineBookingEnabled && bindings
+        getOrder: cancellationSource
+          ? (orderId) => cancellationSource.getOrder(orderId)
+          : this.data.onlineBookingEnabled && bindings
           ? (orderId) => bindings.source.getOrder(orderId)
           : (orderId) => getBookingDataSource().getOrder(orderId),
         clock: bindings?.clock ?? { now: () => new Date() },
@@ -177,13 +243,32 @@ Page({
     return this.poller;
   },
 
+  ownerActionUi(order: OrderView | PaymentOrderView, showPaymentFooter: boolean) {
+    const lifecycle = presentOwnerOrderLifecycle(order);
+    const cancelAction = getCancellationSource() ? lifecycle.cancelAction : null;
+    return {
+      heroTitle: lifecycle.heroTitle,
+      showPaymentFooter,
+      showCancelAction: cancelAction !== null,
+      cancelActionLabel: cancelAction?.label ?? "",
+      cancelModalTitle: cancelAction?.title ?? "",
+      cancelModalContent: cancelAction?.content ?? "",
+      showActionFooter: showPaymentFooter || cancelAction !== null,
+      showLifecycleRefresh: false,
+      cancellationUnknown: false,
+    };
+  },
+
   applyPollState(state: OrderDetailPollState) {
     if (this.terminalOrderStatus && !("order" in state)) return;
     if ("order" in state && !this.acceptOrderProjection(state.order)) return;
+    const ownerLifecycle = "order" in state ? presentOwnerOrderLifecycle(state.order) : null;
     if (
       !this.data.onlineBookingEnabled
       && "order" in state
       && ["pending-payment", "payment-confirming", "payment-exception"].includes(state.status)
+      && ownerLifecycle?.cancelAction === null
+      && ownerLifecycle.shouldPoll === false
     ) {
       this.applyPaymentUnavailable(state.order);
       return;
@@ -216,16 +301,17 @@ Page({
         return;
       case "pending-payment": {
         if (!getPaymentBindings()) {
+          const actionUi = this.ownerActionUi(state.order, false);
           this.setData({
             ...clearedPaymentUi(),
             ...presentOrderDetailStatus(state.status),
+            ...actionUi,
             ...this.orderLabels(state.order),
             order: state.order,
             status: state.status,
             seconds: state.seconds,
             countdown: this.formatCountdown(state.seconds),
             errorText: "",
-            showPaymentFooter: false,
           });
           return;
         }
@@ -246,6 +332,23 @@ Page({
         this.paymentState = reducePayment(this.paymentState, { type: "ORDER_RECEIVED", order: state.order });
         this.applyPaymentState(this.paymentState);
         return;
+      case "cancellation-confirming":
+        this.setData({
+          ...clearedPaymentUi(),
+          ...presentOrderDetailStatus(state.status),
+          ...this.ownerActionUi(state.order, false),
+          ...this.orderLabels(state.order),
+          order: state.order,
+          status: state.status,
+          seconds: 0,
+          countdown: "00:00",
+          errorText: "",
+          cancellationError: "",
+          heroTitle: "正在确认取消",
+          heroCopy: "服务端正在确认支付与取消结果，当前场次不会提前显示为已释放。",
+          showLifecycleRefresh: state.showManualRefresh,
+        });
+        return;
       case "closing-payment":
       case "expired":
       case "cancelled":
@@ -253,9 +356,12 @@ Page({
       case "refund-failed":
       case "refunded":
       case "completed":
+        {
+        const manualRefresh = state.status === "refund-pending" ? state.showManualRefresh : false;
         this.setData({
           ...clearedPaymentUi(),
           ...presentOrderDetailStatus(state.status),
+          ...this.ownerActionUi(state.order, false),
           ...this.orderLabels(state.order),
           order: state.order,
           status: state.status,
@@ -263,8 +369,9 @@ Page({
           countdown: "00:00",
           errorText: "",
           heroCopy: lifecycleHeroCopy(state.status),
-          showPaymentFooter: false,
+          showLifecycleRefresh: manualRefresh,
         });
+        }
     }
   },
 
@@ -279,14 +386,25 @@ Page({
     const exception = status === "payment-exception";
     const confirmed = status === "booking-confirmed";
     const paymentError = state.status === "payment-pending" ? state.errorMessage ?? "" : "";
+    const lifecycle = presentOwnerOrderLifecycle(state.order);
+    const showPaymentFooter = exception || (
+      (pending || creating || cashierOpen)
+      && lifecycle.showPayAction
+      && this.data.onlineBookingEnabled
+      && getPaymentBindings() !== undefined
+    );
+    const actionUi = this.ownerActionUi(state.order, showPaymentFooter);
 
     this.setData({
       ...presentation,
+      ...actionUi,
       ...this.orderLabels(state.order),
       order: state.order,
       status,
       eyebrow: pending || creating || cashierOpen ? "待支付" : "",
-      heroTitle: pending || creating || cashierOpen ? "请在有效期内完成支付" : presentation.heroTitle,
+      heroTitle: pending || creating || cashierOpen
+        ? "请在有效期内完成支付"
+        : presentation.heroTitle,
       heroCopy: confirming
         ? "支付结果以服务端确认为准，请勿重复付款"
         : exception
@@ -304,7 +422,6 @@ Page({
               ? ""
               : "立即支付",
       primaryDisabled: creating || cashierOpen || confirming,
-      showPaymentFooter: !confirmed,
       showPaymentRetry: exception,
       showCashierMarker: cashierOpen,
       cashierNotice: getPaymentBindings()?.capability.cashierNotice ?? "",
@@ -312,6 +429,7 @@ Page({
       showSuccessIcon: confirmed,
       paidLabel: confirmed ? "已支付" : "",
       paymentError,
+      cancellationError: "",
       errorText: "",
       ...extra,
     });
@@ -320,6 +438,7 @@ Page({
   applyPaymentUnavailable(order: OrderView | PaymentOrderView) {
     this.setData({
       ...clearedPaymentUi(),
+      ...this.ownerActionUi(order, false),
       ...this.orderLabels(order),
       order,
       status: "payment-unavailable",
@@ -328,6 +447,8 @@ Page({
       heroCopy: "你仍可查看订单信息，当前无法发起支付。",
       primaryDisabled: true,
       showPaymentFooter: false,
+      showActionFooter: false,
+      showCancelAction: false,
       errorText: "",
     });
   },
@@ -440,12 +561,133 @@ Page({
     }
   },
 
+  async onCancelOrder(): Promise<void> {
+    if (this.cancellationInFlight || this.data.cancellationUnknown) return;
+    const source = getCancellationSource();
+    const order = this.data.order;
+    if (!source || !order) return;
+    const action = presentOwnerOrderLifecycle(order).cancelAction;
+    if (!action) return;
+
+    this.cancellationInFlight = true;
+    this.setData({ cancellationBusy: true, cancellationError: "" });
+    try {
+      const decision = await wx.showModal({
+        title: action.title,
+        content: action.content,
+        confirmText: "确认",
+        cancelText: "暂不",
+      });
+      if (!decision.confirm || !this.visible) return;
+      this.poller?.cancel();
+      const idempotencyKey = this.cancellationKey
+        ?? `cancel-order-${Date.now()}-${++this.cancellationClickSerial}`;
+      this.cancellationKey = idempotencyKey;
+      const generation = ++this.cancellationOperationGeneration;
+      try {
+        const result = await source.cancelOrder({ orderId: order.orderId, idempotencyKey });
+        if (!this.isCurrentCancellationOperation(generation)) return;
+        if (!isCancellationAcknowledgement(order, result)) {
+          this.setData({
+            cancellationUnknown: true,
+            cancellationError: "取消结果尚未确认，请查询服务端最新状态。",
+            cancelActionLabel: "确认取消结果",
+            showCancelAction: false,
+            showPaymentFooter: false,
+            showActionFooter: true,
+          });
+          return;
+        }
+        this.cancellationKey = null;
+        this.applyReconciledOrder(result);
+      } catch (error) {
+        if (!this.isCurrentCancellationOperation(generation)) return;
+        if (isUnknownCancellationResult(error)) {
+          this.setData({
+            cancellationUnknown: true,
+            cancellationError: "取消结果尚未确认，请查询服务端最新状态。",
+            cancelActionLabel: "确认取消结果",
+            showCancelAction: false,
+            showPaymentFooter: false,
+            showActionFooter: true,
+          });
+        } else {
+          this.cancellationKey = null;
+          this.setData({
+            cancellationUnknown: true,
+            cancellationError: "订单状态已变化，请确认最新结果。",
+            cancelActionLabel: "确认取消结果",
+            showCancelAction: false,
+            showPaymentFooter: false,
+            showActionFooter: true,
+          });
+        }
+      }
+    } finally {
+      this.cancellationInFlight = false;
+      if (this.visible) this.setData({ cancellationBusy: false });
+    }
+  },
+
+  onConfirmCancellationResult(): Promise<void> {
+    if (this.cancellationRefreshInFlight) return this.cancellationRefreshInFlight;
+    if (!this.data.cancellationUnknown) return Promise.resolve();
+    const operation = this.refreshCancellationAuthority();
+    this.cancellationRefreshInFlight = operation;
+    void operation.then(
+      () => { if (this.cancellationRefreshInFlight === operation) this.cancellationRefreshInFlight = null; },
+      () => { if (this.cancellationRefreshInFlight === operation) this.cancellationRefreshInFlight = null; },
+    );
+    return operation;
+  },
+
+  async refreshCancellationAuthority(): Promise<void> {
+    const source = getCancellationSource();
+    if (!source || !this.data.orderId) return;
+    const generation = ++this.cancellationOperationGeneration;
+    this.setData({ cancellationBusy: true, cancellationError: "" });
+    try {
+      const order = await source.getOrder(this.data.orderId);
+      if (!this.isCurrentCancellationOperation(generation)) return;
+      if (order.allowedActions?.canCancel !== true) this.cancellationKey = null;
+      this.applyReconciledOrder(order);
+    } catch {
+      if (this.isCurrentCancellationOperation(generation)) {
+        this.setData({
+          cancellationUnknown: true,
+          cancellationError: "暂时无法确认取消结果，请重试。",
+          cancelActionLabel: "确认取消结果",
+          showActionFooter: true,
+        });
+      }
+    } finally {
+      if (this.isCurrentCancellationOperation(generation)) this.setData({ cancellationBusy: false });
+    }
+  },
+
+  onRefreshLifecycle() {
+    if (!this.data.showLifecycleRefresh) return;
+    this.setData({ showLifecycleRefresh: false });
+    this.ensurePoller().reconcile();
+  },
+
+  isCurrentCancellationOperation(generation: number) {
+    return this.visible && generation === this.cancellationOperationGeneration;
+  },
+
   isCurrentPaymentOperation(generation: number) {
     return this.visible && generation === this.paymentOperationGeneration;
   },
 
   acceptOrderProjection(order: OrderView): boolean {
-    if (this.terminalOrderStatus && order.status !== this.terminalOrderStatus) return false;
+    if (this.terminalOrderStatus && order.status !== this.terminalOrderStatus) {
+      const allowedForwardStatuses: Partial<Record<typeof this.terminalOrderStatus, readonly OrderView["status"][]>> = {
+        CONFIRMED: ["REFUND_PENDING", "REFUND_FAILED", "REFUNDED", "COMPLETED"],
+        REFUND_PENDING: ["REFUND_FAILED", "REFUNDED"],
+        REFUND_FAILED: ["REFUND_PENDING", "REFUNDED"],
+      };
+      if (!allowedForwardStatuses[this.terminalOrderStatus]?.includes(order.status)) return false;
+    }
     if (order.status === "CONFIRMED" || order.status === "EXPIRED"
       || order.status === "CANCELLED" || order.status === "REFUND_PENDING"
       || order.status === "REFUND_FAILED" || order.status === "REFUNDED"
@@ -458,6 +700,12 @@ Page({
 
   applyReconciledOrder(order: OrderView, expectedRevision?: number) {
     if (expectedRevision !== undefined && expectedRevision !== this.orderProjectionRevision) return;
+    const ownerLifecycle = presentOwnerOrderLifecycle(order);
+    if (order.status === "PENDING_PAYMENT" && ownerLifecycle.shouldPoll) {
+      this.applyPollState({ status: "cancellation-confirming", order, showManualRefresh: false });
+      this.ensurePoller().followOwnerLifecycle(order);
+      return;
+    }
     if (order.status === "EXPIRED") {
       this.applyPollState({ status: "expired", order });
       return;
@@ -467,7 +715,8 @@ Page({
       return;
     }
     if (order.status === "REFUND_PENDING") {
-      this.applyPollState({ status: "refund-pending", order });
+      this.applyPollState({ status: "refund-pending", order, showManualRefresh: false });
+      this.ensurePoller().followOwnerLifecycle(order);
       return;
     }
     if (order.status === "REFUND_FAILED") {

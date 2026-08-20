@@ -43,7 +43,40 @@ export type OrderSummaryStatus =
   | "PAYMENT_EXCEPTION"
   | LifecycleTerminalOrderStatus;
 
-export interface OrderSummaryView {
+export type OrderActionBlockedReason =
+  | "PAYMENT_RESULT_PENDING"
+  | "CANCELLATION_WINDOW_CLOSED"
+  | "REFUND_IN_PROGRESS"
+  | "CHECK_IN_TOO_EARLY"
+  | "CHECK_IN_REQUIRED"
+  | "SESSION_NOT_ENDED"
+  | "ORDER_TERMINAL"
+  | "CANCELLATION_REQUIRES_SUPPORT";
+
+export interface AllowedOrderActions {
+  readonly canPay: boolean;
+  readonly canCancel: boolean;
+  readonly canCheckIn: boolean;
+  readonly canComplete: boolean;
+  readonly canRefund: boolean;
+  readonly blockedReason: OrderActionBlockedReason | null;
+}
+
+export interface FundingAlert {
+  readonly code: "DUPLICATE_CHARGE_REFUND";
+  readonly status: "REFUND_PENDING" | "REFUND_FAILED" | "REFUNDED";
+}
+
+interface OwnerLifecycleProjection {
+  readonly cancelRequestedAt?: string | null;
+  readonly cancelledAt?: string | null;
+  readonly checkedInAt?: string | null;
+  readonly completedAt?: string | null;
+  readonly allowedActions?: AllowedOrderActions;
+  readonly fundingAlerts?: readonly FundingAlert[];
+}
+
+export interface OrderSummaryView extends OwnerLifecycleProjection {
   readonly orderId: string;
   readonly orderNumber: string;
   readonly status: OrderSummaryStatus;
@@ -82,7 +115,7 @@ export interface OrderContactView {
   readonly maskedPhone: string;
 }
 
-interface OrderViewBase {
+interface OrderViewBase extends OwnerLifecycleProjection {
   readonly orderId: string;
   readonly orderNumber: string;
   readonly slotId: string;

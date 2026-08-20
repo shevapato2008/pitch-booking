@@ -237,6 +237,9 @@
 
 .primary-button,
 .secondary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   min-height: 88rpx;
   border-radius: 26rpx;
@@ -266,6 +269,10 @@
   border: 2rpx solid #7DD3FC;
   background: #FFFFFF;
   color: #0369A1;
+}
+
+.footer-action {
+  flex: 1;
 }
 
 button::after {

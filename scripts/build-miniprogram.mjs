@@ -42,7 +42,7 @@ async function build(selectedMode) {
     : undefined;
 
   await ensureSafeOutputBoundary(projectRoot, outputRoot);
-  const developmentFixtureData = developmentConfig?.source === "fixture"
+  const developmentFixtureData = developmentConfig && developmentConfig.source !== "http"
     ? await prepareDevelopmentFixtureData(projectRoot)
     : undefined;
   await validateTypeScript(sourceRoot, selectedMode === "development");
@@ -163,7 +163,9 @@ async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
   const bootstrap = config.source === "http"
     ? `bootstrapDevelopment({ source: "http", apiBaseUrl: ${JSON.stringify(config.apiBaseUrl)} });`
-    : "bootstrapDevelopment();";
+    : config.source === "order-cancellation"
+      ? 'bootstrapDevelopment({ source: "order-cancellation" });'
+      : "bootstrapDevelopment();";
   const bootstrappedSource = [
     'import { bootstrapDevelopment } from "./dev/bootstrap";',
     bootstrap,
@@ -179,8 +181,9 @@ async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {
 export function resolveDevelopmentConfig(environment) {
   const source = environment.MINIPROGRAM_DEV_BOOKING_SOURCE || "fixture";
   if (source === "fixture") return { source };
+  if (source === "order-cancellation") return { source };
   if (source !== "http") {
-    throw new Error("MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http");
+    throw new Error("MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture, http, or order-cancellation");
   }
 
   const apiBaseUrl = environment.MINIPROGRAM_API_BASE_URL;

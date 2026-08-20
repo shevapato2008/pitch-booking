@@ -4,10 +4,93 @@ import type { ExpiredOrderView, LifecycleTerminalOrderView, OrderView, PendingOr
 import { PAYMENT_SCENARIOS } from "../dev/payment-scenarios";
 import {
   OrderDetailPoller,
+  presentOwnerOrderLifecycle,
   presentOrderDetailStatus,
   type OrderDetailPollState,
   type PollScheduler,
 } from "./order-detail";
+
+const ownerLifecycleOrder = (overrides: Record<string, unknown> = {}) => ({
+  orderId: "00000000-0000-4000-8000-000000000040",
+  status: "CONFIRMED",
+  cancelRequestedAt: null,
+  allowedActions: {
+    canPay: false,
+    canCancel: true,
+    canCheckIn: false,
+    canComplete: false,
+    canRefund: false,
+    blockedReason: null,
+  },
+  ...overrides,
+} as never);
+
+describe("owner order lifecycle presentation", () => {
+  test("keeps server-authorized pay and unpaid cancellation as separate actions", () => {
+    expect(presentOwnerOrderLifecycle(ownerLifecycleOrder({
+      status: "PENDING_PAYMENT",
+      allowedActions: {
+        canPay: true,
+        canCancel: true,
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: null,
+      },
+    }))).toMatchObject({
+      showPayAction: true,
+      cancelAction: {
+        label: "取消订单",
+        title: "确认取消订单？",
+        content: "若尚未付款，取消成功后将释放当前场次。",
+      },
+    });
+  });
+
+  test("does not infer payment permission when the server disables it", () => {
+    expect(presentOwnerOrderLifecycle(ownerLifecycleOrder({
+      status: "PENDING_PAYMENT",
+      allowedActions: {
+        canPay: false,
+        canCancel: true,
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: null,
+      },
+    }))).toMatchObject({ showPayAction: false, cancelAction: { label: "取消订单" } });
+  });
+
+  test.each([
+    ["CONFIRMED", "取消并发起全额退款", "确认取消并发起退款？", "将提交一笔全额退款申请，结果以服务端为准。"],
+    ["REFUND_FAILED", "重试退款", "重试退款？", "将继续处理同一笔全额退款，不会重复扣款。"],
+  ] as const)("presents the server-authorized %s destructive action", (status, label, title, content) => {
+    expect(presentOwnerOrderLifecycle(ownerLifecycleOrder({ status }))).toMatchObject({
+      cancelAction: { label, title, content },
+    });
+  });
+
+  test.each([
+    ["PENDING_PAYMENT", "2026-08-18T12:00:00+08:00", "正在确认取消", true],
+    ["REFUND_PENDING", "2026-08-18T12:00:00+08:00", "退款处理中", true],
+    ["CANCELLED", "2026-08-18T12:00:00+08:00", "订单已取消", false],
+    ["REFUNDED", "2026-08-18T12:00:00+08:00", "退款已完成", false],
+    ["COMPLETED", null, "订单已完成", false],
+  ] as const)("renders %s honestly without a destructive action", (status, cancelRequestedAt, heroTitle, shouldPoll) => {
+    expect(presentOwnerOrderLifecycle(ownerLifecycleOrder({
+      status,
+      cancelRequestedAt,
+      allowedActions: {
+        canPay: false,
+        canCancel: status === "REFUND_PENDING",
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: "ORDER_TERMINAL",
+      },
+    }))).toMatchObject({ heroTitle, shouldPoll, cancelAction: null, showPayAction: false });
+  });
+});
 
 describe("order detail status presentation", () => {
   test("keeps closing-error visibly in closing with an explicit retry", () => {
@@ -123,9 +206,101 @@ const expired: ExpiredOrderView = {
 };
 
 describe("OrderDetailPoller", () => {
+  test("keeps pending cancellation visible until a later authoritative read cancels it", async () => {
+    const time = new ManualTime("2026-07-28T18:00:00+08:00");
+    const cancelling = {
+      ...pending,
+      cancelRequestedAt: "2026-07-28T18:01:00+08:00",
+      allowedActions: {
+        canPay: false,
+        canCancel: false,
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: "PAYMENT_RESULT_PENDING",
+      },
+    } as OrderView;
+    const cancelled = {
+      ...cancelling,
+      status: "CANCELLED",
+      paymentState: "CLOSED",
+      paymentConfirming: false,
+      paidAt: null,
+      cancelledAt: "2026-07-28T18:01:02+08:00",
+      allowedActions: {
+        canPay: false,
+        canCancel: false,
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: "ORDER_TERMINAL",
+      },
+    } as OrderView;
+    const states: OrderDetailPollState[] = [];
+    let calls = 0;
+    const poller = new OrderDetailPoller({
+      getOrder: async () => { calls += 1; return cancelled; },
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.followOwnerLifecycle(cancelling);
+    expect(states[states.length - 1]).toMatchObject({
+      status: "cancellation-confirming",
+      order: cancelling,
+      showManualRefresh: false,
+    });
+    expect(calls).toBe(0);
+
+    await time.advance(2_000);
+    expect(calls).toBe(1);
+    expect(states[states.length - 1]).toEqual({ status: "cancelled", order: cancelled });
+  });
+
+  test("bounds refund-pending polling and then exposes a real manual refresh", async () => {
+    const time = new ManualTime("2026-07-28T18:00:00+08:00");
+    const refundPending = {
+      ...PAYMENT_SCENARIOS.confirmed,
+      status: "REFUND_PENDING",
+      cancelRequestedAt: "2026-07-28T18:01:00+08:00",
+      cancelledAt: "2026-07-28T18:01:00+08:00",
+      allowedActions: {
+        canPay: false,
+        canCancel: false,
+        canCheckIn: false,
+        canComplete: false,
+        canRefund: false,
+        blockedReason: "REFUND_IN_PROGRESS",
+      },
+    } as OrderView;
+    const states: OrderDetailPollState[] = [];
+    let calls = 0;
+    const poller = new OrderDetailPoller({
+      getOrder: async () => { calls += 1; return refundPending; },
+      clock: { now: time.now },
+      scheduler: time,
+      onState: (state) => states.push(state),
+    });
+
+    poller.followOwnerLifecycle(refundPending);
+    await time.advance(29_999);
+    expect(calls).toBe(14);
+    expect(states[states.length - 1]).toMatchObject({
+      status: "refund-pending",
+      showManualRefresh: false,
+    });
+
+    await time.advance(1);
+    expect(states[states.length - 1]).toMatchObject({
+      status: "refund-pending",
+      showManualRefresh: true,
+    });
+    expect(time.pendingTaskCount).toBe(0);
+  });
+
   test.each([
     ["CANCELLED", "cancelled"],
-    ["REFUND_PENDING", "refund-pending"],
     ["REFUND_FAILED", "refund-failed"],
     ["REFUNDED", "refunded"],
     ["COMPLETED", "completed"],

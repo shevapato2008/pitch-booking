@@ -156,6 +156,30 @@ test("development app invokes its single composition root before source app code
   assert.equal(registration < directPage, true);
 });
 
+test("owner cancellation preview source is selectable in development and excluded from production", async (t) => {
+  await build(process.cwd(), "development", {
+    MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation",
+  });
+  const developmentRoot = path.resolve("dist/miniprogram-development");
+  const developmentApp = await readFile(path.join(developmentRoot, "app.js"), "utf8");
+
+  assert.match(developmentApp, /bootstrapDevelopment\)\(\{\s*source:\s*["']order-cancellation["']/s);
+  assert.equal(existsSync(path.join(developmentRoot, "dev/order-cancellation-fixture.js")), true);
+  assert.equal(existsSync(path.join(developmentRoot, "dev/order-cancellation-route-fragment.js")), true);
+
+  await build(process.cwd(), "production");
+  const productionRoot = path.resolve("dist/miniprogram-production");
+  const productionFiles = await collectFiles(productionRoot);
+  const productionText = (await Promise.all(productionFiles
+    .filter((file) => !file.endsWith(".png"))
+    .map((file) => readFile(file, "utf8")))).join("\n");
+  assert.equal(existsSync(path.join(productionRoot, "dev/order-cancellation-fixture.js")), false);
+  assert.equal(existsSync(path.join(productionRoot, "dev/order-cancellation-route-fragment.js")), false);
+  assert.doesNotMatch(productionText, /order-cancellation|createOrderCancellationFixture/);
+
+  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+});
+
 test("production app registers HTTP data, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));

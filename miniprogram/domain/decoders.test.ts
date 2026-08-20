@@ -301,6 +301,8 @@ test("strictly decodes the closed owner-only order list projection", () => {
     venue: { name: "天津奥体足球场" },
     pitch: { name: "七人制 A 场" },
     priceCents: 36000,
+    cancelRequestedAt: null,
+    allowedActions: expect.objectContaining({ canPay: false, canCancel: false }),
   });
   expect(decoded.nextCursor).toEqual(expect.any(String));
   expect(decoded.orders[0]).not.toHaveProperty("contact");
@@ -353,8 +355,22 @@ test.each([
   })).toMatchObject({ status });
 });
 
-test("keeps lifecycle additions closed while preserving the existing order view", () => {
-  expect(decodeOrder(confirmedOrder)).not.toHaveProperty("allowedActions");
+test("keeps lifecycle additions closed while exposing the owner action boundary", () => {
+  expect(decodeOrder(confirmedOrder)).toMatchObject({
+    cancelRequestedAt: null,
+    cancelledAt: null,
+    checkedInAt: null,
+    completedAt: null,
+    allowedActions: {
+      canPay: false,
+      canCancel: true,
+      canCheckIn: false,
+      canComplete: false,
+      canRefund: false,
+      blockedReason: null,
+    },
+    fundingAlerts: [],
+  });
   expect(() => decodeOrder({
     ...confirmedOrder,
     allowed_actions: { ...(confirmedOrder.allowed_actions as object), internal: true },

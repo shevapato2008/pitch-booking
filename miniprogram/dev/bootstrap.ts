@@ -36,6 +36,7 @@ import {
   registerPaymentDataSource,
 } from "../services/payment";
 import { createDevelopmentBookingDataSource } from "./booking-source";
+import { createOrderCancellationFixture } from "./order-cancellation-fixture";
 import { createDevelopmentHttpSources, developmentIdentity } from "./http-booking-source";
 import { developmentPageDataSource } from "./page-data";
 import { createDevelopmentPaymentCapability, showDevelopmentCashier } from "./payment-capability";
@@ -46,6 +47,7 @@ import { createDevelopmentPitchConfigurationDataSource } from "./pitch-configura
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
+  | { readonly source: "order-cancellation" }
   | { readonly source: "http"; readonly apiBaseUrl: string };
 
 export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { source: "fixture" }): void {
@@ -94,7 +96,9 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   }));
   registerPaymentClock({ now: () => new Date(PAYMENT_PREVIEW_NOW) });
   registerPageDataSource(developmentPageDataSource);
-  registerBookingDataSource(createDevelopmentBookingDataSource());
+  registerBookingDataSource(options.source === "order-cancellation"
+    ? createOrderCancellationFixture("confirmed-cancellable")
+    : createDevelopmentBookingDataSource());
   registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource());
   registerPitchConfigurationDataSource(createDevelopmentPitchConfigurationDataSource());
   registerLocationCapability(productionLocation);

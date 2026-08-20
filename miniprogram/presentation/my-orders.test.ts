@@ -30,6 +30,7 @@ test("presents trusted Shanghai schedule, exact amount, and existing detail rout
 });
 
 test.each([
+  [{ ...base, cancelRequestedAt: "2026-08-18T10:00:00+08:00" }, "cancelling", "正在确认取消"],
   [{ ...base, status: "PAYMENT_EXCEPTION" as const, closingPayment: true, paymentConfirming: true }, "exception", "支付待确认"],
   [{ ...base, closingPayment: true, paymentConfirming: true }, "closing", "正在关闭"],
   [{ ...base, paymentConfirming: true }, "confirming", "支付确认中"],
@@ -37,7 +38,7 @@ test.each([
   [{ ...base, status: "EXPIRED" as const }, "expired", "已过期"],
   [{ ...base, status: "CANCELLED" as const }, "cancelled", "已取消"],
   [{ ...base, status: "REFUND_PENDING" as const }, "refund-pending", "退款处理中"],
-  [{ ...base, status: "REFUND_FAILED" as const }, "refund-failed", "退款需处理"],
+  [{ ...base, status: "REFUND_FAILED" as const }, "refund-failed", "退款失败"],
   [{ ...base, status: "REFUNDED" as const }, "refunded", "已退款"],
   [{ ...base, status: "COMPLETED" as const }, "completed", "已完成"],
   [base, "pending", "待支付"],

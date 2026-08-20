@@ -15,6 +15,7 @@ export interface BookingDataSource {
   createOrder(attempt: CreateOrderAttempt): Promise<PendingOrderView>;
   getOrder(orderId: string): Promise<OrderView>;
   listOrders?(cursor?: string, limit?: number): Promise<OrderListView>;
+  cancelOrder?(attempt: CancelOrderAttempt): Promise<OrderView>;
 }
 
 export interface OrderListBookingDataSource extends BookingDataSource {
@@ -23,6 +24,11 @@ export interface OrderListBookingDataSource extends BookingDataSource {
 
 export interface CreateOrderAttempt {
   readonly request: CreateOrderInput;
+  readonly idempotencyKey: string;
+}
+
+export interface CancelOrderAttempt {
+  readonly orderId: string;
   readonly idempotencyKey: string;
 }
 

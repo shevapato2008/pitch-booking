@@ -24,7 +24,7 @@ const productionRoutes = [
   "pages/venue-pitch-setup/index",
 ];
 
-for (const token of ["dev-login-code", "dev-phone-code", "138****0000", "developmentBookingDataSource", "booking-fixture"]) {
+for (const token of ["dev-login-code", "dev-phone-code", "138****0000", "developmentBookingDataSource", "booking-fixture", "order-cancellation"]) {
   test(`production audit rejects ${token} and names it`, async (t) => {
     const root = await mkdtemp(path.join(tmpdir(), "booking-audit-"));
     t.after(() => rm(root, { recursive: true, force: true }));

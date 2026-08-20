@@ -180,7 +180,7 @@ test("development rejects an unknown booking source instead of silently falling 
   const projectRoot = await createBuildProject(t);
   await assert.rejects(
     build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "remote" }),
-    /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http/,
+    /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture, http, or order-cancellation/,
   );
 });
 

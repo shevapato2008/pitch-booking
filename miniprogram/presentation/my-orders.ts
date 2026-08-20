@@ -4,6 +4,7 @@ import { formatShanghaiDateLabel, formatShanghaiTimeRange } from "./shanghai-tim
 
 export type MyOrderStatus =
   | "pending"
+  | "cancelling"
   | "confirming"
   | "closing"
   | "confirmed"
@@ -31,6 +32,9 @@ function statusPresentation(order: OrderSummaryView): Pick<
   MyOrderCardViewModel,
   "status" | "statusLabel" | "statusDescription"
 > {
+  if (order.status === "PENDING_PAYMENT" && order.cancelRequestedAt != null) {
+    return { status: "cancelling", statusLabel: "正在确认取消", statusDescription: "结果以服务端为准" };
+  }
   if (order.status === "PAYMENT_EXCEPTION") {
     return { status: "exception", statusLabel: "支付待确认", statusDescription: "请进入详情重新查询" };
   }
@@ -53,7 +57,7 @@ function statusPresentation(order: OrderSummaryView): Pick<
     return { status: "refund-pending", statusLabel: "退款处理中", statusDescription: "结果以服务端为准" };
   }
   if (order.status === "REFUND_FAILED") {
-    return { status: "refund-failed", statusLabel: "退款需处理", statusDescription: "请联系客服处理" };
+    return { status: "refund-failed", statusLabel: "退款失败", statusDescription: "请进入详情重试或确认结果" };
   }
   if (order.status === "REFUNDED") {
     return { status: "refunded", statusLabel: "已退款", statusDescription: "请留意原支付账户" };

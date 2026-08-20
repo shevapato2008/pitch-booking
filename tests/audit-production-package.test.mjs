@@ -29,6 +29,8 @@ for (const token of [
   "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f",
   "MY_ORDERS_RAW_FIXTURE",
   "VENUE_FULFILLMENT_FIXTURE",
+  "order-cancellation",
+  "createOrderCancellationFixture",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();

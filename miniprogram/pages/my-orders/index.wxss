@@ -95,7 +95,7 @@
 }
 
 .status-description { min-width: 0; color: #526479; font-size: 22rpx; line-height: 34rpx; }
-.status-pending,.status-confirming { background: #E0F2FE; color: #0369A1; }
+.status-pending,.status-confirming,.status-cancelling { background: #E0F2FE; color: #0369A1; }
 .status-closing { background: #FFF7ED; color: #9A3412; }
 .status-confirmed { background: #ECFDF5; color: #047857; }
 .status-expired { background: #F1F5F9; color: #475569; }

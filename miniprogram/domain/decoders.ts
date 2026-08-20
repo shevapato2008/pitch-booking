@@ -18,7 +18,9 @@ import type {
   SessionTokenView,
 } from "./contracts";
 import type {
+  AllowedOrderActions,
   CheckoutView,
+  FundingAlert,
   OrderListView,
   OrderSummaryStatus,
   OrderSummaryView,
@@ -118,26 +120,50 @@ function hasOwn(value: unknown, key: string): boolean {
     && Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function decodeLifecycleProjection(object: Record<string, unknown>, path: string): void {
-  for (const key of ORDER_LIFECYCLE_KEYS.slice(0, 4)) {
+interface DecodedLifecycleProjection {
+  readonly cancelRequestedAt: string | null;
+  readonly cancelledAt: string | null;
+  readonly checkedInAt: string | null;
+  readonly completedAt: string | null;
+  readonly allowedActions: AllowedOrderActions;
+  readonly fundingAlerts: readonly FundingAlert[];
+}
+
+function decodeLifecycleProjection(object: Record<string, unknown>, path: string): DecodedLifecycleProjection {
+  const timestamp = (key: typeof ORDER_LIFECYCLE_KEYS[number]): string | null => {
     const value = object[key];
-    if (value !== null) rfc3339At(value, `${path}.${key}`);
-  }
+    return value === null ? null : rfc3339At(value, `${path}.${key}`);
+  };
   const actions = exactObject(object.allowed_actions, [
     "can_pay", "can_cancel", "can_check_in", "can_complete", "can_refund", "blocked_reason",
   ], `${path}.allowed_actions`);
-  for (const key of ["can_pay", "can_cancel", "can_check_in", "can_complete", "can_refund"] as const) {
-    booleanAt(actions[key], `${path}.allowed_actions.${key}`);
-  }
-  if (actions.blocked_reason !== null) {
-    enumAt(actions.blocked_reason, ORDER_BLOCKED_REASONS, `${path}.allowed_actions.blocked_reason`);
-  }
-  arrayAt(object.funding_alerts, `${path}.funding_alerts`).forEach((alert, index) => {
+  const allowedActions: AllowedOrderActions = {
+    canPay: booleanAt(actions.can_pay, `${path}.allowed_actions.can_pay`),
+    canCancel: booleanAt(actions.can_cancel, `${path}.allowed_actions.can_cancel`),
+    canCheckIn: booleanAt(actions.can_check_in, `${path}.allowed_actions.can_check_in`),
+    canComplete: booleanAt(actions.can_complete, `${path}.allowed_actions.can_complete`),
+    canRefund: booleanAt(actions.can_refund, `${path}.allowed_actions.can_refund`),
+    blockedReason: actions.blocked_reason === null
+      ? null
+      : enumAt(actions.blocked_reason, ORDER_BLOCKED_REASONS, `${path}.allowed_actions.blocked_reason`),
+  };
+  const fundingAlerts = arrayAt(object.funding_alerts, `${path}.funding_alerts`).map((alert, index) => {
     const alertPath = `${path}.funding_alerts[${index}]`;
     const item = exactObject(alert, ["code", "status"], alertPath);
     if (item.code !== "DUPLICATE_CHARGE_REFUND") invalid(`${alertPath}.code`);
-    enumAt(item.status, FUNDING_ALERT_STATUSES, `${alertPath}.status`);
+    return {
+      code: "DUPLICATE_CHARGE_REFUND" as const,
+      status: enumAt(item.status, FUNDING_ALERT_STATUSES, `${alertPath}.status`),
+    };
   });
+  return {
+    cancelRequestedAt: timestamp("cancel_requested_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    checkedInAt: timestamp("checked_in_at"),
+    completedAt: timestamp("completed_at"),
+    allowedActions,
+    fundingAlerts,
+  };
 }
 
 export function decodeWeChatSession(value: unknown): SessionTokenView {
@@ -208,7 +234,7 @@ export function decodeOrder(value: unknown): OrderView {
   ] as const;
   const expanded = hasOwn(value, "allowed_actions");
   const object = exactObject(value, expanded ? [...baseKeys, ...ORDER_LIFECYCLE_KEYS] : baseKeys, "$");
-  if (expanded) decodeLifecycleProjection(object, "$");
+  const lifecycle = expanded ? decodeLifecycleProjection(object, "$") : {};
   const venue = exactObject(object.venue, ["id", "name", "address", "latitude", "longitude"], "$.venue");
   const pitch = exactObject(object.pitch, ["id", "name"], "$.pitch");
   const contact = exactObject(object.contact, ["name", "masked_phone"], "$.contact");
@@ -255,7 +281,7 @@ export function decodeOrder(value: unknown): OrderView {
     createdAt: rfc3339At(object.created_at, "$.created_at"),
     expiresAt: rfc3339At(object.expires_at, "$.expires_at"),
     cancellationSummary: stringAt(object.cancellation_summary, "$.cancellation_summary"),
-    paymentState, paymentConfirming, closingPayment, paidAt, detailPath,
+    paymentState, paymentConfirming, closingPayment, paidAt, detailPath, ...lifecycle,
   };
 
   if (status === "PENDING_PAYMENT") {
@@ -317,7 +343,7 @@ function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
     expanded ? [...ORDER_SUMMARY_KEYS, ...ORDER_LIFECYCLE_KEYS] : ORDER_SUMMARY_KEYS,
     path,
   );
-  if (expanded) decodeLifecycleProjection(object, path);
+  const lifecycle = expanded ? decodeLifecycleProjection(object, path) : {};
   const venue = exactObject(object.venue, ["id", "name"], `${path}.venue`);
   const pitch = exactObject(object.pitch, ["id", "name"], `${path}.pitch`);
   const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
@@ -349,6 +375,7 @@ function decodeOrderSummary(value: unknown, path: string): OrderSummaryView {
     expiresAt: rfc3339At(object.expires_at, `${path}.expires_at`),
     paymentConfirming,
     closingPayment,
+    ...lifecycle,
   };
 }
 

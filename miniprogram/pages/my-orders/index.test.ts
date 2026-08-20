@@ -74,6 +74,29 @@ test("loads the first page and opens the matching existing order detail", async 
   });
 });
 
+test("shows only authoritative lifecycle labels and keeps the whole card as the list action", async () => {
+  const lifecycleOrders = [
+    { ...firstOrder, cancelRequestedAt: "2026-08-18T10:00:00+08:00" },
+    { ...secondOrder, status: "REFUND_PENDING" as const },
+    { ...firstOrder, orderId: "00000000-0000-4000-8000-000000000058", status: "REFUNDED" as const },
+    { ...firstOrder, orderId: "00000000-0000-4000-8000-000000000059", status: "REFUND_FAILED" as const },
+  ];
+  registerListSource(async () => list(lifecycleOrders as readonly OrderSummaryView[], null));
+  const target = page();
+
+  await call(target, "onLoad");
+
+  expect(target.data.orders.map((order: { statusLabel: string }) => order.statusLabel)).toEqual([
+    "正在确认取消",
+    "退款处理中",
+    "已退款",
+    "退款失败",
+  ]);
+  const template = readFileSync("miniprogram/pages/my-orders/index.wxml", "utf8");
+  expect(template.match(/<button\b/g)).toHaveLength(5);
+  expect(template).not.toContain("onCancelOrder");
+});
+
 test("empty state navigates back only when the previous page is the venue map", async () => {
   registerListSource(async () => list([], null));
   const target = page();

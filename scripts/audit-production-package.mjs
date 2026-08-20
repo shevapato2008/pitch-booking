@@ -35,6 +35,8 @@ const forbiddenContentPatterns = [
   /\bshowDevelopmentCashier\b/,
   /MY_ORDERS_RAW_FIXTURE/,
   /VENUE_FULFILLMENT_FIXTURE/,
+  /order-cancellation/,
+  /createOrderCancellationFixture/,
   /\bcreateDevelopmentVenueDirectoryDataSource\b/,
   /\bcreateSimulatedLocationCapability\b/,
   /\bpreviewPoiSearchCapability\b/,
