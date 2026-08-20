@@ -46,8 +46,10 @@ Stop containers without deleting the persistent database:
 docker compose --env-file deploy/.env.local down
 ```
 
-Remote Alibaba Cloud deployment, DNS/TLS, partner-approved content and physical-device acceptance are
-outside this local checkpoint.
+Remote public-staging deployment, DNS/TLS, partner-approved content and physical-device acceptance
+are outside this local checkpoint. The current compute target is the SSH inventory host
+`ucloud-v100`; Alibaba Cloud still hosts the domain-facing services, OSS and DashScope, but its ECS
+Workbench is not the application deployment target.
 
 ## Prepare live-staging inputs
 
