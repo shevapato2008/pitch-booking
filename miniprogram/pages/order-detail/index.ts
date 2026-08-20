@@ -90,6 +90,7 @@ function clearedPaymentUi() {
     showSuccessIcon: false,
     paidLabel: "",
     paymentError: "",
+    cancellationError: "",
     cancelActionLabel: "",
     cancelModalTitle: "",
     cancelModalContent: "",

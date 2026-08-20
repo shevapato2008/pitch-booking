@@ -276,6 +276,46 @@ describe("owner cancellation orchestration", () => {
     call(page, "onUnload");
   });
 
+  test("clears an unknown-result error when hide-show authority returns CANCELLED", async () => {
+    const cancellable = ownerPending(false);
+    const cancelled = {
+      ...cancellable,
+      status: "CANCELLED",
+      paymentState: "CLOSED",
+      paymentConfirming: false,
+      paidAt: null,
+      cancelRequestedAt: "2026-08-18T12:00:00+08:00",
+      cancelledAt: "2026-08-18T12:00:01+08:00",
+      allowedActions: ownerActions(false, false, "ORDER_TERMINAL"),
+    } as Extract<OrderView, { status: "CANCELLED" }>;
+    let reads = 0;
+    registerBookingDataSource({
+      ...baseSource(async () => (++reads === 1 ? cancellable : cancelled)),
+      cancelOrder: async () => {
+        throw Object.assign(new Error("lost response"), { code: "CANCELLATION_RESULT_UNKNOWN" });
+      },
+    });
+    (globalThis as unknown as { wx: object }).wx = {
+      showModal: jest.fn(async () => ({ confirm: true, cancel: false })),
+    };
+    const page = loadPage();
+    call(page, "onLoad", { order_id: pending.orderId });
+    await flush();
+
+    await call(page, "onCancelOrder");
+    expect(page.data.cancellationError).toBe("取消结果尚未确认，请查询服务端最新状态。");
+
+    call(page, "onHide");
+    call(page, "onShow");
+    await flush();
+    expect(page.data).toMatchObject({
+      status: "cancelled",
+      cancellationUnknown: false,
+      cancellationError: "",
+    });
+    call(page, "onUnload");
+  });
+
   test("clears the cancellation key after a definitive conflict", async () => {
     const cancellable = ownerPending(false);
     registerBookingDataSource({
