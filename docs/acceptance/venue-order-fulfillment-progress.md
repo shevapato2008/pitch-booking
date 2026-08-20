@@ -59,6 +59,6 @@
 
 - [ ] 获得真实微信商户凭据后，单独完成受控小额支付、通知、关单和退款 smoke；
 - [ ] 在凭据与资金 smoke 通过的发布中再启用场馆退款路由与动作；当前退款路由继续保持未发布；
-- [ ] owner 取消/退款由独立 B1 轨道完成。
+- [x] 独立 B1 轨道已完成无资金 owner 取消的真实 iPhone 验收；paid refund terminal acceptance 仍等待微信 Provider 凭据。
 
-因此，场馆今日订单、签到和完成的真机验收已收口，但真实支付、退款、owner 取消及整个 B1 均未标记完成。
+因此，场馆今日订单、签到/完成和无资金 owner 取消的真机验收均已收口；真实支付、paid refund terminal acceptance、场馆原因退款及整个 B1 仍未标记完成。
