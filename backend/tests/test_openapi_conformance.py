@@ -1122,6 +1122,39 @@ def test_open_game_public_states_are_coarse_and_position_inputs_are_unordered() 
             ] = "REGISTRATION_DEADLINE_PASSED"
         assert not owner_validator.is_valid(contradictory)
 
+    cancelled_example = json.loads(
+        (EXAMPLES_DIRECTORY / "open-game-owner-cancelled.json").read_text()
+    )
+    assert cancelled_example["persisted_status"] == "CANCELLED"
+    assert cancelled_example["state_reason"] == "CAPTAIN_CANCELLED"
+    assert cancelled_example["public_view"]["state_reason"] == "CAPTAIN_CANCELLED"
+
+    published_example = json.loads(
+        (EXAMPLES_DIRECTORY / "open-game-owner-published.json").read_text()
+    )
+    order_cancelled = json.loads(json.dumps(published_example))
+    order_cancelled.update(
+        {
+            "persisted_status": "PUBLISHED",
+            "state": "CANCELLED",
+            "state_reason": "ORDER_CANCELLED",
+            "allowed_actions": {
+                "can_edit": False,
+                "can_publish": False,
+                "can_share": False,
+                "can_cancel": False,
+                "can_preview": False,
+            },
+            "share": None,
+        }
+    )
+    order_cancelled["public_view"].update(
+        {"state": "CANCELLED", "state_reason": "BOOKING_UNAVAILABLE"}
+    )
+    assert owner_validator.is_valid(order_cancelled)
+    incorrectly_persisted = {**order_cancelled, "persisted_status": "CANCELLED"}
+    assert not owner_validator.is_valid(incorrectly_persisted)
+
 
 def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
     contract = _contract()

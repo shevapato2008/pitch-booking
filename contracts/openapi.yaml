@@ -3723,7 +3723,7 @@ components:
                   type: object
                   properties: {state: {const: CANCELLED}, state_reason: {const: CAPTAIN_CANCELLED}}
             - properties:
-                persisted_status: {const: CANCELLED}
+                persisted_status: {enum: [DRAFT, PUBLISHED]}
                 state: {const: CANCELLED}
                 state_reason: {enum: [ORDER_CANCELLED, ORDER_REFUNDED]}
                 allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false}}
