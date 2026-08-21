@@ -76,12 +76,6 @@ const exampleMap = [
       attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/venues', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/applications', '422', 'InvalidArgument'),
-      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument'),
-      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument', 'post'),
-      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument'),
-      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument', 'put'),
-      attachment('/api/v1/games/{game_id}/publish', '422', 'InvalidArgument', 'post'),
-      attachment('/api/v1/games/{game_id}/cancel', '422', 'InvalidArgument', 'post'),
     ],
   },
   {
@@ -774,6 +768,33 @@ const inlineExampleMap = [
     schema: 'Health',
     value: { status: 'ok' },
     attachments: [attachment('/api/v1/health', '200', 'HealthOk')],
+  },
+  {
+    filename: 'inline OpenGameInvalidArgument',
+    schema: 'OpenGameInvalidArgumentError',
+    value: {
+      error: {
+        code: 'INVALID_ARGUMENT',
+        message: '报名截止时间不符合要求，请修改后重试。',
+        request_id: 'req-contract-open-game-invalid-argument',
+        details: {
+          fields: [
+            {
+              field: 'registration_deadline',
+              message: '必须晚于当前时间且不晚于开场前 2 小时。',
+            },
+          ],
+        },
+      },
+    },
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument'),
+      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument'),
+      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '422', 'InvalidArgument', 'post'),
+    ],
   },
 ];
 

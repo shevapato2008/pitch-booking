@@ -688,6 +688,39 @@ def test_captain_open_game_contract_is_closed_authenticated_and_private() -> Non
             "maxLength": 128,
         }
 
+    invalid_argument_example = {
+        "error": {
+            "code": "INVALID_ARGUMENT",
+            "message": "报名截止时间不符合要求，请修改后重试。",
+            "request_id": "req-contract-open-game-invalid-argument",
+            "details": {
+                "fields": [
+                    {
+                        "field": "registration_deadline",
+                        "message": "必须晚于当前时间且不晚于开场前 2 小时。",
+                    }
+                ]
+            },
+        }
+    }
+    for path, method in (
+        ("/api/v1/orders/{order_id}/game", "get"),
+        ("/api/v1/orders/{order_id}/game", "post"),
+        ("/api/v1/games/{game_id}", "get"),
+        ("/api/v1/games/{game_id}", "put"),
+        ("/api/v1/games/{game_id}/publish", "post"),
+        ("/api/v1/games/{game_id}/cancel", "post"),
+    ):
+        invalid = paths[path][method]["responses"]["422"]["content"][
+            "application/json"
+        ]
+        assert invalid["schema"] == {
+            "$ref": "#/components/schemas/OpenGameInvalidArgumentError"
+        }
+        assert invalid["examples"] == {
+            "InvalidArgument": {"value": invalid_argument_example}
+        }
+
     draft_fields = {
         "name",
         "team_name",
@@ -856,6 +889,12 @@ def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
     assert set(order["properties"]) == order_fields
     assert set(order["required"]) == order_fields
     assert order["properties"]["pitch_specification"]["pattern"] == "^[1-9][0-9]*人制$"
+    assert order["properties"]["pitch_specification"]["x-derived-from"] == (
+        "players_per_side"
+    )
+    assert order["properties"]["pitch_specification"]["x-derived-template"] == (
+        "{players_per_side}人制"
+    )
 
     entry = schemas["OpenGameEntry"]
     assert entry["discriminator"] == {"propertyName": "entry"}
@@ -875,22 +914,39 @@ def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
         "MANAGE",
         "NONE",
     }
+    create_entry = next(
+        example for example in entry_examples if example["entry"] == "CREATE"
+    )
+    assert create_entry["order"]["pitch_specification"] == (
+        f'{create_entry["order"]["players_per_side"]}人制'
+    )
 
+    owner_examples = []
     for filename in (
         "open-game-owner-draft.json",
         "open-game-owner-published.json",
         "open-game-owner-suspended.json",
         "open-game-owner-cancelled.json",
     ):
-        _assert_example_matches_schema(
-            contract,
-            json.loads((EXAMPLES_DIRECTORY / filename).read_text()),
-            owner,
+        owner_example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        owner_examples.append(owner_example)
+        _assert_example_matches_schema(contract, owner_example, owner)
+        assert owner_example["order"]["pitch_specification"] == (
+            f'{owner_example["order"]["players_per_side"]}人制'
+        )
+        assert owner_example["public_view"]["pitch_specification"] == (
+            owner_example["order"]["pitch_specification"]
         )
     public_example = json.loads(
         (EXAMPLES_DIRECTORY / "open-game-public-published.json").read_text()
     )
     _assert_example_matches_schema(contract, public_example, schemas["OpenGamePublic"])
+    published_owner = next(
+        example for example in owner_examples if example["state"] == "PUBLISHED"
+    )
+    assert public_example["pitch_specification"] == published_owner["public_view"][
+        "pitch_specification"
+    ]
     public_text = json.dumps(public_example).lower()
     for forbidden in (
         "order_id",
@@ -914,6 +970,26 @@ def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
     assert error_field["additionalProperties"] is False
     assert set(error_field["required"]) == {"field", "message"}
     assert set(error_field["properties"]) == {"field", "message"}
+    invalid_details = schemas["OpenGameInvalidArgumentDetails"]
+    assert invalid_details["oneOf"] == [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "maxProperties": 0,
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["fields"],
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"$ref": "#/components/schemas/ErrorField"},
+                }
+            },
+        },
+    ]
 
 
 def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:

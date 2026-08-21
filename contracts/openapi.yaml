@@ -1263,13 +1263,18 @@ paths:
           description: Order identifier is invalid.
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              schema: {$ref: '#/components/schemas/OpenGameInvalidArgumentError'}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument:
+                  value:
+                    error:
+                      code: INVALID_ARGUMENT
+                      message: 报名截止时间不符合要求，请修改后重试。
+                      request_id: req-contract-open-game-invalid-argument
+                      details:
+                        fields:
+                          - field: registration_deadline
+                            message: 必须晚于当前时间且不晚于开场前 2 小时。
         '503':
           description: Open game service is unavailable.
           content:
@@ -1343,13 +1348,18 @@ paths:
           description: Path or draft input is invalid.
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              schema: {$ref: '#/components/schemas/OpenGameInvalidArgumentError'}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument:
+                  value:
+                    error:
+                      code: INVALID_ARGUMENT
+                      message: 报名截止时间不符合要求，请修改后重试。
+                      request_id: req-contract-open-game-invalid-argument
+                      details:
+                        fields:
+                          - field: registration_deadline
+                            message: 必须晚于当前时间且不晚于开场前 2 小时。
         '503':
           description: Open game service is unavailable.
           content:
@@ -1404,13 +1414,18 @@ paths:
           description: Game identifier is invalid.
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              schema: {$ref: '#/components/schemas/OpenGameInvalidArgumentError'}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument:
+                  value:
+                    error:
+                      code: INVALID_ARGUMENT
+                      message: 报名截止时间不符合要求，请修改后重试。
+                      request_id: req-contract-open-game-invalid-argument
+                      details:
+                        fields:
+                          - field: registration_deadline
+                            message: 必须晚于当前时间且不晚于开场前 2 小时。
         '503':
           description: Open game service is unavailable.
           content:
@@ -1485,13 +1500,18 @@ paths:
           description: Path, version, or draft input is invalid.
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              schema: {$ref: '#/components/schemas/OpenGameInvalidArgumentError'}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument:
+                  value:
+                    error:
+                      code: INVALID_ARGUMENT
+                      message: 报名截止时间不符合要求，请修改后重试。
+                      request_id: req-contract-open-game-invalid-argument
+                      details:
+                        fields:
+                          - field: registration_deadline
+                            message: 必须晚于当前时间且不晚于开场前 2 小时。
         '503':
           description: Open game service is unavailable.
           content:
@@ -1566,13 +1586,18 @@ paths:
           description: Path or expected version is invalid.
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              schema: {$ref: '#/components/schemas/OpenGameInvalidArgumentError'}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument:
+                  value:
+                    error:
+                      code: INVALID_ARGUMENT
+                      message: 报名截止时间不符合要求，请修改后重试。
+                      request_id: req-contract-open-game-invalid-argument
+                      details:
+                        fields:
+                          - field: registration_deadline
+                            message: 必须晚于当前时间且不晚于开场前 2 小时。
         '503':
           description: Open game service is unavailable.
           content:
@@ -1646,13 +1671,18 @@ paths:
           description: Path or expected version is invalid.
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ErrorEnvelope'
-                  - type: object
-                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              schema: {$ref: '#/components/schemas/OpenGameInvalidArgumentError'}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument:
+                  value:
+                    error:
+                      code: INVALID_ARGUMENT
+                      message: 报名截止时间不符合要求，请修改后重试。
+                      request_id: req-contract-open-game-invalid-argument
+                      details:
+                        fields:
+                          - field: registration_deadline
+                            message: 必须晚于当前时间且不晚于开场前 2 小时。
         '503':
           description: Open game service is unavailable.
           content:
@@ -3418,6 +3448,8 @@ components:
           type: string
           pattern: '^[1-9][0-9]*人制$'
           description: Derived exactly as players_per_side followed by 人制.
+          x-derived-from: players_per_side
+          x-derived-template: '{players_per_side}人制'
         players_per_side: {type: integer, minimum: 1}
         booking_price_cents: {type: integer, minimum: 0}
         starts_at: {type: string, format: date-time}
@@ -5828,6 +5860,31 @@ components:
       properties:
         field: {type: string, minLength: 1}
         message: {type: string, minLength: 1}
+    OpenGameInvalidArgumentDetails:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          maxProperties: 0
+        - type: object
+          additionalProperties: false
+          required: [fields]
+          properties:
+            fields:
+              type: array
+              minItems: 1
+              items: {$ref: '#/components/schemas/ErrorField'}
+    OpenGameInvalidArgumentError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code, details]
+              properties:
+                code: {const: INVALID_ARGUMENT}
+                details: {$ref: '#/components/schemas/OpenGameInvalidArgumentDetails'}
     ErrorDetails:
       type: object
       additionalProperties: false
