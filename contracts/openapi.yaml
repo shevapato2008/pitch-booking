@@ -3400,6 +3400,9 @@ components:
         - ORDER_REFUNDED
         - ORDER_COMPLETED
         - null
+    OpenGamePublicStateReason:
+      type: [string, 'null']
+      enum: [REGISTRATION_WINDOW_CLOSED, REGISTRATION_DEADLINE_PASSED, CAPTAIN_CANCELLED, BOOKING_UNAVAILABLE, BOOKING_COMPLETED, null]
     OpenGameVisibility:
       type: string
       enum: [PUBLIC, LINK_ONLY]
@@ -3431,6 +3434,16 @@ components:
         - [DEFENDER, MIDFIELDER, FORWARD]
         - [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD]
       x-canonical-order: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD]
+    OpenGamePositionSelection:
+      type: array
+      oneOf:
+        - const: [ANY]
+        - minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD]
     OpenGameOrderSummary:
       type: object
       additionalProperties: false
@@ -3492,7 +3505,7 @@ components:
         open_spots: {type: integer, minimum: 1, maximum: 29}
         intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
         minimum_experience: {type: [string, 'null'], maxLength: 60}
-        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        positions: {$ref: '#/components/schemas/OpenGamePositionSelection'}
         aa_cents: {type: integer, minimum: 0}
         registration_deadline: {type: string, format: date-time}
         equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
@@ -3509,7 +3522,7 @@ components:
         open_spots: {type: integer, minimum: 1, maximum: 29}
         intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
         minimum_experience: {type: [string, 'null'], maxLength: 60}
-        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        positions: {$ref: '#/components/schemas/OpenGamePositionSelection'}
         aa_cents: {type: integer, minimum: 0}
         registration_deadline: {type: string, format: date-time}
         equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
@@ -3526,7 +3539,7 @@ components:
         open_spots: {type: integer, minimum: 1, maximum: 29}
         intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
         minimum_experience: {type: [string, 'null'], maxLength: 60}
-        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        positions: {$ref: '#/components/schemas/OpenGamePositionSelection'}
         aa_cents: {type: integer, minimum: 0}
         registration_deadline: {type: string, format: date-time}
         equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
@@ -3571,6 +3584,7 @@ components:
         image_url:
           type: [string, 'null']
           format: uri
+          pattern: '^https://'
           description: Approved published venue cover, or null so the Mini Program omits imageUrl and uses WeChat's default page card.
     OpenGamePublic:
       type: object
@@ -3580,7 +3594,7 @@ components:
         name: {type: string, minLength: 2, maxLength: 30}
         team_name: {type: string, minLength: 2, maxLength: 24}
         state: {$ref: '#/components/schemas/OpenGameState'}
-        state_reason: {$ref: '#/components/schemas/OpenGameStateReason'}
+        state_reason: {$ref: '#/components/schemas/OpenGamePublicStateReason'}
         venue_name: {type: string, minLength: 1}
         pitch_name: {type: string, minLength: 1}
         pitch_specification: {type: string, pattern: '^[1-9][0-9]*人制$'}
@@ -3597,6 +3611,22 @@ components:
         registration_deadline: {type: string, format: date-time}
         equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
         visibility: {$ref: '#/components/schemas/OpenGameVisibility'}
+      oneOf:
+        - properties:
+            state: {const: DRAFT}
+            state_reason: {enum: [REGISTRATION_WINDOW_CLOSED, REGISTRATION_DEADLINE_PASSED, null]}
+        - properties:
+            state: {const: PUBLISHED}
+            state_reason: {enum: [REGISTRATION_DEADLINE_PASSED, null]}
+        - properties:
+            state: {const: SUSPENDED}
+            state_reason: {const: BOOKING_UNAVAILABLE}
+        - properties:
+            state: {const: CANCELLED}
+            state_reason: {enum: [CAPTAIN_CANCELLED, BOOKING_UNAVAILABLE]}
+        - properties:
+            state: {const: COMPLETED}
+            state_reason: {const: BOOKING_COMPLETED}
     OpenGameOwner:
       type: object
       additionalProperties: false
@@ -3635,42 +3665,81 @@ components:
                 state_reason: {const: null}
                 allowed_actions: {const: {can_edit: true, can_publish: true, can_share: false, can_cancel: true, can_preview: true}}
                 share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: DRAFT}, state_reason: {const: null}}
             - properties:
                 persisted_status: {const: DRAFT}
                 state: {const: DRAFT}
                 state_reason: {const: REGISTRATION_DEADLINE_PASSED}
                 allowed_actions: {const: {can_edit: true, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
                 share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: DRAFT}, state_reason: {const: REGISTRATION_DEADLINE_PASSED}}
             - properties:
                 persisted_status: {const: DRAFT}
                 state: {const: DRAFT}
                 state_reason: {const: REGISTRATION_WINDOW_CLOSED}
                 allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
                 share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: DRAFT}, state_reason: {const: REGISTRATION_WINDOW_CLOSED}}
             - properties:
                 persisted_status: {const: PUBLISHED}
                 state: {const: PUBLISHED}
-                state_reason: {enum: [REGISTRATION_DEADLINE_PASSED, null]}
+                state_reason: {const: null}
                 allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true}}
                 share: {$ref: '#/components/schemas/OpenGameShare'}
+                public_view:
+                  type: object
+                  properties: {state: {const: PUBLISHED}, state_reason: {const: null}}
+            - properties:
+                persisted_status: {const: PUBLISHED}
+                state: {const: PUBLISHED}
+                state_reason: {const: REGISTRATION_DEADLINE_PASSED}
+                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true}}
+                share: {$ref: '#/components/schemas/OpenGameShare'}
+                public_view:
+                  type: object
+                  properties: {state: {const: PUBLISHED}, state_reason: {const: REGISTRATION_DEADLINE_PASSED}}
             - properties:
                 persisted_status: {enum: [DRAFT, PUBLISHED]}
                 state: {const: SUSPENDED}
                 state_reason: {enum: [ORDER_CANCELLATION_PENDING, ORDER_PAYMENT_EXCEPTION, ORDER_REFUND_PENDING, ORDER_REFUND_FAILED]}
                 allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
                 share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: SUSPENDED}, state_reason: {const: BOOKING_UNAVAILABLE}}
             - properties:
                 persisted_status: {const: CANCELLED}
                 state: {const: CANCELLED}
-                state_reason: {enum: [CAPTAIN_CANCELLED, ORDER_CANCELLED, ORDER_REFUNDED]}
+                state_reason: {const: CAPTAIN_CANCELLED}
                 allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false}}
                 share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: CANCELLED}, state_reason: {const: CAPTAIN_CANCELLED}}
+            - properties:
+                persisted_status: {const: CANCELLED}
+                state: {const: CANCELLED}
+                state_reason: {enum: [ORDER_CANCELLED, ORDER_REFUNDED]}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false}}
+                share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: CANCELLED}, state_reason: {const: BOOKING_UNAVAILABLE}}
             - properties:
                 persisted_status: {enum: [DRAFT, PUBLISHED]}
                 state: {const: COMPLETED}
                 state_reason: {const: ORDER_COMPLETED}
                 allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: true}}
                 share: {const: null}
+                public_view:
+                  type: object
+                  properties: {state: {const: COMPLETED}, state_reason: {const: BOOKING_COMPLETED}}
     PlatformOnboardingVenueSummary:
       type: object
       additionalProperties: false

@@ -33,7 +33,7 @@
     "name": "周五浦东七人制",
     "team_name": "海风联队",
     "state": "SUSPENDED",
-    "state_reason": "ORDER_REFUND_PENDING",
+    "state_reason": "BOOKING_UNAVAILABLE",
     "venue_name": "浦东星火足球公园",
     "pitch_name": "A1 场",
     "pitch_specification": "7人制",

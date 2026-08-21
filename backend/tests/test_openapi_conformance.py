@@ -37,6 +37,23 @@ def _resolve_schema(contract: dict[str, Any], schema: dict[str, Any]) -> dict[st
     )
 
 
+def _dereference_local_schema(contract: dict[str, Any], value: Any) -> Any:
+    if isinstance(value, list):
+        return [_dereference_local_schema(contract, item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    reference = value.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+        return _dereference_local_schema(
+            contract, contract["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+        )
+    return {
+        key: _dereference_local_schema(contract, child)
+        for key, child in value.items()
+        if not key.startswith("x-")
+    }
+
+
 def _response_schema(operation: dict[str, Any], status: str) -> dict[str, Any]:
     return cast(
         dict[str, Any],
@@ -775,6 +792,15 @@ def test_captain_open_game_contract_is_closed_authenticated_and_private() -> Non
         assert schema["additionalProperties"] is False
         assert set(schema["properties"]) == fields
         assert set(schema["required"]) == fields
+    assert schemas["CreateOpenGameRequest"] == schemas["OpenGameDraftInput"]
+    for schema_name in (
+        "OpenGameDraftInput",
+        "CreateOpenGameRequest",
+        "UpdateOpenGameRequest",
+    ):
+        assert schemas[schema_name]["properties"]["positions"] == {
+            "$ref": "#/components/schemas/OpenGamePositionSelection"
+        }
 
     public_schema = schemas["OpenGamePublic"]
     public_fields = {
@@ -888,6 +914,21 @@ def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
         "MIDFIELDER",
         "FORWARD",
     ]
+    assert owner["properties"]["positions"] == {
+        "$ref": "#/components/schemas/OpenGamePositions"
+    }
+    assert schemas["OpenGamePublic"]["properties"]["positions"] == {
+        "$ref": "#/components/schemas/OpenGamePositions"
+    }
+    assert schemas["OpenGameShare"]["properties"]["image_url"] == {
+        "type": ["string", "null"],
+        "format": "uri",
+        "pattern": "^https://",
+        "description": (
+            "Approved published venue cover, or null so the Mini Program omits "
+            "imageUrl and uses WeChat's default page card."
+        ),
+    }
 
     order = schemas["OpenGameOrderSummary"]
     order_fields = {
@@ -1005,6 +1046,81 @@ def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
             },
         },
     ]
+
+
+def test_open_game_public_states_are_coarse_and_position_inputs_are_unordered() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    public_reason = schemas["OpenGamePublicStateReason"]
+    assert public_reason == {
+        "type": ["string", "null"],
+        "enum": [
+            "REGISTRATION_WINDOW_CLOSED",
+            "REGISTRATION_DEADLINE_PASSED",
+            "CAPTAIN_CANCELLED",
+            "BOOKING_UNAVAILABLE",
+            "BOOKING_COMPLETED",
+            None,
+        ],
+    }
+    assert schemas["OpenGamePublic"]["properties"]["state_reason"] == {
+        "$ref": "#/components/schemas/OpenGamePublicStateReason"
+    }
+
+    selection_validator = Draft202012Validator(
+        _dereference_local_schema(contract, schemas["OpenGamePositionSelection"])
+    )
+    output_validator = Draft202012Validator(
+        _dereference_local_schema(contract, schemas["OpenGamePositions"])
+    )
+    reversed_specific = ["FORWARD", "DEFENDER", "GOALKEEPER"]
+    assert selection_validator.is_valid(reversed_specific)
+    assert not output_validator.is_valid(reversed_specific)
+    assert selection_validator.is_valid(["ANY"])
+    for invalid in (
+        ["ANY", "FORWARD"],
+        ["FORWARD", "FORWARD"],
+        ["STRIKER"],
+    ):
+        assert not selection_validator.is_valid(invalid)
+
+    public_validator = Draft202012Validator(
+        _dereference_local_schema(contract, schemas["OpenGamePublic"])
+    )
+    public_example = json.loads(
+        (EXAMPLES_DIRECTORY / "open-game-public-published.json").read_text()
+    )
+    assert public_validator.is_valid(public_example)
+    for state, reason in (
+        ("SUSPENDED", "ORDER_PAYMENT_EXCEPTION"),
+        ("SUSPENDED", "ORDER_REFUND_PENDING"),
+        ("SUSPENDED", "ORDER_REFUND_FAILED"),
+        ("PUBLISHED", "BOOKING_UNAVAILABLE"),
+        ("SUSPENDED", None),
+        ("COMPLETED", "REGISTRATION_DEADLINE_PASSED"),
+    ):
+        contradictory = {**public_example, "state": state, "state_reason": reason}
+        assert not public_validator.is_valid(contradictory)
+
+    owner_validator = Draft202012Validator(
+        _dereference_local_schema(contract, schemas["OpenGameOwner"])
+    )
+    for filename in (
+        "open-game-owner-draft.json",
+        "open-game-owner-published.json",
+        "open-game-owner-suspended.json",
+        "open-game-owner-cancelled.json",
+    ):
+        owner_example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        assert owner_validator.is_valid(owner_example)
+        contradictory = json.loads(json.dumps(owner_example))
+        contradictory["public_view"]["state"] = "PUBLISHED"
+        contradictory["public_view"]["state_reason"] = None
+        if owner_example["state"] == "PUBLISHED":
+            contradictory["public_view"][
+                "state_reason"
+            ] = "REGISTRATION_DEADLINE_PASSED"
+        assert not owner_validator.is_valid(contradictory)
 
 
 def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
