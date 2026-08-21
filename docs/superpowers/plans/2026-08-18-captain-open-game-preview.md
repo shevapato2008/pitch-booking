@@ -12,7 +12,7 @@
 
 **Prerequisite:** 共享生命周期设计已批准并冻结 B2 资格；本计划仍不得实现生产契约、数据库、API 或启用“我要找球踢”。
 
-**Current status (2026-08-21 root integration):** Task 1 reference Artifact and Task 2 development-only native Fixture have been migrated onto the current baseline. The root integration registers the three preview routes only in the central development manifest. Task 3 has completed the native capture, comparison and interaction/self-review steps; the independent visual decision remains pending, so no visual approval or production readiness is claimed yet.
+**Current status (2026-08-21 root integration):** Task 1 reference Artifact and Task 2 development-only native Fixture have been migrated onto the current baseline. The root integration registers the three preview routes only in the central development manifest. Task 3 completed the native capture, comparison and interaction pass, and the user-authorized independent reviewer returned `PASS` with no Critical or Important blocker. The visual gate is approved; this does not claim production readiness.
 
 **Integration ownership:** 本切片只提交 slice-local 页面、Fixture、路由片段和聚焦测试。`miniprogram/dev/app-pages.json`、`miniprogram/dev/bootstrap.ts`、中央 build/audit manifests/tests 以及最终 Fixture 删除，由 root 集成协调任务在合并所有活动切片后串行完成；不得让本分支的旧中央清单覆盖其他切片路由。
 
@@ -151,7 +151,7 @@ For each reference/native pair run the existing `scripts/create_visual_review.py
 
 Click save, publish, preview, edit, share, cancel, back/close and public read-only navigation in the native Fixture. Confirm labels remain centered, steppers align, long copy wraps, keyboard/fixed footer do not cover fields, and destructive confirmation is honest.
 
-- [ ] **Step 4: Record the decision and commit**
+- [x] **Step 4: Record the decision and commit**
 
 The visual gate may be approved by the user or by the independent reviewer the user explicitly authorized for unattended decisions. Record who decided, the exact viewport, visible differences and whether production contract work may start. If not approved, fix only recorded visual blockers and repeat this representative pass once.
 

@@ -4,7 +4,7 @@
 
 - Target viewport: `375 × 812`.
 - Task 1 reference Artifact and Task 2 development-only native Fixture exist on the current baseline.
-- Exactly four native captures and their same-size comparison sets are recorded below. Implementation self-review is complete; the independent visual decision remains pending, so no visual approval is claimed yet.
+- Exactly four native captures and their same-size comparison sets are recorded below. Implementation self-review and the independent visual review are complete and approved.
 - Production routes, production services, contract and backend are not created.
 - Existing Tianjin football-booking light system is reused: `#F8FAFC`, white surfaces, navy text, trust blue and semantic green. No dark/gold system is introduced.
 
@@ -43,10 +43,10 @@ The implementation was run in the official WeChat DevTools iPhone X simulator. R
 - Public “申请加入即将开放” remained informational rather than tappable. No public order number, contact or payment data was shown.
 - Button labels and steppers were visibly centered on both axes; repeated controls aligned; arrows and close affordances were complete; long copy wrapped; no horizontal overflow, clipped card, footer collision or unsafe-area obstruction was visible.
 
-The visible reference/implementation differences are the real WeChat status/navigation chrome, the development-only warning, native font rasterization and a denser one-column card rhythm. The browser references use roomier summary groupings while the native pages keep the same information and action hierarchy in linear cards. These differences are recorded for the independent reviewer; no pixel-identical claim is made.
+The visible reference/implementation differences are the real WeChat status/navigation chrome, the development-only warning, native font rasterization and a denser one-column card rhythm. The browser references use roomier summary groupings while the native pages keep the same information and action hierarchy in linear cards. The independent reviewer accepted these as proportional native-runtime differences; no pixel-identical claim is made.
 
 ## Gate
 
 - Implementation self-review: `PASS`.
-- Independent reviewer: pending.
-- Production contract work: remains blocked until the independent verdict is recorded.
+- Independent reviewer authorized by the user for unattended decisions: `PASS` on 2026-08-21, with no Critical or Important blocker.
+- Production contract planning may start. Production implementation, staging deployment and any public/experience release are not approved by this visual decision.
