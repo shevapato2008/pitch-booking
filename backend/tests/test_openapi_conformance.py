@@ -688,38 +688,53 @@ def test_captain_open_game_contract_is_closed_authenticated_and_private() -> Non
             "maxLength": 128,
         }
 
-    invalid_argument_example = {
-        "error": {
-            "code": "INVALID_ARGUMENT",
-            "message": "报名截止时间不符合要求，请修改后重试。",
-            "request_id": "req-contract-open-game-invalid-argument",
-            "details": {
-                "fields": [
-                    {
-                        "field": "registration_deadline",
-                        "message": "必须晚于当前时间且不晚于开场前 2 小时。",
-                    }
-                ]
-            },
-        }
+    invalid_argument_details = {
+        ("/api/v1/orders/{order_id}/game", "get"): {},
+        ("/api/v1/orders/{order_id}/game", "post"): {
+            "fields": [
+                {
+                    "field": "registration_deadline",
+                    "message": "必须晚于当前时间且不晚于开场前 2 小时。",
+                }
+            ]
+        },
+        ("/api/v1/games/{game_id}", "get"): {},
+        ("/api/v1/games/{game_id}", "put"): {
+            "fields": [
+                {
+                    "field": "registration_deadline",
+                    "message": "必须晚于当前时间且不晚于开场前 2 小时。",
+                }
+            ]
+        },
+        ("/api/v1/games/{game_id}/publish", "post"): {
+            "fields": [
+                {
+                    "field": "expected_version",
+                    "message": "必须是当前球局版本。",
+                }
+            ]
+        },
+        ("/api/v1/games/{game_id}/cancel", "post"): {
+            "fields": [
+                {
+                    "field": "expected_version",
+                    "message": "必须是当前球局版本。",
+                }
+            ]
+        },
     }
-    for path, method in (
-        ("/api/v1/orders/{order_id}/game", "get"),
-        ("/api/v1/orders/{order_id}/game", "post"),
-        ("/api/v1/games/{game_id}", "get"),
-        ("/api/v1/games/{game_id}", "put"),
-        ("/api/v1/games/{game_id}/publish", "post"),
-        ("/api/v1/games/{game_id}/cancel", "post"),
-    ):
+    for (path, method), expected_details in invalid_argument_details.items():
         invalid = paths[path][method]["responses"]["422"]["content"][
             "application/json"
         ]
         assert invalid["schema"] == {
             "$ref": "#/components/schemas/OpenGameInvalidArgumentError"
         }
-        assert invalid["examples"] == {
-            "InvalidArgument": {"value": invalid_argument_example}
-        }
+        assert set(invalid["examples"]) == {"InvalidArgument"}
+        assert invalid["examples"]["InvalidArgument"]["value"]["error"][
+            "details"
+        ] == expected_details
 
     draft_fields = {
         "name",

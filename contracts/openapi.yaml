@@ -1269,12 +1269,9 @@ paths:
                   value:
                     error:
                       code: INVALID_ARGUMENT
-                      message: 报名截止时间不符合要求，请修改后重试。
-                      request_id: req-contract-open-game-invalid-argument
-                      details:
-                        fields:
-                          - field: registration_deadline
-                            message: 必须晚于当前时间且不晚于开场前 2 小时。
+                      message: 请求路径参数不正确，请检查后重试。
+                      request_id: req-contract-open-game-invalid-path
+                      details: {}
         '503':
           description: Open game service is unavailable.
           content:
@@ -1355,7 +1352,7 @@ paths:
                     error:
                       code: INVALID_ARGUMENT
                       message: 报名截止时间不符合要求，请修改后重试。
-                      request_id: req-contract-open-game-invalid-argument
+                      request_id: req-contract-open-game-invalid-draft
                       details:
                         fields:
                           - field: registration_deadline
@@ -1420,12 +1417,9 @@ paths:
                   value:
                     error:
                       code: INVALID_ARGUMENT
-                      message: 报名截止时间不符合要求，请修改后重试。
-                      request_id: req-contract-open-game-invalid-argument
-                      details:
-                        fields:
-                          - field: registration_deadline
-                            message: 必须晚于当前时间且不晚于开场前 2 小时。
+                      message: 请求路径参数不正确，请检查后重试。
+                      request_id: req-contract-open-game-invalid-path
+                      details: {}
         '503':
           description: Open game service is unavailable.
           content:
@@ -1507,7 +1501,7 @@ paths:
                     error:
                       code: INVALID_ARGUMENT
                       message: 报名截止时间不符合要求，请修改后重试。
-                      request_id: req-contract-open-game-invalid-argument
+                      request_id: req-contract-open-game-invalid-draft
                       details:
                         fields:
                           - field: registration_deadline
@@ -1592,12 +1586,12 @@ paths:
                   value:
                     error:
                       code: INVALID_ARGUMENT
-                      message: 报名截止时间不符合要求，请修改后重试。
-                      request_id: req-contract-open-game-invalid-argument
+                      message: 球局版本参数不正确，请刷新后重试。
+                      request_id: req-contract-open-game-invalid-version
                       details:
                         fields:
-                          - field: registration_deadline
-                            message: 必须晚于当前时间且不晚于开场前 2 小时。
+                          - field: expected_version
+                            message: 必须是当前球局版本。
         '503':
           description: Open game service is unavailable.
           content:
@@ -1677,12 +1671,12 @@ paths:
                   value:
                     error:
                       code: INVALID_ARGUMENT
-                      message: 报名截止时间不符合要求，请修改后重试。
-                      request_id: req-contract-open-game-invalid-argument
+                      message: 球局版本参数不正确，请刷新后重试。
+                      request_id: req-contract-open-game-invalid-version
                       details:
                         fields:
-                          - field: registration_deadline
-                            message: 必须晚于当前时间且不晚于开场前 2 小时。
+                          - field: expected_version
+                            message: 必须是当前球局版本。
         '503':
           description: Open game service is unavailable.
           content:

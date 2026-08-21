@@ -770,13 +770,29 @@ const inlineExampleMap = [
     attachments: [attachment('/api/v1/health', '200', 'HealthOk')],
   },
   {
-    filename: 'inline OpenGameInvalidArgument',
+    filename: 'inline OpenGameInvalidPathArgument',
+    schema: 'OpenGameInvalidArgumentError',
+    value: {
+      error: {
+        code: 'INVALID_ARGUMENT',
+        message: '请求路径参数不正确，请检查后重试。',
+        request_id: 'req-contract-open-game-invalid-path',
+        details: {},
+      },
+    },
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument'),
+      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument'),
+    ],
+  },
+  {
+    filename: 'inline OpenGameInvalidDraftArgument',
     schema: 'OpenGameInvalidArgumentError',
     value: {
       error: {
         code: 'INVALID_ARGUMENT',
         message: '报名截止时间不符合要求，请修改后重试。',
-        request_id: 'req-contract-open-game-invalid-argument',
+        request_id: 'req-contract-open-game-invalid-draft',
         details: {
           fields: [
             {
@@ -788,10 +804,29 @@ const inlineExampleMap = [
       },
     },
     attachments: [
-      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument'),
       attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument', 'post'),
-      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument'),
       attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument', 'put'),
+    ],
+  },
+  {
+    filename: 'inline OpenGameInvalidVersionArgument',
+    schema: 'OpenGameInvalidArgumentError',
+    value: {
+      error: {
+        code: 'INVALID_ARGUMENT',
+        message: '球局版本参数不正确，请刷新后重试。',
+        request_id: 'req-contract-open-game-invalid-version',
+        details: {
+          fields: [
+            {
+              field: 'expected_version',
+              message: '必须是当前球局版本。',
+            },
+          ],
+        },
+      },
+    },
+    attachments: [
       attachment('/api/v1/games/{game_id}/publish', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/games/{game_id}/cancel', '422', 'InvalidArgument', 'post'),
     ],
