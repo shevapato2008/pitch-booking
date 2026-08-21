@@ -12,7 +12,7 @@
 
 **Prerequisite:** 共享生命周期设计已批准并冻结 B2 资格；本计划仍不得实现生产契约、数据库、API 或启用“我要找球踢”。
 
-**Current status (2026-08-21 root integration):** Task 1 reference Artifact and Task 2 development-only native Fixture have been migrated onto the current baseline. The root integration registers the three preview routes only in the central development manifest. Task 3 native capture and visual decision remain pending; no visual approval or production readiness is claimed.
+**Current status (2026-08-21 root integration):** Task 1 reference Artifact and Task 2 development-only native Fixture have been migrated onto the current baseline. The root integration registers the three preview routes only in the central development manifest. Task 3 has completed the native capture, comparison and interaction/self-review steps; the independent visual decision remains pending, so no visual approval or production readiness is claimed yet.
 
 **Integration ownership:** 本切片只提交 slice-local 页面、Fixture、路由片段和聚焦测试。`miniprogram/dev/app-pages.json`、`miniprogram/dev/bootstrap.ts`、中央 build/audit manifests/tests 以及最终 Fixture 删除，由 root 集成协调任务在合并所有活动切片后串行完成；不得让本分支的旧中央清单覆盖其他切片路由。
 
@@ -139,15 +139,15 @@ git commit -m "feat: preview captain open game journey"
 - Modify: `artifacts/ui/reviews/captain-open-game/README.md`
 - Add: four native PNGs and their side-by-side/overlay/difference outputs under `artifacts/ui/reviews/captain-open-game/`
 
-- [ ] **Step 1: Capture the four native states once**
+- [x] **Step 1: Capture the four native states once**
 
 Use WeChat DevTools iPhone X at exactly 375×812. If automation fails once, use the documented manual capture instead of repairing the toolchain. Do not crop manufactured screenshots.
 
-- [ ] **Step 2: Generate the four comparison sets**
+- [x] **Step 2: Generate the four comparison sets**
 
 For each reference/native pair run the existing `scripts/create_visual_review.py`. Inspect reference, native, side-by-side, 50% overlay and diff at actual size.
 
-- [ ] **Step 3: Verify every visible action once**
+- [x] **Step 3: Verify every visible action once**
 
 Click save, publish, preview, edit, share, cancel, back/close and public read-only navigation in the native Fixture. Confirm labels remain centered, steppers align, long copy wraps, keyboard/fixed footer do not cover fields, and destructive confirmation is honest.
 
