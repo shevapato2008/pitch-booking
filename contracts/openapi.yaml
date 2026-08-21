@@ -1220,6 +1220,489 @@ paths:
               examples:
                 InvalidArgument:
                   externalValue: './examples/error-invalid-argument.json'
+  /api/v1/orders/{order_id}/game:
+    get:
+      operationId: getOpenGameEntry
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authoritative create, manage, or unavailable entry for this owned order.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameEntry'}
+              examples:
+                Create: {externalValue: './examples/open-game-entry-create.json'}
+                Manage: {externalValue: './examples/open-game-entry-manage.json'}
+                None: {externalValue: './examples/open-game-entry-none.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Order does not exist or is not owned by this user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '422':
+          description: Order identifier is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+    post:
+      operationId: createOpenGame
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateOpenGameRequest'}
+      responses:
+        '201':
+          description: Private open game draft created or idempotently replayed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameOwner'}
+              examples:
+                DraftCreated: {externalValue: './examples/open-game-owner-draft.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Order does not exist or is not owned by this user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: ORDER_NOT_FOUND}}}}
+              examples:
+                OrderNotFound: {externalValue: './examples/error-order-not-found.json'}
+        '409':
+          description: Order eligibility, active game, or idempotency authority conflicts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ORDER_NOT_ELIGIBLE, OPEN_GAME_ALREADY_EXISTS, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                OrderNotEligible: {externalValue: './examples/error-order-not-eligible.json'}
+                OpenGameAlreadyExists: {externalValue: './examples/error-open-game-already-exists.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path or draft input is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}:
+    get:
+      operationId: getOpenGame
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Owner-only game management projection.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameOwner'}
+              examples:
+                Draft: {externalValue: './examples/open-game-owner-draft.json'}
+                Published: {externalValue: './examples/open-game-owner-published.json'}
+                Suspended: {externalValue: './examples/open-game-owner-suspended.json'}
+                Cancelled: {externalValue: './examples/open-game-owner-cancelled.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game does not exist or is not owned by this user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '422':
+          description: Game identifier is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+    put:
+      operationId: updateOpenGame
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateOpenGameRequest'}
+      responses:
+        '200':
+          description: Game updated or idempotently replayed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameOwner'}
+              examples:
+                DraftUpdated: {externalValue: './examples/open-game-owner-draft.json'}
+                PublishedUpdated: {externalValue: './examples/open-game-owner-published.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game does not exist or is not owned by this user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Eligibility, game version/state, or idempotency authority conflicts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ORDER_NOT_ELIGIBLE, OPEN_GAME_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                OrderNotEligible: {externalValue: './examples/error-order-not-eligible.json'}
+                OpenGameStateChanged: {externalValue: './examples/error-open-game-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path, version, or draft input is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/publish:
+    post:
+      operationId: publishOpenGame
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameVersionRequest'}
+      responses:
+        '200':
+          description: Game published or idempotently replayed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameOwner'}
+              examples:
+                Published: {externalValue: './examples/open-game-owner-published.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game does not exist or is not owned by this user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Eligibility, game version/state, or idempotency authority conflicts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ORDER_NOT_ELIGIBLE, OPEN_GAME_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                OrderNotEligible: {externalValue: './examples/error-order-not-eligible.json'}
+                OpenGameStateChanged: {externalValue: './examples/error-open-game-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path or expected version is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/cancel:
+    post:
+      operationId: cancelOpenGame
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameVersionRequest'}
+      responses:
+        '200':
+          description: Game cancelled or idempotently replayed without changing the order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameOwner'}
+              examples:
+                Cancelled: {externalValue: './examples/open-game-owner-cancelled.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game does not exist or is not owned by this user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Game version/state or idempotency authority conflicts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [OPEN_GAME_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                OpenGameStateChanged: {externalValue: './examples/error-open-game-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path or expected version is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/shared-games/{share_token}:
+    get:
+      operationId: getSharedOpenGame
+      security: []
+      parameters:
+        - name: share_token
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Publicly shareable, strictly whitelisted game projection.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGamePublic'}
+              examples:
+                Published: {externalValue: './examples/open-game-public-published.json'}
+        '404':
+          description: Share token is malformed, unknown, or no longer public.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '503':
+          description: Public open game service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/orders/{order_id}/cancel:
     post:
       operationId: cancelOwnedOrder
@@ -2873,6 +3356,295 @@ components:
           examples:
             VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    OpenGamePersistedStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, CANCELLED]
+    OpenGameState:
+      type: string
+      enum: [DRAFT, PUBLISHED, SUSPENDED, CANCELLED, COMPLETED]
+    OpenGameStateReason:
+      type: [string, 'null']
+      enum:
+        - REGISTRATION_WINDOW_CLOSED
+        - REGISTRATION_DEADLINE_PASSED
+        - CAPTAIN_CANCELLED
+        - ORDER_CANCELLATION_PENDING
+        - ORDER_PAYMENT_EXCEPTION
+        - ORDER_REFUND_PENDING
+        - ORDER_REFUND_FAILED
+        - ORDER_CANCELLED
+        - ORDER_REFUNDED
+        - ORDER_COMPLETED
+        - null
+    OpenGameVisibility:
+      type: string
+      enum: [PUBLIC, LINK_ONLY]
+    OpenGameIntensity:
+      type: string
+      enum: [BEGINNER_FRIENDLY, CASUAL, COMPETITIVE]
+    OpenGamePositions:
+      type: array
+      minItems: 1
+      uniqueItems: true
+      items:
+        type: string
+        enum: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD, ANY]
+      enum:
+        - [ANY]
+        - [GOALKEEPER]
+        - [DEFENDER]
+        - [MIDFIELDER]
+        - [FORWARD]
+        - [GOALKEEPER, DEFENDER]
+        - [GOALKEEPER, MIDFIELDER]
+        - [GOALKEEPER, FORWARD]
+        - [DEFENDER, MIDFIELDER]
+        - [DEFENDER, FORWARD]
+        - [MIDFIELDER, FORWARD]
+        - [GOALKEEPER, DEFENDER, MIDFIELDER]
+        - [GOALKEEPER, DEFENDER, FORWARD]
+        - [GOALKEEPER, MIDFIELDER, FORWARD]
+        - [DEFENDER, MIDFIELDER, FORWARD]
+        - [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD]
+      x-canonical-order: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD]
+    OpenGameOrderSummary:
+      type: object
+      additionalProperties: false
+      required: [venue_name, pitch_name, pitch_specification, players_per_side, booking_price_cents, starts_at, ends_at, time_zone]
+      properties:
+        venue_name: {type: string, minLength: 1}
+        pitch_name: {type: string, minLength: 1}
+        pitch_specification:
+          type: string
+          pattern: '^[1-9][0-9]*人制$'
+          description: Derived exactly as players_per_side followed by 人制.
+        players_per_side: {type: integer, minimum: 1}
+        booking_price_cents: {type: integer, minimum: 0}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone:
+          type: string
+          pattern: '^[A-Za-z]+(?:[._+-][A-Za-z0-9]+)*(?:/[A-Za-z0-9._+-]+)+$'
+          description: IANA time-zone identifier from venue authority.
+    OpenGameEntry:
+      description: Any stored game not CANCELLED takes MANAGE precedence, including terminal order projections; otherwise an eligible order is CREATE and all other cases are NONE. Historical stored-CANCELLED games do not block CREATE.
+      discriminator: {propertyName: entry}
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [entry, order, game_id, blocked_reason]
+          properties:
+            entry: {type: string, const: CREATE}
+            order: {$ref: '#/components/schemas/OpenGameOrderSummary'}
+            game_id: {type: 'null'}
+            blocked_reason: {type: 'null'}
+        - type: object
+          additionalProperties: false
+          required: [entry, order, game_id, blocked_reason]
+          properties:
+            entry: {type: string, const: MANAGE}
+            order: {type: 'null'}
+            game_id: {type: string, format: uuid}
+            blocked_reason: {type: 'null'}
+        - type: object
+          additionalProperties: false
+          required: [entry, order, game_id, blocked_reason]
+          properties:
+            entry: {type: string, const: NONE}
+            order: {type: 'null'}
+            game_id: {type: 'null'}
+            blocked_reason: {type: string, const: ORDER_NOT_ELIGIBLE}
+    OpenGameDraftInput:
+      type: object
+      additionalProperties: false
+      required: [name, team_name, total_players, fixed_players, open_spots, intensity, minimum_experience, positions, aa_cents, registration_deadline, equipment_and_arrival_notes, visibility]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 30}
+        team_name: {type: string, minLength: 2, maxLength: 24}
+        total_players: {type: integer, minimum: 4, maximum: 30}
+        fixed_players: {type: integer, minimum: 1, maximum: 30}
+        open_spots: {type: integer, minimum: 1, maximum: 29}
+        intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
+        minimum_experience: {type: [string, 'null'], maxLength: 60}
+        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        aa_cents: {type: integer, minimum: 0}
+        registration_deadline: {type: string, format: date-time}
+        equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
+        visibility: {$ref: '#/components/schemas/OpenGameVisibility'}
+    CreateOpenGameRequest:
+      type: object
+      additionalProperties: false
+      required: [name, team_name, total_players, fixed_players, open_spots, intensity, minimum_experience, positions, aa_cents, registration_deadline, equipment_and_arrival_notes, visibility]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 30}
+        team_name: {type: string, minLength: 2, maxLength: 24}
+        total_players: {type: integer, minimum: 4, maximum: 30}
+        fixed_players: {type: integer, minimum: 1, maximum: 30}
+        open_spots: {type: integer, minimum: 1, maximum: 29}
+        intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
+        minimum_experience: {type: [string, 'null'], maxLength: 60}
+        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        aa_cents: {type: integer, minimum: 0}
+        registration_deadline: {type: string, format: date-time}
+        equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
+        visibility: {$ref: '#/components/schemas/OpenGameVisibility'}
+    UpdateOpenGameRequest:
+      type: object
+      additionalProperties: false
+      required: [name, team_name, total_players, fixed_players, open_spots, intensity, minimum_experience, positions, aa_cents, registration_deadline, equipment_and_arrival_notes, visibility, expected_version]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 30}
+        team_name: {type: string, minLength: 2, maxLength: 24}
+        total_players: {type: integer, minimum: 4, maximum: 30}
+        fixed_players: {type: integer, minimum: 1, maximum: 30}
+        open_spots: {type: integer, minimum: 1, maximum: 29}
+        intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
+        minimum_experience: {type: [string, 'null'], maxLength: 60}
+        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        aa_cents: {type: integer, minimum: 0}
+        registration_deadline: {type: string, format: date-time}
+        equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
+        visibility: {$ref: '#/components/schemas/OpenGameVisibility'}
+        expected_version: {type: integer, minimum: 1}
+    OpenGameVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    OpenGameTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 2, maxLength: 24}
+    OpenGameAllowedActions:
+      type: object
+      additionalProperties: false
+      required: [can_edit, can_publish, can_share, can_cancel, can_preview]
+      properties:
+        can_edit: {type: boolean}
+        can_publish: {type: boolean}
+        can_share: {type: boolean}
+        can_cancel: {type: boolean}
+        can_preview: {type: boolean}
+    OpenGameShare:
+      type: object
+      additionalProperties: false
+      required: [title, path, image_url]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          description: Game name plus local date/time formatted in order.time_zone.
+        path:
+          type: string
+          pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
+          description: Percent-encoded opaque token only; never an order, game, or user identifier.
+        image_url:
+          type: [string, 'null']
+          format: uri
+          description: Approved published venue cover, or null so the Mini Program omits imageUrl and uses WeChat's default page card.
+    OpenGamePublic:
+      type: object
+      additionalProperties: false
+      required: [name, team_name, state, state_reason, venue_name, pitch_name, pitch_specification, starts_at, ends_at, time_zone, total_players, fixed_players, open_spots, intensity, minimum_experience, positions, aa_cents, registration_deadline, equipment_and_arrival_notes, visibility]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 30}
+        team_name: {type: string, minLength: 2, maxLength: 24}
+        state: {$ref: '#/components/schemas/OpenGameState'}
+        state_reason: {$ref: '#/components/schemas/OpenGameStateReason'}
+        venue_name: {type: string, minLength: 1}
+        pitch_name: {type: string, minLength: 1}
+        pitch_specification: {type: string, pattern: '^[1-9][0-9]*人制$'}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone: {type: string, pattern: '^[A-Za-z]+(?:[._+-][A-Za-z0-9]+)*(?:/[A-Za-z0-9._+-]+)+$'}
+        total_players: {type: integer, minimum: 4, maximum: 30}
+        fixed_players: {type: integer, minimum: 1, maximum: 30}
+        open_spots: {type: integer, minimum: 1, maximum: 29}
+        intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
+        minimum_experience: {type: [string, 'null'], maxLength: 60}
+        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        aa_cents: {type: integer, minimum: 0}
+        registration_deadline: {type: string, format: date-time}
+        equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
+        visibility: {$ref: '#/components/schemas/OpenGameVisibility'}
+    OpenGameOwner:
+      type: object
+      additionalProperties: false
+      required: [id, order_id, order, name, team, total_players, fixed_players, open_spots, intensity, minimum_experience, positions, aa_cents, registration_deadline, equipment_and_arrival_notes, visibility, persisted_status, state, state_reason, version, allowed_actions, share, public_view]
+      properties:
+        id: {type: string, format: uuid}
+        order_id: {type: string, format: uuid}
+        order: {$ref: '#/components/schemas/OpenGameOrderSummary'}
+        name: {type: string, minLength: 2, maxLength: 30}
+        team: {$ref: '#/components/schemas/OpenGameTeam'}
+        total_players: {type: integer, minimum: 4, maximum: 30}
+        fixed_players: {type: integer, minimum: 1, maximum: 30}
+        open_spots: {type: integer, minimum: 1, maximum: 29}
+        intensity: {$ref: '#/components/schemas/OpenGameIntensity'}
+        minimum_experience: {type: [string, 'null'], maxLength: 60}
+        positions: {$ref: '#/components/schemas/OpenGamePositions'}
+        aa_cents: {type: integer, minimum: 0}
+        registration_deadline: {type: string, format: date-time}
+        equipment_and_arrival_notes: {type: [string, 'null'], maxLength: 200}
+        visibility: {$ref: '#/components/schemas/OpenGameVisibility'}
+        persisted_status: {$ref: '#/components/schemas/OpenGamePersistedStatus'}
+        state: {$ref: '#/components/schemas/OpenGameState'}
+        state_reason: {$ref: '#/components/schemas/OpenGameStateReason'}
+        version: {type: integer, minimum: 1}
+        allowed_actions: {$ref: '#/components/schemas/OpenGameAllowedActions'}
+        share:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameShare'
+            - type: 'null'
+        public_view: {$ref: '#/components/schemas/OpenGamePublic'}
+      allOf:
+        - oneOf:
+            - properties:
+                persisted_status: {const: DRAFT}
+                state: {const: DRAFT}
+                state_reason: {const: null}
+                allowed_actions: {const: {can_edit: true, can_publish: true, can_share: false, can_cancel: true, can_preview: true}}
+                share: {const: null}
+            - properties:
+                persisted_status: {const: DRAFT}
+                state: {const: DRAFT}
+                state_reason: {const: REGISTRATION_DEADLINE_PASSED}
+                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
+                share: {const: null}
+            - properties:
+                persisted_status: {const: DRAFT}
+                state: {const: DRAFT}
+                state_reason: {const: REGISTRATION_WINDOW_CLOSED}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
+                share: {const: null}
+            - properties:
+                persisted_status: {const: PUBLISHED}
+                state: {const: PUBLISHED}
+                state_reason: {enum: [REGISTRATION_DEADLINE_PASSED, null]}
+                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true}}
+                share: {$ref: '#/components/schemas/OpenGameShare'}
+            - properties:
+                persisted_status: {enum: [DRAFT, PUBLISHED]}
+                state: {const: SUSPENDED}
+                state_reason: {enum: [ORDER_CANCELLATION_PENDING, ORDER_PAYMENT_EXCEPTION, ORDER_REFUND_PENDING, ORDER_REFUND_FAILED]}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
+                share: {const: null}
+            - properties:
+                persisted_status: {const: CANCELLED}
+                state: {const: CANCELLED}
+                state_reason: {enum: [CAPTAIN_CANCELLED, ORDER_CANCELLED, ORDER_REFUNDED]}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false}}
+                share: {const: null}
+            - properties:
+                persisted_status: {enum: [DRAFT, PUBLISHED]}
+                state: {const: COMPLETED}
+                state_reason: {const: ORDER_COMPLETED}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: true}}
+                share: {const: null}
     PlatformOnboardingVenueSummary:
       type: object
       additionalProperties: false
@@ -5049,10 +5821,20 @@ components:
                   const: PAYMENT_EXCEPTION
                 payment_state:
                   const: UNKNOWN
+    ErrorField:
+      type: object
+      additionalProperties: false
+      required: [field, message]
+      properties:
+        field: {type: string, minLength: 1}
+        message: {type: string, minLength: 1}
     ErrorDetails:
       type: object
       additionalProperties: false
       properties:
+        fields:
+          type: array
+          items: {$ref: '#/components/schemas/ErrorField'}
         field:
           type: string
           minLength: 1
@@ -5144,6 +5926,10 @@ components:
             - PLATFORM_AUTH_INVALID
             - PLATFORM_CSRF_INVALID
             - PLATFORM_ROLE_REQUIRED
+            - ORDER_NOT_ELIGIBLE
+            - OPEN_GAME_NOT_FOUND
+            - OPEN_GAME_ALREADY_EXISTS
+            - OPEN_GAME_STATE_CHANGED
         message:
           type: string
           minLength: 1

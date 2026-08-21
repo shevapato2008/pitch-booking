@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "OPEN_GAME_ALREADY_EXISTS",
+    "message": "该订单已有可管理的球局。",
+    "request_id": "req-contract-open-game-already-exists",
+    "details": {}
+  }
+}

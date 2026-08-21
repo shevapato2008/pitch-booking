@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "OPEN_GAME_NOT_FOUND",
+    "message": "球局不存在。",
+    "request_id": "req-contract-open-game-not-found",
+    "details": {}
+  }
+}

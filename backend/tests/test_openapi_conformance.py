@@ -613,6 +613,309 @@ def test_order_detail_allows_unapplied_success_without_a_primary_payment() -> No
     )
 
 
+def test_captain_open_game_contract_is_closed_authenticated_and_private() -> None:
+    contract = _contract()
+    paths = contract["paths"]
+    schemas = contract["components"]["schemas"]
+    operations = {
+        "/api/v1/orders/{order_id}/game": {
+            "get": {"200", "401", "404", "422", "503"},
+            "post": {"201", "401", "404", "409", "422", "503"},
+        },
+        "/api/v1/games/{game_id}": {
+            "get": {"200", "401", "404", "422", "503"},
+            "put": {"200", "401", "404", "409", "422", "503"},
+        },
+        "/api/v1/games/{game_id}/publish": {
+            "post": {"200", "401", "404", "409", "422", "503"}
+        },
+        "/api/v1/games/{game_id}/cancel": {
+            "post": {"200", "401", "404", "409", "422", "503"}
+        },
+        "/api/v1/shared-games/{share_token}": {
+            "get": {"200", "404", "503"}
+        },
+    }
+    operation_ids = {
+        ("/api/v1/orders/{order_id}/game", "get"): "getOpenGameEntry",
+        ("/api/v1/orders/{order_id}/game", "post"): "createOpenGame",
+        ("/api/v1/games/{game_id}", "get"): "getOpenGame",
+        ("/api/v1/games/{game_id}", "put"): "updateOpenGame",
+        ("/api/v1/games/{game_id}/publish", "post"): "publishOpenGame",
+        ("/api/v1/games/{game_id}/cancel", "post"): "cancelOpenGame",
+        ("/api/v1/shared-games/{share_token}", "get"): "getSharedOpenGame",
+    }
+
+    for path, methods in operations.items():
+        assert set(paths[path]) == set(methods)
+        for method, statuses in methods.items():
+            operation = paths[path][method]
+            assert operation["operationId"] == operation_ids[(path, method)]
+            assert set(operation["responses"]) == statuses
+            if method == "get":
+                assert "requestBody" not in operation
+            if path == "/api/v1/shared-games/{share_token}":
+                assert operation.get("security", []) == []
+            else:
+                assert operation["security"] == [{"bearerAuth": []}]
+
+    shared = paths["/api/v1/shared-games/{share_token}"]["get"]
+    assert {parameter["name"]: parameter for parameter in shared["parameters"]} == {
+        "share_token": {
+            "name": "share_token",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+    }
+    assert "401" not in shared["responses"]
+    assert "422" not in shared["responses"]
+
+    for path, method in (
+        ("/api/v1/orders/{order_id}/game", "post"),
+        ("/api/v1/games/{game_id}", "put"),
+        ("/api/v1/games/{game_id}/publish", "post"),
+        ("/api/v1/games/{game_id}/cancel", "post"),
+    ):
+        operation = paths[path][method]
+        assert {parameter.get("$ref") for parameter in operation["parameters"]} >= {
+            "#/components/parameters/IdempotencyKey"
+        }
+        idempotency = contract["components"]["parameters"]["IdempotencyKey"]
+        assert idempotency["schema"] == {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128,
+        }
+
+    draft_fields = {
+        "name",
+        "team_name",
+        "total_players",
+        "fixed_players",
+        "open_spots",
+        "intensity",
+        "minimum_experience",
+        "positions",
+        "aa_cents",
+        "registration_deadline",
+        "equipment_and_arrival_notes",
+        "visibility",
+    }
+    expected_write_schemas = {
+        ("/api/v1/orders/{order_id}/game", "post"): "CreateOpenGameRequest",
+        ("/api/v1/games/{game_id}", "put"): "UpdateOpenGameRequest",
+        ("/api/v1/games/{game_id}/publish", "post"): "OpenGameVersionRequest",
+        ("/api/v1/games/{game_id}/cancel", "post"): "OpenGameVersionRequest",
+    }
+    for (path, method), schema_name in expected_write_schemas.items():
+        assert paths[path][method]["requestBody"] == {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": f"#/components/schemas/{schema_name}"}
+                }
+            },
+        }
+    for schema_name, fields in (
+        ("OpenGameDraftInput", draft_fields),
+        ("CreateOpenGameRequest", draft_fields),
+        ("UpdateOpenGameRequest", draft_fields | {"expected_version"}),
+        ("OpenGameVersionRequest", {"expected_version"}),
+    ):
+        schema = schemas[schema_name]
+        assert schema["additionalProperties"] is False
+        assert set(schema["properties"]) == fields
+        assert set(schema["required"]) == fields
+
+    public_schema = schemas["OpenGamePublic"]
+    public_fields = {
+        "name",
+        "team_name",
+        "state",
+        "state_reason",
+        "venue_name",
+        "pitch_name",
+        "pitch_specification",
+        "starts_at",
+        "ends_at",
+        "time_zone",
+        "total_players",
+        "fixed_players",
+        "open_spots",
+        "intensity",
+        "minimum_experience",
+        "positions",
+        "aa_cents",
+        "registration_deadline",
+        "equipment_and_arrival_notes",
+        "visibility",
+    }
+    assert public_schema["additionalProperties"] is False
+    assert set(public_schema["properties"]) == public_fields
+    assert set(public_schema["required"]) == public_fields
+    for forbidden in (
+        "order_id",
+        "order_number",
+        "user_id",
+        "phone",
+        "openid",
+        "payment",
+        "refund",
+        "contact",
+        "idempotency_key",
+        "booking_price_cents",
+    ):
+        assert forbidden not in public_schema["properties"]
+
+
+def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    owner_fields = {
+        "id",
+        "order_id",
+        "order",
+        "name",
+        "team",
+        "total_players",
+        "fixed_players",
+        "open_spots",
+        "intensity",
+        "minimum_experience",
+        "positions",
+        "aa_cents",
+        "registration_deadline",
+        "equipment_and_arrival_notes",
+        "visibility",
+        "persisted_status",
+        "state",
+        "state_reason",
+        "version",
+        "allowed_actions",
+        "share",
+        "public_view",
+    }
+    owner = schemas["OpenGameOwner"]
+    assert owner["additionalProperties"] is False
+    assert set(owner["properties"]) == owner_fields
+    assert set(owner["required"]) == owner_fields
+    assert owner["properties"]["public_view"] == {
+        "$ref": "#/components/schemas/OpenGamePublic"
+    }
+    assert schemas["OpenGamePersistedStatus"]["enum"] == [
+        "DRAFT",
+        "PUBLISHED",
+        "CANCELLED",
+    ]
+    assert schemas["OpenGameState"]["enum"] == [
+        "DRAFT",
+        "PUBLISHED",
+        "SUSPENDED",
+        "CANCELLED",
+        "COMPLETED",
+    ]
+    assert schemas["OpenGameStateReason"]["enum"] == [
+        "REGISTRATION_WINDOW_CLOSED",
+        "REGISTRATION_DEADLINE_PASSED",
+        "CAPTAIN_CANCELLED",
+        "ORDER_CANCELLATION_PENDING",
+        "ORDER_PAYMENT_EXCEPTION",
+        "ORDER_REFUND_PENDING",
+        "ORDER_REFUND_FAILED",
+        "ORDER_CANCELLED",
+        "ORDER_REFUNDED",
+        "ORDER_COMPLETED",
+        None,
+    ]
+    assert schemas["OpenGameIntensity"]["enum"] == [
+        "BEGINNER_FRIENDLY",
+        "CASUAL",
+        "COMPETITIVE",
+    ]
+    assert schemas["OpenGameVisibility"]["enum"] == ["PUBLIC", "LINK_ONLY"]
+    assert schemas["OpenGamePositions"]["x-canonical-order"] == [
+        "GOALKEEPER",
+        "DEFENDER",
+        "MIDFIELDER",
+        "FORWARD",
+    ]
+
+    order = schemas["OpenGameOrderSummary"]
+    order_fields = {
+        "venue_name",
+        "pitch_name",
+        "pitch_specification",
+        "players_per_side",
+        "booking_price_cents",
+        "starts_at",
+        "ends_at",
+        "time_zone",
+    }
+    assert order["additionalProperties"] is False
+    assert set(order["properties"]) == order_fields
+    assert set(order["required"]) == order_fields
+    assert order["properties"]["pitch_specification"]["pattern"] == "^[1-9][0-9]*人制$"
+
+    entry = schemas["OpenGameEntry"]
+    assert entry["discriminator"] == {"propertyName": "entry"}
+    assert len(entry["oneOf"]) == 3
+    entry_examples = [
+        json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        for filename in (
+            "open-game-entry-create.json",
+            "open-game-entry-manage.json",
+            "open-game-entry-none.json",
+        )
+    ]
+    for example in entry_examples:
+        _assert_example_matches_schema(contract, example, entry)
+    assert {example["entry"] for example in entry_examples} == {
+        "CREATE",
+        "MANAGE",
+        "NONE",
+    }
+
+    for filename in (
+        "open-game-owner-draft.json",
+        "open-game-owner-published.json",
+        "open-game-owner-suspended.json",
+        "open-game-owner-cancelled.json",
+    ):
+        _assert_example_matches_schema(
+            contract,
+            json.loads((EXAMPLES_DIRECTORY / filename).read_text()),
+            owner,
+        )
+    public_example = json.loads(
+        (EXAMPLES_DIRECTORY / "open-game-public-published.json").read_text()
+    )
+    _assert_example_matches_schema(contract, public_example, schemas["OpenGamePublic"])
+    public_text = json.dumps(public_example).lower()
+    for forbidden in (
+        "order_id",
+        "order_number",
+        "user_id",
+        "phone",
+        "openid",
+        "payment",
+        "refund",
+        "contact",
+        "idempotency_key",
+        "booking_price_cents",
+    ):
+        assert forbidden not in public_text
+
+    assert schemas["ErrorDetails"]["properties"]["fields"] == {
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/ErrorField"},
+    }
+    error_field = schemas["ErrorField"]
+    assert error_field["additionalProperties"] is False
+    assert set(error_field["required"]) == {"field", "message"}
+    assert set(error_field["properties"]) == {"field", "message"}
+
+
 def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
     contract = _contract()
     runtime = create_app(
@@ -640,12 +943,48 @@ def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
         "/api/v1/payments/wechat/notify": ("post", {"204", "400", "503"}),
         "/api/v1/refunds/wechat/notify": ("post", {"204", "400", "503"}),
     }
-    unpublished_operations = {
-        "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund": (
+    unpublished_operations = (
+        (
+            "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund",
             "post",
             {"200", "202", "401", "404", "409", "422", "503"},
         ),
-    }
+        (
+            "/api/v1/orders/{order_id}/game",
+            "get",
+            {"200", "401", "404", "422", "503"},
+        ),
+        (
+            "/api/v1/orders/{order_id}/game",
+            "post",
+            {"201", "401", "404", "409", "422", "503"},
+        ),
+        (
+            "/api/v1/games/{game_id}",
+            "get",
+            {"200", "401", "404", "422", "503"},
+        ),
+        (
+            "/api/v1/games/{game_id}",
+            "put",
+            {"200", "401", "404", "409", "422", "503"},
+        ),
+        (
+            "/api/v1/games/{game_id}/publish",
+            "post",
+            {"200", "401", "404", "409", "422", "503"},
+        ),
+        (
+            "/api/v1/games/{game_id}/cancel",
+            "post",
+            {"200", "401", "404", "409", "422", "503"},
+        ),
+        (
+            "/api/v1/shared-games/{share_token}",
+            "get",
+            {"200", "404", "503"},
+        ),
+    )
 
     for path, (method, statuses) in published_operations.items():
         assert set(contract["paths"][path]) == {method}
@@ -653,8 +992,8 @@ def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
         assert set(runtime["paths"][path]) == {method}
         assert set(runtime["paths"][path][method]["responses"]) == statuses
 
-    for path, (method, statuses) in unpublished_operations.items():
-        assert set(contract["paths"][path]) == {method}
+    for path, method, statuses in unpublished_operations:
+        assert method in contract["paths"][path]
         assert set(contract["paths"][path][method]["responses"]) == statuses
         assert path not in runtime["paths"]
 

@@ -76,6 +76,12 @@ const exampleMap = [
       attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/venues', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/applications', '422', 'InvalidArgument'),
+      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument'),
+      attachment('/api/v1/orders/{order_id}/game', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument'),
+      attachment('/api/v1/games/{game_id}', '422', 'InvalidArgument', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '422', 'InvalidArgument', 'post'),
     ],
   },
   {
@@ -132,6 +138,13 @@ const exampleMap = [
       attachment('/api/v1/venue-onboarding/claims', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/venue-onboarding/venues', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/venue-onboarding/applications', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/orders/{order_id}/game', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/orders/{order_id}/game', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/games/{game_id}', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/games/{game_id}', '503', 'ServiceUnavailable', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/shared-games/{share_token}', '503', 'ServiceUnavailable'),
     ],
   },
   {
@@ -301,6 +314,12 @@ const exampleMap = [
       attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/orders/{order_id}/game', '401', 'AuthRequired'),
+      attachment('/api/v1/orders/{order_id}/game', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/games/{game_id}', '401', 'AuthRequired'),
+      attachment('/api/v1/games/{game_id}', '401', 'AuthRequired', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '401', 'AuthRequired', 'post'),
     ],
   },
   {
@@ -367,6 +386,10 @@ const exampleMap = [
       attachment('/api/v1/venue-onboarding/evidence/{evidence_id}/complete', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/venue-onboarding/claims', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/venue-onboarding/venues', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/orders/{order_id}/game', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/games/{game_id}', '409', 'IdempotencyKeyReused', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '409', 'IdempotencyKeyReused', 'post'),
     ],
   },
   {
@@ -463,6 +486,8 @@ const exampleMap = [
       attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', '404', 'OrderNotFound', 'post'),
       attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', '404', 'OrderNotFound', 'post'),
       attachment('/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund', '404', 'OrderNotFound', 'post'),
+      attachment('/api/v1/orders/{order_id}/game', '404', 'OrderNotFound'),
+      attachment('/api/v1/orders/{order_id}/game', '404', 'OrderNotFound', 'post'),
     ],
   },
   {
@@ -644,6 +669,103 @@ const exampleMap = [
     schema: 'ErrorEnvelope',
     attachments: [attachment('/api/v1/admin/venues/{venue_id}/inventory/slots', '409', 'SlotTimeConflict', 'post')],
   },
+  {
+    filename: 'open-game-entry-create.json',
+    reference: './examples/open-game-entry-create.json',
+    schema: 'OpenGameEntry',
+    attachments: [attachment('/api/v1/orders/{order_id}/game', '200', 'Create')],
+  },
+  {
+    filename: 'open-game-entry-manage.json',
+    reference: './examples/open-game-entry-manage.json',
+    schema: 'OpenGameEntry',
+    attachments: [attachment('/api/v1/orders/{order_id}/game', '200', 'Manage')],
+  },
+  {
+    filename: 'open-game-entry-none.json',
+    reference: './examples/open-game-entry-none.json',
+    schema: 'OpenGameEntry',
+    attachments: [attachment('/api/v1/orders/{order_id}/game', '200', 'None')],
+  },
+  {
+    filename: 'open-game-owner-draft.json',
+    reference: './examples/open-game-owner-draft.json',
+    schema: 'OpenGameOwner',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/game', '201', 'DraftCreated', 'post'),
+      attachment('/api/v1/games/{game_id}', '200', 'Draft'),
+      attachment('/api/v1/games/{game_id}', '200', 'DraftUpdated', 'put'),
+    ],
+  },
+  {
+    filename: 'open-game-owner-published.json',
+    reference: './examples/open-game-owner-published.json',
+    schema: 'OpenGameOwner',
+    attachments: [
+      attachment('/api/v1/games/{game_id}', '200', 'Published'),
+      attachment('/api/v1/games/{game_id}', '200', 'PublishedUpdated', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '200', 'Published', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-owner-suspended.json',
+    reference: './examples/open-game-owner-suspended.json',
+    schema: 'OpenGameOwner',
+    attachments: [attachment('/api/v1/games/{game_id}', '200', 'Suspended')],
+  },
+  {
+    filename: 'open-game-owner-cancelled.json',
+    reference: './examples/open-game-owner-cancelled.json',
+    schema: 'OpenGameOwner',
+    attachments: [
+      attachment('/api/v1/games/{game_id}', '200', 'Cancelled'),
+      attachment('/api/v1/games/{game_id}/cancel', '200', 'Cancelled', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-public-published.json',
+    reference: './examples/open-game-public-published.json',
+    schema: 'OpenGamePublic',
+    attachments: [attachment('/api/v1/shared-games/{share_token}', '200', 'Published')],
+  },
+  {
+    filename: 'error-order-not-eligible.json',
+    reference: './examples/error-order-not-eligible.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/orders/{order_id}/game', '409', 'OrderNotEligible', 'post'),
+      attachment('/api/v1/games/{game_id}', '409', 'OrderNotEligible', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '409', 'OrderNotEligible', 'post'),
+    ],
+  },
+  {
+    filename: 'error-open-game-not-found.json',
+    reference: './examples/error-open-game-not-found.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/games/{game_id}', '404', 'OpenGameNotFound'),
+      attachment('/api/v1/games/{game_id}', '404', 'OpenGameNotFound', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '404', 'OpenGameNotFound', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '404', 'OpenGameNotFound', 'post'),
+      attachment('/api/v1/shared-games/{share_token}', '404', 'OpenGameNotFound'),
+    ],
+  },
+  {
+    filename: 'error-open-game-already-exists.json',
+    reference: './examples/error-open-game-already-exists.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/orders/{order_id}/game', '409', 'OpenGameAlreadyExists', 'post')],
+  },
+  {
+    filename: 'error-open-game-state-changed.json',
+    reference: './examples/error-open-game-state-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/games/{game_id}', '409', 'OpenGameStateChanged', 'put'),
+      attachment('/api/v1/games/{game_id}/publish', '409', 'OpenGameStateChanged', 'post'),
+      attachment('/api/v1/games/{game_id}/cancel', '409', 'OpenGameStateChanged', 'post'),
+    ],
+  },
 ];
 
 const inlineExampleMap = [
@@ -710,6 +832,10 @@ const requiredErrorCodes = new Set([
   'PLATFORM_AUTH_INVALID',
   'PLATFORM_CSRF_INVALID',
   'PLATFORM_ROLE_REQUIRED',
+  'ORDER_NOT_ELIGIBLE',
+  'OPEN_GAME_NOT_FOUND',
+  'OPEN_GAME_ALREADY_EXISTS',
+  'OPEN_GAME_STATE_CHANGED',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -738,6 +864,11 @@ const expectedOperations = new Map([
   ['/api/v1/orders/{order_id}/cancel', new Set(['post'])],
   ['/api/v1/orders/{order_id}/pay', new Set(['post'])],
   ['/api/v1/orders/{order_id}/payments/{payment_id}/reconcile', new Set(['post'])],
+  ['/api/v1/orders/{order_id}/game', new Set(['get', 'post'])],
+  ['/api/v1/games/{game_id}', new Set(['get', 'put'])],
+  ['/api/v1/games/{game_id}/publish', new Set(['post'])],
+  ['/api/v1/games/{game_id}/cancel', new Set(['post'])],
+  ['/api/v1/shared-games/{share_token}', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],
@@ -940,7 +1071,7 @@ function toJsonSchema(value) {
   if (value === null || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== 'discriminator')
+      .filter(([key]) => key !== 'discriminator' && !key.startsWith('x-'))
       .map(([key, child]) => [key, toJsonSchema(child)]),
   );
 }

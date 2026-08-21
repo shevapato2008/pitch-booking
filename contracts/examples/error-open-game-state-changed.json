@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "OPEN_GAME_STATE_CHANGED",
+    "message": "球局状态或版本已变化，请刷新后重试。",
+    "request_id": "req-contract-open-game-state-changed",
+    "details": {}
+  }
+}
