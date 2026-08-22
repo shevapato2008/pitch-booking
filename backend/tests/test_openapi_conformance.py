@@ -1183,46 +1183,28 @@ def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
         "/api/v1/payments/wechat/notify": ("post", {"204", "400", "503"}),
         "/api/v1/refunds/wechat/notify": ("post", {"204", "400", "503"}),
     }
+    open_game_operations = {
+        "/api/v1/orders/{order_id}/game": {
+            "get": {"200", "401", "404", "422", "503"},
+            "post": {"201", "401", "404", "409", "422", "503"},
+        },
+        "/api/v1/games/{game_id}": {
+            "get": {"200", "401", "404", "422", "503"},
+            "put": {"200", "401", "404", "409", "422", "503"},
+        },
+        "/api/v1/games/{game_id}/publish": {
+            "post": {"200", "401", "404", "409", "422", "503"}
+        },
+        "/api/v1/games/{game_id}/cancel": {
+            "post": {"200", "401", "404", "409", "422", "503"}
+        },
+        "/api/v1/shared-games/{share_token}": {"get": {"200", "404", "503"}},
+    }
     unpublished_operations = (
         (
             "/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/refund",
             "post",
             {"200", "202", "401", "404", "409", "422", "503"},
-        ),
-        (
-            "/api/v1/orders/{order_id}/game",
-            "get",
-            {"200", "401", "404", "422", "503"},
-        ),
-        (
-            "/api/v1/orders/{order_id}/game",
-            "post",
-            {"201", "401", "404", "409", "422", "503"},
-        ),
-        (
-            "/api/v1/games/{game_id}",
-            "get",
-            {"200", "401", "404", "422", "503"},
-        ),
-        (
-            "/api/v1/games/{game_id}",
-            "put",
-            {"200", "401", "404", "409", "422", "503"},
-        ),
-        (
-            "/api/v1/games/{game_id}/publish",
-            "post",
-            {"200", "401", "404", "409", "422", "503"},
-        ),
-        (
-            "/api/v1/games/{game_id}/cancel",
-            "post",
-            {"200", "401", "404", "409", "422", "503"},
-        ),
-        (
-            "/api/v1/shared-games/{share_token}",
-            "get",
-            {"200", "404", "503"},
         ),
     )
 
@@ -1236,6 +1218,63 @@ def test_lifecycle_operations_publish_only_available_runtime_routes() -> None:
         assert method in contract["paths"][path]
         assert set(contract["paths"][path][method]["responses"]) == statuses
         assert path not in runtime["paths"]
+
+    open_game_operation_ids = {
+        ("/api/v1/orders/{order_id}/game", "get"): "getOpenGameEntry",
+        ("/api/v1/orders/{order_id}/game", "post"): "createOpenGame",
+        ("/api/v1/games/{game_id}", "get"): "getOpenGame",
+        ("/api/v1/games/{game_id}", "put"): "updateOpenGame",
+        ("/api/v1/games/{game_id}/publish", "post"): "publishOpenGame",
+        ("/api/v1/games/{game_id}/cancel", "post"): "cancelOpenGame",
+        ("/api/v1/shared-games/{share_token}", "get"): "getSharedOpenGame",
+    }
+    open_game_write_schemas = {
+        ("/api/v1/orders/{order_id}/game", "post"): "CreateOpenGameRequest",
+        ("/api/v1/games/{game_id}", "put"): "UpdateOpenGameRequest",
+        ("/api/v1/games/{game_id}/publish", "post"): "OpenGameVersionRequest",
+        ("/api/v1/games/{game_id}/cancel", "post"): "OpenGameVersionRequest",
+    }
+    for path, methods in open_game_operations.items():
+        assert set(contract["paths"][path]) == set(methods)
+        assert set(runtime["paths"][path]) == set(methods)
+        for method, statuses in methods.items():
+            contract_operation = contract["paths"][path][method]
+            runtime_operation = runtime["paths"][path][method]
+            assert set(contract_operation["responses"]) == statuses
+            assert set(runtime_operation["responses"]) == statuses
+            assert (
+                runtime_operation["operationId"]
+                == open_game_operation_ids[(path, method)]
+            )
+            if path == "/api/v1/shared-games/{share_token}":
+                assert runtime_operation.get("security", []) == []
+            else:
+                assert runtime_operation["security"] == [{"bearerAuth": []}]
+            if method == "get":
+                assert "requestBody" not in runtime_operation
+            else:
+                idempotency = next(
+                    parameter
+                    for parameter in runtime_operation["parameters"]
+                    if parameter.get("name") == "Idempotency-Key"
+                )
+                assert idempotency["required"] is True
+                assert {
+                    key: idempotency["schema"][key]
+                    for key in ("type", "minLength", "maxLength")
+                } == {"type": "string", "minLength": 16, "maxLength": 128}
+                schema_name = open_game_write_schemas[(path, method)]
+                assert runtime_operation["requestBody"] == {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": f"#/components/schemas/{schema_name}"
+                            }
+                        }
+                    },
+                }
+    assert "/api/v1/games" not in runtime["paths"]
 
     for path, (method, statuses) in notification_operations.items():
         assert set(contract["paths"][path]) == {method}

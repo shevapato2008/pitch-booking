@@ -1,7 +1,8 @@
-"""Owner entry, draft creation and editing for captain open games."""
+"""Owner lifecycle and public projection for captain open games."""
 
 import hashlib
 import json
+import re
 import secrets
 import uuid
 from collections.abc import Callable
@@ -26,9 +27,11 @@ from backend.app.modules.open_games.dto import (
     OpenGameEntry,
     OpenGameOrderSummary,
     OpenGameOwner,
+    OpenGamePublic,
     OpenGameShare,
     OpenGameTeam,
     OpenGameValidationError,
+    OpenGameVersionRequest,
     UpdateOpenGameRequest,
     mask_to_positions,
     normalize_team_name_key,
@@ -37,6 +40,7 @@ from backend.app.modules.open_games.dto import (
     validate_published_update,
 )
 from backend.app.modules.open_games.lifecycle import (
+    EffectiveOpenGameState,
     OpenGameFacts,
     OpenGameProjectionInvariantError,
     project_open_game_actions,
@@ -59,6 +63,9 @@ from backend.app.modules.orders.repository import OrderRepository
 
 CREATE_OPEN_GAME_OPERATION = "create_open_game"
 UPDATE_OPEN_GAME_OPERATION = "update_open_game"
+PUBLISH_OPEN_GAME_OPERATION = "publish_open_game"
+CANCEL_OPEN_GAME_OPERATION = "cancel_open_game"
+_SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32}$")
 _PAYMENT_MAY_EXIST = frozenset(
     {
         PaymentState.CREATING,
@@ -344,6 +351,222 @@ class OpenGameService:
             self._repository.rollback()
             raise _service_unavailable() from None
 
+    def publish(
+        self,
+        *,
+        user_id: uuid.UUID,
+        game_id: uuid.UUID,
+        idempotency_key: str,
+        request: OpenGameVersionRequest,
+    ) -> OpenGameOwner:
+        try:
+            order_id = self._repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._repository.lock_owned_order(
+                order_id=order_id,
+                user_id=user_id,
+            )
+            if order is None:
+                raise _game_not_found()
+            game = self._repository.lock_target_game(
+                game_id=game_id,
+                order_id=order.id,
+            )
+            if game is None:
+                raise _game_not_found()
+            authority = self._repository.lock_order_authority(order_id=order.id)
+            digest = _request_digest(
+                operation=PUBLISH_OPEN_GAME_OPERATION,
+                resource_id=game.id,
+                request=request,
+            )
+            record, claimed = self._order_repository.claim_idempotency(
+                user_id=user_id,
+                operation=PUBLISH_OPEN_GAME_OPERATION,
+                key=idempotency_key,
+                request_sha256=digest,
+            )
+            if not claimed:
+                replay = _replay_owner(record, digest=digest, status_code=200)
+                self._order_repository.commit()
+                return replay
+            if (
+                game.status is not OpenGameStatus.DRAFT
+                or game.version != request.expected_version
+            ):
+                raise _state_changed()
+
+            now = self._now()
+            order_row = self._require_order_row(order.id)
+            facts = _order_facts(order, order_row, authority)
+            validate_draft_write(
+                facts,
+                registration_deadline=game.registration_deadline,
+                now=now,
+            )
+            game.status = OpenGameStatus.PUBLISHED
+            game.published_at = now
+            game.version += 1
+            self._repository.flush()
+            response = self._project_owner(game, order, authority, now=now)
+            self._order_repository.complete_idempotency(
+                record,
+                response_status=200,
+                response_body=response.model_dump(mode="json"),
+            )
+            self._order_repository.commit()
+            return response
+        except OpenGameValidationError as error:
+            self._repository.rollback()
+            raise _validation_error(error) from None
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def cancel(
+        self,
+        *,
+        user_id: uuid.UUID,
+        game_id: uuid.UUID,
+        idempotency_key: str,
+        request: OpenGameVersionRequest,
+    ) -> OpenGameOwner:
+        try:
+            order_id = self._repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._repository.lock_owned_order(
+                order_id=order_id,
+                user_id=user_id,
+            )
+            if order is None:
+                raise _game_not_found()
+            game = self._repository.lock_target_game(
+                game_id=game_id,
+                order_id=order.id,
+            )
+            if game is None:
+                raise _game_not_found()
+            authority = self._repository.lock_order_authority(order_id=order.id)
+            digest = _request_digest(
+                operation=CANCEL_OPEN_GAME_OPERATION,
+                resource_id=game.id,
+                request=request,
+            )
+            record, claimed = self._order_repository.claim_idempotency(
+                user_id=user_id,
+                operation=CANCEL_OPEN_GAME_OPERATION,
+                key=idempotency_key,
+                request_sha256=digest,
+            )
+            if not claimed:
+                replay = _replay_owner(record, digest=digest, status_code=200)
+                self._order_repository.commit()
+                return replay
+            if game.version != request.expected_version:
+                raise _state_changed()
+
+            now = self._now()
+            order_row = self._require_order_row(order.id)
+            order_facts = _order_facts(order, order_row, authority)
+            game_facts = OpenGameFacts(
+                stored_status=game.status,
+                order_facts=order_facts,
+                registration_deadline=game.registration_deadline,
+            )
+            if not project_open_game_actions(game_facts, now=now).can_cancel:
+                raise _state_changed()
+            game.status = OpenGameStatus.CANCELLED
+            game.cancelled_at = now
+            game.version += 1
+            self._repository.flush()
+            response = self._project_owner(game, order, authority, now=now)
+            self._order_repository.complete_idempotency(
+                record,
+                response_status=200,
+                response_body=response.model_dump(mode="json"),
+            )
+            self._order_repository.commit()
+            return response
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def get_public(self, *, share_token: str) -> OpenGamePublic:
+        if _SHARE_TOKEN_RE.fullmatch(share_token) is None:
+            raise _game_not_found()
+        try:
+            game = self._repository.get_by_share_token(share_token=share_token)
+            if game is None:
+                raise _game_not_found()
+            order = game.order
+            authority = self._repository.get_order_authority(order_id=order.id)
+            order_row = self._require_order_row(order.id)
+            order_facts = _order_facts(order, order_row, authority)
+            facts = OpenGameFacts(
+                stored_status=game.status,
+                order_facts=order_facts,
+                registration_deadline=game.registration_deadline,
+            )
+            state = project_open_game_state(facts)
+            reason = project_open_game_reason(facts, now=self._now())
+            team = self._repository.get_team(team_id=game.team_id)
+            if team is None:
+                raise RuntimeError("open game team is missing")
+            return project_open_game_public(
+                name=game.name,
+                team_name=team.name,
+                state=state,
+                state_reason=reason,
+                venue_name=order_row.venue_name,
+                pitch_name=order_row.pitch_name,
+                players_per_side=order_row.players_per_side,
+                starts_at=order_row.starts_at,
+                ends_at=order_row.ends_at,
+                time_zone=_require_time_zone(order_row),
+                total_players=game.total_players,
+                fixed_players=game.fixed_players,
+                open_spots=game.open_spots,
+                intensity=game.intensity,
+                minimum_experience=game.minimum_experience,
+                positions=mask_to_positions(game.position_mask),
+                aa_cents=game.aa_cents,
+                registration_deadline=game.registration_deadline,
+                equipment_and_arrival_notes=game.equipment_and_arrival_notes,
+                visibility=game.visibility,
+            )
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
     def _insert_draft(
         self,
         *,
@@ -446,7 +669,7 @@ class OpenGameService:
             state_reason=reason,
             version=game.version,
             allowed_actions=actions,
-            share=self._share(game, order_row),
+            share=self._share(game, order_row, state=state),
             public_view=public,
         )
 
@@ -454,8 +677,10 @@ class OpenGameService:
         self,
         game: OpenGame,
         order_row: OpenGameOrderRow,
+        *,
+        state: EffectiveOpenGameState,
     ) -> OpenGameShare | None:
-        if game.published_at is None:
+        if game.published_at is None or state is not EffectiveOpenGameState.PUBLISHED:
             return None
         time_zone = _require_time_zone(order_row)
         local_start = order_row.starts_at.astimezone(ZoneInfo(time_zone))
@@ -553,7 +778,7 @@ def _request_digest(
     *,
     operation: str,
     resource_id: uuid.UUID,
-    request: CreateOpenGameRequest | UpdateOpenGameRequest,
+    request: CreateOpenGameRequest | UpdateOpenGameRequest | OpenGameVersionRequest,
 ) -> str:
     payload = {
         "operation": operation,
@@ -594,7 +819,10 @@ def _validation_error(error: OpenGameValidationError) -> AppError:
             "报名截止时间不符合要求，请修改后重试。",
             details={
                 "fields": [
-                    {"field": item.field, "message": item.message}
+                    {
+                        "field": item.field,
+                        "message": item.message,
+                    }
                     for item in error.fields
                 ]
             },

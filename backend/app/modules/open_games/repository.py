@@ -139,7 +139,10 @@ class OpenGameRepository:
     def get_by_share_token(self, *, share_token: str) -> OpenGame | None:
         return self.session.scalar(
             select(OpenGame)
-            .where(OpenGame.share_token == share_token)
+            .where(
+                OpenGame.share_token == share_token,
+                OpenGame.published_at.is_not(None),
+            )
             .execution_options(populate_existing=True)
         )
 
