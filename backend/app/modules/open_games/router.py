@@ -325,12 +325,18 @@ def publish_open_game(
     database: Annotated[Session, Depends(get_database)],
     now: Annotated[datetime, Depends(get_open_game_clock)],
 ) -> OpenGameOwner:
-    return _service(database, now=now).publish(
-        user_id=user.id,
-        game_id=game_id,
-        idempotency_key=idempotency_key,
-        request=body,
-    )
+    try:
+        return _service(database, now=now).publish(
+            user_id=user.id,
+            game_id=game_id,
+            idempotency_key=idempotency_key,
+            request=body,
+        )
+    except AppError as error:
+        raise _translate_service_validation(
+            error,
+            allowed_fields=frozenset({"expected_version"}),
+        ) from None
 
 
 @router.post(

@@ -27,6 +27,7 @@ from backend.app.modules.open_games.dto import (
     UpdateOpenGameRequest,
 )
 from backend.app.modules.open_games.repository import OpenGameRepository
+from backend.app.modules.open_games.router import get_open_game_clock
 from backend.app.modules.open_games.service import OpenGameService
 from backend.app.modules.orders.repository import OrderRepository
 from backend.tests.test_open_game_service import (
@@ -46,7 +47,7 @@ PUBLISH_KEY = "api-publish-open-game-key-00001"
 CANCEL_KEY = "api-cancel-open-game-key-000001"
 
 
-def _client(engine: Engine) -> TestClient:
+def _client(engine: Engine, *, now: datetime | None = None) -> TestClient:
     app = create_app(settings=Settings(app_env="test", wechat_provider="development"))
 
     def database_override() -> Iterator[Session]:
@@ -54,6 +55,8 @@ def _client(engine: Engine) -> TestClient:
             yield session
 
     app.dependency_overrides[get_database] = database_override
+    if now is not None:
+        app.dependency_overrides[get_open_game_clock] = lambda: now
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -231,6 +234,37 @@ def test_publish_revalidates_b1_eligibility_and_keeps_draft_unchanged(
             None,
             1,
         )
+
+
+def test_publish_elapsed_persisted_deadline_has_no_non_request_field_details(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    _attach_sessions(pg_engine, seeded)
+    deadline = NOW + timedelta(hours=4)
+    with Session(pg_engine) as session:
+        game = OpenGameService(
+            repository=OpenGameRepository(session),
+            order_repository=OrderRepository(session),
+            now=lambda: NOW,
+            token_factory=lambda: "A" * 32,
+        ).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=draft_request(seeded, registration_deadline=deadline),
+        )
+
+    with _client(pg_engine, now=deadline + timedelta(microseconds=1)) as client:
+        response = client.post(
+            f"/api/v1/games/{game.id}/publish",
+            headers=_idempotent(PUBLISH_KEY),
+            json={"expected_version": 1},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+    assert response.json()["error"]["details"] == {}
 
 
 def test_published_owner_remains_published_past_creation_boundary_and_can_retain_deadline(
