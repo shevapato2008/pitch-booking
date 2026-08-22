@@ -75,16 +75,46 @@ test("logs in, loads the default server date, and renders server-authoritative a
   expect(page.data.orders[0]).toMatchObject({ canRefund: true, canCheckIn: false, canComplete: false });
 });
 
-test("navigates previous/current/next from the returned service date and ignores stale reads", async () => {
-  const api = source(); const old = deferred<VenueFulfillmentPage>(); const current = { ...response, serviceDate: "2026-07-29" };
+test("selects a date seven days away with one request and ignores a stale success", async () => {
+  const api = source(); const old = deferred<VenueFulfillmentPage>(); const current = { ...response, serviceDate: "2026-08-04" };
   api.listOrders.mockResolvedValueOnce(response).mockImplementationOnce(() => old.promise).mockResolvedValueOnce(current);
   registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
-  const stale = page.onSelectDate({ currentTarget: { dataset: { serviceDate: "2026-07-27" } } });
-  const latest = page.onSelectDate({ currentTarget: { dataset: { serviceDate: "2026-07-29" } } }); await latest;
+  const stale = page.onSelectDate({ detail: { date: "2026-07-27" } });
+  const latest = page.onSelectDate({ detail: { date: "2026-08-04" } }); await latest;
   old.resolve({ ...response, serviceDate: "2026-07-27" }); await stale;
-  expect(page.data.serviceDate).toBe("2026-07-29");
+  expect(page.data.serviceDate).toBe("2026-08-04");
   expect(api.listOrders).toHaveBeenNthCalledWith(2, response.venue.id, "2026-07-27", undefined);
-  expect(api.listOrders).toHaveBeenNthCalledWith(3, response.venue.id, "2026-07-29", undefined);
+  expect(api.listOrders).toHaveBeenNthCalledWith(3, response.venue.id, "2026-08-04", undefined);
+  expect(api.listOrders).toHaveBeenCalledTimes(3);
+});
+
+test("a stale failed date request cannot replace a newer successful page with read-error", async () => {
+  const api = source(); const old = deferred<VenueFulfillmentPage>(); const current = { ...response, serviceDate: "2026-08-04" };
+  void old.promise.catch(() => undefined);
+  api.listOrders.mockResolvedValueOnce(response).mockImplementationOnce(() => old.promise).mockResolvedValueOnce(current);
+  registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+  const stale = page.onSelectDate({ detail: { date: "2026-07-27" } });
+  await page.onSelectDate({ detail: { date: "2026-08-04" } });
+  old.reject(new Error("stale read")); await stale;
+
+  expect(page.data).toMatchObject({ mode: "ready", serviceDate: "2026-08-04" });
+});
+
+test("a failed date selection keeps authority unchanged and retry requests the same target", async () => {
+  const target = "2026-08-04";
+  const api = source();
+  api.listOrders.mockResolvedValueOnce(response).mockRejectedValueOnce(new Error("read")).mockResolvedValueOnce({ ...response, serviceDate: target });
+  registerVenueFulfillmentDataSource(api); const page = loadPage(); await page.onLoad({ venue_id: response.venue.id });
+
+  await page.onSelectDate({ detail: { date: target } });
+  expect(page.data).toMatchObject({ mode: "read-error", serviceDate: response.serviceDate });
+  expect(page.requestedServiceDate).toBe(target);
+  await page.onRetry();
+
+  expect(api.listOrders).toHaveBeenNthCalledWith(2, response.venue.id, target, undefined);
+  expect(api.listOrders).toHaveBeenNthCalledWith(3, response.venue.id, target, undefined);
+  expect(page.data).toMatchObject({ mode: "ready", serviceDate: target });
+  expect(page.requestedServiceDate).toBe(target);
 });
 
 test("keeps loading, empty, read-error, refresh, pagination, and load-more-error distinct", async () => {
@@ -172,6 +202,12 @@ test("unknown writes refresh authority first and replay the original attempt onl
 
 test("production markup exposes only allowed action buttons and every visible enabled control is bound", () => {
   const markup = readFileSync("miniprogram/pages/venue-fulfillment/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/venue-fulfillment/index.wxss", "utf8");
+  const config = JSON.parse(readFileSync("miniprogram/pages/venue-fulfillment/index.json", "utf8"));
+  expect(config.usingComponents).toEqual({ "date-strip": "/components/date-strip/index" });
+  expect(markup).toMatch(/<date-strip\s+dates="\{\{dates\}\}"\s+selectedDate="\{\{serviceDate\}\}"\s+bind:select="onSelectDate"\s*\/>/);
+  expect(markup).not.toMatch(/date-tabs|data-service-date/);
+  expect(styles).not.toMatch(/\.date-tabs|\.date-tab/);
   expect(markup).toMatch(/wx:if="\{\{item\.canCheckIn\}\}"[^>]*bindtap="onCheckIn"/);
   expect(markup).toMatch(/wx:if="\{\{item\.canComplete\}\}"[^>]*bindtap="onComplete"/);
   expect(markup).toMatch(/wx:if="\{\{item\.canRefund\}\}"[^>]*bindtap="onOpenRefund"/);

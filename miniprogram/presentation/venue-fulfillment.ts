@@ -6,10 +6,9 @@ import type {
 import { formatShanghaiTimeRange } from "./shanghai-time";
 
 export interface VenueServiceDateViewModel {
-  readonly serviceDate: string;
-  readonly weekday: string;
-  readonly day: string;
-  readonly selected: boolean;
+  readonly date: string;
+  readonly weekdayLabel: string;
+  readonly monthDayLabel: string;
 }
 
 export interface VenueFulfillmentOrderViewModel {
@@ -34,17 +33,17 @@ export function shiftServiceDate(serviceDate: string, days: number): string {
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 }
 
-function dateParts(serviceDate: string): { readonly weekday: string; readonly day: string } {
+function dateParts(serviceDate: string): { readonly weekdayLabel: string; readonly monthDayLabel: string } {
   const [year, month, day] = serviceDate.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
-  return { weekday: WEEKDAYS[date.getUTCDay()], day: String(day) };
+  return { weekdayLabel: WEEKDAYS[date.getUTCDay()], monthDayLabel: `${month}月${day}日` };
 }
 
 export function presentVenueServiceDates(serviceDate: string): readonly VenueServiceDateViewModel[] {
-  return [-1, 0, 1].map((offset) => {
+  return Array.from({ length: 15 }, (_, index) => {
+    const offset = index - 7;
     const value = shiftServiceDate(serviceDate, offset);
-    const parts = dateParts(value);
-    return { serviceDate: value, weekday: parts.weekday, day: parts.day, selected: offset === 0 };
+    return { date: value, ...dateParts(value) };
   });
 }
 

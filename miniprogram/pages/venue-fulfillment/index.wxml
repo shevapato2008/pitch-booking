@@ -8,9 +8,11 @@
   <scroll-view class="fulfillment__scroll" scroll-y="true" enhanced="true" show-scrollbar="false" refresher-enabled="true" refresher-triggered="{{refreshing}}" bindrefresherrefresh="onPullDownRefresh">
     <view class="fulfillment__content">
       <view class="date-heading"><view><text class="section-label">服务日期</text><text class="date-heading__value">{{selectedDateLabel || '正在读取'}}</text></view><text class="date-heading__count">{{orders.length}} 个订单</text></view>
-      <view class="date-tabs" role="group" aria-label="切换服务日期">
-        <button wx:for="{{dates}}" wx:key="serviceDate" class="date-tab {{item.selected ? 'date-tab--selected' : ''}}" data-service-date="{{item.serviceDate}}" disabled="{{item.selected}}" bindtap="onSelectDate"><text>{{item.weekday}}</text><text class="date-tab__day">{{item.day}}</text></button>
-      </view>
+      <date-strip
+        dates="{{dates}}"
+        selectedDate="{{serviceDate}}"
+        bind:select="onSelectDate"
+      />
 
       <text wx:if="{{refreshErrorText}}" class="inline-error" role="alert">{{refreshErrorText}}</text>
       <view wx:if="{{actionError}}" class="inline-error inline-error--action" role="alert"><text>{{actionError}}</text><button wx:if="{{unknownAttempt}}" class="inline-error__action" disabled="{{recoveryBusy}}" bindtap="onRetryUnknown">{{recoveryBusy ? '核对中' : '重新核对'}}</button></view>

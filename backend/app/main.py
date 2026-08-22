@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -41,6 +41,13 @@ from backend.app.modules.platform_web import (
 from backend.app.modules.refunds.convergence import RefundConvergenceService
 from backend.app.modules.refunds.repository import RefundRepository
 from backend.app.modules.venue_access.router import router as venue_access_router
+from backend.app.modules.venue_fulfillment.router import (
+    get_refund_actions_enabled,
+    get_refund_provider_name_resolver,
+)
+from backend.app.modules.venue_fulfillment.router import (
+    refund_router as venue_fulfillment_refund_router,
+)
 from backend.app.modules.venue_fulfillment.router import (
     router as venue_fulfillment_router,
 )
@@ -226,6 +233,25 @@ def create_app(
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_fulfillment_router)
+        if (
+            resolved_settings.payment_provider == "wechat"
+            and payment_provider is not None
+        ):
+            refund_provider_name = payment_provider.name
+
+            def refund_actions_enabled() -> bool:
+                return True
+
+            def refund_provider_name_resolver() -> Callable[[], str | None]:
+                return lambda: refund_provider_name
+
+            application.dependency_overrides[get_refund_actions_enabled] = (
+                refund_actions_enabled
+            )
+            application.dependency_overrides[get_refund_provider_name_resolver] = (
+                refund_provider_name_resolver
+            )
+            application.include_router(venue_fulfillment_refund_router)
         application.include_router(venue_onboarding_router)
         application.include_router(venue_profiles_router)
         application.include_router(venue_profile_manual_router)

@@ -1,8 +1,8 @@
 # 用户订单取消与退款验收进度
 
-状态：`STAGING_DEPLOYED_NO_PAYMENT_DEVICE_ACCEPTED_FIXTURE_REMOVED`
+状态：`STAGING_PAID_REFUND_DEVICE_ACCEPTED_FIXTURE_REMOVED`
 
-更新时间：2026-08-20
+更新时间：2026-08-22
 
 ## 已完成的实现
 
@@ -67,6 +67,18 @@
 验收后服务端匿名化权威核验为：订单 `CANCELLED`、目标 slot `AVAILABLE`，并且
 `Payment / RefundCase / RefundAttempt = 0`。随后仅删除本次受控验收产生的 Order、Slot 和取消幂等记录；用户、membership、场馆和场地身份图未改变。未记录订单号、用户标识、手机号、Token、数据库地址、密钥或二维码。
 
+## 真实 iPhone paid refund terminal acceptance：PASS
+
+2026-08-22，体验成员使用体验版 `0.1.3` 完成一笔受控 CNY 0.01 JSAPI 支付，并从
+owner 订单详情发起一次全额退款。支付通知先将权威状态收敛为
+`Payment.SUCCESS / Order.CONFIRMED / Slot.BOOKED`；取消命令只创建 durable refund case
+和 attempt，随后退款终态收敛为 `Order.REFUNDED / Slot.AVAILABLE`。微信账单确认 CNY
+0.01 已原路退回零钱。
+
+最终匿名化服务端核验只有 1 条成功 Payment、1 个 `ORDER_CANCELLATION +
+USER_CANCELLED` 全额退款 case 和 1 次成功 attempt，没有活动或被占用的退款任务。退款释放
+的专用测试 slot 随后由场馆操作员改为 `CLOSED` 且无锁；真实付款与退款账本没有删除。
+
 ## Fixture 清理
 
 真机 PASS 后已删除 `order-cancellation` Fixture、route fragment 及其测试，并移除 development bootstrap 和构建选择器中的临时 source 分支。生产 `pages/order-detail/index`、`pages/my-orders/index`、真实 HTTP source、生产路由以及 production audit deny rules 均保留；清理门禁完成 RED → GREEN，production build、支付关闭检查和 package audit 重新通过。
@@ -74,11 +86,11 @@
 ## 当前诚实边界
 
 - owner 无资金取消已部署到共享 staging，并完成真实 iPhone 的取消、详情重开、列表刷新和时段回收验收。
-- 当前体验版仍保持在线预订、支付和真实退款入口关闭。
-- `MINIPROGRAM_PAYMENT_PROVIDER=disabled`，未启用真实微信支付或退款。
+- 体验版 `0.1.3` 仅在受控 staging 启用真实微信支付，用于本次最小金额验收；没有提交正式审核或公开发布。
 - 已确认此前删除的 my-orders 和 venue-fulfillment 临时资产仍保持缺席；本次清理没有移除任何生产 route/token。
-- paid refund terminal acceptance：`BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`。只有微信 Provider 轨道获得完整商户凭据并完成一次受控小额支付/退款后，才能验收通知或主动查询收敛及最终 `REFUNDED`。
-- durable paid-refund enqueue/retry 的实现与本地 HTTP 证据不等于退款到账，也不等于整个 B1 完成。
+- paid refund terminal acceptance 已在真实 iPhone、真实微信 Provider 和用户到账核对下通过。
+- 本次没有捕获或人工重放原始 Provider 回调，也没有强制触发主动查询/worker recovery；这些路径仍是明确证据缺口。
+- 场馆原因退款 route 仍为 disabled/`404`；owner paid refund 通过不等于整个 B1 完成。
 
 ## 待完成
 
@@ -86,5 +98,6 @@
 - [x] 用受控无资金待支付订单完成真实 iPhone 取消、详情重开、列表刷新和同一 slot 可用性回读；
 - [x] 在 375×812 完成一次 HTTP-backed 详情/列表人工视觉自审，覆盖按钮居中、徽标、箭头、裁切、底部安全区和真实状态；
 - [x] 按完整 route/token union 串行删除 `order-cancellation` 临时 Fixture/route fragment，证明非目标 route/token 未丢失，并重跑 production build、disabled-payment 检查和 package audit；
-- [ ] paid refund terminal acceptance 保持 `BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`；
+- [x] 完成一次真实 iPhone 受控支付与 owner 全额退款，并核对用户到账、服务端终态、唯一资金图和 slot 回收；
+- [ ] 补做人工重复回调和强制 recovery 路径；
 - [x] 体验版 `0.1.2` 上传前取得用户明确确认；未提交正式审核、未公开发布。

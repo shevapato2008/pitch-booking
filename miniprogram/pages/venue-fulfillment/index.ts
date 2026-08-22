@@ -14,6 +14,7 @@ import {
 
 type DatasetEvent = { currentTarget?: { dataset?: Record<string, unknown> } };
 type InputEvent = { detail?: { value?: unknown } };
+type SelectDateEvent = { detail?: { date?: unknown } };
 type MutationKind = VenueFulfillmentMutationAttempt["kind"];
 
 const attemptKey = (kind: MutationKind) => `venue-fulfillment-${kind}-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
@@ -37,6 +38,7 @@ Page({
     headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0,
   },
   requestRevision: 0,
+  requestedServiceDate: "",
   alive: true,
   confirmingOrderId: "",
   authorityOrders: [] as VenueFulfillmentOrder[],
@@ -81,13 +83,19 @@ Page({
   async readOrders(serviceDate?: string, cursor?: string, append = false, initial = false) {
     const revision = ++this.requestRevision;
     if (initial) this.setData({ mode: "loading", refreshErrorText: "", loadMoreError: false });
-    const page = await getVenueFulfillmentDataSource().listOrders(this.data.venueId, serviceDate, cursor);
-    if (!this.alive || revision !== this.requestRevision) return null;
-    this.applyPage(page, append);
-    return page;
+    try {
+      const page = await getVenueFulfillmentDataSource().listOrders(this.data.venueId, serviceDate, cursor);
+      if (!this.alive || revision !== this.requestRevision) return null;
+      this.applyPage(page, append);
+      return page;
+    } catch (caught) {
+      if (!this.alive || revision !== this.requestRevision) return null;
+      throw caught;
+    }
   },
 
   applyPage(page: VenueFulfillmentPage, append: boolean) {
+    this.requestedServiceDate = page.serviceDate;
     const merged = append ? [...this.authorityOrders, ...page.orders] : [...page.orders];
     const seen = new Set<string>();
     this.authorityOrders = merged.filter((order) => !seen.has(order.orderId) && Boolean(seen.add(order.orderId)));
@@ -103,16 +111,17 @@ Page({
     });
   },
 
-  async onSelectDate(event: DatasetEvent) {
-    const serviceDate = event.currentTarget?.dataset?.serviceDate;
+  async onSelectDate(event: SelectDateEvent) {
+    const serviceDate = event.detail?.date;
     if (typeof serviceDate !== "string" || serviceDate === this.data.serviceDate) return;
+    this.requestedServiceDate = serviceDate;
     this.setData({ mode: "loading", refreshErrorText: "", actionError: "" });
     try { await this.readOrders(serviceDate, undefined, false); } catch { if (this.alive) this.setData({ mode: "read-error" }); }
   },
 
   async onRetry() {
     this.setData({ mode: "loading", actionError: "" });
-    try { await this.readOrders(this.data.serviceDate || undefined, undefined, false); } catch { if (this.alive) this.setData({ mode: "read-error" }); }
+    try { await this.readOrders(this.requestedServiceDate || this.data.serviceDate || undefined, undefined, false); } catch { if (this.alive) this.setData({ mode: "read-error" }); }
   },
 
   async onPullDownRefresh() {

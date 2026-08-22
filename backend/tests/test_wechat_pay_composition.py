@@ -8,13 +8,23 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.app import worker as worker_module
 from backend.app.config import Settings
 from backend.app.main import create_app
 from backend.app.modules.payments import build_payment_provider
+from backend.app.modules.venue_fulfillment.router import (
+    get_refund_actions_enabled,
+    get_refund_provider_name_resolver,
+)
 from backend.app.modules.wechat_pay.provider import WeChatPayProvider
+
+VENUE_REFUND_URL = (
+    "/api/v1/venues/00000000-0000-0000-0000-000000000001/fulfillment/orders/"
+    "00000000-0000-0000-0000-000000000002/refund"
+)
 
 
 def _pem_values() -> tuple[str, str]:
@@ -68,6 +78,22 @@ def test_factory_builds_one_real_adapter_for_payment_and_refund_protocols() -> N
     assert callable(adapter.query_refund)
     assert adapter.app_id == "wx6b988ca75ad753c"
     assert adapter.merchant_id == "1900000109"
+
+
+def test_app_activates_venue_refunds_for_constructed_real_wechat_provider() -> None:
+    app = create_app(settings=configured_settings())
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            VENUE_REFUND_URL,
+            headers={"Idempotency-Key": "venue-refund-key-0001"},
+            json={"reason_note": "暴雨停场"},
+        )
+
+    assert response.status_code == 401
+    assert app.dependency_overrides[get_refund_actions_enabled]() is True
+    resolver = app.dependency_overrides[get_refund_provider_name_resolver]()
+    assert resolver() == app.state.payment_provider.name == "wechat"
 
 
 def test_wechat_provider_supports_fresh_import_before_payment_package() -> None:
@@ -150,6 +176,30 @@ def test_app_restart_disabled_ignores_complete_residual_wechat_credentials(
     app = create_app(settings=settings)
 
     assert app.state.payment_provider is None
+    assert get_refund_actions_enabled not in app.dependency_overrides
+    assert get_refund_provider_name_resolver not in app.dependency_overrides
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            VENUE_REFUND_URL,
+            headers={"Idempotency-Key": "venue-refund-key-0001"},
+            json={"reason_note": "暴雨停场"},
+        )
+    assert response.status_code == 404
+
+
+def test_incomplete_wechat_configuration_keeps_venue_refunds_disabled() -> None:
+    app = create_app(settings=Settings(app_env="test", payment_provider="wechat"))
+
+    assert app.state.payment_provider is None
+    assert get_refund_actions_enabled not in app.dependency_overrides
+    assert get_refund_provider_name_resolver not in app.dependency_overrides
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            VENUE_REFUND_URL,
+            headers={"Idempotency-Key": "venue-refund-key-0001"},
+            json={"reason_note": "暴雨停场"},
+        )
+    assert response.status_code == 404
 
 
 def test_worker_restart_disabled_ignores_complete_residual_wechat_credentials(
