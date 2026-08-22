@@ -24,10 +24,6 @@ button::after { border:0; }
 .section-label { color:var(--muted); font-size:22rpx; line-height:32rpx; }
 .date-heading__value { font-size:36rpx; font-weight:750; line-height:50rpx; }
 .date-heading__count { padding-bottom:6rpx; color:var(--muted); font-size:22rpx; line-height:32rpx; }
-.date-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16rpx; margin-bottom:20rpx; }
-.date-tab { display:flex; min-height:104rpx; align-items:center; justify-content:center; gap:16rpx; border:2rpx solid var(--border); border-radius:28rpx; background:var(--surface); color:var(--muted); font-size:24rpx; }
-.date-tab__day { font-size:34rpx; font-weight:750; }
-.date-tab--selected { border-color:var(--primary); background:var(--primary-soft); color:#075985; opacity:1; }
 .inline-error,.load-more-error { display:flex; min-height:72rpx; align-items:center; justify-content:space-between; gap:16rpx; margin-bottom:20rpx; padding:16rpx 20rpx; border-left:8rpx solid var(--danger); border-radius:18rpx; background:#FEF2F2; color:var(--danger); font-size:24rpx; line-height:36rpx; }
 .inline-error__action { display:flex; min-width:88rpx; min-height:64rpx; flex:0 0 auto; align-items:center; justify-content:center; color:#075985; font-weight:750; }
 .order-list { display:grid; gap:20rpx; }

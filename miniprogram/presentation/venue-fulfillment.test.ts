@@ -7,14 +7,17 @@ import { presentVenueFulfillmentOrder, presentVenueServiceDates, shiftServiceDat
 
 const decoded = decodeVenueFulfillmentPage(JSON.parse(readFileSync("contracts/examples/venue-fulfillment-orders.json", "utf8")));
 
-test("presents dates from the server service date without local eligibility", () => {
+test("presents a fifteen-day date-strip window centered on the server service date", () => {
   expect(shiftServiceDate("2026-03-01", -1)).toBe("2026-02-28");
   expect(shiftServiceDate("2024-03-01", -1)).toBe("2024-02-29");
-  expect(presentVenueServiceDates(decoded.serviceDate)).toEqual([
-    expect.objectContaining({ serviceDate: "2026-07-27", selected: false, weekday: "周一" }),
-    expect.objectContaining({ serviceDate: "2026-07-28", selected: true, weekday: "周二" }),
-    expect.objectContaining({ serviceDate: "2026-07-29", selected: false, weekday: "周三" }),
-  ]);
+  const dates = presentVenueServiceDates("2026-08-31");
+
+  expect(dates).toHaveLength(15);
+  expect(dates[0]).toEqual({ date: "2026-08-24", weekdayLabel: "周一", monthDayLabel: "8月24日" });
+  expect(dates[7]).toEqual({ date: "2026-08-31", weekdayLabel: "周一", monthDayLabel: "8月31日" });
+  expect(dates[8]).toEqual({ date: "2026-09-01", weekdayLabel: "周二", monthDayLabel: "9月1日" });
+  expect(dates[14]).toEqual({ date: "2026-09-07", weekdayLabel: "周一", monthDayLabel: "9月7日" });
+  expect(dates.every((date) => Object.keys(date).sort().join(",") === "date,monthDayLabel,weekdayLabel")).toBe(true);
 });
 
 test("maps only server statuses, actions, and blocked reasons to Chinese copy", () => {
