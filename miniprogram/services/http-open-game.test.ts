@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 
-import { decodeOpenGameEntry, decodeOpenGameOwner } from "../domain/open-game-decoder";
+import { decodeOpenGameEntry, decodeOpenGameOwner, decodeOpenGamePublic } from "../domain/open-game-decoder";
 import type { OpenGameDraftInput, OpenGameOwner } from "../domain/open-game";
 import type { StatusTransport, TransportError, WeChatIdentityCapability } from "../runtime/interfaces";
 import {
@@ -17,6 +17,7 @@ import {
   type OpenGameCancelAttempt,
   type OpenGameMutationAttempt,
   type OpenGamePublishAttempt,
+  type OpenGameSource,
 } from "./open-game";
 
 const fixture = (name: string): Record<string, unknown> => JSON.parse(
@@ -38,6 +39,12 @@ const ownerCancelled = decodeOpenGameOwner(rawCancelled);
 const entryCreate = decodeOpenGameEntry(rawEntryCreate);
 const entryManage = decodeOpenGameEntry(rawEntryManage);
 const entryNone = decodeOpenGameEntry(rawEntryNone);
+
+const OTHER_GAME_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const OTHER_ORDER_ID = "22222222-2222-4222-8222-222222222222";
+const rawUpdated = { ...rawDraft, version: 2 };
+const rawPublishedAtVersionTwo = { ...rawPublished, version: 2 };
+const rawCancelledAtVersionTwo = { ...rawCancelled, version: 2 };
 
 const draftBody: OpenGameDraftInput = {
   name: ownerDraft.name,
@@ -136,6 +143,13 @@ function harness(responses: unknown[], sessionPresent = true) {
   };
 }
 
+function performMutation(source: OpenGameSource, attempt: OpenGameMutationAttempt): Promise<OpenGameOwner> {
+  if (attempt.kind === "create") return source.create(attempt);
+  if (attempt.kind === "update") return source.update(attempt);
+  if (attempt.kind === "publish") return source.publish(attempt as OpenGamePublishAttempt);
+  return source.cancel(attempt as OpenGameCancelAttempt);
+}
+
 beforeEach(() => { jest.clearAllMocks(); });
 
 describe("HTTP open-game reads and authentication", () => {
@@ -175,7 +189,7 @@ describe("HTTP open-game reads and authentication", () => {
     const h = harness([
       httpError(401, "AUTH_REQUIRED"),
       response(200, rawSession),
-      response(200, rawDraft),
+      response(200, rawUpdated),
     ]);
 
     await expect(h.source.update(updateAttempt)).resolves.toMatchObject({ id: ownerDraft.id });
@@ -204,19 +218,36 @@ describe("HTTP open-game reads and authentication", () => {
     expect(h.identity.login).toHaveBeenCalledTimes(1);
     expect(h.sessionStore.clear).toHaveBeenCalledTimes(2);
   });
+
+  test("rejects a structurally valid owner response for another game", async () => {
+    expect(() => decodeOpenGameOwner(rawDraft)).not.toThrow();
+    const h = harness([response(200, rawDraft)]);
+
+    await expect(h.source.getOwnedGame("game/id +?="))
+      .rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(h.calls[0]?.path).toBe("/api/v1/games/game%2Fid%20%2B%3F%3D");
+  });
+
+  test("rejects a structurally valid draft response from the shared endpoint", async () => {
+    const draftPublic = { ...rawPublic, state: "DRAFT" };
+    expect(() => decodeOpenGamePublic(draftPublic)).not.toThrow();
+
+    await expect(harness([response(200, draftPublic)]).source.getSharedGame("shared-token"))
+      .rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+  });
 });
 
 describe("HTTP open-game mutations", () => {
-  test("sends exact snake_case requests, encoded paths, and stable idempotency headers", async () => {
-    const create = { ...createAttempt, orderId: "order/id +?=" };
-    const update = { ...updateAttempt, gameId: "game/id +?=" };
-    const publish = { ...publishAttempt, gameId: "game/id +?=" };
-    const cancel = { ...cancelAttempt, gameId: "game/id +?=" };
+  test("sends exact snake_case requests, paths, and stable idempotency headers", async () => {
+    const create = createAttempt;
+    const update = updateAttempt;
+    const publish = publishAttempt;
+    const cancel = cancelAttempt;
     const h = harness([
       response(201, rawDraft),
-      response(200, rawDraft),
-      response(200, rawPublished),
-      response(200, rawCancelled),
+      response(200, rawUpdated),
+      response(200, rawPublishedAtVersionTwo),
+      response(200, rawCancelledAtVersionTwo),
     ]);
 
     await h.source.create(create);
@@ -239,11 +270,42 @@ describe("HTTP open-game mutations", () => {
       visibility: draftBody.visibility,
     };
     expect(h.calls).toEqual([
-      expect.objectContaining({ method: "POST", path: "/api/v1/orders/order%2Fid%20%2B%3F%3D/game", body: snakeBody, headers: expect.objectContaining({ "Idempotency-Key": create.idempotencyKey }) }),
-      expect.objectContaining({ method: "PUT", path: "/api/v1/games/game%2Fid%20%2B%3F%3D", body: { ...snakeBody, expected_version: 1 }, headers: expect.objectContaining({ "Idempotency-Key": update.idempotencyKey }) }),
-      expect.objectContaining({ method: "POST", path: "/api/v1/games/game%2Fid%20%2B%3F%3D/publish", body: { expected_version: 1 }, headers: expect.objectContaining({ "Idempotency-Key": publish.idempotencyKey }) }),
-      expect.objectContaining({ method: "POST", path: "/api/v1/games/game%2Fid%20%2B%3F%3D/cancel", body: { expected_version: 1 }, headers: expect.objectContaining({ "Idempotency-Key": cancel.idempotencyKey }) }),
+      expect.objectContaining({ method: "POST", path: `/api/v1/orders/${create.orderId}/game`, body: snakeBody, headers: expect.objectContaining({ "Idempotency-Key": create.idempotencyKey }) }),
+      expect.objectContaining({ method: "PUT", path: `/api/v1/games/${update.gameId}`, body: { ...snakeBody, expected_version: 1 }, headers: expect.objectContaining({ "Idempotency-Key": update.idempotencyKey }) }),
+      expect.objectContaining({ method: "POST", path: `/api/v1/games/${publish.gameId}/publish`, body: { expected_version: 1 }, headers: expect.objectContaining({ "Idempotency-Key": publish.idempotencyKey }) }),
+      expect.objectContaining({ method: "POST", path: `/api/v1/games/${cancel.gameId}/cancel`, body: { expected_version: 1 }, headers: expect.objectContaining({ "Idempotency-Key": cancel.idempotencyKey }) }),
     ]);
+  });
+
+  test.each([
+    ["create order", createAttempt, { ...rawDraft, order_id: OTHER_ORDER_ID }],
+    ["create state", createAttempt, { ...rawPublished, version: 1 }],
+    ["create version", createAttempt, rawUpdated],
+    ["update game", updateAttempt, { ...rawUpdated, id: OTHER_GAME_ID }],
+    ["update version", updateAttempt, rawDraft],
+    ["publish game", publishAttempt, { ...rawPublishedAtVersionTwo, id: OTHER_GAME_ID }],
+    ["publish version", publishAttempt, { ...rawPublished, version: 1 }],
+    ["publish state", publishAttempt, rawUpdated],
+    ["cancel game", cancelAttempt, { ...rawCancelledAtVersionTwo, id: OTHER_GAME_ID }],
+    ["cancel version", cancelAttempt, { ...rawCancelled, version: 1 }],
+    ["cancel state", cancelAttempt, rawPublishedAtVersionTwo],
+  ] as const)("rejects a structurally valid mismatched %s result without clearing its attempt", async (
+    _caseName,
+    attempt,
+    payload,
+  ) => {
+    expect(() => decodeOpenGameOwner(payload)).not.toThrow();
+    let stored: unknown;
+    const store = createOpenGameMutationAttemptStore({
+      get: () => stored,
+      set: (_key, value) => { stored = value; },
+      remove: () => { stored = undefined; },
+    });
+    expect(store.begin(attempt)).toMatchObject({ kind: "READY" });
+
+    await expect(performMutation(harness([response(attempt.kind === "create" ? 201 : 200, payload)]).source, attempt))
+      .rejects.toMatchObject({ code: "OPEN_GAME_RESULT_UNKNOWN" });
+    expect(store.load()).toEqual(attempt);
   });
 
   test("accepts only 201 for create and 200 for every other operation", async () => {

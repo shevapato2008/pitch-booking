@@ -1,7 +1,7 @@
 import { decodeWeChatSession } from "../domain/decoders";
 import { arrayAt, exactObject, stringAt } from "../domain/decoder-primitives";
 import { decodeOpenGameEntry, decodeOpenGameOwner, decodeOpenGamePublic } from "../domain/open-game-decoder";
-import type { OpenGameDraftInput } from "../domain/open-game";
+import type { OpenGameDraftInput, OpenGameOwner } from "../domain/open-game";
 import type { StatusTransport, TransportError, WeChatIdentityCapability } from "../runtime/interfaces";
 import type { SessionStore } from "./session-store";
 import type {
@@ -231,6 +231,7 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
     path: string,
     body: Readonly<Record<string, unknown>>,
     idempotencyKey: string,
+    matchesAuthority: (owner: OpenGameOwner) => boolean,
   ) => authorized(operation, true, async () => {
     const response = await transport.requestWithStatus<unknown>(
       method,
@@ -240,7 +241,9 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
     );
     if (response.statusCode !== expectedStatus) throw new OpenGameApiError("OPEN_GAME_RESULT_UNKNOWN");
     try {
-      return decodeOpenGameOwner(response.data);
+      const owner = decodeOpenGameOwner(response.data);
+      if (!matchesAuthority(owner)) throw new Error("OPEN_GAME_AUTHORITY_MISMATCH");
+      return owner;
     } catch {
       throw new OpenGameApiError("OPEN_GAME_RESULT_UNKNOWN");
     }
@@ -265,7 +268,9 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
       );
       if (response.statusCode !== 200) throw new OpenGameApiError("SERVICE_UNAVAILABLE");
       try {
-        return decodeOpenGameOwner(response.data);
+        const owner = decodeOpenGameOwner(response.data);
+        if (owner.id !== gameId) throw new Error("OPEN_GAME_AUTHORITY_MISMATCH");
+        return owner;
       } catch {
         throw new OpenGameApiError("SERVICE_UNAVAILABLE");
       }
@@ -276,7 +281,9 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
           "GET", `/api/v1/shared-games/${encodeURIComponent(shareToken)}`, undefined,
         );
         if (response.statusCode !== 200) throw new OpenGameApiError("SERVICE_UNAVAILABLE");
-        return decodeOpenGamePublic(response.data);
+        const publicGame = decodeOpenGamePublic(response.data);
+        if (publicGame.state === "DRAFT") throw new OpenGameApiError("SERVICE_UNAVAILABLE");
+        return publicGame;
       } catch (caught) {
         throw classifyFailure(caught, "shared", false);
       }
@@ -288,6 +295,7 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
       `/api/v1/orders/${encodeURIComponent(attempt.orderId)}/game`,
       draftRequest(attempt.body),
       attempt.idempotencyKey,
+      (owner) => owner.orderId === attempt.orderId && owner.state === "DRAFT" && owner.version === 1,
     ),
     update: (attempt: OpenGameUpdateAttempt) => ownerSuccess(
       "update",
@@ -296,6 +304,7 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
       `/api/v1/games/${encodeURIComponent(attempt.gameId)}`,
       { ...draftRequest(attempt.body), expected_version: attempt.body.expectedVersion },
       attempt.idempotencyKey,
+      (owner) => owner.id === attempt.gameId && owner.version === attempt.body.expectedVersion + 1,
     ),
     publish: (attempt: OpenGamePublishAttempt) => ownerSuccess(
       "publish",
@@ -304,6 +313,9 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
       `/api/v1/games/${encodeURIComponent(attempt.gameId)}/publish`,
       { expected_version: attempt.expectedVersion },
       attempt.idempotencyKey,
+      (owner) => owner.id === attempt.gameId
+        && owner.version === attempt.expectedVersion + 1
+        && owner.state === "PUBLISHED",
     ),
     cancel: (attempt: OpenGameCancelAttempt) => ownerSuccess(
       "cancel",
@@ -312,6 +324,9 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
       `/api/v1/games/${encodeURIComponent(attempt.gameId)}/cancel`,
       { expected_version: attempt.expectedVersion },
       attempt.idempotencyKey,
+      (owner) => owner.id === attempt.gameId
+        && owner.version === attempt.expectedVersion + 1
+        && owner.state === "CANCELLED",
     ),
   };
 }
