@@ -118,7 +118,7 @@ def test_fresh_migration_path_reaches_identity_repair_head(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0014"
+        ).scalar_one() == "0015"
     columns = {item["name"] for item in inspect(migration_engine).get_columns("users")}
     assert "wechat_app_id" in columns
     assert _identity_constraints(migration_engine)["uq_users_wechat_app_openid"] == [

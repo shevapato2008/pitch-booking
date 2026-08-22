@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -91,6 +92,23 @@ class OrderStatus(StrEnum):
     REFUND_FAILED = "REFUND_FAILED"
     REFUNDED = "REFUNDED"
     COMPLETED = "COMPLETED"
+
+
+class OpenGameStatus(StrEnum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    CANCELLED = "CANCELLED"
+
+
+class OpenGameVisibility(StrEnum):
+    PUBLIC = "PUBLIC"
+    LINK_ONLY = "LINK_ONLY"
+
+
+class OpenGameIntensity(StrEnum):
+    BEGINNER_FRIENDLY = "BEGINNER_FRIENDLY"
+    CASUAL = "CASUAL"
+    COMPETITIVE = "COMPETITIVE"
 
 
 class PaymentState(StrEnum):
@@ -928,6 +946,50 @@ class User(Base):
     venue_memberships: Mapped[list[VenueMembership]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    teams: Mapped[list["Team"]] = relationship(
+        foreign_keys="Team.captain_user_id"
+    )
+
+
+class Team(Base):
+    __tablename__ = "teams"
+    __table_args__ = (
+        CheckConstraint(
+            "length(name) BETWEEN 1 AND 24 AND name = trim(name)",
+            name="ck_teams_name",
+        ),
+        CheckConstraint(
+            "length(name_key) BETWEEN 1 AND 64 AND name_key = trim(name_key)",
+            name="ck_teams_name_key",
+        ),
+        UniqueConstraint(
+            "captain_user_id",
+            "name_key",
+            name="uq_teams_captain_name_key",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    captain_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_teams_captain_user_id_users",
+            ondelete="RESTRICT",
+        ),
+    )
+    name: Mapped[str] = mapped_column(String(24))
+    name_key: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    open_games: Mapped[list["OpenGame"]] = relationship(back_populates="team")
 
 
 class VenueOnboardingApplication(Base):
@@ -1332,6 +1394,128 @@ class Order(Base):
     )
     payments: Mapped[list["Payment"]] = relationship(back_populates="order")
     refund_cases: Mapped[list["RefundCase"]] = relationship(back_populates="order")
+    open_games: Mapped[list["OpenGame"]] = relationship(back_populates="order")
+
+
+class OpenGame(Base):
+    __tablename__ = "open_games"
+    __table_args__ = (
+        CheckConstraint(
+            "length(name) BETWEEN 1 AND 30 AND name = trim(name)",
+            name="ck_open_games_name",
+        ),
+        CheckConstraint(
+            "total_players BETWEEN 4 AND 30",
+            name="ck_open_games_total_players",
+        ),
+        CheckConstraint(
+            "fixed_players >= 1", name="ck_open_games_fixed_players"
+        ),
+        CheckConstraint("open_spots >= 1", name="ck_open_games_open_spots"),
+        CheckConstraint(
+            "fixed_players + open_spots <= total_players",
+            name="ck_open_games_roster_capacity",
+        ),
+        CheckConstraint(
+            "minimum_experience IS NULL OR "
+            "(length(minimum_experience) BETWEEN 1 AND 60 "
+            "AND minimum_experience = trim(minimum_experience))",
+            name="ck_open_games_minimum_experience",
+        ),
+        CheckConstraint(
+            "position_mask BETWEEN 0 AND 15",
+            name="ck_open_games_position_mask",
+        ),
+        CheckConstraint("aa_cents >= 0", name="ck_open_games_aa_cents"),
+        CheckConstraint(
+            "equipment_and_arrival_notes IS NULL OR "
+            "(length(equipment_and_arrival_notes) BETWEEN 1 AND 200 "
+            "AND equipment_and_arrival_notes = trim(equipment_and_arrival_notes))",
+            name="ck_open_games_equipment_and_arrival_notes",
+        ),
+        CheckConstraint("version >= 1", name="ck_open_games_version"),
+        CheckConstraint(
+            "length(share_token) BETWEEN 1 AND 64 "
+            "AND share_token = trim(share_token)",
+            name="ck_open_games_share_token",
+        ),
+        CheckConstraint(
+            "(status = 'DRAFT' AND published_at IS NULL AND cancelled_at IS NULL) OR "
+            "(status = 'PUBLISHED' AND published_at IS NOT NULL "
+            "AND cancelled_at IS NULL) OR "
+            "(status = 'CANCELLED' AND cancelled_at IS NOT NULL AND "
+            "(published_at IS NULL OR cancelled_at >= published_at))",
+            name="ck_open_games_status_timestamps",
+        ),
+        UniqueConstraint("share_token", name="uq_open_games_share_token"),
+        Index(
+            "uq_open_games_one_active_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status <> 'CANCELLED'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "orders.id",
+            name="fk_open_games_order_id_orders",
+            ondelete="RESTRICT",
+        ),
+    )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "teams.id",
+            name="fk_open_games_team_id_teams",
+            ondelete="RESTRICT",
+        ),
+    )
+    name: Mapped[str] = mapped_column(String(30))
+    total_players: Mapped[int] = mapped_column(Integer)
+    fixed_players: Mapped[int] = mapped_column(Integer)
+    open_spots: Mapped[int] = mapped_column(Integer)
+    intensity: Mapped[OpenGameIntensity] = mapped_column(
+        Enum(OpenGameIntensity, name="open_game_intensity")
+    )
+    minimum_experience: Mapped[str | None] = mapped_column(
+        String(60), nullable=True
+    )
+    position_mask: Mapped[int] = mapped_column(SmallInteger)
+    aa_cents: Mapped[int] = mapped_column(Integer)
+    registration_deadline: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )
+    equipment_and_arrival_notes: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    visibility: Mapped[OpenGameVisibility] = mapped_column(
+        Enum(OpenGameVisibility, name="open_game_visibility")
+    )
+    status: Mapped[OpenGameStatus] = mapped_column(
+        Enum(OpenGameStatus, name="open_game_status")
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    share_token: Mapped[str] = mapped_column(String(64))
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    order: Mapped[Order] = relationship(back_populates="open_games")
+    team: Mapped[Team] = relationship(back_populates="open_games")
 
 
 class Payment(Base):
