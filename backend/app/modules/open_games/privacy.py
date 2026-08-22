@@ -50,7 +50,8 @@ _MAINLAND_MOBILE_RE = re.compile(r"(?<!\d)1[3-9](?:[\s-]?\d){9}(?!\d)")
 _HTTP_URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _CONTACT_MARKER_RE = re.compile(
     r"(?:加|联系)\s*(?:我)?\s*(?:微信|wechat|wx|vx)"
-    r"|(?:微信|wechat|wx|vx)\s*(?:id\b|号|[:：])",
+    r"|(?:微信|wechat|wx|vx)\s*(?:id\b|号|[:：])"
+    r"|(?:微信|wechat|wx|vx)\s+[A-Za-z0-9][A-Za-z0-9._-]*\b",
     re.IGNORECASE,
 )
 

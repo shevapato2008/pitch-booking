@@ -40,6 +40,10 @@ class OpenGamePublicStateReason(StrEnum):
     BOOKING_COMPLETED = "BOOKING_COMPLETED"
 
 
+class OpenGameProjectionInvariantError(RuntimeError):
+    """Raised when authoritative facts cannot map to a frozen action matrix."""
+
+
 @dataclass(frozen=True, slots=True)
 class OpenGameFacts:
     stored_status: OpenGameStatus
@@ -123,7 +127,9 @@ def project_open_game_actions(
         return _actions(can_cancel=True, can_preview=True)
     if state is EffectiveOpenGameState.PUBLISHED:
         if not _published_authority_is_healthy(facts.order_facts):
-            return _actions(can_cancel=True, can_preview=True)
+            raise OpenGameProjectionInvariantError(
+                "published open game authority is inconsistent"
+            )
         return _actions(
             can_edit=True,
             can_share=True,

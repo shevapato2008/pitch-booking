@@ -269,20 +269,14 @@ def test_non_draft_action_matrix(
 def test_theoretically_inconsistent_published_authority_fails_closed(
     order_facts: OrderLifecycleFacts,
 ) -> None:
-    actions = project_open_game_actions(
-        _game_facts(
-            stored_status=OpenGameStatus.PUBLISHED,
-            order_facts=order_facts,
-        ),
-        now=NOW,
-    )
-    assert actions.model_dump() == {
-        "can_edit": False,
-        "can_publish": False,
-        "can_share": False,
-        "can_cancel": True,
-        "can_preview": True,
-    }
+    with pytest.raises(RuntimeError, match="published open game authority is inconsistent"):
+        project_open_game_actions(
+            _game_facts(
+                stored_status=OpenGameStatus.PUBLISHED,
+                order_facts=order_facts,
+            ),
+            now=NOW,
+        )
 
 
 def test_draft_write_delegates_order_eligibility_to_b1_policy(
@@ -467,6 +461,10 @@ def test_team_key_uses_nfkc_collapsed_whitespace_and_casefold() -> None:
         "WeChat ID: captain123",
         "联系 wx: captain123",
         "加我 vx captain123",
+        "wx captain123",
+        "vx captain123",
+        "微信 captain123",
+        "WeChat captain123",
     ],
 )
 def test_public_free_text_rejects_obvious_contact_channels(text: str) -> None:
