@@ -1,17 +1,20 @@
 # WeChat Pay API v3 bounded smoke
 
-Status: `BLOCKED_EXTERNAL_CREDENTIALS`
+Status: `STAGING_PROVIDER_DEPLOYED_PENDING_CONTROLLED_SMOKE`
 
 The Provider, notification verification/decryption, durable payment/refund convergence, worker
-recovery, deploy generation, and preflight are verified offline. No request has been sent to a real
-WeChat Pay merchant API and no payment/refund availability claim is made.
+recovery, deploy generation, and preflight are verified offline. The real Provider-backed API and
+worker are deployed to staging at revision `bd4c9b3dc4f259a2a6cf630fc90da19720d64006` on
+`ucloud-v100`. An authenticated query for a guaranteed-nonexistent merchant order returned
+`NOT_FOUND`, and both public notification routes rejected an invalid signature with the closed
+`WECHAT_NOTIFICATION_INVALID` response. No real charge or refund has been run, so no
+payment/refund availability claim is made.
 
 ## Preconditions
 
-- A merchant operator supplies the real merchant ID, certificate serial/private key, platform
-  public-key ID/PEM, and API v3 key through ignored deploy config or a secret manager. Both RSA
-  keys are 2048-bit; the API v3 key is 32 characters from `A-Z`, `a-z`, `0-9`, underscore, or
-  hyphen so dotenv and Docker Compose preserve it exactly.
+- The real merchant ID, certificate serial/private key, platform public-key ID/PEM, and API v3 key
+  are supplied through ignored mode-`0600` deploy configuration. Both RSA keys are verified as
+  2048-bit, and the API v3 key passed the deployment preflight without being logged or committed.
 - Both callback URLs use the `PUBLIC_API_BASE_URL` public HTTPS origin, pass
   `scripts.preflight_deploy`, are not on its static IANA/RFC special-use denylist, and are reachable
   by WeChat Pay.
@@ -32,8 +35,13 @@ notification ciphertext, OpenID, phone details, or full provider response bodies
 
 ## Result
 
+- Staging revision: `bd4c9b3dc4f259a2a6cf630fc90da19720d64006`
+- Provider composition: API/worker healthy; authenticated nonexistent-order query `NOT_FOUND`
+- Callback composition: payment/refund invalid-signature probes both returned `400`
+- Pre-smoke authority check: zero active or claimed payment/refund recovery records
+- Venue refund route: remains disabled (`404`) until the paid smoke succeeds
 - Payment identifier: not run
 - Refund identifier: not run
 - Database authority check: not run
 - Duplicate-delivery check: not run
-- Final status: `BLOCKED_EXTERNAL_CREDENTIALS`
+- Final status: `STAGING_PROVIDER_DEPLOYED_PENDING_CONTROLLED_SMOKE`
