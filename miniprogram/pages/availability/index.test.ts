@@ -1,4 +1,7 @@
+/// <reference types="node" />
+
 import { beforeEach, expect, jest, test } from "@jest/globals";
+import { readFileSync } from "node:fs";
 
 type PageDefinition = Record<string, unknown> & { data: Record<string, unknown> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
@@ -80,4 +83,23 @@ test("navigation rejection is handled and keeps the selected slot retryable", as
 
   expect(page.data.selectedSlotId).toBe("slot-retry");
   expect(page.data.navigationError).toBe("页面打开失败，请重试。");
+});
+
+test("the selected date remains visible after availability reload remounts the date strip", () => {
+  const template = readFileSync("miniprogram/components/date-strip/index.wxml", "utf8");
+
+  expect(template).toContain('scroll-into-view="date-{{selectedDate}}"');
+  expect(template).toContain('id="date-{{item.date}}"');
+});
+
+test("the selected-slot CTA uses a safe-area fixed action bar without covering content", () => {
+  const template = readFileSync("miniprogram/pages/availability/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/availability/index.wxss", "utf8");
+
+  expect(template).toContain("availability-content--with-action");
+  expect(template).toContain('class="availability-action-bar u-surface"');
+  expect(template).toContain('class="availability-confirm u-control u-radius-md"');
+  expect(styles).toMatch(/\.availability-action-bar\s*\{[^}]*position:\s*fixed;[^}]*bottom:\s*0;[^}]*env\(safe-area-inset-bottom/s);
+  expect(styles).toMatch(/\.availability-confirm\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+  expect(styles).toMatch(/\.availability-content--with-action\s*\{[^}]*padding-bottom:\s*calc\(/s);
 });

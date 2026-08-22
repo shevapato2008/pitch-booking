@@ -1,7 +1,7 @@
 <view class="availability-page u-page u-text">
   <view wx:if="{{loading}}" class="state-message u-muted u-type-body">正在加载可订时段…</view>
   <view wx:elif="{{errorText}}" class="state-message state-message--error u-type-body">{{errorText}}</view>
-  <view wx:else class="availability-content">
+  <view wx:else class="availability-content {{onlineBookingEnabled && selectedSlotId ? 'availability-content--with-action' : ''}}">
     <view class="date-section">
       <date-strip
         dates="{{viewModel.dates}}"
@@ -30,6 +30,13 @@
       <slot-grid pitchGroups="{{viewModel.pitchGroups}}" disabled="{{!onlineBookingEnabled}}" bind:select="onSlotSelect" />
     </view>
     <text wx:if="{{navigationError}}" class="state-message state-message--error u-type-body">{{navigationError}}</text>
-    <button wx:if="{{onlineBookingEnabled && selectedSlotId}}" class="u-control" bindtap="onConfirmSlot">确认场次</button>
+    <view wx:if="{{onlineBookingEnabled && selectedSlotId}}" class="availability-action-bar u-surface">
+      <button
+        class="availability-confirm u-control u-radius-md"
+        bindtap="onConfirmSlot"
+        hover-class="availability-confirm--pressed"
+        aria-label="确认已选择的场次"
+      >确认场次</button>
+    </view>
   </view>
 </view>

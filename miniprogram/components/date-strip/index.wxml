@@ -1,8 +1,15 @@
-<scroll-view class="date-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+<scroll-view
+  class="date-scroll"
+  scroll-x
+  scroll-into-view="date-{{selectedDate}}"
+  enhanced
+  show-scrollbar="{{false}}"
+>
   <view class="date-row">
     <button
       wx:for="{{dates}}"
       wx:key="date"
+      id="date-{{item.date}}"
       class="date-item u-control u-radius-md {{item.date === selectedDate ? 'date-item--selected' : ''}}"
       data-date="{{item.date}}"
       bindtap="onSelect"
