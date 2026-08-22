@@ -45,6 +45,15 @@ const OTHER_ORDER_ID = "22222222-2222-4222-8222-222222222222";
 const rawUpdated = { ...rawDraft, version: 2 };
 const rawPublishedAtVersionTwo = { ...rawPublished, version: 2 };
 const rawCancelledAtVersionTwo = { ...rawCancelled, version: 2 };
+const rawProjectedCancelledAtVersionTwo = {
+  ...rawCancelledAtVersionTwo,
+  persisted_status: "PUBLISHED",
+  state_reason: "ORDER_REFUNDED",
+  public_view: {
+    ...(rawCancelled.public_view as Record<string, unknown>),
+    state_reason: "BOOKING_UNAVAILABLE",
+  },
+};
 
 const draftBody: OpenGameDraftInput = {
   name: ownerDraft.name,
@@ -289,6 +298,7 @@ describe("HTTP open-game mutations", () => {
     ["cancel game", cancelAttempt, { ...rawCancelledAtVersionTwo, id: OTHER_GAME_ID }],
     ["cancel version", cancelAttempt, { ...rawCancelled, version: 1 }],
     ["cancel state", cancelAttempt, rawPublishedAtVersionTwo],
+    ["cancel persisted status", cancelAttempt, rawProjectedCancelledAtVersionTwo],
   ] as const)("rejects a structurally valid mismatched %s result without clearing its attempt", async (
     _caseName,
     attempt,

@@ -326,6 +326,7 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
       attempt.idempotencyKey,
       (owner) => owner.id === attempt.gameId
         && owner.version === attempt.expectedVersion + 1
+        && owner.persistedStatus === "CANCELLED"
         && owner.state === "CANCELLED",
     ),
   };
