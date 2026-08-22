@@ -4,7 +4,8 @@ Status: `STAGING_CONTROLLED_PAYMENT_REFUND_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
 
 The Provider, notification verification/decryption, durable payment/refund convergence, worker
 recovery, deploy generation, and preflight are verified offline. The real Provider-backed API and
-worker are deployed to staging at revision `bd4c9b3dc4f259a2a6cf630fc90da19720d64006` on
+worker were deployed for the bounded payment/refund run at revision
+`bd4c9b3dc4f259a2a6cf630fc90da19720d64006` on
 `ucloud-v100`. An authenticated query for a guaranteed-nonexistent merchant order returned
 `NOT_FOUND`, and both public notification routes rejected an invalid signature with the closed
 `WECHAT_NOTIFICATION_INVALID` response.
@@ -14,7 +15,9 @@ one owner-requested full refund on a real iPhone. The real payment notification 
 server authority, the refund reached its terminal authority, and the user confirmed that the full
 amount returned to the original WeChat balance account. This closes the normal-path bounded
 payment/refund terminal acceptance only; forced recovery and manual callback redelivery were not
-run, and the venue refund route remains disabled.
+run. After this bounded run, staging revision `87da5d50cfdb70e954ec067dfb93c64a36718e5e`
+activated the already-implemented venue refund route behind the real Provider configuration gate;
+only its unauthenticated `401` boundary was probed, and no venue refund acceptance is claimed here.
 
 ## Preconditions
 
@@ -60,5 +63,6 @@ notification ciphertext, OpenID, phone details, or full provider response bodies
 - Forced active-query/worker recovery: not run in this bounded smoke
 - Manual duplicate-delivery check: not run; no callback body was retained or replayed, so real
   Provider duplicate-redelivery acceptance is not claimed
-- Venue refund route: remains disabled (`404`); it was neither activated nor accepted
+- Venue refund route: activated later at staging revision `87da5d50cfdb70e954ec067dfb93c64a36718e5e`;
+  unauthenticated requests return `401`, but no authenticated venue refund was sent or accepted
 - Final status: `STAGING_CONTROLLED_PAYMENT_REFUND_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
