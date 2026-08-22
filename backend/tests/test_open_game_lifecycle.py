@@ -465,6 +465,9 @@ def test_team_key_uses_nfkc_collapsed_whitespace_and_casefold() -> None:
         "vx captain123",
         "微信 captain123",
         "WeChat captain123",
+        "１３８００１３８０００",
+        "ｈｔｔｐｓ://example.com/game",
+        "ｗｘ captain123",
     ],
 )
 def test_public_free_text_rejects_obvious_contact_channels(text: str) -> None:
@@ -474,6 +477,7 @@ def test_public_free_text_rejects_obvious_contact_channels(text: str) -> None:
 
 def test_public_free_text_does_not_turn_into_generic_moderation() -> None:
     assert validate_public_free_text("本场支持微信支付，欢迎新手") == "本场支持微信支付，欢迎新手"
+    assert validate_public_free_text("联系微信支付客服") == "联系微信支付客服"
 
 
 def test_public_projector_is_an_exact_whitelist_with_coarse_reason() -> None:

@@ -1,6 +1,7 @@
 """Small, explicit privacy boundary for public open-game data."""
 
 import re
+import unicodedata
 from collections.abc import Iterable
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -49,7 +50,7 @@ PUBLIC_OPEN_GAME_FIELDS = frozenset(
 _MAINLAND_MOBILE_RE = re.compile(r"(?<!\d)1[3-9](?:[\s-]?\d){9}(?!\d)")
 _HTTP_URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _CONTACT_MARKER_RE = re.compile(
-    r"(?:加|联系)\s*(?:我)?\s*(?:微信|wechat|wx|vx)"
+    r"(?:加|联系)\s*(?:我)?\s*(?:微信(?!支付)|wechat\b|wx\b|vx\b)"
     r"|(?:微信|wechat|wx|vx)\s*(?:id\b|号|[:：])"
     r"|(?:微信|wechat|wx|vx)\s+[A-Za-z0-9][A-Za-z0-9._-]*\b",
     re.IGNORECASE,
@@ -58,11 +59,12 @@ _CONTACT_MARKER_RE = re.compile(
 
 def validate_public_free_text(value: str) -> str:
     """Reject only obvious off-platform contact details from public free text."""
-    if _MAINLAND_MOBILE_RE.search(value):
+    detection_value = unicodedata.normalize("NFKC", value)
+    if _MAINLAND_MOBILE_RE.search(detection_value):
         raise ValueError("must not include a mainland mobile number")
-    if _HTTP_URL_RE.search(value):
+    if _HTTP_URL_RE.search(detection_value):
         raise ValueError("must not include an http or https URL")
-    if _CONTACT_MARKER_RE.search(value):
+    if _CONTACT_MARKER_RE.search(detection_value):
         raise ValueError("must not include an explicit WeChat contact marker")
     return value
 
