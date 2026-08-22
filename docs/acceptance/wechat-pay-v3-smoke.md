@@ -1,6 +1,6 @@
 # WeChat Pay API v3 bounded smoke
 
-Status: `STAGING_CONTROLLED_PAYMENT_REFUND_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
+Status: `STAGING_CONTROLLED_OWNER_AND_VENUE_REFUNDS_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
 
 The Provider, notification verification/decryption, durable payment/refund convergence, worker
 recovery, deploy generation, and preflight are verified offline. The real Provider-backed API and
@@ -17,7 +17,10 @@ amount returned to the original WeChat balance account. This closes the normal-p
 payment/refund terminal acceptance only; forced recovery and manual callback redelivery were not
 run. After this bounded run, staging revision `87da5d50cfdb70e954ec067dfb93c64a36718e5e`
 activated the already-implemented venue refund route behind the real Provider configuration gate;
-only its unauthenticated `401` boundary was probed, and no venue refund acceptance is claimed here.
+experience version `0.1.3` then completed a second, separate CNY 0.01 payment and one venue-requested
+full refund. The second refund reached the original WeChat balance account and converged to
+`Order.REFUNDED / Slot.CLOSED` with exactly one payment, one refund case, and one successful refund
+attempt. No callback body was retained or manually replayed.
 
 ## Preconditions
 
@@ -27,17 +30,19 @@ only its unauthenticated `401` boundary was probed, and no venue refund acceptan
 - Both callback URLs use the `PUBLIC_API_BASE_URL` public HTTPS origin, pass
   `scripts.preflight_deploy`, are not on its static IANA/RFC special-use denylist, and are reachable
   by WeChat Pay.
-- A real iPhone/OpenID is available and the operator authorizes one smallest practical charge plus
-  its one full refund.
+- A real iPhone/OpenID is available and the operator authorizes two separate smallest practical
+  charges, each followed by exactly one full refund: first by the owner path, then by the venue path.
 
-## One bounded run
+## Two bounded normal-path runs
 
-1. Create one JSAPI payment on the real iPhone and complete it once.
-2. Confirm the payment notification or recovery query converges the payment/order/slot authority.
-3. Request one full refund against that payment.
-4. Confirm the refund notification or recovery query converges the refund/order/slot authority.
-5. Redeliver the recorded callbacks once and repeat the client reconcile request once; confirm no
-   duplicate settlement, refund case, attempt, or inventory mutation.
+1. Complete one JSAPI payment on the real iPhone, confirm its payment/order/slot authority, then
+   request and verify one owner full refund.
+2. After the venue refund route is activated, complete a second independent JSAPI payment, confirm
+   its payment/order/slot authority, then request and verify one venue full refund.
+3. For each run, verify the user funds, terminal order state, slot semantics, and uniqueness of the
+   payment/refund graph before starting another funds operation.
+4. Manual callback redelivery and forced active-query/worker recovery remain separate resilience
+   exercises and were not run during these two normal-path acceptances.
 
 Record only redacted identifiers and timestamps below. Never store keys, authorization headers,
 notification ciphertext, OpenID, phone details, or full provider response bodies.
@@ -64,5 +69,15 @@ notification ciphertext, OpenID, phone details, or full provider response bodies
 - Manual duplicate-delivery check: not run; no callback body was retained or replayed, so real
   Provider duplicate-redelivery acceptance is not claimed
 - Venue refund route: activated later at staging revision `87da5d50cfdb70e954ec067dfb93c64a36718e5e`;
-  unauthenticated requests return `401`, but no authenticated venue refund was sent or accepted
-- Final status: `STAGING_CONTROLLED_PAYMENT_REFUND_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
+  unauthenticated requests return `401`
+- Venue refund result: a second, separate CNY 0.01 JSAPI payment reached
+  `Payment.SUCCESS / Order.CONFIRMED / Slot.BOOKED`; the authorized venue then submitted exactly one
+  full `VENUE_CANCELLED` refund, which reached `Order.REFUNDED / Slot.CLOSED`
+- Venue refund authority: exactly one applied successful payment, one full-amount CNY refund case,
+  and one successful attempt exist; no active, failed, duplicate, or claimed payment/refund work
+  remains
+- Venue refund user-funds check: the second CNY 0.01 refund was confirmed received in the original
+  WeChat balance account
+- Venue refund device check: the venue list, renter detail, and inventory refreshed to “已退款 / 订单已结束”,
+  “退款已完成”, and “已关闭” respectively
+- Final status: `STAGING_CONTROLLED_OWNER_AND_VENUE_REFUNDS_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
