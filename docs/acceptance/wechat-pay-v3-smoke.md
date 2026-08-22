@@ -1,14 +1,20 @@
 # WeChat Pay API v3 bounded smoke
 
-Status: `STAGING_PROVIDER_DEPLOYED_PENDING_CONTROLLED_SMOKE`
+Status: `STAGING_CONTROLLED_PAYMENT_REFUND_ACCEPTED_MANUAL_REPLAY_NOT_RUN`
 
 The Provider, notification verification/decryption, durable payment/refund convergence, worker
 recovery, deploy generation, and preflight are verified offline. The real Provider-backed API and
 worker are deployed to staging at revision `bd4c9b3dc4f259a2a6cf630fc90da19720d64006` on
 `ucloud-v100`. An authenticated query for a guaranteed-nonexistent merchant order returned
 `NOT_FOUND`, and both public notification routes rejected an invalid signature with the closed
-`WECHAT_NOTIFICATION_INVALID` response. No real charge or refund has been run, so no
-payment/refund availability claim is made.
+`WECHAT_NOTIFICATION_INVALID` response.
+
+On 2026-08-22, experience version `0.1.3` completed one controlled CNY 0.01 JSAPI payment and its
+one owner-requested full refund on a real iPhone. The real payment notification converged the
+server authority, the refund reached its terminal authority, and the user confirmed that the full
+amount returned to the original WeChat balance account. This closes the normal-path bounded
+payment/refund terminal acceptance only; forced recovery and manual callback redelivery were not
+run, and the venue refund route remains disabled.
 
 ## Preconditions
 
@@ -39,9 +45,20 @@ notification ciphertext, OpenID, phone details, or full provider response bodies
 - Provider composition: API/worker healthy; authenticated nonexistent-order query `NOT_FOUND`
 - Callback composition: payment/refund invalid-signature probes both returned `400`
 - Pre-smoke authority check: zero active or claimed payment/refund recovery records
-- Venue refund route: remains disabled (`404`) until the paid smoke succeeds
-- Payment identifier: not run
-- Refund identifier: not run
-- Database authority check: not run
-- Duplicate-delivery check: not run
-- Final status: `STAGING_PROVIDER_DEPLOYED_PENDING_CONTROLLED_SMOKE`
+- Experience version: `0.1.3`, controlled staging only; not submitted for formal review or public
+  release
+- Payment result: one CNY 0.01 JSAPI payment reached `Payment.SUCCESS / Order.CONFIRMED /
+  Slot.BOOKED`, with one applied payment and no payment recovery claim
+- Payment convergence: the authenticated real notification path converged directly;
+  `reconcile_attempts=0`, so the recovery worker was not needed for this payment
+- Refund result: one full refund reached `Order.REFUNDED / Slot.AVAILABLE`; exactly one refund case
+  and one successful attempt exist, with no active or claimed refund work
+- User-funds check: the CNY 0.01 refund was confirmed received in the original WeChat balance
+  account
+- Inventory cleanup: after refund released the slot, the operator changed the dedicated test slot
+  to `CLOSED`; it is unlocked and the real payment/refund ledger remains intact
+- Forced active-query/worker recovery: not run in this bounded smoke
+- Manual duplicate-delivery check: not run; no callback body was retained or replayed, so real
+  Provider duplicate-redelivery acceptance is not claimed
+- Venue refund route: remains disabled (`404`); it was neither activated nor accepted
+- Final status: `STAGING_CONTROLLED_PAYMENT_REFUND_ACCEPTED_MANUAL_REPLAY_NOT_RUN`

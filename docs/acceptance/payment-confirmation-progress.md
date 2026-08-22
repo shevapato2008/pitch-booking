@@ -1,10 +1,24 @@
 # Payment confirmation and confirmed order progress
 
-Status: `LOCAL_ACCEPTED_FINAL_DELIVERY_DEFERRED`
+Status: `STAGING_CONTROLLED_REAL_PAYMENT_ACCEPTED_FINAL_DELIVERY_DEFERRED`
 
-Final delivery: **DEFERRED — ICP/WeChat merchant prerequisites pending**
+Final delivery: **DEFERRED — broader recovery, duplicate-delivery, Android, and release gates pending**
 
-Real WeChat Pay live status: **NOT DEPLOYED**
+Real WeChat Pay live status: **CONTROLLED EXPERIENCE BUILD ONLY — not formally reviewed or publicly released**
+
+## Controlled real-Provider checkpoint
+
+On 2026-08-22, experience version `0.1.3` completed one real CNY 0.01 JSAPI payment on an
+iPhone. The authenticated payment notification converged exactly one applied `Payment.SUCCESS`,
+`Order.CONFIRMED`, and `Slot.BOOKED`; payment recovery was not needed. The same owner then
+requested one full refund, which converged to `Order.REFUNDED / Slot.AVAILABLE`, and the user
+confirmed the full amount returned to the original WeChat balance account. Exactly one payment,
+one refund case, and one successful refund attempt remain in the real ledger; the dedicated test
+slot was subsequently closed.
+
+This is one controlled staging case, not general availability. No original callback body was
+retained or manually redelivered, forced recovery was not run, Android was not tested, and the
+venue refund route remains disabled.
 
 ## Checkpoint
 
@@ -14,9 +28,10 @@ PostgreSQL database. Only an explicitly enabled development
 `MockPaymentProvider` supplies payment authority; a cashier callback never confirms
 an order by itself.
 
-This checkpoint does not claim that WeChat Pay is configured, reachable, or live.
-No public deployment, legal-domain change, real merchant credential, real payment,
-or customer charge was used.
+At that historical checkpoint, no public deployment, legal-domain change, real merchant
+credential, real payment, or customer charge was used. The controlled real-Provider checkpoint
+above supersedes only those historical availability statements; the local Mock evidence below
+remains valid regression coverage.
 
 ## Local journey accepted
 
@@ -110,25 +125,24 @@ evidence of an approved WeChat request domain, public HTTPS, or iOS/Android deli
 
 ## Deferred final-delivery gates
 
-Each item remains open because ICP filing, WeChat certification, or merchant payment
-prerequisites are not yet available:
+The remaining items define broader delivery beyond the single controlled staging case:
 
-- [ ] Bind the Mini Program AppID to the merchant account and approve the operating
+- [x] Bind the Mini Program AppID to the merchant account and approve the operating
   category and payment capability.
-- [ ] Configure the merchant private key, certificate serial number, API v3 key, and
-  WeChat platform certificates.
-- [ ] Implement and review the real `WeChatPaymentProvider`, raw request signing, and
+- [x] Configure the merchant private key, certificate serial number, API v3 key, and
+  WeChat payment public key.
+- [x] Implement and review the real `WeChatPaymentProvider`, raw request signing, and
   notification signature verification/decryption.
-- [ ] Publish the HTTPS notification endpoint and configure WeChat legal domains on
+- [x] Publish the HTTPS notification endpoint and configure WeChat legal domains on
   an ICP-approved `modelstella.com` host.
-- [ ] Accept real-device `wx.requestPayment` behavior.
+- [x] Accept one real-device iPhone `wx.requestPayment` and full-refund behavior.
 - [ ] Complete at least five small real-payment cases covering notification, active
   query, close, duplicate delivery, and recovery.
 - [ ] Complete iOS and Android experience-build acceptance.
-- [ ] Remove the runtime simulated payment binding and archive final, redacted
-  production evidence.
-- [ ] Deploy and obtain explicit final delivery acceptance.
+- [x] Keep the runtime simulated payment binding excluded from the production package.
+- [ ] Archive final, redacted production evidence after the broader acceptance matrix.
+- [ ] Promote beyond the controlled experience build and obtain explicit final delivery
+  acceptance.
 
-Until every item above passes, this slice is locally accepted for continued
-development but is not finally delivered and must not be described as live WeChat
-Pay.
+Until every remaining item above passes, this slice has a controlled real-Provider staging
+acceptance but is not finally delivered or generally available WeChat Pay.

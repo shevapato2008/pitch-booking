@@ -1,6 +1,6 @@
 # 场馆订单履约验收进度
 
-更新时间：2026-08-20
+更新时间：2026-08-22
 
 ## 已部署
 
@@ -15,8 +15,8 @@
 
 ## 当前诚实边界
 
-- staging 固化 `ONLINE_BOOKING_ENABLED=false`，`MINIPROGRAM_PAYMENT_PROVIDER=disabled`；场馆、时段和已有订单仍可查看，但不能创建新订单或发起支付。
-- 真实微信支付/退款 Provider 代码和 worker 已集成，但商户凭据与真实资金 smoke 尚未完成，不能声称真实支付或退款可用。
+- 体验版 `0.1.3` 已在受控 staging 启用真实微信支付，并完成一次最小金额支付与 owner 全额退款验收；这不是正式审核或公开发布。
+- 正常支付/owner refund 终态证据记录在 `docs/acceptance/wechat-pay-v3-smoke.md`；人工重复回调与强制 recovery 仍未执行。
 - 场馆退款路由保持未发布，服务端 `can_refund=false`，生产页面不会显示取消/退款按钮。
 
 ## 发布后只读验证
@@ -57,8 +57,9 @@
 
 ## 尚待完成
 
-- [ ] 获得真实微信商户凭据后，单独完成受控小额支付、通知、关单和退款 smoke；
+- [x] 单独完成一次受控小额支付、真实通知收敛和 owner 全额退款到账 smoke；
+- [ ] 补做人工重复回调与强制主动查询/worker recovery；
 - [ ] 在凭据与资金 smoke 通过的发布中再启用场馆退款路由与动作；当前退款路由继续保持未发布；
-- [x] 独立 B1 轨道已完成无资金 owner 取消的真实 iPhone 验收；paid refund terminal acceptance 仍等待微信 Provider 凭据。
+- [x] 独立 B1 轨道已完成无资金 owner 取消和 paid refund terminal acceptance 的真实 iPhone 验收。
 
-因此，场馆今日订单、签到/完成和无资金 owner 取消的真机验收均已收口；真实支付、paid refund terminal acceptance、场馆原因退款及整个 B1 仍未标记完成。
+因此，场馆今日订单、签到/完成、无资金 owner 取消、真实支付和 owner paid refund terminal acceptance 均已收口；人工重复回调、强制 recovery 与场馆原因退款仍未完成，整个 B1 暂不标记完成。

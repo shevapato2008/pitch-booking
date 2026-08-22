@@ -65,23 +65,26 @@ CREATE 的生产代码与部署同样存在，但根据用户 2026-08-18 的明�
 
 ## 波次 B：订单与组织者旅程
 
-### B1：补齐订单履约 — 无资金 owner 取消与场馆履约已真机验收，支付退款仍待完成
+### B1：补齐订单履约 — owner 支付/全额退款与场馆履约已真机验收，场馆原因退款待激活
 
 - [x] 真实 owner-only“我的订单”列表、分页、刷新、错误重试和详情返回已部署到 staging。
 - [x] 冻结订单取消、全额退款、场馆核销/完成和资金异常共用的 PostgreSQL 存储、纯策略、Provider 协议与静态 OpenAPI 契约。
 - [x] 完成一次真实 iPhone“我的订单”刷新、卡片详情、终态回读和可见按钮验收；真实数据已显示“已经到底了”，没有可见 load-more，未人为制造网络失败，相关错误与分页状态由现有自动化覆盖并按比例性接受。
-- [ ] 获得真实微信商户凭据后完成受控小额支付、通知验签解密、主动查询、worker 收敛和退款 smoke；通过前不得宣称真实支付或退款可用。
+- [x] 使用体验版 `0.1.3` 在真实 iPhone 完成一次受控 CNY 0.01 JSAPI 支付与 owner 全额退款；支付收敛为 `Payment.SUCCESS / Order.CONFIRMED / Slot.BOOKED`，退款到账并收敛为 `Order.REFUNDED / Slot.AVAILABLE`，且只有一组付款与退款记录、无遗留 claim。
+- [ ] 补做真实 Provider 回调的人工重复投递，以及强制主动查询/worker recovery 路径；本次正常通知已直接收敛，未捕获或重放原始回调，也未强制触发 recovery，不宣称这些路径已完成真商户验收。
 - [x] 实现 owner 无资金取消生产路由、小程序动作和权威状态展示，并完成真实 iPhone 取消、详情重开、列表刷新和时段释放验收。
 - [x] 实现场馆今日订单、签到和完成生产旅程，并通过真实 iPhone 零金额订单验收及两端刷新后的“已完成”权威状态回读。
-- [ ] 实现场馆原因退款；真实商户凭据与资金 smoke 尚未完成，退款路由保持未发布。
+- [ ] 实现场馆原因退款；受控资金 smoke 已通过，但场馆退款 route 仍保持 disabled/`404`，尚未部署和真机验收。
 
 2026-08-20，体验成员使用已成功上传的体验版 `0.1.1` 在受控 staging 完成 9 项联合 PASS。验收后已删除 my-orders 与 venue-fulfillment 的临时 Fixture/dev pages，以及 venue route fragment；生产页面、真实 HTTP composition、attempt store、生产 route、历史视觉证据和 audit deny rules 保留。`ONLINE_BOOKING_ENABLED=false`，`MINIPROGRAM_PAYMENT_PROVIDER=disabled`，因此本段状态不代表真实支付、退款、owner 取消或整个 B1 完成。
 
 同日，体验成员又使用体验版 `0.1.2` 完成 owner 无资金取消 9/9 真机 PASS：待支付订单经真实确认变为 `CANCELLED`，列表和详情重开均稳定回读，目标 slot 回到 `AVAILABLE`，且 Payment/RefundCase/RefundAttempt 均为 0。验收数据随后按精确范围清理，身份图未改；`order-cancellation` Fixture、route fragment 和临时中央 hooks 已删除，生产订单页面、真实 HTTP 路由及 audit deny rules 保留。
 
-共享基础只表示 revision `0013`、共享模型/策略、Provider 结果协议和公共契约已经冻结，不能把静态 OpenAPI 路径当作已上线能力。场馆今日订单、签到和完成 runtime 已在该冻结边界内落地；真实资金 Provider smoke、paid refund 和场馆退款仍由各自轨道继续完成。后续轨道不得修改 `backend/app/models.py`、revision `0013`、共享 Provider result enums 或冻结的公共 OpenAPI schemas；中央路由注册、production composition、build/audit 汇总继续由集成协调任务串行管理，本次 my-orders、venue-fulfillment 和 order-cancellation 临时 Fixture 均已完成删除。
+2026-08-22，体验成员使用体验版 `0.1.3` 完成一笔 CNY 0.01 真实 JSAPI 支付及 owner 全额退款。支付通知直接将订单/库存收敛为 `CONFIRMED/BOOKED`，退款终态为 `REFUNDED/AVAILABLE`，微信账单确认全额原路退回。服务端最终核验只有 1 条成功 Payment、1 个退款 case 和 1 次成功 attempt，无活动 claim；专用测试 slot 随后由场馆操作员关闭，真实资金账本保留。没有保留或人工重放原始回调，也未强制触发主动查询/worker recovery。
 
-这些能力共同为公开球局取消联动和真实履约提供基础。B1 真实 iPhone“我的订单”、无资金 owner 取消及场馆签到/完成验收债已关闭；A3 CREATE 真机验收债保持不变。真实微信支付、paid refund terminal acceptance 与场馆原因退款仍待完成，其中 paid refund 明确为 `BLOCKED_BY_WECHAT_PROVIDER_INTEGRATION`，但不阻塞后续非资金 MVP 开发。
+共享基础只表示 revision `0013`、共享模型/策略、Provider 结果协议和公共契约已经冻结，不能把静态 OpenAPI 路径当作已上线能力。场馆今日订单、签到和完成 runtime 已在该冻结边界内落地；正常路径的真实资金支付与 owner 全额退款已完成受控验收，人工重复回调、强制 recovery 与场馆退款仍由各自轨道继续完成。后续轨道不得修改 `backend/app/models.py`、revision `0013`、共享 Provider result enums 或冻结的公共 OpenAPI schemas；中央路由注册、production composition、build/audit 汇总继续由集成协调任务串行管理，本次 my-orders、venue-fulfillment 和 order-cancellation 临时 Fixture 均已完成删除。
+
+这些能力共同为公开球局取消联动和真实履约提供基础。B1 真实 iPhone“我的订单”、无资金 owner 取消、正常路径真实微信支付、owner paid-refund terminal acceptance 及场馆签到/完成验收债已关闭；A3 CREATE 真机验收债保持不变。人工重复回调及强制 recovery 仍是明确证据缺口，场馆原因退款仍待激活，因此 B1 暂不标记为“已完成”；这些剩余项不阻塞后续非资金 MVP 开发。
 
 ### B2：队长开放名额 — 待开发，依赖 B1
 
