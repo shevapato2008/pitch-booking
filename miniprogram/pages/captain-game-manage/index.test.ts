@@ -86,6 +86,8 @@ beforeEach(() => {
   resetOpenGameSourceForTesting(); resetOpenGameMutationAttemptStoreForTesting(); storedAttempt = null;
   (store.clear as jest.Mock).mockClear(); registerOpenGameMutationAttemptStore(store);
   (globalThis as any).wx = {
+    getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })),
+    getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })),
     hideShareMenu: jest.fn(async () => undefined), showShareMenu: jest.fn(async () => undefined),
     navigateTo: jest.fn(async () => undefined), navigateBack: jest.fn(async () => undefined), redirectTo: jest.fn(async () => undefined), reLaunch: jest.fn(async () => undefined),
   };

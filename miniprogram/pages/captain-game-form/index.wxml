@@ -1,5 +1,5 @@
 <view class="page">
-  <view class="header"><button class="header__back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">{{pageTitle}}</text><view class="header__spacer"></view></view>
+  <view class="header" style="height: {{headerHeightPx}}px; padding-top: {{headerTopPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;"><button class="header__back" style="height: {{headerRowHeightPx}}px; min-height: {{headerRowHeightPx}}px;" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">{{pageTitle}}</text><view class="header__spacer" style="height: {{headerRowHeightPx}}px; min-height: {{headerRowHeightPx}}px;"></view></view>
   <scroll-view scroll-y="true" class="content">
     <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="state-card__title">正在加载</text><text>正在读取订单与球局状态…</text></view>
     <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="state-card__title">加载失败</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onRetry">重新加载</button></view>

@@ -9,6 +9,7 @@ import {
   openGameStateReasonLabel,
   presentOpenGamePublic,
 } from "../../presentation/open-game";
+import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { OpenGameApiError } from "../../services/http-open-game";
 import { getOpenGameSource } from "../../services/open-game";
 
@@ -29,6 +30,11 @@ function navigation(method: "redirectTo" | "reLaunch", url: string): Promise<voi
     const thenable = returned as unknown as { then?: (yes: () => void, no: (error: unknown) => void) => void };
     if (typeof thenable?.then === "function") thenable.then(done, fail);
   });
+}
+
+function readHeaderData() {
+  const header = readIntentHeaderLayout();
+  return { headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerHeightPx: header.topPx + header.rowHeightPx, headerLeftInsetPx: header.rightInsetPx, headerRightInsetPx: header.rightInsetPx };
 }
 
 function blankData() {
@@ -56,6 +62,11 @@ function blankData() {
     deadlineLabel: "",
     notes: "",
     visibilityLabel: "",
+    headerTopPx: 0,
+    headerRowHeightPx: 44,
+    headerHeightPx: 44,
+    headerLeftInsetPx: 0,
+    headerRightInsetPx: 0,
   };
 }
 
@@ -71,20 +82,21 @@ Page({
     this.visible = true;
     this.skipNextShow = true;
     hideShare();
+    const header = readHeaderData();
     const shared = typeof options.token === "string" && TOKEN_PATTERN.test(options.token)
       && options.game_id === undefined && options.preview === undefined;
     const owner = typeof options.game_id === "string" && UUID_PATTERN.test(options.game_id)
       && options.preview === "1" && options.token === undefined;
     if (shared === owner) {
-      this.setData({ ...blankData(), status: "NOT_FOUND", showLogin: false, showReturnManage: false, errorMessage: "链接不存在或已失效。" });
+      this.setData({ ...blankData(), ...header, status: "NOT_FOUND", showLogin: false, showReturnManage: false, errorMessage: "链接不存在或已失效。" });
       return;
     }
     if (shared) {
       this.routeToken = options.token as string; this.routeGameId = "";
-      this.setData({ ...blankData(), mode: "shared", showReturnManage: false, showLogin: false });
+      this.setData({ ...blankData(), ...header, mode: "shared", showReturnManage: false, showLogin: false });
     } else {
       this.routeGameId = options.game_id as string; this.routeToken = "";
-      this.setData({ ...blankData(), mode: "owner", showReturnManage: true, showLogin: false });
+      this.setData({ ...blankData(), ...header, mode: "owner", showReturnManage: true, showLogin: false });
     }
     void this.loadPublic();
   },

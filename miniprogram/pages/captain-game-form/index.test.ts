@@ -96,6 +96,8 @@ beforeEach(() => {
   (store.clear as jest.Mock).mockClear();
   registerOpenGameMutationAttemptStore(store);
   (globalThis as any).wx = {
+    getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })),
+    getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })),
     navigateTo: jest.fn(async () => undefined), navigateBack: jest.fn(async () => undefined),
     redirectTo: jest.fn(async () => undefined), reLaunch: jest.fn(async () => undefined),
   };
@@ -109,6 +111,7 @@ test("create authority loads immutable order facts and every planned native cont
   expect(page.data.status).toBe("LOADING");
   await flush();
   expect(page.data).toMatchObject({ status: "READY", mode: "create", order: { venueName: order.venueName }, saveLabel: "保存草稿" });
+  expect(page.data).toMatchObject({ headerTopPx: 44, headerRowHeightPx: 44, headerHeightPx: 88, headerLeftInsetPx: 105, headerRightInsetPx: 105 });
   expect(page.data.form.aaYuan).toBe("");
   expect(page.data.form.aaSuggestionCents).toBe(3000);
 
@@ -117,6 +120,9 @@ test("create authority loads immutable order facts and every planned native cont
     expect(wxml).toContain(control);
   }
   expect(wxml).toContain("不可修改");
+  expect(wxml).toContain("padding-top: {{headerTopPx}}px");
+  expect(wxml).toContain("height: {{headerHeightPx}}px");
+  expect(wxml).toContain("padding-left: {{headerLeftInsetPx}}px");
   expect(wxml).toContain("到场线下结算，平台不代收或担保");
   expect(wxml).not.toContain(".indexOf(");
   expect(page.data.positions.find((position: { value: string }) => position.value === "ANY").checked).toBe(true);

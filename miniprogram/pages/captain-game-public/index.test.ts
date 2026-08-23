@@ -56,6 +56,8 @@ function source(overrides: Partial<OpenGameSource> = {}): OpenGameSource {
 beforeEach(() => {
   resetOpenGameSourceForTesting();
   (globalThis as any).wx = {
+    getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })),
+    getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })),
     hideShareMenu: jest.fn(async () => undefined), navigateBack: jest.fn(async () => undefined), redirectTo: jest.fn(async () => undefined), reLaunch: jest.fn(async () => undefined),
   };
   (globalThis as any).getCurrentPages = jest.fn(() => [{ route: "pages/intent-entry/index" }, { route: "pages/captain-game-public/index" }]);

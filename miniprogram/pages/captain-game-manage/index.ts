@@ -8,6 +8,7 @@ import {
   openGameStateLabel,
   openGameStateReasonLabel,
 } from "../../presentation/open-game";
+import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { OpenGameApiError } from "../../services/http-open-game";
 import {
   classifyOpenGameDefinitiveRecovery,
@@ -39,6 +40,10 @@ function navigation(method: "navigateTo" | "redirectTo" | "reLaunch", url: strin
 }
 
 function hideShare(): void { try { void wx.hideShareMenu(); } catch { /* platform unavailable during teardown */ } }
+function readHeaderData() {
+  const header = readIntentHeaderLayout();
+  return { headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerHeightPx: header.topPx + header.rowHeightPx, headerLeftInsetPx: header.rightInsetPx, headerRightInsetPx: header.rightInsetPx };
+}
 function blankData() {
   return {
     status: "LOADING" as ManageStatus,
@@ -70,6 +75,11 @@ function blankData() {
     deadlineLabel: "",
     visibilityLabel: "",
     notes: "",
+    headerTopPx: 0,
+    headerRowHeightPx: 44,
+    headerHeightPx: 44,
+    headerLeftInsetPx: 0,
+    headerRightInsetPx: 0,
   };
 }
 
@@ -87,11 +97,12 @@ Page({
     this.visible = true;
     this.skipNextShow = true;
     hideShare();
+    const header = readHeaderData();
     if (!isUuid(options.game_id)) {
-      this.setData({ ...blankData(), status: "NOT_FOUND", errorMessage: "球局不存在或你无权查看。" });
+      this.setData({ ...blankData(), ...header, status: "NOT_FOUND", errorMessage: "球局不存在或你无权查看。" });
       return;
     }
-    this.setData({ ...blankData(), gameId: options.game_id });
+    this.setData({ ...blankData(), ...header, gameId: options.game_id });
     void this.loadOwner(options.game_id);
   },
 

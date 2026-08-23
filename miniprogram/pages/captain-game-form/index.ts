@@ -11,6 +11,7 @@ import {
   type OpenGameFormField,
   type OpenGameFormValue,
 } from "../../presentation/open-game";
+import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { OpenGameApiError } from "../../services/http-open-game";
 import {
   classifyOpenGameDefinitiveRecovery,
@@ -41,6 +42,10 @@ function pages(): readonly { route?: string }[] { return getCurrentPages() as un
 function canEdit(status: FormStatus): boolean { return status === "READY" || status === "SAVE_ERROR"; }
 function positionOptions(selected: OpenGameFormValue["positions"] = []) {
   return POSITION_OPTIONS.map((position) => ({ ...position, checked: selected.includes(position.value) }));
+}
+function readHeaderData() {
+  const header = readIntentHeaderLayout();
+  return { headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, headerHeightPx: header.topPx + header.rowHeightPx, headerLeftInsetPx: header.rightInsetPx, headerRightInsetPx: header.rightInsetPx };
 }
 
 function navigation(method: "navigateTo" | "redirectTo" | "reLaunch", url: string): Promise<void> {
@@ -81,6 +86,11 @@ function blankData() {
     authoritativeGameId: "",
     stepperError: "",
     pendingKind: "",
+    headerTopPx: 0,
+    headerRowHeightPx: 44,
+    headerHeightPx: 44,
+    headerLeftInsetPx: 0,
+    headerRightInsetPx: 0,
     intensities: [
       { value: "BEGINNER_FRIENDLY", label: "新手友好" },
       { value: "CASUAL", label: "轻松交流" },
@@ -101,18 +111,19 @@ Page({
 
   onLoad(options: PageOptions = {}) {
     this.visible = true;
+    const header = readHeaderData();
     const hasOrder = isUuid(options.order_id);
     const hasGame = isUuid(options.game_id);
     if (hasOrder === hasGame) {
-      this.setData({ ...blankData(), status: "INELIGIBLE", canSave: false, errorMessage: "页面参数无效，请返回订单后重试。" });
+      this.setData({ ...blankData(), ...header, status: "INELIGIBLE", canSave: false, errorMessage: "页面参数无效，请返回订单后重试。" });
       return;
     }
     if (hasOrder) {
-      this.setData({ ...blankData(), orderId: options.order_id as string, mode: "create", pageTitle: "创建球局", saveLabel: "保存草稿" });
+      this.setData({ ...blankData(), ...header, orderId: options.order_id as string, mode: "create", pageTitle: "创建球局", saveLabel: "保存草稿" });
       void this.loadCreate(options.order_id as string);
       return;
     }
-    this.setData({ ...blankData(), gameId: options.game_id as string, mode: "edit", pageTitle: "编辑球局", saveLabel: "保存修改" });
+    this.setData({ ...blankData(), ...header, gameId: options.game_id as string, mode: "edit", pageTitle: "编辑球局", saveLabel: "保存修改" });
     void this.loadEdit(options.game_id as string);
   },
 

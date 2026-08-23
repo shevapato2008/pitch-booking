@@ -18,6 +18,9 @@ const productionRoutes = [
   "pages/availability/index",
   "pages/booking-confirmation/index",
   "pages/order-detail/index",
+  "pages/captain-game-form/index",
+  "pages/captain-game-manage/index",
+  "pages/captain-game-public/index",
   "pages/my-orders/index",
   "pages/venue-profile/index",
   "pages/venue-inventory/index",
@@ -25,7 +28,20 @@ const productionRoutes = [
   "pages/venue-fulfillment/index",
 ];
 
-for (const token of ["dev-login-code", "dev-phone-code", "138****0000", "developmentBookingDataSource", "booking-fixture", "order-cancellation"]) {
+for (const token of [
+  "dev-login-code",
+  "dev-phone-code",
+  "138****0000",
+  "developmentBookingDataSource",
+  "booking-fixture",
+  "order-cancellation",
+  "CAPTAIN_OPEN_GAME_FIXTURE",
+  "奥体周日轻松局",
+  "津门周末足球队",
+  "dev/pages/captain-game-form/index",
+  "dev/pages/captain-game-manage/index",
+  "dev/pages/captain-game-public/index",
+]) {
   test(`production audit rejects ${token} and names it`, async (t) => {
     const root = await mkdtemp(path.join(tmpdir(), "booking-audit-"));
     t.after(() => rm(root, { recursive: true, force: true }));

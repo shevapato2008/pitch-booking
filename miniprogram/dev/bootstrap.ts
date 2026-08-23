@@ -19,12 +19,15 @@ import { createHttpVenueProfileDataSource } from "../services/http-venue-profile
 import { createHttpVenueAccessDataSource } from "../services/http-venue-access";
 import { createHttpVenueOnboardingDataSource } from "../services/http-venue-onboarding";
 import { createHttpVenueFulfillmentDataSource } from "../services/http-venue-fulfillment";
+import { createHttpOpenGameSource } from "../services/http-open-game";
 import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
 import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "../services/venue-fulfillment-attempt-store";
 import { registerVenueFulfillmentDataSource } from "../services/venue-fulfillment";
 import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingDataSource, registerVenueOnboardingEvidenceCapability } from "../services/venue-onboarding";
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
+import { createOpenGameMutationAttemptStore } from "../services/open-game-attempt-store";
+import { registerOpenGameMutationAttemptStore, registerOpenGameSource } from "../services/open-game";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
@@ -43,6 +46,7 @@ import { PAYMENT_PREVIEW_NOW } from "./payment-scenarios";
 import { createDevelopmentPaymentDataSource } from "./payment-source";
 import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
 import { createDevelopmentPitchConfigurationDataSource } from "./pitch-configuration-source";
+import { createDevelopmentOpenGameSource } from "./open-game-source";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -52,6 +56,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));
   registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));
   registerPitchConfigurationAttemptStore(createPitchConfigurationAttemptStore(productionSessionStorage));
+  registerOpenGameMutationAttemptStore(createOpenGameMutationAttemptStore(productionSessionStorage));
   const venueProfileAttemptStore = createVenueProfileAttemptStore(productionSessionStorage);
   const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);
   registerVenueProfileAttemptStore(venueProfileAttemptStore);
@@ -68,6 +73,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerPitchConfigurationDataSource(sources.pitchConfiguration);
     const transport = productionTransport(options.apiBaseUrl);
     const sessionStore = createSessionStore(productionSessionStorage);
+    registerOpenGameSource(createHttpOpenGameSource({ transport, identity: developmentIdentity, sessionStore }));
     registerVenueAccessDataSource(createHttpVenueAccessDataSource({ transport, identity: developmentIdentity, sessionStore }));
     registerVenueOnboardingDataSource(createHttpVenueOnboardingDataSource({ transport, identity: developmentIdentity, phone: productionPhone, sessionStore }));
     registerVenueOnboardingEvidenceCapability(createWeChatVenueOnboardingEvidenceCapability());
@@ -97,6 +103,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerBookingDataSource(createDevelopmentBookingDataSource());
   registerVenueDirectoryDataSource(createDevelopmentVenueDirectoryDataSource());
   registerPitchConfigurationDataSource(createDevelopmentPitchConfigurationDataSource());
+  registerOpenGameSource(createDevelopmentOpenGameSource());
   registerLocationCapability(productionLocation);
   registerNeutralPhoneTapCode(() => "dev-phone-code");
 }

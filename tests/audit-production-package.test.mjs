@@ -31,6 +31,9 @@ for (const token of [
   "VENUE_FULFILLMENT_FIXTURE",
   "order-cancellation",
   "createOrderCancellationFixture",
+  "CAPTAIN_OPEN_GAME_FIXTURE",
+  "奥体周日轻松局",
+  "津门周末足球队",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -275,6 +278,59 @@ test("production audit requires compiled venue fulfillment composition", async (
   await assertAuditRejects(packageRoot, "missing venue fulfillment composition");
 });
 
+test("production audit requires compiled open game source and persistent attempt composition", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.split("\n").filter((line) => !/OpenGame|open-game/.test(line)).join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "missing open game composition");
+});
+
+test("production audit rejects an open game attempt store without production persistence", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace("createOpenGameMutationAttemptStore(productionSessionStorage)", "createOpenGameMutationAttemptStore({})"),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid open game registration: persistent attempt store");
+});
+
+test("production audit rejects a later non-HTTP open game source override", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot, "registerOpenGameSource({});");
+
+  await assertAuditRejects(packageRoot, "invalid open game registration: data source");
+});
+
+for (const [description, mutation] of [
+  ["missing transport", (source) => source.replace("  transport: runtime.transport,\n", "")],
+  ["wrong identity", (source) => source.replace("  identity: productionIdentity,", "  identity: {},")],
+  ["wrong session store", (source) => source.replace("  sessionStore,", "  sessionStore: {},")],
+]) {
+  test(`production audit rejects open game source options with ${description}`, async (t) => {
+    const packageRoot = await createProductionPackage();
+    t.after(() => rm(packageRoot, { recursive: true, force: true }));
+    await installValidPaymentComposition(packageRoot);
+    const appPath = path.join(packageRoot, "app.js");
+    const source = await readFile(appPath, "utf8");
+    await writeFile(appPath, mutation(source));
+
+    await assertAuditRejects(packageRoot, "invalid open game registration: data source");
+  });
+}
+
 test("production audit rejects a venue fulfillment attempt store without production persistence", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
@@ -473,6 +529,9 @@ async function createProductionPackage() {
     "pages/availability/index",
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
+    "pages/captain-game-form/index",
+    "pages/captain-game-manage/index",
+    "pages/captain-game-public/index",
     "pages/my-orders/index",
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
@@ -506,13 +565,26 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
     [
       'const { createHttpPaymentDataSource } = require("./services/http-payment");',
       'const { registerPaymentDataSource, registerPaymentCapability } = require("./services/payment");',
-      'const { productionPayment, productionSessionStorage } = require("./runtime/production");',
+      'const { productionIdentity, productionPayment, productionRuntime, productionSessionStorage } = require("./runtime/production");',
+      'const { createSessionStore } = require("./services/session-store");',
       'const { createHttpVenueFulfillmentDataSource } = require("./services/http-venue-fulfillment");',
       'const { registerVenueFulfillmentDataSource } = require("./services/venue-fulfillment");',
       'const { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } = require("./services/venue-fulfillment-attempt-store");',
+      'const { createHttpOpenGameSource } = require("./services/http-open-game");',
+      'const { registerOpenGameSource, registerOpenGameMutationAttemptStore } = require("./services/open-game");',
+      'const { createOpenGameMutationAttemptStore } = require("./services/open-game-attempt-store");',
+      "const runtime = productionRuntime();",
+      "const sessionStore = createSessionStore(productionSessionStorage);",
       "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
+      "const openGameMutationAttemptStore = createOpenGameMutationAttemptStore(productionSessionStorage);",
       "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
       "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({ attemptStore: venueFulfillmentAttemptStore }));",
+      "registerOpenGameMutationAttemptStore(openGameMutationAttemptStore);",
+      "registerOpenGameSource(createHttpOpenGameSource({",
+      "  transport: runtime.transport,",
+      "  identity: productionIdentity,",
+      "  sessionStore,",
+      "}));",
       "registerPaymentDataSource(createHttpPaymentDataSource({}));",
       "registerPaymentCapability(productionPayment);",
       extraSource,
@@ -527,6 +599,10 @@ async function installProductionDependencies(packageRoot) {
     "services/http-venue-fulfillment.js",
     "services/venue-fulfillment.js",
     "services/venue-fulfillment-attempt-store.js",
+    "services/http-open-game.js",
+    "services/open-game.js",
+    "services/open-game-attempt-store.js",
+    "services/session-store.js",
   ]) await writeFile(path.join(packageRoot, file), "\n");
 }
 

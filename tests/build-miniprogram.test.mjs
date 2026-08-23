@@ -11,6 +11,32 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+const EXISTING_PRODUCTION_ROUTES = [
+  "pages/intent-entry/index",
+  "pages/venue-access/index",
+  "pages/venue-claim/index",
+  "pages/venue-create/index",
+  "pages/venue-map/index",
+  "pages/venue/index",
+  "pages/availability/index",
+  "pages/booking-confirmation/index",
+  "pages/order-detail/index",
+  "pages/my-orders/index",
+  "pages/venue-profile/index",
+  "pages/venue-inventory/index",
+  "pages/venue-pitch-setup/index",
+  "pages/venue-fulfillment/index",
+];
+const CAPTAIN_OPEN_GAME_ROUTES = [
+  "pages/captain-game-form/index",
+  "pages/captain-game-manage/index",
+  "pages/captain-game-public/index",
+];
+const PRODUCTION_ROUTES = [
+  ...EXISTING_PRODUCTION_ROUTES.slice(0, 9),
+  ...CAPTAIN_OPEN_GAME_ROUTES,
+  ...EXISTING_PRODUCTION_ROUTES.slice(9),
+];
 
 function build(projectRoot, mode, environment = {}) {
   return execFileAsync(process.execPath, [buildScript, mode], {
@@ -192,7 +218,7 @@ test("retired owner cancellation preview stays absent while production order rou
   t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
 });
 
-test("production app registers HTTP data, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, open games, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -222,6 +248,11 @@ test("production app registers HTTP data, venue fulfillment, Tencent POI, and na
   assert.match(app, /registerPaymentDataSource/);
   assert.match(app, /productionPayment/);
   assert.match(app, /registerPaymentCapability/);
+  assert.match(app, /createHttpOpenGameSource/);
+  assert.match(app, /registerOpenGameSource/);
+  assert.match(app, /createOpenGameMutationAttemptStore/);
+  assert.match(app, /registerOpenGameMutationAttemptStore/);
+  assert.match(app, /createOpenGameMutationAttemptStore\)\(production_1\.productionSessionStorage\)/);
   assert.match(app, /createHttpVenueFulfillmentDataSource/);
   assert.match(app, /registerVenueFulfillmentDataSource/);
   assert.match(app, /createVenueFulfillmentAttemptStore/);
@@ -241,6 +272,8 @@ test("production app registers HTTP data, venue fulfillment, Tencent POI, and na
   assert.equal(app.indexOf("registerVenueProfileMediaCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameMutationAttemptStore") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
@@ -320,8 +353,8 @@ test("retired my orders previews stay absent while the production route remains"
   assert.equal(existsSync(path.join(productionRoot, "dev/my-orders-fixture.js")), false);
 });
 
-test("captain open game preview routes are registered only in development", async (t) => {
-  const routes = [
+test("captain open game production routes ship in both builds while temporary preview routes and Fixture stay development-only", async (t) => {
+  const previewRoutes = [
     "dev/pages/captain-game-form/index",
     "dev/pages/captain-game-manage/index",
     "dev/pages/captain-game-public/index",
@@ -330,9 +363,12 @@ test("captain open game preview routes are registered only in development", asyn
   const developmentSourceManifest = JSON.parse(await readFile("miniprogram/dev/app-pages.json", "utf8"));
   const productionSourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
 
-  for (const route of routes) {
+  for (const route of previewRoutes) {
     assert.equal(developmentSourceManifest.pages.includes(route), true, `${route} is missing from development`);
     assert.equal(productionSourceManifest.pages.includes(route), false, `${route} leaked into production source`);
+  }
+  for (const route of CAPTAIN_OPEN_GAME_ROUTES) {
+    assert.equal(productionSourceManifest.pages.includes(route), true, `${route} is missing from production source`);
   }
   assert.doesNotMatch(JSON.stringify(productionSourceManifest), isolationPattern);
 
@@ -344,7 +380,7 @@ test("captain open game preview routes are registered only in development", asyn
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
 
-  for (const route of routes) {
+  for (const route of previewRoutes) {
     assert.equal(developmentManifest.pages.includes(route), true, `${route} is missing from development build`);
     assert.equal(productionManifest.pages.includes(route), false, `${route} leaked into production build`);
     for (const extension of ["js", "json", "wxml", "wxss"]) {
@@ -352,6 +388,16 @@ test("captain open game preview routes are registered only in development", asyn
       assert.equal(existsSync(path.join(productionRoot, `${route}.${extension}`)), false, `${route}.${extension}`);
     }
   }
+  for (const route of CAPTAIN_OPEN_GAME_ROUTES) {
+    for (const root of [developmentRoot, productionRoot]) {
+      assert.equal(JSON.parse(await readFile(path.join(root, "app.json"), "utf8")).pages.includes(route), true, `${route} is missing`);
+      for (const extension of ["js", "json", "wxml", "wxss"]) {
+        assert.equal(existsSync(path.join(root, `${route}.${extension}`)), true, `${route}.${extension}`);
+      }
+    }
+  }
+  assert.equal(existsSync(path.join(developmentRoot, "dev/open-game-source.js")), true);
+  assert.equal(existsSync(path.join(productionRoot, "dev/open-game-source.js")), false);
   const developmentText = (await Promise.all((await collectFiles(developmentRoot))
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");
@@ -362,29 +408,16 @@ test("captain open game preview routes are registered only in development", asyn
   assert.doesNotMatch(productionText, isolationPattern);
 });
 
-test("real production build emits all fourteen production routes as native artifacts", async (t) => {
+test("real production build preserves all fourteen existing routes and adds only the three B2 owner routes", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
-  const routes = [
-    "pages/intent-entry/index",
-    "pages/venue-access/index",
-    "pages/venue-claim/index",
-    "pages/venue-create/index",
-    "pages/venue-map/index",
-    "pages/venue/index",
-    "pages/availability/index",
-    "pages/booking-confirmation/index",
-    "pages/order-detail/index",
-    "pages/my-orders/index",
-    "pages/venue-profile/index",
-    "pages/venue-inventory/index",
-    "pages/venue-pitch-setup/index",
-    "pages/venue-fulfillment/index",
-  ];
-  assert.deepEqual(manifest.pages, routes);
-  for (const route of routes) {
+  assert.deepEqual(manifest.pages, PRODUCTION_ROUTES);
+  assert.deepEqual(manifest.pages.filter((route) => !CAPTAIN_OPEN_GAME_ROUTES.includes(route)), EXISTING_PRODUCTION_ROUTES);
+  assert.equal(manifest.pages.length, 17);
+  assert.equal(manifest.pages.some((route) => /(?:list|apply|application)/i.test(route)), false);
+  for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
     assert.equal(existsSync(path.join(outputRoot, `${route}.ts`)), false);
@@ -394,6 +427,21 @@ test("real production build emits all fourteen production routes as native artif
     .filter((file) => !file.endsWith(".png"))
     .map((file) => readFile(file, "utf8")))).join("\n");
   assert.doesNotMatch(productionText, /venue-onboarding-fixture|VENUE_(?:ACCESS|CLAIM|CREATE)_ONBOARDING_FIXTURES|视觉预览，不会提交/);
+});
+
+test("disabled-payment production keeps B2 owner management composed and routed", async (t) => {
+  await build(process.cwd(), "production", { MINIPROGRAM_PAYMENT_PROVIDER: "disabled" });
+  const outputRoot = path.resolve("dist/miniprogram-production");
+  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+
+  const runtime = await readFile(path.join(outputRoot, "config/runtime.js"), "utf8");
+  const app = await readFile(path.join(outputRoot, "app.js"), "utf8");
+  const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
+  assert.match(runtime, /ONLINE_BOOKING_ENABLED\s*=\s*false/);
+  assert.deepEqual(manifest.pages, PRODUCTION_ROUTES);
+  assert.match(app, /registerOpenGameSource/);
+  assert.match(app, /createHttpOpenGameSource/);
+  assert.match(app, /registerOpenGameMutationAttemptStore/);
 });
 
 test("production API URL override changes generated production config only", async (t) => {

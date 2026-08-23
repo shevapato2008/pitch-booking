@@ -48,7 +48,12 @@ test("development booking source defaults to the existing Fixture composition", 
   const cashier = await readFile(path.join(developmentOutput, "dev/payment-capability.js"), "utf8");
   assert.match(bootstrap, /registerPaymentDataSource/);
   assert.match(bootstrap, /registerPaymentCapability/);
+  assert.match(bootstrap, /createDevelopmentOpenGameSource/);
+  assert.match(bootstrap, /registerOpenGameSource/);
+  assert.match(bootstrap, /createOpenGameMutationAttemptStore/);
+  assert.match(bootstrap, /registerOpenGameMutationAttemptStore/);
   assert.match(bootstrap, /PAYMENT_PREVIEW_NOW/);
+  assert.equal(existsSync(path.join(developmentOutput, "dev/open-game-source.js")), true);
   assert.match(cashier, /模拟支付，不会扣款/);
   assert.doesNotMatch(
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
@@ -56,7 +61,7 @@ test("development booking source defaults to the existing Fixture composition", 
   );
 });
 
-test("development native order detail contains payment states without the retired inert action", async (t) => {
+test("development native order detail keeps payment states and the real B2 owner entry without the retired inert action", async (t) => {
   const projectRoot = await createBuildProject(t);
   const developmentOutput = path.join(projectRoot, "dist/miniprogram-development");
 
@@ -75,8 +80,11 @@ test("development native order detail contains payment states without the retire
     "已支付",
   ]) assert.match(wxml, new RegExp(copy));
   assert.match(wxml, /aria-label="支付成功"/);
+  assert.match(wxml, /bindtap="onOpenGameEntry"/);
+  assert.match(wxml, /创建球局/);
+  assert.match(wxml, /管理球局/);
   assert.match(wxss, /env\(safe-area-inset-bottom/);
-  assert.doesNotMatch(wxml, /查看预订详情|创建球局|微信支付/);
+  assert.doesNotMatch(wxml, /查看预订详情|微信支付/);
 });
 
 test("development HTTP build injects an explicit localhost API URL into the typed composition root", async (t) => {
@@ -102,6 +110,15 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.match(source, /dev-phone-code/);
   const bootstrap = await readFile(path.join(developmentOutput, "dev/bootstrap.js"), "utf8");
   assert.match(bootstrap, /registerPaymentDataSource/);
+  assert.match(bootstrap, /createHttpOpenGameSource/);
+  assert.match(bootstrap, /registerOpenGameSource/);
+  assert.match(bootstrap, /createOpenGameMutationAttemptStore/);
+  assert.match(bootstrap, /registerOpenGameMutationAttemptStore/);
+  assert.match(bootstrap, /createOpenGameMutationAttemptStore\)\(production_1\.productionSessionStorage\)/);
+  assert.match(
+    bootstrap,
+    /registerOpenGameSource\)\(\(0, http_open_game_1\.createHttpOpenGameSource\)\([\s\S]*transport[\s\S]*developmentIdentity[\s\S]*sessionStore[\s\S]*return;/,
+  );
   assert.match(bootstrap, /registerVenueDirectoryDataSource/);
   assert.match(bootstrap, /registerLocationCapability/);
   assert.match(bootstrap, /productionLocation/);
@@ -118,6 +135,8 @@ test("development HTTP build injects an explicit localhost API URL into the type
     /registerPoiSearchCapability\)\(new tencent_poi_search_1\.TencentPoiSearchCapability[\s\S]*return;/,
   );
   assert.doesNotMatch(bootstrap, /poi_search_preview|previewPoiSearchCapability|DEV_ONLY_POI_SEARCH_PREVIEW/);
+  assert.equal(bootstrap.indexOf("registerOpenGameSource") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.lastIndexOf("createDevelopmentOpenGameSource") > bootstrap.indexOf("return;"), true);
   assert.match(
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
     new RegExp(TEST_TENCENT_MAP_KEY),
@@ -195,6 +214,10 @@ test("production ignores the development selector and excludes all development c
   assert.equal(existsSync(path.join(productionOutput, "dev")), false);
   const app = await readFile(path.join(productionOutput, "app.js"), "utf8");
   assert.doesNotMatch(app, /dev-login-code|dev-phone-code|http-booking-source|payment-scenarios|payment-capability|payment-source|bootstrapDevelopment/);
+  assert.match(app, /createHttpOpenGameSource/);
+  assert.match(app, /registerOpenGameSource/);
+  assert.match(app, /createOpenGameMutationAttemptStore/);
+  assert.match(app, /registerOpenGameMutationAttemptStore/);
   await execFileAsync(process.execPath, [
     auditScript,
     productionOutput,
