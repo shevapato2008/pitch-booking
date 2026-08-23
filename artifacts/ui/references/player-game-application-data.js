@@ -146,7 +146,10 @@ export const applyArtifactAction = (fixture, action) => {
   const next = { ...fixture, feedback: "" };
   if (action === "LOGIN") next.authenticated = true;
   if (action === "OPEN_APPLICATION" && next.authenticated && next.registrationStatus === "NONE") next.view = "APPLICATION";
-  if (action === "CANCEL_APPLICATION") next.view = "DETAIL";
+  if (action === "CANCEL_APPLICATION" && next.registrationStatus === "NONE") {
+    next.view = "DETAIL";
+    next.form = { ...DEFAULT_ARTIFACT_FORM };
+  }
   if (action === "SUBMIT_APPLICATION" && next.registrationStatus === "NONE" && canSubmitArtifact(next)) {
     next.submittedApplication = { ...next.form };
     next.registrationStatus = "APPLIED";

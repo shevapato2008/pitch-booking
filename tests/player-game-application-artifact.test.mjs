@@ -143,6 +143,26 @@ test("one immutable Artifact form state owns name, note, position, and unchecked
   assert.match(read(files.data), /canSubmitArtifact\(fixture\)/);
 });
 
+test("cancelling an unsubmitted application discards every edit before the form reopens", { skip: missing.length > 0 }, async () => {
+  const data = await import(`../${files.data}?artifact-cancel=1`);
+  let fixture = data.createArtifactFixture("application-ready");
+  const initialForm = fixture.form;
+  fixture = data.applyArtifactField(fixture, "displayName", "临时称呼");
+  fixture = data.applyArtifactField(fixture, "note", "这段备注不应保留");
+  fixture = data.applyArtifactField(fixture, "position", "门将");
+  fixture = data.applyArtifactField(fixture, "adultConfirmed", true);
+  fixture = data.applyArtifactField(fixture, "riskConfirmed", true);
+
+  fixture = data.applyArtifactAction(fixture, "CANCEL_APPLICATION");
+  assert.equal(fixture.registrationStatus, "NONE");
+  assert.equal(fixture.view, "DETAIL");
+  fixture = data.applyArtifactAction(fixture, "OPEN_APPLICATION");
+  assert.equal(fixture.registrationStatus, "NONE");
+  assert.equal(fixture.view, "APPLICATION");
+  assert.deepEqual(fixture.form, initialForm);
+  assert.deepEqual([fixture.form.adultConfirmed, fixture.form.riskConfirmed], [false, false]);
+});
+
 test("authentication gates submit and NONE status copy updates immediately after login", { skip: missing.length > 0 }, async () => {
   const data = await import(`../${files.data}?artifact-auth=1`);
   let anonymous = data.createArtifactFixture("anonymous-detail");
