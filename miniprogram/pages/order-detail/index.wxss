@@ -201,6 +201,11 @@
   line-height: 1.55;
 }
 
+.open-game-action {
+  width: 100%;
+  margin-top: 24rpx;
+}
+
 .rules,
 .closing-copy,
 .inline-error {

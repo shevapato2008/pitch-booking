@@ -19,6 +19,13 @@ import type {
 import { PAYMENT_PREVIEW_NOW, PAYMENT_SCENARIOS } from "../../dev/payment-scenarios";
 import { AsyncGenerationGate } from "../../presentation/lifecycle";
 import { registerBookingDataSource, resetBookingDataSourceForTesting, type BookingDataSource } from "../../services/booking";
+import type { OpenGameEntry } from "../../domain/open-game";
+import { OpenGameApiError } from "../../services/http-open-game";
+import {
+  registerOpenGameSource,
+  resetOpenGameSourceForTesting,
+  type OpenGameSource,
+} from "../../services/open-game";
 import {
   registerPaymentCapability,
   registerPaymentClock,
@@ -95,9 +102,205 @@ const refundPendingFrom = (
   allowedActions: ownerActions(false, false, "REFUND_IN_PROGRESS"),
 });
 
+const openGameOrder = {
+  venueName: "滨江足球公园",
+  pitchName: "五人制 A 场",
+  pitchSpecification: "5人制",
+  playersPerSide: 5,
+  bookingPriceCents: 36000,
+  startsAt: "2099-07-28T19:00:00+08:00",
+  endsAt: "2099-07-28T20:30:00+08:00",
+  timeZone: "Asia/Shanghai",
+} as const;
+const managedGameId = "00000000-0000-4000-8000-000000000041";
+const createEntry: OpenGameEntry = {
+  entry: "CREATE",
+  order: openGameOrder,
+  gameId: null,
+  blockedReason: null,
+};
+const manageEntry: OpenGameEntry = {
+  entry: "MANAGE",
+  order: null,
+  gameId: managedGameId,
+  blockedReason: null,
+};
+const noEntry: OpenGameEntry = {
+  entry: "NONE",
+  order: null,
+  gameId: null,
+  blockedReason: "ORDER_NOT_ELIGIBLE",
+};
+
+function openGameSource(getEntry: OpenGameSource["getEntry"]): OpenGameSource {
+  const unused = async (): Promise<never> => { throw new Error("unused"); };
+  return {
+    login: async () => undefined,
+    getEntry,
+    getOwnedGame: unused,
+    getSharedGame: unused,
+    create: unused,
+    update: unused,
+    publish: unused,
+    cancel: unused,
+  };
+}
+
 beforeEach(() => {
   resetBookingDataSourceForTesting();
   resetPaymentBindingsForTesting();
+  resetOpenGameSourceForTesting();
+});
+
+describe("open game entry orchestration", () => {
+  test("CREATE renders a real action and navigates with the authoritative order id", async () => {
+    const order = ownerConfirmed();
+    const getEntry = jest.fn(async () => createEntry);
+    const navigateTo = jest.fn(async (_input: { url: string }) => undefined);
+    registerBookingDataSource(baseSource(async () => order));
+    registerOpenGameSource(openGameSource(getEntry));
+    (globalThis as unknown as { wx: object }).wx = { navigateTo };
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: order.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "booking-confirmed",
+      showOpenGameEntry: true,
+      openGameActionLabel: "创建球局",
+      openGameEntryError: "",
+      showOpenGameEntryRetry: false,
+    });
+    await call(page, "onOpenGameEntry");
+    expect(navigateTo).toHaveBeenCalledWith({
+      url: `/pages/captain-game-form/index?order_id=${encodeURIComponent(order.orderId)}`,
+    });
+    call(page, "onUnload");
+  });
+
+  test("MANAGE renders a real action and navigates with the authoritative game id", async () => {
+    const order = ownerConfirmed();
+    const getEntry = jest.fn(async () => manageEntry);
+    const navigateTo = jest.fn(async (_input: { url: string }) => undefined);
+    registerBookingDataSource(baseSource(async () => order));
+    registerOpenGameSource(openGameSource(getEntry));
+    (globalThis as unknown as { wx: object }).wx = { navigateTo };
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: order.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      showOpenGameEntry: true,
+      openGameActionLabel: "管理球局",
+      openGameEntryError: "",
+    });
+    await call(page, "onOpenGameEntry");
+    expect(navigateTo).toHaveBeenCalledWith({
+      url: `/pages/captain-game-manage/index?game_id=${encodeURIComponent(managedGameId)}`,
+    });
+    call(page, "onUnload");
+  });
+
+  test("NONE hides the entry instead of rendering a disabled or fake action", async () => {
+    const order = ownerConfirmed();
+    registerBookingDataSource(baseSource(async () => order));
+    registerOpenGameSource(openGameSource(async () => noEntry));
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: order.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "booking-confirmed",
+      showOpenGameEntry: false,
+      openGameActionLabel: "",
+      openGameEntryError: "",
+      showOpenGameEntryRetry: false,
+    });
+    call(page, "onUnload");
+  });
+
+  test("entry failure is non-blocking, preserves payment and cancellation authority, and retries the real source", async () => {
+    const entryRead = deferred<OpenGameEntry>();
+    let entryReads = 0;
+    const getEntry = jest.fn(() => {
+      entryReads += 1;
+      return entryReads === 1 ? entryRead.promise : Promise.resolve(createEntry);
+    });
+    const order = ownerPending(true);
+    registerPaymentRuntime({ getOrder: async () => order });
+    registerBookingDataSource({
+      ...baseSource(async () => order),
+      cancelOrder: async () => ({ ...order, status: "CANCELLED" } as Extract<OrderView, { status: "CANCELLED" }>),
+    });
+    registerOpenGameSource(openGameSource(getEntry));
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: order.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "payment-pending",
+      showPaymentFooter: true,
+      showCancelAction: true,
+      showOpenGameEntry: false,
+      showOpenGameEntryRetry: false,
+    });
+
+    entryRead.reject(new OpenGameApiError("SERVICE_UNAVAILABLE"));
+    await flush();
+    expect(page.data).toMatchObject({
+      status: "payment-pending",
+      showPaymentFooter: true,
+      showCancelAction: true,
+      showOpenGameEntry: false,
+      showOpenGameEntryRetry: true,
+      openGameEntryError: "球局入口暂时无法加载，请重试。",
+    });
+
+    await call(page, "onRetryOpenGameEntry");
+    expect(getEntry).toHaveBeenCalledTimes(2);
+    expect(page.data).toMatchObject({
+      showPaymentFooter: true,
+      showCancelAction: true,
+      showOpenGameEntry: true,
+      openGameActionLabel: "创建球局",
+      showOpenGameEntryRetry: false,
+      openGameEntryError: "",
+    });
+    call(page, "onUnload");
+  });
+
+  test("hide-show refresh ignores an older entry response", async () => {
+    const first = deferred<OpenGameEntry>();
+    let entryReads = 0;
+    const getEntry = jest.fn(() => {
+      entryReads += 1;
+      return entryReads === 1 ? first.promise : Promise.resolve(noEntry);
+    });
+    const order = ownerConfirmed();
+    registerBookingDataSource(baseSource(async () => order));
+    registerOpenGameSource(openGameSource(getEntry));
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: order.orderId });
+    call(page, "onHide");
+    call(page, "onShow");
+    await flush();
+    first.resolve(createEntry);
+    await flush();
+
+    expect(getEntry).toHaveBeenCalledTimes(2);
+    expect(page.data).toMatchObject({
+      showOpenGameEntry: false,
+      openGameActionLabel: "",
+      openGameEntryError: "",
+      showOpenGameEntryRetry: false,
+    });
+    call(page, "onUnload");
+  });
 });
 
 describe("owner cancellation orchestration", () => {
@@ -766,7 +969,12 @@ describe("order detail payment orchestration", () => {
     expect(wxml).toContain("取消订单");
     expect(wxml).toContain('bindtap="onCancelOrder"');
     expect(wxml).toContain('bindtap="onConfirmCancellationResult"');
-    expect(wxml).not.toMatch(/创建球局|微信支付/);
+    expect(wxml).toContain("创建球局");
+    expect(wxml).toContain("管理球局");
+    expect(wxml).toContain('wx:if="{{showOpenGameEntry}}"');
+    expect(wxml).toContain('bindtap="onOpenGameEntry"');
+    expect(wxml).toContain('bindtap="onRetryOpenGameEntry"');
+    expect(wxml).not.toContain("微信支付");
     expect(wxss).toMatch(/env\(safe-area-inset-bottom/);
     expect(wxss).toMatch(/padding-bottom:\s*calc\(/);
     expect(wxss).toMatch(/min-height:\s*88rpx/);

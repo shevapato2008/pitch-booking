@@ -65,10 +65,21 @@
       <text wx:else class="rules">{{order.cancellationSummary}}{{status === 'booking-confirmed' ? '' : ' 页面倒计时不自行释放场地。'}}</text>
     </view>
 
+    <view wx:if="{{showOpenGameEntry}}" class="detail-card open-game-card">
+      <text class="card-kicker">约球</text>
+      <text class="rules">邀请球友加入本场预订，球局信息以服务端最新状态为准。</text>
+      <button wx:if="{{showOpenGameEntry}}" class="primary-button open-game-action" bindtap="onOpenGameEntry">
+        <text wx:if="{{openGameActionLabel === '创建球局'}}">创建球局</text>
+        <text wx:else>管理球局</text>
+      </button>
+    </view>
+
     <text wx:if="{{paymentError}}" class="inline-error" role="alert">{{paymentError}}</text>
     <text wx:if="{{cancellationError}}" class="inline-error" role="alert">{{cancellationError}}</text>
+    <text wx:if="{{openGameEntryError}}" class="inline-error" role="alert">{{openGameEntryError}}</text>
     <text wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</text>
     <text wx:if="{{showClosingMessage}}" class="closing-copy">正在确认服务端关闭状态…</text>
+    <button wx:if="{{showOpenGameEntryRetry}}" class="secondary-button" bindtap="onRetryOpenGameEntry">重试加载球局入口</button>
     <button wx:if="{{showPaymentRetry && status === 'payment-confirming'}}" class="secondary-button" bindtap="onReconcilePayment">重新查询</button>
     <button wx:if="{{showReselect}}" class="secondary-button" bindtap="onReselectSlot">重新选择时段</button>
     <button wx:if="{{showLifecycleRefresh}}" class="secondary-button" bindtap="onRefreshLifecycle">确认最新结果</button>

@@ -1,0 +1,31 @@
+<view class="page">
+  <view class="header"><button class="header__back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">管理球局</text><view class="header__spacer"></view></view>
+  <scroll-view scroll-y="true" class="content">
+    <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="heading">正在加载球局</text><text>正在读取最新状态与可用操作…</text></view>
+    <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="heading">加载失败</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onReload">重新加载</button></view>
+    <view wx:elif="{{status === 'AUTH_LOSS'}}" class="state-card state-card--error" role="alert"><text class="heading">需要重新登录</text><text>{{errorMessage}}</text><button class="primary" bindtap="onLogin">重新登录</button></view>
+    <view wx:elif="{{status === 'NOT_FOUND'}}" class="state-card" role="status"><text class="heading">无法打开球局</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onReturnOrder">返回订单</button></view>
+    <view wx:elif="{{status === 'MUTATION_UNKNOWN'}}" class="state-card state-card--warning" role="alert"><text class="heading">操作结果待确认</text><text>{{errorMessage}}</text><button class="primary" bindtap="onConfirmUnknown">确认操作结果</button></view>
+    <view wx:elif="{{status === 'FOREIGN_PENDING'}}" class="state-card state-card--warning" role="alert"><text class="heading">请先确认上次操作</text><text>{{errorMessage}}</text><button class="primary" bindtap="onConfirmPreviousOperation">确认上次操作</button></view>
+    <view wx:elif="{{status === 'MUTATING'}}" class="state-card" role="status" aria-busy="true"><text class="heading">正在提交操作</text><text>正在等待服务端确认，请勿重复操作。</text></view>
+
+    <block wx:if="{{status === 'READY'}}">
+      <view class="card status-card"><text class="badge badge--{{state}}">{{stateLabel}}</text><text class="heading">{{name}}</text><text>{{stateDescription}}</text><text wx:if="{{stateReasonText}}" class="reason">{{stateReasonText}}</text></view>
+      <view class="card"><text class="eyebrow">真实订场已确认</text><text class="heading">{{order.venueName}}</text><text>{{order.pitchName}} · {{order.pitchSpecification}}</text><text>{{orderRange}}</text></view>
+      <view class="card"><text class="heading">球局概要</text><text>{{peopleSummary}}</text><text>{{intensityLabel}} · {{positionsLabel}}</text><text>预计 AA：{{aaLabel}} · {{visibilityLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>{{notes}}</text><text>到场线下结算，平台不代收或担保。</text></view>
+      <view wx:if="{{errorMessage || navigationError || shareError}}" class="inline-error" role="alert">{{errorMessage || navigationError || shareError}}</view>
+      <view wx:if="{{canPublish || canShare || canPreview || canEdit || canCancel}}" class="actions">
+        <button wx:if="{{canPublish}}" class="primary" bindtap="onOpenPublish">发布球局</button>
+        <button wx:if="{{canShare && share}}" class="primary" open-type="share" binderror="onShareFailure">分享球局</button>
+        <button wx:if="{{canPreview}}" class="secondary" bindtap="onPreview">{{state === 'DRAFT' ? '预览公开详情' : '查看公开页'}}</button>
+        <button wx:if="{{canEdit}}" class="secondary" bindtap="onEdit">编辑球局</button>
+        <button wx:if="{{canCancel}}" class="danger" bindtap="onOpenCancel">{{state === 'DRAFT' ? '放弃草稿' : '取消球局'}}</button>
+      </view>
+      <button wx:if="{{!canPublish && !canShare && !canPreview && !canEdit && !canCancel}}" class="secondary return" bindtap="onReturnOrder">返回订单</button>
+      <view class="scroll-space"></view>
+    </block>
+  </scroll-view>
+
+  <view wx:if="{{panel === 'publish'}}" class="scrim"><view class="sheet" role="dialog" aria-modal="true"><text class="heading">发布前确认</text><text>真实场地：{{order.venueName}} · {{order.pitchName}}</text><text>{{peopleSummary}} · 预计 AA：{{aaLabel}}</text><text>到场线下结算，平台不代收或担保。</text><text>报名截止：{{deadlineLabel}} · {{visibilityLabel}}</text><button class="secondary" bindtap="onClosePanel">返回修改</button><button class="primary" bindtap="onConfirmPublish">确认发布</button></view></view>
+  <view wx:if="{{panel === 'cancel'}}" class="scrim"><view class="sheet" role="dialog" aria-modal="true"><text class="heading">{{state === 'DRAFT' ? '确认放弃草稿' : '确认取消球局'}}</text><text>只取消本次开放球局，不会取消已预订场地，也不会改变订单、支付或退款状态。</text><button class="secondary" bindtap="onClosePanel">继续保留</button><button class="danger" bindtap="onConfirmCancel">{{state === 'DRAFT' ? '确认放弃草稿' : '确认取消球局'}}</button></view></view>
+</view>

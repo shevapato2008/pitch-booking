@@ -1,4 +1,5 @@
 import type { LifecycleTerminalOrderStatus, OrderView } from "../../domain/booking";
+import type { OpenGameEntry } from "../../domain/open-game";
 import type { PaymentOrderView } from "../../domain/payment";
 import {
   OrderDetailPoller,
@@ -16,6 +17,7 @@ import {
 } from "../../presentation/payment";
 import { formatShanghaiTimeRange } from "../../presentation/shanghai-time";
 import { getBookingDataSource, type BookingDataSource } from "../../services/booking";
+import { getOpenGameSource } from "../../services/open-game";
 import { getPaymentBindings } from "../../services/payment";
 import { ONLINE_BOOKING_ENABLED } from "../../config/runtime";
 
@@ -155,6 +157,11 @@ Page({
     showCancelAction: false,
     showActionFooter: false,
     showLifecycleRefresh: false,
+    openGameEntry: null as OpenGameEntry | null,
+    showOpenGameEntry: false,
+    showOpenGameEntryRetry: false,
+    openGameActionLabel: "",
+    openGameEntryError: "",
     onlineBookingEnabled: ONLINE_BOOKING_ENABLED,
   },
   poller: undefined as OrderDetailPoller | undefined,
@@ -170,6 +177,7 @@ Page({
   cancellationKey: null as string | null,
   cancellationInFlight: false,
   cancellationRefreshInFlight: null as Promise<void> | null,
+  openGameEntryGeneration: 0,
   visible: false,
 
   onLoad(options: Record<string, string | undefined>) {
@@ -184,10 +192,19 @@ Page({
     this.cancellationInFlight = false;
     this.cancellationRefreshInFlight = null;
     this.paymentOperationGeneration += 1;
+    this.openGameEntryGeneration += 1;
     try {
       const orderId = requireUuid(options.order_id);
-      this.setData({ orderId });
+      this.setData({
+        orderId,
+        openGameEntry: null,
+        showOpenGameEntry: false,
+        showOpenGameEntryRetry: false,
+        openGameActionLabel: "",
+        openGameEntryError: "",
+      });
       this.ensurePoller().start(orderId);
+      void this.loadOpenGameEntry(orderId);
     } catch {
       this.setData({ status: "route-error", errorText: "订单编号无效。" });
     }
@@ -199,13 +216,17 @@ Page({
     if (isActivePaymentOperation(this.paymentState)) {
       this.paymentState = initialPaymentPageState(this.paymentState.order);
     }
-    if (this.data.orderId) this.ensurePoller().start(this.data.orderId);
+    if (this.data.orderId) {
+      this.ensurePoller().start(this.data.orderId);
+      void this.loadOpenGameEntry(this.data.orderId);
+    }
   },
 
   onHide() {
     this.visible = false;
     this.paymentOperationGeneration += 1;
     this.cancellationOperationGeneration += 1;
+    this.openGameEntryGeneration += 1;
     this.poller?.cancel();
     this.manualReconcileInFlight = null;
     this.cancellationInFlight = false;
@@ -217,6 +238,7 @@ Page({
     this.visible = false;
     this.paymentOperationGeneration += 1;
     this.cancellationOperationGeneration += 1;
+    this.openGameEntryGeneration += 1;
     this.poller?.cancel();
     this.paymentCreateKey = null;
     this.manualReconcileInFlight = null;
@@ -687,6 +709,68 @@ Page({
 
   isCurrentPaymentOperation(generation: number) {
     return this.visible && generation === this.paymentOperationGeneration;
+  },
+
+  isCurrentOpenGameEntry(generation: number) {
+    return this.visible && generation === this.openGameEntryGeneration;
+  },
+
+  async loadOpenGameEntry(orderId: string): Promise<void> {
+    if (!this.visible || !orderId) return;
+    const generation = ++this.openGameEntryGeneration;
+    this.setData({
+      openGameEntry: null,
+      showOpenGameEntry: false,
+      showOpenGameEntryRetry: false,
+      openGameActionLabel: "",
+      openGameEntryError: "",
+    });
+    try {
+      const entry = await getOpenGameSource().getEntry(orderId);
+      if (!this.isCurrentOpenGameEntry(generation)) return;
+      this.setData({
+        openGameEntry: entry,
+        showOpenGameEntry: entry.entry !== "NONE",
+        showOpenGameEntryRetry: false,
+        openGameActionLabel: entry.entry === "CREATE"
+          ? "创建球局"
+          : entry.entry === "MANAGE"
+            ? "管理球局"
+            : "",
+        openGameEntryError: "",
+      });
+    } catch {
+      if (!this.isCurrentOpenGameEntry(generation)) return;
+      this.setData({
+        openGameEntry: null,
+        showOpenGameEntry: false,
+        showOpenGameEntryRetry: true,
+        openGameActionLabel: "",
+        openGameEntryError: "球局入口暂时无法加载，请重试。",
+      });
+    }
+  },
+
+  onRetryOpenGameEntry(): Promise<void> {
+    if (!this.data.showOpenGameEntryRetry || !this.data.orderId) return Promise.resolve();
+    return this.loadOpenGameEntry(this.data.orderId);
+  },
+
+  async onOpenGameEntry(): Promise<void> {
+    if (!this.data.showOpenGameEntry || !this.data.openGameEntry) return;
+    const entry = this.data.openGameEntry;
+    const url = entry.entry === "CREATE"
+      ? `/pages/captain-game-form/index?order_id=${encodeURIComponent(this.data.orderId)}`
+      : entry.entry === "MANAGE"
+        ? `/pages/captain-game-manage/index?game_id=${encodeURIComponent(entry.gameId)}`
+        : null;
+    if (!url) return;
+    this.setData({ openGameEntryError: "" });
+    try {
+      await wx.navigateTo({ url });
+    } catch {
+      this.setData({ openGameEntryError: "页面打开失败，请重试。" });
+    }
   },
 
   acceptOrderProjection(order: OrderView): boolean {

@@ -1,0 +1,49 @@
+<view class="page">
+  <view class="header"><button class="header__back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">{{pageTitle}}</text><view class="header__spacer"></view></view>
+  <scroll-view scroll-y="true" class="content">
+    <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="state-card__title">正在加载</text><text>正在读取订单与球局状态…</text></view>
+    <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="state-card__title">加载失败</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onRetry">重新加载</button></view>
+    <view wx:elif="{{status === 'AUTH_LOSS'}}" class="state-card state-card--error" role="alert"><text class="state-card__title">需要重新登录</text><text>{{errorMessage}}</text><button class="primary" bindtap="onLogin">重新登录</button></view>
+    <view wx:elif="{{status === 'INELIGIBLE'}}" class="state-card" role="status"><text class="state-card__title">暂时不能编辑球局</text><text>{{errorMessage}}</text><button wx:if="{{authoritativeGameId}}" class="primary" bindtap="onOpenManager">返回管理页</button><button wx:else class="secondary" bindtap="onReturnOrder">返回订单</button></view>
+    <view wx:elif="{{status === 'FOREIGN_PENDING'}}" class="state-card state-card--warning" role="alert"><text class="state-card__title">请先确认上次操作</text><text>{{errorMessage}}</text><button class="primary" bindtap="onConfirmPreviousOperation">确认上次操作</button></view>
+    <view wx:elif="{{status === 'SAVE_UNKNOWN'}}" class="state-card state-card--warning" role="alert"><text class="state-card__title">保存结果待确认</text><text>{{errorMessage}}</text><button class="primary" bindtap="onConfirmSaveResult">确认保存结果</button></view>
+    <view wx:elif="{{status === 'SAVE_SUCCEEDED'}}" class="state-card" role="status"><text class="state-card__title">球局已保存</text><text>{{navigationError || '正在打开管理页…'}}</text><button wx:if="{{navigationError}}" class="primary" bindtap="onOpenManager">重新打开管理页</button></view>
+
+    <block wx:if="{{form && (status === 'READY' || status === 'SAVE_ERROR' || status === 'SAVING')}}">
+      <view wx:if="{{errorSummary}}" class="summary" role="alert">{{errorSummary}}</view>
+      <view wx:if="{{errorMessage}}" class="summary" role="alert">{{errorMessage}}</view>
+      <view class="card"><view class="card__top"><text class="eyebrow">真实订场已确认</text><text class="locked">不可修改</text></view><text class="heading">{{order.venueName}}</text><text>{{order.pitchName}} · {{order.pitchSpecification}}</text><text>{{orderRange}}</text></view>
+
+      <view class="card"><text class="heading">球局与球队</text>
+        <label class="field"><text class="field__label">球局名称</text><input class="field__input" data-field="name" value="{{form.name}}" maxlength="30" bindinput="onTextInput" bindblur="onFieldBlur" placeholder="例如：周末轻松局" /></label><text wx:if="{{fieldErrors.name}}" class="field__error" role="alert">{{fieldErrors.name}}</text>
+        <label class="field"><text class="field__label">球队名称</text><input class="field__input" data-field="teamName" value="{{form.teamName}}" maxlength="24" bindinput="onTextInput" bindblur="onFieldBlur" placeholder="请输入球队名称" /></label><text wx:if="{{fieldErrors.teamName}}" class="field__error" role="alert">{{fieldErrors.teamName}}</text>
+      </view>
+
+      <view class="card"><text class="heading">人数与开放名额</text>
+        <view class="stepper-row"><text>计划总人数</text><view class="stepper"><button data-field="totalPlayers" data-delta="-1" bindtap="onStepper">−</button><text>{{form.totalPlayers}}</text><button data-field="totalPlayers" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.totalPlayers}}" class="field__error" role="alert">{{fieldErrors.totalPlayers}}</text>
+        <view class="stepper-row"><text>已有固定队员</text><view class="stepper"><button data-field="fixedPlayers" data-delta="-1" bindtap="onStepper">−</button><text>{{form.fixedPlayers}}</text><button data-field="fixedPlayers" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.fixedPlayers}}" class="field__error" role="alert">{{fieldErrors.fixedPlayers}}</text>
+        <view class="stepper-row"><text>开放给散客</text><view class="stepper"><button data-field="openSpots" data-delta="-1" bindtap="onStepper">−</button><text>{{form.openSpots}}</text><button data-field="openSpots" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.openSpots}}" class="field__error" role="alert">{{fieldErrors.openSpots}}</text>
+        <text class="help">计划共 {{form.totalPlayers}} 人，当前固定 {{form.fixedPlayers}} 人，本次开放 {{form.openSpots}} 个名额</text>
+      </view>
+
+      <view class="card"><text class="heading">强度与位置</text>
+        <radio-group class="choice-row" bindchange="onIntensityChange"><label wx:for="{{intensities}}" wx:key="value" class="choice"><radio value="{{item.value}}" checked="{{form.intensity === item.value}}" />{{item.label}}</label></radio-group><text wx:if="{{fieldErrors.intensity}}" class="field__error" role="alert">{{fieldErrors.intensity}}</text>
+        <label class="field"><text class="field__label">最低经验要求（可选）</text><input class="field__input" data-field="minimumExperience" value="{{form.minimumExperience}}" maxlength="60" bindinput="onTextInput" bindblur="onFieldBlur" placeholder="例如：会传接球即可" /></label><text wx:if="{{fieldErrors.minimumExperience}}" class="field__error">{{fieldErrors.minimumExperience}}</text>
+        <text class="field__label">需要的位置</text><checkbox-group class="choice-grid" bindchange="onPositionsChange"><label wx:for="{{positions}}" wx:key="value" class="choice"><checkbox value="{{item.value}}" checked="{{item.checked}}" />{{item.label}}</label></checkbox-group><text wx:if="{{fieldErrors.positions}}" class="field__error">{{fieldErrors.positions}}</text>
+      </view>
+
+      <view class="card"><text class="heading">费用与截止时间</text>
+        <label class="field"><text class="field__label">每人 AA（元）</text><input class="field__input" type="digit" value="{{form.aaYuan}}" maxlength="18" bindinput="onAaInput" data-field="aaYuan" bindblur="onFieldBlur" placeholder="0.00" /></label><text class="help">建议 AA：{{form.aaSuggestionCents / 100}} 元，仅供参考，不会覆盖你的输入。到场线下结算，平台不代收或担保。</text><text wx:if="{{fieldErrors.aaYuan}}" class="field__error">{{fieldErrors.aaYuan}}</text>
+        <view class="picker-row"><text>报名截止日期</text><picker mode="date" value="{{form.deadlineDate}}" bindchange="onDeadlineDateChange"><view class="picker-value">{{form.deadlineDate}} ›</view></picker></view>
+        <view class="picker-row"><text>报名截止时间</text><picker mode="time" value="{{form.deadlineTime}}" bindchange="onDeadlineTimeChange"><view class="picker-value">{{form.deadlineTime}} ›</view></picker></view><text wx:if="{{fieldErrors.registrationDeadline}}" class="field__error">{{fieldErrors.registrationDeadline}}</text>
+      </view>
+
+      <view class="card"><text class="heading">说明与可见范围</text>
+        <label class="field"><text class="field__label">装备与到场说明（可选）</text><textarea class="field__textarea" value="{{form.equipmentAndArrivalNotes}}" maxlength="200" bindinput="onNotesInput" data-field="equipmentAndArrivalNotes" bindblur="onFieldBlur" placeholder="例如：深浅球衣，提前 15 分钟到场"></textarea></label><text wx:if="{{fieldErrors.equipmentAndArrivalNotes}}" class="field__error">{{fieldErrors.equipmentAndArrivalNotes}}</text>
+        <radio-group class="choice-row" bindchange="onVisibilityChange"><label class="choice"><radio value="PUBLIC" checked="{{form.visibility === 'PUBLIC'}}" />公开可见</label><label class="choice"><radio value="LINK_ONLY" checked="{{form.visibility === 'LINK_ONLY'}}" />仅链接可见</label></radio-group><text wx:if="{{fieldErrors.visibility}}" class="field__error" role="alert">{{fieldErrors.visibility}}</text>
+      </view>
+    </block>
+    <view class="scroll-space"></view>
+  </scroll-view>
+  <view wx:if="{{form && (status === 'READY' || status === 'SAVE_ERROR' || status === 'SAVING')}}" class="footer"><button class="primary" loading="{{status === 'SAVING'}}" disabled="{{status === 'SAVING'}}" bindtap="onSave">{{status === 'SAVING' ? '保存中…' : saveLabel}}</button></view>
+</view>

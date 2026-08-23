@@ -1,0 +1,19 @@
+<view class="page">
+  <view class="header"><button class="header__back" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">公开球局</text><view class="header__spacer"></view></view>
+  <scroll-view scroll-y="true" class="content">
+    <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="heading">正在加载球局</text><text>正在读取最新公开信息…</text></view>
+    <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="heading">加载失败</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onRetry">重新加载</button></view>
+    <view wx:elif="{{status === 'AUTH_LOSS' && showLogin}}" class="state-card state-card--error" role="alert"><text class="heading">需要重新登录</text><text>{{errorMessage}}</text><button class="primary" bindtap="onLogin">重新登录并查看预览</button></view>
+    <view wx:elif="{{status === 'NOT_FOUND'}}" class="state-card" role="status"><text class="heading">球局不可用</text><text>{{errorMessage}}</text></view>
+
+    <block wx:if="{{status === 'READY'}}">
+      <view class="card hero"><view class="hero__top"><text class="eyebrow">真实订场已确认</text><text class="badge badge--{{state}}">{{stateLabel}}</text></view><text class="hero__title">{{name}}</text><text>{{teamName}} · {{visibilityLabel}}</text><text wx:if="{{stateReasonText}}" class="reason">{{stateReasonText}}</text></view>
+      <view class="card"><text class="heading">{{venueName}}</text><text>{{pitchSummary}}</text><text>{{orderRange}}</text></view>
+      <view class="card"><text class="heading">球局安排</text><text>{{peopleSummary}}</text><text>对抗强度：{{intensityLabel}}</text><text>最低经验：{{experienceLabel}}</text><text>位置需求：{{positionsLabel}}</text></view>
+      <view class="card"><text class="heading">费用与说明</text><text>预计人均 AA：{{aaLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>装备与到场：{{notes}}</text><text class="rule">成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。</text></view>
+      <view class="readonly-note">当前仅供查看，申请加入即将开放</view>
+      <view wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</view>
+      <button wx:if="{{showReturnManage}}" class="secondary" bindtap="onReturnManage">返回管理页</button>
+    </block>
+  </scroll-view>
+</view>
