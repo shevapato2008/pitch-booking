@@ -1,0 +1,76 @@
+<view class="c1a-page">
+  <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="c1a-icon-button" bindtap="onHeaderBack" aria-label="返回">‹</button>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">申请加入</text><text class="c1a-nav-subtitle">开发预览</text></view>
+    <view class="c1a-nav-spacer"></view>
+  </view>
+  <scroll-view scroll-y="true" class="c1a-scroll">
+    <view class="c1a-notice"><text>{{fixtureNotice}}</text></view>
+
+    <view wx:if="{{operationState === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">申请表暂时没有加载出来</text><text class="c1a-help">重新读取不会提交申请。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReload">重新加载</button>
+    </view>
+    <view wx:elif="{{operationState === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">登录状态需要恢复</text><text class="c1a-help">已保留当前输入和原提交记录。</text>
+      <button class="c1a-button c1a-button--primary" bindtap="onRecoverAuthentication">重新登录并继续</button>
+    </view>
+    <view wx:elif="{{operationState === 'NOT_FOUND'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">没有找到这场球局</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReturnPreview">返回预览入口</button>
+    </view>
+    <view wx:elif="{{operationState === 'STATE_CHANGED_FULL'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">名额状态已变化</text><text class="c1a-help">这次输入尚未提交，返回详情查看最新名额。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReturnGame">返回球局详情</button>
+    </view>
+    <view wx:elif="{{operationState === 'SUBMIT_UNKNOWN'}}" class="c1a-card c1a-state-card" role="status">
+      <text class="c1a-eyebrow">正在确认原提交</text>
+      <text class="c1a-heading">申请结果暂时未知</text>
+      <text>本场称呼：{{draft.displayName}}</text><text>你的输入已经保留，不会生成第二次申请。</text>
+    </view>
+
+    <block wx:else>
+      <view class="c1a-card">
+        <text class="c1a-heading">你的本场信息</text>
+        <label class="c1a-field" for="c1a-display-name">
+          <text class="c1a-label">本场称呼</text>
+          <input id="c1a-display-name" class="c1a-input" value="{{draft.displayName}}" maxlength="24" bindinput="onDisplayNameInput" cursor-spacing="160" placeholder="例如：小范" />
+          <text class="c1a-help">这是你在本场展示的称呼，不是微信昵称或实名。</text>
+          <text wx:if="{{validation.errors.displayName}}" class="c1a-error" role="alert">{{validation.errors.displayName}}</text>
+        </label>
+      </view>
+      <view class="c1a-card">
+        <text class="c1a-label">意向位置</text>
+        <view class="c1a-position-grid">
+          <button wx:for="{{positions}}" wx:key="value" class="c1a-option {{item.selected ? 'c1a-option--selected' : ''}}" data-position="{{item.value}}" bindtap="onPositionTap">{{item.label}}</button>
+        </view>
+        <text wx:if="{{validation.errors.position}}" class="c1a-error" role="alert">{{validation.errors.position}}</text>
+      </view>
+      <view class="c1a-card">
+        <label class="c1a-field" for="c1a-note">
+          <view class="c1a-card-row"><text class="c1a-label">给队长的话</text><text class="c1a-count">{{noteLength}} / 120</text></view>
+          <textarea id="c1a-note" class="c1a-textarea" value="{{draft.note}}" maxlength="120" bindinput="onNoteInput" cursor-spacing="160" placeholder="可选：简单说明经验或到场安排" />
+          <text class="c1a-help">请勿填写联系方式或证件号码。</text>
+          <text wx:if="{{validation.errors.note}}" class="c1a-error" role="alert">{{validation.errors.note}}</text>
+        </label>
+      </view>
+      <view class="c1a-card">
+        <text class="c1a-heading">参与确认</text>
+        <checkbox-group bindchange="onAdultChange"><label class="c1a-check-row"><checkbox value="adult" checked="{{draft.adultConfirmed}}" color="#0284C7" /><text>我已满 18 周岁</text></label></checkbox-group>
+        <text wx:if="{{validation.errors.adultConfirmed}}" class="c1a-error" role="alert">{{validation.errors.adultConfirmed}}</text>
+        <checkbox-group bindchange="onRiskChange"><label class="c1a-check-row"><checkbox value="risk" checked="{{draft.riskConfirmed}}" color="#0284C7" /><text>我了解足球运动存在受伤风险，并自愿参与</text></label></checkbox-group>
+        <text wx:if="{{validation.errors.riskConfirmed}}" class="c1a-error" role="alert">{{validation.errors.riskConfirmed}}</text>
+      </view>
+    </block>
+  </scroll-view>
+
+  <view wx:if="{{operationState === 'READY'}}" class="c1a-footer">
+    <button class="c1a-button c1a-button--secondary" bindtap="onCancel">取消</button>
+    <button class="c1a-button c1a-button--primary" disabled="{{!validation.valid || submitting}}" bindtap="onSubmit">{{submitting ? '提交中' : '提交申请'}}</button>
+  </view>
+  <view wx:elif="{{operationState === 'SUBMIT_UNKNOWN'}}" class="c1a-footer c1a-footer--stacked">
+    <button class="c1a-button c1a-button--primary" bindtap="onConfirmSubmitResult">确认申请结果</button>
+    <button class="c1a-button c1a-button--secondary" bindtap="onCancel">返回球局详情</button>
+  </view>
+</view>

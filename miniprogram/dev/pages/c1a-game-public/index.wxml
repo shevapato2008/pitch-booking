@@ -1,0 +1,58 @@
+<view class="c1a-page">
+  <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="c1a-icon-button" bindtap="onHeaderBack" aria-label="返回">‹</button>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">球局详情</text><text class="c1a-nav-subtitle">开发预览</text></view>
+    <view class="c1a-nav-spacer"></view>
+  </view>
+  <scroll-view scroll-y="true" class="c1a-scroll">
+    <view class="c1a-notice"><text>{{fixtureNotice}}</text></view>
+
+    <view wx:if="{{operationState === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">球局暂时没有加载出来</text><text class="c1a-help">重新读取同一份预览数据，不会创建申请。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReload">重新加载</button>
+    </view>
+    <view wx:elif="{{operationState === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">登录状态需要恢复</text><text class="c1a-help">恢复后继续读取原申请结果。</text>
+      <button class="c1a-button c1a-button--primary" bindtap="onRecoverAuthentication">重新登录并继续</button>
+    </view>
+    <view wx:elif="{{operationState === 'NOT_FOUND'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">没有找到这场球局</text><text class="c1a-help">返回预览入口重新选择场景。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReturnPreview">返回预览入口</button>
+    </view>
+
+    <block wx:else>
+      <view class="c1a-card c1a-booking-card">
+        <view class="c1a-card-row"><text class="c1a-eyebrow">真实订场已确认</text><text class="c1a-confirmed">已确认</text></view>
+        <text class="c1a-heading">{{game.venueName}}</text>
+        <text>{{game.pitchName}} · {{game.pitchSpecification}}</text>
+        <text>{{dateLabel}} · {{timeLabel}}</text>
+      </view>
+      <view class="c1a-card">
+        <text class="c1a-heading">{{game.name}}</text>
+        <text class="c1a-team">由 {{game.teamName}} 组织</text>
+        <view class="c1a-metrics"><view><text class="c1a-metric-value">{{remainingSpots}}</text><text>剩余名额</text></view><view><text class="c1a-metric-value">{{game.totalPlayers}}</text><text>计划人数</text></view></view>
+        <text>强度：{{intensityLabel}}</text><text>位置需求：{{positionLabel}}</text>
+      </view>
+      <view class="c1a-card">
+        <view class="c1a-card-row"><text class="c1a-heading">费用与说明</text><text class="c1a-aa">{{aaLabel}}</text></view>
+        <text>到场线下结算，平台不代收或担保。</text>
+        <text>{{deadlineLabel}}</text>
+        <text>{{game.equipmentAndArrivalNotes}}</text>
+      </view>
+      <view class="c1a-card c1a-status-card c1a-status-card--{{statusTone}}" role="status">
+        <text class="c1a-eyebrow">申请状态</text><text class="c1a-heading">{{statusCopy}}</text>
+        <text wx:if="{{registrationStatus === 'APPLIED'}}" class="c1a-help">回到同一分享详情刷新，即可看到队长处理结果。</text>
+        <text wx:if="{{registrationStatus === 'JOINED'}}" class="c1a-help">请按球局说明准时到场，费用仍在线下结算。</text>
+        <text wx:if="{{registrationStatus === 'REJECTED'}}" class="c1a-help">这是本场决定，本预览不提供重复申请。</text>
+      </view>
+    </block>
+  </scroll-view>
+
+  <view wx:if="{{primaryAction}}" class="c1a-footer">
+    <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary" bindtap="onLogin">登录并继续</button>
+    <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" bindtap="onApply">申请加入</button>
+    <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary" bindtap="onRefresh">刷新结果</button>
+    <button wx:elif="{{primaryAction === 'CONFIRM_SUBMIT'}}" class="c1a-button c1a-button--primary" bindtap="onConfirmSubmitResult">确认申请结果</button>
+  </view>
+</view>

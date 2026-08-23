@@ -1,0 +1,69 @@
+<view class="c1a-page">
+  <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="c1a-icon-button" bindtap="onHeaderBack" aria-label="返回">‹</button>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">报名审核</text><text class="c1a-nav-subtitle">开发预览</text></view>
+    <view class="c1a-nav-spacer"></view>
+  </view>
+  <scroll-view scroll-y="true" class="c1a-scroll">
+    <view class="c1a-notice"><text>{{fixtureNotice}}</text></view>
+
+    <view wx:if="{{!roleReady && operationState === 'READY'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">请先切换到队长视角</text><text class="c1a-help">角色切换只存在于隔离开发预览。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReturnPreview">返回预览入口</button>
+    </view>
+    <view wx:elif="{{operationState === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">报名列表暂时没有加载出来</text><text class="c1a-help">重新读取不会处理申请。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReload">重新加载</button>
+    </view>
+    <view wx:elif="{{operationState === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">登录状态需要恢复</text><text class="c1a-help">恢复后继续确认原审核记录。</text>
+      <button class="c1a-button c1a-button--primary" bindtap="onRecoverAuthentication">重新登录并继续</button>
+    </view>
+    <view wx:elif="{{operationState === 'NOT_FOUND'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">没有找到这场球局</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReturnPreview">返回预览入口</button>
+    </view>
+    <view wx:elif="{{operationState === 'MUTATION_UNKNOWN'}}" class="c1a-card c1a-state-card" role="status">
+      <text class="c1a-eyebrow">正在确认原审核</text><text class="c1a-heading">处理结果暂时未知</text>
+      <text class="c1a-help">继续确认会复用原决策记录，不会发起第二次处理。</text>
+      <button class="c1a-button c1a-button--primary" bindtap="onConfirmDecisionResult">确认审核结果</button>
+      <button class="c1a-button c1a-button--secondary" bindtap="onHeaderBack">关闭并稍后确认</button>
+    </view>
+    <view wx:elif="{{operationState === 'CAPACITY_CHANGED'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">名额状态已变化</text><text class="c1a-help">申请仍在待审核状态，没有被自动接受。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onRefreshApplications">刷新报名列表</button>
+    </view>
+
+    <block wx:else>
+      <view class="c1a-card c1a-game-card">
+        <view class="c1a-card-row"><text class="c1a-eyebrow">{{game.name}}</text><text class="c1a-spots">剩余 {{remainingSpots}} 位</text></view>
+        <text>{{game.venueName}} · {{game.pitchName}}</text><text class="c1a-help">8月30日 14:00–16:00 · 由 {{game.teamName}} 组织</text>
+      </view>
+      <view wx:if="{{hasPending}}" class="c1a-card c1a-application-card">
+        <view class="c1a-card-row"><view><text class="c1a-eyebrow">待审核申请</text><text class="c1a-heading c1a-applicant-name">{{application.displayName}}</text></view><text class="c1a-time">{{appliedAtLabel}}</text></view>
+        <view class="c1a-detail-row"><text>意向位置</text><text>{{positionLabel}}</text></view>
+        <view class="c1a-note"><text class="c1a-label">给队长的话</text><text>{{application.note || '未填写'}}</text></view>
+        <view class="c1a-actions">
+          <button class="c1a-button c1a-button--primary" wx:if="{{remainingSpots > 0}}" bindtap="onAccept">接受加入</button>
+          <button class="c1a-button c1a-button--secondary" bindtap="onReject">婉拒</button>
+        </view>
+      </view>
+      <view wx:elif="{{empty}}" class="c1a-card c1a-empty" role="status">
+        <view class="c1a-empty-mark"><view></view><view></view><view></view></view>
+        <text class="c1a-heading">当前没有待审核申请</text>
+        <text class="c1a-help">已处理结果会由申请人在同一球局详情读取。</text>
+        <button class="c1a-button c1a-button--secondary" bindtap="onSwitchApplicant">切换到申请人视角</button>
+      </view>
+    </block>
+  </scroll-view>
+
+  <view wx:if="{{panel}}" class="c1a-scrim">
+    <view class="c1a-sheet" role="dialog" aria-modal="true">
+      <view class="c1a-card-row"><text class="c1a-heading">{{decisionTitle}}</text><button class="c1a-sheet-close" bindtap="onClosePanel">关闭</button></view>
+      <text>{{decisionCopy}}</text>
+      <text class="c1a-help">费用仍由到场参与者线下结算，平台不代收或担保。</text>
+      <button class="c1a-button {{panel === 'ACCEPT' ? 'c1a-button--primary' : 'c1a-button--secondary'}}" bindtap="onConfirmDecision">{{decisionButton}}</button>
+    </view>
+  </view>
+</view>
