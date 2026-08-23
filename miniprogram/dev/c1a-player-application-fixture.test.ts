@@ -34,7 +34,9 @@ const pendingApplication = () => {
 
 test("declares one unmistakable development-only fixture with a B2-shaped synthetic game", () => {
   expect(C1A_PLAYER_APPLICATION_FIXTURE.marker).toBe("C1A_PLAYER_APPLICATION_FIXTURE");
-  expect(C1A_PLAYER_APPLICATION_FIXTURE.deletionCondition).toMatch(/production|生产/i);
+  expect(C1A_PLAYER_APPLICATION_FIXTURE.deletionCondition).toBe(
+    "remove only after production apply/review/result-readback automation and dual-account real-device E2E pass",
+  );
   expect(C1A_PLAYER_APPLICATION_FIXTURE.game).toMatchObject({
     name: "奥体周日轻松局",
     teamName: "津门周末队",
@@ -230,6 +232,32 @@ test("a capacity change during acceptance preserves APPLIED and refreshes withou
     game: { remainingSpots: 0 },
   });
   expect(JSON.stringify(store.current())).not.toContain("WAITLIST");
+});
+
+test("a definitive capacity conflict retires ACCEPT before auth recovery and a later REJECT uses a new attempt", () => {
+  const store = pendingApplication();
+  store.openDecision("ACCEPT");
+  const changed = store.confirmDecision("CAPACITY_CHANGED");
+
+  expect(changed).toMatchObject({
+    registrationStatus: "APPLIED",
+    operationState: "CAPACITY_CHANGED",
+    decisionAttempt: null,
+  });
+  store.refreshApplications();
+  store.loseAuthentication();
+  expect(store.recoverAuthentication()).toMatchObject({
+    authenticated: true,
+    registrationStatus: "APPLIED",
+    operationState: "READY",
+    decisionAttempt: null,
+  });
+
+  store.openDecision("REJECT");
+  const rejected = store.confirmDecision();
+  expect(rejected).toMatchObject({ registrationStatus: "REJECTED", operationState: "READY" });
+  expect(rejected.decisionAttempt?.key).toBe("c1a-reject-decision-0002");
+  expect(rejected.decisionAttempt?.key).not.toBe("c1a-accept-decision-0001");
 });
 
 test("re-reading the same store exposes APPLIED and terminal results while only JOINED consumes a spot", () => {

@@ -65,7 +65,7 @@ const deepFreeze = <T>(value: T): T => {
 export const C1A_PLAYER_APPLICATION_FIXTURE = deepFreeze({
   marker: C1A_PLAYER_APPLICATION_MARKER,
   notice: "C1A_PLAYER_APPLICATION_FIXTURE · 仅开发预览，不写入生产报名",
-  deletionCondition: "remove before production integration; production E2E requires separate captain and applicant accounts",
+  deletionCondition: "remove only after production apply/review/result-readback automation and dual-account real-device E2E pass",
   game: {
     id: "c1a-open-game-20260830-1400",
     name: "奥体周日轻松局",
@@ -186,7 +186,7 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
   let decisionAttempt: C1aDecisionAttempt | null = null;
   let remainingSpots = C1A_PLAYER_APPLICATION_FIXTURE.game.openSpots;
   let submitAttemptKey = "c1a-accept-submit-0001";
-  let decisionAttemptKey = "c1a-accept-decision-0001";
+  let decisionAttemptSequence = 1;
 
   const snapshot = (): C1aPlayerApplicationSnapshot => deepFreeze({
     marker: C1A_PLAYER_APPLICATION_MARKER,
@@ -220,7 +220,7 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
     remainingSpots = C1A_PLAYER_APPLICATION_FIXTURE.game.openSpots;
     const branchKey = nextBranch.toLowerCase();
     submitAttemptKey = `c1a-${branchKey}-submit-0001`;
-    decisionAttemptKey = `c1a-${branchKey}-decision-0001`;
+    decisionAttemptSequence = 1;
     return snapshot();
   };
 
@@ -351,13 +351,20 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
         || panel === null || operationState !== "READY") {
         return snapshot();
       }
-      decisionAttempt = deepFreeze({ key: decisionAttemptKey, decision: panel });
+      const decision = panel;
+      const ordinal = String(decisionAttemptSequence).padStart(4, "0");
+      decisionAttemptSequence += 1;
+      decisionAttempt = deepFreeze({
+        key: `c1a-${decision.toLowerCase()}-decision-${ordinal}`,
+        decision,
+      });
       panel = null;
       if (outcome === "UNKNOWN") {
         operationState = "MUTATION_UNKNOWN";
       } else if (outcome === "CAPACITY_CHANGED" && decisionAttempt.decision === "ACCEPT") {
         remainingSpots = 0;
         operationState = "CAPACITY_CHANGED";
+        decisionAttempt = null;
       } else {
         commitDecision(decisionAttempt);
       }
