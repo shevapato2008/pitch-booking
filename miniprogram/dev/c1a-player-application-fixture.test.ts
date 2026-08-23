@@ -260,6 +260,31 @@ test("a definitive capacity conflict retires ACCEPT before auth recovery and a l
   expect(rejected.decisionAttempt?.key).not.toBe("c1a-accept-decision-0001");
 });
 
+test("a repeated ACCEPT at zero capacity also retires its definitive attempt before auth recovery", () => {
+  const store = pendingApplication();
+  store.openDecision("ACCEPT");
+  store.confirmDecision("CAPACITY_CHANGED");
+  store.refreshApplications();
+
+  store.openDecision("ACCEPT");
+  const repeated = store.confirmDecision();
+  expect(repeated).toMatchObject({
+    registrationStatus: "APPLIED",
+    operationState: "CAPACITY_CHANGED",
+    decisionAttempt: null,
+    game: { remainingSpots: 0 },
+  });
+
+  store.refreshApplications();
+  store.loseAuthentication();
+  expect(store.recoverAuthentication()).toMatchObject({
+    authenticated: true,
+    registrationStatus: "APPLIED",
+    operationState: "READY",
+    decisionAttempt: null,
+  });
+});
+
 test("re-reading the same store exposes APPLIED and terminal results while only JOINED consumes a spot", () => {
   const accepted = pendingApplication();
   accepted.setViewerRole("APPLICANT");

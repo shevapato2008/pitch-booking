@@ -244,6 +244,7 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
     if (attempt.decision === "ACCEPT") {
       if (remainingSpots <= 0) {
         operationState = "CAPACITY_CHANGED";
+        decisionAttempt = null;
         return;
       }
       registrationStatus = "JOINED";
