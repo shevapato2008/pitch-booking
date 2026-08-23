@@ -83,8 +83,13 @@ Page({
     this.sync();
   },
   onConfirmDecision() {
-    c1aPlayerApplicationStore.confirmDecision(resolveOutcome(this.data.decisionOutcome));
-    this.sync();
+    const injectedOutcome = resolveOutcome(this.data.decisionOutcome);
+    const outcome = injectedOutcome === "CAPACITY_CHANGED"
+      && c1aPlayerApplicationStore.current().panel === "REJECT"
+      ? "CONFIRMED"
+      : injectedOutcome;
+    c1aPlayerApplicationStore.confirmDecision(outcome);
+    this.sync(outcome === injectedOutcome ? {} : { decisionOutcome: "CONFIRMED" });
   },
   onConfirmDecisionResult() {
     c1aPlayerApplicationStore.confirmDecisionResult();

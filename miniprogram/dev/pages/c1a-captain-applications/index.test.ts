@@ -144,6 +144,21 @@ test("capacity injection is consumed after refresh so a later rejection uses the
   expect(page.data).toMatchObject({ registrationStatus: "REJECTED", panel: null, empty: true });
 });
 
+test("capacity injection applies only to acceptance and a direct rejection still completes", () => {
+  const page = requirePage();
+  page.onLoad({ outcome: "CAPACITY_CHANGED" });
+  page.onReject();
+  page.onConfirmDecision();
+
+  expect(page.data).toMatchObject({
+    registrationStatus: "REJECTED",
+    operationState: "READY",
+    panel: null,
+    empty: true,
+    decisionOutcome: "CONFIRMED",
+  });
+});
+
 test("captain recovery and deep-link buttons reload authority or return to the scenario", () => {
   const page = requirePage();
   page.onLoad();
