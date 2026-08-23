@@ -2,6 +2,7 @@ import {
   C1A_PLAYER_APPLICATION_FIXTURE,
   c1aPlayerApplicationStore,
   type C1aPlayerApplicationForm,
+  type C1aPlayerApplicationSnapshot,
   type C1aPosition,
   type C1aSubmissionOutcome,
 } from "../../c1a-player-application-fixture";
@@ -29,6 +30,10 @@ function resolveOutcome(value: unknown): C1aSubmissionOutcome {
 
 function isChecked(value: unknown): boolean {
   return Array.isArray(value) ? value.length > 0 : value === true;
+}
+
+function requiresPublicBoundary(snapshot: C1aPlayerApplicationSnapshot): boolean {
+  return snapshot.operationState === "READY" && !snapshot.formOpen;
 }
 
 const patch = () => {
@@ -67,6 +72,7 @@ Page({
     submitOutcome: "CONFIRMED" as C1aSubmissionOutcome,
     submitting: false,
     attempted: false,
+    redirecting: false,
     headerTopPx: 0,
     headerRowHeightPx: 44,
     headerRightInsetPx: 0,
@@ -75,24 +81,35 @@ Page({
   sync(extra: Record<string, unknown> = {}) { this.setData({ ...patch(), ...extra }); },
   onLoad(options: Options = {}) {
     c1aPlayerApplicationStore.setViewerRole("APPLICANT");
-    const current = c1aPlayerApplicationStore.current();
+    let current = c1aPlayerApplicationStore.current();
     if (current.authenticated && current.registrationStatus === "NONE"
       && current.operationState === "READY" && !current.formOpen) {
-      c1aPlayerApplicationStore.openApplication();
+      current = c1aPlayerApplicationStore.openApplication();
     }
+    const redirecting = requiresPublicBoundary(current);
     const header = readIntentHeaderLayout();
     this.setData({
       ...patch(),
       submitOutcome: resolveOutcome(options.outcome),
       submitting: false,
       attempted: false,
+      redirecting,
       headerTopPx: header.topPx,
       headerRowHeightPx: header.rowHeightPx,
       headerRightInsetPx: header.rightInsetPx,
       headerLeftInsetPx: header.rightInsetPx,
     });
+    if (redirecting) wx.redirectTo({ url: publicRoute });
   },
-  onShow() { this.sync(); },
+  onShow() {
+    if (this.data.redirecting) return;
+    if (requiresPublicBoundary(c1aPlayerApplicationStore.current())) {
+      this.sync({ redirecting: true });
+      wx.redirectTo({ url: publicRoute });
+      return;
+    }
+    this.sync();
+  },
   updateDraft(next: Partial<C1aPlayerApplicationForm>) {
     c1aPlayerApplicationStore.updateDraft(next);
     this.sync();

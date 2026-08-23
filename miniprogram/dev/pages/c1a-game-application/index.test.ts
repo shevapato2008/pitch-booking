@@ -139,6 +139,27 @@ test("unknown submit preserves the original attempt until explicit confirmation"
   expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
 });
 
+test("an unauthenticated deep link redirects to the public login boundary without exposing an inert form", () => {
+  c1aPlayerApplicationStore.reset();
+  const before = c1aPlayerApplicationStore.current();
+  const page = requirePage();
+  page.onLoad();
+  page.onShow();
+
+  expect(wx.redirectTo).toHaveBeenCalledTimes(1);
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/c1a-game-public/index" });
+  expect(page.data.redirecting).toBe(true);
+  expect(c1aPlayerApplicationStore.current()).toEqual(before);
+
+  page.onDisplayNameInput({ detail: { value: "不会被吞掉的输入" } });
+  expect(c1aPlayerApplicationStore.current()).toEqual(before);
+  expect(page.data.draft.displayName).toBe("");
+
+  const template = readFileSync("miniprogram/dev/pages/c1a-game-application/index.wxml", "utf8");
+  expect(template).toContain('wx:if="{{redirecting}}"');
+  expect(template).toContain('wx:if="{{!redirecting && operationState === \'READY\'}}"');
+});
+
 test("error recovery never creates a new result and deep-link returns fall back to the scenario", () => {
   const page = requirePage();
   page.onLoad();

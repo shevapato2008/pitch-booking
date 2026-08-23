@@ -130,6 +130,20 @@ test("capacity conflict preserves APPLIED until an explicit refresh and never in
   expect(JSON.stringify(page.data)).not.toContain("WAITLIST");
 });
 
+test("capacity injection is consumed after refresh so a later rejection uses the normal outcome", () => {
+  const page = requirePage();
+  page.onLoad({ outcome: "CAPACITY_CHANGED" });
+  page.onAccept();
+  page.onConfirmDecision();
+  expect(page.data).toMatchObject({ registrationStatus: "APPLIED", operationState: "CAPACITY_CHANGED" });
+
+  page.onRefreshApplications();
+  expect(page.data).toMatchObject({ operationState: "READY", decisionOutcome: "CONFIRMED" });
+  page.onReject();
+  page.onConfirmDecision();
+  expect(page.data).toMatchObject({ registrationStatus: "REJECTED", panel: null, empty: true });
+});
+
 test("captain recovery and deep-link buttons reload authority or return to the scenario", () => {
   const page = requirePage();
   page.onLoad();

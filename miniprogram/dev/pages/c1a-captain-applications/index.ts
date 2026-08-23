@@ -88,11 +88,11 @@ Page({
   },
   onConfirmDecisionResult() {
     c1aPlayerApplicationStore.confirmDecisionResult();
-    this.sync();
+    this.sync({ decisionOutcome: "CONFIRMED" });
   },
   onRefreshApplications() {
     c1aPlayerApplicationStore.refreshApplications();
-    this.sync();
+    this.sync({ decisionOutcome: "CONFIRMED" });
   },
   onReload() {
     c1aPlayerApplicationStore.recoverLoad();

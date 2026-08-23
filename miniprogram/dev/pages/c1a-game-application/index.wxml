@@ -8,7 +8,10 @@
   <scroll-view scroll-y="true" class="c1a-scroll">
     <view class="c1a-notice"><text>{{fixtureNotice}}</text></view>
 
-    <view wx:if="{{operationState === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
+    <view wx:if="{{redirecting}}" class="c1a-card c1a-state-card" role="status">
+      <text class="c1a-heading">正在返回球局详情</text><text class="c1a-help">请先完成登录边界，再填写申请。</text>
+    </view>
+    <view wx:elif="{{operationState === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
       <text class="c1a-heading">申请表暂时没有加载出来</text><text class="c1a-help">重新读取不会提交申请。</text>
       <button class="c1a-button c1a-button--secondary" bindtap="onReload">重新加载</button>
     </view>
@@ -65,7 +68,7 @@
     </block>
   </scroll-view>
 
-  <view wx:if="{{operationState === 'READY'}}" class="c1a-footer">
+  <view wx:if="{{!redirecting && operationState === 'READY'}}" class="c1a-footer">
     <button class="c1a-button c1a-button--secondary" bindtap="onCancel">取消</button>
     <button class="c1a-button c1a-button--primary" disabled="{{!validation.valid || submitting}}" bindtap="onSubmit">{{submitting ? '提交中' : '提交申请'}}</button>
   </view>
