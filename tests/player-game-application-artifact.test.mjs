@@ -65,21 +65,25 @@ test("reference data keeps team identity and applicant-provided display name hon
   assert.doesNotMatch(publicCopy, /手机号|微信号|订单\s*ID|支付字段|头像|履约统计|候补|通知承诺/i);
 });
 
-test("Artifact controls drive NONE to APPLIED to either terminal result and closing confirmation is inert", { skip: missing.length > 0 }, async () => {
+test("captain decisions require the matching open panel and closing it makes confirmation inert", { skip: missing.length > 0 }, async () => {
   const data = await import(`../${files.data}?artifact-transition=1`);
-  let accepted = data.createArtifactFixture();
-  accepted = data.applyArtifactAction(accepted, "SUBMIT_APPLICATION");
-  assert.equal(accepted.registrationStatus, "APPLIED");
+  let accepted = data.createArtifactFixture("captain-pending");
+  accepted = data.applyArtifactAction(accepted, "CONFIRM_ACCEPT");
+  assert.equal(accepted.registrationStatus, "APPLIED", "accept cannot bypass its confirmation panel");
   accepted = data.applyArtifactAction(accepted, "OPEN_ACCEPT_CONFIRM");
+  assert.equal(accepted.panel, "accept");
   const closed = data.applyArtifactAction(accepted, "CLOSE_CONFIRM");
   assert.equal(closed.registrationStatus, "APPLIED");
-  assert.equal(closed.confirmation, null);
+  assert.equal(closed.panel, null);
+  assert.equal(data.applyArtifactAction(closed, "CONFIRM_ACCEPT").registrationStatus, "APPLIED", "a closed panel cannot be confirmed");
+  accepted = data.applyArtifactAction(closed, "OPEN_ACCEPT_CONFIRM");
   accepted = data.applyArtifactAction(accepted, "CONFIRM_ACCEPT");
   assert.equal(accepted.registrationStatus, "JOINED");
 
-  let rejected = data.createArtifactFixture();
-  rejected = data.applyArtifactAction(rejected, "SUBMIT_APPLICATION");
+  let rejected = data.createArtifactFixture("captain-pending");
   rejected = data.applyArtifactAction(rejected, "OPEN_REJECT_CONFIRM");
+  assert.equal(rejected.panel, "reject");
+  assert.equal(data.applyArtifactAction(rejected, "CONFIRM_ACCEPT").registrationStatus, "APPLIED", "reject panel cannot confirm accept");
   rejected = data.applyArtifactAction(rejected, "CONFIRM_REJECT");
   assert.equal(rejected.registrationStatus, "REJECTED");
 
@@ -94,17 +98,63 @@ test("Artifact controls drive NONE to APPLIED to either terminal result and clos
   assert.match(source, /history\.(?:pushState|back)/);
 });
 
-test("application controls preserve the selected position and confirmations gate submission", { skip: missing.length > 0 }, async () => {
+test("one immutable Artifact form state owns name, note, position, and unchecked confirmations", { skip: missing.length > 0 }, async () => {
   const data = await import(`../${files.data}?artifact-form=1`);
   let fixture = data.createArtifactFixture("application-ready");
-  fixture = data.applyArtifactAction(fixture, "SELECT_POSITION", "门将");
-  assert.equal(fixture.position, "门将");
-  assert.equal(data.canSubmitArtifact(fixture), true);
-  fixture = data.applyArtifactAction(fixture, "TOGGLE_ADULT");
-  assert.equal(fixture.adultConfirmed, false);
+  assert.deepEqual(fixture.form, {
+    displayName: "周末小翼",
+    position: "前锋",
+    note: "可以补边路，按时到场。",
+    adultConfirmed: false,
+    riskConfirmed: false,
+  });
+  assert.ok(Object.isFrozen(fixture.form));
   assert.equal(data.canSubmitArtifact(fixture), false);
-  assert.match(read(files.data), /applyArtifactAction\(fixture, action, control\.dataset\.value\)/);
+
+  fixture = data.applyArtifactField(fixture, "displayName", "津门边翼");
+  fixture = data.applyArtifactField(fixture, "note", "能踢两边，提前到场。");
+  fixture = data.applyArtifactField(fixture, "position", "门将");
+  fixture = data.applyArtifactField(fixture, "adultConfirmed", true);
+  fixture = data.applyArtifactField(fixture, "riskConfirmed", true);
+  assert.deepEqual(fixture.form, {
+    displayName: "津门边翼",
+    position: "门将",
+    note: "能踢两边，提前到场。",
+    adultConfirmed: true,
+    riskConfirmed: true,
+  });
+  assert.equal(data.canSubmitArtifact(fixture), true);
+
+  const emptyName = data.applyArtifactField(fixture, "displayName", "   ");
+  assert.equal(data.canSubmitArtifact(emptyName), false, "blank display name cannot submit");
+  const submitted = data.applyArtifactAction(fixture, "SUBMIT_APPLICATION");
+  assert.equal(submitted.registrationStatus, "APPLIED");
+  assert.deepEqual(data.getCaptainApplicant(submitted), {
+    displayName: "津门边翼",
+    position: "门将",
+    note: "能踢两边，提前到场。",
+  });
+
+  const source = read(files.data);
+  for (const event of ["input", "change", "click"]) assert.match(source, new RegExp(`addEventListener\\(["']${event}["']`));
+  for (const field of ["displayName", "note", "adultConfirmed", "riskConfirmed"]) assert.match(source, new RegExp(`data-field=["']${field}["']`));
+  assert.match(source, /const applicant = getCaptainApplicant\(fixture\)/);
+  assert.match(source, /applyArtifactField\(/);
   assert.match(read(files.data), /canSubmitArtifact\(fixture\)/);
+});
+
+test("authentication gates submit and NONE status copy updates immediately after login", { skip: missing.length > 0 }, async () => {
+  const data = await import(`../${files.data}?artifact-auth=1`);
+  let anonymous = data.createArtifactFixture("anonymous-detail");
+  anonymous = data.applyArtifactField(anonymous, "adultConfirmed", true);
+  anonymous = data.applyArtifactField(anonymous, "riskConfirmed", true);
+  assert.equal(data.applyArtifactAction(anonymous, "SUBMIT_APPLICATION").registrationStatus, "NONE");
+
+  const loggedIn = data.applyArtifactAction(anonymous, "LOGIN");
+  const status = data.getArtifactStatusPresentation(loggedIn);
+  assert.equal(loggedIn.authenticated, true);
+  assert.doesNotMatch(`${status.heading} ${status.description}`, /登录后可提交申请/);
+  assert.match(status.heading, /可以申请加入/);
 });
 
 test("reference uses the established visual system and safe-area aligned 44px controls", { skip: missing.length > 0 }, () => {

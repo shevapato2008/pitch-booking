@@ -50,6 +50,22 @@ export const C1A_APPLICATION_FORM = freeze({
   },
 });
 
+const DEFAULT_ARTIFACT_FORM = freeze({
+  displayName: C1A_APPLICATION_FORM.display_name.value,
+  position: C1A_APPLICATION_FORM.position.value,
+  note: C1A_APPLICATION_FORM.note.value,
+  adultConfirmed: false,
+  riskConfirmed: false,
+});
+
+const DEFAULT_SUBMITTED_APPLICATION = freeze({
+  displayName: DEFAULT_ARTIFACT_FORM.displayName,
+  position: DEFAULT_ARTIFACT_FORM.position,
+  note: DEFAULT_ARTIFACT_FORM.note,
+  adultConfirmed: true,
+  riskConfirmed: true,
+});
+
 export const C1A_PLAYER_APPLICATION_STATES = freeze({
   "anonymous-detail": { id: "anonymous-detail", role: "APPLICANT", authenticated: false, registrationStatus: "NONE", title: "球局详情" },
   "application-ready": { id: "application-ready", role: "APPLICANT", authenticated: true, registrationStatus: "NONE", title: "申请加入" },
@@ -75,43 +91,82 @@ export const createArtifactFixture = (stateId = "anonymous-detail") => {
     authenticated: state.authenticated,
     registrationStatus: state.registrationStatus,
     view: stateId === "application-ready" ? "APPLICATION" : "DETAIL",
-    confirmation: null,
-    position: C1A_APPLICATION_FORM.position.value,
-    adultConfirmed: true,
-    riskConfirmed: true,
+    panel: null,
+    form: { ...DEFAULT_ARTIFACT_FORM },
+    submittedApplication: state.registrationStatus === "NONE" ? null : { ...DEFAULT_SUBMITTED_APPLICATION },
     feedback: "",
   });
 };
 
-export const canSubmitArtifact = (fixture) => Boolean(fixture.position && fixture.adultConfirmed && fixture.riskConfirmed);
+const normalizePosition = (value) => value === "不限" ? "位置不限" : value;
+const validPositions = freeze(C1A_APPLICATION_FORM.position.options.map(normalizePosition));
 
-export const applyArtifactAction = (fixture, action, value) => {
+export const applyArtifactField = (fixture, field, value) => {
+  if (!["displayName", "position", "note", "adultConfirmed", "riskConfirmed"].includes(field)) return fixture;
+  const form = { ...fixture.form };
+  if (field === "position") {
+    const position = normalizePosition(String(value ?? ""));
+    if (!validPositions.includes(position)) return fixture;
+    form.position = position;
+  } else if (field === "adultConfirmed" || field === "riskConfirmed") {
+    form[field] = Boolean(value);
+  } else {
+    form[field] = String(value ?? "");
+  }
+  return freeze({ ...fixture, form, feedback: "" });
+};
+
+export const canSubmitArtifact = (fixture) => {
+  const form = fixture.form;
+  if (!form || !fixture.authenticated || fixture.registrationStatus !== "NONE" || fixture.view !== "APPLICATION") return false;
+  const displayNameLength = form.displayName.trim().length;
+  return displayNameLength >= 2
+    && displayNameLength <= 24
+    && validPositions.includes(form.position)
+    && form.note.length <= 120
+    && form.adultConfirmed
+    && form.riskConfirmed;
+};
+
+export const getCaptainApplicant = (fixture) => {
+  if (!fixture.submittedApplication) return null;
+  const { displayName, position, note } = fixture.submittedApplication;
+  return freeze({ displayName, position, note });
+};
+
+export const getArtifactStatusPresentation = (fixture) => {
+  if (fixture.registrationStatus === "APPLIED") return freeze({ heading: "等待队长审核", description: "申请已记录。可留在同一详情刷新结果。", variant: "pending" });
+  if (fixture.registrationStatus === "JOINED") return freeze({ heading: "已加入本场球局", description: "队长已接受申请；AA 到场线下结算。", variant: "joined" });
+  if (fixture.registrationStatus === "REJECTED") return freeze({ heading: "本次申请未被接受", description: "这是本场决定，不影响之后参加其他球局。", variant: "rejected" });
+  if (fixture.authenticated) return freeze({ heading: "可以申请加入", description: "填写本场信息后提交，队长审核结果回到本页查看。", variant: "available" });
+  return freeze({ heading: "登录后可提交申请", description: "提交后由队长审核，结果回到本页查看。", variant: "anonymous" });
+};
+
+export const applyArtifactAction = (fixture, action) => {
   const next = { ...fixture, feedback: "" };
   if (action === "LOGIN") next.authenticated = true;
-  if (action === "OPEN_APPLICATION") next.view = "APPLICATION";
+  if (action === "OPEN_APPLICATION" && next.authenticated && next.registrationStatus === "NONE") next.view = "APPLICATION";
   if (action === "CANCEL_APPLICATION") next.view = "DETAIL";
-  if (action === "SELECT_POSITION" && C1A_APPLICATION_FORM.position.options.includes(value)) next.position = value === "不限" ? "位置不限" : value;
-  if (action === "TOGGLE_ADULT") next.adultConfirmed = !next.adultConfirmed;
-  if (action === "TOGGLE_RISK") next.riskConfirmed = !next.riskConfirmed;
   if (action === "SUBMIT_APPLICATION" && next.registrationStatus === "NONE" && canSubmitArtifact(next)) {
+    next.submittedApplication = { ...next.form };
     next.registrationStatus = "APPLIED";
     next.view = "DETAIL";
     next.feedback = "Fixture transition：申请已提交";
   }
   if (action === "REFRESH_RESULT") next.feedback = "Fixture transition：已重新读取当前结果";
-  if (action === "OPEN_ACCEPT_CONFIRM" && next.registrationStatus === "APPLIED") next.confirmation = "ACCEPT";
-  if (action === "OPEN_REJECT_CONFIRM" && next.registrationStatus === "APPLIED") next.confirmation = "REJECT";
-  if (action === "CLOSE_CONFIRM") next.confirmation = null;
-  if (action === "CONFIRM_ACCEPT" && next.registrationStatus === "APPLIED") {
+  if (action === "OPEN_ACCEPT_CONFIRM" && next.role === "CAPTAIN" && next.registrationStatus === "APPLIED") next.panel = "accept";
+  if (action === "OPEN_REJECT_CONFIRM" && next.role === "CAPTAIN" && next.registrationStatus === "APPLIED") next.panel = "reject";
+  if (action === "CLOSE_CONFIRM") next.panel = null;
+  if (action === "CONFIRM_ACCEPT" && next.role === "CAPTAIN" && next.registrationStatus === "APPLIED" && next.panel === "accept") {
     next.registrationStatus = "JOINED";
     next.role = "APPLICANT";
-    next.confirmation = null;
+    next.panel = null;
     next.feedback = "Fixture transition：队长已接受";
   }
-  if (action === "CONFIRM_REJECT" && next.registrationStatus === "APPLIED") {
+  if (action === "CONFIRM_REJECT" && next.role === "CAPTAIN" && next.registrationStatus === "APPLIED" && next.panel === "reject") {
     next.registrationStatus = "REJECTED";
     next.role = "APPLICANT";
-    next.confirmation = null;
+    next.panel = null;
     next.feedback = "Fixture transition：队长已婉拒";
   }
   return freeze(next);
@@ -123,6 +178,10 @@ const routeState = () => {
   return C1A_PLAYER_APPLICATION_STATE_IDS.includes(state) ? state : "anonymous-detail";
 };
 let fixture = createArtifactFixture(routeState());
+
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;",
+})[character]);
 
 const systemHeader = (title) => `
   <div class="system-row"><span class="system-time">9:41</span><span class="native-capsule" aria-hidden="true"></span></div>
@@ -162,11 +221,10 @@ const details = () => `
     <p class="settlement">成人参与，请自行评估运动风险；平台不代收或担保线下结算。</p>
   </section>`;
 
-const statusCard = (status) => {
-  if (status === "APPLIED") return `<section class="status-card section"><h3 class="status-heading"><span class="status-dot"></span>等待队长审核</h3><p>申请已记录。可留在同一详情刷新结果。</p></section>`;
-  if (status === "JOINED") return `<section class="status-card status-card--joined section"><h3 class="status-heading"><span class="status-dot"></span>已加入本场球局</h3><p>队长已接受申请；AA 到场线下结算。</p></section>`;
-  if (status === "REJECTED") return `<section class="status-card status-card--rejected section"><h3 class="status-heading"><span class="status-dot"></span>本次申请未被接受</h3><p>这是本场决定，不影响之后参加其他球局。</p></section>`;
-  return `<section class="status-card section"><h3 class="status-heading"><span class="status-dot"></span>登录后可提交申请</h3><p>提交后由队长审核，结果回到本页查看。</p></section>`;
+const statusCard = (currentFixture) => {
+  const status = getArtifactStatusPresentation(currentFixture);
+  const variant = status.variant === "joined" ? " status-card--joined" : status.variant === "rejected" ? " status-card--rejected" : "";
+  return `<section class="status-card${variant} section"><h3 class="status-heading"><span class="status-dot"></span>${status.heading}</h3><p>${status.description}</p></section>`;
 };
 
 const detailFooter = () => {
@@ -182,13 +240,15 @@ const detailScreen = () => `
     ${confirmedCard()}
     ${gameHero()}
     ${metrics()}
-    ${statusCard(fixture.registrationStatus)}
+    ${statusCard(fixture)}
     ${details()}
   </section>
   ${detailFooter()}`;
 
-const positionChoices = () => C1A_APPLICATION_FORM.position.options.map((position) => `
-  <button class="choice${fixture.position === position || (position === "不限" && fixture.position === "位置不限") ? " choice--active" : ""}" type="button" data-action="SELECT_POSITION" data-value="${position}" aria-pressed="${fixture.position === position || (position === "不限" && fixture.position === "位置不限")}">${position}</button>`).join("");
+const positionChoices = () => C1A_APPLICATION_FORM.position.options.map((position) => {
+  const selected = fixture.form.position === normalizePosition(position);
+  return `<button class="choice${selected ? " choice--active" : ""}" type="button" data-action="SELECT_POSITION" data-field="position" data-value="${position}" aria-pressed="${selected}">${position}</button>`;
+}).join("");
 
 const applicationScreen = () => `
   ${systemHeader("申请加入")}
@@ -196,7 +256,7 @@ const applicationScreen = () => `
     <p class="form-intro">信息仅用于本场审核，提交后不能重复申请。</p>
     <label class="field">
       <span class="field-label">${C1A_APPLICATION_FORM.display_name.label}</span>
-      <input class="text-input" value="${C1A_APPLICATION_FORM.display_name.value}" maxlength="24" aria-describedby="display-name-help" />
+      <input class="text-input" data-field="displayName" value="${escapeHtml(fixture.form.displayName)}" maxlength="24" aria-describedby="display-name-help" />
       <span class="field-help" id="display-name-help">${C1A_APPLICATION_FORM.display_name.help}</span>
     </label>
     <div class="field">
@@ -205,33 +265,36 @@ const applicationScreen = () => `
     </div>
     <label class="field">
       <span class="field-label">${C1A_APPLICATION_FORM.note.label}</span>
-      <textarea class="text-input" maxlength="120">${C1A_APPLICATION_FORM.note.value}</textarea>
+      <textarea class="text-input" data-field="note" maxlength="120">${escapeHtml(fixture.form.note)}</textarea>
       <span class="field-help">${C1A_APPLICATION_FORM.note.help}</span>
     </label>
     <div class="consent-list">
-      <button class="consent" type="button" data-action="TOGGLE_ADULT" aria-pressed="${fixture.adultConfirmed}"><span class="check-mark${fixture.adultConfirmed ? "" : " check-mark--empty"}"></span><span>我已满 18 周岁</span></button>
-      <button class="consent" type="button" data-action="TOGGLE_RISK" aria-pressed="${fixture.riskConfirmed}"><span class="check-mark${fixture.riskConfirmed ? "" : " check-mark--empty"}"></span><span>我了解足球运动存在受伤风险，并自愿参与</span></button>
+      <label class="consent"><input class="consent-input" type="checkbox" data-field="adultConfirmed"${fixture.form.adultConfirmed ? " checked" : ""} /><span class="check-mark"></span><span>我已满 18 周岁</span></label>
+      <label class="consent"><input class="consent-input" type="checkbox" data-field="riskConfirmed"${fixture.form.riskConfirmed ? " checked" : ""} /><span class="check-mark"></span><span>我了解足球运动存在受伤风险，并自愿参与</span></label>
     </div>
   </section>
   <footer class="footer"><div class="footer-actions"><button class="neutral" type="button" data-action="CANCEL_APPLICATION">取消</button><button class="primary" type="button" data-action="SUBMIT_APPLICATION"${canSubmitArtifact(fixture) ? "" : " disabled"}>提交申请</button></div></footer>`;
 
-const captainScreen = () => `
-  ${systemHeader("报名审核")}
-  <section class="screen">
-    <p class="review-context">1 条待审核申请 · ${C1A_GAME.name}</p>
-    <section class="applicant-card">
-      <div class="applicant-top"><h2 class="applicant-name">${C1A_APPLICATION_FORM.display_name.value}</h2><span class="pending-pill">等待审核</span></div>
-      <div class="applicant-meta"><div><span>意向位置</span><strong>${C1A_APPLICATION_FORM.position.value}</strong></div><div><span>申请时间</span><strong>今天 00:18</strong></div></div>
-      <p class="applicant-note">${C1A_APPLICATION_FORM.note.value}</p>
-      <p class="privacy-note">仅展示申请人主动填写的本场信息。</p>
+const captainScreen = () => {
+  const applicant = getCaptainApplicant(fixture);
+  return `
+    ${systemHeader("报名审核")}
+    <section class="screen">
+      <p class="review-context">1 条待审核申请 · ${C1A_GAME.name}</p>
+      <section class="applicant-card">
+        <div class="applicant-top"><h2 class="applicant-name">${escapeHtml(applicant.displayName)}</h2><span class="pending-pill">等待审核</span></div>
+        <div class="applicant-meta"><div><span>意向位置</span><strong>${escapeHtml(applicant.position)}</strong></div><div><span>申请时间</span><strong>今天 00:18</strong></div></div>
+        <p class="applicant-note">${escapeHtml(applicant.note || "未填写备注")}</p>
+        <p class="privacy-note">仅展示申请人主动填写的本场信息。</p>
+      </section>
     </section>
-  </section>
-  <footer class="footer"><div class="footer-actions"><button class="neutral" type="button" data-action="OPEN_REJECT_CONFIRM">婉拒</button><button class="primary" type="button" data-action="OPEN_ACCEPT_CONFIRM">接受加入</button></div></footer>
-  ${confirmationSheet()}`;
+    <footer class="footer"><div class="footer-actions"><button class="neutral" type="button" data-action="OPEN_REJECT_CONFIRM">婉拒</button><button class="primary" type="button" data-action="OPEN_ACCEPT_CONFIRM">接受加入</button></div></footer>
+    ${confirmationSheet()}`;
+};
 
 const confirmationSheet = () => {
-  if (!fixture.confirmation) return "";
-  const accepting = fixture.confirmation === "ACCEPT";
+  if (!fixture.panel) return "";
+  const accepting = fixture.panel === "accept";
   return `<section class="fixture-scrim" role="dialog" aria-modal="true" aria-label="${accepting ? "确认接受" : "确认婉拒"}">
     <div class="fixture-sheet">
       <div class="sheet-title-row"><div><h2>${accepting ? "确认接受加入？" : "确认婉拒申请？"}</h2><p>${accepting ? "确认后申请人会在同一详情看到已加入结果。" : "确认后申请人会在同一详情看到本次决定。"}</p></div><button class="close-button" type="button" data-action="CLOSE_CONFIRM" aria-label="关闭确认层"><span class="close-glyph"></span></button></div>
@@ -252,7 +315,24 @@ const syncRoute = (method = "pushState") => {
   window.history[method]({ state: stateId }, "", `${window.location.pathname}?state=${stateId}`);
 };
 
+const updateSubmitAvailability = () => {
+  const submit = app?.querySelector('button[data-action="SUBMIT_APPLICATION"]');
+  if (submit) submit.disabled = !canSubmitArtifact(fixture);
+};
+
 if (app) {
+  app.addEventListener("input", (event) => {
+    const field = event.target.dataset.field;
+    if (field !== "displayName" && field !== "note") return;
+    fixture = applyArtifactField(fixture, field, event.target.value);
+    updateSubmitAvailability();
+  });
+  app.addEventListener("change", (event) => {
+    const field = event.target.dataset.field;
+    if (field !== "adultConfirmed" && field !== "riskConfirmed") return;
+    fixture = applyArtifactField(fixture, field, event.target.checked);
+    updateSubmitAvailability();
+  });
   app.addEventListener("click", (event) => {
     const control = event.target.closest("button[data-action]");
     if (!control) return;
@@ -266,7 +346,8 @@ if (app) {
       }
       return;
     }
-    fixture = applyArtifactAction(fixture, action, control.dataset.value);
+    if (action === "SELECT_POSITION") fixture = applyArtifactField(fixture, "position", control.dataset.value);
+    else fixture = applyArtifactAction(fixture, action);
     if (["OPEN_APPLICATION", "CANCEL_APPLICATION", "SUBMIT_APPLICATION", "CONFIRM_ACCEPT", "CONFIRM_REJECT"].includes(action)) syncRoute();
     render();
   });

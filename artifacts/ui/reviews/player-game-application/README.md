@@ -12,7 +12,7 @@
 | State | Reference | Implementation | Side by side | Overlay 50% | Difference | Observations |
 | --- | --- | --- | --- | --- | --- | --- |
 | `anonymous-detail` | [anonymous-detail-reference-375x812.png](anonymous-detail-reference-375x812.png) | PENDING | PENDING | PENDING | PENDING | Login boundary and confirmed booking context |
-| `application-ready` | [application-ready-reference-375x812.png](application-ready-reference-375x812.png) | PENDING | PENDING | PENDING | PENDING | Applicant-provided display name, position, note and two confirmations |
+| `application-ready` | [application-ready-reference-375x812.png](application-ready-reference-375x812.png) | PENDING | PENDING | PENDING | PENDING | Applicant-provided display name, position and note; both confirmations start unchecked and submit is disabled |
 | `applied-detail` | [applied-detail-reference-375x812.png](applied-detail-reference-375x812.png) | PENDING | PENDING | PENDING | PENDING | Same detail reads the waiting result |
 | `captain-pending` | [captain-pending-reference-375x812.png](captain-pending-reference-375x812.png) | PENDING | PENDING | PENDING | PENDING | Minimal applicant information and two review decisions |
 | `joined-detail` | [joined-detail-reference-375x812.png](joined-detail-reference-375x812.png) | PENDING | PENDING | PENDING | PENDING | Same detail reads the accepted result |
@@ -20,9 +20,9 @@
 
 ## Reference self-review
 
-Real Chromium rendered and captured each state at exactly `375 × 812` CSS pixels. All six pages reported zero console errors or warnings and zero horizontal overflow. The application page, detail states and captain review card keep a consistent 12px content column; repeated choice and footer controls share dimensions and column lines. Button labels are visibly centered on both axes, the back/check/close marks are complete, long copy remains inside card boundaries, and fixed footers end at the viewport edge with safe-area padding while content reserves space above them.
+After the Task 1 spec review fix, Real Chromium rendered and recaptured all six states at exactly `375 × 812` CSS pixels. All six pages reported zero console errors or warnings and zero horizontal overflow. The application page, detail states and captain review card keep a consistent 12px content column; repeated choice and footer controls share dimensions and column lines. Button labels are visibly centered on both axes, the back/check/close marks are complete, long copy remains inside card boundaries, and fixed footers end at the viewport edge with safe-area padding while content reserves space above them.
 
-The accepted-state confirmation layer was opened and visually checked once: its scrim, sheet, close mark and two actions were complete and unclipped. Closing it left `APPLIED` unchanged. The accept and decline confirmations were then exercised separately and reached `joined-detail` and `rejected-detail`; console output remained clean. The form's exact position selection and confirmation-gated submit behavior were also exercised after the focused test exposed and fixed their initial mismatch.
+The browser journey was rerun from the anonymous detail: login changed the status copy before exposing the apply action; name and note input, exact position click and both checkbox changes remained in one Fixture through rerender; submit stayed disabled with either confirmation unchecked and enabled only after both were checked. Submission reached `APPLIED`. The accepted-state confirmation layer was opened and visually checked once: its scrim, sheet, close mark and two actions were complete and unclipped. Closing it left `APPLIED` unchanged. Reopening and confirming accept reached `joined-detail`; a fresh decline branch reached `rejected-detail`. Console output remained clean throughout.
 
 Reference self-review: `PASS`.
 
