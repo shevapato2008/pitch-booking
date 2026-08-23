@@ -99,9 +99,15 @@ Payment、1 个 `ORDER_CANCELLATION / VENUE_CANCELLED` RefundCase 和 1 次 succ
 
 这些能力共同为公开球局取消联动和真实履约提供基础。B1 的“我的订单”、无资金 owner 取消、正常路径真实微信支付、owner paid-refund、场馆签到/完成及场馆原因退款均已完成真实 iPhone 验收，正常路径可标记完成；A3 CREATE 真机验收债保持不变。人工重复回调及强制 recovery 仍是明确证据缺口，但属于后续韧性演练，不阻塞 B2 非资金 MVP 开发。
 
-### B2：队长开放名额 — 待开发，依赖 B1
+### B2：队长开放名额 — 本地自动化通过，共享 staging 待验收
+
+状态：`LOCAL_BACKEND_HTTP_AND_MINIPROGRAM_AUTOMATION_PASS / STAGING_PENDING`
 
 已支付队长从真实订单创建球局，发布公开详情和分享卡片；一个订单最多对应一个未取消球局。
+
+Task 9 已在精确 runtime candidate/base `c5a0ca553d7acca90fed43bb15b902657cc13f11` 上完成真实本地 Uvicorn HTTP + PostgreSQL 17 disposable database 旅程：单旅程 1/1、指定后端聚焦集 194/194 passed。owner/non-owner 均经 development WeChat session HTTP 端点认证；创建、读取、编辑、preview、发布、公开读取、取消、取消后公开读取、重新进入 CREATE 和同一仍合格订单的第二个 DRAFT 已闭环，所有 mutation 的同 key replay 均为 byte-equivalent authority。公开 published/cancelled payload 均通过字段白名单、递归私有键 deny-list 和敏感值检查；取消前后 B1 Order/Slot/唯一 synthetic applied-success Payment 全字段不变，RefundCase/RefundAttempt 保持 0。该 synthetic baseline 没有 Provider 调用，不是真实支付订单。
+
+Mini Program 本轮证据仅为 unit/composition 自动化 8 suites、206/206 tests passed，不是 Mini Program 到本地后端的完整 HTTP 旅程；契约 101 examples 与 TypeScript typecheck 通过。shared staging 与真实 iPhone/device 仍为未完成门禁；未 deploy、未上传小程序、未开始 Task 10，现有 Fixture 保留到真机 PASS。
 
 ## 波次 C：散客旅程
 
