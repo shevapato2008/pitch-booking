@@ -1,0 +1,26 @@
+id: player-game-application
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+references:
+  source: artifacts/ui/references/player-game-application.html
+  data: artifacts/ui/references/player-game-application-data.js
+  styles: artifacts/ui/references/player-game-application.css
+states:
+  - {id: anonymous-detail, reference: artifacts/ui/references/player-game-application.html?state=anonymous-detail, representative_capture: true}
+  - {id: application-ready, reference: artifacts/ui/references/player-game-application.html?state=application-ready, representative_capture: true}
+  - {id: applied-detail, reference: artifacts/ui/references/player-game-application.html?state=applied-detail, representative_capture: true}
+  - {id: captain-pending, reference: artifacts/ui/references/player-game-application.html?state=captain-pending, representative_capture: true}
+  - {id: joined-detail, reference: artifacts/ui/references/player-game-application.html?state=joined-detail, representative_capture: true}
+  - {id: rejected-detail, reference: artifacts/ui/references/player-game-application.html?state=rejected-detail, representative_capture: true}
+interaction_targets:
+  minimum_css_pixels: 44
+  button_alignment: flex-both-axes
+scrolling:
+  direction: vertical
+  fixed_bottom_bar: all-six-states
+  safe_area_bottom: required
+review_slots: [reference, implementation, side-by-side, overlay-50, difference, observations]
+visual_gate: pending-user-visual-approval
+fixture:
+  planned_path: miniprogram/dev/c1a-player-application-fixture.ts
+  deletion_condition: delete only after production apply, captain decision, applicant result reread, focused automation, and two-account real-device acceptance pass
