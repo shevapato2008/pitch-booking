@@ -96,6 +96,39 @@ test.each([
   expect(validation.errors.note).toMatch(/联系/);
 });
 
+test.each([
+  "13800138000",
+  "微信 pitch_friend",
+  "vx: pitch_friend",
+  "www.example.cn",
+])("rejects contact details in the captain-visible display name: %s", (displayName) => {
+  const validation = validateC1aPlayerApplicationForm({ ...validForm, displayName });
+  expect(validation.valid).toBe(false);
+  expect(validation.errors.displayName).toMatch(/联系|隐私/);
+});
+
+test.each([
+  ["120101199001011234", "displayName", ""],
+  ["老范", "note", "身份证 120101199001011234"],
+  ["120101900101123", "displayName", ""],
+  ["老范", "note", "证件 120101900101123"],
+] as const)("rejects a mainland-style identity number in captain-visible text %#", (value, field, note) => {
+  const form = field === "displayName"
+    ? { ...validForm, displayName: value }
+    : { ...validForm, displayName: value, note };
+  const validation = validateC1aPlayerApplicationForm(form);
+  expect(validation.valid).toBe(false);
+  expect(validation.errors[field]).toMatch(/证件|隐私/);
+});
+
+test("allows useful football text that contains no contact or identity data", () => {
+  expect(validateC1aPlayerApplicationForm({
+    ...validForm,
+    displayName: "中场老范",
+    note: "主要踢后腰，左脚，会提前到场热身",
+  }).valid).toBe(true);
+});
+
 test("accepts a trimmed 2–24 character display name and a contact-free optional note", () => {
   expect(validateC1aPlayerApplicationForm({ ...validForm, displayName: "  小范  ", note: "" })).toEqual({
     valid: true,
@@ -185,6 +218,33 @@ test("authentication recovery preserves a pending submit attempt", () => {
   expect(store.confirmSubmitResult()).toMatchObject({ registrationStatus: "APPLIED" });
 });
 
+const genericFailureInjections = [
+  ["load error", (store: C1aPlayerApplicationStore) => store.injectLoadError()],
+  ["not found", (store: C1aPlayerApplicationStore) => store.injectNotFound()],
+  ["state changed full", (store: C1aPlayerApplicationStore) => store.injectStateChangedFull()],
+] as const;
+
+test.each(genericFailureInjections)("%s cannot overwrite SUBMIT_UNKNOWN", (_label, inject) => {
+  const store = createC1aPlayerApplicationStore();
+  store.login();
+  store.openApplication();
+  store.updateDraft(validForm);
+  const unknown = store.submitApplication("UNKNOWN");
+  const key = unknown.submitAttempt?.key;
+
+  inject(store);
+  expect(store.current()).toMatchObject({
+    registrationStatus: "NONE",
+    operationState: "SUBMIT_UNKNOWN",
+    submitAttempt: { key },
+  });
+  expect(store.confirmSubmitResult()).toMatchObject({
+    registrationStatus: "APPLIED",
+    operationState: "READY",
+    submitAttempt: { key },
+  });
+});
+
 test.each([
   ["ACCEPT", "JOINED"],
   ["REJECT", "REJECTED"],
@@ -214,6 +274,49 @@ test("MUTATION_UNKNOWN resolves only the original decision attempt", () => {
   expect(store.confirmDecision("UNKNOWN").decisionAttempt?.key).toBe(key);
   expect(store.confirmDecisionResult()).toMatchObject({ registrationStatus: "JOINED", operationState: "READY" });
   expect(store.current().decisionAttempt?.key).toBe(key);
+});
+
+test.each(genericFailureInjections)("%s and a new review cannot overwrite MUTATION_UNKNOWN", (_label, inject) => {
+  const store = pendingApplication();
+  store.openDecision("ACCEPT");
+  const unknown = store.confirmDecision("UNKNOWN");
+  const key = unknown.decisionAttempt?.key;
+
+  inject(store);
+  expect(store.openDecision("REJECT")).toMatchObject({
+    registrationStatus: "APPLIED",
+    operationState: "MUTATION_UNKNOWN",
+    panel: null,
+    decisionAttempt: { key, decision: "ACCEPT" },
+  });
+  expect(store.confirmDecision()).toMatchObject({
+    registrationStatus: "APPLIED",
+    operationState: "MUTATION_UNKNOWN",
+    decisionAttempt: { key, decision: "ACCEPT" },
+  });
+  expect(store.confirmDecisionResult()).toMatchObject({
+    registrationStatus: "JOINED",
+    operationState: "READY",
+    decisionAttempt: { key, decision: "ACCEPT" },
+  });
+});
+
+test("CAPACITY_CHANGED is invalid for REJECT and leaves the open decision recoverable", () => {
+  const store = pendingApplication();
+  store.openDecision("REJECT");
+
+  expect(store.confirmDecision("CAPACITY_CHANGED")).toMatchObject({
+    registrationStatus: "APPLIED",
+    operationState: "READY",
+    panel: "REJECT",
+    decisionAttempt: null,
+  });
+  expect(store.confirmDecision()).toMatchObject({
+    registrationStatus: "REJECTED",
+    operationState: "READY",
+    panel: null,
+    decisionAttempt: { key: "c1a-reject-decision-0001", decision: "REJECT" },
+  });
 });
 
 test("a capacity change during acceptance preserves APPLIED and refreshes without a waitlist transition", () => {

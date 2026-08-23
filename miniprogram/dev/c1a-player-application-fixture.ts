@@ -95,23 +95,29 @@ const positions = new Set<C1aPosition>(["GOALKEEPER", "DEFENDER", "MIDFIELDER", 
 const mobilePhonePattern = /(?:^|[^\d])(?:\+?86[\s-]?)?1[3-9](?:[\s-]?\d){9}(?:$|[^\d])/;
 const weChatPattern = /微信(?:号)?|微\s*信|(?:^|[\s,:：])(?:vx|wx|wechat)(?:[\s,:：]|$)/i;
 const urlPattern = /https?:\/\/|www\.|(?:^|\s)[a-z\d-]+\.(?:com|cn|net|org)(?:\/|\s|$)/i;
+const mainlandIdentityPattern = /(?:^|[^\d])(?:\d{17}[\dXx]|\d{15})(?:$|[^\d])/;
 
 const visibleLength = (value: string): number => Array.from(value.trim()).length;
+const containsPrivateContact = (value: string): boolean => mobilePhonePattern.test(value)
+  || weChatPattern.test(value)
+  || urlPattern.test(value)
+  || mainlandIdentityPattern.test(value);
 
 export function validateC1aPlayerApplicationForm(
   form: C1aPlayerApplicationForm,
 ): C1aPlayerApplicationValidation {
   const displayNameLength = visibleLength(form.displayName);
   const noteLength = Array.from(form.note).length;
-  const containsContact = mobilePhonePattern.test(form.note)
-    || weChatPattern.test(form.note)
-    || urlPattern.test(form.note);
+  const displayNameContainsPrivateContact = containsPrivateContact(form.displayName);
+  const noteContainsPrivateContact = containsPrivateContact(form.note);
   const errors: C1aPlayerApplicationFormErrors = {
-    displayName: displayNameLength < 2 || displayNameLength > 24 ? "本场称呼需为 2–24 个字符" : null,
+    displayName: displayNameLength < 2 || displayNameLength > 24
+      ? "本场称呼需为 2–24 个字符"
+      : displayNameContainsPrivateContact ? "请勿在本场称呼中填写联系方式或证件号码" : null,
     position: form.position === null || !positions.has(form.position) ? "请选择意向位置" : null,
     note: noteLength > 120
       ? "给队长的话最多 120 个字符"
-      : containsContact ? "请勿填写手机号、微信号、URL 等联系方式" : null,
+      : noteContainsPrivateContact ? "请勿填写联系方式或证件号码" : null,
     adultConfirmed: form.adultConfirmed ? null : "请确认已满 18 周岁",
     riskConfirmed: form.riskConfirmed ? null : "请确认了解运动风险并自愿参与",
   };
@@ -352,6 +358,7 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
         || panel === null || operationState !== "READY") {
         return snapshot();
       }
+      if (outcome === "CAPACITY_CHANGED" && panel !== "ACCEPT") return snapshot();
       const decision = panel;
       const ordinal = String(decisionAttemptSequence).padStart(4, "0");
       decisionAttemptSequence += 1;
@@ -382,7 +389,7 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
       return snapshot();
     },
     injectLoadError() {
-      operationState = "LOAD_ERROR";
+      if (operationState === "READY") operationState = "LOAD_ERROR";
       return snapshot();
     },
     recoverLoad() {
@@ -390,16 +397,18 @@ export function createC1aPlayerApplicationStore(): C1aPlayerApplicationStore {
       return snapshot();
     },
     injectNotFound() {
-      operationState = "NOT_FOUND";
-      panel = null;
-      formOpen = false;
+      if (operationState === "READY") {
+        operationState = "NOT_FOUND";
+        panel = null;
+        formOpen = false;
+      }
       return snapshot();
     },
     returnToPreview() {
       return operationState === "NOT_FOUND" ? reset(branch) : snapshot();
     },
     injectStateChangedFull() {
-      if (registrationStatus === "NONE") {
+      if (registrationStatus === "NONE" && operationState === "READY") {
         remainingSpots = 0;
         operationState = "STATE_CHANGED_FULL";
       }
