@@ -6,6 +6,7 @@ import re
 import secrets
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,7 @@ from backend.app.models import (
     Order,
     PaymentState,
     RefundCasePurpose,
+    Team,
 )
 from backend.app.modules.open_games.dto import (
     CreateOpenGameRequest,
@@ -81,6 +83,15 @@ _CONTROLLING_REFUND_PURPOSES = frozenset(
         RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class AuthoritativePublicGameProjection:
+    public: OpenGamePublic
+    facts: OpenGameFacts
+    state: EffectiveOpenGameState
+    starts_at: datetime
+    owner_user_id: uuid.UUID
 
 
 class OpenGameService:
@@ -521,39 +532,17 @@ class OpenGameService:
             order = game.order
             authority = self._repository.get_order_authority(order_id=order.id)
             order_row = self._require_order_row(order.id)
-            order_facts = _order_facts(order, order_row, authority)
-            facts = OpenGameFacts(
-                stored_status=game.status,
-                order_facts=order_facts,
-                registration_deadline=game.registration_deadline,
-            )
-            state = project_open_game_state(facts)
-            reason = project_open_game_reason(facts, now=self._now())
             team = self._repository.get_team(team_id=game.team_id)
             if team is None:
                 raise RuntimeError("open game team is missing")
-            return project_open_game_public(
-                name=game.name,
-                team_name=team.name,
-                state=state,
-                state_reason=reason,
-                venue_name=order_row.venue_name,
-                pitch_name=order_row.pitch_name,
-                players_per_side=order_row.players_per_side,
-                starts_at=order_row.starts_at,
-                ends_at=order_row.ends_at,
-                time_zone=_require_time_zone(order_row),
-                total_players=game.total_players,
-                fixed_players=game.fixed_players,
-                open_spots=game.open_spots,
-                intensity=game.intensity,
-                minimum_experience=game.minimum_experience,
-                positions=mask_to_positions(game.position_mask),
-                aa_cents=game.aa_cents,
-                registration_deadline=game.registration_deadline,
-                equipment_and_arrival_notes=game.equipment_and_arrival_notes,
-                visibility=game.visibility,
-            )
+            return project_authoritative_public_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                team=team,
+                now=self._now(),
+            ).public
         except AppError:
             self._repository.rollback()
             raise
@@ -613,41 +602,20 @@ class OpenGameService:
         now: datetime,
     ) -> OpenGameOwner:
         order_row = self._require_order_row(order.id)
-        order_facts = _order_facts(order, order_row, authority)
-        facts = OpenGameFacts(
-            stored_status=game.status,
-            order_facts=order_facts,
-            registration_deadline=game.registration_deadline,
-        )
-        state = project_open_game_state(facts)
-        reason = project_open_game_reason(facts, now=now)
-        actions = project_open_game_actions(facts, now=now)
         team = self._repository.get_team(team_id=game.team_id)
         if team is None:
             raise RuntimeError("open game team is missing")
-        positions = mask_to_positions(game.position_mask)
-        public = project_open_game_public(
-            name=game.name,
-            team_name=team.name,
-            state=state,
-            state_reason=reason,
-            venue_name=order_row.venue_name,
-            pitch_name=order_row.pitch_name,
-            players_per_side=order_row.players_per_side,
-            starts_at=order_row.starts_at,
-            ends_at=order_row.ends_at,
-            time_zone=_require_time_zone(order_row),
-            total_players=game.total_players,
-            fixed_players=game.fixed_players,
-            open_spots=game.open_spots,
-            intensity=game.intensity,
-            minimum_experience=game.minimum_experience,
-            positions=positions,
-            aa_cents=game.aa_cents,
-            registration_deadline=game.registration_deadline,
-            equipment_and_arrival_notes=game.equipment_and_arrival_notes,
-            visibility=game.visibility,
+        projection = project_authoritative_public_game(
+            game=game,
+            order=order,
+            authority=authority,
+            order_row=order_row,
+            team=team,
+            now=now,
         )
+        reason = project_open_game_reason(projection.facts, now=now)
+        actions = project_open_game_actions(projection.facts, now=now)
+        positions = mask_to_positions(game.position_mask)
         return OpenGameOwner(
             id=game.id,
             order_id=order.id,
@@ -665,12 +633,12 @@ class OpenGameService:
             equipment_and_arrival_notes=game.equipment_and_arrival_notes,
             visibility=game.visibility,
             persisted_status=game.status,
-            state=state,
+            state=projection.state,
             state_reason=reason,
             version=game.version,
             allowed_actions=actions,
-            share=self._share(game, order_row, state=state),
-            public_view=public,
+            share=self._share(game, order_row, state=projection.state),
+            public_view=projection.public,
         )
 
     def _share(
@@ -721,6 +689,55 @@ def _apply_update(
     game.equipment_and_arrival_notes = request.equipment_and_arrival_notes
     game.visibility = request.visibility
     game.version += 1
+
+
+def project_authoritative_public_game(
+    *,
+    game: OpenGame,
+    order: Order,
+    authority: OrderAuthorityRows,
+    order_row: OpenGameOrderRow,
+    team: Team,
+    now: datetime,
+) -> AuthoritativePublicGameProjection:
+    """Project B2 public data from already-loaded B1 authority without I/O."""
+    order_facts = _order_facts(order, order_row, authority)
+    facts = OpenGameFacts(
+        stored_status=game.status,
+        order_facts=order_facts,
+        registration_deadline=game.registration_deadline,
+    )
+    state = project_open_game_state(facts)
+    reason = project_open_game_reason(facts, now=now)
+    public = project_open_game_public(
+        name=game.name,
+        team_name=team.name,
+        state=state,
+        state_reason=reason,
+        venue_name=order_row.venue_name,
+        pitch_name=order_row.pitch_name,
+        players_per_side=order_row.players_per_side,
+        starts_at=order_row.starts_at,
+        ends_at=order_row.ends_at,
+        time_zone=_require_time_zone(order_row),
+        total_players=game.total_players,
+        fixed_players=game.fixed_players,
+        open_spots=game.open_spots,
+        intensity=game.intensity,
+        minimum_experience=game.minimum_experience,
+        positions=mask_to_positions(game.position_mask),
+        aa_cents=game.aa_cents,
+        registration_deadline=game.registration_deadline,
+        equipment_and_arrival_notes=game.equipment_and_arrival_notes,
+        visibility=game.visibility,
+    )
+    return AuthoritativePublicGameProjection(
+        public=public,
+        facts=facts,
+        state=state,
+        starts_at=order_row.starts_at,
+        owner_user_id=order.user_id,
+    )
 
 
 def _order_facts(

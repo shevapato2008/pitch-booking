@@ -39,6 +39,7 @@ from backend.app.modules.open_games.repository import OpenGameRepository
 from backend.app.modules.open_games.service import (
     CREATE_OPEN_GAME_OPERATION,
     OpenGameService,
+    project_authoritative_public_game,
 )
 from backend.app.modules.orders.repository import OrderRepository
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
@@ -250,6 +251,59 @@ def add_stored_game(
     session.add(game)
     session.flush()
     return game
+
+
+def test_shared_authority_projection_preserves_public_response(pg_engine: Engine) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        game = add_stored_game(
+            session,
+            seeded=seeded,
+            status=OpenGameStatus.PUBLISHED,
+            share_token="P" * 32,
+        )
+        session.commit()
+        repository = OpenGameRepository(session)
+        authority = repository.get_order_authority(order_id=seeded.order_id)
+        order_row = repository.get_order_row(order_id=seeded.order_id)
+        team = repository.get_team(team_id=game.team_id)
+        assert order_row is not None
+        assert team is not None
+        projection = project_authoritative_public_game(
+            game=game,
+            order=game.order,
+            authority=authority,
+            order_row=order_row,
+            team=team,
+            now=NOW,
+        )
+        public = service(session).get_public(share_token=game.share_token)
+
+    assert projection.public == public
+    assert projection.starts_at == seeded.starts_at
+    assert projection.owner_user_id == seeded.owner_id
+    assert projection.public.model_dump() == {
+        "name": "历史球局",
+        "team_name": "历史联队",
+        "state": OpenGameStatus.PUBLISHED,
+        "state_reason": None,
+        "venue_name": "浦东星跃足球公园",
+        "pitch_name": "五人制 A 场",
+        "pitch_specification": "5人制",
+        "starts_at": seeded.starts_at,
+        "ends_at": seeded.ends_at,
+        "time_zone": "Asia/Shanghai",
+        "total_players": 10,
+        "fixed_players": 6,
+        "open_spots": 4,
+        "intensity": OpenGameIntensity.CASUAL,
+        "minimum_experience": None,
+        "positions": [OpenGamePosition.ANY],
+        "aa_cents": 3600,
+        "registration_deadline": seeded.starts_at - timedelta(hours=3),
+        "equipment_and_arrival_notes": None,
+        "visibility": OpenGameVisibility.LINK_ONLY,
+    }
 
 
 def test_entry_precedence_is_active_then_eligible_then_none(pg_engine: Engine) -> None:

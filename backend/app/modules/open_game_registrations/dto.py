@@ -14,9 +14,11 @@ from backend.app.models import (
     OpenGameRegistrationStatus,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
+    ApplyActions,
     EffectiveRegistrationStatus,
     ReviewActions,
 )
+from backend.app.modules.open_games.dto import OpenGamePublic
 
 OPEN_GAME_REGISTRATION_CONSENT_VERSION = "c1a-2026-08-24"
 
@@ -111,6 +113,14 @@ class CaptainApplication(_FrozenClosedModel):
     applied_at: datetime
     version: Annotated[int, Field(strict=True, ge=1)]
     allowed_actions: ReviewActions
+
+
+class RegistrationContext(_FrozenClosedModel):
+    game: OpenGamePublic
+    remaining_spots: Annotated[int, Field(strict=True, ge=0)]
+    viewer_authenticated: Annotated[bool, Field(strict=True)]
+    viewer_registration: ViewerRegistration | None
+    allowed_actions: ApplyActions
 
 
 class Queue(_FrozenClosedModel):
