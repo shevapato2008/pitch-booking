@@ -19,6 +19,13 @@ class _YamlLoader(Protocol):
 
 YAML = cast(_YamlLoader, import_module("yaml"))
 
+REGISTRATION_OPERATIONS = {
+    "/api/v1/shared-games/{share_token}/registration-context": {"get"},
+    "/api/v1/shared-games/{share_token}/applications": {"post"},
+    "/api/v1/games/{game_id}/applications": {"get"},
+    "/api/v1/games/{game_id}/applications/{application_id}/decision": {"post"},
+}
+
 
 def _contract() -> dict[str, Any]:
     loaded = YAML.safe_load(CONTRACT_PATH.read_text())
@@ -748,7 +755,10 @@ def test_captain_open_game_contract_is_closed_authenticated_and_private() -> Non
         assert invalid["schema"] == {
             "$ref": "#/components/schemas/OpenGameInvalidArgumentError"
         }
-        assert set(invalid["examples"]) == {"InvalidArgument"}
+        expected_example_keys = {"InvalidArgument"}
+        if (path, method) == ("/api/v1/games/{game_id}", "put"):
+            expected_example_keys.add("JoinedUpdateInvalid")
+        assert set(invalid["examples"]) == expected_example_keys
         assert invalid["examples"]["InvalidArgument"]["value"]["error"][
             "details"
         ] == expected_details
@@ -1046,6 +1056,663 @@ def test_captain_open_game_schemas_freeze_state_actions_and_examples() -> None:
             },
         },
     ]
+
+
+def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
+    contract = _contract()
+    paths = contract["paths"]
+
+    assert {path: set(paths[path]) for path in REGISTRATION_OPERATIONS} == (
+        REGISTRATION_OPERATIONS
+    )
+    operation_ids = {
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+        ): "getOpenGameRegistrationContext",
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): "createOpenGameApplication",
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+        ): "listOpenGameApplications",
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+        ): "decideOpenGameApplication",
+    }
+    statuses = {
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+        ): {"200", "401", "404", "503"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): {"201", "401", "404", "409", "422", "503"},
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+        ): {"200", "401", "404", "422", "503"},
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+        ): {"200", "401", "404", "409", "422", "503"},
+    }
+    response_schemas = {
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+        ): ("200", "OpenGameRegistrationContext"),
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): ("201", "OpenGameRegistrationContext"),
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+        ): ("200", "OpenGameApplicationQueue"),
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+        ): ("200", "OpenGameApplicationDecisionResult"),
+    }
+
+    for path, methods in REGISTRATION_OPERATIONS.items():
+        for method in methods:
+            operation = paths[path][method]
+            key = (path, method)
+            assert operation["operationId"] == operation_ids[key]
+            assert set(operation["responses"]) == statuses[key]
+            if path.endswith("registration-context"):
+                assert operation["security"] == [{}, {"bearerAuth": []}]
+            else:
+                assert operation["security"] == [{"bearerAuth": []}]
+            status, schema_name = response_schemas[key]
+            assert _response_schema(operation, status) == {
+                "$ref": f"#/components/schemas/{schema_name}"
+            }
+
+    request_schemas = {
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): "CreateOpenGameApplicationRequest",
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+        ): "OpenGameApplicationDecisionRequest",
+    }
+    for (path, method), schema_name in request_schemas.items():
+        operation = paths[path][method]
+        assert {parameter.get("$ref") for parameter in operation["parameters"]} >= {
+            "#/components/parameters/IdempotencyKey"
+        }
+        assert operation["requestBody"] == {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": f"#/components/schemas/{schema_name}"}
+                }
+            },
+        }
+    for path in (
+        "/api/v1/shared-games/{share_token}/registration-context",
+        "/api/v1/games/{game_id}/applications",
+    ):
+        assert "requestBody" not in paths[path]["get"]
+        assert all(
+            parameter.get("$ref") != "#/components/parameters/IdempotencyKey"
+            for parameter in paths[path]["get"]["parameters"]
+        )
+
+    expected_examples = {
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+            "200",
+        ): {
+            "Anonymous": "open-game-registration-context-anonymous.json",
+            "ApplyReady": "open-game-registration-context-apply-ready.json",
+            "Applied": "open-game-registration-context-applied.json",
+            "Joined": "open-game-registration-context-joined.json",
+            "Rejected": "open-game-registration-context-rejected.json",
+            "Cancelled": "open-game-registration-context-cancelled.json",
+        },
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+            "401",
+        ): {"AuthRequired": "error-auth-required.json"},
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+            "404",
+        ): {"OpenGameNotFound": "error-open-game-not-found.json"},
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+            "503",
+        ): {"ServiceUnavailable": "error-service-unavailable.json"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+            "201",
+        ): {"Applied": "open-game-registration-context-applied.json"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+            "401",
+        ): {"AuthRequired": "error-auth-required.json"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+            "404",
+        ): {"OpenGameNotFound": "error-open-game-not-found.json"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+            "409",
+        ): {
+            "ApplicationAlreadyExists": "error-application-already-exists.json",
+            "ApplicationNotAllowed": "error-application-not-allowed.json",
+            "IdempotencyKeyReused": "error-idempotency-key-reused.json",
+        },
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+            "422",
+        ): {"InvalidArgument": "error-invalid-argument.json"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+            "503",
+        ): {"ServiceUnavailable": "error-service-unavailable.json"},
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+            "200",
+        ): {
+            "Pending": "open-game-applications-pending.json",
+            "Empty": "open-game-applications-empty.json",
+        },
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+            "401",
+        ): {"AuthRequired": "error-auth-required.json"},
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+            "404",
+        ): {"OpenGameNotFound": "error-open-game-not-found.json"},
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+            "422",
+        ): {"InvalidArgument": "error-invalid-argument.json"},
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+            "503",
+        ): {"ServiceUnavailable": "error-service-unavailable.json"},
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+            "200",
+        ): {
+            "Joined": "open-game-application-decision-joined.json",
+            "Rejected": "open-game-application-decision-rejected.json",
+        },
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+            "401",
+        ): {"AuthRequired": "error-auth-required.json"},
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+            "404",
+        ): {
+            "ApplicationNotFound": "error-application-not-found.json",
+            "OpenGameNotFound": "error-open-game-not-found.json",
+        },
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+            "409",
+        ): {
+            "ApplicationStateChanged": "error-application-state-changed.json",
+            "ApplicationCapacityChanged": "error-application-capacity-changed.json",
+            "IdempotencyKeyReused": "error-idempotency-key-reused.json",
+        },
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+            "422",
+        ): {"InvalidArgument": "error-invalid-argument.json"},
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+            "503",
+        ): {"ServiceUnavailable": "error-service-unavailable.json"},
+    }
+    for (path, method, status), examples in expected_examples.items():
+        actual = paths[path][method]["responses"][status]["content"][
+            "application/json"
+        ]["examples"]
+        assert actual == {
+            key: {"externalValue": f"./examples/{filename}"}
+            for key, filename in examples.items()
+        }
+
+    joined_update = paths["/api/v1/games/{game_id}"]["put"]["responses"][
+        "422"
+    ]["content"]["application/json"]["examples"]
+    assert joined_update["JoinedUpdateInvalid"] == {
+        "externalValue": "./examples/error-open-game-joined-update-invalid.json"
+    }
+
+
+def test_open_game_registration_schemas_are_closed_and_exact() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    required_fields = {
+        "OpenGameApplyActions": {"can_apply", "apply_blocked_reason"},
+        "OpenGameReviewActions": {
+            "can_accept",
+            "accept_blocked_reason",
+            "can_reject",
+            "reject_blocked_reason",
+        },
+        "OpenGameViewerRegistration": {
+            "display_name",
+            "position",
+            "note",
+            "persisted_status",
+            "effective_status",
+            "applied_at",
+            "decided_at",
+        },
+        "OpenGameRegistrationContext": {
+            "game",
+            "remaining_spots",
+            "viewer_authenticated",
+            "viewer_registration",
+            "allowed_actions",
+        },
+        "CreateOpenGameApplicationRequest": {
+            "display_name",
+            "position",
+            "note",
+            "adult_confirmed",
+            "risk_confirmed",
+        },
+        "CaptainOpenGameApplication": {
+            "id",
+            "display_name",
+            "position",
+            "note",
+            "applied_at",
+            "version",
+            "allowed_actions",
+        },
+        "OpenGameApplicationQueue": {
+            "remaining_spots",
+            "pending_count",
+            "applications",
+        },
+        "OpenGameApplicationDecisionRequest": {"decision", "expected_version"},
+        "OpenGameApplicationDecisionResult": {
+            "application_id",
+            "status",
+            "version",
+            "decided_at",
+            "remaining_spots",
+            "allowed_actions",
+        },
+        "ApplicationNotAllowedDetails": {
+            "apply_blocked_reason",
+            "remaining_spots",
+        },
+        "ApplicationCapacityChangedDetails": {
+            "remaining_spots",
+            "allowed_actions",
+        },
+    }
+    for schema_name, fields in required_fields.items():
+        schema = schemas[schema_name]
+        assert schema["type"] == "object"
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == fields
+        assert set(schema["properties"]) == fields
+
+    assert schemas["OpenGameRegistrationPosition"] == {
+        "type": "string",
+        "enum": ["GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD", "ANY"],
+    }
+    assert schemas["OpenGameRegistrationPersistedStatus"] == {
+        "type": "string",
+        "enum": ["APPLIED", "JOINED", "REJECTED"],
+    }
+    assert schemas["OpenGameRegistrationEffectiveStatus"] == {
+        "type": "string",
+        "enum": ["APPLIED", "JOINED", "REJECTED", "CANCELLED"],
+    }
+    assert schemas["OpenGameApplyBlockedReason"] == {
+        "type": "string",
+        "enum": [
+            "AUTH_REQUIRED",
+            "OWNER_CANNOT_APPLY",
+            "ALREADY_APPLIED",
+            "GAME_NOT_PUBLISHED",
+            "REGISTRATION_DEADLINE_PASSED",
+            "GAME_FULL",
+            "GAME_SUSPENDED",
+            "GAME_CANCELLED",
+            "GAME_COMPLETED",
+            "GAME_STARTED",
+        ],
+    }
+    assert schemas["OpenGameReviewBlockedReason"] == {
+        "type": "string",
+        "enum": [
+            "APPLICATION_NOT_PENDING",
+            "GAME_SUSPENDED",
+            "GAME_CANCELLED",
+            "GAME_COMPLETED",
+            "GAME_STARTED",
+            "GAME_FULL",
+        ],
+    }
+
+    for schema_name in (
+        "OpenGameViewerRegistration",
+        "CreateOpenGameApplicationRequest",
+        "CaptainOpenGameApplication",
+    ):
+        properties = schemas[schema_name]["properties"]
+        assert properties["display_name"] == {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 24,
+        }
+        assert properties["position"] == {
+            "$ref": "#/components/schemas/OpenGameRegistrationPosition"
+        }
+        assert properties["note"] == {
+            "type": ["string", "null"],
+            "maxLength": 120,
+        }
+    request = schemas["CreateOpenGameApplicationRequest"]["properties"]
+    assert request["adult_confirmed"] == {"type": "boolean", "const": True}
+    assert request["risk_confirmed"] == {"type": "boolean", "const": True}
+
+    viewer = schemas["OpenGameViewerRegistration"]["properties"]
+    assert viewer["persisted_status"] == {
+        "$ref": "#/components/schemas/OpenGameRegistrationPersistedStatus"
+    }
+    assert viewer["effective_status"] == {
+        "$ref": "#/components/schemas/OpenGameRegistrationEffectiveStatus"
+    }
+    assert viewer["applied_at"] == {"type": "string", "format": "date-time"}
+    assert viewer["decided_at"] == {
+        "type": ["string", "null"],
+        "format": "date-time",
+    }
+
+    context = schemas["OpenGameRegistrationContext"]["properties"]
+    assert context["game"] == {"$ref": "#/components/schemas/OpenGamePublic"}
+    assert context["remaining_spots"] == {"type": "integer", "minimum": 0}
+    assert context["viewer_authenticated"] == {"type": "boolean"}
+    assert context["viewer_registration"] == {
+        "oneOf": [
+            {"$ref": "#/components/schemas/OpenGameViewerRegistration"},
+            {"type": "null"},
+        ]
+    }
+    assert context["allowed_actions"] == {
+        "$ref": "#/components/schemas/OpenGameApplyActions"
+    }
+
+    captain = schemas["CaptainOpenGameApplication"]["properties"]
+    assert captain["id"] == {"type": "string", "format": "uuid"}
+    assert captain["applied_at"] == {"type": "string", "format": "date-time"}
+    assert captain["version"] == {"type": "integer", "minimum": 1}
+    assert captain["allowed_actions"] == {
+        "$ref": "#/components/schemas/OpenGameReviewActions"
+    }
+    queue = schemas["OpenGameApplicationQueue"]["properties"]
+    assert queue["remaining_spots"] == {"type": "integer", "minimum": 0}
+    assert queue["pending_count"] == {"type": "integer", "minimum": 0}
+    assert queue["applications"] == {
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/CaptainOpenGameApplication"},
+    }
+
+    decision_request = schemas["OpenGameApplicationDecisionRequest"]["properties"]
+    assert decision_request["decision"] == {
+        "type": "string",
+        "enum": ["ACCEPT", "REJECT"],
+    }
+    assert decision_request["expected_version"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+    decision_result = schemas["OpenGameApplicationDecisionResult"]["properties"]
+    assert decision_result["application_id"] == {
+        "type": "string",
+        "format": "uuid",
+    }
+    assert decision_result["status"] == {
+        "type": "string",
+        "enum": ["JOINED", "REJECTED"],
+    }
+    assert decision_result["version"] == {"type": "integer", "minimum": 1}
+    assert decision_result["decided_at"] == {
+        "type": ["string", "null"],
+        "format": "date-time",
+    }
+    assert decision_result["remaining_spots"] == {
+        "type": "integer",
+        "minimum": 0,
+    }
+    assert decision_result["allowed_actions"] == {
+        "$ref": "#/components/schemas/OpenGameReviewActions"
+    }
+
+    not_allowed = schemas["ApplicationNotAllowedDetails"]["properties"]
+    assert not_allowed["apply_blocked_reason"] == {
+        "$ref": "#/components/schemas/OpenGameApplyBlockedReason"
+    }
+    assert not_allowed["remaining_spots"] == {"type": "integer", "minimum": 0}
+    capacity_changed = schemas["ApplicationCapacityChangedDetails"]["properties"]
+    assert capacity_changed["remaining_spots"] == {
+        "type": "integer",
+        "minimum": 0,
+    }
+    assert capacity_changed["allowed_actions"] == {
+        "$ref": "#/components/schemas/OpenGameReviewActions"
+    }
+
+    apply_actions = Draft202012Validator(
+        _dereference_local_schema(contract, schemas["OpenGameApplyActions"])
+    )
+    assert apply_actions.is_valid(
+        {"can_apply": True, "apply_blocked_reason": None}
+    )
+    assert apply_actions.is_valid(
+        {"can_apply": False, "apply_blocked_reason": "GAME_FULL"}
+    )
+    assert not apply_actions.is_valid(
+        {"can_apply": True, "apply_blocked_reason": "GAME_FULL"}
+    )
+    assert not apply_actions.is_valid(
+        {"can_apply": False, "apply_blocked_reason": None}
+    )
+
+    review_actions = Draft202012Validator(
+        _dereference_local_schema(contract, schemas["OpenGameReviewActions"])
+    )
+    assert review_actions.is_valid(
+        {
+            "can_accept": True,
+            "accept_blocked_reason": None,
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+    )
+    assert review_actions.is_valid(
+        {
+            "can_accept": False,
+            "accept_blocked_reason": "GAME_FULL",
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+    )
+    assert not review_actions.is_valid(
+        {
+            "can_accept": True,
+            "accept_blocked_reason": "GAME_FULL",
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+    )
+    assert not review_actions.is_valid(
+        {
+            "can_accept": False,
+            "accept_blocked_reason": "GAME_FULL",
+            "can_reject": False,
+            "reject_blocked_reason": "GAME_FULL",
+        }
+    )
+
+
+def test_open_game_registration_success_examples_match_closed_schemas() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    example_schemas = {
+        "open-game-registration-context-anonymous.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-apply-ready.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-applied.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-joined.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-rejected.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-cancelled.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-applications-pending.json": "OpenGameApplicationQueue",
+        "open-game-applications-empty.json": "OpenGameApplicationQueue",
+        "open-game-application-decision-joined.json": (
+            "OpenGameApplicationDecisionResult"
+        ),
+        "open-game-application-decision-rejected.json": (
+            "OpenGameApplicationDecisionResult"
+        ),
+    }
+    examples: dict[str, dict[str, Any]] = {}
+    for filename, schema_name in example_schemas.items():
+        example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        examples[filename] = example
+        validator = Draft202012Validator(
+            _dereference_local_schema(contract, schemas[schema_name])
+        )
+        assert validator.is_valid(example), filename
+
+    context_states = {
+        "open-game-registration-context-anonymous.json": (
+            False,
+            None,
+            None,
+            False,
+            "AUTH_REQUIRED",
+        ),
+        "open-game-registration-context-apply-ready.json": (
+            True,
+            None,
+            None,
+            True,
+            None,
+        ),
+        "open-game-registration-context-applied.json": (
+            True,
+            "APPLIED",
+            "APPLIED",
+            False,
+            "ALREADY_APPLIED",
+        ),
+        "open-game-registration-context-joined.json": (
+            True,
+            "JOINED",
+            "JOINED",
+            False,
+            "ALREADY_APPLIED",
+        ),
+        "open-game-registration-context-rejected.json": (
+            True,
+            "REJECTED",
+            "REJECTED",
+            False,
+            "ALREADY_APPLIED",
+        ),
+        "open-game-registration-context-cancelled.json": (
+            True,
+            "JOINED",
+            "CANCELLED",
+            False,
+            "GAME_CANCELLED",
+        ),
+    }
+    for filename, expected in context_states.items():
+        context = examples[filename]
+        registration = context["viewer_registration"]
+        persisted = registration["persisted_status"] if registration else None
+        effective = registration["effective_status"] if registration else None
+        actual = (
+            context["viewer_authenticated"],
+            persisted,
+            effective,
+            context["allowed_actions"]["can_apply"],
+            context["allowed_actions"]["apply_blocked_reason"],
+        )
+        assert actual == expected
+
+    pending = examples["open-game-applications-pending.json"]
+    assert pending["pending_count"] == len(pending["applications"])
+    assert pending["pending_count"] > 0
+    assert examples["open-game-applications-empty.json"]["applications"] == []
+    assert examples["open-game-applications-empty.json"]["pending_count"] == 0
+    assert examples["open-game-application-decision-joined.json"]["status"] == (
+        "JOINED"
+    )
+    assert examples["open-game-application-decision-rejected.json"]["status"] == (
+        "REJECTED"
+    )
+
+    serialized = json.dumps(examples).lower()
+    for forbidden in (
+        "applicant_user_id",
+        "user_id",
+        "phone",
+        "openid",
+        "avatar",
+        "order_id",
+        "payment",
+        "fulfillment",
+        "rating",
+    ):
+        assert forbidden not in serialized
 
 
 def test_open_game_public_states_are_coarse_and_position_inputs_are_unordered() -> None:

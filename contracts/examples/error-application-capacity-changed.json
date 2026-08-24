@@ -1,0 +1,16 @@
+{
+  "error": {
+    "code": "APPLICATION_CAPACITY_CHANGED",
+    "message": "剩余名额已变化，请刷新报名队列。",
+    "request_id": "req-contract-application-capacity-changed",
+    "details": {
+      "remaining_spots": 0,
+      "allowed_actions": {
+        "can_accept": false,
+        "accept_blocked_reason": "GAME_FULL",
+        "can_reject": true,
+        "reject_blocked_reason": null
+      }
+    }
+  }
+}

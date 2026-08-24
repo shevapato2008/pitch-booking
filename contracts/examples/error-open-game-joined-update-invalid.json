@@ -1,0 +1,23 @@
+{
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "球局已有加入成员，开放容量或预计 AA 不符合要求。",
+    "request_id": "req-contract-open-game-joined-update-invalid",
+    "details": {
+      "fields": [
+        {
+          "field": "open_spots",
+          "message": "不能小于已加入人数。"
+        },
+        {
+          "field": "total_players",
+          "message": "不能小于固定人数与已加入人数之和。"
+        },
+        {
+          "field": "aa_cents",
+          "message": "已有加入成员后预计 AA 只能保持或降低。"
+        }
+      ]
+    }
+  }
+}

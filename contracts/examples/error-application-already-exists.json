@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "APPLICATION_ALREADY_EXISTS",
+    "message": "你已申请过本场球局，请刷新查看当前结果。",
+    "request_id": "req-contract-application-already-exists",
+    "details": {}
+  }
+}

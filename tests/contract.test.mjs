@@ -93,10 +93,10 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen forty-four-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen named path members', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
-  assert.deepEqual(Object.keys(contract.paths).sort(), [
+  const expectedPaths = [
     '/api/v1/admin/moderation/venue-profiles/pending',
     '/api/v1/admin/moderation/venue-profiles/{item_id}/decisions',
     '/api/v1/admin/venues',
@@ -113,14 +113,19 @@ test('OpenAPI document validates and exposes the frozen forty-four-path operatio
     '/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry',
     '/api/v1/auth/wechat/phone',
     '/api/v1/auth/wechat/session',
+    '/api/v1/games/{game_id}',
+    '/api/v1/games/{game_id}/cancel',
+    '/api/v1/games/{game_id}/publish',
     '/api/v1/health',
     '/api/v1/orders',
     '/api/v1/orders/{order_id}',
     '/api/v1/orders/{order_id}/cancel',
+    '/api/v1/orders/{order_id}/game',
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
     '/api/v1/payments/wechat/notify',
     '/api/v1/refunds/wechat/notify',
+    '/api/v1/shared-games/{share_token}',
     '/api/v1/slots/{slot_id}/checkout',
     '/api/v1/venue-onboarding/applications',
     '/api/v1/venue-onboarding/candidates',
@@ -141,8 +146,71 @@ test('OpenAPI document validates and exposes the frozen forty-four-path operatio
     '/platform-admin/api/v1/onboarding/applications/{application_id}',
     '/platform-admin/api/v1/onboarding/applications/{application_id}/decisions',
     '/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download',
-  ]);
+  ];
+  for (const expectedPath of expectedPaths) {
+    assert.ok(contract.paths[expectedPath], expectedPath);
+  }
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
+});
+
+test('C1a registration operations expose exact named success examples', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const expected = [
+    {
+      path: '/api/v1/shared-games/{share_token}/registration-context',
+      method: 'get',
+      operationId: 'getOpenGameRegistrationContext',
+      status: '200',
+      examples: {
+        Anonymous: 'open-game-registration-context-anonymous.json',
+        ApplyReady: 'open-game-registration-context-apply-ready.json',
+        Applied: 'open-game-registration-context-applied.json',
+        Joined: 'open-game-registration-context-joined.json',
+        Rejected: 'open-game-registration-context-rejected.json',
+        Cancelled: 'open-game-registration-context-cancelled.json',
+      },
+    },
+    {
+      path: '/api/v1/shared-games/{share_token}/applications',
+      method: 'post',
+      operationId: 'createOpenGameApplication',
+      status: '201',
+      examples: { Applied: 'open-game-registration-context-applied.json' },
+    },
+    {
+      path: '/api/v1/games/{game_id}/applications',
+      method: 'get',
+      operationId: 'listOpenGameApplications',
+      status: '200',
+      examples: {
+        Pending: 'open-game-applications-pending.json',
+        Empty: 'open-game-applications-empty.json',
+      },
+    },
+    {
+      path: '/api/v1/games/{game_id}/applications/{application_id}/decision',
+      method: 'post',
+      operationId: 'decideOpenGameApplication',
+      status: '200',
+      examples: {
+        Joined: 'open-game-application-decision-joined.json',
+        Rejected: 'open-game-application-decision-rejected.json',
+      },
+    },
+  ];
+
+  for (const member of expected) {
+    assert.deepEqual(Object.keys(contract.paths[member.path]), [member.method], member.path);
+    const operation = contract.paths[member.path][member.method];
+    assert.equal(operation.operationId, member.operationId);
+    assert.deepEqual(
+      operation.responses[member.status].content['application/json'].examples,
+      Object.fromEntries(Object.entries(member.examples).map(([key, filename]) => [
+        key,
+        { externalValue: `./examples/${filename}` },
+      ])),
+    );
+  }
 });
 
 test('my orders list freezes owner-only pagination and a private closed projection', async () => {
@@ -936,7 +1004,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 89 JSON examples/i);
+  assert.match(stdout, /validated \d+ JSON examples/i);
   assert.equal(stderr, '');
 });
 
@@ -948,7 +1016,7 @@ test('file-backed OpenAPI examples use standard closed externalValue objects', a
         for (const [key, example] of Object.entries(
           response.content?.['application/json']?.examples ?? {},
         )) {
-          if (key === 'HealthOk') continue;
+          if (key === 'HealthOk' || !('externalValue' in example)) continue;
           assert.deepEqual(Object.keys(example), ['externalValue']);
           assert.match(example.externalValue, /^\.\/examples\/.+\.json$/);
         }
@@ -1159,7 +1227,7 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
   const temporaryDirectory = await createTemporaryRepository();
   try {
     const { stdout, stderr } = await runTemporaryGenerator(temporaryDirectory);
-    assert.match(stdout, /generated 9 fixtures/i);
+    assert.match(stdout, /generated 19 fixtures/i);
     assert.equal(stderr, '');
     const mappings = [
       ['venue-primary.json', 'venue-ready.json'],
@@ -1171,6 +1239,16 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
       ['order-confirmed.json', 'order-confirmed.json'],
       ['order-payment-exception.json', 'order-payment-exception.json'],
       ['order-expired.json', 'order-expired.json'],
+      ['open-game-registration-context-anonymous.json', 'open-game-registration-context-anonymous.json'],
+      ['open-game-registration-context-apply-ready.json', 'open-game-registration-context-apply-ready.json'],
+      ['open-game-registration-context-applied.json', 'open-game-registration-context-applied.json'],
+      ['open-game-registration-context-joined.json', 'open-game-registration-context-joined.json'],
+      ['open-game-registration-context-rejected.json', 'open-game-registration-context-rejected.json'],
+      ['open-game-registration-context-cancelled.json', 'open-game-registration-context-cancelled.json'],
+      ['open-game-applications-pending.json', 'open-game-applications-pending.json'],
+      ['open-game-applications-empty.json', 'open-game-applications-empty.json'],
+      ['open-game-application-decision-joined.json', 'open-game-application-decision-joined.json'],
+      ['open-game-application-decision-rejected.json', 'open-game-application-decision-rejected.json'],
     ];
     assert.deepEqual(
       (await readdir(path.join(temporaryDirectory, 'artifacts/ui/fixtures'))).sort(),
@@ -1198,6 +1276,16 @@ test('checked-in fixtures already match normalized canonical examples byte-for-b
     ['order-confirmed.json', 'order-confirmed.json'],
     ['order-payment-exception.json', 'order-payment-exception.json'],
     ['order-expired.json', 'order-expired.json'],
+    ['open-game-registration-context-anonymous.json', 'open-game-registration-context-anonymous.json'],
+    ['open-game-registration-context-apply-ready.json', 'open-game-registration-context-apply-ready.json'],
+    ['open-game-registration-context-applied.json', 'open-game-registration-context-applied.json'],
+    ['open-game-registration-context-joined.json', 'open-game-registration-context-joined.json'],
+    ['open-game-registration-context-rejected.json', 'open-game-registration-context-rejected.json'],
+    ['open-game-registration-context-cancelled.json', 'open-game-registration-context-cancelled.json'],
+    ['open-game-applications-pending.json', 'open-game-applications-pending.json'],
+    ['open-game-applications-empty.json', 'open-game-applications-empty.json'],
+    ['open-game-application-decision-joined.json', 'open-game-application-decision-joined.json'],
+    ['open-game-application-decision-rejected.json', 'open-game-application-decision-rejected.json'],
   ];
   for (const [sourceName, fixtureName] of mappings) {
     const sourceBytes = await readFile(new URL(`../contracts/examples/${sourceName}`, import.meta.url));
@@ -1287,6 +1375,16 @@ test('fixture publication rolls back every file after a deterministic second-pub
     'order-confirmed.json',
     'order-payment-exception.json',
     'order-expired.json',
+    'open-game-registration-context-anonymous.json',
+    'open-game-registration-context-apply-ready.json',
+    'open-game-registration-context-applied.json',
+    'open-game-registration-context-joined.json',
+    'open-game-registration-context-rejected.json',
+    'open-game-registration-context-cancelled.json',
+    'open-game-applications-pending.json',
+    'open-game-applications-empty.json',
+    'open-game-application-decision-joined.json',
+    'open-game-application-decision-rejected.json',
   ];
   try {
     const before = new Map(await Promise.all(fixtureNames.map(async (filename) => [

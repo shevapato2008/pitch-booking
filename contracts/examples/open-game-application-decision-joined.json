@@ -1,0 +1,13 @@
+{
+  "application_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "status": "JOINED",
+  "version": 2,
+  "decided_at": "2026-08-24T00:25:00+08:00",
+  "remaining_spots": 3,
+  "allowed_actions": {
+    "can_accept": false,
+    "accept_blocked_reason": "APPLICATION_NOT_PENDING",
+    "can_reject": false,
+    "reject_blocked_reason": "APPLICATION_NOT_PENDING"
+  }
+}
