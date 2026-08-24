@@ -23,6 +23,13 @@ from backend.app.modules.auth.router import router as auth_router
 from backend.app.modules.availability.router import router as availability_router
 from backend.app.modules.checkout.router import router as checkout_router
 from backend.app.modules.inventory.router import router as inventory_router
+from backend.app.modules.open_game_registrations.router import (
+    is_open_game_registration_mutation_request,
+    open_game_registration_request_validation_handler,
+)
+from backend.app.modules.open_game_registrations.router import (
+    router as open_game_registrations_router,
+)
 from backend.app.modules.open_games.router import (
     is_open_game_mutation_request,
     open_game_request_validation_handler,
@@ -205,6 +212,11 @@ def create_app(
         application.add_exception_handler(AppError, app_error_handler)
 
         async def validation_handler(request: Request, error: Exception) -> JSONResponse:
+            if is_open_game_registration_mutation_request(request):
+                assert isinstance(error, RequestValidationError)
+                return await open_game_registration_request_validation_handler(
+                    request, error
+                )
             if is_open_game_mutation_request(request):
                 assert isinstance(error, RequestValidationError)
                 return await open_game_request_validation_handler(request, error)
@@ -234,6 +246,7 @@ def create_app(
         application.include_router(checkout_router)
         application.include_router(inventory_router)
         application.include_router(orders_router)
+        application.include_router(open_game_registrations_router)
         application.include_router(open_games_router)
         application.include_router(payments_router)
         application.include_router(wechat_pay_router)
@@ -324,6 +337,15 @@ def create_app(
                 .get("get", {})
             )
             shared_game_get.get("responses", {}).pop("422", None)
+            registration_context_get = (
+                schema.get("paths", {})
+                .get(
+                    "/api/v1/shared-games/{share_token}/registration-context",
+                    {},
+                )
+                .get("get", {})
+            )
+            registration_context_get.get("responses", {}).pop("422", None)
             profile_get = (
                 schema.get("paths", {})
                 .get("/api/v1/admin/venues/{venue_id}/profile", {})

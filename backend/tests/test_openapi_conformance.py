@@ -1316,6 +1316,70 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
     }
 
 
+def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() -> None:
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    operation_ids = {
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+        ): "getOpenGameRegistrationContext",
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): "createOpenGameApplication",
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+        ): "listOpenGameApplications",
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+        ): "decideOpenGameApplication",
+    }
+    statuses = {
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "get",
+        ): {"200", "401", "404", "503"},
+        (
+            "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): {"201", "401", "404", "409", "422", "503"},
+        (
+            "/api/v1/games/{game_id}/applications",
+            "get",
+        ): {"200", "401", "404", "422", "503"},
+        (
+            "/api/v1/games/{game_id}/applications/{application_id}/decision",
+            "post",
+        ): {"200", "401", "404", "409", "422", "503"},
+    }
+
+    for key, operation_id in operation_ids.items():
+        path, method = key
+        operation = runtime["paths"][path][method]
+        assert operation["operationId"] == operation_id
+        assert set(operation["responses"]) == statuses[key]
+        assert operation["security"] == (
+            [{}, {"bearerAuth": []}]
+            if path.endswith("registration-context")
+            else [{"bearerAuth": []}]
+        )
+
+    queue_invalid = runtime["paths"][
+        "/api/v1/games/{game_id}/applications"
+    ]["get"]["responses"]["422"]["content"]["application/json"]["examples"]
+    assert queue_invalid == {
+        "InvalidArgument": {
+            "value": json.loads(
+                (EXAMPLES_DIRECTORY / "error-invalid-argument.json").read_text()
+            )
+        }
+    }
+
+
 def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     contract = _contract()
     schemas = contract["components"]["schemas"]

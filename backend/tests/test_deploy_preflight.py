@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from yaml import safe_load
 
 from scripts.preflight_deploy import preflight
 
@@ -499,6 +500,80 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
         )
     }
     assert "postgres_data" in config["volumes"]
+
+
+def test_rollback_retain_schema_override_only_replaces_the_api_command(
+    tmp_path: Path,
+) -> None:
+    override_path = Path("deploy/compose.rollback-retain-schema.yaml")
+    expected_command = [
+        "uv",
+        "run",
+        "uvicorn",
+        "backend.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+    ]
+    assert safe_load(override_path.read_text(encoding="utf-8")) == {
+        "services": {"api": {"command": expected_command}}
+    }
+    env_file = write_env(tmp_path, valid_local_environment())
+
+    normal_completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            "compose.yaml",
+            "config",
+            "--format",
+            "json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rollback_completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            "compose.yaml",
+            "-f",
+            str(override_path),
+            "config",
+            "--format",
+            "json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    normal = json.loads(normal_completed.stdout)
+    rollback = json.loads(rollback_completed.stdout)
+
+    assert "alembic upgrade head" in " ".join(normal["services"]["api"]["command"])
+    assert rollback["services"]["api"]["command"] == expected_command
+    assert "alembic" not in " ".join(rollback["services"]["api"]["command"])
+    for service in ("worker", "caddy", "postgres"):
+        assert rollback["services"][service] == normal["services"][service]
+    normal_api = {
+        key: value
+        for key, value in normal["services"]["api"].items()
+        if key != "command"
+    }
+    rollback_api = {
+        key: value
+        for key, value in rollback["services"]["api"].items()
+        if key != "command"
+    }
+    assert rollback_api == normal_api
 
 
 def test_compose_preserves_the_exact_safe_api_v3_key(tmp_path: Path) -> None:
