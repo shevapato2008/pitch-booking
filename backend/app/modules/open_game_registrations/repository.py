@@ -37,6 +37,22 @@ class OpenGameRegistrationRepository:
             .execution_options(populate_existing=True)
         )
 
+    def lock_registration(
+        self,
+        *,
+        game_id: uuid.UUID,
+        application_id: uuid.UUID,
+    ) -> OpenGameRegistration | None:
+        return self.session.scalar(
+            select(OpenGameRegistration)
+            .where(
+                OpenGameRegistration.game_id == game_id,
+                OpenGameRegistration.id == application_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     def count_joined(self, *, game_id: uuid.UUID) -> int:
         count = self.session.scalar(
             select(func.count())

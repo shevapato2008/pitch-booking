@@ -20,15 +20,23 @@ from backend.app.models import (
 )
 from backend.app.modules.open_game_registrations.dto import (
     OPEN_GAME_REGISTRATION_CONSENT_VERSION,
+    ApplicationDecision,
     CreateApplicationRequest,
+    DecisionRequest,
+    DecisionResult,
+    DecisionResultStatus,
+    Queue,
     RegistrationContext,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     RegistrationFacts,
+    ReviewBlockedReason,
     project_apply_actions,
+    project_review_actions,
     remaining_spots,
 )
 from backend.app.modules.open_game_registrations.privacy import (
+    project_captain_application,
     project_viewer_registration,
 )
 from backend.app.modules.open_game_registrations.repository import (
@@ -48,6 +56,7 @@ from backend.app.modules.open_games.service import (
 from backend.app.modules.orders.repository import OrderRepository
 
 CREATE_OPEN_GAME_APPLICATION_OPERATION = "create_open_game_application"
+DECIDE_OPEN_GAME_APPLICATION_OPERATION = "decide_open_game_application"
 
 
 class OpenGameRegistrationService:
@@ -261,6 +270,237 @@ class OpenGameRegistrationService:
             self._repository.rollback()
             raise _service_unavailable() from None
 
+    def get_queue(
+        self,
+        *,
+        game_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+    ) -> Queue:
+        try:
+            order_id = self._open_game_repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._open_game_repository.get_owned_order(
+                order_id=order_id,
+                user_id=owner_user_id,
+            )
+            if order is None:
+                raise _game_not_found()
+            game = self._open_game_repository.get_owned_game(
+                game_id=game_id,
+                user_id=owner_user_id,
+            )
+            if game is None:
+                raise _game_not_found()
+
+            authority = self._open_game_repository.get_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            now = self._now()
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=now,
+            )
+            joined_count = self._repository.count_joined(game_id=game.id)
+            rows = self._repository.list_pending(game_id=game.id)
+            facts = _registration_facts(
+                game=game,
+                projection=projection,
+                viewer_user_id=owner_user_id,
+                viewer_has_registration=False,
+                joined_count=joined_count,
+            )
+            applications = tuple(
+                project_captain_application(
+                    application_id=row.id,
+                    display_name=row.display_name,
+                    position=row.position,
+                    note=row.note,
+                    applied_at=row.applied_at,
+                    version=row.version,
+                    allowed_actions=project_review_actions(
+                        facts,
+                        row.status,
+                        now,
+                    ),
+                )
+                for row in rows
+            )
+            return Queue(
+                remaining_spots=remaining_spots(
+                    open_spots=game.open_spots,
+                    joined_count=joined_count,
+                ),
+                pending_count=len(applications),
+                applications=applications,
+            )
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def decide(
+        self,
+        *,
+        game_id: uuid.UUID,
+        application_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+        idempotency_key: str,
+        request: DecisionRequest,
+    ) -> DecisionResult:
+        try:
+            order_id = self._open_game_repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._open_game_repository.lock_owned_order(
+                order_id=order_id,
+                user_id=owner_user_id,
+            )
+            if order is None:
+                raise _game_not_found()
+            game = self._open_game_repository.lock_target_game(
+                game_id=game_id,
+                order_id=order.id,
+            )
+            if game is None:
+                raise _game_not_found()
+            registration = self._repository.lock_registration(
+                game_id=game.id,
+                application_id=application_id,
+            )
+            if registration is None:
+                raise _application_not_found()
+
+            digest = _decision_request_digest(
+                operation=DECIDE_OPEN_GAME_APPLICATION_OPERATION,
+                game_id=game.id,
+                application_id=registration.id,
+                request=request,
+            )
+            record, claimed = self._order_repository.claim_idempotency(
+                user_id=owner_user_id,
+                operation=DECIDE_OPEN_GAME_APPLICATION_OPERATION,
+                key=idempotency_key,
+                request_sha256=digest,
+            )
+            if not claimed:
+                replay = _replay_decision(record, digest=digest)
+                self._order_repository.commit()
+                return replay
+
+            authority = self._open_game_repository.lock_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            now = self._now()
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=now,
+            )
+            joined_count = self._repository.count_joined(game_id=game.id)
+            facts = _registration_facts(
+                game=game,
+                projection=projection,
+                viewer_user_id=owner_user_id,
+                viewer_has_registration=True,
+                joined_count=joined_count,
+            )
+            actions = project_review_actions(
+                facts,
+                registration.status,
+                now,
+            )
+            if (
+                registration.status is not OpenGameRegistrationStatus.APPLIED
+                or registration.version != request.expected_version
+                or not actions.can_reject
+            ):
+                raise _application_state_changed()
+            if request.decision is ApplicationDecision.ACCEPT and not actions.can_accept:
+                if actions.accept_blocked_reason is not ReviewBlockedReason.GAME_FULL:
+                    raise RuntimeError("accept projection has an unexpected blocker")
+                raise AppError(
+                    409,
+                    "APPLICATION_CAPACITY_CHANGED",
+                    "剩余名额已变化，请刷新报名队列。",
+                    details={
+                        "remaining_spots": remaining_spots(
+                            open_spots=game.open_spots,
+                            joined_count=joined_count,
+                        ),
+                        "allowed_actions": actions.model_dump(mode="json"),
+                    },
+                )
+
+            accepted = request.decision is ApplicationDecision.ACCEPT
+            registration.status = (
+                OpenGameRegistrationStatus.JOINED
+                if accepted
+                else OpenGameRegistrationStatus.REJECTED
+            )
+            registration.version += 1
+            registration.decided_at = now
+            registration.decided_by_user_id = owner_user_id
+            self._repository.flush()
+
+            result_joined_count = joined_count + 1 if accepted else joined_count
+            terminal_facts = _registration_facts(
+                game=game,
+                projection=projection,
+                viewer_user_id=owner_user_id,
+                viewer_has_registration=True,
+                joined_count=result_joined_count,
+            )
+            response = DecisionResult(
+                application_id=registration.id,
+                status=DecisionResultStatus(registration.status.value),
+                version=registration.version,
+                decided_at=registration.decided_at,
+                remaining_spots=remaining_spots(
+                    open_spots=game.open_spots,
+                    joined_count=result_joined_count,
+                ),
+                allowed_actions=project_review_actions(
+                    terminal_facts,
+                    registration.status,
+                    now,
+                ),
+            )
+            self._order_repository.complete_idempotency(
+                record,
+                response_status=200,
+                response_body=response.model_dump(mode="json"),
+            )
+            self._order_repository.commit()
+            return response
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
     def _require_order_row(self, order_id: uuid.UUID) -> OpenGameOrderRow:
         row = self._open_game_repository.get_order_row(order_id=order_id)
         if row is None:
@@ -298,15 +538,11 @@ def _project_context(
     joined_count: int,
     now: datetime,
 ) -> RegistrationContext:
-    facts = RegistrationFacts(
-        game_state=projection.state,
-        stored_game_status=game.status,
-        viewer_authenticated=viewer_user_id is not None,
-        viewer_is_owner=viewer_user_id == projection.owner_user_id,
+    facts = _registration_facts(
+        game=game,
+        projection=projection,
+        viewer_user_id=viewer_user_id,
         viewer_has_registration=registration is not None,
-        registration_deadline=game.registration_deadline,
-        starts_at=projection.starts_at,
-        open_spots=game.open_spots,
         joined_count=joined_count,
     )
     viewer_registration = (
@@ -334,6 +570,27 @@ def _project_context(
     )
 
 
+def _registration_facts(
+    *,
+    game: OpenGame,
+    projection: AuthoritativePublicGameProjection,
+    viewer_user_id: uuid.UUID | None,
+    viewer_has_registration: bool,
+    joined_count: int,
+) -> RegistrationFacts:
+    return RegistrationFacts(
+        game_state=projection.state,
+        stored_game_status=game.status,
+        viewer_authenticated=viewer_user_id is not None,
+        viewer_is_owner=viewer_user_id == projection.owner_user_id,
+        viewer_has_registration=viewer_has_registration,
+        registration_deadline=game.registration_deadline,
+        starts_at=projection.starts_at,
+        open_spots=game.open_spots,
+        joined_count=joined_count,
+    )
+
+
 def _application_request_digest(
     *,
     operation: str,
@@ -346,6 +603,25 @@ def _application_request_digest(
         "share_token": share_token,
         "resolved_game_id": str(resolved_game_id),
         "body": request.model_dump(mode="json"),
+        "version": 1,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _decision_request_digest(
+    *,
+    operation: str,
+    game_id: uuid.UUID,
+    application_id: uuid.UUID,
+    request: DecisionRequest,
+) -> str:
+    payload = {
+        "operation": operation,
+        "game_id": str(game_id),
+        "application_id": str(application_id),
+        "decision": request.decision.value,
+        "expected_version": request.expected_version,
         "version": 1,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -372,8 +648,28 @@ def _replay_context(
     return RegistrationContext.model_validate(record.response_body)
 
 
+def _replay_decision(
+    record: IdempotencyRecord,
+    *,
+    digest: str,
+) -> DecisionResult:
+    if record.request_sha256 != digest:
+        raise _idempotency_key_reused()
+    if (
+        record.state is not IdempotencyState.COMPLETED
+        or record.response_status != 200
+        or record.response_body is None
+    ):
+        raise _service_unavailable()
+    return DecisionResult.model_validate(record.response_body)
+
+
 def _game_not_found() -> AppError:
     return AppError(404, "OPEN_GAME_NOT_FOUND", "球局不存在。")
+
+
+def _application_not_found() -> AppError:
+    return AppError(404, "APPLICATION_NOT_FOUND", "报名不存在。")
 
 
 def _application_already_exists() -> AppError:
@@ -381,6 +677,22 @@ def _application_already_exists() -> AppError:
         409,
         "APPLICATION_ALREADY_EXISTS",
         "你已申请过本场球局，请刷新查看当前结果。",
+    )
+
+
+def _application_state_changed() -> AppError:
+    return AppError(
+        409,
+        "APPLICATION_STATE_CHANGED",
+        "报名状态或版本已变化，请刷新后重试。",
+    )
+
+
+def _idempotency_key_reused() -> AppError:
+    return AppError(
+        409,
+        "IDEMPOTENCY_KEY_REUSED",
+        "该幂等键已用于其他请求，请生成新键后重试。",
     )
 
 
