@@ -364,11 +364,8 @@ class OpenGameRegistrationService:
             order_id = self._open_game_repository.locate_order_id(game_id=game_id)
             if order_id is None:
                 raise _game_not_found()
-            order = self._open_game_repository.lock_owned_order(
-                order_id=order_id,
-                user_id=owner_user_id,
-            )
-            if order is None:
+            order = self._repository.lock_order(order_id=order_id)
+            if order is None or order.user_id != owner_user_id:
                 raise _game_not_found()
             game = self._open_game_repository.lock_target_game(
                 game_id=game_id,

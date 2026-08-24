@@ -152,6 +152,16 @@ def _field_error_message(field: str) -> str:
     return "字段值不符合要求。"
 
 
+def _service_field_error_message(field: str) -> str:
+    if field == "open_spots":
+        return "不能小于已加入人数。"
+    if field == "total_players":
+        return "不能小于固定人数与已加入人数之和。"
+    if field == "aa_cents":
+        return "已有加入成员后预计 AA 只能保持或降低。"
+    return _field_error_message(field)
+
+
 def _translate_service_validation(
     error: AppError,
     *,
@@ -171,11 +181,20 @@ def _translate_service_validation(
         if not isinstance(field, str) or field not in allowed_fields or field in seen:
             continue
         seen.add(field)
-        fields.append({"field": field, "message": _field_error_message(field)})
+        fields.append(
+            {"field": field, "message": _service_field_error_message(field)}
+        )
+    deadline_only = fields and all(
+        item["field"] == "registration_deadline" for item in fields
+    )
     return AppError(
         422,
         "INVALID_ARGUMENT",
-        "报名截止时间不符合要求，请修改后重试。",
+        (
+            "报名截止时间不符合要求，请修改后重试。"
+            if deadline_only
+            else "球局已有加入成员，开放容量或预计 AA 不符合要求。"
+        ),
         details={"fields": fields} if fields else {},
     )
 

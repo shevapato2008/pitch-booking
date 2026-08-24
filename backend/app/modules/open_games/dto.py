@@ -151,6 +151,10 @@ class CreateOpenGameRequest(OpenGameDraftInput):
 class UpdateOpenGameRequest(OpenGameDraftInput):
     expected_version: Annotated[int, Field(strict=True, ge=1)]
 
+    @model_validator(mode="after")
+    def validate_roster_capacity(self) -> Self:
+        return self
+
 
 class OpenGameVersionRequest(ClosedModel):
     expected_version: Annotated[int, Field(strict=True, ge=1)]

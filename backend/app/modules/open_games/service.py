@@ -24,9 +24,13 @@ from backend.app.models import (
     RefundCasePurpose,
     Team,
 )
+from backend.app.modules.open_game_registrations.repository import (
+    OpenGameRegistrationRepository,
+)
 from backend.app.modules.open_games.dto import (
     CreateOpenGameRequest,
     OpenGameEntry,
+    OpenGameFieldError,
     OpenGameOrderSummary,
     OpenGameOwner,
     OpenGamePublic,
@@ -100,13 +104,23 @@ class OpenGameService:
         *,
         repository: OpenGameRepository,
         order_repository: OrderRepository,
+        registration_repository: OpenGameRegistrationRepository | None = None,
         now: Callable[[], datetime] | None = None,
         token_factory: Callable[[], str] | None = None,
     ) -> None:
-        if repository.session is not order_repository.session:
-            raise ValueError("open-game and order repositories must share one Session")
+        registration_repository = registration_repository or (
+            OpenGameRegistrationRepository(repository.session)
+        )
+        if (
+            repository.session is not order_repository.session
+            or registration_repository.session is not repository.session
+        ):
+            raise ValueError(
+                "open-game, registration and order repositories must share one Session"
+            )
         self._repository = repository
         self._order_repository = order_repository
+        self._registration_repository = registration_repository
         self._now = now or (lambda: datetime.now(UTC))
         self._token_factory = token_factory or (lambda: secrets.token_urlsafe(24))
 
@@ -330,6 +344,15 @@ class OpenGameService:
                 )
             else:
                 raise _state_changed()
+
+            joined_count = self._registration_repository.count_joined(
+                game_id=game.id
+            )
+            _validate_update_roster(
+                game=game,
+                request=request,
+                joined_count=joined_count,
+            )
 
             team = self._repository.upsert_team(
                 captain_user_id=user_id,
@@ -691,6 +714,41 @@ def _apply_update(
     game.version += 1
 
 
+def _validate_update_roster(
+    *,
+    game: OpenGame,
+    request: UpdateOpenGameRequest,
+    joined_count: int,
+) -> None:
+    errors: list[OpenGameFieldError] = []
+    if request.open_spots < joined_count:
+        errors.append(
+            OpenGameFieldError("open_spots", "不能小于已加入人数。")
+        )
+    if (
+        request.fixed_players + request.open_spots > request.total_players
+        or request.total_players < request.fixed_players + joined_count
+    ):
+        errors.append(
+            OpenGameFieldError(
+                "total_players",
+                "不能小于固定人数与已加入人数之和。",
+            )
+        )
+    if joined_count > 0 and request.aa_cents > game.aa_cents:
+        errors.append(
+            OpenGameFieldError(
+                "aa_cents",
+                "已有加入成员后预计 AA 只能保持或降低。",
+            )
+        )
+    if errors:
+        raise OpenGameValidationError(
+            "joined open-game invariants would be violated",
+            *errors,
+        )
+
+
 def project_authoritative_public_game(
     *,
     game: OpenGame,
@@ -830,10 +888,17 @@ def _replay_owner(
 
 def _validation_error(error: OpenGameValidationError) -> AppError:
     if error.fields:
+        deadline_only = all(
+            item.field == "registration_deadline" for item in error.fields
+        )
         return AppError(
             422,
             "INVALID_ARGUMENT",
-            "报名截止时间不符合要求，请修改后重试。",
+            (
+                "报名截止时间不符合要求，请修改后重试。"
+                if deadline_only
+                else "球局已有加入成员，开放容量或预计 AA 不符合要求。"
+            ),
             details={
                 "fields": [
                     {
