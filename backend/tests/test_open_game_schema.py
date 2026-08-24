@@ -518,8 +518,26 @@ def test_open_game_unique_constraints_distinguish_active_and_cancelled_games(
 
 def test_open_game_models_match_persistence_contract() -> None:
     assert set(models.Team.__mapper__.relationships.keys()) == {"open_games"}
-    assert set(models.OpenGame.__mapper__.relationships.keys()) == {"order", "team"}
-    assert set(models.User.__mapper__.relationships.keys()) >= {"teams"}
+    assert set(models.OpenGame.__mapper__.relationships.keys()) == {
+        "order",
+        "team",
+        "registrations",
+    }
+    assert set(models.User.__mapper__.relationships.keys()) >= {
+        "teams",
+        "open_game_registrations",
+        "decided_open_game_registrations",
+    }
+    assert models.User.__mapper__.relationships[
+        "open_game_registrations"
+    ]._user_defined_foreign_keys == {
+        models.OpenGameRegistration.__table__.c.applicant_user_id
+    }
+    assert models.User.__mapper__.relationships[
+        "decided_open_game_registrations"
+    ]._user_defined_foreign_keys == {
+        models.OpenGameRegistration.__table__.c.decided_by_user_id
+    }
     assert set(models.Order.__mapper__.relationships.keys()) >= {"open_games"}
     assert "captain" not in models.OpenGame.__mapper__.relationships.keys()
     assert models.OpenGameStatus.__members__ == {

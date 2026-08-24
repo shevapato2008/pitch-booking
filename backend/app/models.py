@@ -111,6 +111,20 @@ class OpenGameIntensity(StrEnum):
     COMPETITIVE = "COMPETITIVE"
 
 
+class OpenGameRegistrationPosition(StrEnum):
+    GOALKEEPER = "GOALKEEPER"
+    DEFENDER = "DEFENDER"
+    MIDFIELDER = "MIDFIELDER"
+    FORWARD = "FORWARD"
+    ANY = "ANY"
+
+
+class OpenGameRegistrationStatus(StrEnum):
+    APPLIED = "APPLIED"
+    JOINED = "JOINED"
+    REJECTED = "REJECTED"
+
+
 class PaymentState(StrEnum):
     CREATING = "CREATING"
     PREPAY_CREATED = "PREPAY_CREATED"
@@ -949,6 +963,16 @@ class User(Base):
     teams: Mapped[list["Team"]] = relationship(
         foreign_keys="Team.captain_user_id"
     )
+    open_game_registrations: Mapped[list["OpenGameRegistration"]] = relationship(
+        back_populates="applicant",
+        foreign_keys="OpenGameRegistration.applicant_user_id",
+    )
+    decided_open_game_registrations: Mapped[
+        list["OpenGameRegistration"]
+    ] = relationship(
+        back_populates="decided_by",
+        foreign_keys="OpenGameRegistration.decided_by_user_id",
+    )
 
 
 class Team(Base):
@@ -1516,6 +1540,127 @@ class OpenGame(Base):
 
     order: Mapped[Order] = relationship(back_populates="open_games")
     team: Mapped[Team] = relationship(back_populates="open_games")
+    registrations: Mapped[list["OpenGameRegistration"]] = relationship(
+        back_populates="game",
+        foreign_keys="OpenGameRegistration.game_id",
+    )
+
+
+class OpenGameRegistration(Base):
+    __tablename__ = "open_game_registrations"
+    __table_args__ = (
+        CheckConstraint(
+            "length(display_name) BETWEEN 2 AND 24 "
+            "AND display_name = trim(display_name)",
+            name="ck_open_game_registrations_display_name",
+        ),
+        CheckConstraint(
+            "note IS NULL OR (length(note) BETWEEN 1 AND 120 "
+            "AND note = trim(note))",
+            name="ck_open_game_registrations_note",
+        ),
+        CheckConstraint(
+            "version >= 1",
+            name="ck_open_game_registrations_version",
+        ),
+        CheckConstraint(
+            "length(consent_version) BETWEEN 1 AND 32 "
+            "AND consent_version = trim(consent_version)",
+            name="ck_open_game_registrations_consent_version",
+        ),
+        CheckConstraint(
+            "(status = 'APPLIED' AND decided_at IS NULL "
+            "AND decided_by_user_id IS NULL) OR "
+            "(status IN ('JOINED', 'REJECTED') AND decided_at IS NOT NULL "
+            "AND decided_by_user_id IS NOT NULL)",
+            name="ck_open_game_registrations_decision_pair",
+        ),
+        CheckConstraint(
+            "decided_at IS NULL OR decided_at >= applied_at",
+            name="ck_open_game_registrations_decision_time",
+        ),
+        UniqueConstraint(
+            "game_id",
+            "applicant_user_id",
+            name="uq_open_game_registrations_game_applicant",
+        ),
+        Index(
+            "ix_open_game_registrations_pending",
+            "game_id",
+            "status",
+            "applied_at",
+            "id",
+            postgresql_where=text("status = 'APPLIED'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_games.id",
+            name="fk_open_game_registrations_game_id_open_games",
+            ondelete="RESTRICT",
+        ),
+    )
+    applicant_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_registrations_applicant_user_id_users",
+            ondelete="RESTRICT",
+        ),
+    )
+    display_name: Mapped[str] = mapped_column(String(24))
+    position: Mapped[OpenGameRegistrationPosition] = mapped_column(
+        Enum(
+            OpenGameRegistrationPosition,
+            name="open_game_registration_position",
+        )
+    )
+    note: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[OpenGameRegistrationStatus] = mapped_column(
+        Enum(OpenGameRegistrationStatus, name="open_game_registration_status")
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    consent_version: Mapped[str] = mapped_column(String(32))
+    adult_confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )
+    risk_confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_registrations_decided_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    game: Mapped[OpenGame] = relationship(
+        back_populates="registrations", foreign_keys=[game_id]
+    )
+    applicant: Mapped[User] = relationship(
+        back_populates="open_game_registrations",
+        foreign_keys=[applicant_user_id],
+    )
+    decided_by: Mapped[User | None] = relationship(
+        back_populates="decided_open_game_registrations",
+        foreign_keys=[decided_by_user_id],
+    )
 
 
 class Payment(Base):
