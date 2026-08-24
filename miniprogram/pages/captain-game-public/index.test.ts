@@ -4,25 +4,60 @@
 import { beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 
+import { decodeOpenGameRegistrationContext } from "../../domain/open-game-registration-decoder";
+import type { OpenGameApplyBlockedReason, OpenGameRegistrationContext } from "../../domain/open-game-registration";
 import type { OpenGameOwner, OpenGamePublic } from "../../domain/open-game";
+import { OpenGameRegistrationApiError } from "../../services/http-open-game-registration";
 import { OpenGameApiError } from "../../services/http-open-game";
+import { createOpenGameRegistrationAttemptStore } from "../../services/open-game-registration-attempt-store";
+import {
+  registerOpenGameRegistrationAttemptStore,
+  registerOpenGameRegistrationSource,
+  resetOpenGameRegistrationAttemptStoreForTesting,
+  resetOpenGameRegistrationSourceForTesting,
+  type OpenGameRegistrationAttempt,
+  type OpenGameRegistrationAttemptStore,
+  type OpenGameRegistrationSource,
+} from "../../services/open-game-registration";
 import { registerOpenGameSource, resetOpenGameSourceForTesting, type OpenGameSource } from "../../services/open-game";
 
 type PageDefinition = Record<string, any> & { data: Record<string, any> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
-const call = (page: RuntimePage, method: string, ...args: unknown[]) => page[method].apply(page, args);
-const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+const call = (page: RuntimePage, method: string, ...args: unknown[]) => page[method](...args);
+const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 let captured: PageDefinition | undefined;
 function loadPage(): RuntimePage {
   if (!captured) {
     (globalThis as any).Page = (definition: PageDefinition) => { captured = definition; };
     jest.requireActual("./index");
   }
-  return { ...captured!, data: structuredClone(captured!.data), setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); }, loadGeneration: 0, visible: true } as RuntimePage;
+  return {
+    ...captured!, data: structuredClone(captured!.data),
+    setData(patch: Record<string, unknown>) { Object.assign(this.data, patch); },
+    loadGeneration: 0, visible: true, skipNextShow: false, routeToken: "", routeGameId: "",
+    pendingRoute: "", mutationInFlight: null,
+  } as RuntimePage;
 }
 
 const gameId = "00000000-0000-4000-8000-000000000401";
+const applicationId = "77777777-8888-4999-8aaa-bbbbbbbbbbbb";
+const userId = "11111111-2222-4333-8444-555555555555";
+const otherUserId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
+const otherToken = "1234567890_abcdefghijklmnopqrstu";
+const fixture = (name: string): Record<string, unknown> => JSON.parse(readFileSync(`contracts/examples/${name}.json`, "utf8")) as Record<string, unknown>;
+const anonymousContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-anonymous"));
+const readyContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-apply-ready"));
+const appliedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-applied"));
+const joinedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-joined"));
+const rejectedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-rejected"));
+const cancelledContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-cancelled"));
+const applyAttempt: Extract<OpenGameRegistrationAttempt, { kind: "apply" }> = {
+  kind: "apply", originatingUserId: userId, shareToken: token,
+  body: { displayName: "周末小翼", position: "FORWARD", note: "可以补边路，按时到场。", adultConfirmed: true, riskConfirmed: true },
+  idempotencyKey: "application-key-00000000000001",
+};
+
 function publicGame(state: OpenGamePublic["state"] = "PUBLISHED"): OpenGamePublic {
   return {
     name: "周末轻松局", teamName: "津门蓝队", state,
@@ -39,109 +74,477 @@ function owner(): OpenGameOwner {
   return {
     id: gameId, orderId: "00000000-0000-4000-8000-000000000402",
     order: { venueName: game.venueName, pitchName: game.pitchName, pitchSpecification: game.pitchSpecification, playersPerSide: 7, bookingPriceCents: 42000, startsAt: game.startsAt, endsAt: game.endsAt, timeZone: game.timeZone },
-    name: game.name, team: { id: "00000000-0000-4000-8000-000000000403", name: game.teamName },
-    totalPlayers: game.totalPlayers, fixedPlayers: game.fixedPlayers, openSpots: game.openSpots, intensity: game.intensity,
-    minimumExperience: game.minimumExperience, positions: game.positions, aaCents: game.aaCents, registrationDeadline: game.registrationDeadline,
-    equipmentAndArrivalNotes: game.equipmentAndArrivalNotes, visibility: game.visibility, persistedStatus: "DRAFT", state: "DRAFT", stateReason: null, version: 1,
-    allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true }, share: null, publicView: { ...game, state: "DRAFT" },
+    name: game.name, team: { id: "00000000-0000-4000-8000-000000000403", name: game.teamName }, totalPlayers: game.totalPlayers,
+    fixedPlayers: game.fixedPlayers, openSpots: game.openSpots, intensity: game.intensity, minimumExperience: game.minimumExperience,
+    positions: game.positions, aaCents: game.aaCents, registrationDeadline: game.registrationDeadline,
+    equipmentAndArrivalNotes: game.equipmentAndArrivalNotes, visibility: game.visibility, persistedStatus: "DRAFT", state: "DRAFT",
+    stateReason: null, version: 1, allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true },
+    share: null, publicView: { ...game, state: "DRAFT" },
   };
 }
-function source(overrides: Partial<OpenGameSource> = {}): OpenGameSource {
+function ownerSource(overrides: Partial<OpenGameSource> = {}): OpenGameSource {
   return {
     login: jest.fn(async () => undefined), getEntry: jest.fn(), getOwnedGame: jest.fn(async () => owner()), getSharedGame: jest.fn(async () => publicGame()),
     create: jest.fn(), update: jest.fn(), publish: jest.fn(), cancel: jest.fn(), ...overrides,
   } as OpenGameSource;
 }
 
+let currentUserId: string | null;
+function registrationSource(overrides: Partial<OpenGameRegistrationSource> = {}): OpenGameRegistrationSource {
+  return {
+    login: jest.fn(async () => { if (currentUserId === null) currentUserId = userId; return currentUserId; }),
+    currentUserId: jest.fn(() => currentUserId), getContext: jest.fn(async () => readyContext), apply: jest.fn(async () => appliedContext),
+    getPending: jest.fn(), decide: jest.fn(), ...overrides,
+  } as OpenGameRegistrationSource;
+}
+function registerSources(overrides: Partial<OpenGameRegistrationSource> = {}) {
+  const b2 = ownerSource(); const registration = registrationSource(overrides);
+  registerOpenGameSource(b2); registerOpenGameRegistrationSource(registration);
+  return { b2, registration };
+}
+function blockedContext(reason: OpenGameApplyBlockedReason, viewerAuthenticated = true): OpenGameRegistrationContext {
+  return { ...readyContext, viewerAuthenticated, viewerRegistration: null, allowedActions: { canApply: false, applyBlockedReason: reason } };
+}
+function recursiveKeys(value: unknown): readonly string[] {
+  if (Array.isArray(value)) return value.flatMap(recursiveKeys);
+  if (typeof value !== "object" || value === null) return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) => [key, ...recursiveKeys(nested)]);
+}
+let attemptStore: OpenGameRegistrationAttemptStore;
+function seedAttempt(attempt: OpenGameRegistrationAttempt = applyAttempt): OpenGameRegistrationAttempt { attemptStore.begin(attempt); return attempt; }
+function completeNavigation(options: unknown): void { (options as { success?: () => void }).success?.(); }
+
 beforeEach(() => {
-  resetOpenGameSourceForTesting();
+  resetOpenGameSourceForTesting(); resetOpenGameRegistrationSourceForTesting(); resetOpenGameRegistrationAttemptStoreForTesting();
+  currentUserId = userId;
+  const values = new Map<string, unknown>();
+  attemptStore = createOpenGameRegistrationAttemptStore({ get: (key) => values.get(key), set: (key, value) => { values.set(key, value); }, remove: (key) => { values.delete(key); } });
+  registerOpenGameRegistrationAttemptStore(attemptStore);
   (globalThis as any).wx = {
     getWindowInfo: jest.fn(() => ({ windowWidth: 375, statusBarHeight: 44 })),
     getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })),
-    hideShareMenu: jest.fn(async () => undefined), navigateBack: jest.fn(async () => undefined), redirectTo: jest.fn(async () => undefined), reLaunch: jest.fn(async () => undefined),
+    hideShareMenu: jest.fn(async () => undefined), navigateBack: jest.fn(completeNavigation), navigateTo: jest.fn(completeNavigation),
+    redirectTo: jest.fn(completeNavigation), reLaunch: jest.fn(completeNavigation),
   };
   (globalThis as any).getCurrentPages = jest.fn(() => [{ route: "pages/intent-entry/index" }, { route: "pages/captain-game-public/index" }]);
 });
 
-test("strict shared route loads only public authority and never owner/login", async () => {
-  const api = source(); registerOpenGameSource(api);
+test("strict shared route loads registration authority only and keeps anonymous projection private", async () => {
+  currentUserId = null;
+  const { b2, registration } = registerSources({ getContext: jest.fn(async () => anonymousContext) });
   const page = loadPage(); call(page, "onLoad", { token }); expect(page.data.status).toBe("LOADING"); await flush();
-  expect(page.data).toMatchObject({ status: "READY", mode: "shared", state: "PUBLISHED", showReturnManage: false });
-  expect(api.getSharedGame).toHaveBeenCalledWith(token); expect(api.getOwnedGame).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled(); expect(wx.hideShareMenu).toHaveBeenCalled();
-});
-
-test("strict owner preview loads only nested publicView and exposes real manager return", async () => {
-  const api = source(); registerOpenGameSource(api);
-  const page = loadPage(); call(page, "onLoad", { game_id: gameId, preview: "1" }); await flush();
-  expect(page.data).toMatchObject({ status: "READY", mode: "owner", showReturnManage: true, name: "周末轻松局" });
-  expect(api.getOwnedGame).toHaveBeenCalledWith(gameId); expect(api.getSharedGame).not.toHaveBeenCalled();
+  expect(page.data).toMatchObject({ status: "READY", mode: "shared", state: "PUBLISHED", primaryAction: "LOGIN", remainingSpots: 4, registrationStatus: "NONE", showReturnManage: false });
+  expect(registration.getContext).toHaveBeenCalledWith(token); expect(b2.getSharedGame).not.toHaveBeenCalled(); expect(b2.getOwnedGame).not.toHaveBeenCalled();
+  const pageKeys = recursiveKeys(page.data);
+  for (const privateKey of ["viewerRegistration", "displayName", "position", "note", "persistedStatus", "effectiveStatus", "appliedAt", "decidedAt", "applicantUserId"]) {
+    expect(pageKeys).not.toContain(privateKey);
+  }
+  const serialized = JSON.stringify(page.data);
+  for (const privateValue of ["周末小翼", "可以补边路，按时到场。", "2026-08-24T00:18:00+08:00", "2026-08-24T00:25:00+08:00"]) {
+    expect(serialized).not.toContain(privateValue);
+  }
   expect(Object.keys(page.data.publicGame).sort()).toEqual([
     "aaCents", "endsAt", "equipmentAndArrivalNotes", "fixedPlayers", "intensity", "minimumExperience", "name", "openSpots", "pitchName", "pitchSpecification", "positions", "registrationDeadline", "startsAt", "state", "stateReason", "teamName", "timeZone", "totalPlayers", "venueName", "visibility",
   ].sort());
 });
 
-test("mixed, missing and malformed route combinations fail closed without source calls", () => {
-  const api = source(); registerOpenGameSource(api);
+test("strict owner preview loads only nested publicView and exposes real manager return", async () => {
+  const b2 = ownerSource(); registerOpenGameSource(b2);
+  const page = loadPage(); call(page, "onLoad", { game_id: gameId, preview: "1" }); await flush();
+  expect(page.data).toMatchObject({ status: "READY", mode: "owner", showReturnManage: true, name: "周末轻松局" });
+  expect(b2.getOwnedGame).toHaveBeenCalledWith(gameId); expect(b2.getSharedGame).not.toHaveBeenCalled();
+  expect(Object.keys(page.data.publicGame).sort()).toEqual([
+    "aaCents", "endsAt", "equipmentAndArrivalNotes", "fixedPlayers", "intensity", "minimumExperience", "name", "openSpots", "pitchName", "pitchSpecification", "positions", "registrationDeadline", "startsAt", "state", "stateReason", "teamName", "timeZone", "totalPlayers", "venueName", "visibility",
+  ].sort());
+});
+
+test.each([
+  [applyAttempt],
+  [{ ...applyAttempt, originatingUserId: otherUserId }],
+] as const)("owner preview ignores same- and foreign-account registration attempts", async (attempt) => {
+  seedAttempt(attempt);
+  const b2 = ownerSource();
+  const registration = registrationSource();
+  registerOpenGameSource(b2);
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { game_id: gameId, preview: "1" });
+  await flush();
+
+  expect(page.data).toMatchObject({ status: "READY", mode: "owner" });
+  expect(b2.getOwnedGame).toHaveBeenCalledWith(gameId);
+  expect(registration.currentUserId).not.toHaveBeenCalled();
+  expect(registration.getContext).not.toHaveBeenCalled();
+  expect(registration.login).not.toHaveBeenCalled();
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(registration.decide).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toEqual(attempt);
+});
+
+test("mixed, missing and malformed route combinations fail closed without source calls", async () => {
+  const { b2, registration } = registerSources();
   for (const options of [{}, { token: "short" }, { game_id: gameId }, { game_id: gameId, preview: "0" }, { token, game_id: gameId, preview: "1" }]) {
-    const page = loadPage(); call(page, "onLoad", options); expect(page.data).toMatchObject({ status: "NOT_FOUND", showReturnManage: false });
+    const page = loadPage(); call(page, "onLoad", options); await flush(); expect(page.data).toMatchObject({ status: "NOT_FOUND", showReturnManage: false });
   }
-  expect(api.getSharedGame).not.toHaveBeenCalled(); expect(api.getOwnedGame).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
+  expect(registration.getContext).not.toHaveBeenCalled(); expect(b2.getSharedGame).not.toHaveBeenCalled(); expect(b2.getOwnedGame).not.toHaveBeenCalled();
 });
 
-test("unknown shared token is not-found; transient shared error retries without login", async () => {
-  const unknown = source({ getSharedGame: jest.fn(async () => { throw new OpenGameApiError("OPEN_GAME_NOT_FOUND"); }) }); registerOpenGameSource(unknown);
-  const missing = loadPage(); call(missing, "onLoad", { token }); await flush(); expect(missing.data.status).toBe("NOT_FOUND"); expect(missing.data.showLogin).toBe(false);
-
-  let calls = 0; resetOpenGameSourceForTesting(); const flaky = source({ getSharedGame: jest.fn(async () => { calls += 1; if (calls === 1) throw new OpenGameApiError("SERVICE_UNAVAILABLE"); return publicGame("SUSPENDED"); }) }); registerOpenGameSource(flaky);
-  const page = loadPage(); call(page, "onLoad", { token }); await flush(); expect(page.data.status).toBe("LOAD_ERROR"); call(page, "onRetry"); await flush(); expect(page.data).toMatchObject({ status: "READY", state: "SUSPENDED" }); expect(flaky.login).not.toHaveBeenCalled();
+test("anonymous login reloads the same token and apply uses the production application route", async () => {
+  currentUserId = null; let reads = 0;
+  const { b2, registration } = registerSources({ getContext: jest.fn(async () => { reads += 1; return reads === 1 ? anonymousContext : readyContext; }) });
+  const page = loadPage(); call(page, "onLoad", { token }); await flush(); expect(page.data.primaryAction).toBe("LOGIN");
+  await call(page, "onLogin"); expect(registration.login).toHaveBeenCalledTimes(1); expect(registration.getContext).toHaveBeenNthCalledWith(2, token); expect(page.data.primaryAction).toBe("APPLY");
+  expect(b2.login).not.toHaveBeenCalled();
+  await call(page, "onApply"); expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/player-game-application/index?token=${token}` }));
 });
 
-test("owner auth loss offers real login, while shared visitors never see login", async () => {
+test("APPLIED refreshes real context while terminal results and effective cancellation stay read-only", async () => {
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? appliedContext : joinedContext;
+    }),
+  });
+  const page = loadPage(); call(page, "onLoad", { token }); await flush();
+  expect(page.data).toMatchObject({ registrationStatus: "APPLIED", statusHeading: "等待队长审核", primaryAction: "REFRESH" });
+  await call(page, "onRefresh");
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({ registrationStatus: "JOINED", statusHeading: "已加入本场球局", primaryAction: null });
+  for (const [context, registrationStatus, statusHeading] of [[rejectedContext, "REJECTED", "本次申请未被接受"], [cancelledContext, "CANCELLED", "球局已取消"]] as const) {
+    resetOpenGameRegistrationSourceForTesting(); registerOpenGameRegistrationSource(registrationSource({ getContext: jest.fn(async () => context) }));
+    const resultPage = loadPage(); call(resultPage, "onLoad", { token }); await flush();
+    expect(resultPage.data).toMatchObject({ registrationStatus, statusHeading, primaryAction: null });
+  }
+});
+
+test.each([
+  ["AUTH_REQUIRED", false, "登录后可提交申请", "LOGIN"], ["OWNER_CANNOT_APPLY", true, "队长不能申请自己组织的球局", null],
+  ["ALREADY_APPLIED", true, "你已经申请过这场球局", null], ["GAME_NOT_PUBLISHED", true, "球局暂未开放申请", null],
+  ["REGISTRATION_DEADLINE_PASSED", true, "报名已经截止", null], ["GAME_FULL", true, "名额已满", null],
+  ["GAME_SUSPENDED", true, "球局暂时停止报名", null], ["GAME_CANCELLED", true, "球局已取消", null],
+  ["GAME_COMPLETED", true, "球局已结束", null], ["GAME_STARTED", true, "球局已经开始", null],
+] as const)("renders server apply blocker %s without inventing an action", async (reason, viewerAuthenticated, statusHeading, primaryAction) => {
+  currentUserId = viewerAuthenticated ? userId : null; registerSources({ getContext: jest.fn(async () => blockedContext(reason, viewerAuthenticated)) });
+  const page = loadPage(); call(page, "onLoad", { token }); await flush();
+  expect(page.data).toMatchObject({ status: "READY", applyBlockedReason: reason, statusHeading, primaryAction });
+});
+
+test("follows canApply authority even when local capacity and dates look impossible", async () => {
+  const strange: OpenGameRegistrationContext = {
+    ...readyContext, game: { ...readyContext.game, startsAt: "2020-08-28T20:00:00+08:00", endsAt: "2020-08-28T22:00:00+08:00", registrationDeadline: "2020-08-28T18:00:00+08:00" },
+    remainingSpots: 0, allowedActions: { canApply: true, applyBlockedReason: null },
+  };
+  registerSources({ getContext: jest.fn(async () => strange) }); const page = loadPage(); call(page, "onLoad", { token }); await flush();
+  expect(page.data).toMatchObject({ primaryAction: "APPLY", statusHeading: "可以申请加入" });
+});
+
+test("shared service errors expose not-found, auth and real retry without B2 reads", async () => {
+  const { b2 } = registerSources({ getContext: jest.fn(async () => { throw new OpenGameRegistrationApiError("OPEN_GAME_NOT_FOUND"); }) });
+  const missing = loadPage(); call(missing, "onLoad", { token }); await flush(); expect(missing.data).toMatchObject({ status: "NOT_FOUND", primaryAction: null });
+  resetOpenGameRegistrationSourceForTesting(); const auth = registrationSource({ getContext: jest.fn(async () => { throw new OpenGameRegistrationApiError("AUTH_REQUIRED"); }) }); registerOpenGameRegistrationSource(auth);
+  const authPage = loadPage(); call(authPage, "onLoad", { token }); await flush(); expect(authPage.data).toMatchObject({ status: "AUTH_LOSS", primaryAction: "LOGIN" });
+  resetOpenGameRegistrationSourceForTesting(); let calls = 0;
+  const flaky = registrationSource({ getContext: jest.fn(async () => { calls += 1; if (calls === 1) throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE"); return readyContext; }) });
+  registerOpenGameRegistrationSource(flaky); const retry = loadPage(); call(retry, "onLoad", { token }); await flush(); expect(retry.data.status).toBe("LOAD_ERROR");
+  await call(retry, "onRetry"); expect(retry.data.status).toBe("READY"); expect(flaky.getContext).toHaveBeenCalledTimes(2); expect(b2.getSharedGame).not.toHaveBeenCalled();
+});
+
+test.each([
+  ["owned current-token", applyAttempt, null],
+  ["foreign current-token", { ...applyAttempt, originatingUserId: otherUserId }, "PRESERVE"],
+  ["owned other-token", { ...applyAttempt, shareToken: otherToken }, "PRESERVE"],
+] as const)("shared 404 clears only an %s apply attempt", async (_label, attempt, expected) => {
+  seedAttempt(attempt);
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => { throw new OpenGameRegistrationApiError("OPEN_GAME_NOT_FOUND"); }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data.status).toBe("NOT_FOUND");
+  expect(attemptStore.load()).toEqual(expected === null ? null : attempt);
+  expect(registration.apply).not.toHaveBeenCalled();
+});
+
+test("owner auth loss still uses the B2 login and returns to the original preview authority", async () => {
   let authenticated = false;
-  const api = source({ getOwnedGame: jest.fn(async () => { if (!authenticated) throw new OpenGameApiError("AUTH_REQUIRED"); return owner(); }), login: jest.fn(async () => { authenticated = true; }) }); registerOpenGameSource(api);
-  const page = loadPage(); call(page, "onLoad", { game_id: gameId, preview: "1" }); await flush(); expect(page.data).toMatchObject({ status: "AUTH_LOSS", showLogin: true }); await call(page, "onLogin"); await flush(); expect(page.data.status).toBe("READY");
+  const b2 = ownerSource({ getOwnedGame: jest.fn(async () => { if (!authenticated) throw new OpenGameApiError("AUTH_REQUIRED"); return owner(); }), login: jest.fn(async () => { authenticated = true; }) });
+  registerOpenGameSource(b2); registerOpenGameRegistrationSource(registrationSource());
+  const page = loadPage(); call(page, "onLoad", { game_id: gameId, preview: "1" }); await flush(); expect(page.data).toMatchObject({ status: "AUTH_LOSS", showLogin: true, mode: "owner" });
+  await call(page, "onLogin"); await flush(); expect(b2.login).toHaveBeenCalledTimes(1); expect(page.data.status).toBe("READY");
 });
 
-test.each(["PUBLISHED", "SUSPENDED", "CANCELLED", "COMPLETED"] as const)("renders shared %s honestly", async (state) => {
-  registerOpenGameSource(source({ getSharedGame: jest.fn(async () => publicGame(state)) }));
-  const page = loadPage(); call(page, "onLoad", { token }); await flush(); expect(page.data).toMatchObject({ status: "READY", state });
-  if (state === "SUSPENDED" || state === "CANCELLED" || state === "COMPLETED") expect(page.data.stateReasonText.length).toBeGreaterThan(0);
+test("same-account unknown apply accepts authority or replays only the exact stored attempt", async () => {
+  seedAttempt(); const authorityApi = registerSources({ getContext: jest.fn(async () => appliedContext) }).registration;
+  const accepted = loadPage(); call(accepted, "onLoad", { token }); await flush();
+  expect(accepted.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "REFRESH" }); expect(authorityApi.apply).not.toHaveBeenCalled(); expect(attemptStore.load()).toBeNull();
+  seedAttempt(); resetOpenGameRegistrationSourceForTesting();
+  const replayApi = registrationSource({ getContext: jest.fn(async () => readyContext), apply: jest.fn(async () => appliedContext) }); registerOpenGameRegistrationSource(replayApi);
+  const replay = loadPage(); call(replay, "onLoad", { token }); await flush(); expect(replay.data).toMatchObject({ status: "RESULT_UNKNOWN", primaryAction: "CONFIRM_RESULT" });
+  await call(replay, "onConfirmResult"); expect(replayApi.apply).toHaveBeenCalledWith(applyAttempt); expect(attemptStore.load()).toBeNull();
+  expect(replay.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "REFRESH" });
 });
 
-test("public markup is read-only, contains the frozen settlement note, and has no private or application controls", () => {
-  const wxml = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
-  expect(wxml).toContain("当前仅供查看，申请加入即将开放"); expect(wxml).toContain("到场线下结算，平台不代收或担保");
-  expect(wxml).not.toMatch(/bindtap="onApply|open-type="share"|phone|orderId|payment|refund|contact/i);
-  expect(wxml).toContain("onHeaderBack"); expect(wxml).toContain("onReturnManage"); expect(wxml).toContain("onRetry"); expect(wxml).toContain("onLogin");
+test("confirm result is single-flight and an unknown replay keeps the exact durable attempt", async () => {
+  seedAttempt();
+  let resolveConfirmRead!: (context: OpenGameRegistrationContext) => void;
+  const confirmRead = new Promise<OpenGameRegistrationContext>((resolve) => { resolveConfirmRead = resolve; });
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(() => { reads += 1; return reads === 1 ? Promise.resolve(readyContext) : confirmRead; }),
+    apply: jest.fn(async () => { throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN"); }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  const first = call(page, "onConfirmResult");
+  const duplicate = call(page, "onConfirmResult");
+  expect(first).toBe(duplicate);
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  resolveConfirmRead(readyContext);
+  await first;
+  await duplicate;
+
+  expect(registration.apply).toHaveBeenCalledTimes(1);
+  expect(registration.apply).toHaveBeenCalledWith(applyAttempt);
+  expect(page.data).toMatchObject({ status: "RESULT_UNKNOWN", primaryAction: "CONFIRM_RESULT" });
+  expect(attemptStore.load()).toEqual(applyAttempt);
+  call(page, "onHeaderBack");
+  expect(attemptStore.load()).toEqual(applyAttempt);
 });
 
-test("shared back and owner return follow their distinct first-page fallbacks", async () => {
-  registerOpenGameSource(source());
-  const shared = loadPage(); call(shared, "onLoad", { token }); await flush(); call(shared, "onHeaderBack"); expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
+test.each([
+  ["accepts newly visible authority", appliedContext, "READY", "APPLIED", true],
+  ["preserves unknown when authority is still absent", readyContext, "RESULT_UNKNOWN", "NONE", false],
+] as const)("APPLICATION_ALREADY_EXISTS %s after one follow-up context read", async (
+  _label,
+  followUpContext,
+  expectedStatus,
+  expectedRegistrationStatus,
+  clears,
+) => {
+  seedAttempt();
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads < 3 ? readyContext : followUpContext;
+    }),
+    apply: jest.fn(async () => {
+      throw new OpenGameRegistrationApiError("APPLICATION_ALREADY_EXISTS");
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  await call(page, "onConfirmResult");
+
+  expect(registration.apply).toHaveBeenCalledTimes(1);
+  expect(registration.getContext).toHaveBeenCalledTimes(3);
+  expect(page.data).toMatchObject({
+    status: expectedStatus,
+    registrationStatus: expectedRegistrationStatus,
+  });
+  expect(attemptStore.load()).toEqual(clears ? null : applyAttempt);
+});
+
+test.each([
+  ["accepts authority with a registration", appliedContext, "READY", "APPLIED"],
+  ["does not reopen apply without a registration", readyContext, "RESULT_UNKNOWN", "NONE"],
+] as const)("confirm read loses its durable record and %s", async (
+  _label,
+  readContext,
+  expectedStatus,
+  expectedRegistrationStatus,
+) => {
+  seedAttempt();
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      if (reads === 2) attemptStore.clear();
+      return reads === 1 ? readyContext : readContext;
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  await call(page, "onConfirmResult");
+
+  expect(page.data).toMatchObject({
+    status: expectedStatus,
+    registrationStatus: expectedRegistrationStatus,
+  });
+  if (readContext.viewerRegistration === null) expect(page.data.primaryAction).not.toBe("APPLY");
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+});
+
+test("a hidden page ignores a late confirm read without replay, clear or navigation", async () => {
+  seedAttempt();
+  let resolveConfirmRead!: (context: OpenGameRegistrationContext) => void;
+  const confirmRead = new Promise<OpenGameRegistrationContext>((resolve) => { resolveConfirmRead = resolve; });
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(() => { reads += 1; return reads === 1 ? Promise.resolve(readyContext) : confirmRead; }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  const confirmation = call(page, "onConfirmResult");
+  call(page, "onHide");
+  resolveConfirmRead(readyContext);
+  await confirmation;
+
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toEqual(applyAttempt);
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+  expect(wx.redirectTo).not.toHaveBeenCalled();
+  expect(wx.reLaunch).not.toHaveBeenCalled();
+});
+
+test("an anonymous pending attempt logs in explicitly but never replays under another account", async () => {
+  seedAttempt();
+  currentUserId = null;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => anonymousContext),
+    login: jest.fn(async () => { currentUserId = otherUserId; return otherUserId; }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(page.data).toMatchObject({ status: "AUTH_LOSS", primaryAction: "LOGIN" });
+  await call(page, "onLogin");
+
+  expect(page.data).toMatchObject({ status: "FOREIGN_PENDING", primaryAction: "CLEAR_PENDING" });
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toEqual(applyAttempt);
+});
+
+test.each([
+  [{ ...applyAttempt, shareToken: otherToken, idempotencyKey: "application-key-other-token-0001" }, `/pages/captain-game-public/index?token=${otherToken}`],
+  [{ kind: "decision", originatingUserId: userId, gameId, applicationId, decision: "ACCEPT", expectedVersion: 1, idempotencyKey: "decision-key-other-game-000001" }, `/pages/captain-game-applications/index?game_id=${gameId}`],
+] as const)("same-account pending work for another resource navigates to its deterministic route", async (attempt, route) => {
+  seedAttempt(attempt as OpenGameRegistrationAttempt); const { registration } = registerSources(); const page = loadPage(); call(page, "onLoad", { token }); await flush();
+  expect(page.data).toMatchObject({ status: "OTHER_PENDING", primaryAction: "GO_PENDING" }); await call(page, "onGoPending");
+  expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: route })); expect(registration.apply).not.toHaveBeenCalled(); expect(registration.decide).not.toHaveBeenCalled(); expect(attemptStore.load()).not.toBeNull();
+});
+
+test.each([
+  ["hidden", (page: RuntimePage) => call(page, "onHide")],
+  ["route changed", (page: RuntimePage) => { page.pendingRoute = "/pages/captain-game-public/index?token=" + token; }],
+] as const)("pending redirect failure does not relaunch after the page becomes %s", async (
+  _label,
+  invalidate,
+) => {
+  seedAttempt({ ...applyAttempt, shareToken: otherToken, idempotencyKey: "application-key-stale-route-0001" });
+  registerSources();
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  let failRedirect!: (error: Error) => void;
+  (wx.redirectTo as unknown as jest.Mock).mockImplementation((options: unknown) => {
+    failRedirect = (options as { fail: (error: Error) => void }).fail;
+  });
+
+  const navigationAttempt = call(page, "onGoPending");
+  invalidate(page);
+  failRedirect(new Error("REDIRECT_FAILED"));
+  await navigationAttempt;
+
+  expect(wx.reLaunch).not.toHaveBeenCalled();
+  expect(attemptStore.load()).not.toBeNull();
+});
+
+test("different-account pending work can only be cleared locally before current authority reloads", async () => {
+  const original = seedAttempt({ ...applyAttempt, originatingUserId: otherUserId }); const { registration } = registerSources();
+  const page = loadPage(); call(page, "onLoad", { token }); await flush(); expect(page.data).toMatchObject({ status: "FOREIGN_PENDING", primaryAction: "CLEAR_PENDING" });
+  expect(attemptStore.load()).toEqual(original); expect(registration.apply).not.toHaveBeenCalled(); expect(registration.decide).not.toHaveBeenCalled();
+  call(page, "onHeaderBack"); expect(attemptStore.load()).toEqual(original);
+  await call(page, "onClearPending"); expect(attemptStore.load()).toBeNull(); expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({ status: "READY", primaryAction: "APPLY" }); expect(registration.apply).not.toHaveBeenCalled();
+});
+
+test("foreign clear reclassifies the latest durable attempt and never deletes an owned replacement", async () => {
+  seedAttempt({ ...applyAttempt, originatingUserId: otherUserId });
+  const { registration } = registerSources();
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(page.data.status).toBe("FOREIGN_PENDING");
+
+  attemptStore.clear();
+  seedAttempt({ ...applyAttempt, idempotencyKey: "application-key-owned-replacement-01" });
+  await call(page, "onClearPending");
+
+  expect(attemptStore.load()).toMatchObject({
+    originatingUserId: userId,
+    idempotencyKey: "application-key-owned-replacement-01",
+  });
+  expect(page.data).toMatchObject({ status: "RESULT_UNKNOWN", primaryAction: "CONFIRM_RESULT" });
+  expect(registration.getContext).toHaveBeenCalledTimes(1);
+  expect(registration.apply).not.toHaveBeenCalled();
+});
+
+test("shared application navigation failure remains visible and never sends a mutation", async () => {
+  const failNavigation = (options: unknown) => {
+    (options as { fail?: (error: Error) => void }).fail?.(new Error("NAV_FAILED"));
+  };
+  (wx.navigateTo as unknown as jest.Mock).mockImplementation(failNavigation);
+  const { registration } = registerSources();
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  await call(page, "onApply");
+
+  expect(page.data.navigationError).toContain("无法打开申请表");
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+});
+
+test("unknown recovery does not replay or clear when the durable record changes during its read", async () => {
+  seedAttempt(); let reads = 0;
+  const { registration } = registerSources({ getContext: jest.fn(async () => {
+    reads += 1; if (reads === 2) { attemptStore.clear(); seedAttempt({ ...applyAttempt, shareToken: otherToken, idempotencyKey: "application-key-other-token-0002" }); }
+    return readyContext;
+  }) });
+  const page = loadPage(); call(page, "onLoad", { token }); await flush(); await call(page, "onConfirmResult");
+  expect(registration.apply).not.toHaveBeenCalled(); expect(page.data.status).toBe("OTHER_PENDING"); expect(attemptStore.load()).toMatchObject({ shareToken: otherToken });
+});
+
+test("approved shared composition is production-only and every visible button has a real handler", () => {
+  const wxml = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8"); const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
+  expect(wxml).toContain("c1a-status-card"); expect(wxml).toContain("真实订场已确认"); expect(wxml).toContain("到场线下结算"); expect(wxml).toContain("当前仅供查看，申请加入即将开放");
+  expect(wxml).toContain("mode === 'shared'"); expect(wxml).toContain("mode === 'owner'");
+  expect(wxml).not.toMatch(/Fixture|开发预览|dev\/pages|c1a-scenario/); expect(wxml).not.toMatch(/phone|orderId|payment|refund|contact/i);
+  const buttons = wxml.match(/<button\b[^>]*>/g) ?? []; expect(buttons.length).toBeGreaterThan(0); for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
+  for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onReturnManage"]) expect(wxml).toContain(`bindtap="${handler}"`);
+  const buttonRule = styles.match(/\.c1a-button\s*\{([^}]*)\}/s)?.[1] ?? "";
+  for (const declaration of [/min-height:\s*88rpx/, /display:\s*flex/, /align-items:\s*center/, /justify-content:\s*center/]) expect(buttonRule).toMatch(declaration);
+  const footerRule = styles.match(/\.c1a-footer\s*\{([^}]*)\}/s)?.[1] ?? "";
+  for (const declaration of [/position:\s*fixed/, /bottom:\s*0/, /env\(safe-area-inset-bottom/]) expect(footerRule).toMatch(declaration);
+  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*#0369A1/s); expect(styles).toMatch(/button-hover|:active/);
+});
+
+test("native share boundary, shared back and owner return keep their distinct behavior", async () => {
+  registerSources(); const shared = loadPage(); call(shared, "onLoad", { token }); await flush(); expect(wx.hideShareMenu).toHaveBeenCalled();
+  call(shared, "onHeaderBack"); expect(wx.navigateBack).toHaveBeenCalledWith(expect.objectContaining({ delta: 1 }));
   (globalThis as any).getCurrentPages = jest.fn(() => [{ route: "pages/captain-game-public/index" }]);
-  const firstShared = loadPage(); call(firstShared, "onLoad", { token }); await flush(); call(firstShared, "onHeaderBack"); expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
-
+  const firstShared = loadPage(); call(firstShared, "onLoad", { token }); await flush(); call(firstShared, "onHeaderBack");
+  expect(wx.reLaunch).toHaveBeenCalledWith(expect.objectContaining({ url: "/pages/intent-entry/index" }));
   const preview = loadPage(); call(preview, "onLoad", { game_id: gameId, preview: "1" }); await flush(); await call(preview, "onReturnManage");
   expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/captain-game-manage/index?game_id=${gameId}` }));
 });
 
-test("hide-show replaces a pending public read and ignores its stale response", async () => {
-  let resolveFirst!: (value: OpenGamePublic) => void;
-  const first = new Promise<OpenGamePublic>((yes) => { resolveFirst = yes; });
-  let reads = 0;
-  const api = source({
-    getSharedGame: jest.fn(() => {
-      reads += 1;
-      return reads === 1 ? first : Promise.resolve(publicGame("SUSPENDED"));
-    }),
-  });
-  registerOpenGameSource(api);
-  const page = loadPage(); call(page, "onLoad", { token });
-  expect(typeof page.onShow).toBe("function");
-  call(page, "onShow");
-  call(page, "onHide"); call(page, "onShow"); await flush();
-  resolveFirst(publicGame("PUBLISHED")); await flush();
-
-  expect(api.getSharedGame).toHaveBeenCalledTimes(2);
-  expect(page.data).toMatchObject({ status: "READY", state: "SUSPENDED" });
+test("hide-show replaces a pending shared authority read and ignores its stale response", async () => {
+  let resolveFirst!: (value: OpenGameRegistrationContext) => void; const first = new Promise<OpenGameRegistrationContext>((resolve) => { resolveFirst = resolve; }); let reads = 0;
+  const suspended: OpenGameRegistrationContext = {
+    ...readyContext,
+    allowedActions: { canApply: false, applyBlockedReason: "GAME_SUSPENDED" },
+  };
+  const { registration } = registerSources({ getContext: jest.fn(() => { reads += 1; return reads === 1 ? first : Promise.resolve(suspended); }) });
+  const page = loadPage(); call(page, "onLoad", { token }); expect(typeof page.onShow).toBe("function"); call(page, "onShow"); call(page, "onHide"); call(page, "onShow"); await flush();
+  resolveFirst(readyContext); await flush(); expect(registration.getContext).toHaveBeenCalledTimes(2); expect(page.data).toMatchObject({ status: "READY", applyBlockedReason: "GAME_SUSPENDED" });
 });
