@@ -20,7 +20,7 @@ const positionLabels: ReadonlyArray<{ value: C1aPosition; label: string }> = [
   { value: "DEFENDER", label: "后卫" },
   { value: "MIDFIELDER", label: "中场" },
   { value: "FORWARD", label: "前锋" },
-  { value: "ANY", label: "位置不限" },
+  { value: "ANY", label: "不限" },
 ];
 const validPositions = new Set<C1aPosition>(positionLabels.map((position) => position.value));
 

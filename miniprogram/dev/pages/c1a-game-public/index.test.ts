@@ -90,8 +90,8 @@ test("public detail imports the singleton, logs in without leaving, and then ope
 
 test.each([
   ["ACCEPT", "JOINED", "已加入本场球局"],
-  ["REJECT", "REJECTED", "队长本次未能接受申请"],
-] as const)("onShow reads the shared %s result and terminal states expose no fake action", (decision, status, statusCopy) => {
+  ["REJECT", "REJECTED", "本次申请未被接受"],
+] as const)("onShow reads the shared %s result and terminal states expose the real refresh action", (decision, status, statusHeading) => {
   submitPending();
   const page = requirePage();
   page.onLoad();
@@ -99,7 +99,9 @@ test.each([
 
   decide(decision);
   page.onShow();
-  expect(page.data).toMatchObject({ registrationStatus: status, statusCopy, primaryAction: null });
+  expect(page.data).toMatchObject({ registrationStatus: status, statusHeading, primaryAction: "REFRESH" });
+  page.onRefresh();
+  expect(page.data.registrationStatus).toBe(status);
 });
 
 test("refresh and unknown-submit recovery both read the original shared attempt", () => {

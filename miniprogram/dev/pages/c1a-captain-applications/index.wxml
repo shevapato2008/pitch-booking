@@ -1,13 +1,11 @@
 <view class="c1a-page">
   <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
-  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;">
-    <button class="c1a-icon-button" bindtap="onHeaderBack" aria-label="返回">‹</button>
-    <view class="c1a-nav-copy"><text class="c1a-nav-title">报名审核</text><text class="c1a-nav-subtitle">开发预览</text></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1a-icon-button" bindtap="onHeaderBack" aria-label="返回"><view class="c1a-back-glyph"></view></button>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">报名审核</text><text class="c1a-nav-subtitle">C1a 开发预览</text></view>
     <view class="c1a-nav-spacer"></view>
   </view>
   <scroll-view scroll-y="true" class="c1a-scroll">
-    <view class="c1a-notice"><text>{{fixtureNotice}}</text></view>
-
     <view wx:if="{{!roleReady && operationState === 'READY'}}" class="c1a-card c1a-state-card" role="alert">
       <text class="c1a-heading">请先切换到队长视角</text><text class="c1a-help">角色切换只存在于隔离开发预览。</text>
       <button class="c1a-button c1a-button--secondary" bindtap="onReturnPreview">返回预览入口</button>
@@ -36,18 +34,18 @@
     </view>
 
     <block wx:else>
-      <view class="c1a-card c1a-game-card">
-        <view class="c1a-card-row"><text class="c1a-eyebrow">{{game.name}}</text><text class="c1a-spots">剩余 {{remainingSpots}} 位</text></view>
-        <text>{{game.venueName}} · {{game.pitchName}}</text><text class="c1a-help">8月30日 14:00–16:00 · 由 {{game.teamName}} 组织</text>
-      </view>
-      <view wx:if="{{hasPending}}" class="c1a-card c1a-application-card">
-        <view class="c1a-card-row"><view><text class="c1a-eyebrow">待审核申请</text><text class="c1a-heading c1a-applicant-name">{{application.displayName}}</text></view><text class="c1a-time">{{appliedAtLabel}}</text></view>
-        <view class="c1a-detail-row"><text>意向位置</text><text>{{positionLabel}}</text></view>
-        <view class="c1a-note"><text class="c1a-label">给队长的话</text><text>{{application.note || '未填写'}}</text></view>
-        <view class="c1a-actions">
-          <button class="c1a-button c1a-button--primary" wx:if="{{remainingSpots > 0}}" bindtap="onAccept">接受加入</button>
-          <button class="c1a-button c1a-button--secondary" bindtap="onReject">婉拒</button>
+      <text wx:if="{{hasPending}}" class="c1a-review-context">1 条待审核申请 · {{game.name}}</text>
+      <view wx:if="{{hasPending}}" class="c1a-applicant-card">
+        <view class="c1a-applicant-top">
+          <text class="c1a-applicant-name">{{application.displayName}}</text>
+          <text class="c1a-pending-pill">等待审核</text>
         </view>
+        <view class="c1a-applicant-meta">
+          <view><text>意向位置</text><text class="c1a-meta-value">{{positionLabel}}</text></view>
+          <view><text>申请时间</text><text class="c1a-meta-value">{{appliedAtLabel}}</text></view>
+        </view>
+        <text class="c1a-applicant-note">{{application.note || '未填写备注'}}</text>
+        <text class="c1a-privacy-note">仅展示申请人主动填写的本场信息。</text>
       </view>
       <view wx:elif="{{empty}}" class="c1a-card c1a-empty" role="status">
         <view class="c1a-empty-mark"><view></view><view></view><view></view></view>
@@ -58,12 +56,23 @@
     </block>
   </scroll-view>
 
+  <view wx:if="{{roleReady && operationState === 'READY' && hasPending}}" class="c1a-footer">
+    <view class="c1a-footer-actions {{remainingSpots > 0 ? '' : 'c1a-footer-actions--single'}}">
+      <button class="c1a-button c1a-button--neutral" bindtap="onReject">婉拒</button>
+      <button wx:if="{{remainingSpots > 0}}" class="c1a-button c1a-button--primary" bindtap="onAccept">接受加入</button>
+    </view>
+  </view>
+
   <view wx:if="{{panel}}" class="c1a-scrim">
     <view class="c1a-sheet" role="dialog" aria-modal="true">
-      <view class="c1a-card-row"><text class="c1a-heading">{{decisionTitle}}</text><button class="c1a-sheet-close" bindtap="onClosePanel">关闭</button></view>
-      <text>{{decisionCopy}}</text>
-      <text class="c1a-help">费用仍由到场参与者线下结算，平台不代收或担保。</text>
-      <button class="c1a-button {{panel === 'ACCEPT' ? 'c1a-button--primary' : 'c1a-button--secondary'}}" bindtap="onConfirmDecision">{{decisionButton}}</button>
+      <view class="c1a-sheet-title-row">
+        <view><text class="c1a-sheet-title">{{decisionTitle}}</text><text class="c1a-sheet-copy">{{decisionCopy}}</text></view>
+        <button class="c1a-sheet-close" bindtap="onClosePanel" aria-label="关闭确认层"><view class="c1a-close-glyph"></view></button>
+      </view>
+      <view class="c1a-sheet-actions">
+        <button class="c1a-button c1a-button--neutral" bindtap="onClosePanel">返回审核</button>
+        <button class="c1a-button c1a-button--primary" bindtap="onConfirmDecision">{{decisionButton}}</button>
+      </view>
     </view>
   </view>
 </view>

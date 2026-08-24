@@ -33,8 +33,8 @@ const patch = () => {
     empty: snapshot.registrationStatus !== "APPLIED" && snapshot.operationState === "READY",
     roleReady: snapshot.viewerRole === "CAPTAIN" && snapshot.authenticated,
     positionLabel: snapshot.application ? positionLabels[snapshot.application.position] : "",
-    appliedAtLabel: snapshot.application ? "8月24日 02:00" : "",
-    decisionTitle: snapshot.panel === "ACCEPT" ? "确认接受申请" : "确认婉拒申请",
+    appliedAtLabel: snapshot.application ? "今天 00:18" : "",
+    decisionTitle: snapshot.panel === "ACCEPT" ? "确认接受加入？" : "确认婉拒申请？",
     decisionCopy: snapshot.panel === "ACCEPT"
       ? "接受后，申请人会在同一球局详情看到已加入结果。"
       : "婉拒仅代表本场决定，申请人会在同一详情看到结果。",
