@@ -20,6 +20,7 @@ import { createHttpVenueAccessDataSource } from "../services/http-venue-access";
 import { createHttpVenueOnboardingDataSource } from "../services/http-venue-onboarding";
 import { createHttpVenueFulfillmentDataSource } from "../services/http-venue-fulfillment";
 import { createHttpOpenGameSource } from "../services/http-open-game";
+import { createHttpOpenGameRegistrationSource } from "../services/http-open-game-registration";
 import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
 import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "../services/venue-fulfillment-attempt-store";
@@ -28,6 +29,11 @@ import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingD
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { createOpenGameMutationAttemptStore } from "../services/open-game-attempt-store";
 import { registerOpenGameMutationAttemptStore, registerOpenGameSource } from "../services/open-game";
+import { createOpenGameRegistrationAttemptStore } from "../services/open-game-registration-attempt-store";
+import {
+  registerOpenGameRegistrationAttemptStore,
+  registerOpenGameRegistrationSource,
+} from "../services/open-game-registration";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
@@ -73,6 +79,15 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerPitchConfigurationDataSource(sources.pitchConfiguration);
     const transport = productionTransport(options.apiBaseUrl);
     const sessionStore = createSessionStore(productionSessionStorage);
+    const openGameRegistrationAttemptStore = createOpenGameRegistrationAttemptStore(
+      productionSessionStorage,
+    );
+    registerOpenGameRegistrationAttemptStore(openGameRegistrationAttemptStore);
+    registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({
+      transport,
+      identity: developmentIdentity,
+      sessionStore,
+    }));
     registerOpenGameSource(createHttpOpenGameSource({ transport, identity: developmentIdentity, sessionStore }));
     registerVenueAccessDataSource(createHttpVenueAccessDataSource({ transport, identity: developmentIdentity, sessionStore }));
     registerVenueOnboardingDataSource(createHttpVenueOnboardingDataSource({ transport, identity: developmentIdentity, phone: productionPhone, sessionStore }));

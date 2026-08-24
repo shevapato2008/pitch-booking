@@ -32,8 +32,27 @@ for (const token of [
   "order-cancellation",
   "createOrderCancellationFixture",
   "CAPTAIN_OPEN_GAME_FIXTURE",
+  "C1A_PLAYER_APPLICATION_FIXTURE",
+  "miniprogram/dev/c1a-player-application-fixture",
+  "miniprogram/dev/c1a-player-application-pages.json",
+  "dev/c1a-player-application-fixture",
+  "dev/c1a-player-application-pages.json",
+  "dev/pages/c1a-scenario/index",
+  "dev/pages/c1a-game-public/index",
+  "dev/pages/c1a-game-application/index",
+  "dev/pages/c1a-captain-applications/index",
   "奥体周日轻松局",
   "津门周末足球队",
+  "津门周末队",
+  "c1a-open-game-20260830-1400",
+  "2026-08-30T19:00:00+08:00",
+  "2026-08-30T21:00:00+08:00",
+  "2026-08-30T17:00:00+08:00",
+  "2026年8月30日 周日",
+  "19:00–21:00",
+  "8月30日 17:00",
+  "2026-08-24T00:18:00+08:00",
+  "今天 00:18",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -314,6 +333,74 @@ test("production audit rejects a later non-HTTP open game source override", asyn
   await assertAuditRejects(packageRoot, "invalid open game registration: data source");
 });
 
+test("production audit requires compiled player registration source and persistent attempt composition", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.split("\n").filter((line) => !/OpenGameRegistration|open-game-registration/.test(line)).join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "missing player game registration composition");
+});
+
+test("production audit rejects a player registration attempt store without production persistence", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace(
+      "createOpenGameRegistrationAttemptStore(productionSessionStorage)",
+      "createOpenGameRegistrationAttemptStore({})",
+    ),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid player game registration: persistent attempt store");
+});
+
+test("production audit rejects player registration source wired to a different persistent session-store instance", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source
+      .replace(
+        "const sessionStore = createSessionStore(productionSessionStorage);",
+        "const sessionStore = createSessionStore(productionSessionStorage);\n"
+          + "const c1aSessionStore = createSessionStore(productionSessionStorage);",
+      )
+      .replace(
+        "registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({\n"
+          + "  transport: runtime.transport,\n"
+          + "  identity: productionIdentity,\n"
+          + "  sessionStore,\n",
+        "registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({\n"
+          + "  transport: runtime.transport,\n"
+          + "  identity: productionIdentity,\n"
+          + "  sessionStore: c1aSessionStore,\n",
+      ),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid player game registration: shared session store");
+});
+
+test("production audit rejects a later non-HTTP player registration source override", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot, "registerOpenGameRegistrationSource({});");
+
+  await assertAuditRejects(packageRoot, "invalid player game registration: data source");
+});
+
 for (const [description, mutation] of [
   ["missing transport", (source) => source.replace("  transport: runtime.transport,\n", "")],
   ["wrong identity", (source) => source.replace("  identity: productionIdentity,", "  identity: {},")],
@@ -532,6 +619,8 @@ async function createProductionPackage() {
     "pages/captain-game-form/index",
     "pages/captain-game-manage/index",
     "pages/captain-game-public/index",
+    "pages/player-game-application/index",
+    "pages/captain-game-applications/index",
     "pages/my-orders/index",
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
@@ -573,14 +662,24 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       'const { createHttpOpenGameSource } = require("./services/http-open-game");',
       'const { registerOpenGameSource, registerOpenGameMutationAttemptStore } = require("./services/open-game");',
       'const { createOpenGameMutationAttemptStore } = require("./services/open-game-attempt-store");',
+      'const { createHttpOpenGameRegistrationSource } = require("./services/http-open-game-registration");',
+      'const { registerOpenGameRegistrationSource, registerOpenGameRegistrationAttemptStore } = require("./services/open-game-registration");',
+      'const { createOpenGameRegistrationAttemptStore } = require("./services/open-game-registration-attempt-store");',
       "const runtime = productionRuntime();",
       "const sessionStore = createSessionStore(productionSessionStorage);",
       "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
       "const openGameMutationAttemptStore = createOpenGameMutationAttemptStore(productionSessionStorage);",
+      "const openGameRegistrationAttemptStore = createOpenGameRegistrationAttemptStore(productionSessionStorage);",
       "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
       "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({ attemptStore: venueFulfillmentAttemptStore }));",
       "registerOpenGameMutationAttemptStore(openGameMutationAttemptStore);",
       "registerOpenGameSource(createHttpOpenGameSource({",
+      "  transport: runtime.transport,",
+      "  identity: productionIdentity,",
+      "  sessionStore,",
+      "}));",
+      "registerOpenGameRegistrationAttemptStore(openGameRegistrationAttemptStore);",
+      "registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({",
       "  transport: runtime.transport,",
       "  identity: productionIdentity,",
       "  sessionStore,",
@@ -602,6 +701,9 @@ async function installProductionDependencies(packageRoot) {
     "services/http-open-game.js",
     "services/open-game.js",
     "services/open-game-attempt-store.js",
+    "services/http-open-game-registration.js",
+    "services/open-game-registration.js",
+    "services/open-game-registration-attempt-store.js",
     "services/session-store.js",
   ]) await writeFile(path.join(packageRoot, file), "\n");
 }

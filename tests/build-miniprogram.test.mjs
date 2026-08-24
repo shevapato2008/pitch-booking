@@ -32,10 +32,27 @@ const CAPTAIN_OPEN_GAME_ROUTES = [
   "pages/captain-game-manage/index",
   "pages/captain-game-public/index",
 ];
+const OPEN_GAME_REGISTRATION_ROUTES = [
+  "pages/player-game-application/index",
+  "pages/captain-game-applications/index",
+];
 const PRODUCTION_ROUTES = [
   ...EXISTING_PRODUCTION_ROUTES.slice(0, 9),
   ...CAPTAIN_OPEN_GAME_ROUTES,
+  ...OPEN_GAME_REGISTRATION_ROUTES,
   ...EXISTING_PRODUCTION_ROUTES.slice(9),
+];
+const OPEN_GAME_REGISTRATION_FIXTURES = [
+  "open-game-registration-context-anonymous",
+  "open-game-registration-context-apply-ready",
+  "open-game-registration-context-applied",
+  "open-game-registration-context-joined",
+  "open-game-registration-context-rejected",
+  "open-game-registration-context-cancelled",
+  "open-game-applications-pending",
+  "open-game-applications-empty",
+  "open-game-application-decision-joined",
+  "open-game-application-decision-rejected",
 ];
 
 function build(projectRoot, mode, environment = {}) {
@@ -218,7 +235,7 @@ test("retired owner cancellation preview stays absent while production order rou
   t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
 });
 
-test("production app registers HTTP data, open games, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, open games, registrations, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -253,6 +270,16 @@ test("production app registers HTTP data, open games, venue fulfillment, Tencent
   assert.match(app, /createOpenGameMutationAttemptStore/);
   assert.match(app, /registerOpenGameMutationAttemptStore/);
   assert.match(app, /createOpenGameMutationAttemptStore\)\(production_1\.productionSessionStorage\)/);
+  assert.match(app, /createHttpOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationSource/);
+  assert.match(app, /createOpenGameRegistrationAttemptStore/);
+  assert.match(app, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(app, /createOpenGameRegistrationAttemptStore\)\(production_1\.productionSessionStorage\)/);
+  assert.match(
+    app,
+    /registerOpenGameRegistrationSource\)\(\(0, http_open_game_registration_1\.createHttpOpenGameRegistrationSource\)\(\{\s*transport:\s*runtime\.transport,\s*identity:\s*production_1\.productionIdentity,\s*sessionStore,?\s*\}\)\);/,
+  );
+  assert.equal((app.match(/createSessionStore\)\(production_1\.productionSessionStorage\)/g) ?? []).length, 1);
   assert.match(app, /createHttpVenueFulfillmentDataSource/);
   assert.match(app, /registerVenueFulfillmentDataSource/);
   assert.match(app, /createVenueFulfillmentAttemptStore/);
@@ -274,6 +301,8 @@ test("production app registers HTTP data, open games, venue fulfillment, Tencent
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerOpenGameMutationAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerOpenGameSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameRegistrationAttemptStore") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameRegistrationSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
@@ -408,15 +437,42 @@ test("captain open game production routes ship in both builds while temporary pr
   assert.doesNotMatch(productionText, isolationPattern);
 });
 
-test("real production build preserves all fourteen existing routes and adds only the three B2 owner routes", async (t) => {
+test("open game registration production routes ship in both manifests with compiled native artifacts", async (t) => {
+  const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
+  assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
+  assert.equal(sourceManifest.pages.length, 19);
+
+  await build(process.cwd(), "development");
+  await build(process.cwd(), "production");
+  const developmentRoot = path.resolve("dist/miniprogram-development");
+  const productionRoot = path.resolve("dist/miniprogram-production");
+  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
+  const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
+
+  assert.deepEqual(developmentManifest.pages.slice(0, PRODUCTION_ROUTES.length), PRODUCTION_ROUTES);
+  assert.deepEqual(productionManifest.pages, PRODUCTION_ROUTES);
+  for (const route of OPEN_GAME_REGISTRATION_ROUTES) {
+    for (const root of [developmentRoot, productionRoot]) {
+      for (const extension of ["js", "json", "wxml", "wxss"]) {
+        assert.equal(existsSync(path.join(root, `${route}.${extension}`)), true, `${route}.${extension}`);
+      }
+      assert.equal(existsSync(path.join(root, `${route}.ts`)), false, `${route}.ts`);
+    }
+  }
+});
+
+test("real production build preserves all fourteen existing routes and adds only the five open-game journey routes", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   assert.deepEqual(manifest.pages, PRODUCTION_ROUTES);
-  assert.deepEqual(manifest.pages.filter((route) => !CAPTAIN_OPEN_GAME_ROUTES.includes(route)), EXISTING_PRODUCTION_ROUTES);
-  assert.equal(manifest.pages.length, 17);
-  assert.equal(manifest.pages.some((route) => /(?:list|apply|application)/i.test(route)), false);
+  assert.deepEqual(
+    manifest.pages.filter((route) => ![...CAPTAIN_OPEN_GAME_ROUTES, ...OPEN_GAME_REGISTRATION_ROUTES].includes(route)),
+    EXISTING_PRODUCTION_ROUTES,
+  );
+  assert.equal(manifest.pages.length, 19);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
@@ -442,6 +498,9 @@ test("disabled-payment production keeps B2 owner management composed and routed"
   assert.match(app, /registerOpenGameSource/);
   assert.match(app, /createHttpOpenGameSource/);
   assert.match(app, /registerOpenGameMutationAttemptStore/);
+  assert.match(app, /createHttpOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationAttemptStore/);
 });
 
 test("production API URL override changes generated production config only", async (t) => {
@@ -541,11 +600,15 @@ test("built development Scenario runtime is self-contained without URL", async (
       const assert = require("node:assert/strict");
       const { scenarioRuntime } = require("./runtime/scenario.js");
       const { FIXTURE_DATA } = require("./dev/fixture-data.js");
-      const names = [
+      const scenarioNames = [
         "venue-ready", "slots-ready", "slots-empty",
         "booking-checkout-ready", "order-pending", "order-expired",
         "order-confirmed", "order-payment-confirming", "order-payment-exception",
         "venue-map", "venue-online-detail", "venue-directory-detail",
+      ];
+      const names = [
+        ...scenarioNames,
+        ${OPEN_GAME_REGISTRATION_FIXTURES.map((name) => JSON.stringify(name)).join(", ")},
       ];
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
@@ -555,7 +618,7 @@ test("built development Scenario runtime is self-contained without URL", async (
       const originalCover = FIXTURE_DATA["venue-ready"].profile.images[0].url;
       FIXTURE_DATA["venue-ready"].profile.images[0].url = "https://mutated.invalid/cover.jpg";
       assert.equal(FIXTURE_DATA["venue-ready"].profile.images[0].url, originalCover);
-      for (const name of names) {
+      for (const name of scenarioNames) {
         const runtime = scenarioRuntime({
           id: name,
           clock: "2026-07-22T10:30:00+08:00",

@@ -53,6 +53,24 @@ test("development booking source defaults to the existing Fixture composition", 
   assert.match(bootstrap, /createOpenGameMutationAttemptStore/);
   assert.match(bootstrap, /registerOpenGameMutationAttemptStore/);
   assert.match(bootstrap, /PAYMENT_PREVIEW_NOW/);
+  assert.doesNotMatch(bootstrap, /c1a_player_application_fixture|C1A_PLAYER_APPLICATION_FIXTURE/);
+  const httpBranchStart = bootstrap.indexOf('if (options.source === "http")');
+  const httpBranchEnd = bootstrap.indexOf("return;");
+  assert.notEqual(httpBranchStart, -1);
+  assert.notEqual(httpBranchEnd, -1);
+  assert.equal(httpBranchStart < httpBranchEnd, true);
+  for (const registration of [
+    "registerOpenGameRegistrationAttemptStore",
+    "registerOpenGameRegistrationSource",
+  ]) {
+    const calls = [...bootstrap.matchAll(new RegExp(`${registration}\\)\\(`, "g"))];
+    assert.equal(calls.length, 1, `${registration} must be called exactly once`);
+    assert.equal(calls[0].index > httpBranchStart && calls[0].index < httpBranchEnd, true);
+  }
+  assert.doesNotMatch(
+    bootstrap.slice(httpBranchEnd + "return;".length),
+    /registerOpenGameRegistration(?:Source|AttemptStore)\)\(/,
+  );
   assert.equal(existsSync(path.join(developmentOutput, "dev/open-game-source.js")), true);
   assert.match(cashier, /模拟支付，不会扣款/);
   assert.doesNotMatch(
@@ -117,8 +135,21 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.match(bootstrap, /createOpenGameMutationAttemptStore\)\(production_1\.productionSessionStorage\)/);
   assert.match(
     bootstrap,
-    /registerOpenGameSource\)\(\(0, http_open_game_1\.createHttpOpenGameSource\)\([\s\S]*transport[\s\S]*developmentIdentity[\s\S]*sessionStore[\s\S]*return;/,
+    /registerOpenGameSource\)\(\(0, http_open_game_1\.createHttpOpenGameSource\)\(\{\s*transport,\s*identity:\s*http_booking_source_1\.developmentIdentity,\s*sessionStore,?\s*\}\)\);/,
   );
+  assert.match(bootstrap, /createHttpOpenGameRegistrationSource/);
+  assert.match(bootstrap, /registerOpenGameRegistrationSource/);
+  assert.match(bootstrap, /createOpenGameRegistrationAttemptStore/);
+  assert.match(bootstrap, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(
+    bootstrap,
+    /createOpenGameRegistrationAttemptStore\)\(production_1\.productionSessionStorage\)/,
+  );
+  assert.match(
+    bootstrap,
+    /registerOpenGameRegistrationSource\)\(\(0, http_open_game_registration_1\.createHttpOpenGameRegistrationSource\)\(\{\s*transport,\s*identity:\s*http_booking_source_1\.developmentIdentity,\s*sessionStore,?\s*\}\)\);/,
+  );
+  assert.equal((bootstrap.match(/createSessionStore\)\(production_1\.productionSessionStorage\)/g) ?? []).length, 1);
   assert.match(bootstrap, /registerVenueDirectoryDataSource/);
   assert.match(bootstrap, /registerLocationCapability/);
   assert.match(bootstrap, /productionLocation/);
@@ -136,6 +167,8 @@ test("development HTTP build injects an explicit localhost API URL into the type
   );
   assert.doesNotMatch(bootstrap, /poi_search_preview|previewPoiSearchCapability|DEV_ONLY_POI_SEARCH_PREVIEW/);
   assert.equal(bootstrap.indexOf("registerOpenGameSource") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("registerOpenGameRegistrationAttemptStore") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("registerOpenGameRegistrationSource") < bootstrap.indexOf("return;"), true);
   assert.equal(bootstrap.lastIndexOf("createDevelopmentOpenGameSource") > bootstrap.indexOf("return;"), true);
   assert.match(
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
@@ -218,6 +251,10 @@ test("production ignores the development selector and excludes all development c
   assert.match(app, /registerOpenGameSource/);
   assert.match(app, /createOpenGameMutationAttemptStore/);
   assert.match(app, /registerOpenGameMutationAttemptStore/);
+  assert.match(app, /createHttpOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationSource/);
+  assert.match(app, /createOpenGameRegistrationAttemptStore/);
+  assert.match(app, /registerOpenGameRegistrationAttemptStore/);
   await execFileAsync(process.execPath, [
     auditScript,
     productionOutput,

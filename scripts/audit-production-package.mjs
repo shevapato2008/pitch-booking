@@ -38,8 +38,25 @@ const forbiddenContentPatterns = [
   /order-cancellation/,
   /createOrderCancellationFixture/,
   /CAPTAIN_OPEN_GAME_FIXTURE/,
+  /C1A_PLAYER_APPLICATION_FIXTURE/,
+  /miniprogram\/dev\/c1a-[A-Za-z0-9._/-]*/,
+  /dev\/c1a-[A-Za-z0-9._/-]*/,
+  /dev\/pages\/c1a-scenario\/index/,
+  /dev\/pages\/c1a-game-public\/index/,
+  /dev\/pages\/c1a-game-application\/index/,
+  /dev\/pages\/c1a-captain-applications\/index/,
   /奥体周日轻松局/,
   /津门周末足球队/,
+  /津门周末队/,
+  /c1a-open-game-20260830-1400/,
+  /2026-08-30T19:00:00\+08:00/,
+  /2026-08-30T21:00:00\+08:00/,
+  /2026-08-30T17:00:00\+08:00/,
+  /2026年8月30日 周日/,
+  /19:00–21:00/,
+  /8月30日 17:00/,
+  /2026-08-24T00:18:00\+08:00/,
+  /今天 00:18/,
   /dev\/pages\/captain-game-form\/index/,
   /dev\/pages\/captain-game-manage\/index/,
   /dev\/pages\/captain-game-public\/index/,
@@ -94,6 +111,18 @@ const requiredOpenGameImports = [
   ["./services/open-game-attempt-store", /\brequire\s*\(\s*["']\.\/services\/open-game-attempt-store["']\s*\)/],
   ["./services/session-store", /\brequire\s*\(\s*["']\.\/services\/session-store["']\s*\)/],
 ];
+const requiredPlayerGameRegistrationComposition = [
+  "createHttpOpenGameRegistrationSource",
+  "registerOpenGameRegistrationSource",
+  "createOpenGameRegistrationAttemptStore",
+  "registerOpenGameRegistrationAttemptStore",
+];
+const requiredPlayerGameRegistrationImports = [
+  ["./services/http-open-game-registration", /\brequire\s*\(\s*["']\.\/services\/http-open-game-registration["']\s*\)/],
+  ["./services/open-game-registration", /\brequire\s*\(\s*["']\.\/services\/open-game-registration["']\s*\)/],
+  ["./services/open-game-registration-attempt-store", /\brequire\s*\(\s*["']\.\/services\/open-game-registration-attempt-store["']\s*\)/],
+  ["./services/session-store", /\brequire\s*\(\s*["']\.\/services\/session-store["']\s*\)/],
+];
 
 const targetStat = await lstat(target);
 if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
@@ -144,6 +173,13 @@ for (const [specifier, pattern] of requiredOpenGameImports) {
   if (!pattern.test(appContents)) forbidden.push(`missing open game import: ${specifier}`);
 }
 for (const diagnostic of inspectOpenGameRegistration(appContents)) forbidden.push(diagnostic);
+for (const symbol of requiredPlayerGameRegistrationComposition) {
+  if (!appContents.includes(symbol)) forbidden.push(`missing player game registration composition: ${symbol}`);
+}
+for (const [specifier, pattern] of requiredPlayerGameRegistrationImports) {
+  if (!pattern.test(appContents)) forbidden.push(`missing player game registration import: ${specifier}`);
+}
+for (const diagnostic of inspectPlayerGameRegistration(appContents)) forbidden.push(diagnostic);
 await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
 try {
@@ -170,6 +206,8 @@ const productionRoutes = [
   "pages/captain-game-form/index",
   "pages/captain-game-manage/index",
   "pages/captain-game-public/index",
+  "pages/player-game-application/index",
+  "pages/captain-game-applications/index",
   "pages/my-orders/index",
   "pages/venue-profile/index",
   "pages/venue-inventory/index",
@@ -708,6 +746,165 @@ function inspectOpenGameRegistration(source) {
       && identity.symbol === "productionIdentity"
       && ts.isIdentifier(sessionStore)
       && persistentSessionStores.has(sessionStore.text);
+  }
+}
+
+function inspectPlayerGameRegistration(source) {
+  const sourceFile = ts.createSourceFile("app.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const moduleAliases = new Map();
+  const importedBindings = new Map();
+  const declaredAttemptStores = new Set();
+  const persistentAttemptStores = new Set();
+  const productionRuntimes = new Set();
+  const persistentSessionStores = new Set();
+  const httpSources = new Map();
+  const attemptRegistrations = [];
+  const sourceRegistrations = [];
+  const startupPositions = [];
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const requiredModule = requireSpecifier(declaration.initializer);
+        if (requiredModule) {
+          if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
+          if (ts.isObjectBindingPattern(declaration.name)) {
+            for (const element of declaration.name.elements) {
+              if (!ts.isIdentifier(element.name)) continue;
+              const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+                ? element.propertyName.text : element.name.text;
+              importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
+            }
+          }
+          continue;
+        }
+        if (!ts.isIdentifier(declaration.name) || !ts.isCallExpression(unwrapExpression(declaration.initializer))) continue;
+        const call = unwrapExpression(declaration.initializer);
+        const factory = importedSymbol(call.expression);
+        if (factory?.module === "./services/open-game-registration-attempt-store"
+          && factory.symbol === "createOpenGameRegistrationAttemptStore") {
+          declaredAttemptStores.add(declaration.name.text);
+          if (isProductionSessionStorage(call.arguments[0])) {
+            persistentAttemptStores.add(declaration.name.text);
+          }
+        }
+        if (factory?.module === "./runtime/production" && factory.symbol === "productionRuntime") {
+          productionRuntimes.add(declaration.name.text);
+        }
+        if (factory?.module === "./services/session-store" && factory.symbol === "createSessionStore"
+          && isProductionSessionStorage(call.arguments[0])) {
+          persistentSessionStores.add(declaration.name.text);
+        }
+        if (factory?.module === "./services/http-open-game-registration"
+          && factory.symbol === "createHttpOpenGameRegistrationSource") {
+          httpSources.set(declaration.name.text, productionSourceSessionStore(call));
+        }
+      }
+      continue;
+    }
+    if (!ts.isExpressionStatement(statement)) continue;
+    const expression = unwrapExpression(statement.expression);
+    if (!ts.isCallExpression(expression)) continue;
+    const callee = importedSymbol(expression.expression);
+    const rawCallee = unwrapExpression(expression.expression);
+    if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) {
+      startupPositions.push(expression.pos);
+    }
+    if (callee?.module === "./services/open-game-registration"
+      && callee.symbol === "registerOpenGameRegistrationAttemptStore") {
+      const argument = unwrapExpression(expression.arguments[0]);
+      const store = ts.isIdentifier(argument) ? argument.text : undefined;
+      attemptRegistrations.push({
+        position: expression.pos,
+        valid: Boolean(store && persistentAttemptStores.has(store)),
+      });
+    }
+    if (callee?.module === "./services/open-game-registration"
+      && callee.symbol === "registerOpenGameRegistrationSource") {
+      const argument = unwrapExpression(expression.arguments[0]);
+      let sessionStore;
+      if (ts.isIdentifier(argument)) {
+        sessionStore = httpSources.get(argument.text);
+      } else if (ts.isCallExpression(argument)) {
+        const factory = importedSymbol(argument.expression);
+        if (factory?.module === "./services/http-open-game-registration"
+          && factory.symbol === "createHttpOpenGameRegistrationSource") {
+          sessionStore = productionSourceSessionStore(argument);
+        }
+      }
+      sourceRegistrations.push({ position: expression.pos, sessionStore });
+    }
+  }
+
+  const diagnostics = [];
+  const effectiveAttempt = attemptRegistrations[attemptRegistrations.length - 1];
+  const effectiveSource = sourceRegistrations[sourceRegistrations.length - 1];
+  const sourceIsPersistent = effectiveSource?.sessionStore
+    && persistentSessionStores.has(effectiveSource.sessionStore);
+  if (declaredAttemptStores.size > 0 && persistentAttemptStores.size === 0) {
+    diagnostics.push("invalid player game registration: persistent attempt store");
+  }
+  if (!effectiveAttempt?.valid) diagnostics.push("invalid player game registration: attempt store");
+  if (!sourceIsPersistent) diagnostics.push("invalid player game registration: data source");
+  if (persistentSessionStores.size !== 1
+    || sourceIsPersistent && effectiveSource.sessionStore !== [...persistentSessionStores][0]) {
+    diagnostics.push("invalid player game registration: shared session store");
+  }
+  if (startupPositions.length > 0) {
+    const startup = Math.min(...startupPositions);
+    if ((effectiveAttempt && effectiveAttempt.position >= startup)
+      || (effectiveSource && effectiveSource.position >= startup)) {
+      diagnostics.push("player game registration must precede App/Page startup");
+    }
+  }
+  return diagnostics;
+
+  function importedSymbol(expression) {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value)) return importedBindings.get(value.text);
+    if (!ts.isPropertyAccessExpression(value) || !ts.isIdentifier(value.expression)) return undefined;
+    const module = moduleAliases.get(value.expression.text);
+    return module ? { module, symbol: value.name.text } : undefined;
+  }
+
+  function isProductionSessionStorage(expression) {
+    const value = unwrapExpression(expression);
+    const binding = importedSymbol(value);
+    return binding?.module === "./runtime/production" && binding.symbol === "productionSessionStorage";
+  }
+
+  function productionSourceSessionStore(call) {
+    const options = unwrapExpression(call.arguments[0]);
+    if (!ts.isObjectLiteralExpression(options)) return undefined;
+    const values = new Map();
+    for (const property of options.properties) {
+      if (ts.isSpreadAssignment(property)) return undefined;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        values.set(property.name.text, property.name);
+        continue;
+      }
+      if (!ts.isPropertyAssignment(property)) continue;
+      const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+        ? property.name.text : undefined;
+      if (name) values.set(name, property.initializer);
+    }
+    const transportValue = values.get("transport");
+    const identityValue = values.get("identity");
+    const sessionStoreValue = values.get("sessionStore");
+    if (!transportValue || !identityValue || !sessionStoreValue) return undefined;
+    const transport = unwrapExpression(transportValue);
+    const transportOwner = ts.isPropertyAccessExpression(transport)
+      ? unwrapExpression(transport.expression) : undefined;
+    const identity = importedSymbol(identityValue);
+    const sessionStore = unwrapExpression(sessionStoreValue);
+    if (!identity || !ts.isPropertyAccessExpression(transport)
+      || transport.name.text !== "transport"
+      || !ts.isIdentifier(transportOwner)
+      || !productionRuntimes.has(transportOwner.text)
+      || identity.module !== "./runtime/production"
+      || identity.symbol !== "productionIdentity"
+      || !ts.isIdentifier(sessionStore)) return undefined;
+    return sessionStore.text;
   }
 }
 

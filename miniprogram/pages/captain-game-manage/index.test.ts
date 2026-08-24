@@ -18,7 +18,7 @@ import {
 
 type PageDefinition = Record<string, any> & { data: Record<string, any> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
-const call = (page: RuntimePage, method: string, ...args: unknown[]) => page[method].apply(page, args);
+const call = (page: RuntimePage, method: string, ...args: unknown[]) => page[method](...args);
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 let captured: PageDefinition | undefined;
 function loadPage(): RuntimePage {
@@ -99,15 +99,55 @@ test("loads authority, hides share by default, and projects every action indepen
   const page = loadPage(); call(page, "onLoad", { game_id: gameId });
   expect(page.data.status).toBe("LOADING"); expect(wx.hideShareMenu).toHaveBeenCalled();
   await flush();
-  expect(page.data).toMatchObject({ status: "READY", state: "DRAFT", canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true });
+  expect(page.data).toMatchObject({ status: "READY", state: "DRAFT", canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canReviewApplications: false });
   expect(wx.showShareMenu).not.toHaveBeenCalled();
 
   const latePublished = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", registrationDeadline: "2020-01-01T08:00:00+08:00", allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
   resetOpenGameSourceForTesting(); registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => latePublished) }));
   const published = loadPage(); call(published, "onLoad", { game_id: gameId }); await flush();
-  expect(published.data).toMatchObject({ state: "PUBLISHED", canEdit: true, canShare: true, canCancel: true });
+  expect(published.data).toMatchObject({
+    state: "PUBLISHED",
+    stateDescription: "公开详情已可查看；可分享球局并审核报名。",
+    canEdit: true,
+    canShare: true,
+    canCancel: true,
+    canReviewApplications: true,
+  });
   expect(wx.showShareMenu).toHaveBeenCalled();
 });
+
+test("only a READY PUBLISHED owner can open the real application review route", async () => {
+  const published = owner({
+    state: "PUBLISHED",
+    persistedStatus: "PUBLISHED",
+    allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true },
+  });
+  registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => published) }));
+  const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
+
+  expect(page.data).toMatchObject({ status: "READY", canReviewApplications: true });
+  const template = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
+  expect(template).toContain('wx:if="{{canReviewApplications}}"');
+  expect(template).toContain('bindtap="onReviewApplications">报名审核');
+
+  await call(page, "onReviewApplications");
+
+  expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+    url: `/pages/captain-game-applications/index?game_id=${gameId}`,
+  }));
+});
+
+test.each(["DRAFT", "SUSPENDED", "CANCELLED", "COMPLETED"] as const)(
+  "%s owners never expose the application review action",
+  async (state) => {
+    registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => owner({ state })) }));
+    const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
+
+    expect(page.data).toMatchObject({ status: "READY", state, canReviewApplications: false });
+    await call(page, "onReviewApplications");
+    expect(wx.navigateTo).not.toHaveBeenCalled();
+  },
+);
 
 test("a new manager restores and resolves its persisted same-game terminal publish", async () => {
   storedAttempt = { kind: "publish", gameId, expectedVersion: 1, idempotencyKey: "open-game-restored-current-0001" };
@@ -181,7 +221,7 @@ test("malformed, not-found, load-error and auth-loss expose only real recovery",
 test("approved visible buttons are native and backed by real handlers", () => {
   const wxml = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
   expect(wxml).toContain('open-type="share"');
-  for (const handler of ["onReload", "onLogin", "onOpenPublish", "onClosePanel", "onConfirmPublish", "onOpenCancel", "onConfirmCancel", "onEdit", "onPreview", "onReturnOrder", "onHeaderBack", "onConfirmUnknown", "onConfirmPreviousOperation"]) expect(wxml).toContain(handler);
+  for (const handler of ["onReload", "onLogin", "onOpenPublish", "onClosePanel", "onConfirmPublish", "onOpenCancel", "onConfirmCancel", "onEdit", "onPreview", "onReviewApplications", "onReturnOrder", "onHeaderBack", "onConfirmUnknown", "onConfirmPreviousOperation"]) expect(wxml).toContain(handler);
   expect(wxml).toContain("不会取消已预订场地，也不会改变订单、支付或退款状态");
   expect(wxml).toContain("正在提交操作");
   expect(wxml).not.toContain("status === 'READY' || status === 'MUTATING'");
