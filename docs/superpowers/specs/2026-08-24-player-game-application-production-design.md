@@ -68,6 +68,8 @@ C1a 只闭环一条私域分享旅程：
 
 新增报名专属 domain、严格 decoder、HTTP source 和持久 mutation-attempt store。它们与现有 open-game sibling 模块并列，不扩大 B2 decoder 或把申请逻辑塞进订单服务。
 
+为保证持久 attempt 不能在切换微信账号后被错误重放，现有 `StoredSession` 升级为同时保存 `userId` 的 v2 封闭值。所有会话交换继续使用同一个 session store；旧 v1 本地值因无法证明用户归属而清除，并只要求用户重新登录一次，不猜测旧 token 的身份。
+
 生产页面包括：
 
 - 修改现有 `pages/captain-game-public` 的 shared 模式；
@@ -163,7 +165,20 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 
 所有会同时接触 B1/B2/C1a 的写操作保持 `Order → OpenGame → Registration` 锁顺序。接受操作锁定权威行和目标报名，在同一事务内统计 `JOINED` 后决定。若最后一个名额已被其他请求占用，返回容量冲突，目标报名保持 `APPLIED`，不自动候补或婉拒。
 
-### 5.3 取消投影
+### 5.3 已加入后的 B2 编辑与并发
+
+C1a 接入后，现有 `PUT /api/v1/games/{game_id}` 在同一 `Order → OpenGame` 锁内读取 `JOINED_count`。当 `JOINED_count > 0` 时，发布后编辑必须同时满足：
+
+- 新 `open_spots >= JOINED_count`；
+- 新 `total_players >= new fixed_players + JOINED_count`；
+- 新 `aa_cents <= current aa_cents`，预计 AA 只能保持或降低；
+- 继续满足 B2 既有 `fixed_players + open_spots <= total_players` 等约束。
+
+违反时返回 `INVALID_ARGUMENT`，字段分别落在 `open_spots`、`total_players` 或 `aa_cents`，报名和球局都不改变。`allowed_actions.can_edit` 仍表示可以进入编辑页，不表示任意新值都可保存。
+
+编辑和接受都先锁 `Order`、再锁同一 `OpenGame`，因此不会用旧容量各自提交：接受先获得锁时，随后编辑按增加后的 `JOINED_count` 验证；编辑先获得锁时，随后接受按编辑后的 `open_spots` 重算剩余名额。两种顺序都不得超额加入或把开放容量降到已加入人数以下。
+
+### 5.4 取消投影
 
 球局或其权威订单取消时，申请人上下文把有效报名结果投影为 `CANCELLED`，并禁用报名和审核动作。数据库保留原始 `APPLIED` / `JOINED` / `REJECTED` 以供一致性与审计，不修改订单、支付、退款或库存。
 
@@ -178,7 +193,7 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 - 无 Authorization 时允许匿名读取；
 - 有有效 bearer 时返回本人报名；
 - 响应嵌套现有、字段不变的 `OpenGamePublic`；
-- 同时返回 `remaining_spots`、viewer 是否登录、本人报名或 `null`、`can_apply` 和一个封闭 `apply_blocked_reason | null`。
+- 同时返回 `remaining_spots`、viewer 是否登录、本人报名或 `null`，以及精确的 `allowed_actions: { can_apply, apply_blocked_reason }`。
 
 本人报名只返回本人的称呼、位置、备注、持久/有效状态、申请时间和决定时间。匿名响应不泄露任何申请人信息。
 
@@ -201,7 +216,7 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 - 越权与不存在统一 404；
 - 返回全部 `APPLIED`，按 `(applied_at, id)` 升序，不分页、不静默截断；
 - 返回 `remaining_spots`、`pending_count` 和每条申请的版本与服务端允许动作；
-- 每条申请只含 `id`、称呼、位置、备注、申请时间、版本、`can_accept`、`can_reject` 与 blocker；
+- 每条申请只含 `id`、称呼、位置、备注、申请时间、版本，以及精确的 `allowed_actions: { can_accept, accept_blocked_reason, can_reject, reject_blocked_reason }`；
 - 不返回 applicant user ID、手机号、微信身份、头像、订单、支付、履约或评分。
 
 队长小程序显示真实总数，但一次只呈现最早一条的已批准卡片构图；处理后从同一权威队列显示下一条。
@@ -212,7 +227,7 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 
 - 必须 bearer 与 `Idempotency-Key`；
 - body 为 `decision: ACCEPT | REJECT` 和 `expected_version`；
-- 成功返回该报名的最新状态、版本、决定时间、`remaining_spots` 与最新允许动作；
+- 成功返回该报名的最新状态、版本、决定时间、`remaining_spots`，以及与队长列表相同形状的四字段 `allowed_actions`；
 - 接受容量冲突返回确定错误并附最新剩余名额，报名保持 `APPLIED`；
 - 已处理、版本不符、球局状态改变或开场返回确定的状态冲突。
 
@@ -233,6 +248,38 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 
 服务端是 `allowed_actions` 和 blocker 的唯一权威；客户端只用本地状态防重复点击，不自行放宽权限。
 
+封闭 blocker 定义如下：
+
+```text
+ApplyBlockedReason =
+  AUTH_REQUIRED
+  | OWNER_CANNOT_APPLY
+  | ALREADY_APPLIED
+  | GAME_NOT_PUBLISHED
+  | REGISTRATION_DEADLINE_PASSED
+  | GAME_FULL
+  | GAME_SUSPENDED
+  | GAME_CANCELLED
+  | GAME_COMPLETED
+  | GAME_STARTED
+
+ReviewBlockedReason =
+  APPLICATION_NOT_PENDING
+  | GAME_SUSPENDED
+  | GAME_CANCELLED
+  | GAME_COMPLETED
+  | GAME_STARTED
+  | GAME_FULL
+```
+
+动作与 blocker 必须成对：动作是 `true` 时对应 blocker 必须为 `null`；动作是 `false` 时必须恰有一个 blocker。`GAME_FULL` 只阻止接受，不能阻止婉拒。报名已处理时，两个审核动作都使用 `APPLICATION_NOT_PENDING`。
+
+为了得到确定响应，申请 blocker 严格按 `GAME_CANCELLED → GAME_COMPLETED → GAME_SUSPENDED → GAME_STARTED → GAME_NOT_PUBLISHED → ALREADY_APPLIED → OWNER_CANNOT_APPLY → REGISTRATION_DEADLINE_PASSED → GAME_FULL → AUTH_REQUIRED` 选取第一个命中值；因此 `AUTH_REQUIRED` 只表示除此以外本可申请。审核 blocker 严格按 `APPLICATION_NOT_PENDING → GAME_CANCELLED → GAME_COMPLETED → GAME_SUSPENDED → GAME_STARTED → GAME_FULL` 选取，婉拒跳过最后的 `GAME_FULL`。
+
+`APPLICATION_NOT_ALLOWED` 的 error `details` 精确包含当前 `apply_blocked_reason` 与 `remaining_spots`。`APPLICATION_CAPACITY_CHANGED` 的 `details` 精确包含最新 `remaining_spots` 和上述四字段审核 `allowed_actions`，使严格客户端不需猜测。
+
+报名上下文只有在 Authorization header 完全缺失时按匿名处理；header 已出现但 scheme 不是 Bearer、token 为空、无效或过期时统一返回 401，不静默降级。
+
 ## 7. 幂等与未知结果恢复
 
 申请和审核复用现有 `idempotency_records`，operation 名称与 request digest 包含目标资源和封闭请求内容。数据库响应记录保存可重放的成功结果，不新增第二套 attempt 表。
@@ -241,10 +288,13 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 
 - 申请 attempt 绑定 share token、表单快照和 key；
 - 审核 attempt 绑定 game ID、application ID、decision、expected version 和 key；
+- 两类 attempt 都绑定创建它的 `originatingUserId`，来源只能是已解码并保存的微信会话；
 - 页面卸载、重新登录或应用重启都不生成新 key；
 - 有未确认的 foreign attempt 时，必须先解决它，再允许新写操作。
 
 申请未知时先重新读取报名上下文：若报名已经存在则接受权威结果并清除 attempt，否则以同 key 重放。审核未知时以同 key 重放以取得服务端保存的决定响应；若收到确定状态冲突，再刷新待审核队列。任何未知、401、409 或 503 都不得提前显示 `JOINED` / `REJECTED`。
+
+重新登录后，只有当前 session 的 `userId` 与 `originatingUserId` 相等才可恢复或重放。若变成另一个微信账号，客户端进入 `FOREIGN_ACCOUNT_PENDING`，绝不发送原 attempt，也不把它改绑到新用户；页面明确说明该记录属于另一账号，并提供“清除本机待确认记录”与返回动作。用户主动清除只删除本机 attempt，随后为当前账号重读权威页面，不能宣称旧操作成功或失败。
 
 ## 8. 小程序页面行为
 
@@ -288,6 +338,7 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 - API 匿名/登录/owner/non-owner、统一 404、字段过滤、严格请求与错误矩阵；
 - OpenAPI schema、examples 和生成 Fixture 一致性；
 - PostgreSQL 两线程竞争最后名额，恰好一个 `JOINED`，另一个保持 `APPLIED`；
+- B2 编辑与接受分别先获得锁的两种并发顺序，容量、计划人数和 AA 不可逆约束都成立；
 - 真实 Uvicorn/PostgreSQL 双身份 HTTP 旅程；
 - 旅程前后 Order、Slot、Payment、RefundCase 等 B1 权威数据不变。
 
@@ -298,6 +349,7 @@ remaining_spots = max(open_spots - JOINED_count, 0)
 - closed exact-object decoder；
 - 精确 path/body/header、401、409、timeout、5xx 与 malformed success；
 - attempt 持久化、重启恢复、同 key 重放和 foreign attempt；
+- session v1 清理、v2 `userId` 归属、同账号恢复和异账号绝不重放；
 - 页面 stale response、加载/错误/恢复和每个可见按钮 handler；
 - manage → review、shared detail → application、提交 → 回详情的真实导航；
 - development / production 组合与 production package audit；
