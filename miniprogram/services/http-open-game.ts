@@ -180,7 +180,7 @@ export function createHttpOpenGameSource({ transport, identity, sessionStore }: 
         );
         if (response.statusCode !== 200) throw new Error("LOGIN_STATUS");
         const session = decodeWeChatSession(response.data);
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId });
       } catch {
         throw new OpenGameApiError("LOGIN_FAILED");
       }

@@ -112,7 +112,7 @@ export function createHttpBookingDataSource({
         const result = await identity.login();
         if (!result.code) throw new BookingApiError("LOGIN_FAILED");
         const session = decodeWeChatSession(await transport.post("/api/v1/auth/wechat/session", { code: result.code }));
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId });
         return session.user;
       } catch (caught) {
         const failure = inspectHttpFailure(caught);

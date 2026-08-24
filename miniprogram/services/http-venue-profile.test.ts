@@ -15,11 +15,19 @@ function setup(initialSession = true) {
     put: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => invoke<T>("PUT", path, body, headers),
     delete: <T>(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => invoke<T>("DELETE", path, body, headers),
   };
-  let sessionValue: unknown = initialSession ? { token: "token", expiresAt: "2099-01-01T00:00:00Z" } : undefined;
-  const sessionStore = createSessionStore({ get: () => sessionValue, set: (_key, value) => { sessionValue = value; }, remove: () => { sessionValue = undefined; } });
+  const sessionValues = new Map<string, unknown>(initialSession ? [[
+    "modelstella.pitch-booking.session.v2",
+    { token: "token", expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+  ]] : []);
+  const sessionStorage = {
+    get: jest.fn((storageKey: string) => sessionValues.get(storageKey)),
+    set: jest.fn((storageKey: string, value: unknown) => { sessionValues.set(storageKey, value); }),
+    remove: jest.fn((storageKey: string) => { sessionValues.delete(storageKey); }),
+  };
+  const sessionStore = createSessionStore(sessionStorage);
   let attemptValue: unknown; const attemptStore = createVenueProfileAttemptStore({ get: () => attemptValue, set: (_key, value) => { attemptValue = value; }, remove: () => { attemptValue = undefined; } });
   const identity: WeChatIdentityCapability = { login: jest.fn(async () => ({ code: "login-code" })) };
-  return { source: createHttpVenueProfileDataSource({ transport, identity, sessionStore, attemptStore }), calls, attemptStore, identity, setResponse: (value: unknown) => { response = value; }, setFailure: (value: unknown) => { failure = value; } };
+  return { source: createHttpVenueProfileDataSource({ transport, identity, sessionStore, attemptStore }), calls, attemptStore, identity, sessionStorage, setResponse: (value: unknown) => { response = value; }, setFailure: (value: unknown) => { failure = value; } };
 }
 const key = "1234567890abcdef"; const venueId = "venue / one"; const imageId = "image / one";
 
@@ -45,8 +53,14 @@ test("maps bootstrap and every profile mutation to the frozen authenticated endp
 });
 
 test("logs in once on missing session and keeps unresolved writes for original-key retry", async () => {
-  const login = setup(false); login.setResponse({ session_token: "x".repeat(43), expires_at: "2099-01-01T00:00:00Z", user: { id: "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f", masked_phone: null, last_contact_name: null } });
+  const loginUserId = "99999999-9999-4999-8999-999999999999";
+  const login = setup(false); login.setResponse({ session_token: "x".repeat(43), expires_at: "2099-01-01T00:00:00Z", user: { id: loginUserId, masked_phone: null, last_contact_name: null } });
   await expect(login.source.login()).resolves.toBeUndefined(); expect(login.identity.login).toHaveBeenCalledTimes(1);
+  expect(login.sessionStorage.set).toHaveBeenCalledWith("modelstella.pitch-booking.session.v2", {
+    token: "x".repeat(43),
+    expiresAt: "2099-01-01T00:00:00Z",
+    userId: loginUserId,
+  });
 
   const unknown = setup(); unknown.setFailure({ code: "REQUEST_TIMEOUT", errMsg: "timeout" });
   const attempt = { kind: "delete" as const, venueId, imageId, expectedRevisionVersion: 7, idempotencyKey: key };

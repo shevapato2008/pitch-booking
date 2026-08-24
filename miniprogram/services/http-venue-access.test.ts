@@ -1,14 +1,14 @@
 import { describe, expect, jest, test } from "@jest/globals";
 
 import type { Transport, WeChatIdentityCapability } from "../runtime/interfaces";
-import type { SessionStore } from "./session-store";
+import type { SessionStore, StoredSession } from "./session-store";
 import { createHttpVenueAccessDataSource, VenueAccessApiError } from "./http-venue-access";
 
 const tokenResponse = {
   session_token: "wxsess_7jX9Qp2Lm8Vn4Rt6Yw3Kc5Hd1Bs0Fa9Eu7Gi2No6Zx4",
   expires_at: "2099-01-01T00:00:00Z",
   user: {
-    id: "00000000-0000-4000-8000-000000000001",
+    id: "66666666-6666-4666-8666-666666666666",
     masked_phone: null,
     last_contact_name: null,
   },
@@ -53,6 +53,11 @@ describe("HTTP venue access data source", () => {
 
     await expect(harness.source.listManagedVenues()).resolves.toHaveLength(1);
     expect(harness.identity.login).toHaveBeenCalledTimes(1);
+    expect(harness.sessionStore.save).toHaveBeenCalledWith({
+      token: tokenResponse.session_token,
+      expiresAt: tokenResponse.expires_at,
+      userId: tokenResponse.user.id,
+    });
     expect(harness.post).toHaveBeenCalledWith("/api/v1/auth/wechat/session", { code: "wx-login-code" });
     expect(harness.get).toHaveBeenCalledWith("/api/v1/admin/venues", {
       Authorization: `Bearer ${tokenResponse.session_token}`,
@@ -116,8 +121,8 @@ describe("HTTP venue access data source", () => {
 
 function createHarness(initialSession: "present" | "missing" = "present") {
   let stored = initialSession === "present"
-    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" }
-    : null as { token: string; expiresAt: string } | null;
+    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
+    : null as StoredSession | null;
   const get = jest.fn(async (_path: string, _headers?: Readonly<Record<string, string>>) => undefined as unknown);
   const post = jest.fn(async (_path: string, _body: unknown) => undefined as unknown);
   const transport: Transport = {
@@ -128,15 +133,17 @@ function createHarness(initialSession: "present" | "missing" = "present") {
   const identity: WeChatIdentityCapability & { login: jest.MockedFunction<WeChatIdentityCapability["login"]> } = {
     login: jest.fn(async () => ({ code: "wx-login-code" })),
   };
+  const save = jest.fn((session: StoredSession) => { stored = session; });
   const sessionStore: SessionStore = {
     load: () => stored,
-    save: (session) => { stored = session; },
+    save,
     clear: () => { stored = null; },
   };
   return {
     get,
     post,
     identity,
+    sessionStore,
     source: createHttpVenueAccessDataSource({ transport, identity, sessionStore }),
   };
 }

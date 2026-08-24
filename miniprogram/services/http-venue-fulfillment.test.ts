@@ -3,7 +3,7 @@ import { beforeEach, expect, jest, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 
 import type { StatusTransport, TransportError, WeChatIdentityCapability } from "../runtime/interfaces";
-import type { SessionStore } from "./session-store";
+import type { SessionStore, StoredSession } from "./session-store";
 import type { VenueFulfillmentAttemptStore } from "./venue-fulfillment-attempt-store";
 import type { VenueFulfillmentMutationAttempt } from "./venue-fulfillment";
 import { createHttpVenueFulfillmentDataSource, VenueFulfillmentApiError } from "./http-venue-fulfillment";
@@ -12,7 +12,9 @@ const page = JSON.parse(readFileSync("contracts/examples/venue-fulfillment-order
 const checkedIn = JSON.parse(readFileSync("contracts/examples/venue-order-checked-in.json", "utf8"));
 const completed = JSON.parse(readFileSync("contracts/examples/venue-order-completed.json", "utf8"));
 const refund = JSON.parse(readFileSync("contracts/examples/refund-accepted.json", "utf8"));
-const session = JSON.parse(readFileSync("contracts/examples/wechat-session.json", "utf8"));
+const SESSION_USER_ID = "77777777-7777-4777-8777-777777777777";
+const rawSession = JSON.parse(readFileSync("contracts/examples/wechat-session.json", "utf8"));
+const session = { ...rawSession, user: { ...rawSession.user, id: SESSION_USER_ID } };
 
 type Call = { method: string; path: string; body: unknown; headers?: Readonly<Record<string, string>> };
 const response = (statusCode: number, data: unknown) => ({ statusCode, data });
@@ -20,7 +22,9 @@ const httpError = (statusCode: number, code: string, data: unknown = {}) => ({ c
 
 function harness(responses: unknown[], sessionPresent = true) {
   const calls: Call[] = [];
-  let storedSession = sessionPresent ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" } : null;
+  let storedSession: StoredSession | null = sessionPresent
+    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
+    : null;
   let pending: VenueFulfillmentMutationAttempt | null = null;
   const next = async () => { const value = responses.shift(); if (value instanceof Error || (value && typeof value === "object" && "code" in value)) throw value; return value; };
   const transport: StatusTransport = {
@@ -29,9 +33,10 @@ function harness(responses: unknown[], sessionPresent = true) {
     put: async <T>() => (await next()) as T,
     requestWithStatus: async <T>(method: "GET" | "POST" | "PUT", path: string, body: unknown, headers?: Readonly<Record<string, string>>) => { calls.push({ method, path, body, headers }); return (await next()) as { statusCode: number; data: T }; },
   };
+  const save = jest.fn((value: StoredSession) => { storedSession = value; });
   const sessionStore: SessionStore = {
     load: () => storedSession,
-    save: (value) => { storedSession = value; },
+    save,
     clear: () => { storedSession = null; },
   };
   const attemptStore: VenueFulfillmentAttemptStore = {
@@ -40,7 +45,7 @@ function harness(responses: unknown[], sessionPresent = true) {
     clear: jest.fn(() => { pending = null; }),
   };
   const identity: WeChatIdentityCapability = { login: jest.fn(async () => ({ code: "wechat-code" })) };
-  return { calls, attemptStore, identity, source: createHttpVenueFulfillmentDataSource({ transport, identity, sessionStore, attemptStore }) };
+  return { calls, attemptStore, identity, sessionStore, source: createHttpVenueFulfillmentDataSource({ transport, identity, sessionStore, attemptStore }) };
 }
 
 beforeEach(() => { jest.clearAllMocks(); });
@@ -114,5 +119,10 @@ test("a missing session logs in before a read and only once", async () => {
   const h = harness([response(200, session), response(200, page)], false);
   await h.source.listOrders(page.venue.id);
   expect(h.identity.login).toHaveBeenCalledTimes(1);
+  expect(h.sessionStore.save).toHaveBeenCalledWith({
+    token: session.session_token,
+    expiresAt: session.expires_at,
+    userId: SESSION_USER_ID,
+  });
   expect(h.calls.map(({ path }) => path)).toEqual(["/api/v1/auth/wechat/session", `/api/v1/venues/${page.venue.id}/fulfillment/orders?limit=20`]);
 });

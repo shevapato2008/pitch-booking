@@ -80,7 +80,7 @@ export function createHttpPaymentDataSource({
         );
         if (response.statusCode !== 200) throw new ApiResponseError("$.status");
         const session = decodeWeChatSession(response.data);
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId });
       } catch (caught) {
         if (caught instanceof ApiResponseError || caught instanceof PaymentApiError) throw caught;
         throw new PaymentApiError("LOGIN_FAILED");

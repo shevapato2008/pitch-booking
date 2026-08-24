@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 import type { WeChatIdentityCapability } from "../runtime/interfaces";
-import type { SessionStore } from "./session-store";
+import type { SessionStore, StoredSession } from "./session-store";
 import {
   createHttpPaymentDataSource,
   PaymentApiError,
@@ -12,7 +12,12 @@ const pendingOrder = jest.requireActual<Record<string, unknown>>("../../contract
 const confirmedOrder = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-confirmed.json");
 const paymentPrepay = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-prepay-created.json");
 const paymentConfirming = jest.requireActual<Record<string, unknown>>("../../contracts/examples/payment-confirming.json");
-const session = jest.requireActual<Record<string, unknown>>("../../contracts/examples/wechat-session.json");
+const SESSION_USER_ID = "44444444-4444-4444-8444-444444444444";
+const rawSession = jest.requireActual<Record<string, unknown>>("../../contracts/examples/wechat-session.json");
+const session: Record<string, unknown> = {
+  ...rawSession,
+  user: { ...(rawSession.user as Record<string, unknown>), id: SESSION_USER_ID },
+};
 
 interface Call {
   readonly method: "GET" | "POST" | "PUT";
@@ -35,8 +40,8 @@ function harness(
 ) {
   const calls: Call[] = [];
   let stored = initialSession === "present"
-    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" }
-    : null as { token: string; expiresAt: string } | null;
+    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
+    : null as StoredSession | null;
   const next = async () => {
     const value = responses.shift();
     if (value instanceof Error || (typeof value === "object" && value !== null && "code" in value)) throw value;
@@ -56,14 +61,15 @@ function harness(
       return await next() as { readonly statusCode: number; readonly data: T };
     },
   };
+  const save = jest.fn((value: StoredSession) => { stored = value; });
   const sessionStore: SessionStore = {
     load: () => stored,
-    save: (value) => { stored = value; },
+    save,
     clear: () => { stored = null; },
   };
   const identity: WeChatIdentityCapability = { login: jest.fn(async () => ({ code: "login-code" })) };
   return {
-    calls, identity,
+    calls, identity, sessionStore,
     source: createHttpPaymentDataSource({ transport, sessionStore, identity }),
   };
 }
@@ -122,6 +128,11 @@ describe("HTTP payment data source", () => {
     await expect(testHarness.source.createPayment("order-1", "stable-key-12345"))
       .resolves.toMatchObject({ outcome: "PREPAY_CREATED" });
     expect(testHarness.identity.login).toHaveBeenCalledTimes(1);
+    expect(testHarness.sessionStore.save).toHaveBeenCalledWith({
+      token: String(session.session_token),
+      expiresAt: String(session.expires_at),
+      userId: SESSION_USER_ID,
+    });
     expect(testHarness.calls[1]).toMatchObject({
       method: "POST", path: "/api/v1/auth/wechat/session", body: { code: "login-code" },
     });

@@ -4,7 +4,12 @@ import type { Transport, WeChatIdentityCapability, WeChatPhoneCapability } from 
 import { createSessionStore } from "./session-store";
 import { createHttpBookingDataSource } from "./http-booking";
 
-const sessionFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/wechat-session.json");
+const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
+const rawSessionFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/wechat-session.json");
+const sessionFixture: Record<string, unknown> = {
+  ...rawSessionFixture,
+  user: { ...(rawSessionFixture.user as Record<string, unknown>), id: SESSION_USER_ID },
+};
 const phoneFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/phone-verified.json");
 const checkoutFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/checkout-ready.json");
 const orderFixture = jest.requireActual<Record<string, unknown>>("../../contracts/examples/order-pending.json");
@@ -44,7 +49,11 @@ describe("HTTP booking adapter", () => {
     harness.post.mockResolvedValueOnce(sessionFixture).mockResolvedValueOnce(phoneFixture);
     harness.get.mockResolvedValueOnce(checkoutFixture).mockResolvedValueOnce(ownerPendingFixture);
 
-    await expect(harness.source.login()).resolves.toMatchObject({ userId: expect.any(String), maskedPhone: null });
+    await expect(harness.source.login()).resolves.toMatchObject({ userId: SESSION_USER_ID, maskedPhone: null });
+    expect(harness.storage.set).toHaveBeenCalledWith(
+      "modelstella.pitch-booking.session.v2",
+      { token: sessionFixture.session_token, expiresAt: sessionFixture.expires_at, userId: SESSION_USER_ID },
+    );
     const rawPhoneDetail = { code: "phone-code", errMsg: "getPhoneNumber:ok" };
     await expect(harness.source.authorizePhone(rawPhoneDetail)).resolves.toEqual({ maskedPhone: "138****5678" });
     await expect(harness.source.getCheckout("slot-id")).resolves.toMatchObject({ slotId: expect.any(String) });
@@ -398,11 +407,11 @@ describe("HTTP booking adapter", () => {
 });
 
 function createHarness() {
-  let persisted: unknown;
+  const persisted = new Map<string, unknown>();
   const storage = {
-    get: jest.fn(() => persisted),
-    set: jest.fn((_key: string, value: unknown) => { persisted = value; }),
-    remove: jest.fn(() => { persisted = undefined; }),
+    get: jest.fn((key: string) => persisted.get(key)),
+    set: jest.fn((key: string, value: unknown) => { persisted.set(key, value); }),
+    remove: jest.fn((key: string) => { persisted.delete(key); }),
   };
   const get = jest.fn<(path: string, headers?: Readonly<Record<string, string>>) => Promise<unknown>>(
     async () => undefined,

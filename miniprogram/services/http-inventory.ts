@@ -37,7 +37,7 @@ export function createHttpInventoryDataSource({ transport, identity, sessionStor
         const { code } = await identity.login();
         if (!code) throw new InventoryApiError("LOGIN_FAILED");
         const session = decodeWeChatSession(await transport.post("/api/v1/auth/wechat/session", { code }));
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId });
       } catch (caught) {
         if (caught instanceof ApiResponseError || caught instanceof InventoryApiError) throw caught;
         throw new InventoryApiError("LOGIN_FAILED");

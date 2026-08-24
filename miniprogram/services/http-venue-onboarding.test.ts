@@ -3,14 +3,14 @@ import { describe, expect, jest, test } from "@jest/globals";
 
 import type { Transport, WeChatIdentityCapability, WeChatPhoneCapability } from "../runtime/interfaces";
 import type { VenueOnboardingUploadIntent } from "../domain/venue-onboarding";
-import type { SessionStore } from "./session-store";
+import type { SessionStore, StoredSession } from "./session-store";
 import { createHttpVenueOnboardingDataSource } from "./http-venue-onboarding";
 import { createWeChatVenueOnboardingEvidenceCapability } from "./venue-onboarding";
 
 const session = {
   session_token: "wxsess_7jX9Qp2Lm8Vn4Rt6Yw3Kc5Hd1Bs0Fa9Eu7Gi2No6Zx4",
   expires_at: "2099-01-01T00:00:00Z",
-  user: { id: "00000000-0000-4000-8000-000000000001", masked_phone: "138****0000", last_contact_name: "张三" },
+  user: { id: "88888888-8888-4888-8888-888888888888", masked_phone: "138****0000", last_contact_name: "张三" },
 };
 const candidates = { items: [{ venue_id: "7e68d7d8-4b7e-4f04-a5c5-3fe263e69c6f", name: "浦东滨江足球公园", district_name: "浦东新区", address: "滨江大道1000号" }], next_cursor: null };
 const uploadIntent = { evidence_id: "37e2344f-91e1-4754-a171-8047a06bb3c1", status: "PENDING_UPLOAD", post_policy: { url: "https://uploads.example.com/venue-onboarding", method: "POST", fields: { key: "opaque/${filename}", policy: "short" }, expires_at: "2099-01-01T00:00:00Z" }, constraints: { kind: "VENUE_EXTERIOR", accepted_mime_types: ["image/jpeg", "image/png"], maximum_bytes: 15728640 } };
@@ -23,6 +23,11 @@ describe("HTTP venue onboarding source", () => {
     const x = harness();
     x.post.mockResolvedValueOnce(session);
     await expect(x.source.login()).resolves.toMatchObject({ maskedPhone: "138****0000", contactName: "张三" });
+    expect(x.sessionStore.save).toHaveBeenCalledWith({
+      token: session.session_token,
+      expiresAt: session.expires_at,
+      userId: session.user.id,
+    });
     x.get.mockResolvedValueOnce(candidates).mockResolvedValueOnce({ items: [{ ...submitted, rejection_reason: null }], next_cursor: null });
     await x.source.searchCandidates("浦东 滨江");
     await x.source.listApplications();
@@ -118,12 +123,15 @@ describe("native onboarding evidence upload", () => {
 });
 
 function harness(token?: string) {
-  let stored = token ? { token, expiresAt: "2099-01-01T00:00:00Z" } : null as { token: string; expiresAt: string } | null;
+  let stored: StoredSession | null = token
+    ? { token, expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
+    : null;
   const get = jest.fn<(path: string, headers?: Readonly<Record<string, string>>) => Promise<unknown>>();
   const post = jest.fn<(path: string, body: unknown, headers?: Readonly<Record<string, string>>) => Promise<unknown>>();
   const transport: Transport = { get: (path, headers) => get(path, headers) as never, post: (path, body, headers) => post(path, body, headers) as never, put: async () => undefined as never };
   const identity: WeChatIdentityCapability & { login: jest.Mock } = { login: jest.fn(async () => ({ code: "wx-code" })) };
   const phone: WeChatPhoneCapability = { normalizeEvent: jest.fn(() => ({ code: "phone-code" })) };
-  const sessionStore: SessionStore = { load: () => stored, save: (next) => { stored = next; }, clear: () => { stored = null; } };
-  return { get, post, identity, source: createHttpVenueOnboardingDataSource({ transport, identity, phone, sessionStore }) };
+  const save = jest.fn((next: StoredSession) => { stored = next; });
+  const sessionStore: SessionStore = { load: () => stored, save, clear: () => { stored = null; } };
+  return { get, post, identity, sessionStore, source: createHttpVenueOnboardingDataSource({ transport, identity, phone, sessionStore }) };
 }
