@@ -123,8 +123,16 @@ function createHarness(initialSession: "present" | "missing" = "present") {
   let stored = initialSession === "present"
     ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
     : null as StoredSession | null;
-  const get = jest.fn(async (_path: string, _headers?: Readonly<Record<string, string>>) => undefined as unknown);
-  const post = jest.fn(async (_path: string, _body: unknown) => undefined as unknown);
+  const get = jest.fn(async (_path: string, _headers?: Readonly<Record<string, string>>) => {
+    void _path;
+    void _headers;
+    return undefined as unknown;
+  });
+  const post = jest.fn(async (_path: string, _body: unknown) => {
+    void _path;
+    void _body;
+    return undefined as unknown;
+  });
   const transport: Transport = {
     get: <T>(path: string, headers?: Readonly<Record<string, string>>) => get(path, headers) as Promise<T>,
     post: <T>(path: string, body: unknown) => post(path, body) as Promise<T>,
