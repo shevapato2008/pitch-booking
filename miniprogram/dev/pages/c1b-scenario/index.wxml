@@ -1,0 +1,31 @@
+<view class="c1b-page">
+  <view class="c1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1b-header-back" hover-class="c1b-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="c1b-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1b-header-title">C1b 开发预览</text>
+    <view class="c1b-header-spacer" aria-hidden="true"></view>
+  </view>
+  <scroll-view class="c1b-scroll" scroll-y="true">
+    <view class="c1b-scenario-content">
+      <text class="c1b-preview-note">以下为模拟球局</text>
+      <text class="c1b-scenario-title">公开球局发现</text>
+      <text class="c1b-scenario-copy">选择一个可重复状态，检查列表、筛选、恢复与只读详情。</text>
+      <view class="c1b-scenario-list">
+        <button
+          wx:for="{{scenarios}}"
+          wx:key="scenario"
+          class="c1b-scenario-button"
+          hover-class="c1b-pressed"
+          bindtap="onOpenScenario"
+          data-scenario="{{item.scenario}}"
+          aria-label="{{item.title}}，{{item.detail}}"
+        >
+          <text class="c1b-scenario-button__title">{{item.title}}</text>
+          <text class="c1b-scenario-button__detail">{{item.detail}}</text>
+        </button>
+      </view>
+    </view>
+  </scroll-view>
+</view>
