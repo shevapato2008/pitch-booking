@@ -120,9 +120,9 @@ test("create authority loads immutable order facts and every planned native cont
     expect(wxml).toContain(control);
   }
   expect(wxml).toContain("不可修改");
-  expect(wxml).toContain("padding-top: {{headerTopPx}}px");
-  expect(wxml).toContain("height: {{headerHeightPx}}px");
-  expect(wxml).toContain("padding-left: {{headerLeftInsetPx}}px");
+  expect(wxml).toContain('class="header__system" style="height: {{headerTopPx}}px;"');
+  expect(wxml).toContain('class="header" style="height: {{headerRowHeightPx}}px;"');
+  expect(wxml).not.toContain("padding-left: {{headerLeftInsetPx}}px");
   expect(wxml).toContain("到场线下结算，平台不代收或担保");
   expect(wxml).not.toContain(".indexOf(");
   expect(page.data.positions.find((position: { value: string }) => position.value === "ANY").checked).toBe(true);

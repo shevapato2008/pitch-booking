@@ -437,11 +437,11 @@ test("captain open game production routes ship in both builds while temporary pr
   assert.doesNotMatch(productionText, isolationPattern);
 });
 
-test("production captain game scroll views keep a definite viewport on WeChat iOS", async () => {
+test("production captain game scroll views keep a bounded flex viewport on WeChat iOS", async () => {
   const layouts = [
-    ["captain-game-form", ".page", ".content"],
-    ["captain-game-manage", ".page", ".content"],
-    ["captain-game-public", ".owner-shell", ".content"],
+    ["captain-game-form", ".page", ".header__system", ".header", ".content"],
+    ["captain-game-manage", ".page", ".header__system", ".header", ".content"],
+    ["captain-game-public", ".owner-shell", ".header__system", ".header", ".content"],
   ];
   const ruleBody = (styles, selector, page) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -450,16 +450,44 @@ test("production captain game scroll views keep a definite viewport on WeChat iO
     return match[1];
   };
 
-  for (const [page, shellSelector, scrollSelector] of layouts) {
+  for (const [page, shellSelector, systemSelector, headerSelector, scrollSelector] of layouts) {
     const styles = await readFile(`miniprogram/pages/${page}/index.wxss`, "utf8");
     const shell = ruleBody(styles, shellSelector, page);
+    const system = ruleBody(styles, systemSelector, page);
+    const header = ruleBody(styles, headerSelector, page);
     const scroll = ruleBody(styles, scrollSelector, page);
     assert.match(shell, /(?:^|;)\s*display:\s*flex\s*;/);
     assert.match(shell, /(?:^|;)\s*height:\s*100vh\s*;/, `${page} shell must have a definite viewport height`);
     assert.match(shell, /(?:^|;)\s*overflow:\s*hidden\s*;/);
+    assert.match(system, /(?:^|;)\s*flex:\s*0\s+0\s+auto\s*;/, `${page} system spacer must not shrink`);
+    assert.match(header, /(?:^|;)\s*flex:\s*0\s+0\s+auto\s*;/, `${page} header must not shrink into the first card`);
     assert.match(scroll, /(?:^|;)\s*flex:\s*1\s+1\s+auto\s*;/);
-    assert.match(scroll, /(?:^|;)\s*height:\s*auto\s*;/);
+    assert.match(scroll, /(?:^|;)\s*min-height:\s*0\s*;/, `${page} scroll view must shrink to the remaining viewport`);
+    assert.match(scroll, /(?:^|;)\s*height:\s*0\s*;/, `${page} scroll view must have a definite flex basis on WeChat iOS`);
   }
+});
+
+test("production captain game form uses the shared mobile header and fixed stepper columns", async () => {
+  for (const page of ["captain-game-form", "captain-game-manage", "captain-game-public"]) {
+    const wxml = await readFile(`miniprogram/pages/${page}/index.wxml`, "utf8");
+    const styles = await readFile(`miniprogram/pages/${page}/index.wxss`, "utf8");
+    assert.match(wxml, /class="header__system"[^>]*height: \{\{headerTopPx\}\}px/);
+    assert.match(wxml, /class="header__back"[^>]*hover-class="button-hover"[^>]*>[\s\S]*?class="header__back-glyph"/);
+    assert.doesNotMatch(wxml, /‹/);
+    assert.doesNotMatch(wxml, /headerLeftInsetPx/);
+    const back = [...styles.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .find((match) => match[1].split(",").some((selector) => selector.trim() === ".header__back"))?.[2] ?? "";
+    assert.match(back, /min-width:\s*88rpx\s*;/);
+    assert.match(back, /min-height:\s*88rpx\s*;/);
+    assert.match(styles, /\.header__back-glyph\s*\{[^}]*border-bottom:\s*4rpx solid currentColor[^}]*border-left:\s*4rpx solid currentColor[^}]*transform:\s*rotate\(45deg\)/s);
+  }
+
+  const form = await readFile("miniprogram/pages/captain-game-form/index.wxml", "utf8");
+  const styles = await readFile("miniprogram/pages/captain-game-form/index.wxss", "utf8");
+  assert.equal((form.match(/class="stepper__value"/g) ?? []).length, 3);
+  assert.match(styles, /\.stepper\s*\{[^}]*display:\s*grid\s*;[^}]*grid-template-columns:\s*88rpx\s+56rpx\s+88rpx\s*;/s);
+  assert.match(styles, /\.stepper__value\s*\{[^}]*display:\s*flex\s*;[^}]*align-items:\s*center\s*;[^}]*justify-content:\s*center\s*;/s);
+  assert.match(styles, /\.scroll-space\s*\{[^}]*height:\s*calc\(136rpx \+ env\(safe-area-inset-bottom, 0px\)\)\s*;/s);
 });
 
 test("open game registration production routes ship in both manifests with compiled native artifacts", async (t) => {

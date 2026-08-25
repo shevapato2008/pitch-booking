@@ -1,5 +1,6 @@
 <view class="page">
-  <view class="header" style="height: {{headerHeightPx}}px; padding-top: {{headerTopPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;"><button class="header__back" style="height: {{headerRowHeightPx}}px; min-height: {{headerRowHeightPx}}px;" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">{{pageTitle}}</text><view class="header__spacer" style="height: {{headerRowHeightPx}}px; min-height: {{headerRowHeightPx}}px;"></view></view>
+  <view class="header__system" style="height: {{headerTopPx}}px;"></view>
+  <view class="header" style="height: {{headerRowHeightPx}}px;"><button class="header__back" hover-class="button-hover" bindtap="onHeaderBack" aria-label="返回"><view class="header__back-glyph"></view></button><text class="header__title">{{pageTitle}}</text><view class="header__spacer"></view></view>
   <scroll-view scroll-y="true" class="content">
     <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="state-card__title">正在加载</text><text>正在读取订单与球局状态…</text></view>
     <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="state-card__title">加载失败</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onRetry">重新加载</button></view>
@@ -20,9 +21,9 @@
       </view>
 
       <view class="card"><text class="heading">人数与开放名额</text>
-        <view class="stepper-row"><text>计划总人数</text><view class="stepper"><button data-field="totalPlayers" data-delta="-1" bindtap="onStepper">−</button><text>{{form.totalPlayers}}</text><button data-field="totalPlayers" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.totalPlayers}}" class="field__error" role="alert">{{fieldErrors.totalPlayers}}</text>
-        <view class="stepper-row"><text>已有固定队员</text><view class="stepper"><button data-field="fixedPlayers" data-delta="-1" bindtap="onStepper">−</button><text>{{form.fixedPlayers}}</text><button data-field="fixedPlayers" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.fixedPlayers}}" class="field__error" role="alert">{{fieldErrors.fixedPlayers}}</text>
-        <view class="stepper-row"><text>开放给散客</text><view class="stepper"><button data-field="openSpots" data-delta="-1" bindtap="onStepper">−</button><text>{{form.openSpots}}</text><button data-field="openSpots" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.openSpots}}" class="field__error" role="alert">{{fieldErrors.openSpots}}</text>
+        <view class="stepper-row"><text>计划总人数</text><view class="stepper"><button data-field="totalPlayers" data-delta="-1" bindtap="onStepper">−</button><text class="stepper__value">{{form.totalPlayers}}</text><button data-field="totalPlayers" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.totalPlayers}}" class="field__error" role="alert">{{fieldErrors.totalPlayers}}</text>
+        <view class="stepper-row"><text>已有固定队员</text><view class="stepper"><button data-field="fixedPlayers" data-delta="-1" bindtap="onStepper">−</button><text class="stepper__value">{{form.fixedPlayers}}</text><button data-field="fixedPlayers" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.fixedPlayers}}" class="field__error" role="alert">{{fieldErrors.fixedPlayers}}</text>
+        <view class="stepper-row"><text>开放给散客</text><view class="stepper"><button data-field="openSpots" data-delta="-1" bindtap="onStepper">−</button><text class="stepper__value">{{form.openSpots}}</text><button data-field="openSpots" data-delta="1" bindtap="onStepper">+</button></view></view><text wx:if="{{fieldErrors.openSpots}}" class="field__error" role="alert">{{fieldErrors.openSpots}}</text>
         <text class="help">计划共 {{form.totalPlayers}} 人，当前固定 {{form.fixedPlayers}} 人，本次开放 {{form.openSpots}} 个名额</text>
       </view>
 
