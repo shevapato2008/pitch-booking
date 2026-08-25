@@ -9,7 +9,9 @@ const decodeGameId = (value: unknown): string => {
 };
 
 const returnToDirectory = () => {
-  if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 });
+  const pages = getCurrentPages() as unknown as readonly { route?: string }[];
+  const previous = pages[pages.length - 2];
+  if (previous?.route === "dev/pages/c1b-game-discovery/index") wx.navigateBack({ delta: 1 });
   else wx.redirectTo({ url: "/dev/pages/c1b-game-discovery/index" });
 };
 

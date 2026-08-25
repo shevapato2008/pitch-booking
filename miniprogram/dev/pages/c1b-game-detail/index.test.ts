@@ -63,7 +63,7 @@ test("unknown or malformed IDs never fall back to the first game", () => {
   expect(malformed.data).toMatchObject({ gameId: "", game: null, notFound: true });
 });
 
-test("onShow rereads the same record and return preserves singleton filters", () => {
+test("onShow rereads the same record and returning from the directory preserves singleton filters", () => {
   c1bGameDiscoveryStore.reset("FILTERED_NONEMPTY");
   const page = loadPage();
   page.onLoad({ gameId: "harbor-five" });
@@ -74,13 +74,28 @@ test("onShow rereads the same record and return preserves singleton filters", ()
   expect(page.data).toMatchObject({ gameId: "harbor-five", game: null, notFound: true });
 
   c1bGameDiscoveryStore.reset("FILTERED_NONEMPTY");
-  page.onHeaderBack();
-  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/c1b-game-discovery/index" });
-  expect(c1bGameDiscoveryStore.current().filters).toEqual({ date: "2026-08-29", format: "FIVE", availableOnly: true });
-
-  (getCurrentPages as unknown as jest.Mock).mockReturnValue([{}, {}]);
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([
+    { route: "dev/pages/c1b-game-discovery/index" },
+    { route: "dev/pages/c1b-game-detail/index" },
+  ]);
   page.onHeaderBack();
   expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
+  expect(c1bGameDiscoveryStore.current().filters).toEqual({ date: "2026-08-29", format: "FIVE", availableOnly: true });
+});
+
+test.each([
+  ["header", "onHeaderBack", [{ route: "dev/pages/c1b-scenario/index" }, { route: "dev/pages/c1b-game-detail/index" }]],
+  ["not-found button", "onReturnList", [{ route: "pages/intent-entry/index" }, { route: "dev/pages/c1b-game-detail/index" }]],
+  ["deep link", "onHeaderBack", [{ route: "dev/pages/c1b-game-detail/index" }]],
+] as const)("%s redirects to the directory unless the previous route is the directory", (_label, action, stack) => {
+  const page = loadPage();
+  page.onLoad({ gameId: "unknown" });
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue(stack);
+
+  page[action]();
+
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/c1b-game-discovery/index" });
+  expect(wx.navigateBack).not.toHaveBeenCalled();
 });
 
 test("not-found return is real and the read-only detail exposes no application or private field", () => {
