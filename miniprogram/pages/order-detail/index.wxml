@@ -1,6 +1,6 @@
 <view class="order-page u-page u-text">
   <view class="hero">
-    <view wx:if="{{showSuccessIcon}}" class="success-check" role="img" aria-label="支付成功">
+    <view wx:if="{{showSuccessIcon}}" class="success-check" role="img" aria-label="{{paidLabel ? '支付成功' : '预订成功'}}">
       <view class="success-check__stroke"></view>
     </view>
     <view wx:elif="{{showProgressIcon}}" class="progress-icon" role="img" aria-label="正在查询支付结果">
@@ -59,9 +59,10 @@
     </view>
 
     <view class="detail-card">
-      <text class="card-kicker">{{status === 'payment-confirming' || status === 'payment-exception' ? '确认说明' : status === 'booking-confirmed' ? '取消规则' : '预订须知'}}</text>
+      <text class="card-kicker">{{status === 'payment-confirming' || status === 'payment-exception' ? '确认说明' : status === 'booking-confirmed' && !paidLabel ? '订单说明' : status === 'booking-confirmed' ? '取消规则' : '预订须知'}}</text>
       <text wx:if="{{status === 'payment-confirming'}}" class="rules">服务端正在查询权威支付结果。结果未知时场地保持锁定，不会显示成功或已释放。</text>
       <text wx:elif="{{status === 'payment-exception'}}" class="rules">支付结果暂时无法确认，场地仍保持锁定。重新查询前不会显示成功，也不会声称场次已释放。</text>
+      <text wx:elif="{{status === 'booking-confirmed' && !paidLabel}}" class="rules">订单已确认，当前未记录线上支付，页面不提供退款操作。</text>
       <text wx:else class="rules">{{order.cancellationSummary}}{{status === 'booking-confirmed' ? '' : ' 页面倒计时不自行释放场地。'}}</text>
     </view>
 

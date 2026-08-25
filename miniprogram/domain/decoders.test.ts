@@ -550,6 +550,33 @@ test("accepts the frozen exceptional-success and closed-expired combinations", (
   })).toMatchObject({ status: "PAYMENT_EXCEPTION", paymentState: null });
 });
 
+test("limits marked non-funding confirmation to owner detail reads", () => {
+  const stagingReservation = {
+    ...confirmedOrder,
+    order_number: "PB-STG-C1A-7182b05283de-03",
+    payment_state: null,
+    paid_at: null,
+  };
+
+  expect(() => decodeOrder(stagingReservation)).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodePaymentReconciliation(stagingReservation)).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodeOwnerOrder({
+    ...stagingReservation,
+    order_number: confirmedOrder.order_number,
+  })).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodeOrder({
+    ...stagingReservation,
+    status: "COMPLETED",
+    completed_at: "2026-08-31T10:00:00+08:00",
+  })).toThrow("INVALID_API_RESPONSE");
+  expect(decodeOwnerOrder(stagingReservation)).toMatchObject({
+    status: "CONFIRMED",
+    paymentState: null,
+    paymentConfirming: false,
+    paidAt: null,
+  });
+});
+
 test.each([
   [null, false, false],
   ["CREATING", false, false],

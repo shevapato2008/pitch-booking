@@ -92,6 +92,11 @@ const ownerConfirmed = (): Extract<OrderView, { status: "CONFIRMED" }> => ({
   allowedActions: ownerActions(false, true),
   fundingAlerts: [],
 });
+const ownerInventoryConfirmed = (): Extract<OrderView, { status: "CONFIRMED" }> => ({
+  ...ownerConfirmed(),
+  paymentState: null,
+  paidAt: null,
+});
 const refundPendingFrom = (
   order: ReturnType<typeof ownerConfirmed>,
 ): Extract<OrderView, { status: "REFUND_PENDING" }> => ({
@@ -153,10 +158,39 @@ beforeEach(() => {
 });
 
 describe("open game entry orchestration", () => {
+  test("the confirmation template distinguishes reservation success from payment success", () => {
+    const wxml = readFileSync("miniprogram/pages/order-detail/index.wxml", "utf8");
+    expect(wxml).toContain("aria-label=\"{{paidLabel ? '支付成功' : '预订成功'}}\"");
+    expect(wxml).toContain("订单已确认，当前未记录线上支付，页面不提供退款操作。");
+  });
+
+  test("a non-funding confirmed reservation exposes CREATE without claiming payment or refund", async () => {
+    const order = ownerInventoryConfirmed();
+    registerBookingDataSource({
+      ...baseSource(async () => order),
+      cancelOrder: async () => { throw new Error("must stay hidden"); },
+    });
+    registerOpenGameSource(openGameSource(async () => createEntry));
+    const page = loadPage();
+
+    call(page, "onLoad", { order_id: order.orderId });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "booking-confirmed",
+      paidLabel: "",
+      showCancelAction: false,
+      showActionFooter: false,
+      showOpenGameEntry: true,
+      openGameActionLabel: "创建球局",
+    });
+    call(page, "onUnload");
+  });
+
   test("CREATE renders a real action and navigates with the authoritative order id", async () => {
     const order = ownerConfirmed();
     const getEntry = jest.fn(async () => createEntry);
-    const navigateTo = jest.fn(async (_input: { url: string }) => undefined);
+    const navigateTo = jest.fn(async (input: { url: string }) => { void input; });
     registerBookingDataSource(baseSource(async () => order));
     registerOpenGameSource(openGameSource(getEntry));
     (globalThis as unknown as { wx: object }).wx = { navigateTo };
@@ -182,7 +216,7 @@ describe("open game entry orchestration", () => {
   test("MANAGE renders a real action and navigates with the authoritative game id", async () => {
     const order = ownerConfirmed();
     const getEntry = jest.fn(async () => manageEntry);
-    const navigateTo = jest.fn(async (_input: { url: string }) => undefined);
+    const navigateTo = jest.fn(async (input: { url: string }) => { void input; });
     registerBookingDataSource(baseSource(async () => order));
     registerOpenGameSource(openGameSource(getEntry));
     (globalThis as unknown as { wx: object }).wx = { navigateTo };
@@ -962,7 +996,7 @@ describe("order detail payment orchestration", () => {
     ]) expect(wxml).toContain(copy);
     expect(wxml).not.toContain("查看预订详情");
     expect(wxml).toMatch(/disabled="\{\{primaryDisabled\}\}"/);
-    expect(wxml).toMatch(/aria-label="支付成功"/);
+    expect(wxml).toContain("aria-label=\"{{paidLabel ? '支付成功' : '预订成功'}}\"");
     expect(wxml).not.toMatch(/客服.*电话|customerServicePhone/);
     expect(wxml).toContain("{{cashierNotice}}");
     expect(wxml).not.toContain("模拟支付，不会扣款");

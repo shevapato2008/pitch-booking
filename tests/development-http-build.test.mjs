@@ -97,7 +97,8 @@ test("development native order detail keeps payment states and the real B2 owner
     "预订成功",
     "已支付",
   ]) assert.match(wxml, new RegExp(copy));
-  assert.match(wxml, /aria-label="支付成功"/);
+  assert.match(wxml, /aria-label="\{\{paidLabel \? '支付成功' : '预订成功'\}\}"/);
+  assert.match(wxml, /订单已确认，当前未记录线上支付，页面不提供退款操作。/);
   assert.match(wxml, /bindtap="onOpenGameEntry"/);
   assert.match(wxml, /创建球局/);
   assert.match(wxml, /管理球局/);

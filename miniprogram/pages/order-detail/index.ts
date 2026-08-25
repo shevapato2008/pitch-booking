@@ -453,7 +453,7 @@ Page({
       cashierNotice: getPaymentBindings()?.capability.cashierNotice ?? "",
       showProgressIcon: confirming || exception,
       showSuccessIcon: confirmed,
-      paidLabel: confirmed ? "已支付" : "",
+      paidLabel: confirmed && state.order.paymentState === "SUCCESS" ? "已支付" : "",
       paymentError,
       cancellationError: "",
       errorText: "",

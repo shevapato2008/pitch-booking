@@ -20,6 +20,7 @@ import type {
 import type {
   AllowedOrderActions,
   CheckoutView,
+  ConfirmedOrderView,
   FundingAlert,
   OrderListView,
   OrderSummaryStatus,
@@ -317,7 +318,9 @@ export function decodeCheckout(value: unknown): CheckoutView {
   };
 }
 
-export function decodeOrder(value: unknown): OrderView {
+const STAGING_NON_FUNDING_ORDER_NUMBER = /^PB-STG-C1A-[0-9a-f]{12}-0[1-3]$/;
+
+function decodeOrderProjection(value: unknown, allowMarkedNonFundingConfirmed: boolean): OrderView {
   const baseKeys = [
     "id", "order_number", "status", "slot_id", "venue", "pitch", "starts_at", "ends_at",
     "duration_minutes", "price_cents", "currency", "contact", "created_at", "expires_at",
@@ -387,10 +390,15 @@ export function decodeOrder(value: unknown): OrderView {
     return { ...common, status, expiredAt: null } as PaymentPendingOrderView;
   }
   if (status === "CONFIRMED") {
-    if (expiredAt !== null || paymentState !== "SUCCESS" || paymentConfirming || closingPayment || paidAt === null) {
+    const appliedPayment = paymentState === "SUCCESS" && paidAt !== null;
+    const inventoryReservation = allowMarkedNonFundingConfirmed
+      && STAGING_NON_FUNDING_ORDER_NUMBER.test(common.orderNumber)
+      && paymentState === null
+      && paidAt === null;
+    if (expiredAt !== null || paymentConfirming || closingPayment || (!appliedPayment && !inventoryReservation)) {
       invalid("$.status");
     }
-    return { ...common, status, expiredAt: null, paymentState: "SUCCESS", paymentConfirming: false, closingPayment: false, paidAt };
+    return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as ConfirmedOrderView;
   }
   if (status === "EXPIRED") {
     if (expiredAt === null || (paymentState !== null && paymentState !== "CLOSED")
@@ -423,11 +431,15 @@ export function decodeOrder(value: unknown): OrderView {
   return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt } as Extract<OrderView, { status: "PAYMENT_EXCEPTION" }>;
 }
 
+export function decodeOrder(value: unknown): OrderView {
+  return decodeOrderProjection(value, false);
+}
+
 export function decodeOwnerOrder(value: unknown): OrderView {
   for (const key of ORDER_LIFECYCLE_KEYS) {
     if (!hasOwn(value, key)) invalid(`$.${key}`);
   }
-  const order = decodeOrder(value);
+  const order = decodeOrderProjection(value, true);
   if (order.cancelRequestedAt === undefined || order.cancelledAt === undefined
     || order.checkedInAt === undefined || order.completedAt === undefined
     || order.allowedActions === undefined || order.fundingAlerts === undefined) {

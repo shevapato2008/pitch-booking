@@ -13,6 +13,7 @@ import {
 const ownerLifecycleOrder = (overrides: Record<string, unknown> = {}) => ({
   orderId: "00000000-0000-4000-8000-000000000040",
   status: "CONFIRMED",
+  paymentState: "SUCCESS",
   cancelRequestedAt: null,
   allowedActions: {
     canPay: false,
@@ -67,6 +68,14 @@ describe("owner order lifecycle presentation", () => {
   ] as const)("presents the server-authorized %s destructive action", (status, label, title, content) => {
     expect(presentOwnerOrderLifecycle(ownerLifecycleOrder({ status }))).toMatchObject({
       cancelAction: { label, title, content },
+    });
+  });
+
+  test("does not offer a refund action for a non-funding confirmed reservation", () => {
+    expect(presentOwnerOrderLifecycle(ownerLifecycleOrder({ paymentState: null }))).toMatchObject({
+      heroTitle: "预订成功",
+      showPayAction: false,
+      cancelAction: null,
     });
   });
 

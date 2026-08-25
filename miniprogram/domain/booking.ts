@@ -158,13 +158,15 @@ export interface ExpiredOrderView extends OrderViewBase {
   readonly paidAt?: null;
 }
 
-export interface ConfirmedOrderView extends OrderViewBase {
+export type ConfirmedOrderView = OrderViewBase & {
   readonly status: "CONFIRMED";
   readonly expiredAt: null;
-  readonly paymentState: "SUCCESS";
   readonly paymentConfirming: false;
-  readonly paidAt: string;
-}
+  readonly closingPayment: false;
+} & (
+  | { readonly paymentState: "SUCCESS"; readonly paidAt: string }
+  | { readonly paymentState: null; readonly paidAt: null }
+);
 
 export type PaymentExceptionOrderView =
   | (OrderViewBase & {
