@@ -437,6 +437,31 @@ test("captain open game production routes ship in both builds while temporary pr
   assert.doesNotMatch(productionText, isolationPattern);
 });
 
+test("production captain game scroll views keep a definite viewport on WeChat iOS", async () => {
+  const layouts = [
+    ["captain-game-form", ".page", ".content"],
+    ["captain-game-manage", ".page", ".content"],
+    ["captain-game-public", ".owner-shell", ".content"],
+  ];
+  const ruleBody = (styles, selector, page) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = styles.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `${page} is missing ${selector}`);
+    return match[1];
+  };
+
+  for (const [page, shellSelector, scrollSelector] of layouts) {
+    const styles = await readFile(`miniprogram/pages/${page}/index.wxss`, "utf8");
+    const shell = ruleBody(styles, shellSelector, page);
+    const scroll = ruleBody(styles, scrollSelector, page);
+    assert.match(shell, /(?:^|;)\s*display:\s*flex\s*;/);
+    assert.match(shell, /(?:^|;)\s*height:\s*100vh\s*;/, `${page} shell must have a definite viewport height`);
+    assert.match(shell, /(?:^|;)\s*overflow:\s*hidden\s*;/);
+    assert.match(scroll, /(?:^|;)\s*flex:\s*1\s+1\s+auto\s*;/);
+    assert.match(scroll, /(?:^|;)\s*height:\s*auto\s*;/);
+  }
+});
+
 test("open game registration production routes ship in both manifests with compiled native artifacts", async (t) => {
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
