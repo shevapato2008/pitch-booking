@@ -25,6 +25,16 @@ function changed(mutator: (value: DirectoryWire) => void): DirectoryWire {
   return value;
 }
 
+function singleItemAt(startsAt: string, endsAt: string, localDate: string): DirectoryWire {
+  return changed((value) => {
+    value.items = [value.items[0]];
+    value.available_dates = [localDate];
+    value.items[0].local_date = localDate;
+    value.items[0].game.starts_at = startsAt;
+    value.items[0].game.ends_at = endsAt;
+  });
+}
+
 describe("public game directory decoder", () => {
   test("decodes the frozen ready response to the readonly camel-case domain", () => {
     const decoded = decodePublicGameDirectory(readyExample);
@@ -64,6 +74,38 @@ describe("public game directory decoder", () => {
     });
   });
 
+  test("decodes a grammar-valid leap-second start", () => {
+    const startsAt = "2026-08-28T23:59:60Z";
+
+    expect(decodePublicGameDirectory(singleItemAt(
+      startsAt,
+      "2026-08-29T01:00:00Z",
+      "2026-08-29",
+    )).items[0]).toMatchObject({
+      localDate: "2026-08-29",
+      game: { startsAt },
+    });
+  });
+
+  test.each([
+    ["lowercase t/z", "2026-08-28t15:59:59z", "2026-08-28T17:00:00Z", "2026-08-28"],
+    ["explicit offset", "2026-08-28T23:59:59-08:00", "2026-08-29T08:30:00Z", "2026-08-29"],
+  ])("decodes a contract-valid %s start consistently", (_name, startsAt, endsAt, localDate) => {
+    expect(decodePublicGameDirectory(singleItemAt(startsAt, endsAt, localDate)).items[0])
+      .toMatchObject({ localDate, game: { startsAt } });
+  });
+
+  test.each([
+    ["2026-08-28T15:59:59Z", "2026-08-28"],
+    ["2026-08-28T16:00:00Z", "2026-08-29"],
+  ])("derives Shanghai date %s at the UTC midnight boundary", (startsAt, localDate) => {
+    expect(decodePublicGameDirectory(singleItemAt(
+      startsAt,
+      "2026-08-29T01:00:00Z",
+      localDate,
+    )).items[0].localDate).toBe(localDate);
+  });
+
   test.each([
     ["response private key", changed((value) => { value.cursor = "private"; })],
     ["item private key", changed((value) => { value.items[0].order_id = "private"; })],
@@ -89,7 +131,10 @@ describe("public game directory decoder", () => {
     ["naive authority timestamp", changed((value) => { value.authoritative_now = "2026-08-26T04:00:00"; })],
     ["naive game timestamp", changed((value) => { value.items[0].game.starts_at = "2026-08-28T23:30:00"; })],
     ["nonexistent venue timezone", changed((value) => { value.items[0].game.time_zone = "Fake/Zone"; })],
-    ["local date outside the venue day", changed((value) => { value.items[0].local_date = "2026-08-28"; })],
+    ["local date outside the venue day", changed((value) => {
+      value.available_dates = ["2026-08-28", "2026-08-30", "2026-08-31"];
+      value.items[0].local_date = "2026-08-28";
+    })],
     ["format and pitch mismatch", changed((value) => { value.items[0].format = "SEVEN"; })],
     ["current players below fixed players", changed((value) => { value.items[0].current_players = 3; })],
     ["current players above total players", changed((value) => { value.items[0].current_players = 11; })],

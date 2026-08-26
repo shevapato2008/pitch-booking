@@ -6,6 +6,7 @@ import {
   invalid,
   rfc3339At,
   rfc3339Before,
+  rfc3339DateAtOffset,
   stringAt,
 } from "./decoder-primitives";
 import { decodeOpenGamePublic } from "./open-game-decoder";
@@ -21,7 +22,7 @@ const ITEM_KEYS = [
   "detail_path", "local_date", "format", "current_players", "remaining_spots", "game",
 ] as const;
 const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
-const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+const SHANGHAI_OFFSET_SECONDS = 8 * 60 * 60;
 
 function safeIntegerAt(value: unknown, path: string, minimum: number): number {
   if (!Number.isSafeInteger(value) || (value as number) < minimum) invalid(path);
@@ -35,11 +36,7 @@ function detailPathAt(value: unknown, path: string): string {
 }
 
 function localDateAtShanghai(instant: string, path: string): string {
-  const epoch = Date.parse(instant);
-  if (!Number.isFinite(epoch)) invalid(path);
-  const shifted = new Date(epoch + SHANGHAI_OFFSET_MS);
-  const two = (part: number): string => String(part).padStart(2, "0");
-  return `${shifted.getUTCFullYear()}-${two(shifted.getUTCMonth() + 1)}-${two(shifted.getUTCDate())}`;
+  return rfc3339DateAtOffset(instant, path, SHANGHAI_OFFSET_SECONDS);
 }
 
 function expectedPitchSpecification(format: PublicGameFormat): string {

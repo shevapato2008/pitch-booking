@@ -108,6 +108,9 @@ interface ComparableInstant {
   fraction: string;
 }
 
+const INSTANT_UNITS_PER_SECOND = 2;
+const SECONDS_PER_DAY = 86_400;
+
 function parseRfc3339(value: string, path: string): ComparableInstant {
   const match = RFC3339_PATTERN.exec(value);
   if (!match) invalid(path);
@@ -122,10 +125,10 @@ function parseRfc3339(value: string, path: string): ComparableInstant {
   }
   const offsetDirection = match[9] === "-" ? -1 : 1;
   const offsetSeconds = offsetDirection * (offsetHour * 60 + offsetMinute) * 60;
-  const wholeSeconds = daysFromCivil(year, month, day) * 86_400
+  const wholeSeconds = daysFromCivil(year, month, day) * SECONDS_PER_DAY
     + hour * 3_600 + minute * 60 + Math.min(second, 59) - offsetSeconds;
   return {
-    unit: wholeSeconds * 2 + (second === 60 ? 1 : 0),
+    unit: wholeSeconds * INSTANT_UNITS_PER_SECOND + (second === 60 ? 1 : 0),
     fraction: match[7] ?? "",
   };
 }
@@ -139,6 +142,16 @@ function daysFromCivil(year: number, month: number, day: number): number {
   const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4)
     - Math.floor(yearOfEra / 100) + dayOfYear;
   return era * 146_097 + dayOfEra;
+}
+
+export function rfc3339DateAtOffset(value: string, path: string, offsetSeconds: number): string {
+  const unixEpochUnit = daysFromCivil(1970, 1, 1) * SECONDS_PER_DAY
+    * INSTANT_UNITS_PER_SECOND;
+  const shiftedUnit = parseRfc3339(value, path).unit - unixEpochUnit
+    + offsetSeconds * INSTANT_UNITS_PER_SECOND;
+  const shifted = new Date(shiftedUnit * (1_000 / INSTANT_UNITS_PER_SECOND));
+  const two = (part: number): string => String(part).padStart(2, "0");
+  return `${String(shifted.getUTCFullYear()).padStart(4, "0")}-${two(shifted.getUTCMonth() + 1)}-${two(shifted.getUTCDate())}`;
 }
 
 export function rfc3339Before(left: string, right: string): boolean {
