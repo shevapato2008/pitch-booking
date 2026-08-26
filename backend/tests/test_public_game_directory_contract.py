@@ -156,6 +156,56 @@ def test_directory_response_requires_aware_time_sorted_dates_and_stable_items() 
             dto.PublicGameDirectoryResponse.model_validate(payload)
 
 
+def test_directory_response_requires_item_dates_in_available_dates() -> None:
+    dto = _dto_module()
+    payload = deepcopy(_response_payload())
+    payload["available_dates"] = ["2026-08-30"]
+
+    with pytest.raises(
+        ValidationError,
+        match="item local_date must belong to available_dates",
+    ):
+        dto.PublicGameDirectoryResponse.model_validate(payload)
+
+
+def test_directory_item_local_date_matches_game_timezone() -> None:
+    dto = _dto_module()
+    payload = deepcopy(_response_payload())
+    payload["items"][0]["local_date"] = "2026-08-28"  # type: ignore[index]
+
+    with pytest.raises(
+        ValidationError,
+        match=r"local_date must match game\.starts_at in game\.time_zone",
+    ):
+        dto.PublicGameDirectoryResponse.model_validate(payload)
+
+
+def test_directory_item_rejects_unknown_game_timezone() -> None:
+    dto = _dto_module()
+    payload = deepcopy(_response_payload())
+    payload["items"][0]["game"]["time_zone"] = "Fake/Zone"  # type: ignore[index]
+
+    with pytest.raises(
+        ValidationError,
+        match="game.time_zone must identify an available IANA time zone",
+    ):
+        dto.PublicGameDirectoryResponse.model_validate(payload)
+
+
+def test_directory_item_rejects_published_state_reason() -> None:
+    dto = _dto_module()
+    payload = deepcopy(_response_payload())
+    payload["items"][0]["game"][  # type: ignore[index]
+        "state_reason"
+    ] = "REGISTRATION_DEADLINE_PASSED"
+
+    with pytest.raises(
+        ValidationError,
+        match="directory published game cannot have a state reason",
+    ):
+        dto.PublicGameDirectoryResponse.model_validate(payload)
+
+
 def test_directory_items_enforce_public_format_capacity_and_future_authority() -> None:
     dto = _dto_module()
 

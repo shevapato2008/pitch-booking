@@ -3,6 +3,7 @@
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
 
@@ -34,6 +35,17 @@ class PublicGameDirectoryItem(ClosedModel):
 
     @model_validator(mode="after")
     def validate_public_directory_projection(self) -> Self:
+        try:
+            game_time_zone = ZoneInfo(self.game.time_zone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(
+                "game.time_zone must identify an available IANA time zone"
+            ) from exc
+        if self.local_date != self.game.starts_at.astimezone(game_time_zone).date():
+            raise ValueError(
+                "local_date must match game.starts_at in game.time_zone"
+            )
+
         expected_pitch_specification = {
             PublicGameFormat.FIVE: "5人制",
             PublicGameFormat.SEVEN: "7人制",
@@ -42,6 +54,8 @@ class PublicGameDirectoryItem(ClosedModel):
             raise ValueError("format must match game.pitch_specification")
         if self.game.state is not EffectiveOpenGameState.PUBLISHED:
             raise ValueError("directory game must be published")
+        if self.game.state_reason is not None:
+            raise ValueError("directory published game cannot have a state reason")
         if self.game.visibility is not OpenGameVisibility.PUBLIC:
             raise ValueError("directory game must be public")
 
@@ -74,7 +88,10 @@ class PublicGameDirectoryResponse(ClosedModel):
 
     @model_validator(mode="after")
     def validate_authoritative_snapshot(self) -> Self:
+        available_dates = set(self.available_dates)
         for index, item in enumerate(self.items):
+            if item.local_date not in available_dates:
+                raise ValueError("item local_date must belong to available_dates")
             if item.game.starts_at <= self.authoritative_now:
                 raise ValueError("directory game start must be in the future")
             if item.game.registration_deadline <= self.authoritative_now:

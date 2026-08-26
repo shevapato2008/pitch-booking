@@ -1462,6 +1462,26 @@ function validateOrderListBusinessRules(response, filename) {
   }
 }
 
+function localDateInTimeZone(timestamp, timeZone, filename) {
+  try {
+    const dateParts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-CA', {
+        calendar: 'iso8601',
+        numberingSystem: 'latn',
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+        .formatToParts(new Date(timestamp))
+        .map(({ type, value }) => [type, value]),
+    );
+    return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+  } catch {
+    fail(`${filename}: time_zone must identify a recognized IANA time zone`);
+  }
+}
+
 function validatePublicGameDirectoryBusinessRules(response, filename) {
   const authoritativeNow = Date.parse(response.authoritative_now);
   if (!Number.isFinite(authoritativeNow)) {
@@ -1485,7 +1505,19 @@ function validatePublicGameDirectoryBusinessRules(response, filename) {
   }
 
   const pitchSpecificationByFormat = { FIVE: '5人制', SEVEN: '7人制' };
+  const availableDates = new Set(response.available_dates);
   for (const item of response.items) {
+    if (!availableDates.has(item.local_date)) {
+      fail(`${filename}: item local_date must belong to available_dates`);
+    }
+    const expectedLocalDate = localDateInTimeZone(
+      item.game.starts_at,
+      item.game.time_zone,
+      filename,
+    );
+    if (item.local_date !== expectedLocalDate) {
+      fail(`${filename}: local_date must match starts_at in time_zone`);
+    }
     if (item.game.pitch_specification !== pitchSpecificationByFormat[item.format]) {
       fail(`${filename}: format must match pitch specification`);
     }

@@ -1662,3 +1662,27 @@ test('contract validator rejects public game directory authority drift', async (
     [example.items[0], example.items[1]] = [example.items[1], example.items[0]];
   }, /public-games-ready|stable|sorted|order/i);
 });
+
+test('contract validator rejects public game directory local date drift', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].local_date = '2026-08-28';
+  }, /public-games-ready|local_date|time.zone/i);
+});
+
+test('contract validator rejects public game directory unknown time zones', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].game.time_zone = 'Fake/Zone';
+  }, /public-games-ready|time_zone|time zone/i);
+});
+
+test('contract validator rejects public game directory missing available dates', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.available_dates = example.available_dates.slice(1);
+  }, /public-games-ready|available_dates|local_date/i);
+});
+
+test('contract validator rejects public game directory published state reasons', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].game.state_reason = 'REGISTRATION_DEADLINE_PASSED';
+  }, /public-games-ready|state reason|state_reason/i);
+});
