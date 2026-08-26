@@ -79,6 +79,7 @@ const exampleMap = [
       attachment('/api/v1/shared-games/{share_token}/applications', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/games/{game_id}/applications', '422', 'InvalidArgument'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/public-games', '422', 'InvalidArgument'),
     ],
   },
   {
@@ -146,6 +147,7 @@ const exampleMap = [
       attachment('/api/v1/shared-games/{share_token}/applications', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/games/{game_id}/applications', '503', 'ServiceUnavailable'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/public-games', '503', 'ServiceUnavailable'),
     ],
   },
   {
@@ -736,6 +738,18 @@ const exampleMap = [
     attachments: [attachment('/api/v1/shared-games/{share_token}', '200', 'Published')],
   },
   {
+    filename: 'public-games-ready.json',
+    reference: './examples/public-games-ready.json',
+    schema: 'PublicGameDirectoryResponse',
+    attachments: [attachment('/api/v1/public-games', '200', 'Ready')],
+  },
+  {
+    filename: 'public-games-empty.json',
+    reference: './examples/public-games-empty.json',
+    schema: 'PublicGameDirectoryResponse',
+    attachments: [attachment('/api/v1/public-games', '200', 'Empty')],
+  },
+  {
     filename: 'open-game-registration-context-anonymous.json',
     reference: './examples/open-game-registration-context-anonymous.json',
     schema: 'OpenGameRegistrationContext',
@@ -1050,6 +1064,7 @@ const expectedOperations = new Map([
   ['/api/v1/shared-games/{share_token}/registration-context', new Set(['get'])],
   ['/api/v1/shared-games/{share_token}/applications', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}', new Set(['get'])],
+  ['/api/v1/public-games', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],
@@ -1137,6 +1152,82 @@ function validateOperationMatrix(contract) {
       const expectedLabel = expectedMethods.map((method) => method.toUpperCase()).join(', ');
       fail(`operation method matrix differs at ${pathName}: expected ${expectedLabel} only; found ${methods.join(', ')}`);
     }
+  }
+}
+
+function validatePublicGameDirectoryContract(contract) {
+  const operation = contract.paths?.['/api/v1/public-games']?.get;
+  if (!operation) fail('public-games GET operation is required');
+  if (!isDeepStrictEqual(operation.security, [])) {
+    fail('public-games must declare anonymous security: []');
+  }
+
+  const expectedParameters = [
+    {
+      name: 'local_date',
+      in: 'query',
+      required: false,
+      schema: { type: 'string', format: 'date' },
+    },
+    {
+      name: 'format',
+      in: 'query',
+      required: false,
+      schema: { $ref: '#/components/schemas/PublicGameFormat' },
+    },
+    {
+      name: 'available_only',
+      in: 'query',
+      required: false,
+      schema: { type: 'boolean', default: false },
+    },
+  ];
+  if (!isDeepStrictEqual(operation.parameters, expectedParameters)) {
+    fail('public-games parameters must be exactly local_date, format, and available_only');
+  }
+  if (!isDeepStrictEqual(Object.keys(operation.responses ?? {}), ['200', '422', '503'])) {
+    fail('public-games responses must be exactly 200, 422, and 503');
+  }
+
+  const success = operation.responses['200']?.content?.['application/json'];
+  if (!isDeepStrictEqual(success?.schema, {
+    $ref: '#/components/schemas/PublicGameDirectoryResponse',
+  })) {
+    fail('public-games 200 schema ref must target PublicGameDirectoryResponse');
+  }
+  if (!isDeepStrictEqual(success?.examples, {
+    Ready: { externalValue: './examples/public-games-ready.json' },
+    Empty: { externalValue: './examples/public-games-empty.json' },
+  })) {
+    fail('public-games 200 examples must be exactly Ready and Empty');
+  }
+
+  for (const [status, code] of [['422', 'INVALID_ARGUMENT'], ['503', 'SERVICE_UNAVAILABLE']]) {
+    const content = operation.responses[status]?.content?.['application/json'];
+    if (content?.schema?.allOf?.[0]?.$ref !== '#/components/schemas/ErrorEnvelope') {
+      fail(`public-games ${status} schema must reference ErrorEnvelope`);
+    }
+    const actualCode = content?.schema?.allOf?.[1]?.properties?.error?.properties?.code?.const;
+    if (actualCode !== code) {
+      fail(`public-games ${status} must freeze ${code}`);
+    }
+  }
+
+  const schemas = contract.components?.schemas ?? {};
+  if (!isDeepStrictEqual(schemas.PublicGameDirectoryItem?.properties?.format, {
+    $ref: '#/components/schemas/PublicGameFormat',
+  })) {
+    fail('public-games item format schema ref must target PublicGameFormat');
+  }
+  if (!isDeepStrictEqual(schemas.PublicGameDirectoryItem?.properties?.game, {
+    $ref: '#/components/schemas/OpenGamePublic',
+  })) {
+    fail('public-games item game schema ref must target OpenGamePublic');
+  }
+  if (!isDeepStrictEqual(schemas.PublicGameDirectoryResponse?.properties?.items?.items, {
+    $ref: '#/components/schemas/PublicGameDirectoryItem',
+  })) {
+    fail('public-games response item schema ref must target PublicGameDirectoryItem');
   }
 }
 
@@ -1371,6 +1462,58 @@ function validateOrderListBusinessRules(response, filename) {
   }
 }
 
+function validatePublicGameDirectoryBusinessRules(response, filename) {
+  const authoritativeNow = Date.parse(response.authoritative_now);
+  if (!Number.isFinite(authoritativeNow)) {
+    fail(`${filename}: authoritative_now must be an aware date-time`);
+  }
+  assertSorted(response.available_dates, (value) => value, `${filename}: available_dates`);
+  assertSorted(
+    response.items,
+    ({ game }) => Date.parse(game.starts_at),
+    `${filename}: items must preserve stable start order`,
+  );
+
+  if (filename === 'public-games-empty.json') {
+    if (response.available_dates.length !== 0 || response.items.length !== 0) {
+      fail(`${filename}: empty response must have no dates or items`);
+    }
+    return;
+  }
+  if (response.items.length === 0) {
+    fail(`${filename}: ready response must contain public games`);
+  }
+
+  const pitchSpecificationByFormat = { FIVE: '5人制', SEVEN: '7人制' };
+  for (const item of response.items) {
+    if (item.game.pitch_specification !== pitchSpecificationByFormat[item.format]) {
+      fail(`${filename}: format must match pitch specification`);
+    }
+    if (item.game.state !== 'PUBLISHED' || item.game.visibility !== 'PUBLIC') {
+      fail(`${filename}: every directory game must be public and published`);
+    }
+    if (item.game.state_reason !== null) {
+      fail(`${filename}: a future published directory game cannot have a state reason`);
+    }
+    if (Date.parse(item.game.starts_at) <= authoritativeNow) {
+      fail(`${filename}: game starts_at must be in the authoritative future`);
+    }
+    if (Date.parse(item.game.registration_deadline) <= authoritativeNow) {
+      fail(`${filename}: registration_deadline must be in the authoritative future`);
+    }
+
+    const joinedCount = item.current_players - item.game.fixed_players;
+    const expectedRemaining = Math.max(item.game.open_spots - joinedCount, 0);
+    if (
+      joinedCount < 0
+      || item.current_players > item.game.total_players
+      || item.remaining_spots !== expectedRemaining
+    ) {
+      fail(`${filename}: current_players and remaining_spots must match game capacity`);
+    }
+  }
+}
+
 async function readJsonWithContext(filename) {
   try {
     return JSON.parse(await readFile(filename, 'utf8'));
@@ -1383,6 +1526,7 @@ export async function validateContract(contractPath = defaultContractPath) {
   contractPath = path.resolve(contractPath);
   const rawContract = await SwaggerParser.parse(contractPath);
   validateOperationMatrix(rawContract);
+  validatePublicGameDirectoryContract(rawContract);
   validateErrorCodeEnum(rawContract);
   findAllAttachments(rawContract);
   await SwaggerParser.validate(contractPath);
@@ -1437,6 +1581,9 @@ export async function validateContract(contractPath = defaultContractPath) {
     if (mapping.schema === 'VenueMapResponse') validateVenueMapBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'OrderListResponse') validateOrderListBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'PublicGameDirectoryResponse') {
+      validatePublicGameDirectoryBusinessRules(mapping.value, mapping.filename);
+    }
     if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {
       const keys = Object.keys(mapping.value.error.details).sort();

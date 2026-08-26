@@ -126,7 +126,7 @@ def project_open_game_actions(
     if state is EffectiveOpenGameState.SUSPENDED:
         return _actions(can_cancel=True, can_preview=True)
     if state is EffectiveOpenGameState.PUBLISHED:
-        if not _published_authority_is_healthy(facts.order_facts):
+        if not published_authority_is_healthy(facts.order_facts):
             raise OpenGameProjectionInvariantError(
                 "published open game authority is inconsistent"
             )
@@ -148,7 +148,8 @@ def project_open_game_actions(
     )
 
 
-def _published_authority_is_healthy(facts: OrderLifecycleFacts) -> bool:
+def published_authority_is_healthy(facts: OrderLifecycleFacts) -> bool:
+    """Return whether a published game still has healthy order authority."""
     return (
         facts.status is OrderStatus.CONFIRMED
         and facts.cancel_requested_at is None

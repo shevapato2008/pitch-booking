@@ -1,0 +1,97 @@
+{
+  "authoritative_now": "2026-08-26T04:00:00Z",
+  "available_dates": [
+    "2026-08-29",
+    "2026-08-30",
+    "2026-08-31"
+  ],
+  "items": [
+    {
+      "detail_path": "/pages/captain-game-public/index?token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "local_date": "2026-08-29",
+      "format": "FIVE",
+      "current_players": 6,
+      "remaining_spots": 4,
+      "game": {
+        "name": "海河周六晨练局",
+        "team_name": "海河晨光队",
+        "state": "PUBLISHED",
+        "state_reason": null,
+        "venue_name": "天津河东体育中心",
+        "pitch_name": "笼式五人制 2 号场",
+        "pitch_specification": "5人制",
+        "starts_at": "2026-08-28T23:30:00Z",
+        "ends_at": "2026-08-29T01:00:00Z",
+        "time_zone": "Asia/Shanghai",
+        "total_players": 10,
+        "fixed_players": 4,
+        "open_spots": 6,
+        "intensity": "CASUAL",
+        "minimum_experience": "有基础传接球经验",
+        "positions": ["MIDFIELDER", "FORWARD"],
+        "aa_cents": 3600,
+        "registration_deadline": "2026-08-28T12:00:00Z",
+        "equipment_and_arrival_notes": "深浅两套球衣，提前十五分钟到场",
+        "visibility": "PUBLIC"
+      }
+    },
+    {
+      "detail_path": "/pages/captain-game-public/index?token=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "local_date": "2026-08-30",
+      "format": "SEVEN",
+      "current_players": 11,
+      "remaining_spots": 3,
+      "game": {
+        "name": "奥体周日傍晚局",
+        "team_name": "津门周末足球队",
+        "state": "PUBLISHED",
+        "state_reason": null,
+        "venue_name": "天津奥体足球场",
+        "pitch_name": "七人制 A 场",
+        "pitch_specification": "7人制",
+        "starts_at": "2026-08-30T10:00:00Z",
+        "ends_at": "2026-08-30T12:00:00Z",
+        "time_zone": "Asia/Shanghai",
+        "total_players": 14,
+        "fixed_players": 8,
+        "open_spots": 6,
+        "intensity": "COMPETITIVE",
+        "minimum_experience": "可完成高强度对抗",
+        "positions": ["GOALKEEPER", "DEFENDER"],
+        "aa_cents": 5200,
+        "registration_deadline": "2026-08-30T04:00:00Z",
+        "equipment_and_arrival_notes": "提前二十分钟热身，备好护腿板",
+        "visibility": "PUBLIC"
+      }
+    },
+    {
+      "detail_path": "/pages/captain-game-public/index?token=cccccccccccccccccccccccccccccccc",
+      "local_date": "2026-08-31",
+      "format": "FIVE",
+      "current_players": 10,
+      "remaining_spots": 0,
+      "game": {
+        "name": "水西公园夜场局",
+        "team_name": "西青快乐足球",
+        "state": "PUBLISHED",
+        "state_reason": null,
+        "venue_name": "水西公园足球场",
+        "pitch_name": "五人制 1 号场",
+        "pitch_specification": "5人制",
+        "starts_at": "2026-08-31T12:00:00Z",
+        "ends_at": "2026-08-31T13:30:00Z",
+        "time_zone": "Asia/Shanghai",
+        "total_players": 10,
+        "fixed_players": 6,
+        "open_spots": 4,
+        "intensity": "BEGINNER_FRIENDLY",
+        "minimum_experience": null,
+        "positions": ["ANY"],
+        "aa_cents": 4200,
+        "registration_deadline": "2026-08-31T08:00:00Z",
+        "equipment_and_arrival_notes": "穿碎钉球鞋，开场前十分钟集合",
+        "visibility": "PUBLIC"
+      }
+    }
+  ]
+}

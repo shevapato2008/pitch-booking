@@ -3093,3 +3093,139 @@ def test_platform_session_contract_is_closed_cookie_authenticated_and_csrf_prote
                 for item in runtime_parameters[name]["schema"].get("anyOf", [])
             }
             assert runtime_types != {"string", "null"}
+
+
+def test_public_game_directory_contract_is_anonymous_closed_and_exampled() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    path_item = contract["paths"]["/api/v1/public-games"]
+
+    assert set(path_item) == {"get"}
+    operation = path_item["get"]
+    assert operation["security"] == []
+    assert "requestBody" not in operation
+    assert operation["parameters"] == [
+        {
+            "name": "local_date",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "string", "format": "date"},
+        },
+        {
+            "name": "format",
+            "in": "query",
+            "required": False,
+            "schema": {"$ref": "#/components/schemas/PublicGameFormat"},
+        },
+        {
+            "name": "available_only",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "boolean", "default": False},
+        },
+    ]
+    assert set(operation["responses"]) == {"200", "422", "503"}
+    assert _response_schema(operation, "200") == {
+        "$ref": "#/components/schemas/PublicGameDirectoryResponse"
+    }
+    assert operation["responses"]["200"]["content"]["application/json"][
+        "examples"
+    ] == {
+        "Ready": {"externalValue": "./examples/public-games-ready.json"},
+        "Empty": {"externalValue": "./examples/public-games-empty.json"},
+    }
+    for status, code, example_name, filename in (
+        ("422", "INVALID_ARGUMENT", "InvalidArgument", "error-invalid-argument.json"),
+        (
+            "503",
+            "SERVICE_UNAVAILABLE",
+            "ServiceUnavailable",
+            "error-service-unavailable.json",
+        ),
+    ):
+        response = operation["responses"][status]["content"]["application/json"]
+        assert {"$ref": "#/components/schemas/ErrorEnvelope"} in response[
+            "schema"
+        ]["allOf"]
+        assert response["schema"]["allOf"][1]["properties"]["error"][
+            "properties"
+        ]["code"] == {"const": code}
+        assert response["examples"] == {
+            example_name: {"externalValue": f"./examples/{filename}"}
+        }
+
+    assert schemas["PublicGameFormat"] == {
+        "type": "string",
+        "enum": ["FIVE", "SEVEN"],
+    }
+    item = schemas["PublicGameDirectoryItem"]
+    item_fields = {
+        "detail_path",
+        "local_date",
+        "format",
+        "current_players",
+        "remaining_spots",
+        "game",
+    }
+    assert item["additionalProperties"] is False
+    assert set(item["required"]) == item_fields
+    assert set(item["properties"]) == item_fields
+    assert item["properties"]["detail_path"] == {
+        "type": "string",
+        "pattern": (
+            "^/pages/captain-game-public/index\\?token="
+            "[A-Za-z0-9_-]{32}$"
+        ),
+    }
+    assert item["properties"]["local_date"] == {
+        "type": "string",
+        "format": "date",
+    }
+    assert item["properties"]["format"] == {
+        "$ref": "#/components/schemas/PublicGameFormat"
+    }
+    assert item["properties"]["current_players"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+    assert item["properties"]["remaining_spots"] == {
+        "type": "integer",
+        "minimum": 0,
+    }
+    assert item["properties"]["game"] == {
+        "$ref": "#/components/schemas/OpenGamePublic"
+    }
+
+    response_schema = schemas["PublicGameDirectoryResponse"]
+    response_fields = {"authoritative_now", "available_dates", "items"}
+    assert response_schema["additionalProperties"] is False
+    assert set(response_schema["required"]) == response_fields
+    assert set(response_schema["properties"]) == response_fields
+    assert response_schema["properties"]["authoritative_now"] == {
+        "type": "string",
+        "format": "date-time",
+    }
+    assert response_schema["properties"]["available_dates"] == {
+        "type": "array",
+        "uniqueItems": True,
+        "items": {"type": "string", "format": "date"},
+    }
+    assert response_schema["properties"]["items"] == {
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/PublicGameDirectoryItem"},
+    }
+
+    for filename in ("public-games-ready.json", "public-games-empty.json"):
+        example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        _assert_example_matches_schema(contract, example, response_schema)
+        serialized = json.dumps(example)
+        for private in (
+            "order_id",
+            "captain_user_id",
+            "share_token",
+            "payment",
+            "refund",
+            "application",
+            "members",
+        ):
+            assert private not in serialized, private

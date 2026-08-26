@@ -1515,3 +1515,150 @@ test('fixture generator rejects error response examples', async () => {
     },
   );
 });
+
+test('public game directory freezes anonymous filters and a closed public projection', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operation = contract.paths['/api/v1/public-games'].get;
+  const schemas = contract.components.schemas;
+
+  assert.deepEqual(Object.keys(contract.paths['/api/v1/public-games']), ['get']);
+  assert.deepEqual(operation.security, []);
+  assert.equal(operation.requestBody, undefined);
+  assert.deepEqual(operation.parameters, [
+    {
+      name: 'local_date',
+      in: 'query',
+      required: false,
+      schema: { type: 'string', format: 'date' },
+    },
+    {
+      name: 'format',
+      in: 'query',
+      required: false,
+      schema: { $ref: '#/components/schemas/PublicGameFormat' },
+    },
+    {
+      name: 'available_only',
+      in: 'query',
+      required: false,
+      schema: { type: 'boolean', default: false },
+    },
+  ]);
+  assert.deepEqual(Object.keys(operation.responses), ['200', '422', '503']);
+  assert.deepEqual(
+    operation.responses['200'].content['application/json'].schema,
+    { $ref: '#/components/schemas/PublicGameDirectoryResponse' },
+  );
+  assert.deepEqual(operation.responses['200'].content['application/json'].examples, {
+    Ready: { externalValue: './examples/public-games-ready.json' },
+    Empty: { externalValue: './examples/public-games-empty.json' },
+  });
+  for (const [status, code, exampleName, filename] of [
+    ['422', 'INVALID_ARGUMENT', 'InvalidArgument', 'error-invalid-argument.json'],
+    ['503', 'SERVICE_UNAVAILABLE', 'ServiceUnavailable', 'error-service-unavailable.json'],
+  ]) {
+    const content = operation.responses[status].content['application/json'];
+    assert.deepEqual(content.schema.allOf[0], { $ref: '#/components/schemas/ErrorEnvelope' });
+    assert.deepEqual(content.schema.allOf[1].properties.error.properties.code, { const: code });
+    assert.deepEqual(content.examples, {
+      [exampleName]: { externalValue: `./examples/${filename}` },
+    });
+  }
+
+  assert.deepEqual(schemas.PublicGameFormat, { type: 'string', enum: ['FIVE', 'SEVEN'] });
+  const item = schemas.PublicGameDirectoryItem;
+  const itemFields = [
+    'detail_path', 'local_date', 'format', 'current_players', 'remaining_spots', 'game',
+  ];
+  assert.equal(item.additionalProperties, false);
+  assert.deepEqual([...item.required].sort(), [...itemFields].sort());
+  assert.deepEqual(Object.keys(item.properties).sort(), [...itemFields].sort());
+  assert.deepEqual(item.properties.format, { $ref: '#/components/schemas/PublicGameFormat' });
+  assert.deepEqual(item.properties.game, { $ref: '#/components/schemas/OpenGamePublic' });
+  assert.equal(
+    item.properties.detail_path.pattern,
+    '^/pages/captain-game-public/index\\?token=[A-Za-z0-9_-]{32}$',
+  );
+
+  const response = schemas.PublicGameDirectoryResponse;
+  assert.equal(response.additionalProperties, false);
+  assert.deepEqual(
+    [...response.required].sort(),
+    ['authoritative_now', 'available_dates', 'items'],
+  );
+  assert.equal(response.properties.available_dates.uniqueItems, true);
+  assert.deepEqual(response.properties.items.items, {
+    $ref: '#/components/schemas/PublicGameDirectoryItem',
+  });
+
+  const ready = await readExample('public-games-ready.json');
+  const empty = await readExample('public-games-empty.json');
+  assert.deepEqual(empty, {
+    authoritative_now: '2026-08-26T04:00:00Z',
+    available_dates: [],
+    items: [],
+  });
+  assert.deepEqual(ready.available_dates, [...ready.available_dates].sort());
+  assert.equal(new Set(ready.available_dates).size, ready.available_dates.length);
+  assert.ok(ready.items.length > 1);
+  for (const [index, directoryItem] of ready.items.entries()) {
+    assert.match(
+      directoryItem.detail_path,
+      /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/,
+    );
+    assert.equal(directoryItem.game.state, 'PUBLISHED');
+    assert.equal(directoryItem.game.state_reason, null);
+    assert.equal(directoryItem.game.visibility, 'PUBLIC');
+    assert.equal(
+      directoryItem.game.pitch_specification,
+      directoryItem.format === 'FIVE' ? '5人制' : '7人制',
+    );
+    const joinedCount = directoryItem.current_players - directoryItem.game.fixed_players;
+    assert.ok(joinedCount >= 0);
+    assert.equal(directoryItem.remaining_spots, directoryItem.game.open_spots - joinedCount);
+    assert.ok(Date.parse(directoryItem.game.starts_at) > Date.parse(ready.authoritative_now));
+    assert.ok(
+      Date.parse(directoryItem.game.registration_deadline) > Date.parse(ready.authoritative_now),
+    );
+    if (index > 0) {
+      assert.ok(
+        Date.parse(ready.items[index - 1].game.starts_at)
+          <= Date.parse(directoryItem.game.starts_at),
+      );
+    }
+  }
+  for (const privateField of [
+    'order_id', 'captain_user_id', 'share_token', 'payment', 'refund', 'application', 'members',
+  ]) {
+    assert.equal(JSON.stringify({ item, response, ready, empty }).includes(privateField), false);
+  }
+});
+
+test('contract validator rejects public game directory authority drift', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/public-games'].get.security = [{ bearerAuth: [] }];
+  }, /public-games|anonymous|security/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/public-games'].get.responses['200']
+      .content['application/json'].schema.$ref = '#/components/schemas/OpenGamePublic';
+  }, /public-games|schema|ref/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/public-games'].get.parameters = contract.paths['/api/v1/public-games']
+      .get.parameters.filter(({ name }) => name !== 'format');
+  }, /public-games|parameter|format/i);
+
+  await assertMutatedContractRejected((contract) => {
+    delete contract.paths['/api/v1/public-games'].get.responses['200']
+      .content['application/json'].examples.Ready;
+  }, /public-games|example|ready/i);
+
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].order_id = 'private';
+  }, /public-games-ready|additional properties|order_id/i);
+
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    [example.items[0], example.items[1]] = [example.items[1], example.items[0]];
+  }, /public-games-ready|stable|sorted|order/i);
+});

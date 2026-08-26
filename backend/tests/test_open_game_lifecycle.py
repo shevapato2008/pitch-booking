@@ -13,6 +13,7 @@ from backend.app.models import (
     RefundCasePurpose,
     VenueImage,
 )
+from backend.app.modules.open_games import lifecycle as open_game_lifecycle
 from backend.app.modules.open_games.dto import (
     OpenGameDraftInput,
     OpenGamePosition,
@@ -277,6 +278,66 @@ def test_theoretically_inconsistent_published_authority_fails_closed(
             ),
             now=NOW,
         )
+
+
+def test_published_authority_health_is_one_exported_closed_policy() -> None:
+    predicate = getattr(
+        open_game_lifecycle, "published_authority_is_healthy", None
+    )
+    assert callable(predicate)
+
+    for purpose in (None, RefundCasePurpose.DUPLICATE_CHARGE):
+        assert predicate(_order_facts(controlling_refund_purpose=purpose)) is True
+
+    rejected = [
+        _order_facts(cancel_requested_at=NOW),
+        _order_facts(
+            controlling_refund_purpose=RefundCasePurpose.ORDER_CANCELLATION
+        ),
+        _order_facts(
+            controlling_refund_purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT
+        ),
+        *(
+            _order_facts(status=status)
+            for status in OrderStatus
+            if status is not OrderStatus.CONFIRMED
+        ),
+    ]
+    assert all(predicate(facts) is False for facts in rejected)
+
+
+def test_published_actions_and_updates_share_the_exported_authority_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    facts = _order_facts(status=OrderStatus.PENDING_PAYMENT)
+    calls: list[OrderLifecycleFacts] = []
+
+    def accept_for_shared_policy(candidate: OrderLifecycleFacts) -> bool:
+        calls.append(candidate)
+        return True
+
+    monkeypatch.setattr(
+        open_game_lifecycle,
+        "published_authority_is_healthy",
+        accept_for_shared_policy,
+        raising=False,
+    )
+
+    project_open_game_actions(
+        _game_facts(
+            stored_status=OpenGameStatus.PUBLISHED,
+            order_facts=facts,
+        ),
+        now=NOW,
+    )
+    validate_published_update(
+        facts,
+        previous_registration_deadline=STARTS_AT - timedelta(hours=3),
+        registration_deadline=STARTS_AT - timedelta(hours=3),
+        now=NOW,
+    )
+
+    assert calls == [facts, facts]
 
 
 def test_draft_write_delegates_order_eligibility_to_b1_policy(

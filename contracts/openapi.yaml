@@ -2003,6 +2003,54 @@ paths:
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/public-games:
+    get:
+      operationId: listPublicGames
+      security: []
+      parameters:
+        - name: local_date
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - name: format
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/PublicGameFormat'}
+        - name: available_only
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: Discoverable public games at one authoritative server time.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublicGameDirectoryResponse'}
+              examples:
+                Ready: {externalValue: './examples/public-games-ready.json'}
+                Empty: {externalValue: './examples/public-games-empty.json'}
+        '422':
+          description: A public game directory filter is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Public game directory service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/shared-games/{share_token}:
     get:
       operationId: getSharedOpenGame
@@ -3695,6 +3743,35 @@ components:
           examples:
             VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
   schemas:
+    PublicGameFormat:
+      type: string
+      enum: [FIVE, SEVEN]
+    PublicGameDirectoryItem:
+      type: object
+      additionalProperties: false
+      required: [detail_path, local_date, format, current_players, remaining_spots, game]
+      properties:
+        detail_path:
+          type: string
+          pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
+        local_date: {type: string, format: date}
+        format: {$ref: '#/components/schemas/PublicGameFormat'}
+        current_players: {type: integer, minimum: 1}
+        remaining_spots: {type: integer, minimum: 0}
+        game: {$ref: '#/components/schemas/OpenGamePublic'}
+    PublicGameDirectoryResponse:
+      type: object
+      additionalProperties: false
+      required: [authoritative_now, available_dates, items]
+      properties:
+        authoritative_now: {type: string, format: date-time}
+        available_dates:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: date}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PublicGameDirectoryItem'}
     OpenGamePersistedStatus:
       type: string
       enum: [DRAFT, PUBLISHED, CANCELLED]
