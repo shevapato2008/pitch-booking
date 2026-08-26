@@ -50,6 +50,8 @@ from backend.app.modules.platform_web import (
     create_platform_web_router,
     default_platform_admin_root,
 )
+from backend.app.modules.public_games.router import align_public_game_directory_openapi
+from backend.app.modules.public_games.router import router as public_games_router
 from backend.app.modules.refunds.convergence import RefundConvergenceService
 from backend.app.modules.refunds.repository import RefundRepository
 from backend.app.modules.venue_access.router import router as venue_access_router
@@ -248,6 +250,7 @@ def create_app(
         application.include_router(orders_router)
         application.include_router(open_game_registrations_router)
         application.include_router(open_games_router)
+        application.include_router(public_games_router)
         application.include_router(payments_router)
         application.include_router(wechat_pay_router)
         application.include_router(platform_auth_router)
@@ -331,6 +334,7 @@ def create_app(
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)
             align_order_list_openapi(schema)
+            align_public_game_directory_openapi(schema)
             shared_game_get = (
                 schema.get("paths", {})
                 .get("/api/v1/shared-games/{share_token}", {})

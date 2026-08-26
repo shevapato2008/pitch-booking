@@ -48,7 +48,7 @@ PUBLISH_KEY = "api-publish-open-game-key-00001"
 CANCEL_KEY = "api-cancel-open-game-key-000001"
 
 
-def _client(engine: Engine, *, now: datetime | None = None) -> TestClient:
+def _client(engine: Engine, *, now: datetime = NOW) -> TestClient:
     app = create_app(settings=Settings(app_env="test", wechat_provider="development"))
 
     def database_override() -> Iterator[Session]:
@@ -56,8 +56,7 @@ def _client(engine: Engine, *, now: datetime | None = None) -> TestClient:
             yield session
 
     app.dependency_overrides[get_database] = database_override
-    if now is not None:
-        app.dependency_overrides[get_open_game_clock] = lambda: now
+    app.dependency_overrides[get_open_game_clock] = lambda: now
     return TestClient(app, raise_server_exceptions=False)
 
 
