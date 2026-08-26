@@ -104,7 +104,7 @@ test("reference follows the existing light system, touch sizing and privacy boun
   assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u, "emoji cannot serve as icons");
 });
 
-test("flow and review freeze honest recovery and four reference captures", { skip: missing.length > 0 }, () => {
+test("flow and review freeze approved recovery and four reference captures", { skip: missing.length > 0 }, () => {
   const flow = read(files.flow);
   for (const phrase of [
     "日期、人制和仅看有名额使用 AND", "卡片 → 对应只读详情", "返回列表并保留筛选", "清除筛选",
@@ -112,7 +112,7 @@ test("flow and review freeze honest recovery and four reference captures", { ski
   ]) assert.match(flow, new RegExp(esc(phrase)));
   const review = read(files.review);
   for (const state of states) assert.match(review, new RegExp(`${esc(state)}-reference-375x812\\.png`));
-  assert.match(review, /User visual gate:\s*`PENDING`/);
+  assert.match(review, /User visual gate:\s*`PASS`/);
   const board = read(files.board);
   for (const state of states) assert.match(board, new RegExp(`data-state="${esc(state)}"`));
   assert.doesNotMatch(board, /implementation-375x812\.png/);
