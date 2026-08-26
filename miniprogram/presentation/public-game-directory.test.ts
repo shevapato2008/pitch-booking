@@ -74,4 +74,65 @@ describe("public game directory presentation", () => {
       spotsLabel: "剩 2 个名额",
     });
   });
+
+  test("formats an America/Los_Angeles spring-DST jump in venue-local time", () => {
+    const item = {
+      ...directory.items[0],
+      localDate: "2026-03-08",
+      game: {
+        ...directory.items[0].game,
+        startsAt: "2026-03-08T09:30:00Z",
+        endsAt: "2026-03-08T10:30:00Z",
+        registrationDeadline: "2026-03-08T07:30:00Z",
+        timeZone: "America/Los_Angeles",
+      },
+    };
+
+    expect(presentPublicGameDirectoryItem(item)).toMatchObject({
+      localDate: "2026-03-08",
+      dateLabel: "3月8日 周日",
+      timeLabel: "01:30–03:30",
+      deadlineLabel: "3月7日 周六 23:30",
+    });
+  });
+
+  test("formats the venue-local date across a Los Angeles UTC-day boundary", () => {
+    const item = {
+      ...directory.items[0],
+      localDate: "2026-08-27",
+      game: {
+        ...directory.items[0].game,
+        startsAt: "2026-08-28T01:00:00Z",
+        endsAt: "2026-08-28T03:00:00Z",
+        registrationDeadline: "2026-08-27T01:00:00Z",
+        timeZone: "America/Los_Angeles",
+      },
+    };
+
+    expect(presentPublicGameDirectoryItem(item)).toMatchObject({
+      localDate: "2026-08-27",
+      dateLabel: "8月27日 周四",
+      timeLabel: "18:00–20:00",
+      deadlineLabel: "8月26日 周三 18:00",
+    });
+  });
+
+  test("presents a grammar-valid leap second in its deterministic venue minute", () => {
+    const item = {
+      ...directory.items[0],
+      localDate: "2026-08-29",
+      game: {
+        ...directory.items[0].game,
+        startsAt: "2026-08-28T23:59:60Z",
+        endsAt: "2026-08-29T01:00:00Z",
+        registrationDeadline: "2026-08-28T23:59:60Z",
+      },
+    };
+
+    expect(presentPublicGameDirectoryItem(item)).toMatchObject({
+      dateLabel: "8月29日 周六",
+      timeLabel: "07:59–09:00",
+      deadlineLabel: "8月29日 周六 07:59",
+    });
+  });
 });

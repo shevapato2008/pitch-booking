@@ -3,12 +3,14 @@ import type {
   PublicGameFormat,
 } from "../domain/public-game-directory";
 import {
+  type ZonedMinuteParts,
+  rfc3339ZonedMinutePartsAt,
+} from "../domain/zoned-time";
+import {
   formatCents,
-  formatOpenGameDateTime,
   openGameIntensityLabel,
   openGamePositionLabel,
 } from "./open-game";
-import { formatShanghaiDateLabel, formatShanghaiTimeRange } from "./shanghai-time";
 
 export interface PublicGameDirectoryCard {
   readonly detailPath: string;
@@ -43,6 +45,39 @@ function formatLabel(format: PublicGameFormat): string {
   return format === "FIVE" ? "五人制" : "七人制";
 }
 
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
+
+function two(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function weekdayAt(parts: ZonedMinuteParts): string {
+  const date = new Date(0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  date.setUTCHours(0, 0, 0, 0);
+  return WEEKDAYS[date.getUTCDay()];
+}
+
+function partsAt(instant: string, path: string, timeZone: string): ZonedMinuteParts {
+  return rfc3339ZonedMinutePartsAt(instant, path, timeZone, "$.game.time_zone");
+}
+
+function dateLabelAt(instant: string, path: string, timeZone: string): string {
+  const parts = partsAt(instant, path, timeZone);
+  return `${parts.month}月${parts.day}日 ${weekdayAt(parts)}`;
+}
+
+function timeRangeAt(startsAt: string, endsAt: string, timeZone: string): string {
+  const start = partsAt(startsAt, "$.game.starts_at", timeZone);
+  const end = partsAt(endsAt, "$.game.ends_at", timeZone);
+  return `${two(start.hour)}:${two(start.minute)}–${two(end.hour)}:${two(end.minute)}`;
+}
+
+function dateTimeAt(instant: string, path: string, timeZone: string): string {
+  const parts = partsAt(instant, path, timeZone);
+  return `${parts.month}月${parts.day}日 ${weekdayAt(parts)} ${two(parts.hour)}:${two(parts.minute)}`;
+}
+
 export function presentPublicGameDirectoryItem(item: PublicGameDirectoryItem): PublicGameDirectoryCard {
   const { game } = item;
   return {
@@ -56,8 +91,8 @@ export function presentPublicGameDirectoryItem(item: PublicGameDirectoryItem): P
     teamName: game.teamName,
     venueName: game.venueName,
     pitchName: game.pitchName,
-    dateLabel: formatShanghaiDateLabel(game.startsAt),
-    timeLabel: formatShanghaiTimeRange(game.startsAt, game.endsAt),
+    dateLabel: dateLabelAt(game.startsAt, "$.game.starts_at", game.timeZone),
+    timeLabel: timeRangeAt(game.startsAt, game.endsAt, game.timeZone),
     formatLabel: formatLabel(item.format),
     intensityLabel: openGameIntensityLabel(game.intensity),
     experienceLabel: game.minimumExperience || "无最低经验要求",
@@ -65,7 +100,11 @@ export function presentPublicGameDirectoryItem(item: PublicGameDirectoryItem): P
     playerSummary: `${item.currentPlayers} / ${game.totalPlayers} 人`,
     spotsLabel: item.remainingSpots === 0 ? "已满" : `剩 ${item.remainingSpots} 个名额`,
     aaLabel: formatCents(game.aaCents),
-    deadlineLabel: formatOpenGameDateTime(game.registrationDeadline, game.timeZone),
+    deadlineLabel: dateTimeAt(
+      game.registrationDeadline,
+      "$.game.registration_deadline",
+      game.timeZone,
+    ),
     confirmedLabel: "真实订场已确认",
     currentPlayersCaption: "当前 / 计划",
     aaCaption: "预计 AA",

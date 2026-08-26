@@ -144,12 +144,18 @@ function daysFromCivil(year: number, month: number, day: number): number {
   return era * 146_097 + dayOfEra;
 }
 
+export function rfc3339EpochMillisecondsAt(value: string, path: string): number {
+  const instant = parseRfc3339(value, path);
+  const unixEpochSeconds = daysFromCivil(1970, 1, 1) * SECONDS_PER_DAY;
+  const wholeSeconds = Math.floor(instant.unit / INSTANT_UNITS_PER_SECOND) - unixEpochSeconds;
+  const milliseconds = instant.unit % INSTANT_UNITS_PER_SECOND === 0
+    ? Number(instant.fraction.padEnd(3, "0").slice(0, 3))
+    : 999;
+  return wholeSeconds * 1_000 + milliseconds;
+}
+
 export function rfc3339DateAtOffset(value: string, path: string, offsetSeconds: number): string {
-  const unixEpochUnit = daysFromCivil(1970, 1, 1) * SECONDS_PER_DAY
-    * INSTANT_UNITS_PER_SECOND;
-  const shiftedUnit = parseRfc3339(value, path).unit - unixEpochUnit
-    + offsetSeconds * INSTANT_UNITS_PER_SECOND;
-  const shifted = new Date(shiftedUnit * (1_000 / INSTANT_UNITS_PER_SECOND));
+  const shifted = new Date(rfc3339EpochMillisecondsAt(value, path) + offsetSeconds * 1_000);
   const two = (part: number): string => String(part).padStart(2, "0");
   return `${String(shifted.getUTCFullYear()).padStart(4, "0")}-${two(shifted.getUTCMonth() + 1)}-${two(shifted.getUTCDate())}`;
 }

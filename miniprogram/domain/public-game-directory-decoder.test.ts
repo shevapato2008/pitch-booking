@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from "@jest/globals";
 
+import { ApiResponseError } from "./contracts";
 import { decodePublicGameDirectory } from "./public-game-directory-decoder";
 
 interface DirectoryWireItem extends Record<string, unknown> {
@@ -25,14 +26,30 @@ function changed(mutator: (value: DirectoryWire) => void): DirectoryWire {
   return value;
 }
 
-function singleItemAt(startsAt: string, endsAt: string, localDate: string): DirectoryWire {
+function singleItemAt(
+  startsAt: string,
+  endsAt: string,
+  localDate: string,
+  timeZone = "Asia/Shanghai",
+): DirectoryWire {
   return changed((value) => {
     value.items = [value.items[0]];
     value.available_dates = [localDate];
     value.items[0].local_date = localDate;
     value.items[0].game.starts_at = startsAt;
     value.items[0].game.ends_at = endsAt;
+    value.items[0].game.time_zone = timeZone;
   });
+}
+
+function expectApiPath(decode: () => unknown, path: string): void {
+  try {
+    decode();
+    throw new Error("decoder unexpectedly accepted corrupt data");
+  } catch (error) {
+    expect(error).toBeInstanceOf(ApiResponseError);
+    expect(error).toMatchObject({ code: "INVALID_API_RESPONSE", path });
+  }
 }
 
 describe("public game directory decoder", () => {
@@ -90,9 +107,57 @@ describe("public game directory decoder", () => {
   test.each([
     ["lowercase t/z", "2026-08-28t15:59:59z", "2026-08-28T17:00:00Z", "2026-08-28"],
     ["explicit offset", "2026-08-28T23:59:59-08:00", "2026-08-29T08:30:00Z", "2026-08-29"],
+    ["fraction", "2026-08-28T15:59:59.987654Z", "2026-08-28T17:00:00Z", "2026-08-28"],
   ])("decodes a contract-valid %s start consistently", (_name, startsAt, endsAt, localDate) => {
     expect(decodePublicGameDirectory(singleItemAt(startsAt, endsAt, localDate)).items[0])
       .toMatchObject({ localDate, game: { startsAt } });
+  });
+
+  test("derives the local date in the venue's America/Los_Angeles zone", () => {
+    const startsAt = "2026-08-28T01:00:00Z";
+
+    expect(decodePublicGameDirectory(singleItemAt(
+      startsAt,
+      "2026-08-28T02:00:00Z",
+      "2026-08-27",
+      "America/Los_Angeles",
+    )).items[0]).toMatchObject({
+      localDate: "2026-08-27",
+      game: { startsAt, timeZone: "America/Los_Angeles" },
+    });
+  });
+
+  test("rejects a local date outside the venue's America/Los_Angeles day", () => {
+    expectApiPath(() => decodePublicGameDirectory(singleItemAt(
+      "2026-08-28T01:00:00Z",
+      "2026-08-28T02:00:00Z",
+      "2026-08-28",
+      "America/Los_Angeles",
+    )), "$.items[0].local_date");
+  });
+
+  test("rejects an unsupported IANA zone at the exact item path", () => {
+    expectApiPath(() => decodePublicGameDirectory(changed((value) => {
+      value.items[0].game.time_zone = "Fake/Zone";
+    })), "$.items[0].game.time_zone");
+  });
+
+  test("fails closed when the runtime cannot construct a unique IANA zone", () => {
+    const timeZone = "America/Juneau";
+    const dateTimeFormat = Intl.DateTimeFormat;
+    const formatterSpy = jest.spyOn(Intl, "DateTimeFormat").mockImplementation((locales, options) => {
+      if (options?.timeZone === timeZone) throw new RangeError("unsupported test zone");
+      return dateTimeFormat(locales, options);
+    });
+
+    try {
+      expectApiPath(() => decodePublicGameDirectory(changed((value) => {
+        value.items[0].game.time_zone = timeZone;
+      })), "$.items[0].game.time_zone");
+      expect(formatterSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      formatterSpy.mockRestore();
+    }
   });
 
   test.each([
@@ -130,7 +195,6 @@ describe("public game directory decoder", () => {
     ["invalid authority timestamp", changed((value) => { value.authoritative_now = "not-a-time"; })],
     ["naive authority timestamp", changed((value) => { value.authoritative_now = "2026-08-26T04:00:00"; })],
     ["naive game timestamp", changed((value) => { value.items[0].game.starts_at = "2026-08-28T23:30:00"; })],
-    ["nonexistent venue timezone", changed((value) => { value.items[0].game.time_zone = "Fake/Zone"; })],
     ["local date outside the venue day", changed((value) => {
       value.available_dates = ["2026-08-28", "2026-08-30", "2026-08-31"];
       value.items[0].local_date = "2026-08-28";

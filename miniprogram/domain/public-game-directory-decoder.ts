@@ -6,7 +6,6 @@ import {
   invalid,
   rfc3339At,
   rfc3339Before,
-  rfc3339DateAtOffset,
   stringAt,
 } from "./decoder-primitives";
 import { decodeOpenGamePublic } from "./open-game-decoder";
@@ -16,13 +15,13 @@ import {
   type PublicGameDirectoryItem,
   type PublicGameFormat,
 } from "./public-game-directory";
+import { rfc3339DateAtTimeZone, supportedIanaTimeZoneAt } from "./zoned-time";
 
 const RESPONSE_KEYS = ["authoritative_now", "available_dates", "items"] as const;
 const ITEM_KEYS = [
   "detail_path", "local_date", "format", "current_players", "remaining_spots", "game",
 ] as const;
 const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
-const SHANGHAI_OFFSET_SECONDS = 8 * 60 * 60;
 
 function safeIntegerAt(value: unknown, path: string, minimum: number): number {
   if (!Number.isSafeInteger(value) || (value as number) < minimum) invalid(path);
@@ -33,10 +32,6 @@ function detailPathAt(value: unknown, path: string): string {
   const decoded = stringAt(value, path);
   if (!DETAIL_PATH_PATTERN.test(decoded)) invalid(path);
   return decoded;
-}
-
-function localDateAtShanghai(instant: string, path: string): string {
-  return rfc3339DateAtOffset(instant, path, SHANGHAI_OFFSET_SECONDS);
 }
 
 function expectedPitchSpecification(format: PublicGameFormat): string {
@@ -51,9 +46,15 @@ function decodeItem(value: unknown, path: string): PublicGameDirectoryItem {
   const currentPlayers = safeIntegerAt(object.current_players, `${path}.current_players`, 1);
   const remainingSpots = safeIntegerAt(object.remaining_spots, `${path}.remaining_spots`, 0);
   const game = decodeOpenGamePublic(object.game, `${path}.game`);
+  const timeZonePath = `${path}.game.time_zone`;
 
-  if (game.timeZone !== "Asia/Shanghai") invalid(`${path}.game.time_zone`);
-  if (localDateAtShanghai(game.startsAt, `${path}.game.starts_at`) !== localDate) {
+  supportedIanaTimeZoneAt(game.timeZone, timeZonePath);
+  if (rfc3339DateAtTimeZone(
+    game.startsAt,
+    `${path}.game.starts_at`,
+    game.timeZone,
+    timeZonePath,
+  ) !== localDate) {
     invalid(`${path}.local_date`);
   }
   if (game.pitchSpecification !== expectedPitchSpecification(format)) invalid(`${path}.format`);
