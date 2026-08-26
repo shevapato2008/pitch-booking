@@ -1,0 +1,108 @@
+<view class="c1b-page">
+  <view class="c1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1b-header-back" hover-class="c1b-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="c1b-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1b-header-title">找球局</text>
+    <view class="c1b-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c1b-scroll" scroll-y="true">
+    <view class="c1b-content">
+      <text class="c1b-context">天津 · 仅展示真实订场已确认的公开球局</text>
+
+      <view class="c1b-filters">
+        <scroll-view class="c1b-date-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
+          <view class="c1b-date-strip__inner">
+            <button
+              wx:for="{{dateOptions}}"
+              wx:key="value"
+              class="c1b-date-chip {{filters.date === item.value ? 'c1b-filter-active' : ''}}"
+              hover-class="c1b-pressed"
+              disabled="{{status === 'LOADING'}}"
+              bindtap="onSelectDate"
+              data-value="{{item.value}}"
+              aria-label="按{{item.label}}筛选"
+            >{{item.label}}</button>
+          </view>
+        </scroll-view>
+        <view class="c1b-filter-row">
+          <picker
+            class="c1b-format-picker {{status === 'LOADING' ? 'c1b-control-disabled' : ''}}"
+            mode="selector"
+            range="{{formatOptions}}"
+            range-key="label"
+            value="{{selectedFormatIndex}}"
+            disabled="{{status === 'LOADING'}}"
+            bindchange="onFormatChange"
+          >
+            <view class="c1b-filter-chip {{filters.format !== 'ALL' ? 'c1b-filter-active' : ''}}" aria-label="按人制筛选，当前{{selectedFormatLabel}}">
+              <text>{{selectedFormatLabel}}</text><view class="c1b-down-icon" aria-hidden="true"></view>
+            </view>
+          </picker>
+          <button
+            class="c1b-filter-chip {{filters.availableOnly ? 'c1b-filter-active' : ''}}"
+            hover-class="c1b-pressed"
+            disabled="{{status === 'LOADING'}}"
+            bindtap="onToggleAvailable"
+            aria-label="仅看有名额，当前{{filters.availableOnly ? '已开启' : '未开启'}}"
+          >
+            <view class="c1b-toggle-dot" aria-hidden="true"></view><text>仅看有名额</text>
+          </button>
+        </view>
+      </view>
+
+      <view wx:if="{{status === 'LOADING'}}" class="c1b-game-list" role="status" aria-busy="true" aria-label="正在加载公开球局">
+        <view class="c1b-skeleton"></view><view class="c1b-skeleton"></view>
+      </view>
+
+      <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c1b-state-card c1b-state-card--error" role="alert">
+        <text class="c1b-state-title">球局加载失败</text>
+        <text class="c1b-state-copy">网络开了个小差，请重新加载公开球局。</text>
+        <button class="c1b-secondary-action" hover-class="c1b-pressed" bindtap="onRetry">重新加载</button>
+      </view>
+
+      <block wx:else>
+        <view class="c1b-result-line"><text>按开场时间排序</text><text class="c1b-result-count">{{resultCount}} 场</text></view>
+        <view wx:if="{{sourceEmpty}}" class="c1b-state-card">
+          <text class="c1b-state-title">暂时没有公开球局</text>
+          <text class="c1b-state-copy">可以先返回选择其他订场目的。</text>
+          <button class="c1b-secondary-action" hover-class="c1b-pressed" bindtap="onReturnIntent">返回选择目的</button>
+        </view>
+        <view wx:elif="{{filterNoMatch}}" class="c1b-state-card">
+          <text class="c1b-state-title">没有符合筛选的球局</text>
+          <text class="c1b-state-copy">换个日期或人制，看看更多公开球局。</text>
+          <button class="c1b-secondary-action" hover-class="c1b-pressed" bindtap="onClearFilters">清除筛选</button>
+        </view>
+        <view wx:else class="c1b-game-list">
+          <button
+            wx:for="{{games}}"
+            wx:key="detailPath"
+            class="c1b-game-card"
+            hover-class="c1b-game-card--pressed"
+            bindtap="onOpenGame"
+            data-detail-path="{{item.detailPath}}"
+            aria-label="查看{{item.name}}详情"
+          >
+            <view class="c1b-card-status">
+              <text class="c1b-confirmed">{{item.confirmedLabel}}</text>
+              <text class="c1b-spots {{item.remainingSpots === 0 ? 'c1b-spots--full' : ''}}">{{item.spotsLabel}}</text>
+            </view>
+            <text class="c1b-game-name">{{item.name}}</text>
+            <text class="c1b-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
+            <text class="c1b-game-venue">{{item.venueName}} · {{item.pitchName}}</text>
+            <view class="c1b-game-tags"><text>{{item.formatLabel}}</text><text>{{item.intensityLabel}}</text><text>{{item.positionsLabel}}</text></view>
+            <view class="c1b-metrics">
+              <view><text class="c1b-metric-label">{{item.currentPlayersCaption}}</text><text class="c1b-metric-value">{{item.playerSummary}}</text></view>
+              <view><text class="c1b-metric-label">{{item.aaCaption}}</text><text class="c1b-metric-value">{{item.aaLabel}} · {{item.settlementLabel}}</text></view>
+              <view><text class="c1b-metric-label">{{item.deadlineCaption}}</text><text class="c1b-metric-value">{{item.deadlineLabel}}</text></view>
+            </view>
+            <view class="c1b-organizer"><text>{{item.teamName}}</text><text>{{item.teamRoleLabel}}</text></view>
+            <view class="c1b-card-chevron" aria-hidden="true"></view>
+          </button>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+</view>
