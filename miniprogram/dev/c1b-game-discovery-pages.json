@@ -1,0 +1,8 @@
+{
+  "token": "C1B_GAME_DISCOVERY_FIXTURE",
+  "pages": [
+    "dev/pages/c1b-scenario/index",
+    "dev/pages/c1b-game-discovery/index",
+    "dev/pages/c1b-game-detail/index"
+  ]
+}

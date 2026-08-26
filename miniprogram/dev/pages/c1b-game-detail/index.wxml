@@ -1,0 +1,40 @@
+<view class="c1b-page">
+  <view class="c1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1b-header-back" hover-class="c1b-pressed" bindtap="onHeaderBack" aria-label="返回球局列表">
+      <view class="c1b-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1b-header-title">球局详情</text>
+    <view class="c1b-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c1b-scroll" scroll-y="true">
+    <view class="c1b-detail-content">
+      <text class="c1b-preview-note">C1b 开发预览 · 只读详情</text>
+      <view wx:if="{{notFound}}" class="c1b-state-card">
+        <text class="c1b-state-title">球局不存在或已失效</text>
+        <text class="c1b-state-copy">返回列表查看仍可浏览的公开球局。</text>
+        <button class="c1b-secondary-action" hover-class="c1b-pressed" bindtap="onReturnList">返回球局列表</button>
+      </view>
+
+      <view wx:else class="c1b-detail-card">
+        <text class="c1b-confirmed">真实订场已确认</text>
+        <text class="c1b-detail-title">{{game.name}}</text>
+        <text class="c1b-detail-meta">{{game.dateLabel}} · {{game.timeLabel}}</text>
+        <text class="c1b-detail-meta">{{game.venue}} · {{game.pitch}}</text>
+        <view class="c1b-detail-grid">
+          <view><text class="c1b-detail-label">人制</text><text class="c1b-detail-value">{{game.formatLabel}}</text></view>
+          <view><text class="c1b-detail-label">对抗强度</text><text class="c1b-detail-value">{{game.intensity}}</text></view>
+          <view><text class="c1b-detail-label">需要位置</text><text class="c1b-detail-value">{{game.positions}}</text></view>
+          <view><text class="c1b-detail-label">当前人数</text><text class="c1b-detail-value">{{game.currentPlayers}} / {{game.totalPlayers}} 人</text></view>
+          <view><text class="c1b-detail-label">剩余名额</text><text class="c1b-detail-value">{{game.remainingSpots === 0 ? '已满' : game.remainingSpots + ' 个'}}</text></view>
+          <view><text class="c1b-detail-label">预计 AA</text><text class="c1b-detail-value">{{game.aa}} · 到场线下结算</text></view>
+          <view><text class="c1b-detail-label">球队组织者</text><text class="c1b-detail-value">{{game.team}}</text></view>
+          <view><text class="c1b-detail-label">报名截止</text><text class="c1b-detail-value">{{game.deadline}}</text></view>
+          <view class="c1b-detail-grid__wide"><text class="c1b-detail-label">到场说明</text><text class="c1b-detail-value">{{game.arrival}}</text></view>
+        </view>
+        <text class="c1b-readonly-note">C1b 开发预览仅验证发现与只读详情，不提供申请操作。</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>
