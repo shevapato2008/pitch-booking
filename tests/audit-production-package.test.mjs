@@ -53,6 +53,34 @@ for (const token of [
   "8月30日 17:00",
   "2026-08-24T00:18:00+08:00",
   "今天 00:18",
+  "C1B_GAME_DISCOVERY_FIXTURE",
+  "C1bGameDiscoveryScenario",
+  "projectC1bDirectory",
+  "createDevelopmentPublicGameDirectorySource",
+  "createC1bGameDiscoveryStore",
+  "c1bGameDiscoveryStore",
+  "miniprogram/dev/c1b-game-discovery-fixture",
+  "miniprogram/dev/c1b-game-discovery-pages.json",
+  "miniprogram/dev/public-game-directory-source",
+  "dev/c1b-game-discovery-fixture",
+  "dev/c1b-game-discovery-pages.json",
+  "dev/public-game-directory-source",
+  "dev/pages/c1b-scenario/index",
+  "dev/pages/c1b-game-discovery/index",
+  "dev/pages/c1b-game-detail/index",
+  "C1b 开发预览 · 模拟数据",
+  "C1b 开发预览 · 只读详情",
+  "C1b 开发预览仅验证发现与只读详情，不提供申请操作。",
+  "C1b 开发预览",
+  "以下为模拟球局",
+  "以下均为模拟球局，仅用于开发预览。",
+  "remove C1B_GAME_DISCOVERY_FIXTURE before production integration",
+  "harbor-five",
+  "olympic-seven",
+  "riverside-five",
+  "海河周六晨练局",
+  "奥体周日傍晚局",
+  "水西公园夜场局",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -196,6 +224,18 @@ test("production audit accepts ordinary production code", async (t) => {
   assert.match(result.stdout, /0 forbidden paths\/tokens/);
 });
 
+test("production audit accepts the real directory symbols and legitimate public-game copy", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(
+    packageRoot,
+    'const interfaceName = "PublicGameDirectorySource";\nconst heading = "公开球局";\n',
+  );
+
+  const result = await execFileAsync(process.execPath, [auditScript, packageRoot]);
+  assert.match(result.stdout, /0 forbidden paths\/tokens/);
+});
+
 test("production audit rejects a missing Tencent map key config", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
@@ -309,6 +349,45 @@ test("production audit requires compiled open game source and persistent attempt
   );
 
   await assertAuditRejects(packageRoot, "missing open game composition");
+});
+
+test("production audit requires compiled anonymous public game directory composition", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.split("\n").filter((line) => !/PublicGameDirectory|public-game-directory/.test(line)).join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "missing public game directory composition");
+});
+
+test("production audit rejects a public game directory source without runtime.transport", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace(
+      "registerPublicGameDirectorySource(createHttpPublicGameDirectorySource(runtime.transport));",
+      "registerPublicGameDirectorySource(createHttpPublicGameDirectorySource({}));",
+    ),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid public game directory registration: data source");
+});
+
+test("production audit rejects a later non-HTTP public game directory override", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot, "registerPublicGameDirectorySource({});");
+
+  await assertAuditRejects(packageRoot, "invalid public game directory registration: data source");
 });
 
 test("production audit rejects an open game attempt store without production persistence", async (t) => {
@@ -608,6 +687,7 @@ async function createProductionPackage() {
   const packageRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-audit-"));
   const routes = [
     "pages/intent-entry/index",
+    "pages/game-discovery/index",
     "pages/venue-access/index",
     "pages/venue-claim/index",
     "pages/venue-create/index",
@@ -665,6 +745,8 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       'const { createHttpOpenGameRegistrationSource } = require("./services/http-open-game-registration");',
       'const { registerOpenGameRegistrationSource, registerOpenGameRegistrationAttemptStore } = require("./services/open-game-registration");',
       'const { createOpenGameRegistrationAttemptStore } = require("./services/open-game-registration-attempt-store");',
+      'const { createHttpPublicGameDirectorySource } = require("./services/http-public-game-directory");',
+      'const { registerPublicGameDirectorySource } = require("./services/public-game-directory");',
       "const runtime = productionRuntime();",
       "const sessionStore = createSessionStore(productionSessionStorage);",
       "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
@@ -684,6 +766,7 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       "  identity: productionIdentity,",
       "  sessionStore,",
       "}));",
+      "registerPublicGameDirectorySource(createHttpPublicGameDirectorySource(runtime.transport));",
       "registerPaymentDataSource(createHttpPaymentDataSource({}));",
       "registerPaymentCapability(productionPayment);",
       extraSource,
@@ -704,6 +787,8 @@ async function installProductionDependencies(packageRoot) {
     "services/http-open-game-registration.js",
     "services/open-game-registration.js",
     "services/open-game-registration-attempt-store.js",
+    "services/http-public-game-directory.js",
+    "services/public-game-directory.js",
     "services/session-store.js",
   ]) await writeFile(path.join(packageRoot, file), "\n");
 }

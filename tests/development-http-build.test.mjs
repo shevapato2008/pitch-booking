@@ -71,6 +71,17 @@ test("development booking source defaults to the existing Fixture composition", 
     bootstrap.slice(httpBranchEnd + "return;".length),
     /registerOpenGameRegistration(?:Source|AttemptStore)\)\(/,
   );
+  assert.match(
+    bootstrap,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(transport\)\);/,
+  );
+  assert.match(
+    bootstrap,
+    /registerPublicGameDirectorySource\)\(\(0, public_game_directory_source_1\.createDevelopmentPublicGameDirectorySource\)\(\)\);/,
+  );
+  assert.equal((bootstrap.match(/registerPublicGameDirectorySource\)\(/g) ?? []).length, 2);
+  assert.equal(bootstrap.indexOf("createHttpPublicGameDirectorySource)(transport)") < httpBranchEnd, true);
+  assert.equal(bootstrap.indexOf("createDevelopmentPublicGameDirectorySource)()") > httpBranchEnd, true);
   assert.equal(existsSync(path.join(developmentOutput, "dev/open-game-source.js")), true);
   assert.match(cashier, /模拟支付，不会扣款/);
   assert.doesNotMatch(
@@ -172,6 +183,12 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.equal(bootstrap.indexOf("registerOpenGameRegistrationSource") < bootstrap.indexOf("return;"), true);
   assert.equal(bootstrap.lastIndexOf("createDevelopmentOpenGameSource") > bootstrap.indexOf("return;"), true);
   assert.match(
+    bootstrap,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(transport\)\);/,
+  );
+  assert.equal(bootstrap.indexOf("createHttpPublicGameDirectorySource)(transport)") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("createDevelopmentPublicGameDirectorySource)()") > bootstrap.indexOf("return;"), true);
+  assert.match(
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
     new RegExp(TEST_TENCENT_MAP_KEY),
   );
@@ -256,6 +273,13 @@ test("production ignores the development selector and excludes all development c
   assert.match(app, /registerOpenGameRegistrationSource/);
   assert.match(app, /createOpenGameRegistrationAttemptStore/);
   assert.match(app, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(app, /createHttpPublicGameDirectorySource/);
+  assert.match(app, /registerPublicGameDirectorySource/);
+  assert.match(
+    app,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(runtime\.transport\)\);/,
+  );
+  assert.doesNotMatch(app, /createDevelopmentPublicGameDirectorySource/);
   await execFileAsync(process.execPath, [
     auditScript,
     productionOutput,

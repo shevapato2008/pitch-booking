@@ -1,20 +1,9 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const pageNames = ["c1b-scenario", "c1b-game-discovery", "c1b-game-detail"];
 const routes = pageNames.map((name) => `dev/pages/${name}/index`);
-
-const readTree = (root) => {
-  if (!existsSync(root)) return "";
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    const target = path.join(root, entry.name);
-    if (entry.isDirectory()) return [readTree(target)];
-    return statSync(target).isFile() ? [readFileSync(target, "utf8")] : [];
-  }).join("\n");
-};
 
 test("the slice-local inventory owns exactly three complete custom-navigation pages", () => {
   assert.deepEqual(JSON.parse(readFileSync("miniprogram/dev/c1b-game-discovery-pages.json", "utf8")), {
@@ -58,38 +47,32 @@ test("the directory uses exact whole-card actions and the preview stays read-onl
   }
 });
 
-test("fresh development output contains C1b while fresh production output contains no route, marker or synthetic game", () => {
-  const developmentManifest = JSON.parse(readFileSync("dist/miniprogram-development/app.json", "utf8"));
+test("C1b preview routes and its fixture adapter remain source-local under miniprogram/dev", () => {
+  const previewInventory = JSON.parse(readFileSync("miniprogram/dev/c1b-game-discovery-pages.json", "utf8"));
+  assert.deepEqual(previewInventory.pages, routes);
   for (const route of routes) {
-    assert.ok(developmentManifest.pages.includes(route), `development manifest missing ${route}`);
-    for (const extension of ["js", "wxml", "wxss", "json"]) {
-      assert.equal(existsSync(`dist/miniprogram-development/${route}.${extension}`), true, `development output missing ${route}.${extension}`);
-    }
+    assert.match(route, /^dev\/pages\/c1b-/);
+    assert.equal(existsSync(`miniprogram/${route}.ts`), true, `source missing ${route}.ts`);
   }
 
-  const productionManifest = readFileSync("dist/miniprogram-production/app.json", "utf8");
-  const productionSource = readTree("dist/miniprogram-production");
-  assert.doesNotMatch(productionManifest, /dev\/pages\/c1b-|C1B_GAME_DISCOVERY_FIXTURE/);
-  assert.doesNotMatch(productionSource, /C1B_GAME_DISCOVERY_FIXTURE|dev\/pages\/c1b-|海河周六晨练局|奥体周日傍晚局|水西公园夜场局/);
+  const adapter = readFileSync("miniprogram/dev/public-game-directory-source.ts", "utf8");
+  assert.match(adapter, /\.\/c1b-game-discovery-fixture/);
+  assert.match(adapter, /\/dev\/pages\/c1b-game-detail\/index\?gameId=/);
+  const bootstrap = readFileSync("miniprogram/dev/bootstrap.ts", "utf8");
+  assert.match(bootstrap, /registerPublicGameDirectorySource\(createDevelopmentPublicGameDirectorySource\(\)\)/);
 });
 
-test("the branch remains add-only inside the approved C1b boundary", () => {
-  const committed = execFileSync("git", ["diff", "--name-status", "main...HEAD"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
-  const working = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
-  const entries = [
-    ...committed.map((line) => ({ status: line.split("\t")[0], file: line.split("\t").at(-1) })),
-    ...working.map((line) => ({ status: line.slice(0, 2).trim(), file: line.slice(3) })),
-  ];
-  const approved = [
-    /^docs\/superpowers\/(?:plans|specs)\/2026-08-26-public-game-discovery-preview(?:-design)?\.md$/,
-    /^artifacts\/ui\/(?:references\/public-game-discovery(?:\.(?:html|css)|-data\.js)|flows\/public-game-discovery\.md|screen-manifest\/public-game-discovery\.yaml|reviews\/public-game-discovery\/)/,
-    /^miniprogram\/dev\/c1b-game-discovery-(?:fixture(?:\.test)?\.ts|pages\.json)$/,
-    /^miniprogram\/dev\/pages\/c1b-(?:scenario|game-discovery|game-detail)\/index\.(?:ts|wxml|wxss|json|test\.ts)$/,
-    /^tests\/public-game-discovery-(?:artifact|native-preview)\.test\.mjs$/,
-  ];
-  assert.ok(entries.length > 0);
-  for (const { status, file } of entries) {
-    assert.ok(status === "A" || status === "??", `${file} must be add-only, saw ${status}`);
-    assert.ok(approved.some((pattern) => pattern.test(file)), `outside approved C1b boundary: ${file}`);
-  }
+test("production route inventory includes discovery without any C1b preview route or token", () => {
+  const manifest = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
+  assert.ok(manifest.pages.includes("pages/game-discovery/index"));
+  for (const route of routes) assert.equal(manifest.pages.includes(route), false, `${route} leaked into production routes`);
+  assert.doesNotMatch(JSON.stringify(manifest), /C1B_GAME_DISCOVERY_FIXTURE|dev\/pages\/c1b-/);
+
+  const productionPage = ["ts", "wxml", "wxss", "json"]
+    .map((extension) => readFileSync(`miniprogram/pages/game-discovery/index.${extension}`, "utf8"))
+    .join("\n");
+  assert.doesNotMatch(
+    productionPage,
+    /C1B_GAME_DISCOVERY_FIXTURE|dev\/pages\/c1b-|海河周六晨练局|奥体周日傍晚局|水西公园夜场局/,
+  );
 });

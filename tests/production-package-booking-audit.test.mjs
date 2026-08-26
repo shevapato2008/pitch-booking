@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const audit = path.resolve("scripts/audit-production-package.mjs");
 const productionRoutes = [
   "pages/intent-entry/index",
+  "pages/game-discovery/index",
   "pages/venue-access/index",
   "pages/venue-claim/index",
   "pages/venue-create/index",
@@ -62,6 +63,34 @@ for (const token of [
   "dev/pages/c1a-game-public/index",
   "dev/pages/c1a-game-application/index",
   "dev/pages/c1a-captain-applications/index",
+  "C1B_GAME_DISCOVERY_FIXTURE",
+  "C1bGameDiscoveryScenario",
+  "projectC1bDirectory",
+  "createDevelopmentPublicGameDirectorySource",
+  "createC1bGameDiscoveryStore",
+  "c1bGameDiscoveryStore",
+  "miniprogram/dev/c1b-game-discovery-fixture",
+  "miniprogram/dev/c1b-game-discovery-pages.json",
+  "miniprogram/dev/public-game-directory-source",
+  "dev/c1b-game-discovery-fixture",
+  "dev/c1b-game-discovery-pages.json",
+  "dev/public-game-directory-source",
+  "dev/pages/c1b-scenario/index",
+  "dev/pages/c1b-game-discovery/index",
+  "dev/pages/c1b-game-detail/index",
+  "C1b 开发预览 · 模拟数据",
+  "C1b 开发预览 · 只读详情",
+  "C1b 开发预览仅验证发现与只读详情，不提供申请操作。",
+  "C1b 开发预览",
+  "以下为模拟球局",
+  "以下均为模拟球局，仅用于开发预览。",
+  "remove C1B_GAME_DISCOVERY_FIXTURE before production integration",
+  "harbor-five",
+  "olympic-seven",
+  "riverside-five",
+  "海河周六晨练局",
+  "奥体周日傍晚局",
+  "水西公园夜场局",
 ]) {
   test(`production audit rejects ${token} and names it`, async (t) => {
     const root = await createProductionPackage(t);
@@ -70,6 +99,18 @@ for (const token of [
     await assert.rejects(execFileAsync(process.execPath, [audit, root]), (error) => error.code !== 0 && error.stderr.includes(token));
   });
 }
+
+test("production audit accepts the real directory source and legitimate 公开球局 copy", async (t) => {
+  const root = await createProductionPackage(t);
+  const appPath = path.join(root, "app.js");
+  await writeFile(
+    appPath,
+    `${await readFile(appPath, "utf8")}\nconst sourceType = "PublicGameDirectorySource";\nconst heading = "公开球局";\n`,
+  );
+
+  const result = await execFileAsync(process.execPath, [audit, root]);
+  assert.match(result.stdout, /0 forbidden paths\/tokens/);
+});
 
 test("production audit rejects a package that omits booking routes", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-audit-"));
@@ -131,6 +172,8 @@ async function createProductionPackage(t) {
     "services/http-open-game-registration.js",
     "services/open-game-registration.js",
     "services/open-game-registration-attempt-store.js",
+    "services/http-public-game-directory.js",
+    "services/public-game-directory.js",
     "services/session-store.js",
     "runtime/production.js",
   ]) await writeFile(path.join(root, file), "\n");
@@ -154,6 +197,8 @@ async function createProductionPackage(t) {
       'const { createHttpOpenGameRegistrationSource } = require("./services/http-open-game-registration");',
       'const { registerOpenGameRegistrationSource, registerOpenGameRegistrationAttemptStore } = require("./services/open-game-registration");',
       'const { createOpenGameRegistrationAttemptStore } = require("./services/open-game-registration-attempt-store");',
+      'const { createHttpPublicGameDirectorySource } = require("./services/http-public-game-directory");',
+      'const { registerPublicGameDirectorySource } = require("./services/public-game-directory");',
       "const runtime = productionRuntime();",
       "const sessionStore = createSessionStore(productionSessionStorage);",
       "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
@@ -173,6 +218,7 @@ async function createProductionPackage(t) {
       "  identity: productionIdentity,",
       "  sessionStore,",
       "}));",
+      "registerPublicGameDirectorySource(createHttpPublicGameDirectorySource(runtime.transport));",
       "registerPaymentDataSource(createHttpPaymentDataSource({}));",
       "registerPaymentCapability(productionPayment);",
       "App({});",

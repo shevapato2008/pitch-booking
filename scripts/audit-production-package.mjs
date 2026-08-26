@@ -57,6 +57,34 @@ const forbiddenContentPatterns = [
   /8月30日 17:00/,
   /2026-08-24T00:18:00\+08:00/,
   /今天 00:18/,
+  /remove C1B_GAME_DISCOVERY_FIXTURE before production integration/,
+  /C1B_GAME_DISCOVERY_FIXTURE/,
+  /\bC1bGameDiscoveryScenario\b/,
+  /\bprojectC1bDirectory\b/,
+  /\bcreateDevelopmentPublicGameDirectorySource\b/,
+  /\bcreateC1bGameDiscoveryStore\b/,
+  /\bc1bGameDiscoveryStore\b/,
+  /miniprogram\/dev\/c1b-game-discovery-fixture/,
+  /miniprogram\/dev\/c1b-game-discovery-pages\.json/,
+  /miniprogram\/dev\/public-game-directory-source/,
+  /dev\/c1b-game-discovery-fixture/,
+  /dev\/c1b-game-discovery-pages\.json/,
+  /dev\/public-game-directory-source/,
+  /dev\/pages\/c1b-scenario\/index/,
+  /dev\/pages\/c1b-game-discovery\/index/,
+  /dev\/pages\/c1b-game-detail\/index/,
+  /C1b 开发预览 · 模拟数据/,
+  /C1b 开发预览 · 只读详情/,
+  /C1b 开发预览仅验证发现与只读详情，不提供申请操作。/,
+  /C1b 开发预览/,
+  /以下为模拟球局/,
+  /以下均为模拟球局，仅用于开发预览。/,
+  /harbor-five/,
+  /olympic-seven/,
+  /riverside-five/,
+  /海河周六晨练局/,
+  /奥体周日傍晚局/,
+  /水西公园夜场局/,
   /dev\/pages\/captain-game-form\/index/,
   /dev\/pages\/captain-game-manage\/index/,
   /dev\/pages\/captain-game-public\/index/,
@@ -123,6 +151,15 @@ const requiredPlayerGameRegistrationImports = [
   ["./services/open-game-registration-attempt-store", /\brequire\s*\(\s*["']\.\/services\/open-game-registration-attempt-store["']\s*\)/],
   ["./services/session-store", /\brequire\s*\(\s*["']\.\/services\/session-store["']\s*\)/],
 ];
+const requiredPublicGameDirectoryComposition = [
+  "createHttpPublicGameDirectorySource",
+  "registerPublicGameDirectorySource",
+];
+const requiredPublicGameDirectoryImports = [
+  ["./services/http-public-game-directory", /\brequire\s*\(\s*["']\.\/services\/http-public-game-directory["']\s*\)/],
+  ["./services/public-game-directory", /\brequire\s*\(\s*["']\.\/services\/public-game-directory["']\s*\)/],
+  ["./runtime/production", /\brequire\s*\(\s*["']\.\/runtime\/production["']\s*\)/],
+];
 
 const targetStat = await lstat(target);
 if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
@@ -180,6 +217,13 @@ for (const [specifier, pattern] of requiredPlayerGameRegistrationImports) {
   if (!pattern.test(appContents)) forbidden.push(`missing player game registration import: ${specifier}`);
 }
 for (const diagnostic of inspectPlayerGameRegistration(appContents)) forbidden.push(diagnostic);
+for (const symbol of requiredPublicGameDirectoryComposition) {
+  if (!appContents.includes(symbol)) forbidden.push(`missing public game directory composition: ${symbol}`);
+}
+for (const [specifier, pattern] of requiredPublicGameDirectoryImports) {
+  if (!pattern.test(appContents)) forbidden.push(`missing public game directory import: ${specifier}`);
+}
+for (const diagnostic of inspectPublicGameDirectoryRegistration(appContents)) forbidden.push(diagnostic);
 await auditDependencyClosure(target, path.join(target, "app.js"), forbidden);
 
 try {
@@ -195,6 +239,7 @@ try {
 const manifest = JSON.parse(await readFile(path.join(target, "app.json"), "utf8"));
 const productionRoutes = [
   "pages/intent-entry/index",
+  "pages/game-discovery/index",
   "pages/venue-access/index",
   "pages/venue-claim/index",
   "pages/venue-create/index",
@@ -369,6 +414,94 @@ async function auditDependencyClosure(packageRoot, entryPath, diagnostics) {
       }
       if (resolved.endsWith(".js")) queue.push(resolved);
     }
+  }
+}
+
+function inspectPublicGameDirectoryRegistration(source) {
+  const sourceFile = ts.createSourceFile("app.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const moduleAliases = new Map();
+  const importedBindings = new Map();
+  const productionRuntimes = new Set();
+  const httpSources = new Set();
+  const registrations = [];
+  const startupPositions = [];
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const requiredModule = requireSpecifier(declaration.initializer);
+        if (requiredModule) {
+          if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
+          if (ts.isObjectBindingPattern(declaration.name)) {
+            for (const element of declaration.name.elements) {
+              if (!ts.isIdentifier(element.name)) continue;
+              const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+                ? element.propertyName.text : element.name.text;
+              importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
+            }
+          }
+          continue;
+        }
+        if (!ts.isIdentifier(declaration.name)
+          || !ts.isCallExpression(unwrapExpression(declaration.initializer))) continue;
+        const call = unwrapExpression(declaration.initializer);
+        const factory = importedSymbol(call.expression);
+        if (factory?.module === "./runtime/production" && factory.symbol === "productionRuntime") {
+          productionRuntimes.add(declaration.name.text);
+        }
+        if (factory?.module === "./services/http-public-game-directory"
+          && factory.symbol === "createHttpPublicGameDirectorySource"
+          && hasProductionTransport(call)) {
+          httpSources.add(declaration.name.text);
+        }
+      }
+      continue;
+    }
+    if (!ts.isExpressionStatement(statement)) continue;
+    const expression = unwrapExpression(statement.expression);
+    if (!ts.isCallExpression(expression)) continue;
+    const callee = importedSymbol(expression.expression);
+    const rawCallee = unwrapExpression(expression.expression);
+    if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) {
+      startupPositions.push(expression.pos);
+    }
+    if (callee?.module !== "./services/public-game-directory"
+      || callee.symbol !== "registerPublicGameDirectorySource") continue;
+    const argument = unwrapExpression(expression.arguments[0]);
+    const valid = ts.isIdentifier(argument) ? httpSources.has(argument.text)
+      : ts.isCallExpression(argument)
+        && importedSymbol(argument.expression)?.module === "./services/http-public-game-directory"
+        && importedSymbol(argument.expression)?.symbol === "createHttpPublicGameDirectorySource"
+        && hasProductionTransport(argument);
+    registrations.push({ position: expression.pos, valid });
+  }
+
+  const diagnostics = [];
+  const effective = registrations[registrations.length - 1];
+  if (!effective?.valid) diagnostics.push("invalid public game directory registration: data source");
+  if (effective && startupPositions.length > 0
+    && effective.position >= Math.min(...startupPositions)) {
+    diagnostics.push("public game directory registration must precede App/Page startup");
+  }
+  return diagnostics;
+
+  function importedSymbol(expression) {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value)) return importedBindings.get(value.text);
+    if (!ts.isPropertyAccessExpression(value) || !ts.isIdentifier(value.expression)) return undefined;
+    const module = moduleAliases.get(value.expression.text);
+    return module ? { module, symbol: value.name.text } : undefined;
+  }
+
+  function hasProductionTransport(call) {
+    if (call.arguments.length !== 1) return false;
+    const transport = unwrapExpression(call.arguments[0]);
+    const owner = ts.isPropertyAccessExpression(transport)
+      ? unwrapExpression(transport.expression) : undefined;
+    return ts.isPropertyAccessExpression(transport)
+      && transport.name.text === "transport"
+      && ts.isIdentifier(owner)
+      && productionRuntimes.has(owner.text);
   }
 }
 

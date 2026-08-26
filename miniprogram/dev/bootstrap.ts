@@ -21,6 +21,7 @@ import { createHttpVenueOnboardingDataSource } from "../services/http-venue-onbo
 import { createHttpVenueFulfillmentDataSource } from "../services/http-venue-fulfillment";
 import { createHttpOpenGameSource } from "../services/http-open-game";
 import { createHttpOpenGameRegistrationSource } from "../services/http-open-game-registration";
+import { createHttpPublicGameDirectorySource } from "../services/http-public-game-directory";
 import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
 import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "../services/venue-fulfillment-attempt-store";
@@ -37,6 +38,7 @@ import {
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
+import { registerPublicGameDirectorySource } from "../services/public-game-directory";
 import { TencentPoiSearchCapability } from "../services/tencent-poi-search";
 import { registerVenueDirectoryDataSource } from "../services/venue-directory";
 import {
@@ -53,6 +55,7 @@ import { createDevelopmentPaymentDataSource } from "./payment-source";
 import { createDevelopmentVenueDirectoryDataSource } from "./venue-directory-source";
 import { createDevelopmentPitchConfigurationDataSource } from "./pitch-configuration-source";
 import { createDevelopmentOpenGameSource } from "./open-game-source";
+import { createDevelopmentPublicGameDirectorySource } from "./public-game-directory-source";
 
 export type DevelopmentBootstrapOptions =
   | { readonly source: "fixture" }
@@ -78,6 +81,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     registerInventoryDataSource(sources.inventory);
     registerPitchConfigurationDataSource(sources.pitchConfiguration);
     const transport = productionTransport(options.apiBaseUrl);
+    registerPublicGameDirectorySource(createHttpPublicGameDirectorySource(transport));
     const sessionStore = createSessionStore(productionSessionStorage);
     const openGameRegistrationAttemptStore = createOpenGameRegistrationAttemptStore(
       productionSessionStorage,
@@ -108,6 +112,7 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     ));
     return;
   }
+  registerPublicGameDirectorySource(createDevelopmentPublicGameDirectorySource());
   registerPaymentDataSource(createDevelopmentPaymentDataSource({
     initial: "pending",
     reconciliation: "confirmed",
