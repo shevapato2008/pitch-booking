@@ -21,7 +21,7 @@ test("public game discovery Artifact source set exists", () => {
   assert.deepEqual(missing, [], `missing source files: ${missing.join(", ")}`);
 });
 
-test("manifest freezes exactly four 375 by 812 development-only states", { skip: missing.length > 0 }, () => {
+test("user-visual-approved manifest freezes exactly four 375 by 812 development-only states", { skip: missing.length > 0 }, () => {
   const doc = parseDocument(read(files.manifest), { uniqueKeys: true });
   assert.deepEqual(doc.errors, []);
   const manifest = doc.toJS();
@@ -32,7 +32,7 @@ test("manifest freezes exactly four 375 by 812 development-only states", { skip:
   assert.equal(manifest.states.filter(({ representative_capture }) => representative_capture).length, 4);
   assert.deepEqual(manifest.review_slots, ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"]);
   assert.match(manifest.fixture.deletion_condition, /production/i);
-  assert.equal(manifest.gate, "pending-user-visual-approval");
+  assert.equal(manifest.gate, "user-visual-approved");
 });
 
 test("catalog is sorted and covers two available games plus one full game", { skip: missing.length > 0 }, async () => {
