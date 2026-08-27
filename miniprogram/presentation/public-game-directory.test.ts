@@ -28,7 +28,7 @@ describe("public game directory presentation", () => {
       experienceLabel: "有基础传接球经验",
       positionsLabel: "中场 / 前锋",
       playerSummary: "6 / 10 人",
-      spotsLabel: "剩 4 个名额",
+      spotsLabel: "公开报名剩 4 名",
       aaLabel: "¥36.00",
       deadlineLabel: "8月28日 周五 20:00",
       confirmedLabel: "真实订场已确认",
@@ -51,7 +51,7 @@ describe("public game directory presentation", () => {
       experienceLabel: "可完成高强度对抗",
       positionsLabel: "门将 / 后卫",
       playerSummary: "11 / 14 人",
-      spotsLabel: "剩 3 个名额",
+      spotsLabel: "公开报名剩 3 名",
     });
     expect(beginner).toMatchObject({
       format: "FIVE",
@@ -60,7 +60,7 @@ describe("public game directory presentation", () => {
       experienceLabel: "无最低经验要求",
       positionsLabel: "任意位置",
       playerSummary: "10 / 10 人",
-      spotsLabel: "已满",
+      spotsLabel: "公开报名已满",
     });
   });
 
@@ -71,7 +71,7 @@ describe("public game directory presentation", () => {
       currentPlayers: 6,
       remainingSpots: 2,
       playerSummary: "6 / 10 人",
-      spotsLabel: "剩 2 个名额",
+      spotsLabel: "公开报名剩 2 名",
     });
   });
 

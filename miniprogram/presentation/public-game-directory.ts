@@ -98,7 +98,9 @@ export function presentPublicGameDirectoryItem(item: PublicGameDirectoryItem): P
     experienceLabel: game.minimumExperience || "无最低经验要求",
     positionsLabel: game.positions.map(openGamePositionLabel).join(" / "),
     playerSummary: `${item.currentPlayers} / ${game.totalPlayers} 人`,
-    spotsLabel: item.remainingSpots === 0 ? "已满" : `剩 ${item.remainingSpots} 个名额`,
+    spotsLabel: item.remainingSpots === 0
+      ? "公开报名已满"
+      : `公开报名剩 ${item.remainingSpots} 名`,
     aaLabel: formatCents(game.aaCents),
     deadlineLabel: dateTimeAt(
       game.registrationDeadline,

@@ -140,7 +140,7 @@ test("initial onShow keeps exactly two skeletons until the real directory render
     intensityLabel: "轻松交流",
     positionsLabel: "中场 / 前锋",
     playerSummary: "6 / 10 人",
-    spotsLabel: "剩 4 个名额",
+    spotsLabel: "公开报名剩 4 名",
     aaLabel: "¥36.00",
     deadlineLabel: "8月28日 周五 20:00",
   });
@@ -317,7 +317,10 @@ test("returning from detail refreshes counts while preserving the selected filte
     status: "READY",
     filters: { date: "2026-08-29", format: "ALL", availableOnly: false },
   });
-  expect(page.data.games[0]).toMatchObject({ playerSummary: "7 / 10 人", spotsLabel: "剩 3 个名额" });
+  expect(page.data.games[0]).toMatchObject({
+    playerSummary: "7 / 10 人",
+    spotsLabel: "公开报名剩 3 名",
+  });
 });
 
 test("a late older response cannot overwrite the latest onShow result", async () => {

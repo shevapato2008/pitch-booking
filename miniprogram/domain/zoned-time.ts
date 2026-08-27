@@ -14,6 +14,29 @@ export interface ZonedMinuteParts {
 }
 
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
+const SHANGHAI_TIME_ZONE = "Asia/Shanghai";
+const SHANGHAI_UTC_OFFSET_MILLISECONDS = 8 * 60 * 60 * 1_000;
+
+function fixedOffsetMinutePartsAt(
+  epochMilliseconds: number,
+  offsetMilliseconds: number,
+  path: string,
+): ZonedMinuteParts {
+  if (!Number.isFinite(epochMilliseconds)) invalid(path);
+  const shifted = new Date(epochMilliseconds + offsetMilliseconds);
+  const value = {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+  };
+  dateAt(
+    `${String(value.year).padStart(4, "0")}-${String(value.month).padStart(2, "0")}-${String(value.day).padStart(2, "0")}`,
+    path,
+  );
+  return value;
+}
 
 function numericPartAt(
   parts: readonly Intl.DateTimeFormatPart[],
@@ -83,7 +106,7 @@ function formatterAt(timeZone: string, path: string): Intl.DateTimeFormat {
 
 export function supportedIanaTimeZoneAt(value: unknown, path: string): string {
   const timeZone = stringAt(value, path);
-  formatterAt(timeZone, path);
+  if (timeZone !== SHANGHAI_TIME_ZONE) formatterAt(timeZone, path);
   return timeZone;
 }
 
@@ -94,6 +117,13 @@ export function rfc3339ZonedMinutePartsAt(
   timeZonePath: string,
 ): ZonedMinuteParts {
   const epochMilliseconds = rfc3339EpochMillisecondsAt(value, valuePath);
+  if (timeZone === SHANGHAI_TIME_ZONE) {
+    return fixedOffsetMinutePartsAt(
+      epochMilliseconds,
+      SHANGHAI_UTC_OFFSET_MILLISECONDS,
+      timeZonePath,
+    );
+  }
   return minutePartsAt(formatterAt(timeZone, timeZonePath), epochMilliseconds, timeZonePath);
 }
 
