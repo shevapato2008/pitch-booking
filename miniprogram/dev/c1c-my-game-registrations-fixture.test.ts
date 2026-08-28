@@ -36,6 +36,9 @@ test("declares one isolated four-status catalog spanning visibility and time", (
   expect(new Set(fixture.catalog.map(({ visibility }) => visibility))).toEqual(new Set(["PUBLIC", "LINK_ONLY"]));
   expect(fixture.catalog.some(({ startsAt }) => Date.parse(startsAt) > Date.parse(fixture.authoritativeNow))).toBe(true);
   expect(fixture.catalog.some(({ startsAt }) => Date.parse(startsAt) < Date.parse(fixture.authoritativeNow))).toBe(true);
+  fixture.catalog.forEach(({ appliedAt, startsAt }) => {
+    expect(Date.parse(appliedAt)).toBeLessThan(Date.parse(startsAt));
+  });
   expect(scenarios).toEqual(["READY", "EMPTY", "LOAD_ERROR"]);
   expect(c1cMyGameRegistrationsStore.current().status).toBe("READY");
 });
