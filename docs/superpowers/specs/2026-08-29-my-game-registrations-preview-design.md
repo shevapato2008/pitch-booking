@@ -76,7 +76,7 @@ development-only 场景页明确标注“C1c 开发预览 · 模拟数据”，�
 
 入口预览沿用 C1b 标题、城市说明、日期和筛选控件的已批准结构，只增加一行 88rpx 的“我的报名”入口，放在城市说明之后、筛选区之前。入口使用白色表面、现有边框和蓝色文案，文字与箭头显式双轴居中；点击进入 C1c 列表。
 
-它只验证入口几何与返回后状态保留，不复制或改变 C1b 的生产查询逻辑。
+它只验证入口几何与返回后状态保留，不复制或改变 C1b 的生产查询逻辑。预览中仍然可见的日期、人制、有名额、清除筛选、重试、卡片和返回控件必须全部由隔离 Fixture 驱动真实状态变化或导航；不得把 production 页面截成一张带无效按钮的静态壳。
 
 ### 4.3 我的报名列表
 
@@ -103,13 +103,13 @@ development-only 场景页明确标注“C1c 开发预览 · 模拟数据”，�
 
 ### 4.4 返回与登录边界
 
-- 入口使用 `navigateTo`，返回后保留 C1b 筛选/滚动状态；
+- 入口使用 `navigateTo`；预览显式保存筛选、列表和 `scrollTop`，并验证“筛选 → 滚动 → 进入我的报名 → 返回”后精确恢复；
 - 列表或详情有历史时使用 `navigateBack`；独立深链没有历史时回找球局；
 - production 设计中，401 必须在原页提供真实微信登录 CTA，登录成功后原页重载；
-- 账号变化或会话失效时先清空旧用户列表，再发起新读取，禁止跨账号残留；
+- production 设计中，列表、cursor 与请求 generation 必须绑定 `session.userId`；账号变化或 401 时先递增 generation 并清空旧列表，只有 userId 和 generation 仍匹配的响应才能落地，禁止旧账号的晚到响应重新写回；
 - 本 development preview 不模拟真实微信身份，只以明确文案展示该生产边界。
 
-## 5. Fixture 与未来只读契约
+## 5. Fixture 与未来生产边界
 
 Fixture 唯一 marker 为 `C1C_MY_GAME_REGISTRATIONS_FIXTURE`。单一 store 保存四条合成报名、加载状态、分页和选中项；返回不可变快照。
 
@@ -122,22 +122,22 @@ Fixture 唯一 marker 为 `C1C_MY_GAME_REGISTRATIONS_FIXTURE`。单一 store 保
 
 默认按 `(appliedAt DESC, registrationId DESC)` 排序；Fixture 使用稳定游标模拟 `limit + 1` 分页，页面按 registration ID 去重。首次失败替换首屏内容；刷新或续页失败保留已显示卡片。重试/刷新只重读，不创建或修改报名。
 
-未来生产 API 采用 self-only 语义：
+本预览只冻结 self-only、隐私禁止项、只读分页行为和状态必须由服务端投影；不冻结 endpoint、schema、cursor 编码、limit 或错误码。为验证页面所需数据，Fixture 暂用以下非约束候选形状：
 
 ```text
-GET /api/v1/me/game-registrations?limit=20&cursor=<opaque>
+listMine({ limit: 2, cursor?: <opaque fixture cursor> })
 ```
 
-- 只允许 `applicant_user_id == authenticated user.id`，队长不能读取他人；
-- 200 空 `items`，不是 404；
-- 封闭返回 `items + next_cursor`，默认 limit 20、范围 1–50；
-- cursor 是包含 `(applied_at, id)` 的版本化不透明值，严格字典序 `<`；
-- 非法 cursor/limit 为 422；
+- self-only 表示只允许当前登录申请人读取自己的记录，队长不能借此读取他人；
+- 空列表是正常成功结果，不是资源不存在；
+- Fixture 返回封闭 `items + nextCursor`，以不透明游标模拟稳定两页；
 - 列表包含 PUBLIC、LINK_ONLY、未来和历史报名，不能复用 C1b 公开目录查询；
 - 有效状态复用 C1a 服务端取消投影，不新增持久 `CANCELLED`；
 - 权威订单/球局/场地关系缺失或不一致时整页 503，不静默漏项。
 
-每项未来最小字段为 `registration_id, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification, effective_status, detail_path`。`detail_path` 必须是严格编码的既有真实分享详情路径。
+Fixture 每项只含稳定 key、球局名称、时间、时区、场馆、物理场地、人制、有效状态和预览详情目标；这些字段名不构成生产契约。生产 `detail_path` 必须是严格编码的既有真实分享详情路径。
+
+精确生产 endpoint、request/response schema、版本化 cursor、默认/最大 limit 与 HTTP 错误矩阵必须在联合候选验收并形成 final `main` 后另行设计和批准。
 
 ## 6. 视觉规则
 
@@ -169,12 +169,15 @@ GET /api/v1/me/game-registrations?limit=20&cursor=<opaque>
 
 - 四种有效状态、PUBLIC + LINK_ONLY、未来与历史排序；
 - 两页无重漏、刷新和续页失败保留数据、空态与首次重试；
+- 筛选并滚动后进入“我的报名”，返回时恢复入口页筛选、列表和 `scrollTop`；
 - 未知详情不回退第一条；
 - 每个可见按钮有真实 handler，入口和卡片导航路径正确；
 - 88rpx 触控、双轴居中、header/scroll/safe-area 规则存在；
 - reference / native 实现同为 375×812；
 - fresh development build 包含 C1c 页面；fresh production build 与 audit 不含 marker、合成数据或 dev routes；
 - 既有 C1a/C1b 聚焦测试与 TypeScript 继续通过。
+
+未来 production 测试还必须覆盖账号 A 请求晚于账号 B 返回时不能写回；该并发隐私测试不通过时不得接入真实 HTTP source。
 
 近期 C1b 曾出现 Android `Intl` 兼容问题，因此未来生产验收额外保留一次 Android 登录/列表/详情 smoke；预览阶段不扩张为全状态多设备测试。
 
