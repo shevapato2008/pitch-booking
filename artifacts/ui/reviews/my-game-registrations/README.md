@@ -28,3 +28,9 @@
 Reference self-review 因上述项目通过而标记 `PASS`；原生实现和用户视觉确认仍为 `PENDING`。
 
 规格审查修正后又在同一 viewport 检查了 `entry`：入口为单行 44px，文字和 chevron 完整，公开球局卡片保持左对齐；独立详情深链的标题栏返回会进入找球局。重新捕获 `ready-list` 后与已提交 PNG 的 SHA-256 完全一致，因此保留原代表帧。
+
+## Native checkpoint · 2026-08-29
+
+Task 1–3 的聚焦测试、类型检查、development / production fresh build 和生产包隔离审计均已通过。微信开发者工具真实运行时审核仍未完成：`computer-use` 本机通道无法启动，官方自动化客户端又遇到当前 IDE 未返回 `SDKVersion`、后续请求超时。两条链路重复失败后按项目比例原则停止工具排障，不生成替代截图，也不把浏览器 Reference 当作原生证据。
+
+恢复时只需：登录微信开发者工具，打开 C1c 场景页，在 iPhone X 逻辑 `375 × 812` 下执行 entry 筛选与返回保留、列表刷新/加载更多、详情返回、empty/retry，然后捕获同尺寸 `ready-list` 并完成 side-by-side / overlay / difference 检查。在这之前，Native implementation self-review 与 User visual gate 均保持 `PENDING`。
