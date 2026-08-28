@@ -246,7 +246,9 @@ const renderEntryFilters = () => {
   const filters = element("section", "entry-filters");
   const dates = element("div", "date-strip");
   [["ALL", "全部日期"], ["2026-09-05", "9/5 周六"], ["2026-09-06", "9/6 周日"]].forEach(([value, label]) => {
-    dates.append(actionButton(label, "date-filter", `date-chip${state.entryFilters.date === value ? " control--active" : ""}`, { value }));
+    const date = actionButton(label, "date-filter", `date-chip${state.entryFilters.date === value ? " control--active" : ""}`, { value });
+    date.setAttribute("aria-pressed", String(state.entryFilters.date === value));
+    dates.append(date);
   });
   const row = element("div", "filter-row");
   const nextFormat = state.entryFilters.format === "ALL" ? "FIVE" : state.entryFilters.format === "FIVE" ? "SEVEN" : "ALL";
@@ -254,6 +256,7 @@ const renderEntryFilters = () => {
   const format = actionButton(formatLabel, "format-filter", `filter-control${state.entryFilters.format !== "ALL" ? " control--active" : ""}`, { value: nextFormat });
   format.append(element("span", "caret"));
   const available = actionButton("仅看有名额", "availability-filter", `filter-control${state.entryFilters.availableOnly ? " control--active" : ""}`);
+  available.setAttribute("aria-pressed", String(state.entryFilters.availableOnly));
   available.prepend(element("span", "toggle-dot"));
   row.append(format, available);
   filters.append(dates, row);

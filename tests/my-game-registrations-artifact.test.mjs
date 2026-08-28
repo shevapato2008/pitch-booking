@@ -259,6 +259,44 @@ test("the rendered my registrations entry is a single centered 44px row", { skip
   });
 });
 
+test("rendered date and availability toggles expose synchronized aria-pressed state", { skip: missing.length > 0 }, async () => {
+  await withRenderedArtifact("?state=entry", ({ root }) => {
+    const dateControls = () => root.querySelectorAll("button[data-action]").filter(({ dataset }) => dataset.action === "date-filter");
+    const availability = () => findControl(root, "availability-filter");
+    assert.deepEqual(dateControls().map(({ attributes }) => attributes["aria-pressed"]), ["true", "false", "false"]);
+    assert.equal(availability().attributes["aria-pressed"], "false");
+
+    dateControls()[1].click();
+    assert.deepEqual(dateControls().map(({ attributes }) => attributes["aria-pressed"]), ["false", "true", "false"]);
+    availability().click();
+    assert.equal(availability().attributes["aria-pressed"], "true");
+  });
+});
+
+test("real screen scroll listeners restore exact entry and list positions through browser history", { skip: missing.length > 0 }, async () => {
+  await withRenderedArtifact("?state=entry", ({ root, history }) => {
+    const entryScreen = root.querySelector(".screen");
+    entryScreen.scrollTop = 248;
+    entryScreen.emit("scroll");
+    findControl(root, "open-my-registrations").click();
+    findControl(root, "header-back").click();
+    assert.equal(history.backCalls, 1);
+    assert.equal(visibleTitle(root), "找球局");
+    assert.equal(root.querySelector(".screen").scrollTop, 248);
+  });
+
+  await withRenderedArtifact("?state=ready-list", ({ root, history }) => {
+    const listScreen = root.querySelector(".screen");
+    listScreen.scrollTop = 316;
+    listScreen.emit("scroll");
+    findControl(root, "open-registration-detail").click();
+    findControl(root, "header-back").click();
+    assert.equal(history.backCalls, 1);
+    assert.equal(visibleTitle(root), "我的报名");
+    assert.equal(root.querySelector(".screen").scrollTop, 316);
+  });
+});
+
 test("refresh is stable, load more appends page two once, and whole-card detail restores list state", { skip: missing.length > 0 }, async () => {
   const data = await import(`../${files.data}?list-test=1`);
   const state = data.createArtifactState("ready-list");
