@@ -115,6 +115,7 @@ export const createArtifactState = (requestedState = "ready-list") => {
     items: sourceEmpty || initialError ? [] : [...firstPage.items],
     nextCursor: sourceEmpty || initialError ? null : firstPage.nextCursor,
     selectedRegistrationId: null,
+    detailOrigin: null,
     selectedEntryGameId: null,
     secondPageLoaded: false,
   };
@@ -159,15 +160,17 @@ const loadMore = (state) => {
   state.secondPageLoaded = true;
   return true;
 };
-const openRegistration = (state, { registrationId }) => {
+const openRegistration = (state, { registrationId, fromList = true }) => {
   state.selectedRegistrationId = registrationId;
+  state.detailOrigin = fromList ? "LIST" : "ENTRY";
   const found = MY_REGISTRATIONS.some((item) => item.registrationId === registrationId);
   state.view = found ? "DETAIL" : "NOT_FOUND";
   return found;
 };
 const returnList = (state) => {
-  state.view = "LIST";
+  state.view = state.detailOrigin === "LIST" ? "LIST" : "ENTRY";
   state.selectedRegistrationId = null;
+  state.detailOrigin = null;
   return true;
 };
 const resumeEntry = (state) => { state.view = "ENTRY"; return true; };
@@ -262,14 +265,15 @@ const renderEntryFilters = () => {
 
 const directoryCard = (game) => {
   const card = actionButton("", "open-entry-game", "directory-card", { gameId: game.gameId });
-  card.append(
+  const body = element("span", "card-body");
+  body.append(
     element("span", `availability${game.available ? "" : " availability--full"}`, game.available ? "有名额" : "已满"),
     element("h2", "", game.gameName),
     element("p", "card-time", `${game.dateLabel} · ${game.timeLabel}`),
     element("p", "card-place", `${game.venue} · ${game.pitch}`),
     element("span", "card-format", game.formatLabel),
-    element("span", "chevron"),
   );
+  card.append(body, element("span", "chevron"));
   return card;
 };
 
@@ -278,9 +282,8 @@ const renderEntry = () => {
   const screen = createScreen();
   screen.append(element("p", "entry-context", "天津 · 仅展示真实订场已确认的公开球局"));
   const mine = actionButton("", "open-my-registrations", "mine-entry");
-  const mineCopy = element("span", "mine-entry__copy");
-  mineCopy.append(element("strong", "", "我的报名"), element("small", "", "查看自己最近的报名状态"));
-  mine.append(mineCopy, element("span", "chevron"));
+  mine.setAttribute("aria-label", "我的报名");
+  mine.append(element("strong", "mine-entry__label", "我的报名"), element("span", "chevron"));
   screen.append(mine, renderEntryFilters());
   const games = getVisibleDirectoryGames(state);
   const result = element("p", "result-line");
@@ -319,16 +322,17 @@ const renderEntryDetail = () => {
 
 const registrationCard = (item) => {
   const card = actionButton("", "open-registration-detail", "registration-card", { registrationId: item.registrationId });
+  const body = element("span", "card-body");
   const top = element("div", "registration-card__top");
   top.append(element("span", statusClass(item.effectiveStatus), item.statusLabel), element("span", "card-format", item.formatLabel));
-  card.append(
+  body.append(
     top,
     element("h2", "", item.gameName),
     element("p", "card-time", `${item.dateLabel} · ${item.timeLabel}`),
     element("p", "card-place", item.venue),
     element("p", "card-pitch", item.pitch),
-    element("span", "chevron"),
   );
+  card.append(body, element("span", "chevron"));
   return card;
 };
 
@@ -370,7 +374,8 @@ const renderRegistrationDetail = () => {
   const item = getSelectedRegistration(state);
   if (!item) {
     const missing = element("section", "state-card");
-    missing.append(element("h2", "", "报名不存在或已失效"), element("p", "", "返回列表查看仍可访问的报名。"), actionButton("返回我的报名", "return-list", "secondary-action"));
+    const destination = state.detailOrigin === "LIST" ? "返回我的报名" : "返回找球局";
+    missing.append(element("h2", "", "报名不存在或已失效"), element("p", "", "返回后可继续查看公开球局。"), actionButton(destination, "return-list", "secondary-action"));
     screen.append(missing);
   } else {
     const card = element("article", "detail-card");
@@ -400,6 +405,7 @@ const renderScenario = () => {
 const routeSnapshot = () => ({
   view: state.view,
   selectedRegistrationId: state.selectedRegistrationId,
+  detailOrigin: state.detailOrigin,
   selectedEntryGameId: state.selectedEntryGameId,
 });
 const syncUrl = (method, hasArtifactHistory = false) => {
@@ -432,6 +438,7 @@ const render = () => {
       value: currentTarget.dataset.value,
       gameId: currentTarget.dataset.gameId,
       registrationId: currentTarget.dataset.registrationId,
+      fromList: true,
     };
     dispatchArtifactAction(state, action, payload);
     const forward = action === "open-my-registrations" || action === "open-entry-game" || action === "open-registration-detail";
@@ -446,13 +453,14 @@ const render = () => {
 if (app) {
   const route = new URLSearchParams(window.location.search);
   const requestedView = route.get("view");
-  if (requestedView === "detail") openRegistration(state, { registrationId: route.get("registration") });
+  if (requestedView === "detail") openRegistration(state, { registrationId: route.get("registration"), fromList: false });
   if (requestedView === "entry_detail") openEntryGame(state, { gameId: route.get("game") });
   window.history.replaceState({ ...routeSnapshot(), hasArtifactHistory: false }, "");
   window.addEventListener("popstate", ({ state: historyState }) => {
     if (!historyState?.view) return;
     state.view = historyState.view;
     state.selectedRegistrationId = historyState.selectedRegistrationId ?? null;
+    state.detailOrigin = historyState.detailOrigin ?? null;
     state.selectedEntryGameId = historyState.selectedEntryGameId ?? null;
     render();
   });

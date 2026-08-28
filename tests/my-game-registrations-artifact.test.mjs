@@ -24,6 +24,159 @@ const pngDimensions = (path) => {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 };
 
+class FakeNode {
+  constructor(tagName = "fragment") {
+    this.tagName = tagName.toUpperCase();
+    this.className = "";
+    this.dataset = {};
+    this.attributes = {};
+    this.children = [];
+    this.listeners = new Map();
+    this.parentNode = null;
+    this.scrollTop = 0;
+    this._text = "";
+  }
+
+  set textContent(value) { this._text = String(value ?? ""); }
+  get textContent() { return `${this._text}${this.children.map((child) => child.textContent).join("")}`; }
+
+  append(...children) {
+    for (const child of children.flat()) {
+      if (!child) continue;
+      if (child.tagName === "FRAGMENT") { this.append(...child.children); continue; }
+      child.parentNode = this;
+      this.children.push(child);
+    }
+  }
+
+  prepend(...children) {
+    const prepared = [];
+    for (const child of children.flat()) {
+      if (!child) continue;
+      if (child.tagName === "FRAGMENT") prepared.push(...child.children);
+      else prepared.push(child);
+    }
+    prepared.forEach((child) => { child.parentNode = this; });
+    this.children.unshift(...prepared);
+  }
+
+  replaceChildren(...children) { this.children = []; this._text = ""; this.append(...children); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  addEventListener(name, listener) {
+    const listeners = this.listeners.get(name) ?? [];
+    listeners.push(listener);
+    this.listeners.set(name, listeners);
+  }
+  emit(name) { for (const listener of this.listeners.get(name) ?? []) listener({ currentTarget: this }); }
+  click() { this.emit("click"); }
+
+  descendants() { return this.children.flatMap((child) => [child, ...child.descendants()]); }
+  querySelectorAll(selector) {
+    if (selector === "button[data-action]") {
+      return this.descendants().filter((node) => node.tagName === "BUTTON" && typeof node.dataset.action === "string");
+    }
+    if (selector.startsWith(".")) {
+      const className = selector.slice(1);
+      return this.descendants().filter((node) => node.className.split(/\s+/).includes(className));
+    }
+    return this.descendants().filter((node) => node.tagName === selector.toUpperCase());
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
+}
+
+const createFakeBrowser = (search) => {
+  const root = new FakeNode("main");
+  const documentListeners = new Map();
+  const document = {
+    querySelector: (selector) => selector === "#my-game-registrations-app" ? root : null,
+    createElement: (tag) => new FakeNode(tag),
+    createDocumentFragment: () => new FakeNode("fragment"),
+    addEventListener: (name, listener) => documentListeners.set(name, listener),
+  };
+  const windowListeners = new Map();
+  const location = { pathname: "/artifacts/ui/references/my-game-registrations.html", search };
+  const history = {
+    state: null,
+    entries: [],
+    index: -1,
+    pushCalls: 0,
+    backCalls: 0,
+    replaceState(nextState, _title, url = `${location.pathname}${location.search}`) {
+      this.state = nextState;
+      const parsed = new URL(url, "http://artifact.local");
+      location.pathname = parsed.pathname;
+      location.search = parsed.search;
+      const entry = { state: nextState, url: `${parsed.pathname}${parsed.search}` };
+      if (this.index < 0) { this.entries.push(entry); this.index = 0; }
+      else this.entries[this.index] = entry;
+    },
+    pushState(nextState, _title, url) {
+      this.pushCalls += 1;
+      this.entries.splice(this.index + 1);
+      this.entries.push({ state: nextState, url });
+      this.index = this.entries.length - 1;
+      this.state = nextState;
+      const parsed = new URL(url, "http://artifact.local");
+      location.pathname = parsed.pathname;
+      location.search = parsed.search;
+    },
+    back() {
+      this.backCalls += 1;
+      if (this.index <= 0) return;
+      this.index -= 1;
+      const entry = this.entries[this.index];
+      this.state = entry.state;
+      const parsed = new URL(entry.url, "http://artifact.local");
+      location.pathname = parsed.pathname;
+      location.search = parsed.search;
+      windowListeners.get("popstate")?.({ state: entry.state });
+    },
+  };
+  const window = { location, history, addEventListener: (name, listener) => windowListeners.set(name, listener) };
+  return { root, document, window, history };
+};
+
+let browserImportSequence = 0;
+const withRenderedArtifact = async (search, callback) => {
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  const browser = createFakeBrowser(search);
+  globalThis.document = browser.document;
+  globalThis.window = browser.window;
+  try {
+    browserImportSequence += 1;
+    const data = await import(`../${files.data}?browser-render=${browserImportSequence}`);
+    return await callback({ ...browser, data });
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document; else globalThis.document = previousDocument;
+    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
+  }
+};
+
+const findControl = (root, action) => root.querySelectorAll("button[data-action]").find((node) => node.dataset.action === action);
+const visibleTitle = (root) => root.querySelector("h1")?.textContent ?? "";
+const parseDeclarations = (body) => Object.fromEntries(
+  [...body.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map((match) => [match[1], match[2].trim()]),
+);
+const selectorMatchesControl = (selector, control) => {
+  const clean = selector.replace(/:[\w-]+(?:\([^)]*\))?/g, "").trim();
+  if (/\s/.test(clean)) return false;
+  const tag = clean.match(/^[a-z]+/i)?.[0];
+  if (tag && tag.toUpperCase() !== control.tagName) return false;
+  const requiredClasses = [...clean.matchAll(/\.([\w-]+)/g)].map((match) => match[1]);
+  const controlClasses = new Set(control.className.split(/\s+/).filter(Boolean));
+  return (tag || requiredClasses.length > 0) && requiredClasses.every((className) => controlClasses.has(className));
+};
+const controlStyle = (control, css) => {
+  const style = {};
+  for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (match[1].split(",").some((selector) => selectorMatchesControl(selector, control))) {
+      Object.assign(style, parseDeclarations(match[2]));
+    }
+  }
+  return style;
+};
+
 test("my registrations Artifact source set exists", () => {
   assert.deepEqual(missing, [], `missing source files: ${missing.join(", ")}`);
 });
@@ -35,6 +188,7 @@ test("manifest freezes four production-disabled states and one 375 by 812 repres
   assert.equal(manifest.id, "my-game-registrations");
   assert.deepEqual(manifest.target_viewport, { width: 375, height: 812 });
   assert.equal(manifest.production_enabled, false);
+  assert.match(read(files.html), /data-production-enabled="false"/);
   assert.deepEqual(manifest.states.map(({ id }) => id), stateIds);
   assert.deepEqual(
     manifest.states.filter(({ representative_capture }) => representative_capture).map(({ id }) => id),
@@ -91,6 +245,20 @@ test("entry filters and scroll survive the trip to my registrations and back", {
   ]);
 });
 
+test("the rendered my registrations entry is a single centered 44px row", { skip: missing.length > 0 }, async () => {
+  const css = read(files.css);
+  await withRenderedArtifact("?state=entry", ({ root }) => {
+    const mine = findControl(root, "open-my-registrations");
+    assert.ok(mine, "entry state must visibly render the my registrations control");
+    assert.equal(mine.textContent.trim(), "我的报名");
+    const style = controlStyle(mine, css);
+    assert.equal(style["min-height"], "44px");
+    assert.equal(style.display, "flex");
+    assert.equal(style["align-items"], "center");
+    assert.equal(style["justify-content"], "space-between");
+  });
+});
+
 test("refresh is stable, load more appends page two once, and whole-card detail restores list state", { skip: missing.length > 0 }, async () => {
   const data = await import(`../${files.data}?list-test=1`);
   const state = data.createArtifactState("ready-list");
@@ -128,26 +296,95 @@ test("refresh is stable, load more appends page two once, and whole-card detail 
   assert.equal(state.listScrollTop, 316);
 });
 
-test("every visible control is bound, cards have one detail target, and CSS freezes touch geometry", { skip: missing.length > 0 }, async () => {
-  const data = await import(`../${files.data}?controls-test=1`);
-  const source = read(files.data);
-  const html = read(files.html);
-  const css = read(files.css);
+test("known and unknown registration deep links without history return to discovery entry", { skip: missing.length > 0 }, async () => {
+  const data = await import(`../${files.data}?deep-link-state-test=1`);
+  for (const registrationId of ["reg-applied", "unknown"]) {
+    const state = data.createArtifactState("ready-list");
+    data.dispatchArtifactAction(state, "open-registration-detail", { registrationId, fromList: false });
+    assert.equal(state.view, registrationId === "reg-applied" ? "DETAIL" : "NOT_FOUND");
+    data.dispatchArtifactAction(state, "header-back");
+    assert.equal(state.view, "ENTRY");
+  }
 
-  assert.match(html, /data-production-enabled="false"/);
-  assert.deepEqual(data.REGISTRATION_CARD_FIELDS, [
+  for (const registrationId of ["reg-applied", "unknown"]) {
+    await withRenderedArtifact(`?state=ready-list&view=detail&registration=${registrationId}`, ({ root, history }) => {
+      assert.equal(visibleTitle(root), "报名详情");
+      findControl(root, "header-back").click();
+      assert.equal(visibleTitle(root), "找球局");
+      assert.equal(history.backCalls, 0, "a direct detail must not call browser back without Artifact history");
+    });
+  }
+});
+
+test("list to exact detail uses browser history and returns to the rendered list", { skip: missing.length > 0 }, async () => {
+  await withRenderedArtifact("?state=entry", ({ root, history }) => {
+    findControl(root, "open-my-registrations").click();
+    assert.equal(visibleTitle(root), "我的报名");
+    const card = findControl(root, "open-registration-detail");
+    assert.equal(card.dataset.registrationId, "reg-applied");
+    card.click();
+    assert.equal(visibleTitle(root), "报名详情");
+    assert.equal(history.pushCalls, 2);
+    findControl(root, "header-back").click();
+    assert.equal(history.backCalls, 1);
+    assert.equal(visibleTitle(root), "我的报名");
+  });
+});
+
+test("actual controls rendered across query states map to fixed handlers and per-control touch geometry", { skip: missing.length > 0 }, async () => {
+  const css = read(files.css);
+  const expectedActions = [
+    "header-back", "resume-entry", "date-filter", "format-filter", "availability-filter",
+    "clear-entry-filters", "open-my-registrations", "open-entry-game", "refresh-registrations",
+    "retry-list", "load-more", "open-registration-detail", "return-list",
+  ].sort();
+  const actualActions = new Set();
+  const renderedControls = [];
+  let handlers = null;
+  const collectControls = (root, context) => {
+    const visibleButtons = root.querySelectorAll("button");
+    const boundControls = root.querySelectorAll("button[data-action]");
+    assert.equal(boundControls.length, visibleButtons.length, `${context} must not render an unbound button`);
+    boundControls.forEach((control) => { actualActions.add(control.dataset.action); renderedControls.push(control); });
+  };
+
+  for (const stateId of stateIds) {
+    await withRenderedArtifact(`?state=${stateId}`, ({ root, data }) => {
+      handlers ??= data.ARTIFACT_ACTION_HANDLERS;
+      collectControls(root, stateId);
+      if (stateId === "entry") {
+        root.querySelectorAll("button[data-action]")
+          .find((control) => control.dataset.action === "date-filter" && control.dataset.value !== "ALL")
+          .click();
+        collectControls(root, "entry-filtered");
+        findControl(root, "header-back").click();
+        collectControls(root, "entry-scenario");
+      }
+    });
+  }
+  await withRenderedArtifact("?state=ready-list&view=detail&registration=unknown", ({ root }) => {
+    collectControls(root, "unknown-detail");
+  });
+
+  assert.deepEqual([...actualActions].sort(), expectedActions);
+  assert.deepEqual(Object.keys(handlers).sort(), expectedActions);
+  for (const control of renderedControls) {
+    assert.equal(typeof handlers[control.dataset.action], "function", `${control.dataset.action} must bind a real handler`);
+    const style = controlStyle(control, css);
+    assert.ok(Number.parseFloat(style["min-height"]) >= 44, `${control.dataset.action} needs its own >=44px rule`);
+    assert.equal(style.display, "flex", `${control.dataset.action} must use flex`);
+    assert.equal(style["align-items"], "center", `${control.dataset.action} must center on the cross axis`);
+    assert.ok(["center", "space-between"].includes(style["justify-content"]), `${control.dataset.action} must center or distribute its content explicitly`);
+  }
+
+  const source = read(files.data);
+  const cardRenderer = source.slice(source.indexOf("const registrationCard"), source.indexOf("const renderListState"));
+  const cardModule = await import(`../${files.data}?card-fields-test=1`);
+  assert.deepEqual(cardModule.REGISTRATION_CARD_FIELDS, [
     "effectiveStatus", "gameName", "dateLabel", "timeLabel", "venue", "pitch", "formatLabel",
   ]);
-  assert.equal(data.REGISTRATION_DETAIL_TARGET, "WHOLE_CARD_ONLY");
-  for (const action of data.VISIBLE_CONTROL_ACTIONS) {
-    assert.equal(typeof data.ARTIFACT_ACTION_HANDLERS[action], "function", `${action} must have a handler`);
-    assert.match(source, new RegExp(`dataAction|${escapeRegex(action)}`));
-  }
-  const cardRenderer = source.slice(source.indexOf("const registrationCard"), source.indexOf("const renderListState"));
-  assert.match(cardRenderer, /actionButton\("", "open-registration-detail"/);
+  assert.equal(cardModule.REGISTRATION_DETAIL_TARGET, "WHOLE_CARD_ONLY");
   assert.equal([...cardRenderer.matchAll(/actionButton\(/g)].length, 1, "the whole card must be the only detail target");
-  assert.match(css, /min-height:\s*44px/);
-  assert.match(css, /display:\s*flex;[\s\S]{0,180}?align-items:\s*center;[\s\S]{0,180}?justify-content:\s*center;/);
   assert.match(css, /env\(safe-area-inset-bottom/);
   assert.match(css, /overflow-y:\s*auto/);
   assert.doesNotMatch(css, /overflow-x:\s*auto/);

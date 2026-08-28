@@ -6,7 +6,7 @@
 
 `ready-list → refresh`：刷新重新投影第一页，稳定 key 按 registration ID 去重，因此刷新不重复。`ready-list → load-more`：游标 `c1c-page-2` 只读取一次，第二页只追加一次，再点不会重载或重复。
 
-`ready-list → detail → ready-list`：报名整卡是唯一详情入口，按 registration ID 打开与卡片一致的只读详情。标题栏返回或显式返回都保留已加载列表、游标和 listScrollTop。未知报名不回退第一条，显示“不存在或已失效”并提供真实返回列表动作。
+`ready-list → detail → ready-list`：报名整卡是唯一详情入口，按 registration ID 打开与卡片一致的只读详情。从列表打开时，标题栏返回或显式返回都保留已加载列表、游标和 listScrollTop；独立深链没有 Artifact 历史时返回找球局入口。未知报名不回退第一条，并遵循同一来源返回语义。
 
 `empty`：空列表是成功结果，刷新仍为空；标题栏可以返回找球局。`load-error → ready-list`：重新加载读取稳定第一页，不制造新的报名或成功假象。
 
