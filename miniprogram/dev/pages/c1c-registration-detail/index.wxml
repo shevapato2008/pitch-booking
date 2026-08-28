@@ -1,0 +1,31 @@
+<view class="c1c-page">
+  <view class="c1c-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1c-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1c-header-back" hover-class="c1c-pressed" bindtap="onHeaderBack" aria-label="返回我的报名">
+      <view class="c1c-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1c-header-title">报名详情</text>
+    <view class="c1c-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c1c-scroll" scroll-y="true">
+    <view class="c1c-content">
+      <text class="c1c-preview-note">{{previewNotice}}</text>
+      <view wx:if="{{notFound}}" class="c1c-state-card">
+        <text class="c1c-state-title">报名不存在或已失效</text>
+        <text class="c1c-state-copy">返回找球局，查看当前可用入口。</text>
+        <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onReturnList">返回找球局</button>
+      </view>
+
+      <view wx:else class="c1c-detail-card">
+        <text class="c1c-status-badge {{registration.effectiveStatus === 'APPLIED' ? 'c1c-status--applied' : registration.effectiveStatus === 'JOINED' ? 'c1c-status--joined' : 'c1c-status--neutral'}}">{{registration.statusLabel}}</text>
+        <text class="c1c-detail-title">{{registration.gameName}}</text>
+        <text class="c1c-detail-meta">{{registration.dateLabel}} · {{registration.timeLabel}}</text>
+        <view class="c1c-detail-section"><text>场馆</text><text>{{registration.venue}}</text></view>
+        <view class="c1c-detail-section"><text>物理场地</text><text>{{registration.pitch}}</text></view>
+        <view class="c1c-detail-section"><text>人制</text><text>{{registration.formatLabel}}</text></view>
+        <text class="c1c-authority-note">状态以服务端为准。生产接入后只展示当前登录用户自己的报名结果。</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>

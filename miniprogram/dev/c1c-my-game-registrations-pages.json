@@ -1,0 +1,9 @@
+{
+  "token": "C1C_MY_GAME_REGISTRATIONS_FIXTURE",
+  "pages": [
+    "dev/pages/c1c-scenario/index",
+    "dev/pages/c1c-discovery-entry/index",
+    "dev/pages/c1c-my-registrations/index",
+    "dev/pages/c1c-registration-detail/index"
+  ]
+}

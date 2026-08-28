@@ -1,0 +1,91 @@
+<view class="c1c-page">
+  <view class="c1c-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1c-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1c-header-back" hover-class="c1c-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="c1c-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1c-header-title">找球局</text>
+    <view class="c1c-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c1c-scroll" scroll-y="true" scroll-top="{{entryScrollTop}}" bindscroll="onScroll">
+    <view class="c1c-content">
+      <text class="c1c-preview-note">{{previewNotice}}</text>
+      <text class="c1c-context">天津 · 仅展示真实订场已确认的公开球局</text>
+
+      <button class="c1c-mine-entry" hover-class="c1c-pressed" bindtap="onOpenMyRegistrations" aria-label="打开我的报名">
+        <text>我的报名</text><view class="c1c-chevron" aria-hidden="true"></view>
+      </button>
+
+      <view class="c1c-filters">
+        <scroll-view class="c1c-date-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
+          <view class="c1c-date-strip__inner">
+            <button
+              wx:for="{{dateOptions}}"
+              wx:key="value"
+              class="c1c-date-chip {{filters.date === item.value ? 'c1c-filter-active' : ''}}"
+              hover-class="c1c-pressed"
+              bindtap="onSelectDate"
+              data-value="{{item.value}}"
+              aria-label="按{{item.label}}筛选"
+            >{{item.label}}</button>
+          </view>
+        </scroll-view>
+        <view class="c1c-filter-row">
+          <picker mode="selector" range="{{formatOptions}}" range-key="label" value="{{selectedFormatIndex}}" bindchange="onFormatChange">
+            <view class="c1c-filter-chip {{filters.format !== 'ALL' ? 'c1c-filter-active' : ''}}" aria-label="按人制筛选，当前{{selectedFormatLabel}}">
+              <text>{{selectedFormatLabel}}</text><view class="c1c-down-icon" aria-hidden="true"></view>
+            </view>
+          </picker>
+          <button class="c1c-filter-chip {{filters.availableOnly ? 'c1c-filter-active' : ''}}" hover-class="c1c-pressed" bindtap="onToggleAvailable" aria-label="仅看有名额，当前{{filters.availableOnly ? '已开启' : '未开启'}}">
+            <view class="c1c-toggle-dot" aria-hidden="true"></view><text>仅看有名额</text>
+          </button>
+        </view>
+      </view>
+
+      <view wx:if="{{status === 'LOADING'}}" class="c1c-game-list" role="status" aria-busy="true" aria-label="正在加载公开球局">
+        <view class="c1c-skeleton"></view><view class="c1c-skeleton"></view>
+      </view>
+
+      <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c1c-state-card c1c-state-card--error" role="alert">
+        <text class="c1c-state-title">球局加载失败</text>
+        <text class="c1c-state-copy">网络开了个小差，请重新加载公开球局。</text>
+        <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onRetry">重新加载</button>
+      </view>
+
+      <block wx:else>
+        <view class="c1c-result-line"><text>按开场时间排序</text><text class="c1c-result-count">{{resultCount}} 场</text></view>
+        <view wx:if="{{sourceEmpty}}" class="c1c-state-card">
+          <text class="c1c-state-title">暂时没有公开球局</text>
+          <text class="c1c-state-copy">可以先返回选择其他订场目的。</text>
+          <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onReturnIntent">返回选择目的</button>
+        </view>
+        <view wx:elif="{{filterNoMatch}}" class="c1c-state-card">
+          <text class="c1c-state-title">没有符合筛选的球局</text>
+          <text class="c1c-state-copy">换个日期或人制，看看更多公开球局。</text>
+          <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onClearFilters">清除筛选</button>
+        </view>
+        <view wx:else class="c1c-game-list">
+          <button
+            wx:for="{{games}}"
+            wx:key="id"
+            class="c1c-game-card"
+            hover-class="c1c-pressed"
+            bindtap="onOpenGame"
+            data-game-id="{{item.id}}"
+            aria-label="查看{{item.name}}详情"
+          >
+            <view class="c1c-card-body">
+              <view class="c1c-card-status"><text>真实订场已确认</text><text>{{item.remainingSpots === 0 ? '已满' : '剩 ' + item.remainingSpots + ' 个名额'}}</text></view>
+              <text class="c1c-game-name">{{item.name}}</text>
+              <text class="c1c-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
+              <text class="c1c-game-place">{{item.venue}} · {{item.pitch}}</text>
+              <text class="c1c-format-badge">{{item.formatLabel}}</text>
+            </view>
+            <view class="c1c-chevron" aria-hidden="true"></view>
+          </button>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+</view>
