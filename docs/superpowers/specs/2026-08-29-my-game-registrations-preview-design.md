@@ -133,7 +133,7 @@ listMine({ limit: 2, cursor?: <opaque fixture cursor> })
 - Fixture 返回封闭 `items + nextCursor`，以不透明游标模拟稳定两页；
 - 列表包含 PUBLIC、LINK_ONLY、未来和历史报名，不能复用 C1b 公开目录查询；
 - 有效状态复用 C1a 服务端取消投影，不新增持久 `CANCELLED`；
-- 权威订单/球局/场地关系缺失或不一致时整页 503，不静默漏项。
+- 权威订单/球局/场地关系缺失或不一致时显式返回整页不可用状态，不静默漏项；具体 HTTP 映射在 final `main` 后冻结。
 
 Fixture 每项只含稳定 key、球局名称、时间、时区、场馆、物理场地、人制、有效状态和预览详情目标；这些字段名不构成生产契约。生产 `detail_path` 必须是严格编码的既有真实分享详情路径。
 
