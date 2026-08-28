@@ -4,11 +4,31 @@
     <button class="c1c-header-back" hover-class="c1c-pressed" bindtap="onHeaderBack" aria-label="返回">
       <view class="c1c-back-icon" aria-hidden="true"></view>
     </button>
-    <text class="c1c-header-title">找球局</text>
+    <text class="c1c-header-title">{{detailMode ? '球局详情' : '找球局'}}</text>
     <view class="c1c-header-spacer" aria-hidden="true"></view>
   </view>
 
-  <scroll-view class="c1c-scroll" scroll-y="true" scroll-top="{{entryScrollTop}}" bindscroll="onScroll">
+  <scroll-view wx:if="{{detailMode}}" class="c1c-scroll" scroll-y="true">
+    <view class="c1c-detail-content">
+      <text class="c1c-preview-note">{{previewNotice}}</text>
+      <view wx:if="{{detailNotFound}}" class="c1c-state-card">
+        <text class="c1c-state-title">球局不存在或已失效</text>
+        <text class="c1c-state-copy">返回找球局，查看当前可浏览的公开球局。</text>
+        <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onReturnEntry">返回找球局</button>
+      </view>
+      <view wx:else class="c1c-detail-card">
+        <text class="c1c-confirmed">真实订场已确认</text>
+        <text class="c1c-detail-title">{{detailGame.name}}</text>
+        <text class="c1c-detail-meta">{{detailGame.dateLabel}} · {{detailGame.timeLabel}}</text>
+        <text class="c1c-detail-meta">{{detailGame.venue}} · {{detailGame.pitch}}</text>
+        <view class="c1c-detail-row"><text>人制</text><text>{{detailGame.formatLabel}}</text></view>
+        <text class="c1c-readonly-note">C1c 入口预览只验证公开球局的精确只读详情。</text>
+        <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onReturnEntry">返回找球局</button>
+      </view>
+    </view>
+  </scroll-view>
+
+  <scroll-view wx:else class="c1c-scroll" scroll-y="true" scroll-top="{{entryScrollTop}}" bindscroll="onScroll">
     <view class="c1c-content">
       <text class="c1c-preview-note">{{previewNotice}}</text>
       <text class="c1c-context">天津 · 仅展示真实订场已确认的公开球局</text>
@@ -76,7 +96,7 @@
             aria-label="查看{{item.name}}详情"
           >
             <view class="c1c-card-body">
-              <view class="c1c-card-status"><text>真实订场已确认</text><text>{{item.remainingSpots === 0 ? '已满' : '剩 ' + item.remainingSpots + ' 个名额'}}</text></view>
+              <view class="c1c-card-status"><text>真实订场已确认</text><text>{{item.remainingSpots === 0 ? '公开报名已满' : '公开报名剩 ' + item.remainingSpots + ' 名'}}</text></view>
               <text class="c1c-game-name">{{item.name}}</text>
               <text class="c1c-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
               <text class="c1c-game-place">{{item.venue}} · {{item.pitch}}</text>

@@ -6,6 +6,12 @@ interface DateEvent { currentTarget?: { dataset?: { value?: unknown } }; }
 interface FormatEvent { detail?: { value?: unknown }; }
 interface GameEvent { currentTarget?: { dataset?: { gameId?: unknown } }; }
 interface ScrollEvent { detail?: { scrollTop?: unknown }; }
+interface DetailQuery { gameId?: unknown; }
+
+const decodeGameId = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  try { return decodeURIComponent(value); } catch { return ""; }
+};
 
 const projectPage = () => {
   const directory = c1bGameDiscoveryStore.current();
@@ -31,20 +37,60 @@ const returnFromEntry = () => {
   else wx.redirectTo({ url: "/dev/pages/c1c-scenario/index" });
 };
 
+const returnFromDetail = () => {
+  const pages = getCurrentPages() as unknown as readonly { route?: string }[];
+  const previous = pages[pages.length - 2];
+  if (previous?.route === "dev/pages/c1c-discovery-entry/index") wx.navigateBack({ delta: 1 });
+  else wx.redirectTo({ url: "/dev/pages/c1c-discovery-entry/index" });
+};
+
 Page({
   data: {
     ...projectPage(),
     previewNotice: "C1c 开发预览 · 模拟数据",
+    detailMode: false,
+    detailGameId: "",
+    detailGame: null as ReturnType<typeof c1bGameDiscoveryStore.detail>,
+    detailNotFound: false,
     headerTopPx: 0,
     headerRowHeightPx: 44,
   },
 
-  onLoad() {
+  onLoad(query: DetailQuery = {}) {
     const header = readIntentHeaderLayout();
-    this.setData({ headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx, ...projectPage() });
+    const detailMode = query.gameId !== undefined;
+    if (detailMode) {
+      const detailGameId = decodeGameId(query.gameId);
+      const detailGame = c1bGameDiscoveryStore.detail(detailGameId);
+      this.setData({
+        detailMode,
+        detailGameId,
+        detailGame,
+        detailNotFound: detailGame === null,
+        headerTopPx: header.topPx,
+        headerRowHeightPx: header.rowHeightPx,
+      });
+      return;
+    }
+    this.setData({
+      detailMode: false,
+      detailGameId: "",
+      detailGame: null,
+      detailNotFound: false,
+      headerTopPx: header.topPx,
+      headerRowHeightPx: header.rowHeightPx,
+      ...projectPage(),
+    });
   },
 
-  onShow() { this.setData(projectPage()); },
+  onShow() {
+    if (this.data.detailMode) {
+      const detailGame = c1bGameDiscoveryStore.detail(this.data.detailGameId);
+      this.setData({ detailGame, detailNotFound: detailGame === null });
+      return;
+    }
+    this.setData(projectPage());
+  },
 
   onSelectDate(event: DateEvent) {
     c1bGameDiscoveryStore.setDateFilter(event.currentTarget?.dataset?.value);
@@ -76,7 +122,7 @@ Page({
   onOpenGame(event: GameEvent) {
     const gameId = event.currentTarget?.dataset?.gameId;
     if (!c1bGameDiscoveryStore.selectGame(gameId) || typeof gameId !== "string") return;
-    wx.navigateTo({ url: `/dev/pages/c1b-game-detail/index?gameId=${encodeURIComponent(gameId)}` });
+    wx.navigateTo({ url: `/dev/pages/c1c-discovery-entry/index?gameId=${encodeURIComponent(gameId)}` });
   },
 
   onOpenMyRegistrations() {
@@ -88,6 +134,10 @@ Page({
     this.setData({ entryScrollTop: snapshot.entryScrollTop });
   },
 
+  onReturnEntry() { returnFromDetail(); },
   onReturnIntent() { wx.reLaunch({ url: "/pages/intent-entry/index" }); },
-  onHeaderBack() { returnFromEntry(); },
+  onHeaderBack() {
+    if (this.data.detailMode) returnFromDetail();
+    else returnFromEntry();
+  },
 });

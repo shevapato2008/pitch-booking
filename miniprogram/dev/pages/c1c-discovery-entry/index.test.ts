@@ -9,7 +9,7 @@ import { c1cMyGameRegistrationsStore } from "../../c1c-my-game-registrations-fix
 
 interface Definition {
   data: Record<string, any>;
-  onLoad(): void;
+  onLoad(query?: { gameId?: unknown }): void;
   onShow(): void;
   onSelectDate(event: { currentTarget?: { dataset?: { value?: unknown } } }): void;
   onFormatChange(event: { detail?: { value?: unknown } }): void;
@@ -19,6 +19,7 @@ interface Definition {
   onOpenGame(event: { currentTarget?: { dataset?: { gameId?: unknown } } }): void;
   onOpenMyRegistrations(): void;
   onScroll(event: { detail?: { scrollTop?: unknown } }): void;
+  onReturnEntry(): void;
   onReturnIntent(): void;
   onHeaderBack(): void;
 }
@@ -94,7 +95,7 @@ test("opening My Registrations and returning preserves entry filters and exact s
   expect(page.data.games.map(({ id }: { id: string }) => id)).toEqual(["olympic-seven"]);
 });
 
-test("retry, empty return, and each public-game card have a real destination", () => {
+test("retry, empty return, and each public-game card have a C1c-owned destination", () => {
   c1bGameDiscoveryStore.reset("LOAD_ERROR");
   const page = loadPage();
   page.onShow();
@@ -105,7 +106,7 @@ test("retry, empty return, and each public-game card have a real destination", (
   page.onOpenGame({ currentTarget: { dataset: { gameId: "olympic-seven" } } });
   expect(c1bGameDiscoveryStore.current().selectedGameId).toBe("olympic-seven");
   expect(wx.navigateTo).toHaveBeenCalledWith({
-    url: "/dev/pages/c1b-game-detail/index?gameId=olympic-seven",
+    url: "/dev/pages/c1c-discovery-entry/index?gameId=olympic-seven",
   });
 
   page.onOpenGame({ currentTarget: { dataset: { gameId: "unknown" } } });
@@ -115,6 +116,62 @@ test("retry, empty return, and each public-game card have a real destination", (
   page.onShow();
   page.onReturnIntent();
   expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
+});
+
+test("entry card to exact detail and visible return preserve C1c filters and scroll", () => {
+  const entry = loadPage();
+  entry.onLoad();
+  entry.onSelectDate({ currentTarget: { dataset: { value: "2026-08-30" } } });
+  entry.onFormatChange({ detail: { value: "2" } });
+  entry.onToggleAvailable();
+  entry.onScroll({ detail: { scrollTop: 466.25 } });
+  entry.onOpenGame({ currentTarget: { dataset: { gameId: "olympic-seven" } } });
+
+  const detail = loadPage();
+  detail.onLoad({ gameId: "olympic-seven" });
+  detail.onShow();
+  expect(detail.data).toMatchObject({
+    detailMode: true,
+    detailGameId: "olympic-seven",
+    detailNotFound: false,
+    detailGame: { id: "olympic-seven", name: "奥体周日傍晚局", pitch: "七人制 A 场" },
+  });
+
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([
+    { route: "dev/pages/c1c-discovery-entry/index" },
+    { route: "dev/pages/c1c-discovery-entry/index" },
+  ]);
+  detail.onReturnEntry();
+  expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
+
+  entry.onShow();
+  expect(entry.data).toMatchObject({
+    entryScrollTop: 466.25,
+    filters: { date: "2026-08-30", format: "SEVEN", availableOnly: true },
+  });
+  expect(entry.data.games.map(({ id }: { id: string }) => id)).toEqual(["olympic-seven"]);
+});
+
+test("unknown detail never falls back and a deep-link return redirects to C1c entry mode", () => {
+  const detail = loadPage();
+  detail.onLoad({ gameId: "unknown" });
+  detail.onShow();
+  expect(detail.data).toMatchObject({
+    detailMode: true,
+    detailGameId: "unknown",
+    detailGame: null,
+    detailNotFound: true,
+  });
+
+  (getCurrentPages as unknown as jest.Mock).mockReturnValue([
+    { route: "dev/pages/c1c-discovery-entry/index" },
+  ]);
+  detail.onHeaderBack();
+  expect(wx.redirectTo).toHaveBeenCalledWith({ url: "/dev/pages/c1c-discovery-entry/index" });
+
+  const malformed = loadPage();
+  malformed.onLoad({ gameId: "%E0%A4%A" });
+  expect(malformed.data).toMatchObject({ detailMode: true, detailGameId: "", detailGame: null, detailNotFound: true });
 });
 
 test("header back returns to history or the C1c launcher", () => {
@@ -141,4 +198,16 @@ test("every visible entry control binds behavior and scroll restoration is wired
   expect(wxml).toMatch(/<picker[^>]+bindchange="onFormatChange"/);
   expect(wxml).toMatch(/<scroll-view[^>]+scroll-y="true"[^>]+scroll-top="{{entryScrollTop}}"[^>]+bindscroll="onScroll"/);
   expect(wxml).toMatch(/bindtap="onOpenMyRegistrations"/);
+  expect(wxml).toMatch(/{{detailGame.name}}/);
+  expect(wxml).toMatch(/{{detailGame.dateLabel}} · {{detailGame.timeLabel}}/);
+  expect(wxml).toMatch(/{{detailGame.venue}} · {{detailGame.pitch}}/);
+  expect(wxml).toMatch(/bindtap="onReturnEntry"/);
+  expect(wxml).not.toMatch(/申请加入|我要报名|立即加入|手机号|微信号|订单号|成员名单|支付字段/);
+});
+
+test("capacity copy explicitly describes public-registration availability", () => {
+  const wxml = readFileSync("miniprogram/dev/pages/c1c-discovery-entry/index.wxml", "utf8");
+  expect(wxml).toMatch(/公开报名已满/);
+  expect(wxml).toMatch(/公开报名剩 ['"] \+ item\.remainingSpots \+ ['"] 名/);
+  expect(wxml).not.toMatch(/'已满'|'剩 ' \+ item\.remainingSpots \+ ' 个名额'/);
 });
