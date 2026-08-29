@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
@@ -25,6 +28,9 @@ ITEM_FIELDS = {
     "pitch_name",
     "pitch_specification",
 }
+READY_EXAMPLE_PATH = Path(
+    "contracts/examples/my-open-game-applications-ready.json"
+)
 
 
 def _valid_item() -> dict[str, object]:
@@ -97,3 +103,17 @@ def test_my_application_accepts_every_effective_status_and_aware_datetimes() -> 
     invalid = {**_valid_item(), "effective_status": "PENDING"}
     with pytest.raises(ValidationError):
         MyOpenGameApplication.model_validate(invalid)
+
+
+def test_ready_example_cursor_is_a_versioned_keyset_for_the_last_item() -> None:
+    ready = json.loads(READY_EXAMPLE_PATH.read_text())
+    cursor = ready["next_cursor"]
+    padding = "=" * (-len(cursor) % 4)
+    keyset = json.loads(base64.urlsafe_b64decode(cursor + padding))
+
+    assert set(keyset) == {"v", "applied_at", "id"}
+    assert keyset["v"] == 1
+    assert datetime.fromisoformat(keyset["applied_at"]).tzinfo is not None
+    assert uuid.UUID(keyset["id"])
+    assert keyset["applied_at"] == ready["items"][-1]["applied_at"]
+    assert keyset["id"] == ready["items"][-1]["id"]
