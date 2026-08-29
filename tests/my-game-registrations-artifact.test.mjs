@@ -12,6 +12,10 @@ const files = {
   review: "artifacts/ui/reviews/my-game-registrations/README.md",
   board: "artifacts/ui/reviews/my-game-registrations/review-board.html",
   reference: "artifacts/ui/reviews/my-game-registrations/ready-list-reference-375x812.png",
+  implementation: "artifacts/ui/reviews/my-game-registrations/ready-list-implementation-375x812.png",
+  sideBySide: "artifacts/ui/reviews/my-game-registrations/ready-list-side-by-side.png",
+  overlay: "artifacts/ui/reviews/my-game-registrations/ready-list-overlay-50.png",
+  difference: "artifacts/ui/reviews/my-game-registrations/ready-list-difference.png",
 };
 const stateIds = ["entry", "ready-list", "empty", "load-error"];
 const read = (path) => readFileSync(path, "utf8");
@@ -440,7 +444,7 @@ test("render source stays inside the frozen card fields and privacy boundary", {
   assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u, "emoji cannot serve as icons");
 });
 
-test("flow and reference review keep the production and user gates honest", { skip: missing.length > 0 }, () => {
+test("flow and visual review keep the production and approved user gates honest", { skip: missing.length > 0 }, () => {
   const flow = read(files.flow);
   for (const phrase of [
     "production-disabled", "entry → ready-list", "日期、人制和仅看有名额", "保留筛选与 entryScrollTop",
@@ -449,12 +453,23 @@ test("flow and reference review keep the production and user gates honest", { sk
 
   const review = read(files.review);
   assert.match(review, /ready-list-reference-375x812\.png/);
+  assert.match(review, /ready-list-implementation-375x812\.png/);
   assert.match(review, /Reference self-review:\s*`PASS`/);
-  assert.match(review, /User visual gate:\s*`PENDING`/);
-  assert.doesNotMatch(review, /implementation-375x812\.png/);
+  assert.match(review, /Native implementation self-review:\s*`PASS`/);
+  assert.match(review, /User visual gate:\s*`PASS`/);
+
+  assert.deepEqual(pngDimensions(files.reference), { width: 375, height: 812 });
+  assert.deepEqual(pngDimensions(files.implementation), { width: 375, height: 812 });
+  assert.deepEqual(pngDimensions(files.sideBySide), { width: 750, height: 812 });
+  assert.deepEqual(pngDimensions(files.overlay), { width: 375, height: 812 });
+  assert.deepEqual(pngDimensions(files.difference), { width: 375, height: 812 });
 
   const board = read(files.board);
-  assert.deepEqual([...board.matchAll(/data-state="([^"]+)"/g)].map((match) => match[1]), ["ready-list"]);
-  assert.match(board, /ready-list-reference-375x812\.png/);
-  assert.doesNotMatch(board, /implementation-375x812\.png/);
+  assert.deepEqual(
+    [...board.matchAll(/data-state="([^"]+)"/g)].map((match) => match[1]),
+    ["ready-list-comparison", "ready-list-overlay"],
+  );
+  assert.match(board, /ready-list-side-by-side\.png/);
+  assert.match(board, /ready-list-overlay-50\.png/);
+  assert.match(board, /ready-list-difference\.png/);
 });

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>我的报名 · 参考稿视觉板</title>
+    <title>我的报名 · 视觉评审板</title>
     <style>
       * { box-sizing: border-box; }
       body { margin: 0; padding: 32px; color: #10243E; background: #EEF3F7; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -11,8 +11,10 @@
       h1 { margin: 0 0 8px; font-size: 30px; }
       p { margin: 0 0 24px; color: #526479; }
       .pill { display: inline-flex; min-height: 28px; align-items: center; margin-right: 8px; padding: 3px 10px; border: 1px solid #BAE6FD; border-radius: 999px; background: #F0F9FF; color: #0369A1; font-weight: 700; }
-      figure { width: 375px; margin: 0 auto; overflow: hidden; border: 1px solid #DBE5EC; border-radius: 16px; background: #FFF; box-shadow: 0 8px 22px rgb(16 36 62 / 8%); }
-      img { display: block; width: 375px; height: 812px; background: #F8FAFC; }
+      figure { width: 100%; margin: 0 auto 24px; overflow: hidden; border: 1px solid #DBE5EC; border-radius: 16px; background: #FFF; box-shadow: 0 8px 22px rgb(16 36 62 / 8%); }
+      figure.comparison { max-width: 750px; }
+      figure.single { max-width: 375px; }
+      img { display: block; width: 100%; height: auto; background: #F8FAFC; }
       figcaption { display: flex; min-height: 52px; align-items: center; justify-content: space-between; padding: 12px 16px; font-weight: 700; }
       a { color: #0369A1; }
       @media (max-width: 640px) { body { padding: 20px 0; } header { padding: 0 14px; } }
@@ -20,13 +22,17 @@
   </head>
   <body>
     <header>
-      <h1>我的报名 · 参考稿视觉板</h1>
-      <p><span class="pill">375 × 812</span><span class="pill">Reference only</span><span class="pill">用户视觉门 PENDING</span></p>
+      <h1>我的报名 · 视觉评审板</h1>
+      <p><span class="pill">375 × 812</span><span class="pill">Native PASS</span><span class="pill">用户视觉门 PASS</span></p>
     </header>
     <main>
-      <figure data-state="ready-list">
-        <a href="ready-list-reference-375x812.png"><img src="ready-list-reference-375x812.png" width="375" height="812" alt="我的报名默认列表参考稿" /></a>
-        <figcaption><span>ready-list</span><a href="../../references/my-game-registrations.html?state=ready-list">打开交互稿</a></figcaption>
+      <figure class="comparison" data-state="ready-list-comparison">
+        <a href="ready-list-side-by-side.png"><img src="ready-list-side-by-side.png" width="750" height="812" alt="我的报名参考稿与微信原生实现并排图" /></a>
+        <figcaption><span>Reference / Native</span><a href="../../references/my-game-registrations.html?state=ready-list">打开交互稿</a></figcaption>
+      </figure>
+      <figure class="single" data-state="ready-list-overlay">
+        <a href="ready-list-overlay-50.png"><img src="ready-list-overlay-50.png" width="375" height="812" alt="我的报名参考稿与微信原生实现百分之五十叠加图" /></a>
+        <figcaption><span>Overlay 50%</span><a href="ready-list-difference.png">打开差异图</a></figcaption>
       </figure>
     </main>
   </body>
