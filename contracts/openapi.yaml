@@ -2048,7 +2048,7 @@ paths:
                   - type: object
                     properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
               examples:
-                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+                InvalidArgument: {externalValue: './examples/error-my-open-game-applications-invalid-argument.json'}
         '503':
           description: Open game application service is unavailable.
           content:

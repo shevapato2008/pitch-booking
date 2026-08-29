@@ -1,10 +1,13 @@
 """Applicant context and idempotent apply transaction for shared open games."""
 
+import base64
+import binascii
 import hashlib
 import json
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfoNotFoundError
 
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,6 +28,8 @@ from backend.app.modules.open_game_registrations.dto import (
     DecisionRequest,
     DecisionResult,
     DecisionResultStatus,
+    MyOpenGameApplication,
+    MyOpenGameApplicationsResponse,
     Queue,
     RegistrationContext,
 )
@@ -37,6 +42,7 @@ from backend.app.modules.open_game_registrations.lifecycle import (
 )
 from backend.app.modules.open_game_registrations.privacy import (
     project_captain_application,
+    project_my_open_game_application,
     project_viewer_registration,
 )
 from backend.app.modules.open_game_registrations.repository import (
@@ -132,6 +138,51 @@ class OpenGameRegistrationService:
             ValidationError,
             ValueError,
             RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def list_my_applications(
+        self,
+        *,
+        applicant_user_id: uuid.UUID,
+        limit: int,
+        cursor: str | None,
+    ) -> MyOpenGameApplicationsResponse:
+        try:
+            if not 1 <= limit <= 50:
+                raise _invalid_argument()
+            cursor_applied_at, cursor_id = _decode_my_applications_cursor(cursor)
+            rows = self._repository.list_mine(
+                applicant_user_id=applicant_user_id,
+                limit=limit + 1,
+                cursor_applied_at=cursor_applied_at,
+                cursor_id=cursor_id,
+            )
+            now = self._now()
+            items = tuple(
+                self._project_my_application(row, now=now) for row in rows
+            )
+            next_cursor = (
+                _encode_my_applications_cursor(rows[limit - 1])
+                if len(rows) > limit
+                else None
+            )
+            return MyOpenGameApplicationsResponse(
+                items=items[:limit],
+                next_cursor=next_cursor,
+            )
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            AttributeError,
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+            ZoneInfoNotFoundError,
         ):
             self._repository.rollback()
             raise _service_unavailable() from None
@@ -525,6 +576,60 @@ class OpenGameRegistrationService:
             now=now,
         )
 
+    def _project_my_application(
+        self,
+        registration: OpenGameRegistration,
+        *,
+        now: datetime,
+    ) -> MyOpenGameApplication:
+        game = registration.game
+        if game.published_at is None:
+            raise RuntimeError("registration game was never published")
+        order = game.order
+        slot = order.slot
+        pitch = slot.pitch
+        venue = pitch.venue
+        authority = OrderAuthorityRows(
+            payments=tuple(sorted(order.payments, key=lambda row: row.id)),
+            refund_cases=tuple(
+                sorted(order.refund_cases, key=lambda row: (row.created_at, row.id))
+            ),
+            refund_attempts=tuple(
+                sorted(
+                    (
+                        attempt
+                        for refund_case in order.refund_cases
+                        for attempt in refund_case.attempts
+                    ),
+                    key=lambda row: (row.refund_case_id, row.attempt_no, row.id),
+                )
+            ),
+        )
+        order_row = OpenGameOrderRow(
+            venue_name=venue.name,
+            pitch_name=pitch.name,
+            players_per_side=pitch.players_per_side,
+            booking_price_cents=order.price_cents,
+            starts_at=slot.starts_at,
+            ends_at=slot.ends_at,
+            time_zone=venue.timezone,
+        )
+        projection = project_authoritative_public_game(
+            game=game,
+            order=order,
+            authority=authority,
+            order_row=order_row,
+            team=game.team,
+            now=now,
+        )
+        return project_my_open_game_application(
+            application_id=registration.id,
+            persisted_status=registration.status,
+            applied_at=registration.applied_at,
+            share_token=game.share_token,
+            projection=projection,
+        )
+
 
 def _project_context(
     *,
@@ -625,6 +730,59 @@ def _decision_request_digest(
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _encode_my_applications_cursor(registration: OpenGameRegistration) -> str:
+    payload = json.dumps(
+        {
+            "v": 1,
+            "applied_at": registration.applied_at.isoformat(),
+            "id": str(registration.id),
+        },
+        separators=(",", ":"),
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_my_applications_cursor(
+    cursor: str | None,
+) -> tuple[datetime | None, uuid.UUID | None]:
+    if cursor is None:
+        return None, None
+    if not cursor or any(
+        character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        for character in cursor
+    ):
+        raise _invalid_argument()
+    try:
+        decoded = base64.b64decode(
+            cursor + "=" * (-len(cursor) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+        if base64.urlsafe_b64encode(decoded).decode().rstrip("=") != cursor:
+            raise ValueError("cursor is not canonical base64url")
+        payload = json.loads(decoded)
+        if not isinstance(payload, dict) or set(payload) != {"v", "applied_at", "id"}:
+            raise ValueError("cursor object is not exact")
+        if type(payload["v"]) is not int or payload["v"] != 1:
+            raise ValueError("cursor version is unsupported")
+        if not isinstance(payload["applied_at"], str) or not isinstance(
+            payload["id"], str
+        ):
+            raise ValueError("cursor key types are invalid")
+        applied_at = datetime.fromisoformat(payload["applied_at"])
+        if applied_at.tzinfo is None or applied_at.utcoffset() is None:
+            raise ValueError("cursor timestamp must be aware")
+        application_id = uuid.UUID(payload["id"])
+    except (
+        binascii.Error,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
+        raise _invalid_argument() from None
+    return applied_at, application_id
+
+
 def _replay_context(
     record: IdempotencyRecord,
     *,
@@ -690,6 +848,14 @@ def _idempotency_key_reused() -> AppError:
         409,
         "IDEMPOTENCY_KEY_REUSED",
         "该幂等键已用于其他请求，请生成新键后重试。",
+    )
+
+
+def _invalid_argument() -> AppError:
+    return AppError(
+        422,
+        "INVALID_ARGUMENT",
+        "请求参数格式不正确，请检查后重试。",
     )
 
 

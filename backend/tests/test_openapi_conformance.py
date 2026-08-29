@@ -85,6 +85,27 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
             "const": code
         }
 
+    invalid_argument = operation["responses"]["422"]["content"]["application/json"]
+    assert invalid_argument["examples"] == {
+        "InvalidArgument": {
+            "externalValue": (
+                "./examples/error-my-open-game-applications-invalid-argument.json"
+            )
+        }
+    }
+    invalid_example = json.loads(
+        (
+            EXAMPLES_DIRECTORY
+            / "error-my-open-game-applications-invalid-argument.json"
+        ).read_text()
+    )
+    assert invalid_example["error"] == {
+        "code": "INVALID_ARGUMENT",
+        "message": "请求参数格式不正确，请检查后重试。",
+        "request_id": "req_my_open_game_applications_invalid_001",
+        "details": {},
+    }
+
     schemas = contract["components"]["schemas"]
     item = schemas["MyOpenGameApplication"]
     assert item["additionalProperties"] is False

@@ -80,7 +80,6 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications', '422', 'InvalidArgument'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/public-games', '422', 'InvalidArgument'),
-      attachment('/api/v1/open-game-applications', '422', 'InvalidArgument'),
     ],
   },
   {
@@ -219,6 +218,14 @@ const exampleMap = [
     reference: './examples/my-open-game-applications-empty.json',
     schema: 'MyOpenGameApplicationsResponse',
     attachments: [attachment('/api/v1/open-game-applications', '200', 'Empty')],
+  },
+  {
+    filename: 'error-my-open-game-applications-invalid-argument.json',
+    reference: './examples/error-my-open-game-applications-invalid-argument.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/open-game-applications', '422', 'InvalidArgument'),
+    ],
   },
   {
     filename: 'order-expired.json',
@@ -1719,6 +1726,11 @@ export async function validateContract(contractPath = defaultContractPath) {
       const keys = Object.keys(mapping.value.error.details).sort();
       if (keys.join(',') !== 'end_date,start_date') {
         fail(`${mapping.filename}: details must contain exactly start_date and end_date`);
+      }
+    }
+    if (mapping.filename === 'error-my-open-game-applications-invalid-argument.json') {
+      if (Object.keys(mapping.value.error.details).length !== 0) {
+        fail(`${mapping.filename}: details must be an empty object`);
       }
     }
   }

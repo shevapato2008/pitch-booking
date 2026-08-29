@@ -6,7 +6,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -21,6 +21,7 @@ from backend.app.modules.open_game_registrations.dto import (
     CreateApplicationRequest,
     DecisionRequest,
     DecisionResult,
+    MyOpenGameApplicationsResponse,
     Queue,
     RegistrationContext,
 )
@@ -150,6 +151,30 @@ def _service(database: Session, *, now: datetime) -> OpenGameRegistrationService
         open_game_repository=OpenGameRepository(database),
         order_repository=OrderRepository(database),
         now=lambda: now,
+    )
+
+
+@router.get(
+    "/api/v1/open-game-applications",
+    operation_id="listMyOpenGameApplications",
+    response_model=MyOpenGameApplicationsResponse,
+    responses={
+        401: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def list_my_open_game_applications(
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    now: Annotated[datetime, Depends(get_open_game_registration_clock)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    cursor: Annotated[str | None, Query(min_length=1)] = None,
+) -> MyOpenGameApplicationsResponse:
+    return _service(database, now=now).list_my_applications(
+        applicant_user_id=user.id,
+        limit=limit,
+        cursor=cursor,
     )
 
 
