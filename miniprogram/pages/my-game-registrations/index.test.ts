@@ -325,6 +325,30 @@ test("load-more failure retains cards and cursor; retry appends stable unique re
   expect(new Set(pageInstance.data.items.map((item: { registrationId: string }) => item.registrationId)).size).toBe(4);
 });
 
+test("idle load-more after switching accounts clears A and loads account B page one", async () => {
+  const aItem = { ...READY.items[0], gameName: "账号 A 的球局" };
+  const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };
+  const api = registerSource({
+    listMine: jest.fn(async () => currentUserId === USER_A
+      ? page([aItem], "account-a-cursor")
+      : page([bItem], null)),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+
+  currentUserId = USER_B;
+  await call(pageInstance, "onLoadMore");
+
+  expect(api.listMine).toHaveBeenNthCalledWith(1, undefined, 20);
+  expect(api.listMine).toHaveBeenNthCalledWith(2, undefined, 20);
+  expect(pageInstance.data).toMatchObject({
+    status: "READY", nextCursor: null, resultCount: 1, listScrollTop: 0,
+  });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
+});
+
 test("cards use only the current registration id, preserve scroll/detail return, and deep links return to discovery", async () => {
   const api = registerSource({ listMine: jest.fn(async () => page(READY.items.slice(0, 2), null)) });
   const pageInstance = loadPage();
@@ -581,4 +605,66 @@ test("a real late account A 401 preserves account B session and rendered items",
   expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
     "账号 B 的球局",
   ]);
+});
+
+test("a stale A1 refresh 401 preserves refreshed A2 session, cards, and retry state", async () => {
+  const staleRefresh = deferred<unknown>();
+  const sessionA1: StoredSession = {
+    token: "account-a1-token",
+    expiresAt: "2099-01-01T00:00:00Z",
+    userId: USER_A,
+  };
+  const sessionA2: StoredSession = {
+    token: "account-a2-token",
+    expiresAt: "2099-02-01T00:00:00Z",
+    userId: USER_A,
+  };
+  let storedSession: StoredSession | null = sessionA1;
+  const sessionStore: SessionStore = {
+    load: jest.fn(() => storedSession),
+    save: jest.fn((session: StoredSession) => { storedSession = session; }),
+    clear: jest.fn(() => { storedSession = null; }),
+  };
+  let requestCount = 0;
+  const unsupported = async <T>(): Promise<T> => { throw new Error("UNSUPPORTED_TRANSPORT_CALL"); };
+  const transport: StatusTransport = {
+    get: unsupported,
+    post: unsupported,
+    put: unsupported,
+    requestWithStatus: async <T>() => {
+      requestCount += 1;
+      if (requestCount === 1) return { statusCode: 200, data: RAW_READY as T };
+      throw await staleRefresh.promise;
+    },
+  };
+  const api = createHttpOpenGameRegistrationSource({
+    transport,
+    identity: { login: jest.fn(async () => ({ code: "unused" })) },
+    sessionStore,
+  });
+  registerOpenGameRegistrationSource(api);
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  const originalIds = pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  );
+  const refreshing = call(pageInstance, "onRefresh") as Promise<void>;
+
+  sessionStore.save(sessionA2);
+  staleRefresh.resolve({
+    code: "HTTP_ERROR",
+    statusCode: 401,
+    data: { error: { code: "AUTH_REQUIRED", message: "expired", request_id: "old-a1", details: {} } },
+  });
+  await refreshing;
+
+  expect(api.currentUserId()).toBe(USER_A);
+  expect(sessionStore.load()).toEqual(sessionA2);
+  expect(sessionStore.clear).not.toHaveBeenCalled();
+  expect(pageInstance.data).toMatchObject({
+    status: "READY", refreshing: false, refreshError: true, resultCount: 4,
+  });
+  expect(pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  )).toEqual(originalIds);
 });

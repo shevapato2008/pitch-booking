@@ -279,7 +279,7 @@ describe("HTTP open-game registration requests", () => {
   test.each([
     ["account B", REPLACEMENT_B_SESSION],
     ["a refreshed account A token", REFRESHED_A_SESSION],
-  ])("a late account A 401 preserves %s stored after the request started", async (
+  ])("a late account A 401 preserves %s and becomes a stale read failure", async (
     _label,
     replacement,
   ) => {
@@ -290,7 +290,7 @@ describe("HTTP open-game registration requests", () => {
     h.sessionStore.save(replacement);
     lateResponse.resolve(httpError(401, "AUTH_REQUIRED"));
 
-    await expect(oldRequest).rejects.toEqual(new OpenGameRegistrationApiError("AUTH_REQUIRED"));
+    await expect(oldRequest).rejects.toEqual(new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE"));
     expect(h.sessionStore.clear).not.toHaveBeenCalled();
     expect(h.sessionStore.load()).toEqual(replacement);
     expect(h.source.currentUserId()).toBe(replacement.userId);

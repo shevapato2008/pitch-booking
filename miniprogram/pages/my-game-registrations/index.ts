@@ -254,10 +254,11 @@ Page({
   async onLoadMore() {
     if (this.data.status !== "READY" || this.readBusy || this.data.nextCursor === null) return;
     const userId = this.boundUserId;
-    if (userId === null || this.currentUserId() !== userId) {
+    if (userId === null) {
       this.enterAuthentication();
       return;
     }
+    if (this.currentUserId() !== userId) return this.synchronizeAccount();
     const cursor = this.data.nextCursor;
     const generation = ++this.generation;
     this.readBusy = true;

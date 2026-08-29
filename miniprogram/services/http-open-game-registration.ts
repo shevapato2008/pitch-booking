@@ -313,7 +313,9 @@ function classifyFailure(
   const failure = httpFailure(caught);
   if (failure?.statusCode === 401 && requestSession !== null) {
     try {
-      replaceSessionIfCurrent(sessionStore, requestSession, null);
+      if (!replaceSessionIfCurrent(sessionStore, requestSession, null)) {
+        return noDetailsError(write ? "APPLICATION_RESULT_UNKNOWN" : "SERVICE_UNAVAILABLE");
+      }
     } catch {
       // Local cleanup cannot replace the server's strict authentication result.
     }
