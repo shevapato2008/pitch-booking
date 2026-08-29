@@ -1174,7 +1174,11 @@ def test_auth_request_validation_returns_safe_error_envelope(
     monkeypatch.setattr(
         "backend.app.modules.auth.service.secrets.token_urlsafe", lambda _length: BUSINESS_TOKEN
     )
-    token = _service(pg_session, vault).create_session(LOGIN_CODE).session_token
+    token = _service(
+        pg_session,
+        vault,
+        now=datetime.now(UTC),
+    ).create_session(LOGIN_CODE).session_token
     app = create_app(
         settings=Settings(
             app_env="test",
@@ -1303,7 +1307,7 @@ def test_router_maps_internal_provider_errors_without_leaking_provider_data(
         headers = {}
         request_code = LOGIN_CODE
     else:
-        service = _service(pg_session, vault)
+        service = _service(pg_session, vault, now=datetime.now(UTC))
         token = service.create_session(LOGIN_CODE).session_token
         app.dependency_overrides[get_phone_provider] = lambda: StubPhoneProvider(
             {PHONE_CODE: error}
@@ -1333,7 +1337,11 @@ def test_router_maps_malformed_provider_phone_to_safe_502(
     monkeypatch.setattr(
         "backend.app.modules.auth.service.secrets.token_urlsafe", lambda _length: BUSINESS_TOKEN
     )
-    token = _service(pg_session, vault).create_session(LOGIN_CODE).session_token
+    token = _service(
+        pg_session,
+        vault,
+        now=datetime.now(UTC),
+    ).create_session(LOGIN_CODE).session_token
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/cgi-bin/token":

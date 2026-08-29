@@ -18,6 +18,7 @@ from backend.app.models import (
     OrderStatus,
 )
 from backend.app.modules.open_games.privacy import PUBLIC_OPEN_GAME_FIELDS
+from backend.app.modules.open_games.router import get_open_game_clock
 from backend.tests.test_open_game_service import (
     NOW,
     add_stored_game,
@@ -35,6 +36,7 @@ def _client(engine: Engine) -> TestClient:
             yield session
 
     app.dependency_overrides[get_database] = database_override
+    app.dependency_overrides[get_open_game_clock] = lambda: NOW
     return TestClient(app, raise_server_exceptions=False)
 
 
