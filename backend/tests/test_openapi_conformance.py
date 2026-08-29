@@ -169,12 +169,39 @@ def test_my_open_game_applications_runtime_openapi_matches_frozen_operation() ->
             "schemas"
         ][name]
 
+    frozen_schemas = frozen["components"]["schemas"]
+    error_schema_names: set[str] = set()
+    pending = ["ErrorEnvelope"]
+    while pending:
+        name = pending.pop()
+        if name in error_schema_names:
+            continue
+        error_schema_names.add(name)
+        pending.extend(_local_schema_references(frozen_schemas[name]))
+    assert {"ErrorEnvelope", "Error", "ErrorDetails"} <= error_schema_names
+    for name in sorted(error_schema_names):
+        assert runtime["components"]["schemas"][name] == frozen_schemas[name]
+
 
 def _contract() -> dict[str, Any]:
     loaded = YAML.safe_load(CONTRACT_PATH.read_text())
     if not isinstance(loaded, dict):
         raise TypeError("OpenAPI contract root must be an object")
     return cast(dict[str, Any], loaded)
+
+
+def _local_schema_references(value: Any) -> set[str]:
+    if isinstance(value, list):
+        return set().union(*(_local_schema_references(item) for item in value))
+    if not isinstance(value, dict):
+        return set()
+    references = set()
+    reference = value.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+        references.add(reference.rsplit("/", 1)[-1])
+    for child in value.values():
+        references.update(_local_schema_references(child))
+    return references
 
 
 def _resolve_schema(contract: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
