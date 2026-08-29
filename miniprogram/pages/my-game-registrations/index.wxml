@@ -1,0 +1,94 @@
+<view class="c1c-page">
+  <view class="c1c-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1c-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1c-header-back" hover-class="c1c-pressed" bindtap="onHeaderBack" aria-label="返回找球局">
+      <view class="c1c-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1c-header-title">我的报名</text>
+    <view class="c1c-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c1c-scroll" scroll-y="true" scroll-top="{{listScrollTop}}" bindscroll="onScroll">
+    <view class="c1c-content">
+      <view class="c1c-list-intro">
+        <view><text class="c1c-list-heading">最近报名</text><text class="c1c-list-copy">状态以服务端为准</text></view>
+        <button
+          wx:if="{{status === 'READY'}}"
+          class="c1c-refresh-action"
+          hover-class="c1c-pressed"
+          disabled="{{refreshing || loadingMore}}"
+          bindtap="onRefresh"
+          aria-label="刷新我的报名"
+        >{{refreshing ? '刷新中' : '刷新'}}</button>
+      </view>
+
+      <view wx:if="{{status === 'LOADING'}}" class="c1c-registration-list" role="status" aria-busy="true" aria-label="正在加载我的报名">
+        <view class="c1c-skeleton"></view><view class="c1c-skeleton"></view>
+      </view>
+
+      <view wx:elif="{{status === 'AUTH_REQUIRED' || status === 'LOGIN_FAILED'}}" class="c1c-state-card">
+        <text class="c1c-state-title">{{status === 'LOGIN_FAILED' ? '登录失败' : '登录后查看报名'}}</text>
+        <text class="c1c-state-copy">{{status === 'LOGIN_FAILED' ? '未能完成微信登录，请重试。' : '只会展示当前微信账号提交的报名。'}}</text>
+        <button class="c1c-secondary-action" hover-class="c1c-pressed" disabled="{{loginBusy}}" bindtap="onLogin">{{loginBusy ? '登录中' : '微信登录'}}</button>
+      </view>
+
+      <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c1c-state-card c1c-state-card--error" role="alert">
+        <text class="c1c-state-title">报名加载失败</text>
+        <text class="c1c-state-copy">网络开了个小差，请重新加载。</text>
+        <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onRetry">重新加载</button>
+      </view>
+
+      <block wx:else>
+        <view wx:if="{{refreshError}}" class="c1c-inline-error" role="alert">
+          <view><text>刷新失败</text><text>已保留当前报名记录。</text></view>
+          <button hover-class="c1c-pressed" bindtap="onRefresh">重试刷新</button>
+        </view>
+
+        <view wx:if="{{sourceEmpty}}" class="c1c-state-card">
+          <text class="c1c-state-title">还没有报名记录</text>
+          <text class="c1c-state-copy">找到合适的公开球局后，可以提交加入申请。</text>
+          <button class="c1c-secondary-action" hover-class="c1c-pressed" bindtap="onOpenDiscovery">去找球局</button>
+        </view>
+
+        <block wx:else>
+          <view class="c1c-result-line"><text>按报名时间排序</text><text>{{resultCount}} 条</text></view>
+          <view class="c1c-registration-list">
+            <button
+              wx:for="{{items}}"
+              wx:key="registrationId"
+              class="c1c-registration-card"
+              hover-class="c1c-pressed"
+              bindtap="onOpenRegistration"
+              data-registration-id="{{item.registrationId}}"
+              aria-label="查看{{item.gameName}}报名详情"
+            >
+              <view class="c1c-card-body">
+                <view class="c1c-card-top">
+                  <text class="c1c-status-badge {{item.effectiveStatus === 'APPLIED' ? 'c1c-status--applied' : item.effectiveStatus === 'JOINED' ? 'c1c-status--joined' : 'c1c-status--neutral'}}">{{item.statusLabel}}</text>
+                  <text class="c1c-format-badge">{{item.formatLabel}}</text>
+                </view>
+                <text class="c1c-game-name">{{item.gameName}}</text>
+                <text class="c1c-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
+                <text class="c1c-game-place">{{item.venue}}</text>
+                <text class="c1c-game-place">{{item.pitch}}</text>
+              </view>
+              <view class="c1c-chevron" aria-hidden="true"></view>
+            </button>
+          </view>
+
+          <view wx:if="{{loadMoreError}}" class="c1c-inline-error c1c-inline-error--footer" role="alert">
+            <view><text>加载更多失败</text><text>已保留当前报名记录。</text></view>
+            <button hover-class="c1c-pressed" bindtap="onLoadMore">重试加载</button>
+          </view>
+          <button
+            wx:elif="{{nextCursor}}"
+            class="c1c-secondary-action c1c-load-more"
+            hover-class="c1c-pressed"
+            disabled="{{loadingMore || refreshing}}"
+            bindtap="onLoadMore"
+          >{{loadingMore ? '加载中' : '加载更多'}}</button>
+        </block>
+      </block>
+    </view>
+  </scroll-view>
+</view>

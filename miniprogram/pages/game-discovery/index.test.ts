@@ -323,6 +323,47 @@ test("returning from detail refreshes counts while preserving the selected filte
   });
 });
 
+test("opening My Registrations preserves filters, cards, and exact scroll without reloading on return", async () => {
+  const getDirectory = registerSource();
+  const page = loadPage();
+  call(page, "onLoad");
+  await call(page, "onShow");
+  await call(page, "onSelectDate", {
+    currentTarget: { dataset: { value: "2026-08-30" } },
+  });
+  call(page, "onScroll", { detail: { scrollTop: 314.5 } });
+  const names = page.data.games.map((game: { name: string }) => game.name);
+
+  call(page, "onOpenMyRegistrations");
+  expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+    url: "/pages/my-game-registrations/index",
+  }));
+  call(page, "onHide");
+  await call(page, "onShow");
+
+  expect(getDirectory).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    entryScrollTop: 314.5,
+    filters: { date: "2026-08-30", format: "ALL", availableOnly: false },
+  });
+  expect(page.data.games.map((game: { name: string }) => game.name)).toEqual(names);
+});
+
+test("a failed My Registrations navigation does not suppress the next authoritative reload", async () => {
+  const getDirectory = registerSource();
+  const page = loadPage();
+  await call(page, "onShow");
+  (wx.navigateTo as unknown as jest.Mock).mockImplementationOnce((options: unknown) => {
+    (options as { fail?: (reason: Error) => void }).fail?.(new Error("NAV_FAILED"));
+  });
+
+  call(page, "onOpenMyRegistrations");
+  call(page, "onHide");
+  await call(page, "onShow");
+
+  expect(getDirectory).toHaveBeenCalledTimes(2);
+});
+
 test("a late older response cannot overwrite the latest onShow result", async () => {
   const stale = deferred<PublicGameDirectory>();
   const latest = deferred<PublicGameDirectory>();
@@ -390,7 +431,7 @@ test("production markup preserves nested scroll, touch geometry, safe area, and 
   const card = wxml.match(/<button[^>]*class="c1b-game-card"[\s\S]*?<\/button>/)?.[0] ?? "";
 
   expect(wxml.match(/<scroll-view\b/g)).toHaveLength(2);
-  expect(wxml).toMatch(/class="c1b-scroll"\s+scroll-y="true"/);
+  expect(wxml).toMatch(/class="c1b-scroll"\s+scroll-y="true"[^>]+scroll-top="{{entryScrollTop}}"[^>]+bindscroll="onScroll"/);
   expect(wxml).toMatch(/class="c1b-date-strip"\s+scroll-x="true"/);
   expect(wxml).toContain('disabled="{{status === \'LOADING\'}}"');
   expect(wxml).toContain('bindchange="onFormatChange"');
@@ -400,8 +441,9 @@ test("production markup preserves nested scroll, touch geometry, safe area, and 
   for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
   for (const handler of [
     "onHeaderBack", "onSelectDate", "onToggleAvailable", "onRetry",
-    "onReturnIntent", "onClearFilters", "onOpenGame",
+    "onReturnIntent", "onClearFilters", "onOpenGame", "onOpenMyRegistrations",
   ]) expect(wxml).toContain(`bindtap="${handler}"`);
+  expect(wxml.indexOf('bindtap="onOpenMyRegistrations"')).toBeLessThan(wxml.indexOf('class="c1b-filters"'));
   expect(wxml).not.toMatch(/Fixture|开发预览|模拟数据|scenario|dev\/pages/i);
 
   const controls = styles.match(/\.c1b-date-chip, \.c1b-filter-chip, \.c1b-secondary-action\s*\{([^}]*)\}/s)?.[1] ?? "";
@@ -414,6 +456,10 @@ test("production markup preserves nested scroll, touch geometry, safe area, and 
   expect(styles).toMatch(/\.c1b-date-strip__inner\s*\{[^}]*display:\s*inline-flex/s);
   expect(styles).toMatch(/\.c1b-game-card\s*\{[^}]*min-height:\s*444rpx/s);
   expect(styles).toMatch(/\.c1b-skeleton\s*\{[^}]*min-height:\s*444rpx/s);
+  const mineEntryRule = styles.match(/\.c1b-mine-entry\s*\{([^}]*)\}/s)?.[1] ?? "";
+  for (const declaration of [
+    /min-height:\s*88rpx/, /display:\s*flex/, /align-items:\s*center/, /justify-content:\s*center/,
+  ]) expect(mineEntryRule).toMatch(declaration);
   expect(wxml).toMatch(/class="c1b-metric c1b-metric--deadline"[^>]*>[\s\S]*?\{\{item\.deadlineLabel\}\}/);
   const metricValueRule = styles.match(/\.c1b-metric-value\s*\{([^}]*)\}/s)?.[1] ?? "";
   for (const declaration of [

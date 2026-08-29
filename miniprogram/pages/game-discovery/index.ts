@@ -32,6 +32,10 @@ interface GameEvent {
   readonly currentTarget?: { readonly dataset?: { readonly detailPath?: unknown } };
 }
 
+interface ScrollEvent {
+  readonly detail?: { readonly scrollTop?: unknown };
+}
+
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
 const FORMAT_OPTIONS: readonly DirectoryOption<FormatFilter>[] = [
   { value: "ALL", label: "全部人制" },
@@ -94,9 +98,11 @@ Page({
     filterNoMatch: false,
     headerTopPx: 0,
     headerRowHeightPx: 44,
+    entryScrollTop: 0,
   },
   requestRevision: 0,
   active: true,
+  preserveNextShow: false,
 
   onLoad() {
     this.active = true;
@@ -105,6 +111,11 @@ Page({
 
   onShow() {
     this.active = true;
+    if (this.preserveNextShow && this.data.status !== "LOADING") {
+      this.preserveNextShow = false;
+      return;
+    }
+    this.preserveNextShow = false;
     return this.loadDirectory();
   },
 
@@ -199,6 +210,20 @@ Page({
     if (typeof detailPath !== "string") return;
     const game = this.data.games.find((candidate) => candidate.detailPath === detailPath);
     if (game) wx.navigateTo({ url: game.detailPath });
+  },
+
+  onOpenMyRegistrations() {
+    this.preserveNextShow = true;
+    wx.navigateTo({
+      url: "/pages/my-game-registrations/index",
+      fail: () => { this.preserveNextShow = false; },
+    });
+  },
+
+  onScroll(event: ScrollEvent) {
+    const scrollTop = Number(event.detail?.scrollTop);
+    if (!Number.isFinite(scrollTop)) return;
+    this.setData({ entryScrollTop: Math.max(0, scrollTop) });
   },
 
   onReturnIntent() {

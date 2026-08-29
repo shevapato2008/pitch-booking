@@ -8,9 +8,13 @@
     <view class="c1b-header-spacer" aria-hidden="true"></view>
   </view>
 
-  <scroll-view class="c1b-scroll" scroll-y="true">
+  <scroll-view class="c1b-scroll" scroll-y="true" scroll-top="{{entryScrollTop}}" bindscroll="onScroll">
     <view class="c1b-content">
       <text class="c1b-context">天津 · 仅展示真实订场已确认的公开球局</text>
+
+      <button class="c1b-mine-entry" hover-class="c1b-pressed" bindtap="onOpenMyRegistrations" aria-label="打开我的报名">
+        <text>我的报名</text><view class="c1b-mine-chevron" aria-hidden="true"></view>
+      </button>
 
       <view class="c1b-filters">
         <scroll-view class="c1b-date-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
