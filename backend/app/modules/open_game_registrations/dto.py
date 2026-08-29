@@ -161,7 +161,7 @@ class MyOpenGameApplication(_FrozenClosedModel):
 
 class MyOpenGameApplicationsResponse(_FrozenClosedModel):
     items: tuple[MyOpenGameApplication, ...]
-    next_cursor: Annotated[str, Field(strict=True)] | None
+    next_cursor: Annotated[str, Field(strict=True, min_length=1)] | None
 
 
 class DecisionRequest(_ClosedModel):

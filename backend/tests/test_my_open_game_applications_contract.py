@@ -70,6 +70,10 @@ def test_my_application_dtos_are_closed_and_exact() -> None:
         MyOpenGameApplicationsResponse.model_validate(
             {"items": [], "next_cursor": None, "total": 1}
         )
+    with pytest.raises(ValidationError):
+        MyOpenGameApplicationsResponse.model_validate(
+            {"items": [], "next_cursor": ""}
+        )
 
 
 @pytest.mark.parametrize(

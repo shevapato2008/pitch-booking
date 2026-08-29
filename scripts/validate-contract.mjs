@@ -1264,7 +1264,7 @@ function validateMyOpenGameApplicationsContract(contract) {
       name: 'cursor',
       in: 'query',
       required: false,
-      schema: { type: 'string' },
+      schema: { type: 'string', minLength: 1 },
     },
   ];
   if (!isDeepStrictEqual(operation.parameters, expectedParameters)) {
@@ -1296,6 +1296,12 @@ function validateMyOpenGameApplicationsContract(contract) {
       || !isDeepStrictEqual(new Set(response.required), new Set(['items', 'next_cursor']))
       || !hasExactKeys(response.properties, ['items', 'next_cursor'])) {
     fail('MyOpenGameApplicationsResponse must be closed with items and next_cursor');
+  }
+  if (!isDeepStrictEqual(response.properties.next_cursor, {
+    type: ['string', 'null'],
+    minLength: 1,
+  })) {
+    fail('MyOpenGameApplicationsResponse next_cursor must be null or a non-empty string');
   }
 }
 

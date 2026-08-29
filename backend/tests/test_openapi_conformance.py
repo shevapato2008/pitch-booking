@@ -61,7 +61,7 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
             "name": "cursor",
             "in": "query",
             "required": False,
-            "schema": {"type": "string"},
+            "schema": {"type": "string", "minLength": 1},
         },
     ]
     assert set(operation["responses"]) == {"200", "401", "422", "503"}
@@ -104,6 +104,10 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
     assert response["additionalProperties"] is False
     assert set(response["required"]) == {"items", "next_cursor"}
     assert set(response["properties"]) == {"items", "next_cursor"}
+    assert response["properties"]["next_cursor"] == {
+        "type": ["string", "null"],
+        "minLength": 1,
+    }
 
     for filename in (
         "my-open-game-applications-ready.json",

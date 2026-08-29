@@ -165,7 +165,7 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   assert.deepEqual(operation.security, [{ bearerAuth: [] }]);
   assert.deepEqual(operation.parameters, [
     { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
-    { name: 'cursor', in: 'query', required: false, schema: { type: 'string' } },
+    { name: 'cursor', in: 'query', required: false, schema: { type: 'string', minLength: 1 } },
   ]);
   assert.deepEqual(Object.keys(operation.responses), ['200', '401', '422', '503']);
   assert.deepEqual(operation.responses['200'].content['application/json'].examples, {
@@ -185,6 +185,10 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   assert.equal(response.additionalProperties, false);
   assert.deepEqual([...response.required].sort(), ['items', 'next_cursor']);
   assert.deepEqual(Object.keys(response.properties).sort(), ['items', 'next_cursor']);
+  assert.deepEqual(response.properties.next_cursor, {
+    type: ['string', 'null'],
+    minLength: 1,
+  });
 });
 
 test('C1a registration operations expose exact named success examples', async () => {

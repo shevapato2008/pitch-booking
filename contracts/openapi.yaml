@@ -2017,7 +2017,7 @@ paths:
         - name: cursor
           in: query
           required: false
-          schema: {type: string}
+          schema: {type: string, minLength: 1}
       responses:
         '200':
           description: Current page of the authenticated user's applications.
@@ -3928,7 +3928,7 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/MyOpenGameApplication'}
-        next_cursor: {type: [string, 'null']}
+        next_cursor: {type: [string, 'null'], minLength: 1}
     OpenGameApplyBlockedReason:
       type: string
       enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_FULL, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
