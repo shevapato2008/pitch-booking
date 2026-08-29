@@ -49,7 +49,8 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c1a-game-subtitle { margin-top: 6rpx; color: #526479; font-size: 24rpx; line-height: 36rpx; }
 .c1a-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14rpx; }
 .c1a-metric { display: flex; min-width: 0; min-height: 84rpx; flex-direction: column; align-items: center; justify-content: center; padding: 18rpx 8rpx; border-radius: 22rpx; background: #F6F9FB; color: #526479; font-size: 20rpx; line-height: 30rpx; text-align: center; }
-.c1a-metric-value { display: block; color: #10243E; font-size: 22rpx; font-weight: 700; line-height: 32rpx; white-space: nowrap; }
+.c1a-metric-value { display: flex; width: 100%; min-width: 0; min-height: 64rpx; align-items: center; justify-content: center; color: #10243E; font-size: 22rpx; font-weight: 700; line-height: 32rpx; text-align: center; white-space: nowrap; }
+.c1a-metric--deadline .c1a-metric-value { white-space: normal; word-break: keep-all; }
 .c1a-status-card { box-sizing: border-box; padding: 22rpx 24rpx; border: 1rpx solid #BAE6FD; border-radius: 26rpx; background: #F0F9FF; }
 .c1a-status-card--joined { border-color: #A7F3D0; background: #ECFDF5; }
 .c1a-status-card--rejected { border-color: #DBE5EC; background: #F1F5F9; }

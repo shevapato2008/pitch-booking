@@ -58,7 +58,7 @@
           <view class="c1a-metrics c1a-section" aria-label="球局摘要">
             <view class="c1a-metric"><text class="c1a-metric-value">剩余 {{remainingSpots}} 个名额</text><text>{{capacityLabel}}</text></view>
             <view class="c1a-metric"><text class="c1a-metric-value">{{aaSummaryLabel}}</text><text>到场线下结算</text></view>
-            <view class="c1a-metric"><text class="c1a-metric-value">{{deadlineLabel}}</text><text>报名截止</text></view>
+            <view class="c1a-metric c1a-metric--deadline"><text class="c1a-metric-value">{{deadlineLabel}}</text><text>报名截止</text></view>
           </view>
 
           <view class="c1a-status-card c1a-status-card--{{statusTone}} c1a-section" role="status">

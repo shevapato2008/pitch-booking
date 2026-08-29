@@ -40,9 +40,9 @@
 .c1b-game-tags { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 16rpx; }
 .c1b-game-tags text { padding: 4rpx 14rpx; border-radius: 20rpx; background: #F1F5F9; color: #526479; font-size: 20rpx; line-height: 32rpx; }
 .c1b-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14rpx; margin-top: 20rpx; padding: 18rpx 0; border-top: 1rpx solid #EDF2F6; border-bottom: 1rpx solid #EDF2F6; }
-.c1b-metric-label, .c1b-metric-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c1b-metric-label { color: #64748B; font-size: 18rpx; line-height: 28rpx; }
-.c1b-metric-value { margin-top: 2rpx; color: #10243E; font-size: 22rpx; font-weight: 700; line-height: 34rpx; }
+.c1b-metric-label { display: block; overflow: hidden; color: #64748B; font-size: 18rpx; line-height: 28rpx; text-overflow: ellipsis; white-space: nowrap; }
+.c1b-metric-value { display: flex; width: 100%; min-width: 0; min-height: 68rpx; align-items: center; justify-content: center; overflow: hidden; margin-top: 2rpx; color: #10243E; font-size: 22rpx; font-weight: 700; line-height: 34rpx; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.c1b-metric--deadline .c1b-metric-value { overflow: hidden; text-overflow: clip; white-space: normal; word-break: keep-all; }
 .c1b-organizer { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-top: 16rpx; color: #526479; font-size: 22rpx; line-height: 34rpx; }
 .c1b-organizer text:first-child { overflow: hidden; color: #10243E; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .c1b-card-chevron { position: absolute; top: 50%; right: 28rpx; box-sizing: border-box; width: 18rpx; height: 18rpx; border-top: 4rpx solid #64748B; border-right: 4rpx solid #64748B; transform: translateY(-50%) rotate(45deg); }

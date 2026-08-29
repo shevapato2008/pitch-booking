@@ -414,4 +414,13 @@ test("production markup preserves nested scroll, touch geometry, safe area, and 
   expect(styles).toMatch(/\.c1b-date-strip__inner\s*\{[^}]*display:\s*inline-flex/s);
   expect(styles).toMatch(/\.c1b-game-card\s*\{[^}]*min-height:\s*444rpx/s);
   expect(styles).toMatch(/\.c1b-skeleton\s*\{[^}]*min-height:\s*444rpx/s);
+  expect(wxml).toMatch(/class="c1b-metric c1b-metric--deadline"[^>]*>[\s\S]*?\{\{item\.deadlineLabel\}\}/);
+  const metricValueRule = styles.match(/\.c1b-metric-value\s*\{([^}]*)\}/s)?.[1] ?? "";
+  for (const declaration of [
+    /display:\s*flex/, /min-height:\s*68rpx/, /align-items:\s*center/, /justify-content:\s*center/,
+  ]) expect(metricValueRule).toMatch(declaration);
+  const deadlineValueRule = styles.match(/\.c1b-metric--deadline \.c1b-metric-value\s*\{([^}]*)\}/s)?.[1] ?? "";
+  for (const declaration of [
+    /overflow:\s*hidden/, /text-overflow:\s*clip/, /white-space:\s*normal/, /word-break:\s*keep-all/,
+  ]) expect(deadlineValueRule).toMatch(declaration);
 });

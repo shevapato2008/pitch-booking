@@ -96,7 +96,7 @@
             <view class="c1b-metrics">
               <view><text class="c1b-metric-label">{{item.currentPlayersCaption}}</text><text class="c1b-metric-value">{{item.playerSummary}}</text></view>
               <view><text class="c1b-metric-label">{{item.aaCaption}}</text><text class="c1b-metric-value">{{item.aaLabel}} · {{item.settlementLabel}}</text></view>
-              <view><text class="c1b-metric-label">{{item.deadlineCaption}}</text><text class="c1b-metric-value">{{item.deadlineLabel}}</text></view>
+              <view class="c1b-metric c1b-metric--deadline"><text class="c1b-metric-label">{{item.deadlineCaption}}</text><text class="c1b-metric-value">{{item.deadlineLabel}}</text></view>
             </view>
             <view class="c1b-organizer"><text>{{item.teamName}}</text><text>{{item.teamRoleLabel}}</text></view>
             <view class="c1b-card-chevron" aria-hidden="true"></view>
