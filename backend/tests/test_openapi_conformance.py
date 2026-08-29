@@ -24,6 +24,7 @@ YAML = cast(_YamlLoader, import_module("yaml"))
 
 REGISTRATION_OPERATIONS = {
     "/api/v1/open-game-applications": {"get"},
+    "/api/v1/open-game-applications/{application_id}/withdraw": {"post"},
     "/api/v1/shared-games/{share_token}/registration-context": {"get"},
     "/api/v1/shared-games/{share_token}/applications": {"post"},
     "/api/v1/games/{game_id}/applications": {"get"},
@@ -1273,6 +1274,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "get",
         ): "listMyOpenGameApplications",
         (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+        ): "withdrawOpenGameApplication",
+        (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
         ): "getOpenGameRegistrationContext",
@@ -1295,6 +1300,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "get",
         ): {"200", "401", "422", "503"},
         (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+        ): {"200", "401", "404", "409", "422", "503"},
+        (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
         ): {"200", "401", "404", "503"},
@@ -1316,6 +1325,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "/api/v1/open-game-applications",
             "get",
         ): ("200", "MyOpenGameApplicationsResponse"),
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+        ): ("200", "OpenGameRegistrationContext"),
         (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
@@ -1358,6 +1371,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "/api/v1/games/{game_id}/applications/{application_id}/decision",
             "post",
         ): "OpenGameApplicationDecisionRequest",
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+        ): "OpenGameApplicationWithdrawalRequest",
     }
     for (path, method), schema_name in request_schemas.items():
         operation = paths[path][method]
@@ -1415,6 +1432,44 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
         (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
+            "503",
+        ): {"ServiceUnavailable": "error-service-unavailable.json"},
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+            "200",
+        ): {
+            "ApplicationWithdrawn": (
+                "open-game-registration-context-withdrawn-application.json"
+            ),
+            "GameExited": "open-game-registration-context-withdrawn-game-exit.json",
+        },
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+            "401",
+        ): {"AuthRequired": "error-auth-required.json"},
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+            "404",
+        ): {"ApplicationNotFound": "error-application-not-found.json"},
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+            "409",
+        ): {
+            "ApplicationStateChanged": "error-application-state-changed.json",
+            "IdempotencyKeyReused": "error-idempotency-key-reused.json",
+        },
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+            "422",
+        ): {"InvalidArgument": "error-invalid-argument.json"},
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
             "503",
         ): {"ServiceUnavailable": "error-service-unavailable.json"},
         (
@@ -1548,6 +1603,10 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             "get",
         ): "getOpenGameRegistrationContext",
         (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+        ): "withdrawOpenGameApplication",
+        (
             "/api/v1/shared-games/{share_token}/applications",
             "post",
         ): "createOpenGameApplication",
@@ -1565,6 +1624,10 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
         ): {"200", "401", "404", "503"},
+        (
+            "/api/v1/open-game-applications/{application_id}/withdraw",
+            "post",
+        ): {"200", "401", "404", "409", "422", "503"},
         (
             "/api/v1/shared-games/{share_token}/applications",
             "post",
@@ -1590,6 +1653,11 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             else [{"bearerAuth": []}]
         )
 
+    withdrawal_path = "/api/v1/open-game-applications/{application_id}/withdraw"
+    assert runtime["paths"][withdrawal_path]["post"] == (
+        contract["paths"][withdrawal_path]["post"]
+    )
+
     queue_invalid = runtime["paths"][
         "/api/v1/games/{game_id}/applications"
     ]["get"]["responses"]["422"]["content"]["application/json"]["examples"]
@@ -1607,6 +1675,7 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             "200",
         ),
         ("/api/v1/shared-games/{share_token}/applications", "201"),
+        ("/api/v1/open-game-applications/{application_id}/withdraw", "200"),
     ):
         runtime_response = runtime["paths"][path][
             "get" if path.endswith("registration-context") else "post"
@@ -1626,6 +1695,7 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
         "OpenGameApplyActions",
         "OpenGameViewerRegistration",
         "OpenGameRegistrationContext",
+        "OpenGameApplicationWithdrawalRequest",
     )
     for schema_name in affected_schemas:
         assert runtime["components"]["schemas"][schema_name] == (
@@ -1689,6 +1759,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "applications",
         },
         "OpenGameApplicationDecisionRequest": {"decision", "expected_version"},
+        "OpenGameApplicationWithdrawalRequest": {"action", "expected_version"},
         "OpenGameApplicationDecisionResult": {
             "application_id",
             "status",
@@ -1852,6 +1923,14 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         "type": "integer",
         "minimum": 1,
     }
+    withdrawal_request = schemas["OpenGameApplicationWithdrawalRequest"]["properties"]
+    assert withdrawal_request["action"] == {
+        "$ref": "#/components/schemas/OpenGameRegistrationWithdrawalAction"
+    }
+    assert withdrawal_request["expected_version"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
     decision_result = schemas["OpenGameApplicationDecisionResult"]["properties"]
     assert decision_result["application_id"] == {
         "type": "string",
@@ -1941,16 +2020,17 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     )
 
 
-def test_registration_withdrawal_compatibility_contract_keeps_write_closed() -> None:
+def test_registration_withdrawal_feature_contract_opens_only_the_frozen_write() -> None:
     withdrawal_path = (
         "/api/v1/open-game-applications/{application_id}/withdraw"
     )
-    assert withdrawal_path not in _contract()["paths"]
+    frozen = _contract()["paths"][withdrawal_path]
+    assert set(frozen) == {"post"}
 
     runtime = create_app(
         settings=Settings(app_env="test", wechat_provider="development")
     ).openapi()
-    assert withdrawal_path not in runtime["paths"]
+    assert runtime["paths"][withdrawal_path] == frozen
 
 
 def test_open_game_registration_success_examples_match_closed_schemas() -> None:
@@ -2071,7 +2151,20 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
         )
         assert actual == expected
         if registration is not None:
-            assert registration["available_withdrawal_action"] is None
+            expected_withdrawal_action = {
+                "APPLIED": "WITHDRAW_APPLICATION",
+                "JOINED": (
+                    None
+                    if registration["effective_status"] == "CANCELLED"
+                    else "LEAVE_GAME"
+                ),
+                "REJECTED": None,
+                "WITHDRAWN": None,
+            }[registration["persisted_status"]]
+            assert (
+                registration["available_withdrawal_action"]
+                == expected_withdrawal_action
+            )
             assert registration["late_exit_will_be_recorded"] is False
 
     pending = examples["open-game-applications-pending.json"]

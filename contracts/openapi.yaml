@@ -2066,6 +2066,100 @@ paths:
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/open-game-applications/{application_id}/withdraw:
+    post:
+      operationId: withdrawOpenGameApplication
+      description: Withdraw the current user's pending application or leave a joined game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameApplicationWithdrawalRequest'}
+      responses:
+        '200':
+          description: Registration withdrawn or idempotently replayed with authoritative viewer context.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameRegistrationContext'}
+              examples:
+                ApplicationWithdrawn: {externalValue: './examples/open-game-registration-context-withdrawn-application.json'}
+                GameExited: {externalValue: './examples/open-game-registration-context-withdrawn-game-exit.json'}
+        '401':
+          description: Authentication required.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: The application is absent or does not belong to the current user.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: APPLICATION_NOT_FOUND}}}}
+              examples:
+                ApplicationNotFound: {externalValue: './examples/error-application-not-found.json'}
+        '409':
+          description: Registration state, version, action, or idempotency authority changed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        oneOf:
+                          - type: object
+                            properties: {code: {const: APPLICATION_STATE_CHANGED}}
+                          - type: object
+                            properties: {code: {const: IDEMPOTENCY_KEY_REUSED}}
+              examples:
+                ApplicationStateChanged: {externalValue: './examples/error-application-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path, action, expected version, or idempotency key is invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game application service is unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/public-games:
     get:
       operationId: listPublicGames
@@ -4072,6 +4166,13 @@ components:
       required: [decision, expected_version]
       properties:
         decision: {type: string, enum: [ACCEPT, REJECT]}
+        expected_version: {type: integer, minimum: 1}
+    OpenGameApplicationWithdrawalRequest:
+      type: object
+      additionalProperties: false
+      required: [action, expected_version]
+      properties:
+        action: {$ref: '#/components/schemas/OpenGameRegistrationWithdrawalAction'}
         expected_version: {type: integer, minimum: 1}
     OpenGameApplicationDecisionResult:
       type: object

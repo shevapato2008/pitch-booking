@@ -47,6 +47,7 @@ WECHAT_APP_ID = "wx-open-game-registration-test"
 SHARE_TOKEN = "H" * 32
 ACCEPTED_APPLY_KEY = "http-registration-accepted-apply-001"
 ACCEPT_DECISION_KEY = "http-registration-accept-decision-01"
+EXIT_KEY = "http-registration-joined-exit-key-0001"
 REJECTED_APPLY_KEY = "http-registration-rejected-apply-001"
 REJECT_DECISION_KEY = "http-registration-reject-decision-01"
 
@@ -357,6 +358,36 @@ def test_three_identity_registration_journey_runs_over_real_http_without_changin
         )
         assert joined["viewer_registration"]["persisted_status"] == "JOINED"
         assert joined["viewer_registration"]["effective_status"] == "JOINED"
+        assert joined["viewer_registration"]["available_withdrawal_action"] == (
+            "LEAVE_GAME"
+        )
+
+        exited = client.post(
+            (
+                "/api/v1/open-game-applications/"
+                f"{accepted_application_id}/withdraw"
+            ),
+            headers=_idempotent(EXIT_KEY, token=accepted_token),
+            json={"action": "LEAVE_GAME", "expected_version": 2},
+        )
+        exited_replay = client.post(
+            (
+                "/api/v1/open-game-applications/"
+                f"{accepted_application_id}/withdraw"
+            ),
+            headers=_idempotent(EXIT_KEY, token=accepted_token),
+            json={"action": "LEAVE_GAME", "expected_version": 2},
+        )
+        exited_body = _assert_context(
+            exited,
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert exited_replay.status_code == 200
+        assert exited_replay.content == exited.content
+        assert exited_body["viewer_registration"]["persisted_status"] == "WITHDRAWN"
+        assert exited_body["viewer_registration"]["withdrawal_kind"] == "GAME_EXIT"
+        assert exited_body["viewer_registration"]["version"] == 3
+        assert exited_body["remaining_spots"] == 4
 
         rejected_token = _login(client, REJECTED_CODE, rejected_user_id)
         rejected_apply = client.post(
@@ -403,7 +434,7 @@ def test_three_identity_registration_journey_runs_over_real_http_without_changin
             )
         )
         assert set(statuses) == {
-            OpenGameRegistrationStatus.JOINED,
+            OpenGameRegistrationStatus.WITHDRAWN,
             OpenGameRegistrationStatus.REJECTED,
         }
         assert len(statuses) == 2

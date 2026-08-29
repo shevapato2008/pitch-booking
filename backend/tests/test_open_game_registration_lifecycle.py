@@ -24,6 +24,7 @@ from backend.app.modules.open_game_registrations.dto import (
     DecisionResultStatus,
     Queue,
     ViewerRegistration,
+    WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     ApplyActions,
@@ -32,7 +33,9 @@ from backend.app.modules.open_game_registrations.lifecycle import (
     RegistrationFacts,
     ReviewActions,
     ReviewBlockedReason,
+    WithdrawalAction,
     project_apply_actions,
+    project_available_withdrawal,
     project_effective_registration_status,
     project_review_actions,
     remaining_spots,
@@ -129,6 +132,116 @@ def test_request_has_exact_fields_and_server_owned_consent_version() -> None:
         "risk_confirmed",
     }
     assert all(field.is_required() for field in CreateApplicationRequest.model_fields.values())
+
+
+def test_withdrawal_request_is_closed_strict_and_explicit() -> None:
+    assert set(WithdrawalRequest.model_fields) == {"action", "expected_version"}
+    assert WithdrawalRequest.model_validate(
+        {"action": "WITHDRAW_APPLICATION", "expected_version": 1}
+    ).action is WithdrawalAction.WITHDRAW_APPLICATION
+    assert WithdrawalRequest.model_validate(
+        {"action": "LEAVE_GAME", "expected_version": 2}
+    ).action is WithdrawalAction.LEAVE_GAME
+    for invalid in (
+        {"action": "LEAVE_GAME"},
+        {"action": "LEAVE_GAME", "expected_version": 0},
+        {"action": "AUTO", "expected_version": 1},
+        {"action": "LEAVE_GAME", "expected_version": 2, "late": True},
+    ):
+        with pytest.raises(ValidationError):
+            WithdrawalRequest.model_validate(invalid)
+
+
+@pytest.mark.parametrize(
+    ("status", "game_state", "now", "expected_action", "expected_late"),
+    [
+        (
+            OpenGameRegistrationStatus.APPLIED,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW,
+            WithdrawalAction.WITHDRAW_APPLICATION,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.APPLIED,
+            EffectiveOpenGameState.SUSPENDED,
+            NOW,
+            WithdrawalAction.WITHDRAW_APPLICATION,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW,
+            WithdrawalAction.LEAVE_GAME,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW + timedelta(microseconds=1),
+            WithdrawalAction.LEAVE_GAME,
+            True,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            EffectiveOpenGameState.SUSPENDED,
+            NOW + timedelta(microseconds=1),
+            WithdrawalAction.LEAVE_GAME,
+            True,
+        ),
+        (
+            OpenGameRegistrationStatus.REJECTED,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW,
+            None,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.WITHDRAWN,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW,
+            None,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            EffectiveOpenGameState.CANCELLED,
+            NOW,
+            None,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            EffectiveOpenGameState.COMPLETED,
+            NOW,
+            None,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW + timedelta(hours=6),
+            None,
+            False,
+        ),
+    ],
+)
+def test_available_withdrawal_projection_freezes_status_state_and_exact_six_hour_boundary(
+    status: OpenGameRegistrationStatus,
+    game_state: EffectiveOpenGameState,
+    now: datetime,
+    expected_action: WithdrawalAction | None,
+    expected_late: bool,
+) -> None:
+    projection = project_available_withdrawal(
+        persisted_status=status,
+        game_state=game_state,
+        starts_at=NOW + timedelta(hours=6),
+        now=now,
+    )
+    assert projection.action is expected_action
+    assert projection.late_exit_will_be_recorded is expected_late
 
 
 @pytest.mark.parametrize(
@@ -658,6 +771,8 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
         withdrawn_at=None,
         withdrawal_kind=None,
         late_exit_recorded=False,
+        starts_at=NOW + timedelta(hours=2),
+        now=NOW,
     )
     assert set(projected.model_dump()) == VIEWER_REGISTRATION_FIELDS
     assert projected.persisted_status is OpenGameRegistrationStatus.JOINED
@@ -703,6 +818,8 @@ def test_privacy_projections_recursively_exclude_sensitive_keys() -> None:
         withdrawn_at=None,
         withdrawal_kind=None,
         late_exit_recorded=False,
+        starts_at=NOW + timedelta(hours=2),
+        now=NOW,
     )
     captain = project_captain_application(
         application_id=UUID("30000000-0000-0000-0000-000000000041"),

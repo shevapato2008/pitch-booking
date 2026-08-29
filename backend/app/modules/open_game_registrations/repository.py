@@ -1,6 +1,7 @@
 """Narrow PostgreSQL repository for open-game registrations."""
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import and_, func, or_, select
@@ -21,6 +22,12 @@ from backend.app.modules.orders.locking import lock_order as lock_order_row
 
 class RegistrationApplicantConflictError(RuntimeError):
     """Raised only for the named game/applicant uniqueness constraint."""
+
+
+@dataclass(frozen=True, slots=True)
+class WithdrawalTarget:
+    game_id: uuid.UUID
+    order_id: uuid.UUID
 
 
 class OpenGameRegistrationRepository:
@@ -53,6 +60,42 @@ class OpenGameRegistrationRepository:
             .where(
                 OpenGameRegistration.game_id == game_id,
                 OpenGameRegistration.id == application_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def locate_withdrawal_target(
+        self,
+        *,
+        application_id: uuid.UUID,
+        applicant_user_id: uuid.UUID,
+    ) -> WithdrawalTarget | None:
+        row = self.session.execute(
+            select(OpenGameRegistration.game_id, OpenGame.order_id)
+            .join(OpenGame, OpenGame.id == OpenGameRegistration.game_id)
+            .where(
+                OpenGameRegistration.id == application_id,
+                OpenGameRegistration.applicant_user_id == applicant_user_id,
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return WithdrawalTarget(game_id=row[0], order_id=row[1])
+
+    def lock_self_registration(
+        self,
+        *,
+        game_id: uuid.UUID,
+        application_id: uuid.UUID,
+        applicant_user_id: uuid.UUID,
+    ) -> OpenGameRegistration | None:
+        return self.session.scalar(
+            select(OpenGameRegistration)
+            .where(
+                OpenGameRegistration.game_id == game_id,
+                OpenGameRegistration.id == application_id,
+                OpenGameRegistration.applicant_user_id == applicant_user_id,
             )
             .with_for_update()
             .execution_options(populate_existing=True)

@@ -79,6 +79,7 @@ const exampleMap = [
       attachment('/api/v1/shared-games/{share_token}/applications', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/games/{game_id}/applications', '422', 'InvalidArgument'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/public-games', '422', 'InvalidArgument'),
     ],
   },
@@ -149,6 +150,7 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/public-games', '503', 'ServiceUnavailable'),
       attachment('/api/v1/open-game-applications', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '503', 'ServiceUnavailable', 'post'),
     ],
   },
   {
@@ -349,6 +351,7 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications', '401', 'AuthRequired'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/open-game-applications', '401', 'AuthRequired'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '401', 'AuthRequired', 'post'),
     ],
   },
   {
@@ -421,6 +424,7 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/cancel', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/shared-games/{share_token}/applications', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '409', 'IdempotencyKeyReused', 'post'),
     ],
   },
   {
@@ -808,13 +812,19 @@ const exampleMap = [
     filename: 'open-game-registration-context-withdrawn-application.json',
     reference: './examples/open-game-registration-context-withdrawn-application.json',
     schema: 'OpenGameRegistrationContext',
-    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnApplication')],
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnApplication'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'ApplicationWithdrawn', 'post'),
+    ],
   },
   {
     filename: 'open-game-registration-context-withdrawn-game-exit.json',
     reference: './examples/open-game-registration-context-withdrawn-game-exit.json',
     schema: 'OpenGameRegistrationContext',
-    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnGameExit')],
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnGameExit'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'GameExited', 'post'),
+    ],
   },
   {
     filename: 'open-game-registration-context-cancelled.json',
@@ -892,7 +902,10 @@ const exampleMap = [
     filename: 'error-application-not-found.json',
     reference: './examples/error-application-not-found.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '404', 'ApplicationNotFound', 'post')],
+    attachments: [
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '404', 'ApplicationNotFound', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '404', 'ApplicationNotFound', 'post'),
+    ],
   },
   {
     filename: 'error-application-already-exists.json',
@@ -910,7 +923,10 @@ const exampleMap = [
     filename: 'error-application-state-changed.json',
     reference: './examples/error-application-state-changed.json',
     schema: 'ErrorEnvelope',
-    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'ApplicationStateChanged', 'post')],
+    attachments: [
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'ApplicationStateChanged', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '409', 'ApplicationStateChanged', 'post'),
+    ],
   },
   {
     filename: 'error-application-capacity-changed.json',
@@ -1100,6 +1116,7 @@ const expectedOperations = new Map([
   ['/api/v1/shared-games/{share_token}', new Set(['get'])],
   ['/api/v1/public-games', new Set(['get'])],
   ['/api/v1/open-game-applications', new Set(['get'])],
+  ['/api/v1/open-game-applications/{application_id}/withdraw', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],

@@ -1,7 +1,7 @@
 """Pure lifecycle projection for open-game registrations."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Self
 
@@ -22,6 +22,12 @@ class EffectiveRegistrationStatus(StrEnum):
 class WithdrawalAction(StrEnum):
     WITHDRAW_APPLICATION = "WITHDRAW_APPLICATION"
     LEAVE_GAME = "LEAVE_GAME"
+
+
+@dataclass(frozen=True, slots=True)
+class AvailableWithdrawal:
+    action: WithdrawalAction | None
+    late_exit_will_be_recorded: bool
 
 
 class ApplyBlockedReason(StrEnum):
@@ -165,6 +171,32 @@ def project_effective_registration_status(
     if game_state is EffectiveOpenGameState.CANCELLED:
         return EffectiveRegistrationStatus.CANCELLED
     return EffectiveRegistrationStatus(persisted_status.value)
+
+
+def project_available_withdrawal(
+    *,
+    persisted_status: OpenGameRegistrationStatus,
+    game_state: EffectiveOpenGameState,
+    starts_at: datetime,
+    now: datetime,
+) -> AvailableWithdrawal:
+    if (
+        game_state
+        not in {EffectiveOpenGameState.PUBLISHED, EffectiveOpenGameState.SUSPENDED}
+        or now >= starts_at
+    ):
+        return AvailableWithdrawal(action=None, late_exit_will_be_recorded=False)
+    if persisted_status is OpenGameRegistrationStatus.APPLIED:
+        return AvailableWithdrawal(
+            action=WithdrawalAction.WITHDRAW_APPLICATION,
+            late_exit_will_be_recorded=False,
+        )
+    if persisted_status is OpenGameRegistrationStatus.JOINED:
+        return AvailableWithdrawal(
+            action=WithdrawalAction.LEAVE_GAME,
+            late_exit_will_be_recorded=now > starts_at - timedelta(hours=6),
+        )
+    return AvailableWithdrawal(action=None, late_exit_will_be_recorded=False)
 
 
 def _review_common_blocker(

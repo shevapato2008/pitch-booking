@@ -18,6 +18,7 @@ from backend.app.modules.open_game_registrations.dto import (
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     ReviewActions,
+    project_available_withdrawal,
     project_effective_registration_status,
 )
 from backend.app.modules.open_games.lifecycle import EffectiveOpenGameState
@@ -89,8 +90,16 @@ def project_viewer_registration(
     withdrawn_at: datetime | None,
     withdrawal_kind: OpenGameRegistrationWithdrawalKind | None,
     late_exit_recorded: bool,
+    starts_at: datetime,
+    now: datetime,
 ) -> ViewerRegistration:
     """Rebuild the applicant response from its reviewed field whitelist."""
+    withdrawal = project_available_withdrawal(
+        persisted_status=persisted_status,
+        game_state=game_state,
+        starts_at=starts_at,
+        now=now,
+    )
     return ViewerRegistration(
         id=application_id,
         display_name=display_name,
@@ -106,8 +115,8 @@ def project_viewer_registration(
         withdrawn_at=withdrawn_at,
         withdrawal_kind=withdrawal_kind,
         late_exit_recorded=late_exit_recorded,
-        available_withdrawal_action=None,
-        late_exit_will_be_recorded=False,
+        available_withdrawal_action=withdrawal.action,
+        late_exit_will_be_recorded=withdrawal.late_exit_will_be_recorded,
     )
 
 

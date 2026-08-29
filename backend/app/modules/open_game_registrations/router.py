@@ -2,6 +2,7 @@
 
 import re
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -24,6 +25,7 @@ from backend.app.modules.open_game_registrations.dto import (
     MyOpenGameApplicationsResponse,
     Queue,
     RegistrationContext,
+    WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.repository import (
     OpenGameRegistrationRepository,
@@ -43,6 +45,9 @@ _APPLICATION_PATH = re.compile(
 _DECISION_PATH = re.compile(
     r"^/api/v1/games/[^/]+/applications/[^/]+/decision$"
 )
+_WITHDRAWAL_PATH = re.compile(
+    r"^/api/v1/open-game-applications/[^/]+/withdraw$"
+)
 _APPLICATION_FIELDS = frozenset(
     {
         "display_name",
@@ -53,6 +58,7 @@ _APPLICATION_FIELDS = frozenset(
     }
 )
 _DECISION_FIELDS = frozenset({"decision", "expected_version"})
+_WITHDRAWAL_FIELDS = frozenset({"action", "expected_version"})
 _INVALID_ARGUMENT_EXAMPLE = {
     "error": {
         "code": "INVALID_ARGUMENT",
@@ -63,8 +69,12 @@ _INVALID_ARGUMENT_EXAMPLE = {
 }
 
 
-def get_open_game_registration_clock() -> datetime:
+def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def get_open_game_registration_clock() -> Callable[[], datetime]:
+    return _utc_now
 
 
 def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
@@ -399,6 +409,23 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                 },
             },
+            "OpenGameApplicationWithdrawalRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["action", "expected_version"],
+                "properties": {
+                    "action": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationWithdrawalAction"
+                        )
+                    },
+                    "expected_version": {
+                        "type": "integer",
+                        "minimum": 1,
+                    },
+                },
+            },
             "MyOpenGameApplication": {
                 "type": "object",
                 "additionalProperties": False,
@@ -479,6 +506,146 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         apply_operation["post"]["responses"]["201"]["content"][
             "application/json"
         ]["schema"] = dict(context_ref)
+    withdrawal_path = (
+        "/api/v1/open-game-applications/{application_id}/withdraw"
+    )
+    if withdrawal_path in schema["paths"]:
+        conflict = error_response(
+            "Registration state, version, action, or idempotency authority changed.",
+            code="APPLICATION_STATE_CHANGED",
+            example_name="ApplicationStateChanged",
+            example_file="error-application-state-changed.json",
+        )
+        conflict_content = conflict["content"]["application/json"]
+        conflict_content["schema"] = {
+            "allOf": [
+                {"$ref": "#/components/schemas/ErrorEnvelope"},
+                {
+                    "type": "object",
+                    "properties": {
+                        "error": {
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "const": "APPLICATION_STATE_CHANGED"
+                                        }
+                                    },
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "const": "IDEMPOTENCY_KEY_REUSED"
+                                        }
+                                    },
+                                },
+                            ]
+                        }
+                    },
+                },
+            ]
+        }
+        conflict_content["examples"] = {
+            "ApplicationStateChanged": {
+                "externalValue": "./examples/error-application-state-changed.json"
+            },
+            "IdempotencyKeyReused": {
+                "externalValue": "./examples/error-idempotency-key-reused.json"
+            },
+        }
+        schema["paths"][withdrawal_path]["post"] = {
+            "operationId": "withdrawOpenGameApplication",
+            "description": (
+                "Withdraw the current user's pending application or leave a "
+                "joined game."
+            ),
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "application_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {"$ref": "#/components/parameters/IdempotencyKey"},
+            ],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "OpenGameApplicationWithdrawalRequest"
+                            )
+                        }
+                    }
+                },
+            },
+            "responses": {
+                "200": {
+                    "description": (
+                        "Registration withdrawn or idempotently replayed with "
+                        "authoritative viewer context."
+                    ),
+                    "headers": {"X-Request-Id": request_id_header},
+                    "content": {
+                        "application/json": {
+                            "schema": dict(context_ref),
+                            "examples": {
+                                "ApplicationWithdrawn": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-registration-context-"
+                                        "withdrawn-application.json"
+                                    )
+                                },
+                                "GameExited": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-registration-context-"
+                                        "withdrawn-game-exit.json"
+                                    )
+                                },
+                            },
+                        }
+                    },
+                },
+                "401": error_response(
+                    "Authentication required.",
+                    code="AUTH_REQUIRED",
+                    example_name="AuthRequired",
+                    example_file="error-auth-required.json",
+                ),
+                "404": error_response(
+                    (
+                        "The application is absent or does not belong to the "
+                        "current user."
+                    ),
+                    code="APPLICATION_NOT_FOUND",
+                    example_name="ApplicationNotFound",
+                    example_file="error-application-not-found.json",
+                ),
+                "409": conflict,
+                "422": error_response(
+                    (
+                        "Path, action, expected version, or idempotency key is "
+                        "invalid."
+                    ),
+                    code="INVALID_ARGUMENT",
+                    example_name="InvalidArgument",
+                    example_file="error-invalid-argument.json",
+                ),
+                "503": error_response(
+                    "Open game application service is unavailable.",
+                    code="SERVICE_UNAVAILABLE",
+                    example_name="ServiceUnavailable",
+                    example_file="error-service-unavailable.json",
+                ),
+            },
+        }
 
 
 def get_optional_open_game_registration_user(
@@ -521,6 +688,7 @@ def is_open_game_registration_mutation_request(request: Request) -> bool:
     return (
         _APPLICATION_PATH.fullmatch(path) is not None
         or _DECISION_PATH.fullmatch(path) is not None
+        or _WITHDRAWAL_PATH.fullmatch(path) is not None
     )
 
 
@@ -528,11 +696,12 @@ async def open_game_registration_request_validation_handler(
     request: Request,
     error: RequestValidationError,
 ) -> JSONResponse:
-    allowed_fields = (
-        _DECISION_FIELDS
-        if _DECISION_PATH.fullmatch(request.url.path) is not None
-        else _APPLICATION_FIELDS
-    )
+    if _DECISION_PATH.fullmatch(request.url.path) is not None:
+        allowed_fields = _DECISION_FIELDS
+    elif _WITHDRAWAL_PATH.fullmatch(request.url.path) is not None:
+        allowed_fields = _WITHDRAWAL_FIELDS
+    else:
+        allowed_fields = _APPLICATION_FIELDS
     fields: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in error.errors():
@@ -559,12 +728,16 @@ async def open_game_registration_request_validation_handler(
     )
 
 
-def _service(database: Session, *, now: datetime) -> OpenGameRegistrationService:
+def _service(
+    database: Session,
+    *,
+    clock: Callable[[], datetime],
+) -> OpenGameRegistrationService:
     return OpenGameRegistrationService(
         repository=OpenGameRegistrationRepository(database),
         open_game_repository=OpenGameRepository(database),
         order_repository=OrderRepository(database),
-        now=lambda: now,
+        now=clock,
     )
 
 
@@ -581,14 +754,49 @@ def _service(database: Session, *, now: datetime) -> OpenGameRegistrationService
 def list_my_open_game_applications(
     user: Annotated[User, Depends(get_required_open_game_registration_user)],
     database: Annotated[Session, Depends(get_database)],
-    now: Annotated[datetime, Depends(get_open_game_registration_clock)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     cursor: Annotated[str | None, Query(min_length=1)] = None,
 ) -> MyOpenGameApplicationsResponse:
-    return _service(database, now=now).list_my_applications(
+    return _service(database, clock=clock).list_my_applications(
         applicant_user_id=user.id,
         limit=limit,
         cursor=cursor,
+    )
+
+
+@router.post(
+    "/api/v1/open-game-applications/{application_id}/withdraw",
+    operation_id="withdrawOpenGameApplication",
+    response_model=RegistrationContext,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def withdraw_open_game_application(
+    application_id: uuid.UUID,
+    body: WithdrawalRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
+) -> RegistrationContext:
+    return _service(database, clock=clock).withdraw(
+        application_id=application_id,
+        applicant_user_id=user.id,
+        idempotency_key=idempotency_key,
+        request=body,
     )
 
 
@@ -610,9 +818,11 @@ def get_open_game_registration_context(
         Depends(get_optional_open_game_registration_user),
     ],
     database: Annotated[Session, Depends(get_database)],
-    now: Annotated[datetime, Depends(get_open_game_registration_clock)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
 ) -> RegistrationContext:
-    return _service(database, now=now).get_context(
+    return _service(database, clock=clock).get_context(
         share_token=share_token,
         viewer_user_id=viewer.id if viewer is not None else None,
     )
@@ -640,9 +850,11 @@ def create_open_game_application(
     ],
     user: Annotated[User, Depends(get_required_open_game_registration_user)],
     database: Annotated[Session, Depends(get_database)],
-    now: Annotated[datetime, Depends(get_open_game_registration_clock)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
 ) -> RegistrationContext:
-    return _service(database, now=now).apply(
+    return _service(database, clock=clock).apply(
         share_token=share_token,
         applicant_user_id=user.id,
         idempotency_key=idempotency_key,
@@ -674,9 +886,11 @@ def list_open_game_applications(
     game_id: uuid.UUID,
     user: Annotated[User, Depends(get_required_open_game_registration_user)],
     database: Annotated[Session, Depends(get_database)],
-    now: Annotated[datetime, Depends(get_open_game_registration_clock)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
 ) -> Queue:
-    return _service(database, now=now).get_queue(
+    return _service(database, clock=clock).get_queue(
         game_id=game_id,
         owner_user_id=user.id,
     )
@@ -704,9 +918,11 @@ def decide_open_game_application(
     ],
     user: Annotated[User, Depends(get_required_open_game_registration_user)],
     database: Annotated[Session, Depends(get_database)],
-    now: Annotated[datetime, Depends(get_open_game_registration_clock)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
 ) -> DecisionResult:
-    return _service(database, now=now).decide(
+    return _service(database, clock=clock).decide(
         game_id=game_id,
         application_id=application_id,
         owner_user_id=user.id,

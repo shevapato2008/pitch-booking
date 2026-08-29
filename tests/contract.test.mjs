@@ -124,6 +124,7 @@ test('OpenAPI document validates and exposes the frozen named path members', asy
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
     '/api/v1/open-game-applications',
+    '/api/v1/open-game-applications/{application_id}/withdraw',
     '/api/v1/payments/wechat/notify',
     '/api/v1/refunds/wechat/notify',
     '/api/v1/shared-games/{share_token}',
@@ -191,7 +192,7 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   });
 });
 
-test('C1a registration operations expose exact named success examples', async () => {
+test('C1a/C2a registration operations expose exact named success examples', async () => {
   const contract = YAML.parse(await readFile(contractPath, 'utf8'));
   const expected = [
     {
@@ -208,6 +209,16 @@ test('C1a registration operations expose exact named success examples', async ()
         WithdrawnApplication: 'open-game-registration-context-withdrawn-application.json',
         WithdrawnGameExit: 'open-game-registration-context-withdrawn-game-exit.json',
         Cancelled: 'open-game-registration-context-cancelled.json',
+      },
+    },
+    {
+      path: '/api/v1/open-game-applications/{application_id}/withdraw',
+      method: 'post',
+      operationId: 'withdrawOpenGameApplication',
+      status: '200',
+      examples: {
+        ApplicationWithdrawn: 'open-game-registration-context-withdrawn-application.json',
+        GameExited: 'open-game-registration-context-withdrawn-game-exit.json',
       },
     },
     {

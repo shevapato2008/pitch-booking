@@ -34,7 +34,9 @@ from backend.app.modules.open_game_registrations.dto import (
     ApplicationDecision,
     CreateApplicationRequest,
     DecisionRequest,
+    WithdrawalRequest,
 )
+from backend.app.modules.open_game_registrations.lifecycle import WithdrawalAction
 from backend.app.modules.open_game_registrations.privacy import (
     CAPTAIN_APPLICATION_FIELDS,
     VIEWER_REGISTRATION_FIELDS,
@@ -64,6 +66,7 @@ pytestmark = pytest.mark.integration
 SHARE_TOKEN = "R" * 32
 APPLICATION_KEY = "create-open-game-application-key-000001"
 DECISION_KEY = "decide-open-game-application-key-000001"
+WITHDRAWAL_KEY = "withdraw-open-game-application-key-0001"
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +226,14 @@ def _decision(
         decision=decision,
         expected_version=expected_version,
     )
+
+
+def _withdrawal(
+    action: WithdrawalAction,
+    *,
+    expected_version: int,
+) -> WithdrawalRequest:
+    return WithdrawalRequest(action=action, expected_version=expected_version)
 
 
 def _assert_context_privacy(context: Any) -> None:
@@ -390,6 +401,61 @@ def test_context_reads_withdrawn_audit_fields_but_keeps_write_action_closed(
         "available_withdrawal_action": None,
         "late_exit_will_be_recorded": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("status", "now", "expected_action", "expected_late"),
+    [
+        (
+            OpenGameRegistrationStatus.APPLIED,
+            NOW,
+            "WITHDRAW_APPLICATION",
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            NOW,
+            "LEAVE_GAME",
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            NOW + timedelta(days=3) - timedelta(hours=6) + timedelta(microseconds=1),
+            "LEAVE_GAME",
+            True,
+        ),
+    ],
+)
+def test_context_projects_real_withdrawal_action_and_server_late_warning(
+    pg_engine: Engine,
+    status: OpenGameRegistrationStatus,
+    now: datetime,
+    expected_action: str,
+    expected_late: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=status,
+            decided_by_user_id=(
+                case.booking.owner_id
+                if status is OpenGameRegistrationStatus.JOINED
+                else None
+            ),
+        )
+        session.commit()
+
+        context = _service(session, now=now).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+
+    assert context.viewer_registration is not None
+    assert context.viewer_registration.available_withdrawal_action == expected_action
+    assert context.viewer_registration.late_exit_will_be_recorded is expected_late
 
 
 def test_context_uses_one_clock_snapshot_for_public_and_actions(
@@ -573,7 +639,10 @@ def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
             request=request,
         )
 
-        assert replay == first
+        expected = first.model_dump(mode="json")
+        assert expected["viewer_registration"] is not None
+        expected["viewer_registration"]["available_withdrawal_action"] = None
+        assert replay.model_dump(mode="json") == expected
         assert replay.viewer_registration is not None
         assert replay.viewer_registration.id == registration.id
         assert replay.viewer_registration.version == 1
@@ -1398,6 +1467,282 @@ def test_accept_capacity_change_is_closed_and_leaves_target_pending(
         assert _b1_snapshot(session) == before_b1
 
 
+@pytest.mark.parametrize(
+    ("status", "action", "expected_kind", "expected_version"),
+    [
+        (
+            OpenGameRegistrationStatus.APPLIED,
+            WithdrawalAction.WITHDRAW_APPLICATION,
+            OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL,
+            1,
+        ),
+        (
+            OpenGameRegistrationStatus.JOINED,
+            WithdrawalAction.LEAVE_GAME,
+            OpenGameRegistrationWithdrawalKind.GAME_EXIT,
+            2,
+        ),
+    ],
+)
+def test_withdraw_is_terminal_idempotent_and_preserves_capacity_authority(
+    pg_engine: Engine,
+    status: OpenGameRegistrationStatus,
+    action: WithdrawalAction,
+    expected_kind: OpenGameRegistrationWithdrawalKind,
+    expected_version: int,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=status,
+            decided_by_user_id=(
+                case.booking.owner_id
+                if status is OpenGameRegistrationStatus.JOINED
+                else None
+            ),
+        )
+        game = session.get_one(OpenGame, case.game_id)
+        open_spots_before = game.open_spots
+        joined_before = 1 if status is OpenGameRegistrationStatus.JOINED else 0
+        session.commit()
+
+        service = _service(session)
+        first = service.withdraw(
+            application_id=target.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=WITHDRAWAL_KEY,
+            request=_withdrawal(action, expected_version=expected_version),
+        )
+        replay = service.withdraw(
+            application_id=target.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=WITHDRAWAL_KEY,
+            request=_withdrawal(action, expected_version=expected_version),
+        )
+
+        assert replay.model_dump(mode="json") == first.model_dump(mode="json")
+        assert first.remaining_spots == open_spots_before
+        assert first.remaining_spots == open_spots_before - joined_before + joined_before
+        assert first.viewer_registration is not None
+        assert first.viewer_registration.model_dump(mode="json") | {} == {
+            **first.viewer_registration.model_dump(mode="json"),
+            "persisted_status": "WITHDRAWN",
+            "effective_status": "WITHDRAWN",
+            "version": expected_version + 1,
+            "withdrawn_at": NOW.isoformat().replace("+00:00", "Z"),
+            "withdrawal_kind": expected_kind.value,
+            "late_exit_recorded": False,
+            "available_withdrawal_action": None,
+            "late_exit_will_be_recorded": False,
+        }
+        persisted = session.get_one(OpenGameRegistration, target.id)
+        assert persisted.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert persisted.version == expected_version + 1
+        assert persisted.withdrawal_kind is expected_kind
+        assert persisted.withdrawn_at == NOW
+        assert persisted.late_exit_recorded is False
+        assert session.get_one(OpenGame, case.game_id).open_spots == open_spots_before
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(OpenGameRegistration)
+                .where(
+                    OpenGameRegistration.game_id == case.game_id,
+                    OpenGameRegistration.status
+                    == OpenGameRegistrationStatus.JOINED,
+                )
+            )
+            == 0
+        )
+        records = tuple(session.scalars(select(IdempotencyRecord)))
+        assert len(records) == 1
+        assert records[0].response_status == 200
+
+
+def test_joined_exit_records_only_strictly_inside_six_hours_and_suspended_is_allowed(
+    pg_engine: Engine,
+) -> None:
+    for offset, expected_late in (
+        (timedelta(hours=6), False),
+        (timedelta(hours=6) - timedelta(microseconds=1), True),
+    ):
+        case = _seed_published_game(pg_engine, share_token=uuid.uuid4().hex)
+        with Session(pg_engine) as session:
+            target = _add_registration(
+                session,
+                game_id=case.game_id,
+                applicant_user_id=case.booking.stranger_id,
+                status=OpenGameRegistrationStatus.JOINED,
+                decided_by_user_id=case.booking.owner_id,
+            )
+            session.get_one(Order, case.booking.order_id).status = (
+                OrderStatus.PAYMENT_EXCEPTION
+            )
+            session.commit()
+
+            result = _service(
+                session,
+                now=case.booking.starts_at - offset,
+            ).withdraw(
+                application_id=target.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=f"suspended-exit-{expected_late}-key-000001",
+                request=_withdrawal(
+                    WithdrawalAction.LEAVE_GAME,
+                    expected_version=2,
+                ),
+            )
+
+            assert result.game.state == "SUSPENDED"
+            assert result.viewer_registration is not None
+            assert result.viewer_registration.late_exit_recorded is expected_late
+
+
+@pytest.mark.parametrize(
+    ("condition", "action", "expected_version"),
+    [
+        ("action", WithdrawalAction.LEAVE_GAME, 1),
+        ("version", WithdrawalAction.WITHDRAW_APPLICATION, 2),
+        ("cancelled", WithdrawalAction.WITHDRAW_APPLICATION, 1),
+        ("completed", WithdrawalAction.WITHDRAW_APPLICATION, 1),
+        ("started", WithdrawalAction.WITHDRAW_APPLICATION, 1),
+    ],
+)
+def test_withdraw_rejects_stale_action_version_and_closed_game_without_partial_writes(
+    pg_engine: Engine,
+    condition: str,
+    action: WithdrawalAction,
+    expected_version: int,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        now = (
+            _set_review_authority(session, case=case, condition=condition)
+            if condition in {"cancelled", "completed", "started"}
+            else NOW
+        )
+        session.commit()
+        before_c1a = _c1a_snapshot(session)
+        before_b1 = _b1_snapshot(session)
+
+        with pytest.raises(AppError) as changed:
+            _service(session, now=now).withdraw(
+                application_id=target.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=f"withdraw-{condition}-key-0000000001",
+                request=_withdrawal(action, expected_version=expected_version),
+            )
+
+        assert (changed.value.status_code, changed.value.code) == (
+            409,
+            "APPLICATION_STATE_CHANGED",
+        )
+        assert _c1a_snapshot(session) == before_c1a
+        assert _b1_snapshot(session) == before_b1
+
+
+def test_withdraw_hides_other_users_application_and_rejects_reused_key_payload(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        other = _new_user(session, "withdraw-hidden")
+        session.commit()
+
+        with pytest.raises(AppError) as hidden:
+            _service(session).withdraw(
+                application_id=target.id,
+                applicant_user_id=other.id,
+                idempotency_key="hidden-withdrawal-key-000000001",
+                request=_withdrawal(
+                    WithdrawalAction.WITHDRAW_APPLICATION,
+                    expected_version=1,
+                ),
+            )
+        assert (hidden.value.status_code, hidden.value.code) == (
+            404,
+            "APPLICATION_NOT_FOUND",
+        )
+
+        service = _service(session)
+        service.withdraw(
+            application_id=target.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=WITHDRAWAL_KEY,
+            request=_withdrawal(
+                WithdrawalAction.WITHDRAW_APPLICATION,
+                expected_version=1,
+            ),
+        )
+        with pytest.raises(AppError) as reused:
+            service.withdraw(
+                application_id=target.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=WITHDRAWAL_KEY,
+                request=_withdrawal(
+                    WithdrawalAction.WITHDRAW_APPLICATION,
+                    expected_version=2,
+                ),
+            )
+        assert (reused.value.status_code, reused.value.code) == (
+            409,
+            "IDEMPOTENCY_KEY_REUSED",
+        )
+
+
+def test_later_game_cancellation_overrides_effective_status_but_retains_withdrawal_audit(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        _service(session).withdraw(
+            application_id=target.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=WITHDRAWAL_KEY,
+            request=_withdrawal(
+                WithdrawalAction.WITHDRAW_APPLICATION,
+                expected_version=1,
+            ),
+        )
+        game = session.get_one(OpenGame, case.game_id)
+        game.status = OpenGameStatus.CANCELLED
+        game.cancelled_at = NOW
+        session.commit()
+
+        context = _service(session).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+
+    assert context.viewer_registration is not None
+    assert context.viewer_registration.persisted_status == "WITHDRAWN"
+    assert context.viewer_registration.effective_status == "CANCELLED"
+    assert context.viewer_registration.withdrawal_kind == "APPLICATION_WITHDRAWAL"
+    assert context.viewer_registration.withdrawn_at == NOW
+
+
 class _FailingContextRepository(OpenGameRegistrationRepository):
     def count_joined(self, *, game_id: uuid.UUID) -> int:
         raise SQLAlchemyError("injected secret context read failure")
@@ -1430,6 +1775,12 @@ class _FailingDecisionFlushRepository(OpenGameRegistrationRepository):
         raise SQLAlchemyError("injected secret decision flush failure")
 
 
+class _FailingWithdrawalFlushRepository(OpenGameRegistrationRepository):
+    def flush(self) -> None:
+        super().flush()
+        raise SQLAlchemyError("injected secret withdrawal flush failure")
+
+
 class _FailingCompletionOrderRepository(OrderRepository):
     def complete_idempotency(self, *args: object, **kwargs: object) -> None:
         raise SQLAlchemyError("injected secret completion failure")
@@ -1438,6 +1789,44 @@ class _FailingCompletionOrderRepository(OrderRepository):
 class _FailingCommitOrderRepository(OrderRepository):
     def commit(self) -> None:
         raise SQLAlchemyError("injected secret commit failure")
+
+
+def test_withdrawal_flush_failure_rolls_back_audit_status_and_idempotency(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        session.commit()
+        before_c1a = _c1a_snapshot(session)
+        before_b1 = _b1_snapshot(session)
+
+        with pytest.raises(AppError) as unavailable:
+            _service(
+                session,
+                registration_repository=_FailingWithdrawalFlushRepository(session),
+            ).withdraw(
+                application_id=target.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key="failing-withdrawal-flush-key-00001",
+                request=_withdrawal(
+                    WithdrawalAction.LEAVE_GAME,
+                    expected_version=2,
+                ),
+            )
+
+        assert (unavailable.value.status_code, unavailable.value.code) == (
+            503,
+            "SERVICE_UNAVAILABLE",
+        )
+        assert _c1a_snapshot(session) == before_c1a
+        assert _b1_snapshot(session) == before_b1
 
 
 def test_named_applicant_insert_race_maps_to_duplicate_and_rolls_back_claim(

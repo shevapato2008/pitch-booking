@@ -20,7 +20,9 @@ from backend.app.models import (
 from backend.app.modules.open_game_registrations.dto import (
     ApplicationDecision,
     DecisionRequest,
+    WithdrawalRequest,
 )
+from backend.app.modules.open_game_registrations.lifecycle import WithdrawalAction
 from backend.app.modules.open_game_registrations.repository import (
     OpenGameRegistrationRepository,
 )
@@ -174,6 +176,57 @@ def _decision_worker(
                 ),
             )
             return result.status.value, result.model_dump(mode="json")
+        except AppError as error:
+            return error.code, error.details
+    finally:
+        session.rollback()
+        session.close()
+        worker_engine.dispose()
+
+
+def _withdrawal_worker(
+    *,
+    database_url: object,
+    case: SeededRegistrationCase,
+    application_id: uuid.UUID,
+    idempotency_key: str,
+    action: WithdrawalAction,
+    expected_version: int,
+    observed: tuple[Event, Event] | None,
+    pid_queue: Queue[int],
+) -> tuple[str, object]:
+    worker_engine = create_engine(database_url, poolclass=NullPool)
+    session = Session(worker_engine)
+    try:
+        backend_pid = session.scalar(text("SELECT pg_backend_pid()"))
+        assert isinstance(backend_pid, int)
+        pid_queue.put(backend_pid)
+        registration_repository = (
+            OpenGameRegistrationRepository(session)
+            if observed is None
+            else ObservedRegistrationRepository(
+                session,
+                acquired=observed[0],
+                release=observed[1],
+            )
+        )
+        service = OpenGameRegistrationService(
+            repository=registration_repository,
+            open_game_repository=OpenGameRepository(session),
+            order_repository=OrderRepository(session),
+            now=lambda: NOW,
+        )
+        try:
+            result = service.withdraw(
+                application_id=application_id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=idempotency_key,
+                request=WithdrawalRequest(
+                    action=action,
+                    expected_version=expected_version,
+                ),
+            )
+            return "WITHDRAWN", result.model_dump(mode="json")
         except AppError as error:
             return error.code, error.details
     finally:
@@ -341,6 +394,165 @@ def test_two_accepts_for_last_place_are_serialized(pg_engine: Engine) -> None:
     )
     assert joined_count == 2
     assert game.aa_cents == 3600
+
+
+def test_withdraw_and_accept_from_application_v1_serialize_to_one_success(
+    pg_engine: Engine,
+) -> None:
+    case, application_id, _, before_b1 = _seed_pending(
+        pg_engine,
+        existing_joined=False,
+    )
+    acquired = Event()
+    release = Event()
+    withdrawn, accepted = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key="withdraw-before-accept-key-0000001",
+            action=WithdrawalAction.WITHDRAW_APPLICATION,
+            expected_version=1,
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key="accept-after-withdraw-key-00000001",
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert withdrawn[0] == "WITHDRAWN"
+    assert accepted[0] == "APPLICATION_STATE_CHANGED"
+    with Session(pg_engine) as session:
+        row = session.get_one(OpenGameRegistration, application_id)
+        assert row.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert row.version == 2
+    _assert_final_invariants(pg_engine, case=case, before_b1=before_b1)
+
+
+def test_accept_and_old_withdraw_from_application_v1_serialize_to_one_success(
+    pg_engine: Engine,
+) -> None:
+    case, application_id, _, before_b1 = _seed_pending(
+        pg_engine,
+        existing_joined=False,
+    )
+    acquired = Event()
+    release = Event()
+    accepted, withdrawn = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key="accept-before-withdraw-key-0000001",
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key="withdraw-after-accept-key-00000001",
+            action=WithdrawalAction.WITHDRAW_APPLICATION,
+            expected_version=1,
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert accepted[0] == "JOINED"
+    assert withdrawn[0] == "APPLICATION_STATE_CHANGED"
+    with Session(pg_engine) as session:
+        row = session.get_one(OpenGameRegistration, application_id)
+        assert row.status is OpenGameRegistrationStatus.JOINED
+        assert row.version == 2
+    _, joined_count = _assert_final_invariants(
+        pg_engine,
+        case=case,
+        before_b1=before_b1,
+    )
+    assert joined_count == 1
+
+
+@pytest.mark.parametrize("same_key", [False, True])
+def test_two_joined_exit_requests_release_capacity_once(
+    pg_engine: Engine,
+    same_key: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 2
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        session.commit()
+        application_id = target.id
+        before_b1 = _b1_snapshot(session)
+
+    first_key = "concurrent-joined-exit-key-0000001"
+    second_key = (
+        first_key if same_key else "concurrent-other-exit-key-000000001"
+    )
+    acquired = Event()
+    release = Event()
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=first_key,
+            action=WithdrawalAction.LEAVE_GAME,
+            expected_version=2,
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=second_key,
+            action=WithdrawalAction.LEAVE_GAME,
+            expected_version=2,
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert first[0] == "WITHDRAWN"
+    assert second[0] == ("WITHDRAWN" if same_key else "APPLICATION_STATE_CHANGED")
+    if same_key:
+        assert second[1] == first[1]
+    with Session(pg_engine) as session:
+        row = session.get_one(OpenGameRegistration, application_id)
+        assert row.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert row.version == 3
+        assert session.get_one(OpenGame, case.game_id).open_spots == 2
+    game, joined_count = _assert_final_invariants(
+        pg_engine,
+        case=case,
+        before_b1=before_b1,
+    )
+    assert joined_count == 0
+    assert game.open_spots == 2
 
 
 def test_accept_first_forces_joined_aware_edit_to_fail(pg_engine: Engine) -> None:

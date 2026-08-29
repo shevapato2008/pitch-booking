@@ -19,6 +19,7 @@ from backend.app.models import (
     OpenGame,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
+    OpenGameRegistrationWithdrawalKind,
     Order,
 )
 from backend.app.modules.open_game_registrations.dto import (
@@ -32,11 +33,14 @@ from backend.app.modules.open_game_registrations.dto import (
     MyOpenGameApplicationsResponse,
     Queue,
     RegistrationContext,
+    WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     RegistrationFacts,
     ReviewBlockedReason,
+    WithdrawalAction,
     project_apply_actions,
+    project_available_withdrawal,
     project_review_actions,
     remaining_spots,
 )
@@ -63,6 +67,7 @@ from backend.app.modules.orders.repository import OrderRepository
 
 CREATE_OPEN_GAME_APPLICATION_OPERATION = "create_open_game_application"
 DECIDE_OPEN_GAME_APPLICATION_OPERATION = "decide_open_game_application"
+WITHDRAW_OPEN_GAME_APPLICATION_OPERATION = "withdraw_open_game_application"
 
 
 class OpenGameRegistrationService:
@@ -415,6 +420,120 @@ class OpenGameRegistrationService:
             self._repository.rollback()
             raise _service_unavailable() from None
 
+    def withdraw(
+        self,
+        *,
+        application_id: uuid.UUID,
+        applicant_user_id: uuid.UUID,
+        idempotency_key: str,
+        request: WithdrawalRequest,
+    ) -> RegistrationContext:
+        try:
+            target = self._repository.locate_withdrawal_target(
+                application_id=application_id,
+                applicant_user_id=applicant_user_id,
+            )
+            if target is None:
+                raise _application_not_found()
+            order = self._repository.lock_order(order_id=target.order_id)
+            if order is None:
+                raise _application_not_found()
+            game = self._open_game_repository.lock_target_game(
+                game_id=target.game_id,
+                order_id=order.id,
+            )
+            if game is None:
+                raise _application_not_found()
+            registration = self._repository.lock_self_registration(
+                game_id=game.id,
+                application_id=application_id,
+                applicant_user_id=applicant_user_id,
+            )
+            if registration is None:
+                raise _application_not_found()
+
+            digest = _withdrawal_request_digest(
+                operation=WITHDRAW_OPEN_GAME_APPLICATION_OPERATION,
+                application_id=registration.id,
+                resolved_game_id=game.id,
+                request=request,
+            )
+            record, claimed = self._order_repository.claim_idempotency(
+                user_id=applicant_user_id,
+                operation=WITHDRAW_OPEN_GAME_APPLICATION_OPERATION,
+                key=idempotency_key,
+                request_sha256=digest,
+            )
+            if not claimed:
+                replay = _replay_withdrawal(record, digest=digest)
+                self._order_repository.commit()
+                return replay
+
+            authority = self._open_game_repository.lock_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            now = self._now()
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=now,
+            )
+            available = project_available_withdrawal(
+                persisted_status=registration.status,
+                game_state=projection.state,
+                starts_at=projection.starts_at,
+                now=now,
+            )
+            if (
+                registration.version != request.expected_version
+                or available.action is not request.action
+            ):
+                raise _application_state_changed()
+
+            registration.status = OpenGameRegistrationStatus.WITHDRAWN
+            registration.version += 1
+            registration.withdrawn_at = now
+            registration.withdrawal_kind = (
+                OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
+                if request.action is WithdrawalAction.WITHDRAW_APPLICATION
+                else OpenGameRegistrationWithdrawalKind.GAME_EXIT
+            )
+            registration.late_exit_recorded = (
+                available.late_exit_will_be_recorded
+            )
+            self._repository.flush()
+            joined_count = self._repository.count_joined(game_id=game.id)
+            response = _project_context(
+                game=game,
+                projection=projection,
+                viewer_user_id=applicant_user_id,
+                registration=registration,
+                joined_count=joined_count,
+                now=now,
+            )
+            self._order_repository.complete_idempotency(
+                record,
+                response_status=200,
+                response_body=response.model_dump(mode="json"),
+            )
+            self._order_repository.commit()
+            return response
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
     def decide(
         self,
         *,
@@ -674,6 +793,8 @@ def _project_context(
             withdrawn_at=registration.withdrawn_at,
             withdrawal_kind=registration.withdrawal_kind,
             late_exit_recorded=registration.late_exit_recorded,
+            starts_at=projection.starts_at,
+            now=now,
         )
         if registration is not None
         else None
@@ -741,6 +862,25 @@ def _decision_request_digest(
         "game_id": str(game_id),
         "application_id": str(application_id),
         "decision": request.decision.value,
+        "expected_version": request.expected_version,
+        "version": 1,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _withdrawal_request_digest(
+    *,
+    operation: str,
+    application_id: uuid.UUID,
+    resolved_game_id: uuid.UUID,
+    request: WithdrawalRequest,
+) -> str:
+    payload = {
+        "operation": operation,
+        "application_id": str(application_id),
+        "resolved_game_id": str(resolved_game_id),
+        "action": request.action.value,
         "expected_version": request.expected_version,
         "version": 1,
     }
@@ -895,6 +1035,22 @@ def _replay_decision(
     ):
         raise _service_unavailable()
     return DecisionResult.model_validate(record.response_body)
+
+
+def _replay_withdrawal(
+    record: IdempotencyRecord,
+    *,
+    digest: str,
+) -> RegistrationContext:
+    if record.request_sha256 != digest:
+        raise _idempotency_key_reused()
+    if (
+        record.state is not IdempotencyState.COMPLETED
+        or record.response_status != 200
+        or record.response_body is None
+    ):
+        raise _service_unavailable()
+    return RegistrationContext.model_validate(record.response_body)
 
 
 def _game_not_found() -> AppError:

@@ -29,6 +29,9 @@ from backend.app.modules.open_game_registrations.privacy import (
 from backend.app.modules.open_game_registrations.repository import (
     OpenGameRegistrationRepository,
 )
+from backend.app.modules.open_game_registrations.router import (
+    get_open_game_registration_clock,
+)
 from backend.app.modules.open_games.privacy import PUBLIC_OPEN_GAME_FIELDS
 from backend.tests.test_open_game_registration_service import (
     SeededRegistrationCase,
@@ -49,6 +52,7 @@ APPLICANT_TOKEN = "registration-api-applicant-token-with-256-bits"
 EXPIRED_TOKEN = "registration-api-expired-token-with-256-bits"
 APPLY_KEY = "registration-api-apply-key-000001"
 DECISION_KEY = "registration-api-decision-key-0001"
+WITHDRAWAL_KEY = "registration-api-withdrawal-key-0001"
 
 CONTEXT_FIELDS = frozenset(
     {
@@ -148,6 +152,123 @@ def _application_body(*, display_name: str = "周末小翼") -> dict[str, object
         "adult_confirmed": True,
         "risk_confirmed": True,
     }
+
+
+def _withdrawal_body(
+    *,
+    action: str = "WITHDRAW_APPLICATION",
+    expected_version: int = 1,
+) -> dict[str, object]:
+    return {"action": action, "expected_version": expected_version}
+
+
+def test_withdrawal_route_is_self_only_closed_and_byte_stable_on_replay(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    _attach_sessions(pg_engine, case)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        application_id = target.id
+
+    path = f"/api/v1/open-game-applications/{application_id}/withdraw"
+    with _client(pg_engine) as client:
+        unauthenticated = client.post(
+            path,
+            headers={"Idempotency-Key": WITHDRAWAL_KEY},
+            json=_withdrawal_body(),
+        )
+        hidden = client.post(
+            path,
+            headers=_idempotent(WITHDRAWAL_KEY, token=OWNER_TOKEN),
+            json=_withdrawal_body(),
+        )
+        invalid = client.post(
+            path,
+            headers=_idempotent("short"),
+            json={"action": "AUTO", "expected_version": 0, "late": True},
+        )
+        withdrawn = client.post(
+            path,
+            headers=_idempotent(WITHDRAWAL_KEY),
+            json=_withdrawal_body(),
+        )
+        replay = client.post(
+            path,
+            headers=_idempotent(WITHDRAWAL_KEY),
+            json=_withdrawal_body(),
+        )
+        reused = client.post(
+            path,
+            headers=_idempotent(WITHDRAWAL_KEY),
+            json=_withdrawal_body(expected_version=2),
+        )
+
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.json()["error"]["code"] == "AUTH_REQUIRED"
+    assert hidden.status_code == 404
+    assert hidden.json()["error"]["code"] == "APPLICATION_NOT_FOUND"
+    assert invalid.status_code == 422
+    assert _error(invalid) == {
+        "code": "INVALID_ARGUMENT",
+        "message": "请求参数格式不正确，请检查后重试。",
+        "details": {
+            "fields": [
+                {"field": "action", "message": "字段值不符合要求。"},
+                {"field": "expected_version", "message": "字段值不符合要求。"},
+            ]
+        },
+    }
+    assert withdrawn.status_code == 200, withdrawn.text
+    _assert_context_privacy(withdrawn.json())
+    assert withdrawn.json()["viewer_registration"]["persisted_status"] == "WITHDRAWN"
+    assert replay.status_code == 200
+    assert replay.content == withdrawn.content
+    assert reused.status_code == 409
+    assert reused.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_withdrawal_route_samples_the_injected_clock_inside_the_locked_service(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    _attach_sessions(pg_engine, case)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        application_id = target.id
+
+    calls = 0
+
+    def locked_clock() -> datetime:
+        nonlocal calls
+        calls += 1
+        return datetime.now(UTC)
+
+    client = _client(pg_engine)
+    client.app.dependency_overrides[get_open_game_registration_clock] = (
+        lambda: locked_clock
+    )
+    with client:
+        response = client.post(
+            f"/api/v1/open-game-applications/{application_id}/withdraw",
+            headers=_idempotent("registration-api-lazy-clock-key-01"),
+            json=_withdrawal_body(),
+        )
+
+    assert response.status_code == 200
+    assert calls == 1
 
 
 def _all_keys(value: Any) -> set[str]:

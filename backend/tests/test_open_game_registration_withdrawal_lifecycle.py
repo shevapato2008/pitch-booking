@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from sqlalchemy import Boolean, DateTime, Table
@@ -87,6 +87,8 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         withdrawn_at=NOW,
         withdrawal_kind=models.OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL,
         late_exit_recorded=False,
+        starts_at=NOW + timedelta(hours=2),
+        now=NOW,
     )
     assert projected.model_dump(mode="json") == {
         "id": str(application_id),

@@ -178,6 +178,11 @@ class DecisionRequest(_ClosedModel):
     expected_version: Annotated[int, Field(strict=True, ge=1)]
 
 
+class WithdrawalRequest(_ClosedModel):
+    action: WithdrawalAction
+    expected_version: Annotated[int, Field(strict=True, ge=1)]
+
+
 class DecisionResult(_FrozenClosedModel):
     application_id: uuid.UUID
     status: DecisionResultStatus
