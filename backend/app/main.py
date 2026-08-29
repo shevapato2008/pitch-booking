@@ -14,6 +14,7 @@ from backend.app.config import Settings
 from backend.app.database import get_database, get_engine
 from backend.app.errors import (
     AppError,
+    align_error_schemas_openapi,
     app_error_handler,
     request_validation_error_handler,
     unexpected_error_handler,
@@ -334,6 +335,7 @@ def create_app(
             ):
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)
+            align_error_schemas_openapi(schema)
             align_order_list_openapi(schema)
             align_public_game_directory_openapi(schema)
             align_my_open_game_applications_openapi(schema)

@@ -7,6 +7,9 @@ from jsonschema import Draft202012Validator
 
 from backend.app.config import Settings
 from backend.app.main import create_app
+from backend.app.modules.open_game_registrations.router import (
+    align_my_open_game_applications_openapi,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPOSITORY_ROOT / "contracts" / "openapi.yaml"
@@ -146,6 +149,23 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
         assert validator.is_valid(example), filename
 
 
+def test_my_applications_aligner_does_not_overwrite_shared_error_schemas() -> None:
+    frozen_schemas = _contract()["components"]["schemas"]
+    error_schema_names = _local_schema_closure(frozen_schemas, root="ErrorEnvelope")
+    sentinels = {name: {"owner": "shared"} for name in error_schema_names}
+    schema = {
+        "paths": {"/api/v1/open-game-applications": {"get": {}}},
+        "components": {"schemas": dict(sentinels)},
+    }
+
+    align_my_open_game_applications_openapi(schema)
+
+    assert {
+        name: schema["components"]["schemas"][name]
+        for name in error_schema_names
+    } == sentinels
+
+
 def test_my_open_game_applications_runtime_openapi_matches_frozen_operation() -> None:
     frozen = _contract()
     runtime = create_app(
@@ -170,14 +190,10 @@ def test_my_open_game_applications_runtime_openapi_matches_frozen_operation() ->
         ][name]
 
     frozen_schemas = frozen["components"]["schemas"]
-    error_schema_names: set[str] = set()
-    pending = ["ErrorEnvelope"]
-    while pending:
-        name = pending.pop()
-        if name in error_schema_names:
-            continue
-        error_schema_names.add(name)
-        pending.extend(_local_schema_references(frozen_schemas[name]))
+    error_schema_names = _local_schema_closure(
+        frozen_schemas,
+        root="ErrorEnvelope",
+    )
     assert {"ErrorEnvelope", "Error", "ErrorDetails"} <= error_schema_names
     for name in sorted(error_schema_names):
         assert runtime["components"]["schemas"][name] == frozen_schemas[name]
@@ -202,6 +218,22 @@ def _local_schema_references(value: Any) -> set[str]:
     for child in value.values():
         references.update(_local_schema_references(child))
     return references
+
+
+def _local_schema_closure(
+    schemas: dict[str, Any],
+    *,
+    root: str,
+) -> set[str]:
+    names: set[str] = set()
+    pending = [root]
+    while pending:
+        name = pending.pop()
+        if name in names:
+            continue
+        names.add(name)
+        pending.extend(_local_schema_references(schemas[name]))
+    return names
 
 
 def _resolve_schema(contract: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
