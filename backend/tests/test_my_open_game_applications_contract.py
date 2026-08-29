@@ -95,7 +95,7 @@ def test_my_application_rejects_ambiguous_or_invalid_public_projection(
 
 
 def test_my_application_accepts_every_effective_status_and_aware_datetimes() -> None:
-    for status in ("APPLIED", "JOINED", "REJECTED", "CANCELLED"):
+    for status in ("APPLIED", "JOINED", "REJECTED", "WITHDRAWN", "CANCELLED"):
         item = MyOpenGameApplication.model_validate(
             {**_valid_item(), "effective_status": status}
         )

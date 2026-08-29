@@ -15,7 +15,13 @@ class EffectiveRegistrationStatus(StrEnum):
     APPLIED = "APPLIED"
     JOINED = "JOINED"
     REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
     CANCELLED = "CANCELLED"
+
+
+class WithdrawalAction(StrEnum):
+    WITHDRAW_APPLICATION = "WITHDRAW_APPLICATION"
+    LEAVE_GAME = "LEAVE_GAME"
 
 
 class ApplyBlockedReason(StrEnum):

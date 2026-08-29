@@ -552,7 +552,7 @@ def test_cancelled_game_projects_cancelled_without_mutating_persisted_status(
     assert project_effective_registration_status(
         persisted_status, EffectiveOpenGameState.CANCELLED
     ) is EffectiveRegistrationStatus.CANCELLED
-    assert persisted_status.value in {"APPLIED", "JOINED", "REJECTED"}
+    assert persisted_status.value in {"APPLIED", "JOINED", "REJECTED", "WITHDRAWN"}
 
 
 @pytest.mark.parametrize("persisted_status", list(OpenGameRegistrationStatus))
@@ -629,23 +629,35 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
     assert isinstance(VIEWER_REGISTRATION_FIELDS, frozenset)
     assert VIEWER_REGISTRATION_FIELDS == frozenset(
         {
+            "id",
             "display_name",
             "position",
             "note",
             "persisted_status",
             "effective_status",
+            "version",
             "applied_at",
             "decided_at",
+            "withdrawn_at",
+            "withdrawal_kind",
+            "late_exit_recorded",
+            "available_withdrawal_action",
+            "late_exit_will_be_recorded",
         }
     )
     projected = project_viewer_registration(
+        application_id=UUID("30000000-0000-0000-0000-000000000041"),
         display_name="中场老范",
         position=OpenGameRegistrationPosition.MIDFIELDER,
         note="主要踢后腰",
         persisted_status=OpenGameRegistrationStatus.JOINED,
         game_state=EffectiveOpenGameState.CANCELLED,
+        version=2,
         applied_at=NOW,
         decided_at=NOW + timedelta(minutes=5),
+        withdrawn_at=None,
+        withdrawal_kind=None,
+        late_exit_recorded=False,
     )
     assert set(projected.model_dump()) == VIEWER_REGISTRATION_FIELDS
     assert projected.persisted_status is OpenGameRegistrationStatus.JOINED
@@ -679,13 +691,18 @@ def test_owner_projection_has_an_exact_whitelist() -> None:
 
 def test_privacy_projections_recursively_exclude_sensitive_keys() -> None:
     viewer = project_viewer_registration(
+        application_id=UUID("30000000-0000-0000-0000-000000000041"),
         display_name="中场老范",
         position=OpenGameRegistrationPosition.MIDFIELDER,
         note=None,
         persisted_status=OpenGameRegistrationStatus.APPLIED,
         game_state=EffectiveOpenGameState.PUBLISHED,
+        version=1,
         applied_at=NOW,
         decided_at=None,
+        withdrawn_at=None,
+        withdrawal_kind=None,
+        late_exit_recorded=False,
     )
     captain = project_captain_application(
         application_id=UUID("30000000-0000-0000-0000-000000000041"),
@@ -720,13 +737,20 @@ def test_privacy_projections_recursively_exclude_sensitive_keys() -> None:
 
 def test_response_models_are_closed_and_frozen() -> None:
     viewer = ViewerRegistration(
+        id=UUID("30000000-0000-0000-0000-000000000041"),
         display_name="中场老范",
         position=OpenGameRegistrationPosition.MIDFIELDER,
         note=None,
         persisted_status=OpenGameRegistrationStatus.APPLIED,
         effective_status=EffectiveRegistrationStatus.APPLIED,
+        version=1,
         applied_at=NOW,
         decided_at=None,
+        withdrawn_at=None,
+        withdrawal_kind=None,
+        late_exit_recorded=False,
+        available_withdrawal_action=None,
+        late_exit_will_be_recorded=False,
     )
     with pytest.raises(ValidationError):
         ViewerRegistration.model_validate({**viewer.model_dump(), "internal": True})
@@ -786,11 +810,13 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "APPLIED",
         "JOINED",
         "REJECTED",
+        "WITHDRAWN",
     ]
     assert [status.value for status in EffectiveRegistrationStatus] == [
         "APPLIED",
         "JOINED",
         "REJECTED",
+        "WITHDRAWN",
         "CANCELLED",
     ]
     assert [reason.value for reason in ApplyBlockedReason] == [

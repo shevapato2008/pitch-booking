@@ -18,6 +18,7 @@ from backend.app.models import (
     OpenGameRegistration,
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
+    OpenGameRegistrationWithdrawalKind,
     OpenGameStatus,
     Order,
     OrderStatus,
@@ -140,8 +141,17 @@ def _add_registration(
     applied_at: datetime = NOW - timedelta(minutes=10),
     decided_by_user_id: uuid.UUID | None = None,
     version: int | None = None,
+    withdrawal_kind: OpenGameRegistrationWithdrawalKind | None = None,
+    withdrawn_at: datetime | None = None,
+    late_exit_recorded: bool = False,
 ) -> OpenGameRegistration:
-    terminal = status is not OpenGameRegistrationStatus.APPLIED
+    decision_required = status in {
+        OpenGameRegistrationStatus.JOINED,
+        OpenGameRegistrationStatus.REJECTED,
+    } or (
+        status is OpenGameRegistrationStatus.WITHDRAWN
+        and withdrawal_kind is OpenGameRegistrationWithdrawalKind.GAME_EXIT
+    )
     row = OpenGameRegistration(
         id=application_id or uuid.uuid4(),
         game_id=game_id,
@@ -150,13 +160,16 @@ def _add_registration(
         position=position,
         note=note,
         status=status,
-        version=version if version is not None else (2 if terminal else 1),
+        version=version if version is not None else (2 if decision_required else 1),
         consent_version=OPEN_GAME_REGISTRATION_CONSENT_VERSION,
         adult_confirmed_at=applied_at,
         risk_confirmed_at=applied_at,
         applied_at=applied_at,
-        decided_at=NOW - timedelta(minutes=5) if terminal else None,
-        decided_by_user_id=decided_by_user_id if terminal else None,
+        decided_at=NOW - timedelta(minutes=5) if decision_required else None,
+        decided_by_user_id=decided_by_user_id if decision_required else None,
+        withdrawn_at=withdrawn_at,
+        withdrawal_kind=withdrawal_kind,
+        late_exit_recorded=late_exit_recorded,
     )
     session.add(row)
     session.flush()
@@ -332,6 +345,53 @@ def test_context_projects_viewer_blockers_and_exact_privacy(pg_engine: Engine) -
         _assert_context_privacy(existing)
 
 
+def test_context_reads_withdrawn_audit_fields_but_keeps_write_action_closed(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    withdrawn_at = NOW - timedelta(minutes=1)
+    application_id = uuid.uuid4()
+    with Session(pg_engine) as session:
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            application_id=application_id,
+            status=OpenGameRegistrationStatus.WITHDRAWN,
+            version=2,
+            withdrawal_kind=(
+                OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
+            ),
+            withdrawn_at=withdrawn_at,
+        )
+        session.commit()
+
+        context = _service(session).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+
+    assert context.viewer_registration is not None
+    assert context.viewer_registration.model_dump(mode="json") == {
+        "id": str(application_id),
+        "display_name": "周末小翼",
+        "position": "FORWARD",
+        "note": "可以补边路，按时到场。",
+        "persisted_status": "WITHDRAWN",
+        "effective_status": "WITHDRAWN",
+        "version": 2,
+        "applied_at": (NOW - timedelta(minutes=10)).isoformat().replace(
+            "+00:00", "Z"
+        ),
+        "decided_at": None,
+        "withdrawn_at": withdrawn_at.isoformat().replace("+00:00", "Z"),
+        "withdrawal_kind": "APPLICATION_WITHDRAWAL",
+        "late_exit_recorded": False,
+        "available_withdrawal_action": None,
+        "late_exit_will_be_recorded": False,
+    }
+
+
 def test_context_uses_one_clock_snapshot_for_public_and_actions(
     pg_engine: Engine,
 ) -> None:
@@ -471,6 +531,57 @@ def test_apply_is_idempotent_persists_server_authority_and_leaves_b1_unchanged(
         )
         assert replay == first
         assert _b1_snapshot(session) == before
+
+
+def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    request = _request()
+    with Session(pg_engine) as session:
+        first = _service(session).apply(
+            share_token=case.share_token,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=APPLICATION_KEY,
+            request=request,
+        )
+        registration = session.scalar(select(OpenGameRegistration))
+        record = session.scalar(select(IdempotencyRecord))
+        assert registration is not None
+        assert record is not None
+        assert record.response_body is not None
+        legacy_body = dict(record.response_body)
+        legacy_viewer = dict(legacy_body["viewer_registration"])
+        for field in (
+            "id",
+            "version",
+            "withdrawn_at",
+            "withdrawal_kind",
+            "late_exit_recorded",
+            "available_withdrawal_action",
+            "late_exit_will_be_recorded",
+        ):
+            legacy_viewer.pop(field)
+        legacy_body["viewer_registration"] = legacy_viewer
+        record.response_body = legacy_body
+        session.commit()
+
+        replay = _service(session).apply(
+            share_token=case.share_token,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=APPLICATION_KEY,
+            request=request,
+        )
+
+        assert replay == first
+        assert replay.viewer_registration is not None
+        assert replay.viewer_registration.id == registration.id
+        assert replay.viewer_registration.version == 1
+        assert replay.viewer_registration.withdrawn_at is None
+        assert replay.viewer_registration.withdrawal_kind is None
+        assert replay.viewer_registration.late_exit_recorded is False
+        assert replay.viewer_registration.available_withdrawal_action is None
+        assert replay.viewer_registration.late_exit_will_be_recorded is False
 
 
 def test_apply_duplicate_and_idempotency_reuse_are_distinct(pg_engine: Engine) -> None:

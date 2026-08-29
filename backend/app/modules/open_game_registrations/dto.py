@@ -13,11 +13,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from backend.app.models import (
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
+    OpenGameRegistrationWithdrawalKind,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     ApplyActions,
     EffectiveRegistrationStatus,
     ReviewActions,
+    WithdrawalAction,
 )
 from backend.app.modules.open_games.dto import OpenGamePublic
 
@@ -97,13 +99,20 @@ class CreateApplicationRequest(_ClosedModel):
 
 
 class ViewerRegistration(_FrozenClosedModel):
+    id: uuid.UUID
     display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
     position: OpenGameRegistrationPosition
     note: Annotated[str, Field(strict=True, max_length=120)] | None
     persisted_status: OpenGameRegistrationStatus
     effective_status: EffectiveRegistrationStatus
+    version: Annotated[int, Field(strict=True, ge=1)]
     applied_at: datetime
     decided_at: datetime | None
+    withdrawn_at: datetime | None
+    withdrawal_kind: OpenGameRegistrationWithdrawalKind | None
+    late_exit_recorded: Annotated[bool, Field(strict=True)]
+    available_withdrawal_action: WithdrawalAction | None
+    late_exit_will_be_recorded: Annotated[bool, Field(strict=True)]
 
 
 class CaptainApplication(_FrozenClosedModel):

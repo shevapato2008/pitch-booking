@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from backend.app.models import (
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
+    OpenGameRegistrationWithdrawalKind,
 )
 from backend.app.modules.open_game_registrations.dto import (
     CaptainApplication,
@@ -29,12 +30,19 @@ if TYPE_CHECKING:
 VIEWER_REGISTRATION_FIELDS = frozenset(
     {
         "display_name",
+        "id",
         "position",
         "note",
         "persisted_status",
         "effective_status",
+        "version",
         "applied_at",
         "decided_at",
+        "withdrawn_at",
+        "withdrawal_kind",
+        "late_exit_recorded",
+        "available_withdrawal_action",
+        "late_exit_will_be_recorded",
     }
 )
 
@@ -69,16 +77,22 @@ MY_OPEN_GAME_APPLICATION_FIELDS = frozenset(
 
 def project_viewer_registration(
     *,
+    application_id: uuid.UUID,
     display_name: str,
     position: OpenGameRegistrationPosition,
     note: str | None,
     persisted_status: OpenGameRegistrationStatus,
     game_state: EffectiveOpenGameState,
+    version: int,
     applied_at: datetime,
     decided_at: datetime | None,
+    withdrawn_at: datetime | None,
+    withdrawal_kind: OpenGameRegistrationWithdrawalKind | None,
+    late_exit_recorded: bool,
 ) -> ViewerRegistration:
     """Rebuild the applicant response from its reviewed field whitelist."""
     return ViewerRegistration(
+        id=application_id,
         display_name=display_name,
         position=position,
         note=note,
@@ -86,8 +100,14 @@ def project_viewer_registration(
         effective_status=project_effective_registration_status(
             persisted_status, game_state
         ),
+        version=version,
         applied_at=applied_at,
         decided_at=decided_at,
+        withdrawn_at=withdrawn_at,
+        withdrawal_kind=withdrawal_kind,
+        late_exit_recorded=late_exit_recorded,
+        available_withdrawal_action=None,
+        late_exit_will_be_recorded=False,
     )
 
 

@@ -1877,6 +1877,8 @@ paths:
                 Applied: {externalValue: './examples/open-game-registration-context-applied.json'}
                 Joined: {externalValue: './examples/open-game-registration-context-joined.json'}
                 Rejected: {externalValue: './examples/open-game-registration-context-rejected.json'}
+                WithdrawnApplication: {externalValue: './examples/open-game-registration-context-withdrawn-application.json'}
+                WithdrawnGameExit: {externalValue: './examples/open-game-registration-context-withdrawn-game-exit.json'}
                 Cancelled: {externalValue: './examples/open-game-registration-context-cancelled.json'}
         '401':
           description: A supplied Authorization header is invalid or expired.
@@ -3902,10 +3904,16 @@ components:
       enum: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD, ANY]
     OpenGameRegistrationPersistedStatus:
       type: string
-      enum: [APPLIED, JOINED, REJECTED]
+      enum: [APPLIED, JOINED, REJECTED, WITHDRAWN]
     OpenGameRegistrationEffectiveStatus:
       type: string
-      enum: [APPLIED, JOINED, REJECTED, CANCELLED]
+      enum: [APPLIED, JOINED, REJECTED, WITHDRAWN, CANCELLED]
+    OpenGameRegistrationWithdrawalKind:
+      type: string
+      enum: [APPLICATION_WITHDRAWAL, GAME_EXIT]
+    OpenGameRegistrationWithdrawalAction:
+      type: string
+      enum: [WITHDRAW_APPLICATION, LEAVE_GAME]
     MyOpenGameApplication:
       type: object
       additionalProperties: false
@@ -3991,15 +3999,28 @@ components:
     OpenGameViewerRegistration:
       type: object
       additionalProperties: false
-      required: [display_name, position, note, persisted_status, effective_status, applied_at, decided_at]
+      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded]
       properties:
+        id: {type: string, format: uuid}
         display_name: {type: string, minLength: 2, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         note: {type: [string, 'null'], maxLength: 120}
         persisted_status: {$ref: '#/components/schemas/OpenGameRegistrationPersistedStatus'}
         effective_status: {$ref: '#/components/schemas/OpenGameRegistrationEffectiveStatus'}
+        version: {type: integer, minimum: 1}
         applied_at: {type: string, format: date-time}
         decided_at: {type: [string, 'null'], format: date-time}
+        withdrawn_at: {type: [string, 'null'], format: date-time}
+        withdrawal_kind:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameRegistrationWithdrawalKind'
+            - type: 'null'
+        late_exit_recorded: {type: boolean}
+        available_withdrawal_action:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameRegistrationWithdrawalAction'
+            - type: 'null'
+        late_exit_will_be_recorded: {type: boolean}
     OpenGameRegistrationContext:
       type: object
       additionalProperties: false

@@ -228,7 +228,17 @@ class OpenGameRegistrationService:
                 request_sha256=digest,
             )
             if not claimed:
-                replay = _replay_context(record, digest=digest)
+                existing = self._repository.get_registration(
+                    game_id=game.id,
+                    applicant_user_id=applicant_user_id,
+                )
+                replay = _replay_context(
+                    record,
+                    digest=digest,
+                    legacy_application_id=(
+                        existing.id if existing is not None else None
+                    ),
+                )
                 self._order_repository.commit()
                 return replay
 
@@ -288,6 +298,9 @@ class OpenGameRegistrationService:
                 applied_at=now,
                 decided_at=None,
                 decided_by_user_id=None,
+                withdrawn_at=None,
+                withdrawal_kind=None,
+                late_exit_recorded=False,
             )
             self._repository.add_registration(registration)
             response = _project_context(
@@ -649,13 +662,18 @@ def _project_context(
     )
     viewer_registration = (
         project_viewer_registration(
+            application_id=registration.id,
             display_name=registration.display_name,
             position=registration.position,
             note=registration.note,
             persisted_status=registration.status,
             game_state=projection.state,
+            version=registration.version,
             applied_at=registration.applied_at,
             decided_at=registration.decided_at,
+            withdrawn_at=registration.withdrawn_at,
+            withdrawal_kind=registration.withdrawal_kind,
+            late_exit_recorded=registration.late_exit_recorded,
         )
         if registration is not None
         else None
@@ -788,6 +806,7 @@ def _replay_context(
     record: IdempotencyRecord,
     *,
     digest: str,
+    legacy_application_id: uuid.UUID | None = None,
 ) -> RegistrationContext:
     if record.request_sha256 != digest:
         raise AppError(
@@ -801,7 +820,65 @@ def _replay_context(
         or record.response_body is None
     ):
         raise _service_unavailable()
-    return RegistrationContext.model_validate(record.response_body)
+    try:
+        return RegistrationContext.model_validate(record.response_body)
+    except ValidationError:
+        return RegistrationContext.model_validate(
+            _upgrade_legacy_application_context(
+                record.response_body,
+                application_id=legacy_application_id,
+            )
+        )
+
+
+def _upgrade_legacy_application_context(
+    response_body: dict[str, object],
+    *,
+    application_id: uuid.UUID | None,
+) -> dict[str, object]:
+    """Add only the C2a viewer fields missing from a trusted C1a apply replay."""
+    if application_id is None or set(response_body) != {
+        "game",
+        "remaining_spots",
+        "viewer_authenticated",
+        "viewer_registration",
+        "allowed_actions",
+    }:
+        raise ValueError("legacy application response is not recoverable")
+    viewer = response_body.get("viewer_registration")
+    if not isinstance(viewer, dict) or set(viewer) != {
+        "display_name",
+        "position",
+        "note",
+        "persisted_status",
+        "effective_status",
+        "applied_at",
+        "decided_at",
+    }:
+        raise ValueError("legacy application viewer is not exact")
+    if (
+        response_body.get("viewer_authenticated") is not True
+        or viewer.get("persisted_status") != "APPLIED"
+        or viewer.get("effective_status") != "APPLIED"
+        or viewer.get("decided_at") is not None
+    ):
+        raise ValueError("legacy application viewer is not an apply result")
+
+    upgraded_viewer = dict(viewer)
+    upgraded_viewer.update(
+        {
+            "id": str(application_id),
+            "version": 1,
+            "withdrawn_at": None,
+            "withdrawal_kind": None,
+            "late_exit_recorded": False,
+            "available_withdrawal_action": None,
+            "late_exit_will_be_recorded": False,
+        }
+    )
+    upgraded = dict(response_body)
+    upgraded["viewer_registration"] = upgraded_viewer
+    return upgraded
 
 
 def _replay_decision(

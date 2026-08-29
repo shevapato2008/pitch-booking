@@ -1394,6 +1394,12 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "Applied": "open-game-registration-context-applied.json",
             "Joined": "open-game-registration-context-joined.json",
             "Rejected": "open-game-registration-context-rejected.json",
+            "WithdrawnApplication": (
+                "open-game-registration-context-withdrawn-application.json"
+            ),
+            "WithdrawnGameExit": (
+                "open-game-registration-context-withdrawn-game-exit.json"
+            ),
             "Cancelled": "open-game-registration-context-cancelled.json",
         },
         (
@@ -1532,6 +1538,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
 
 
 def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() -> None:
+    contract = _contract()
     runtime = create_app(
         settings=Settings(app_env="test", wechat_provider="development")
     ).openapi()
@@ -1594,6 +1601,37 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
         }
     }
 
+    for path, status in (
+        (
+            "/api/v1/shared-games/{share_token}/registration-context",
+            "200",
+        ),
+        ("/api/v1/shared-games/{share_token}/applications", "201"),
+    ):
+        runtime_response = runtime["paths"][path][
+            "get" if path.endswith("registration-context") else "post"
+        ]["responses"][status]["content"]["application/json"]["schema"]
+        static_response = contract["paths"][path][
+            "get" if path.endswith("registration-context") else "post"
+        ]["responses"][status]["content"]["application/json"]["schema"]
+        assert runtime_response == static_response
+
+    affected_schemas = (
+        "OpenGameRegistrationPosition",
+        "OpenGameRegistrationPersistedStatus",
+        "OpenGameRegistrationEffectiveStatus",
+        "OpenGameRegistrationWithdrawalKind",
+        "OpenGameRegistrationWithdrawalAction",
+        "OpenGameApplyBlockedReason",
+        "OpenGameApplyActions",
+        "OpenGameViewerRegistration",
+        "OpenGameRegistrationContext",
+    )
+    for schema_name in affected_schemas:
+        assert runtime["components"]["schemas"][schema_name] == (
+            contract["components"]["schemas"][schema_name]
+        )
+
 
 def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     contract = _contract()
@@ -1607,13 +1645,20 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "reject_blocked_reason",
         },
         "OpenGameViewerRegistration": {
+            "id",
             "display_name",
             "position",
             "note",
             "persisted_status",
             "effective_status",
+            "version",
             "applied_at",
             "decided_at",
+            "withdrawn_at",
+            "withdrawal_kind",
+            "late_exit_recorded",
+            "available_withdrawal_action",
+            "late_exit_will_be_recorded",
         },
         "OpenGameRegistrationContext": {
             "game",
@@ -1674,11 +1719,19 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     }
     assert schemas["OpenGameRegistrationPersistedStatus"] == {
         "type": "string",
-        "enum": ["APPLIED", "JOINED", "REJECTED"],
+        "enum": ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN"],
     }
     assert schemas["OpenGameRegistrationEffectiveStatus"] == {
         "type": "string",
-        "enum": ["APPLIED", "JOINED", "REJECTED", "CANCELLED"],
+        "enum": ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN", "CANCELLED"],
+    }
+    assert schemas["OpenGameRegistrationWithdrawalKind"] == {
+        "type": "string",
+        "enum": ["APPLICATION_WITHDRAWAL", "GAME_EXIT"],
+    }
+    assert schemas["OpenGameRegistrationWithdrawalAction"] == {
+        "type": "string",
+        "enum": ["WITHDRAW_APPLICATION", "LEAVE_GAME"],
     }
     assert schemas["OpenGameApplyBlockedReason"] == {
         "type": "string",
@@ -1706,7 +1759,6 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "GAME_FULL",
         ],
     }
-
     for schema_name in (
         "OpenGameViewerRegistration",
         "CreateOpenGameApplicationRequest",
@@ -1730,6 +1782,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     assert request["risk_confirmed"] == {"type": "boolean", "const": True}
 
     viewer = schemas["OpenGameViewerRegistration"]["properties"]
+    assert viewer["id"] == {"type": "string", "format": "uuid"}
     assert viewer["persisted_status"] == {
         "$ref": "#/components/schemas/OpenGameRegistrationPersistedStatus"
     }
@@ -1741,6 +1794,25 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         "type": ["string", "null"],
         "format": "date-time",
     }
+    assert viewer["version"] == {"type": "integer", "minimum": 1}
+    assert viewer["withdrawn_at"] == {
+        "type": ["string", "null"],
+        "format": "date-time",
+    }
+    assert viewer["withdrawal_kind"] == {
+        "oneOf": [
+            {"$ref": "#/components/schemas/OpenGameRegistrationWithdrawalKind"},
+            {"type": "null"},
+        ]
+    }
+    assert viewer["late_exit_recorded"] == {"type": "boolean"}
+    assert viewer["available_withdrawal_action"] == {
+        "oneOf": [
+            {"$ref": "#/components/schemas/OpenGameRegistrationWithdrawalAction"},
+            {"type": "null"},
+        ]
+    }
+    assert viewer["late_exit_will_be_recorded"] == {"type": "boolean"}
 
     context = schemas["OpenGameRegistrationContext"]["properties"]
     assert context["game"] == {"$ref": "#/components/schemas/OpenGamePublic"}
@@ -1869,6 +1941,18 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     )
 
 
+def test_registration_withdrawal_compatibility_contract_keeps_write_closed() -> None:
+    withdrawal_path = (
+        "/api/v1/open-game-applications/{application_id}/withdraw"
+    )
+    assert withdrawal_path not in _contract()["paths"]
+
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    assert withdrawal_path not in runtime["paths"]
+
+
 def test_open_game_registration_success_examples_match_closed_schemas() -> None:
     contract = _contract()
     schemas = contract["components"]["schemas"]
@@ -1886,6 +1970,12 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             "OpenGameRegistrationContext"
         ),
         "open-game-registration-context-rejected.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-withdrawn-application.json": (
+            "OpenGameRegistrationContext"
+        ),
+        "open-game-registration-context-withdrawn-game-exit.json": (
             "OpenGameRegistrationContext"
         ),
         "open-game-registration-context-cancelled.json": (
@@ -1945,6 +2035,20 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             False,
             "ALREADY_APPLIED",
         ),
+        "open-game-registration-context-withdrawn-application.json": (
+            True,
+            "WITHDRAWN",
+            "WITHDRAWN",
+            False,
+            "ALREADY_APPLIED",
+        ),
+        "open-game-registration-context-withdrawn-game-exit.json": (
+            True,
+            "WITHDRAWN",
+            "WITHDRAWN",
+            False,
+            "ALREADY_APPLIED",
+        ),
         "open-game-registration-context-cancelled.json": (
             True,
             "JOINED",
@@ -1966,6 +2070,9 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             context["allowed_actions"]["apply_blocked_reason"],
         )
         assert actual == expected
+        if registration is not None:
+            assert registration["available_withdrawal_action"] is None
+            assert registration["late_exit_will_be_recorded"] is False
 
     pending = examples["open-game-applications-pending.json"]
     assert pending["pending_count"] == len(pending["applications"])

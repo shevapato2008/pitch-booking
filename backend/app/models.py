@@ -123,6 +123,12 @@ class OpenGameRegistrationStatus(StrEnum):
     APPLIED = "APPLIED"
     JOINED = "JOINED"
     REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
+
+
+class OpenGameRegistrationWithdrawalKind(StrEnum):
+    APPLICATION_WITHDRAWAL = "APPLICATION_WITHDRAWAL"
+    GAME_EXIT = "GAME_EXIT"
 
 
 class PaymentState(StrEnum):
@@ -1572,12 +1578,30 @@ class OpenGameRegistration(Base):
             "(status = 'APPLIED' AND decided_at IS NULL "
             "AND decided_by_user_id IS NULL) OR "
             "(status IN ('JOINED', 'REJECTED') AND decided_at IS NOT NULL "
-            "AND decided_by_user_id IS NOT NULL)",
+            "AND decided_by_user_id IS NOT NULL) OR "
+            "(status = 'WITHDRAWN' AND withdrawal_kind = 'APPLICATION_WITHDRAWAL' "
+            "AND decided_at IS NULL AND decided_by_user_id IS NULL) OR "
+            "(status = 'WITHDRAWN' AND withdrawal_kind = 'GAME_EXIT' "
+            "AND decided_at IS NOT NULL AND decided_by_user_id IS NOT NULL)",
             name="ck_open_game_registrations_decision_pair",
+        ),
+        CheckConstraint(
+            "(status IN ('APPLIED', 'JOINED', 'REJECTED') "
+            "AND withdrawn_at IS NULL AND withdrawal_kind IS NULL "
+            "AND late_exit_recorded = false) OR "
+            "(status = 'WITHDRAWN' AND withdrawn_at IS NOT NULL "
+            "AND withdrawal_kind IS NOT NULL "
+            "AND (withdrawal_kind = 'GAME_EXIT' OR late_exit_recorded = false))",
+            name="ck_open_game_registrations_withdrawal_pair",
         ),
         CheckConstraint(
             "decided_at IS NULL OR decided_at >= applied_at",
             name="ck_open_game_registrations_decision_time",
+        ),
+        CheckConstraint(
+            "(withdrawn_at IS NULL OR withdrawn_at >= applied_at) AND "
+            "(withdrawal_kind != 'GAME_EXIT' OR withdrawn_at >= decided_at)",
+            name="ck_open_game_registrations_withdrawal_time",
         ),
         UniqueConstraint(
             "game_id",
@@ -1648,6 +1672,21 @@ class OpenGameRegistration(Base):
             ondelete="RESTRICT",
         ),
         nullable=True,
+    )
+    withdrawn_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    withdrawal_kind: Mapped[OpenGameRegistrationWithdrawalKind | None] = mapped_column(
+        Enum(
+            OpenGameRegistrationWithdrawalKind,
+            name="open_game_registration_withdrawal_kind",
+        ),
+        nullable=True,
+    )
+    late_exit_recorded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

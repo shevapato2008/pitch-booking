@@ -447,6 +447,13 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "APPLIED": models.OpenGameRegistrationStatus.APPLIED,
         "JOINED": models.OpenGameRegistrationStatus.JOINED,
         "REJECTED": models.OpenGameRegistrationStatus.REJECTED,
+        "WITHDRAWN": models.OpenGameRegistrationStatus.WITHDRAWN,
+    }
+    assert models.OpenGameRegistrationWithdrawalKind.__members__ == {
+        "APPLICATION_WITHDRAWAL": (
+            models.OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
+        ),
+        "GAME_EXIT": models.OpenGameRegistrationWithdrawalKind.GAME_EXIT,
     }
     table = models.OpenGameRegistration.__table__
     assert list(table.c.keys()) == [
@@ -464,6 +471,9 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "applied_at",
         "decided_at",
         "decided_by_user_id",
+        "withdrawn_at",
+        "withdrawal_kind",
+        "late_exit_recorded",
         "created_at",
         "updated_at",
     ]
@@ -471,12 +481,19 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "note",
         "decided_at",
         "decided_by_user_id",
+        "withdrawn_at",
+        "withdrawal_kind",
     }
     assert table.c.display_name.type.length == 24
     assert table.c.note.type.length == 120
     assert table.c.consent_version.type.length == 32
     assert table.c.position.type.name == "open_game_registration_position"
     assert table.c.status.type.name == "open_game_registration_status"
+    assert (
+        table.c.withdrawal_kind.type.name
+        == "open_game_registration_withdrawal_kind"
+    )
+    assert str(table.c.late_exit_recorded.server_default.arg) == "false"
     assert table.c.created_at.server_default is not None
     assert str(table.c.created_at.server_default.arg) == "now()"
     assert table.c.updated_at.server_default is not None
@@ -494,6 +511,8 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "ck_open_game_registrations_consent_version",
         "ck_open_game_registrations_decision_pair",
         "ck_open_game_registrations_decision_time",
+        "ck_open_game_registrations_withdrawal_pair",
+        "ck_open_game_registrations_withdrawal_time",
     }
     pending_index = next(
         item
@@ -540,6 +559,6 @@ def test_open_game_registration_migration_matches_model_metadata(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0017"
+        ).scalar_one() == "0018"
 
     command.check(config)

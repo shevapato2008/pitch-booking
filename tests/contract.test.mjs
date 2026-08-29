@@ -205,6 +205,8 @@ test('C1a registration operations expose exact named success examples', async ()
         Applied: 'open-game-registration-context-applied.json',
         Joined: 'open-game-registration-context-joined.json',
         Rejected: 'open-game-registration-context-rejected.json',
+        WithdrawnApplication: 'open-game-registration-context-withdrawn-application.json',
+        WithdrawnGameExit: 'open-game-registration-context-withdrawn-game-exit.json',
         Cancelled: 'open-game-registration-context-cancelled.json',
       },
     },

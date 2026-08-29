@@ -805,6 +805,18 @@ const exampleMap = [
     attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Rejected')],
   },
   {
+    filename: 'open-game-registration-context-withdrawn-application.json',
+    reference: './examples/open-game-registration-context-withdrawn-application.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnApplication')],
+  },
+  {
+    filename: 'open-game-registration-context-withdrawn-game-exit.json',
+    reference: './examples/open-game-registration-context-withdrawn-game-exit.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnGameExit')],
+  },
+  {
     filename: 'open-game-registration-context-cancelled.json',
     reference: './examples/open-game-registration-context-cancelled.json',
     schema: 'OpenGameRegistrationContext',

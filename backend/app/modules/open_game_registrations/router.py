@@ -195,11 +195,209 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "required": True,
         "schema": {"type": "string", "minLength": 1},
     }
+    shared_apply_blocked_reason = components["schemas"].get(
+        "OpenGameApplyBlockedReason"
+    )
     components["schemas"].update(
         {
+            "OpenGameRegistrationPosition": {
+                "type": "string",
+                "enum": [
+                    "GOALKEEPER",
+                    "DEFENDER",
+                    "MIDFIELDER",
+                    "FORWARD",
+                    "ANY",
+                ],
+            },
+            "OpenGameRegistrationPersistedStatus": {
+                "type": "string",
+                "enum": ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN"],
+            },
             "OpenGameRegistrationEffectiveStatus": {
                 "type": "string",
-                "enum": ["APPLIED", "JOINED", "REJECTED", "CANCELLED"],
+                "enum": [
+                    "APPLIED",
+                    "JOINED",
+                    "REJECTED",
+                    "WITHDRAWN",
+                    "CANCELLED",
+                ],
+            },
+            "OpenGameRegistrationWithdrawalKind": {
+                "type": "string",
+                "enum": ["APPLICATION_WITHDRAWAL", "GAME_EXIT"],
+            },
+            "OpenGameRegistrationWithdrawalAction": {
+                "type": "string",
+                "enum": ["WITHDRAW_APPLICATION", "LEAVE_GAME"],
+            },
+            "OpenGameApplyBlockedReason": {
+                "type": "string",
+                "enum": [
+                    "AUTH_REQUIRED",
+                    "OWNER_CANNOT_APPLY",
+                    "ALREADY_APPLIED",
+                    "GAME_NOT_PUBLISHED",
+                    "REGISTRATION_DEADLINE_PASSED",
+                    "GAME_FULL",
+                    "GAME_SUSPENDED",
+                    "GAME_CANCELLED",
+                    "GAME_COMPLETED",
+                    "GAME_STARTED",
+                ],
+            },
+            "OpenGameApplyActions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["can_apply", "apply_blocked_reason"],
+                "properties": {
+                    "can_apply": {"type": "boolean"},
+                    "apply_blocked_reason": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameApplyBlockedReason"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "can_apply": {"const": True},
+                            "apply_blocked_reason": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "can_apply": {"const": False},
+                            "apply_blocked_reason": {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameApplyBlockedReason"
+                                )
+                            },
+                        }
+                    },
+                ],
+            },
+            "OpenGameViewerRegistration": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "id",
+                    "display_name",
+                    "position",
+                    "note",
+                    "persisted_status",
+                    "effective_status",
+                    "version",
+                    "applied_at",
+                    "decided_at",
+                    "withdrawn_at",
+                    "withdrawal_kind",
+                    "late_exit_recorded",
+                    "available_withdrawal_action",
+                    "late_exit_will_be_recorded",
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "note": {
+                        "type": ["string", "null"],
+                        "maxLength": 120,
+                    },
+                    "persisted_status": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPersistedStatus"
+                        )
+                    },
+                    "effective_status": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationEffectiveStatus"
+                        )
+                    },
+                    "version": {"type": "integer", "minimum": 1},
+                    "applied_at": {"type": "string", "format": "date-time"},
+                    "decided_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "withdrawn_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "withdrawal_kind": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameRegistrationWithdrawalKind"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "late_exit_recorded": {"type": "boolean"},
+                    "available_withdrawal_action": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameRegistrationWithdrawalAction"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "late_exit_will_be_recorded": {"type": "boolean"},
+                },
+            },
+            "OpenGameRegistrationContext": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "game",
+                    "remaining_spots",
+                    "viewer_authenticated",
+                    "viewer_registration",
+                    "allowed_actions",
+                ],
+                "properties": {
+                    "game": {"$ref": "#/components/schemas/OpenGamePublic"},
+                    "remaining_spots": {"type": "integer", "minimum": 0},
+                    "viewer_authenticated": {"type": "boolean"},
+                    "viewer_registration": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameViewerRegistration"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "allowed_actions": {
+                        "$ref": "#/components/schemas/OpenGameApplyActions"
+                    },
+                },
             },
             "MyOpenGameApplication": {
                 "type": "object",
@@ -261,6 +459,26 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             },
         }
     )
+    if shared_apply_blocked_reason is not None:
+        components["schemas"][
+            "OpenGameApplyBlockedReason"
+        ] = shared_apply_blocked_reason
+
+    context_ref = {"$ref": "#/components/schemas/OpenGameRegistrationContext"}
+    context_operation = schema["paths"].get(
+        "/api/v1/shared-games/{share_token}/registration-context"
+    )
+    if context_operation is not None:
+        context_operation["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"] = context_ref
+    apply_operation = schema["paths"].get(
+        "/api/v1/shared-games/{share_token}/applications"
+    )
+    if apply_operation is not None:
+        apply_operation["post"]["responses"]["201"]["content"][
+            "application/json"
+        ]["schema"] = dict(context_ref)
 
 
 def get_optional_open_game_registration_user(
