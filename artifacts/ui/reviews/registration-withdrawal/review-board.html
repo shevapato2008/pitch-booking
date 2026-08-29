@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>C2a 撤回报名 · 视觉评审板</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 28px 16px; color: #10243E; background: #EEF3F7; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      header, main { max-width: 920px; margin: auto; }
+      h1 { margin: 0 0 8px; font-size: 28px; }
+      p { margin: 0 0 20px; color: #526479; }
+      .pill { display: inline-flex; min-height: 28px; align-items: center; margin: 0 8px 8px 0; padding: 3px 10px; border: 1px solid #BAE6FD; border-radius: 999px; background: #F0F9FF; color: #0369A1; font-weight: 700; }
+      .pill--pass { border-color: #A7F3D0; background: #ECFDF5; color: #047857; }
+      .review-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 18px; align-items: start; }
+      figure { width: 100%; margin: 0; padding: 16px; border: 1px solid #DBE5EC; border-radius: 18px; background: #FFF; box-shadow: 0 8px 22px rgb(16 36 62 / 8%); }
+      iframe { display: block; width: 375px; max-width: 100%; height: 812px; border: 1px solid #DBE5EC; border-radius: 12px; background: #F8FAFC; }
+      img { display: block; width: 100%; height: auto; border: 1px solid #DBE5EC; border-radius: 12px; background: #F8FAFC; }
+      figcaption { padding-top: 12px; font-weight: 700; }
+      a { color: #0369A1; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>C2a 撤回报名 · 视觉评审板</h1>
+      <p><span class="pill">375 × 812</span><span class="pill">joined-confirm</span><span class="pill pill--pass">Self-review PASS</span><span class="pill">User gate PENDING</span></p>
+    </header>
+    <main class="review-grid">
+      <figure data-state="joined-confirm">
+        <iframe title="C2a joined-confirm 交互参考稿" src="../../references/registration-withdrawal.html?state=joined-confirm"></iframe>
+        <figcaption>可交互 Reference · <a href="../../references/registration-withdrawal.html?state=joined-confirm">单独打开</a></figcaption>
+      </figure>
+      <figure>
+        <img src="joined-confirm-side-by-side-ios-375x812.png" alt="Reference 与 iOS 原生实现并排对比" />
+        <figcaption>Reference / iOS 同尺寸并排</figcaption>
+      </figure>
+      <figure>
+        <img src="joined-confirm-overlay-50-ios-375x812.png" alt="Reference 与 iOS 原生实现 50% 叠加" />
+        <figcaption>50% 叠加检查</figcaption>
+      </figure>
+      <figure>
+        <img src="joined-confirm-difference-ios-375x812.png" alt="Reference 与 iOS 原生实现视觉差异" />
+        <figcaption>差异图</figcaption>
+      </figure>
+      <figure>
+        <img src="joined-confirm-implementation-android-411x731.png" alt="Android Nexus 5X 原生实现" />
+        <figcaption>Android 代表设备 · 411 × 731</figcaption>
+      </figure>
+    </main>
+  </body>
+</html>

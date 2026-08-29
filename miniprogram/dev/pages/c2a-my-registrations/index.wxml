@@ -1,0 +1,45 @@
+<view class="c2a-page">
+  <view class="c2a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2a-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2a-header-back" hover-class="c2a-pressed" bindtap="onHeaderBack" aria-label="返回 C2a 场景">
+      <view class="c2a-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2a-header-title">我的报名</text>
+    <view class="c2a-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2a-scroll" scroll-y="true" scroll-top="{{listScrollTop}}" bindscroll="onScroll">
+    <view class="c2a-content">
+      <text class="c2a-preview-note">{{previewNotice}}</text>
+      <view class="c2a-list-intro">
+        <text class="c2a-list-heading">最近报名</text>
+        <text class="c2a-list-copy">退出结果以权威状态为准</text>
+      </view>
+      <view class="c2a-result-line"><text>按报名时间排序</text><text>{{resultCount}} 条</text></view>
+      <view class="c2a-registration-list">
+        <button
+          wx:for="{{items}}"
+          wx:key="registrationId"
+          class="c2a-registration-card"
+          hover-class="c2a-pressed"
+          bindtap="onOpenRegistration"
+          data-registration-id="{{item.registrationId}}"
+          aria-label="查看{{item.gameName}}报名详情"
+        >
+          <view class="c2a-card-body">
+            <view class="c2a-card-top">
+              <text class="c2a-status-badge {{item.effectiveStatus === 'APPLIED' ? 'c2a-status--applied' : item.effectiveStatus === 'JOINED' ? 'c2a-status--joined' : 'c2a-status--neutral'}}">{{item.statusLabel}}</text>
+              <text class="c2a-format-badge">{{item.formatLabel}}</text>
+            </view>
+            <text class="c2a-game-name">{{item.gameName}}</text>
+            <text class="c2a-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
+            <text class="c2a-game-place">{{item.venue}}</text>
+            <text class="c2a-game-place">{{item.pitch}}</text>
+          </view>
+          <view class="c2a-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+      <text class="c2a-authority-note">从详情完成操作后返回，本卡片会回读同一条报名的最新终态。</text>
+    </view>
+  </scroll-view>
+</view>
