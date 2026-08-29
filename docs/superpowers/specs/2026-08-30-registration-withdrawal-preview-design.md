@@ -2,7 +2,7 @@
 
 日期：2026-08-30
 
-状态：`DELEGATED_APPROVED_FOR_PREVIEW`。用户已授权其休息期间由独立 agent 代做必要产品决策；本文件只批准 development-only 视觉预览，不批准生产契约、数据库或部署改动。
+状态：`DELEGATED_VISUAL_PASS`。用户已明确要求代理在微信开发者工具完成 iOS 与 Android 视觉验证，通过后继续开发并统一生成体验候选；双平台自审和独立复审均已通过。该授权允许进入生产候选阶段，但不替代最终真实手机验收。
 
 上游文档：
 
@@ -93,7 +93,7 @@ development build 自动发现三页；production build、`miniprogram/app.json`
 - “记录临时退出，但不封禁/扣款”与“不可再次申请”语义准确；
 - Android/iOS 代表设备没有裁切或安全区问题。
 
-用户确认前 gate 保持 `PENDING`，不得进入生产契约和后端阶段。
+用户明确委托的双平台视觉自审已通过，gate 记录为 `DELEGATED_PASS`。真实体验版手机验收仍待用户完成。
 
 ## 7. 聚焦验收
 
@@ -106,8 +106,8 @@ development build 自动发现三页；production build、`miniprogram/app.json`
 - 已开场/终态无 CTA，WITHDRAWN 无重新申请；
 - 每个可见按钮有真实 handler；
 - fresh development build 包含三页，fresh production build/audit 排除 C2a；
-- 代表性微信原生视觉自审通过，用户视觉门仍待确认。
+- 代表性微信原生视觉自审与独立复审通过，真实手机候选验收仍待确认。
 
 ## 8. 未来生产门
 
-只有在用户确认本预览后，才另行冻结：持久状态/审计字段、幂等 endpoint、锁顺序、容量释放并发、未知结果恢复、与球局取消及未来候补的边界。生产端到端通过前不删除 Fixture、不合并 `main`、不称 C2a 完成。
+基于用户的 delegated visual 授权，可另行冻结：持久状态/审计字段、幂等 endpoint、锁顺序、容量释放并发、未知结果恢复、与球局取消及未来候补的边界。生产端到端与真实手机验收通过前不删除 Fixture、不合并最终 `main`、不称 C2a 完成。

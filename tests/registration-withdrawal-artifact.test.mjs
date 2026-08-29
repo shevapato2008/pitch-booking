@@ -43,7 +43,7 @@ test("manifest keeps C2a production-disabled with one representative confirm sta
     ["joined-confirm"],
   );
   assert.deepEqual(manifest.internal_states, ["result-unknown"]);
-  assert.equal(manifest.gate, "PENDING");
+  assert.equal(manifest.gate, "DELEGATED_PASS");
   assert.match(read(files.html), /data-production-enabled="false"/);
   assert.match(read(files.html), /C2A_REGISTRATION_WITHDRAWAL_FIXTURE/);
 });
@@ -134,7 +134,7 @@ test("all controls are dual-axis centered 44px targets and danger is restrained 
   assert.match(css, /prefers-reduced-motion/);
 });
 
-test("flow and review keep result-unknown internal and the visual gate pending", () => {
+test("flow and review keep result-unknown internal and record delegated visual approval", () => {
   const flow = read(files.flow);
   const review = read(files.review);
   const board = read(files.board);
@@ -143,8 +143,8 @@ test("flow and review keep result-unknown internal and the visual gate pending",
   assert.match(flow, /JOINED.*退出球局/s);
   assert.match(flow, /结果待确认.*确认退出结果/s);
   assert.match(flow, /不得再次申请/);
-  assert.match(review, /PENDING/);
-  assert.doesNotMatch(review, /用户视觉门.*PASS/);
+  assert.match(review, /Delegated visual gate: `PASS`/);
+  assert.match(review, /User physical candidate gate: `PENDING`/);
   assert.match(board, /joined-confirm/);
   assert.match(board, /375 × 812/);
 });

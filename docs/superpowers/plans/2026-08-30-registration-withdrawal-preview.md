@@ -20,7 +20,7 @@
 - `artifacts/ui/screen-manifest/registration-withdrawal.yaml`
 - `artifacts/ui/reviews/registration-withdrawal/{README.md,review-board.html}`
 
-- [x] 先写 RED，覆盖五场景、确认/取消、名额释放一次、6 小时规则、终态无重新申请、375×812 与 `PENDING` gate。
+- [x] 先写 RED，覆盖五场景、确认/取消、名额释放一次、6 小时规则、终态无重新申请、375×812 与视觉 gate。
 - [x] 实现最小交互 Artifact；只有 `joined-confirm` 是代表截图状态。
 - [x] 运行 `node --test tests/registration-withdrawal-artifact.test.mjs` 和 `git diff --check`。
 
@@ -56,6 +56,6 @@
 - [x] 捕获 reference、iOS 与 Android native implementation，生成 side-by-side、overlay、difference。
 - [x] 人工检查按钮居中、重复元素列线、图标、裁切、滚动、固定底栏、安全区和关键文案；只修复一眼可见的问题。
 - [x] 运行 Artifact + fixture + 三页 + isolation 的聚焦门、typecheck、fresh development/production build、package audit 和 diff-check。
-- [x] 独立代码复审通过；记录 `Implementation self-review: PASS`、`User visual gate: PENDING`。
+- [x] 独立代码复审通过；记录 `Implementation self-review: PASS`、`Delegated visual gate: PASS`、`User physical candidate gate: PENDING`。
 
-停止在用户视觉确认门。不要实现生产 API、部署或上传 C2a。
+用户随后明确委托代理完成 iOS/Android 视觉判断并在通过后继续；该门已按事实转为 `DELEGATED_PASS`。后续生产候选必须另立设计与计划，且真实手机验收通过前仍不得删除 Fixture、合并最终 `main` 或称 C2a 完成。

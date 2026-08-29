@@ -10,7 +10,8 @@
 - iOS native self-review: `PASS`（iPhone X，`375 × 812`，DPR 3）。
 - Android native self-review: `PASS`（Nexus 5X，`411 × 731`，DPR 2.625）。
 - Implementation self-review: `PASS`.
-- User visual gate: `PENDING`.
+- Delegated visual gate: `PASS`（用户明确委托代理在 iOS 与 Android 开发者工具自审通过后继续）。
+- User physical candidate gate: `PENDING`.
 - Review board: [review-board.html](review-board.html).
 
 ## Proportional evidence plan
@@ -30,4 +31,4 @@ iOS 原生流程已实际点击：场景 → 列表 → 详情 → 打开确认�
 
 Android 使用同一代表流程复核；确认层完整位于 `411 × 731` 可视区内，两个按钮均为 `173.5 × 48px`，固定底栏和安全区无裁切。两端最终复跑均无页面异常或控制台错误。
 
-同尺寸并排、50% 叠加与差异图已人工检查。剩余差异仅为开发者工具系统状态栏/胶囊与原生字体栅格化，不存在产品构图、关键文案、按钮对齐或状态语义差异。Reference、iOS 和 Android 自审均通过；用户视觉门仍为 `PENDING`，因此尚不进入生产契约、后端、合并或发布。
+同尺寸并排、50% 叠加与差异图已人工检查。剩余差异仅为开发者工具系统状态栏/胶囊与原生字体栅格化，不存在产品构图、关键文案、按钮对齐或状态语义差异。Reference、iOS 和 Android 自审均通过；按用户“由代理完成双平台视觉验证、通过后继续”的明确授权，delegated visual gate 为 `PASS`。真实体验版手机验收仍为 `PENDING`，在通过前不删除 Fixture、不合并最终 `main`、不称 C2a 完成。

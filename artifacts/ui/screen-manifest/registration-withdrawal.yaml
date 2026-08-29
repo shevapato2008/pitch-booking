@@ -25,4 +25,4 @@ fixture:
   marker: C2A_REGISTRATION_WITHDRAWAL_FIXTURE
   planned_path: miniprogram/dev/c2a-registration-withdrawal-fixture.ts
   deletion_condition: delete after user-approved visual preview, approved withdrawal contract, backend integration, focused automation, and real-device acceptance pass
-gate: PENDING
+gate: DELEGATED_PASS
