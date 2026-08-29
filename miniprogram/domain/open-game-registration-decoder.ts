@@ -27,6 +27,8 @@ import type {
   OpenGameReviewActions,
   OpenGameReviewBlockedReason,
   OpenGameViewerRegistration,
+  OpenGameRegistrationWithdrawalAction,
+  OpenGameRegistrationWithdrawalKind,
 } from "./open-game-registration";
 
 const APPLY_BLOCKED_REASONS = [
@@ -49,14 +51,18 @@ const REVIEW_BLOCKED_REASONS = [
   "GAME_STARTED",
   "GAME_FULL",
 ] as const;
-const PERSISTED_STATUSES = ["APPLIED", "JOINED", "REJECTED"] as const;
+const PERSISTED_STATUSES = ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN"] as const;
 const EFFECTIVE_STATUSES = OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES;
+const WITHDRAWAL_ACTIONS = ["WITHDRAW_APPLICATION", "LEAVE_GAME"] as const;
+const WITHDRAWAL_KINDS = ["APPLICATION_WITHDRAWAL", "GAME_EXIT"] as const;
 
 const CONTEXT_KEYS = [
   "game", "remaining_spots", "viewer_authenticated", "viewer_registration", "allowed_actions",
 ] as const;
 const VIEWER_REGISTRATION_KEYS = [
-  "display_name", "position", "note", "persisted_status", "effective_status", "applied_at", "decided_at",
+  "id", "version", "display_name", "position", "note", "persisted_status", "effective_status",
+  "applied_at", "decided_at", "withdrawn_at", "withdrawal_kind", "late_exit_recorded",
+  "available_withdrawal_action", "late_exit_will_be_recorded",
 ] as const;
 const QUEUE_KEYS = ["remaining_spots", "pending_count", "applications"] as const;
 const CAPTAIN_APPLICATION_KEYS = [
@@ -138,14 +144,77 @@ function decodeReviewActions(value: unknown, path: string): OpenGameReviewAction
 
 function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerRegistration {
   const object = exactObject(value, VIEWER_REGISTRATION_KEYS, path);
+  const persistedStatus = enumAt(
+    object.persisted_status,
+    PERSISTED_STATUSES,
+    `${path}.persisted_status`,
+  );
+  const effectiveStatus = enumAt(
+    object.effective_status,
+    EFFECTIVE_STATUSES,
+    `${path}.effective_status`,
+  );
+  const appliedAt = rfc3339At(object.applied_at, `${path}.applied_at`);
+  const decidedAt = nullableRfc3339At(object.decided_at, `${path}.decided_at`);
+  const withdrawnAt = nullableRfc3339At(object.withdrawn_at, `${path}.withdrawn_at`);
+  const withdrawalKind: OpenGameRegistrationWithdrawalKind | null = object.withdrawal_kind === null
+    ? null
+    : enumAt(object.withdrawal_kind, WITHDRAWAL_KINDS, `${path}.withdrawal_kind`);
+  const lateExitRecorded = booleanAt(object.late_exit_recorded, `${path}.late_exit_recorded`);
+  const availableWithdrawalAction: OpenGameRegistrationWithdrawalAction | null =
+    object.available_withdrawal_action === null
+      ? null
+      : enumAt(
+        object.available_withdrawal_action,
+        WITHDRAWAL_ACTIONS,
+        `${path}.available_withdrawal_action`,
+      );
+  const lateExitWillBeRecorded = booleanAt(
+    object.late_exit_will_be_recorded,
+    `${path}.late_exit_will_be_recorded`,
+  );
+
+  if (effectiveStatus !== persistedStatus && effectiveStatus !== "CANCELLED") invalid(path);
+  if (persistedStatus === "APPLIED" && decidedAt !== null) invalid(`${path}.decided_at`);
+  if ((persistedStatus === "JOINED" || persistedStatus === "REJECTED") && decidedAt === null) {
+    invalid(`${path}.decided_at`);
+  }
+  if (persistedStatus !== "WITHDRAWN") {
+    if (withdrawnAt !== null || withdrawalKind !== null || lateExitRecorded) invalid(path);
+  } else {
+    if (withdrawnAt === null || withdrawalKind === null) invalid(path);
+    if (rfc3339Before(withdrawnAt, appliedAt)) invalid(`${path}.withdrawn_at`);
+    if (withdrawalKind === "APPLICATION_WITHDRAWAL") {
+      if (decidedAt !== null || lateExitRecorded) invalid(path);
+    } else {
+      if (decidedAt === null || rfc3339Before(withdrawnAt, decidedAt)) invalid(path);
+    }
+  }
+  if (availableWithdrawalAction !== null) {
+    if (effectiveStatus === "CANCELLED"
+      || (availableWithdrawalAction === "WITHDRAW_APPLICATION" && persistedStatus !== "APPLIED")
+      || (availableWithdrawalAction === "LEAVE_GAME" && persistedStatus !== "JOINED")) invalid(path);
+  }
+  if (lateExitWillBeRecorded && availableWithdrawalAction !== "LEAVE_GAME") invalid(path);
+  if (availableWithdrawalAction === "WITHDRAW_APPLICATION" && lateExitWillBeRecorded) invalid(path);
+  if (persistedStatus === "WITHDRAWN"
+    && (availableWithdrawalAction !== null || lateExitWillBeRecorded)) invalid(path);
+
   return Object.freeze({
+    id: uuidAt(object.id, `${path}.id`),
+    version: safeIntegerAt(object.version, `${path}.version`, 1),
     displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     note: nullableBoundedStringAt(object.note, `${path}.note`, 120),
-    persistedStatus: enumAt(object.persisted_status, PERSISTED_STATUSES, `${path}.persisted_status`),
-    effectiveStatus: enumAt(object.effective_status, EFFECTIVE_STATUSES, `${path}.effective_status`),
-    appliedAt: rfc3339At(object.applied_at, `${path}.applied_at`),
-    decidedAt: nullableRfc3339At(object.decided_at, `${path}.decided_at`),
+    persistedStatus,
+    effectiveStatus,
+    appliedAt,
+    decidedAt,
+    withdrawnAt,
+    withdrawalKind,
+    lateExitRecorded,
+    availableWithdrawalAction,
+    lateExitWillBeRecorded,
   });
 }
 
@@ -192,13 +261,16 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
 
 export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegistrationContext {
   const object = exactObject(value, CONTEXT_KEYS, "$" );
+  const viewerAuthenticated = booleanAt(object.viewer_authenticated, "$.viewer_authenticated");
+  const viewerRegistration = object.viewer_registration === null
+    ? null
+    : decodeViewerRegistration(object.viewer_registration, "$.viewer_registration");
+  if (!viewerAuthenticated && viewerRegistration !== null) invalid("$.viewer_registration");
   return Object.freeze({
     game: decodeOpenGamePublic(object.game, "$.game"),
     remainingSpots: safeIntegerAt(object.remaining_spots, "$.remaining_spots"),
-    viewerAuthenticated: booleanAt(object.viewer_authenticated, "$.viewer_authenticated"),
-    viewerRegistration: object.viewer_registration === null
-      ? null
-      : decodeViewerRegistration(object.viewer_registration, "$.viewer_registration"),
+    viewerAuthenticated,
+    viewerRegistration,
     allowedActions: decodeApplyActions(object.allowed_actions, "$.allowed_actions"),
   });
 }

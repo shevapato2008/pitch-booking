@@ -54,10 +54,12 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c1a-status-card { box-sizing: border-box; padding: 22rpx 24rpx; border: 1rpx solid #BAE6FD; border-radius: 26rpx; background: #F0F9FF; }
 .c1a-status-card--joined { border-color: #A7F3D0; background: #ECFDF5; }
 .c1a-status-card--rejected { border-color: #DBE5EC; background: #F1F5F9; }
+.c1a-status-card--withdrawn { border-color: #DBE5EC; background: #F1F5F9; }
 .c1a-status-heading { display: flex; align-items: center; gap: 16rpx; font-size: 28rpx; font-weight: 700; line-height: 40rpx; }
 .c1a-status-dot { width: 16rpx; height: 16rpx; flex: 0 0 auto; border-radius: 50%; background: #0284C7; }
 .c1a-status-card--joined .c1a-status-dot { background: #047857; }
 .c1a-status-card--rejected .c1a-status-dot { background: #64748B; }
+.c1a-status-card--withdrawn .c1a-status-dot { background: #64748B; }
 .c1a-status-description { display: block; margin: 6rpx 0 0 32rpx; color: #526479; font-size: 22rpx; line-height: 34rpx; }
 .c1a-status-card--joined .c1a-status-description { color: #047857; }
 .c1a-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx 24rpx; }
@@ -70,8 +72,23 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c1a-button { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; min-height: 88rpx; margin: 0; padding: 0 24rpx; border-radius: 20rpx; font-size: 28rpx; font-weight: 700; line-height: 40rpx; }
 .c1a-button--primary { border: 1rpx solid #0369A1; background: #0369A1; color: #FFFFFF; }
 .c1a-button--secondary { border: 1rpx solid #7DD3FC; background: #F0F9FF; color: #0369A1; }
+.c1a-button--danger { border: 1rpx solid #F4C7C3; background: #FFF7F6; color: #B42318; }
 .c1a-icon-button { display: flex; align-items: center; justify-content: center; min-width: 88rpx; min-height: 88rpx; margin: 0; padding: 0; border: 0; background: transparent; color: #10243E; }
 .c1a-back-glyph { box-sizing: border-box; width: 22rpx; height: 22rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; transform: rotate(45deg); }
 .c1a-footer { position: fixed; z-index: 8; right: 0; bottom: 0; left: 0; padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom, 0px)); border-top: 1rpx solid #DBE5EC; background: rgba(255, 255, 255, .96); }
+.c2a-scrim { position: fixed; z-index: 20; inset: 0; display: flex; align-items: flex-end; box-sizing: border-box; padding: 0 24rpx calc(24rpx + env(safe-area-inset-bottom, 0px)); background: rgba(16, 36, 62, .48); }
+.c2a-sheet { box-sizing: border-box; width: 100%; padding: 20rpx 28rpx 28rpx; border-radius: 36rpx; background: #FFFFFF; box-shadow: 0 28rpx 64rpx rgba(16, 36, 62, .22); }
+.c2a-sheet-handle { width: 68rpx; height: 8rpx; margin: 0 auto 24rpx; border-radius: 4rpx; background: #CBD5E1; }
+.c2a-sheet-title, .c2a-sheet-copy { display: block; }
+.c2a-sheet-title { font-size: 36rpx; font-weight: 700; line-height: 50rpx; }
+.c2a-sheet-copy { margin-top: 12rpx; color: #526479; font-size: 24rpx; line-height: 38rpx; }
+.c2a-late-warning { margin-top: 20rpx; padding: 20rpx 22rpx; border: 1rpx solid #F4C7C3; border-radius: 20rpx; background: #FFF7F6; color: #B42318; }
+.c2a-late-warning text { display: block; font-size: 23rpx; line-height: 36rpx; }
+.c2a-late-warning text:first-child { font-weight: 700; }
+.c2a-sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; margin-top: 28rpx; }
+.c2a-neutral-action, .c2a-danger-action { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; min-height: 88rpx; margin: 0; padding: 0 20rpx; border-radius: 22rpx; font-size: 26rpx; font-weight: 700; line-height: 38rpx; }
+.c2a-neutral-action { border: 1rpx solid #DBE5EC; background: #FFFFFF; color: #10243E; }
+.c2a-danger-action { border: 1rpx solid #F4C7C3; background: #FFF7F6; color: #B42318; }
+.c2a-neutral-action[disabled], .c2a-danger-action[disabled] { opacity: .54; }
 .button-hover, .c1a-button:active, .primary:active, .secondary:active { opacity: .82; }
 button::after { border: 0; }

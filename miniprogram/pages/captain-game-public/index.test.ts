@@ -45,17 +45,77 @@ const userId = "11111111-2222-4333-8444-555555555555";
 const otherUserId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
 const otherToken = "1234567890_abcdefghijklmnopqrstu";
-const fixture = (name: string): Record<string, unknown> => JSON.parse(readFileSync(`contracts/examples/${name}.json`, "utf8")) as Record<string, unknown>;
+const fixture = (name: string): Record<string, unknown> => {
+  const raw = JSON.parse(readFileSync(`contracts/examples/${name}.json`, "utf8")) as Record<string, unknown>;
+  const viewer = raw.viewer_registration;
+  if (typeof viewer !== "object" || viewer === null || Array.isArray(viewer)) return raw;
+  const registration = viewer as Record<string, unknown>;
+  const persisted = registration.persisted_status;
+  const effective = registration.effective_status;
+  raw.viewer_registration = {
+    id: applicationId,
+    version: persisted === "APPLIED" ? 1 : 2,
+    withdrawn_at: null,
+    withdrawal_kind: null,
+    late_exit_recorded: false,
+    available_withdrawal_action: effective === "CANCELLED"
+      ? null
+      : persisted === "APPLIED" ? "WITHDRAW_APPLICATION"
+        : persisted === "JOINED" ? "LEAVE_GAME" : null,
+    late_exit_will_be_recorded: false,
+    ...registration,
+  };
+  return raw;
+};
 const anonymousContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-anonymous"));
 const readyContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-apply-ready"));
-const appliedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-applied"));
-const joinedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-joined"));
+const decodedAppliedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-applied"));
+const appliedContext: OpenGameRegistrationContext = {
+  ...decodedAppliedContext,
+  viewerRegistration: {
+    ...decodedAppliedContext.viewerRegistration!,
+    availableWithdrawalAction: "WITHDRAW_APPLICATION",
+  },
+};
+const decodedJoinedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-joined"));
+const joinedContext: OpenGameRegistrationContext = {
+  ...decodedJoinedContext,
+  viewerRegistration: {
+    ...decodedJoinedContext.viewerRegistration!,
+    availableWithdrawalAction: "LEAVE_GAME",
+  },
+};
 const rejectedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-rejected"));
 const cancelledContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-cancelled"));
+const lateJoinedContext: OpenGameRegistrationContext = {
+  ...joinedContext,
+  viewerRegistration: {
+    ...joinedContext.viewerRegistration!,
+    lateExitWillBeRecorded: true,
+  },
+};
+const withdrawnContext: OpenGameRegistrationContext = {
+  ...appliedContext,
+  viewerRegistration: {
+    ...appliedContext.viewerRegistration!,
+    version: 2,
+    persistedStatus: "WITHDRAWN",
+    effectiveStatus: "WITHDRAWN",
+    withdrawnAt: "2026-08-24T00:30:00+08:00",
+    withdrawalKind: "APPLICATION_WITHDRAWAL",
+    availableWithdrawalAction: null,
+  },
+};
 const applyAttempt: Extract<OpenGameRegistrationAttempt, { kind: "apply" }> = {
   kind: "apply", originatingUserId: userId, shareToken: token,
   body: { displayName: "周末小翼", position: "FORWARD", note: "可以补边路，按时到场。", adultConfirmed: true, riskConfirmed: true },
   idempotencyKey: "application-key-00000000000001",
+};
+const withdrawAttempt: Extract<OpenGameRegistrationAttempt, { kind: "withdraw" }> = {
+  kind: "withdraw", originatingUserId: userId, shareToken: token,
+  applicationId: appliedContext.viewerRegistration!.id,
+  action: "WITHDRAW_APPLICATION", expectedVersion: 1,
+  idempotencyKey: "withdraw-key-0000000000000001",
 };
 
 function publicGame(state: OpenGamePublic["state"] = "PUBLISHED"): OpenGamePublic {
@@ -94,7 +154,7 @@ function registrationSource(overrides: Partial<OpenGameRegistrationSource> = {})
   return {
     login: jest.fn(async () => { if (currentUserId === null) currentUserId = userId; return currentUserId; }),
     currentUserId: jest.fn(() => currentUserId), getContext: jest.fn(async () => readyContext), apply: jest.fn(async () => appliedContext),
-    getPending: jest.fn(), decide: jest.fn(), ...overrides,
+    getPending: jest.fn(), decide: jest.fn(), withdraw: jest.fn(async () => withdrawnContext), ...overrides,
   } as OpenGameRegistrationSource;
 }
 function registerSources(overrides: Partial<OpenGameRegistrationSource> = {}) {
@@ -198,7 +258,7 @@ test("anonymous login reloads the same token and apply uses the production appli
   await call(page, "onApply"); expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/player-game-application/index?token=${token}` }));
 });
 
-test("APPLIED refreshes real context while terminal results and effective cancellation stay read-only", async () => {
+test("APPLIED and JOINED expose server withdrawal actions while terminal and cancelled results stay read-only", async () => {
   let reads = 0;
   const { registration } = registerSources({
     getContext: jest.fn(async () => {
@@ -207,10 +267,10 @@ test("APPLIED refreshes real context while terminal results and effective cancel
     }),
   });
   const page = loadPage(); call(page, "onLoad", { token }); await flush();
-  expect(page.data).toMatchObject({ registrationStatus: "APPLIED", statusHeading: "等待队长审核", primaryAction: "REFRESH" });
-  await call(page, "onRefresh");
+  expect(page.data).toMatchObject({ registrationStatus: "APPLIED", statusHeading: "等待队长审核", primaryAction: "WITHDRAW", withdrawalAction: "WITHDRAW_APPLICATION" });
+  await call(page, "loadPublic");
   expect(registration.getContext).toHaveBeenCalledTimes(2);
-  expect(page.data).toMatchObject({ registrationStatus: "JOINED", statusHeading: "已加入本场球局", primaryAction: null });
+  expect(page.data).toMatchObject({ registrationStatus: "JOINED", statusHeading: "已加入本场球局", primaryAction: "WITHDRAW", withdrawalAction: "LEAVE_GAME" });
   for (const [context, registrationStatus, statusHeading] of [[rejectedContext, "REJECTED", "本次申请未被接受"], [cancelledContext, "CANCELLED", "球局已取消"]] as const) {
     resetOpenGameRegistrationSourceForTesting(); registerOpenGameRegistrationSource(registrationSource({ getContext: jest.fn(async () => context) }));
     const resultPage = loadPage(); call(resultPage, "onLoad", { token }); await flush();
@@ -279,12 +339,12 @@ test("owner auth loss still uses the B2 login and returns to the original previe
 test("same-account unknown apply accepts authority or replays only the exact stored attempt", async () => {
   seedAttempt(); const authorityApi = registerSources({ getContext: jest.fn(async () => appliedContext) }).registration;
   const accepted = loadPage(); call(accepted, "onLoad", { token }); await flush();
-  expect(accepted.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "REFRESH" }); expect(authorityApi.apply).not.toHaveBeenCalled(); expect(attemptStore.load()).toBeNull();
+  expect(accepted.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "WITHDRAW" }); expect(authorityApi.apply).not.toHaveBeenCalled(); expect(attemptStore.load()).toBeNull();
   seedAttempt(); resetOpenGameRegistrationSourceForTesting();
   const replayApi = registrationSource({ getContext: jest.fn(async () => readyContext), apply: jest.fn(async () => appliedContext) }); registerOpenGameRegistrationSource(replayApi);
   const replay = loadPage(); call(replay, "onLoad", { token }); await flush(); expect(replay.data).toMatchObject({ status: "RESULT_UNKNOWN", primaryAction: "CONFIRM_RESULT" });
   await call(replay, "onConfirmResult"); expect(replayApi.apply).toHaveBeenCalledWith(applyAttempt); expect(attemptStore.load()).toBeNull();
-  expect(replay.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "REFRESH" });
+  expect(replay.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "WITHDRAW" });
 });
 
 test("confirm result is single-flight and an unknown replay keeps the exact durable attempt", async () => {
@@ -514,13 +574,357 @@ test("unknown recovery does not replay or clear when the durable record changes 
   expect(registration.apply).not.toHaveBeenCalled(); expect(page.data.status).toBe("OTHER_PENDING"); expect(attemptStore.load()).toMatchObject({ shareToken: otherToken });
 });
 
+test("APPLIED and JOINED use server withdrawal actions, confirmation is write-free, and submit is single-flight", async () => {
+  let resolveWithdraw!: (context: OpenGameRegistrationContext) => void;
+  const pendingWithdraw = new Promise<OpenGameRegistrationContext>((resolve) => {
+    resolveWithdraw = resolve;
+  });
+  const listPatch = jest.fn();
+  (globalThis as any).getCurrentPages = jest.fn(() => [
+    { route: "pages/my-game-registrations/index", applyRegistrationAuthority: listPatch },
+    { route: "pages/captain-game-public/index" },
+  ]);
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => appliedContext),
+    withdraw: jest.fn(() => pendingWithdraw),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(page.data).toMatchObject({
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "WITHDRAW_APPLICATION",
+    withdrawalActionLabel: "撤回申请",
+    withdrawalOperationState: "IDLE",
+  });
+
+  call(page, "onOpenWithdrawalConfirm");
+  expect(page.data.withdrawalOperationState).toBe("CONFIRMING");
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+  call(page, "onCancelWithdrawal");
+  expect(page.data.withdrawalOperationState).toBe("IDLE");
+  expect(registration.withdraw).not.toHaveBeenCalled();
+
+  call(page, "onOpenWithdrawalConfirm");
+  const first = call(page, "onConfirmWithdrawal") as Promise<void>;
+  const duplicate = call(page, "onConfirmWithdrawal") as Promise<void>;
+  expect(first).toBe(duplicate);
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  const stable = jest.mocked(registration.withdraw).mock.calls[0][0];
+  expect(stable).toMatchObject({
+    kind: "withdraw",
+    originatingUserId: userId,
+    shareToken: token,
+    applicationId: appliedContext.viewerRegistration!.id,
+    action: "WITHDRAW_APPLICATION",
+    expectedVersion: 1,
+  });
+  expect(attemptStore.load()).toEqual(stable);
+  resolveWithdraw(withdrawnContext);
+  await first;
+  await duplicate;
+
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({
+    registrationStatus: "WITHDRAWN",
+    primaryAction: null,
+    withdrawalOperationState: "IDLE",
+  });
+  expect(listPatch).toHaveBeenCalledWith({
+    originatingUserId: userId,
+    registrationId: appliedContext.viewerRegistration!.id,
+    effectiveStatus: "WITHDRAWN",
+  });
+
+  resetOpenGameRegistrationSourceForTesting();
+  registerOpenGameRegistrationSource(registrationSource({
+    getContext: jest.fn(async () => lateJoinedContext),
+  }));
+  const joined = loadPage();
+  call(joined, "onLoad", { token });
+  await flush();
+  expect(joined.data).toMatchObject({
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "LEAVE_GAME",
+    withdrawalActionLabel: "退出球局",
+    lateExitWillBeRecorded: true,
+  });
+});
+
+test("unknown withdrawal reads authority first, replays only the unchanged original key, and converges exactly", async () => {
+  seedAttempt(withdrawAttempt);
+  const getContext = jest.fn<(shareToken: string) => Promise<OpenGameRegistrationContext>>()
+    .mockResolvedValueOnce(appliedContext)
+    .mockResolvedValueOnce(appliedContext)
+    .mockResolvedValueOnce(withdrawnContext);
+  const withdraw = jest.fn(async () => {
+    throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+  });
+  const { registration } = registerSources({ getContext, withdraw });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(page.data).toMatchObject({
+    status: "READY",
+    withdrawalOperationState: "RESULT_UNKNOWN",
+    primaryAction: "CONFIRM_WITHDRAW_RESULT",
+  });
+
+  await call(page, "onConfirmWithdrawalResult");
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  expect(registration.withdraw).toHaveBeenCalledWith(withdrawAttempt);
+  expect(attemptStore.load()).toEqual(withdrawAttempt);
+  expect(page.data).toMatchObject({
+    withdrawalOperationState: "RESULT_UNKNOWN",
+    primaryAction: "CONFIRM_WITHDRAW_RESULT",
+  });
+
+  await call(page, "onConfirmWithdrawalResult");
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({ registrationStatus: "WITHDRAWN", primaryAction: null });
+});
+
+test("unknown withdrawal preserves its durable attempt when the authority read returns not found", async () => {
+  seedAttempt(withdrawAttempt);
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      if (reads === 1) return appliedContext;
+      throw new OpenGameRegistrationApiError("OPEN_GAME_NOT_FOUND");
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onConfirmWithdrawalResult");
+
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toEqual(withdrawAttempt);
+  expect(page.data).toMatchObject({
+    status: "READY",
+    withdrawalOperationState: "RESULT_UNKNOWN",
+    primaryAction: "CONFIRM_WITHDRAW_RESULT",
+  });
+});
+
+test("a local attempt-store failure keeps the withdrawal unsent and shows a visible retry message", async () => {
+  const { registration } = registerSources({ getContext: jest.fn(async () => appliedContext) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  registerOpenGameRegistrationAttemptStore({
+    ...attemptStore,
+    begin: jest.fn(() => { throw new Error("storage unavailable"); }),
+  });
+
+  call(page, "onOpenWithdrawalConfirm");
+  await call(page, "onConfirmWithdrawal");
+
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(page.data).toMatchObject({
+    primaryAction: "WITHDRAW",
+    withdrawalOperationState: "IDLE",
+  });
+  expect(page.data.statusDescription).toContain("尚未发送");
+});
+
+test("switching accounts before opening confirmation reloads authority instead of exposing stale controls", async () => {
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? appliedContext : readyContext;
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  currentUserId = otherUserId;
+
+  call(page, "onOpenWithdrawalConfirm");
+  await flush();
+
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    status: "READY",
+    registrationStatus: "NONE",
+    primaryAction: "APPLY",
+    withdrawalOperationState: "IDLE",
+  });
+});
+
+test("switching accounts after opening confirmation closes stale authority without sending", async () => {
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? appliedContext : readyContext;
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  call(page, "onOpenWithdrawalConfirm");
+  currentUserId = otherUserId;
+
+  await call(page, "onConfirmWithdrawal");
+
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    status: "READY",
+    registrationStatus: "NONE",
+    primaryAction: "APPLY",
+    withdrawalOperationState: "IDLE",
+  });
+});
+
+test("a late account-A auth failure resynchronizes account B without stale page or list writes", async () => {
+  let rejectWithdraw!: (reason: unknown) => void;
+  const pending = new Promise<OpenGameRegistrationContext>((_resolve, reject) => {
+    rejectWithdraw = reject;
+  });
+  let reads = 0;
+  const listPatch = jest.fn();
+  (globalThis as any).getCurrentPages = jest.fn(() => [
+    { route: "pages/my-game-registrations/index", applyRegistrationAuthority: listPatch },
+    { route: "pages/captain-game-public/index" },
+  ]);
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? appliedContext : readyContext;
+    }),
+    withdraw: jest.fn(() => pending),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  listPatch.mockClear();
+  call(page, "onOpenWithdrawalConfirm");
+  const submitting = call(page, "onConfirmWithdrawal") as Promise<void>;
+  currentUserId = otherUserId;
+  rejectWithdraw(new OpenGameRegistrationApiError("AUTH_REQUIRED"));
+  await submitting;
+
+  expect(attemptStore.load()).not.toBeNull();
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    status: "FOREIGN_PENDING",
+    primaryAction: "CLEAR_PENDING",
+  });
+  expect(listPatch).not.toHaveBeenCalled();
+});
+
+test("an old APPLIED withdrawal never upgrades to LEAVE_GAME after captain acceptance", async () => {
+  seedAttempt(withdrawAttempt);
+  const { registration } = registerSources({ getContext: jest.fn(async () => joinedContext) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({
+    registrationStatus: "JOINED",
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "LEAVE_GAME",
+    withdrawalOperationState: "IDLE",
+  });
+});
+
+test("a confirmed APPLIED withdrawal that loses the version race refreshes JOINED without auto-submitting LEAVE_GAME", async () => {
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? appliedContext : joinedContext;
+    }),
+    withdraw: jest.fn(async () => {
+      throw new OpenGameRegistrationApiError("APPLICATION_STATE_CHANGED");
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  call(page, "onOpenWithdrawalConfirm");
+  await call(page, "onConfirmWithdrawal");
+
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  expect(registration.withdraw).toHaveBeenCalledWith(expect.objectContaining({
+    action: "WITHDRAW_APPLICATION",
+    expectedVersion: 1,
+  }));
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({
+    registrationStatus: "JOINED",
+    withdrawalAction: "LEAVE_GAME",
+    primaryAction: "WITHDRAW",
+    withdrawalOperationState: "IDLE",
+  });
+});
+
+test("a visible account-A context response cannot render after the source switches to account B", async () => {
+  let resolveRead!: (context: OpenGameRegistrationContext) => void;
+  const read = new Promise<OpenGameRegistrationContext>((resolve) => { resolveRead = resolve; });
+  registerSources({ getContext: jest.fn(() => read) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  currentUserId = otherUserId;
+  resolveRead(appliedContext);
+  await flush();
+
+  expect(page.data).toMatchObject({ status: "LOADING", registrationStatus: "NONE" });
+});
+
+test("account switching during withdrawal preserves the owning attempt and blocks stale page/list writes", async () => {
+  let resolveWithdraw!: (context: OpenGameRegistrationContext) => void;
+  const pending = new Promise<OpenGameRegistrationContext>((resolve) => { resolveWithdraw = resolve; });
+  const listPatch = jest.fn();
+  (globalThis as any).getCurrentPages = jest.fn(() => [
+    { route: "pages/my-game-registrations/index", applyRegistrationAuthority: listPatch },
+    { route: "pages/captain-game-public/index" },
+  ]);
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => appliedContext),
+    withdraw: jest.fn(() => pending),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  listPatch.mockClear();
+  call(page, "onOpenWithdrawalConfirm");
+  const submitting = call(page, "onConfirmWithdrawal") as Promise<void>;
+  currentUserId = otherUserId;
+  resolveWithdraw(withdrawnContext);
+  await submitting;
+
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  expect(attemptStore.load()).not.toBeNull();
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    status: "FOREIGN_PENDING",
+    primaryAction: "CLEAR_PENDING",
+    withdrawalOperationState: "IDLE",
+  });
+  expect(listPatch).not.toHaveBeenCalled();
+});
+
 test("approved shared composition is production-only and every visible button has a real handler", () => {
   const wxml = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8"); const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
   expect(wxml).toContain("c1a-status-card"); expect(wxml).toContain("真实订场已确认"); expect(wxml).toContain("到场线下结算"); expect(wxml).toContain("当前仅供查看，申请加入即将开放");
   expect(wxml).toContain("mode === 'shared'"); expect(wxml).toContain("mode === 'owner'");
   expect(wxml).not.toMatch(/Fixture|开发预览|dev\/pages|c1a-scenario/); expect(wxml).not.toMatch(/phone|orderId|payment|refund|contact/i);
   const buttons = wxml.match(/<button\b[^>]*>/g) ?? []; expect(buttons.length).toBeGreaterThan(0); for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
-  for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onReturnManage"]) expect(wxml).toContain(`bindtap="${handler}"`);
+  for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onOpenWithdrawalConfirm", "onCancelWithdrawal", "onConfirmWithdrawal", "onConfirmWithdrawalResult", "onReturnManage"]) expect(wxml).toContain(`bindtap="${handler}"`);
+  expect(wxml).toContain("lateExitWillBeRecorded");
+  expect(wxml).toContain("保留报名");
+  expect(styles).toMatch(/\.c2a-scrim\s*\{[^}]*position:\s*fixed[^}]*align-items:\s*flex-end/s);
   const buttonRule = styles.match(/\.c1a-button\s*\{([^}]*)\}/s)?.[1] ?? "";
   for (const declaration of [/min-height:\s*88rpx/, /display:\s*flex/, /align-items:\s*center/, /justify-content:\s*center/]) expect(buttonRule).toMatch(declaration);
   const footerRule = styles.match(/\.c1a-footer\s*\{([^}]*)\}/s)?.[1] ?? "";

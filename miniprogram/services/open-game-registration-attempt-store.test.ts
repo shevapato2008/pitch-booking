@@ -41,6 +41,16 @@ const decisionAttempt = {
   idempotencyKey: "decision-key-0000000000000001",
 };
 
+const withdrawAttempt = {
+  kind: "withdraw" as const,
+  originatingUserId: USER_ID,
+  shareToken: SHARE_TOKEN,
+  applicationId: APPLICATION_ID,
+  action: "WITHDRAW_APPLICATION" as const,
+  expectedVersion: 1,
+  idempotencyKey: "withdraw-key-0000000000000001",
+};
+
 function memoryStorage(initial: ReadonlyArray<readonly [string, unknown]> = []) {
   const values = new Map<string, unknown>(initial);
   return {
@@ -71,8 +81,8 @@ describe("OpenGameRegistrationAttemptStore", () => {
     expect(restored.body).not.toBe(body);
   });
 
-  test("restores apply and decision attempts through a new factory instance", () => {
-    for (const attempt of [applyAttempt, decisionAttempt] satisfies readonly OpenGameRegistrationAttempt[]) {
+  test("restores apply, decision, and withdrawal attempts through a new factory instance", () => {
+    for (const attempt of [applyAttempt, decisionAttempt, withdrawAttempt] satisfies readonly OpenGameRegistrationAttempt[]) {
       const storage = memoryStorage();
       createOpenGameRegistrationAttemptStore(storage).begin(attempt);
 
@@ -94,6 +104,24 @@ describe("OpenGameRegistrationAttemptStore", () => {
     } as OpenGameRegistrationAttempt;
 
     expect(store.begin(reorderedAttempt)).toEqual({ kind: "READY", attempt: applyAttempt });
+    expect(storage.set).toHaveBeenCalledTimes(1);
+  });
+
+  test("reuses the exact withdrawal mutation while treating action, version, resource, and account changes as conflicts", () => {
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+    store.begin(withdrawAttempt);
+
+    expect(store.begin({ ...withdrawAttempt, idempotencyKey: "replacement-withdraw-key-000001" }))
+      .toEqual({ kind: "READY", attempt: withdrawAttempt });
+    for (const changed of [
+      { ...withdrawAttempt, action: "LEAVE_GAME" as const },
+      { ...withdrawAttempt, expectedVersion: 2 },
+      { ...withdrawAttempt, applicationId: "88888888-8888-4888-8aaa-bbbbbbbbbbbb" },
+      { ...withdrawAttempt, shareToken: "1234567890_abcdefghijklmnopqrstu" },
+    ]) expect(store.begin(changed)).toEqual({ kind: "SAME_ACCOUNT_PENDING", attempt: withdrawAttempt });
+    expect(store.begin({ ...withdrawAttempt, originatingUserId: OTHER_USER_ID }))
+      .toEqual({ kind: "FOREIGN_ACCOUNT_PENDING", attempt: withdrawAttempt });
     expect(storage.set).toHaveBeenCalledTimes(1);
   });
 
@@ -132,6 +160,8 @@ describe("OpenGameRegistrationAttemptStore", () => {
   test.each([
     ["apply", applyAttempt],
     ["decision", decisionAttempt],
+    ["withdraw application", withdrawAttempt],
+    ["leave game", { ...withdrawAttempt, action: "LEAVE_GAME" }],
     ["reject decision", { ...decisionAttempt, decision: "REJECT" }],
     ["null note", { ...applyAttempt, body: { ...body, note: null } }],
     ["goalkeeper", { ...applyAttempt, body: { ...body, position: "GOALKEEPER" } }],
@@ -146,7 +176,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
 
   test.each([
     ["extra attempt property", { ...applyAttempt, extra: true }],
-    ["unknown attempt kind", { ...applyAttempt, kind: "withdraw" }],
+    ["unknown attempt kind", { ...applyAttempt, kind: "cancel" }],
     ["invalid originating user", { ...applyAttempt, originatingUserId: "not-a-uuid" }],
     ["short share token", { ...applyAttempt, shareToken: SHARE_TOKEN.slice(1) }],
     ["unsafe share token", { ...applyAttempt, shareToken: `${SHARE_TOKEN.slice(0, 31)}!` }],
@@ -167,6 +197,10 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["unknown decision", { ...decisionAttempt, decision: "WAITLIST" }],
     ["zero expected version", { ...decisionAttempt, expectedVersion: 0 }],
     ["unsafe expected version", { ...decisionAttempt, expectedVersion: Number.MAX_SAFE_INTEGER + 1 }],
+    ["withdraw missing token", { ...withdrawAttempt, shareToken: undefined }],
+    ["withdraw invalid application id", { ...withdrawAttempt, applicationId: "not-a-uuid" }],
+    ["withdraw unknown action", { ...withdrawAttempt, action: "AUTO" }],
+    ["withdraw zero expected version", { ...withdrawAttempt, expectedVersion: 0 }],
   ])("rejects an invalid begin with zero persistence writes: %s", (_label, invalid) => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);

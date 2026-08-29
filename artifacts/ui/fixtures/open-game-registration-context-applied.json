@@ -28,13 +28,20 @@
   "remaining_spots": 4,
   "viewer_authenticated": true,
   "viewer_registration": {
+    "id": "40000000-0000-4000-8000-000000000101",
     "display_name": "周末小翼",
     "position": "FORWARD",
     "note": "可以补边路，按时到场。",
     "persisted_status": "APPLIED",
     "effective_status": "APPLIED",
+    "version": 1,
     "applied_at": "2026-08-24T00:18:00+08:00",
-    "decided_at": null
+    "decided_at": null,
+    "withdrawn_at": null,
+    "withdrawal_kind": null,
+    "late_exit_recorded": false,
+    "available_withdrawal_action": null,
+    "late_exit_will_be_recorded": false
   },
   "allowed_actions": {
     "can_apply": false,

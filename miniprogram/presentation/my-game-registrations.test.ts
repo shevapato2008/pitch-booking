@@ -1,7 +1,10 @@
 import { describe, expect, test } from "@jest/globals";
 
 import type { OpenGameApplicationItem } from "../domain/open-game-registration";
-import { presentMyGameRegistration } from "./my-game-registrations";
+import {
+  patchMyGameRegistrationStatus,
+  presentMyGameRegistration,
+} from "./my-game-registrations";
 
 const base: OpenGameApplicationItem = {
   id: "40000000-0000-4000-8000-000000000001",
@@ -22,12 +25,23 @@ describe("my game registration presentation", () => {
     ["APPLIED", "待队长审核"],
     ["JOINED", "已加入"],
     ["REJECTED", "未通过"],
+    ["WITHDRAWN", "已退出"],
     ["CANCELLED", "球局已取消"],
   ] as const)("maps %s to its frozen status label", (effectiveStatus, statusLabel) => {
     expect(presentMyGameRegistration({ ...base, effectiveStatus })).toMatchObject({
       effectiveStatus,
       statusLabel,
     });
+  });
+
+  test("patches only effective status presentation while preserving the exact loaded card", () => {
+    const card = presentMyGameRegistration(base);
+    expect(patchMyGameRegistrationStatus(card, "WITHDRAWN")).toEqual({
+      ...card,
+      effectiveStatus: "WITHDRAWN",
+      statusLabel: "已退出",
+    });
+    expect(card).toMatchObject({ effectiveStatus: "APPLIED", statusLabel: "待队长审核" });
   });
 
   test("projects the exact approved card fields and response time zone across a UTC date boundary", () => {

@@ -16,6 +16,7 @@ import {
 import type {
   OpenGameRegistrationApplyAttempt,
   OpenGameRegistrationDecisionAttempt,
+  OpenGameRegistrationWithdrawAttempt,
 } from "./open-game-registration";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -68,6 +69,41 @@ const decisionAttempt: OpenGameRegistrationDecisionAttempt = {
   expectedVersion: 1,
   idempotencyKey: "decision-key-0000000000000001",
 };
+const withdrawAttempt: OpenGameRegistrationWithdrawAttempt = {
+  kind: "withdraw",
+  originatingUserId: USER_ID,
+  shareToken: SHARE_TOKEN,
+  applicationId: APPLICATION_ID,
+  action: "WITHDRAW_APPLICATION",
+  expectedVersion: 1,
+  idempotencyKey: "withdraw-key-0000000000000001",
+};
+
+function contextWithWithdrawalFields(viewerPatch: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...rawAppliedContext,
+    viewer_registration: {
+      ...(rawAppliedContext.viewer_registration as Record<string, unknown>),
+      id: APPLICATION_ID,
+      version: 1,
+      withdrawn_at: null,
+      withdrawal_kind: null,
+      late_exit_recorded: false,
+      available_withdrawal_action: "WITHDRAW_APPLICATION",
+      late_exit_will_be_recorded: false,
+      ...viewerPatch,
+    },
+  };
+}
+
+const rawWithdrawnContext = contextWithWithdrawalFields({
+  persisted_status: "WITHDRAWN",
+  effective_status: "WITHDRAWN",
+  version: 2,
+  withdrawn_at: "2026-08-24T00:30:00+08:00",
+  withdrawal_kind: "APPLICATION_WITHDRAWAL",
+  available_withdrawal_action: null,
+});
 
 type Call = {
   readonly method: "GET" | "POST" | "PUT";
@@ -146,6 +182,53 @@ function harness(
 }
 
 describe("HTTP open-game registration requests", () => {
+  test("withdraws through the exact self-only endpoint with explicit action, version, bearer, and key", async () => {
+    const h = harness([response(200, rawWithdrawnContext)]);
+
+    await expect(h.source.withdraw(withdrawAttempt)).resolves.toEqual(
+      decodeOpenGameRegistrationContext(rawWithdrawnContext),
+    );
+
+    expect(h.calls).toEqual([{
+      method: "POST",
+      path: `/api/v1/open-game-applications/${APPLICATION_ID}/withdraw`,
+      body: { action: "WITHDRAW_APPLICATION", expected_version: 1 },
+      headers: {
+        Authorization: `Bearer ${SESSION_TOKEN}`,
+        "Idempotency-Key": withdrawAttempt.idempotencyKey,
+      },
+    }]);
+  });
+
+  test.each([
+    [401, "AUTH_REQUIRED"],
+    [404, "APPLICATION_NOT_FOUND"],
+    [409, "APPLICATION_STATE_CHANGED"],
+    [409, "IDEMPOTENCY_KEY_REUSED"],
+    [422, "INVALID_ARGUMENT"],
+  ] as const)("maps definitive withdraw HTTP %s %s and keeps other failures unknown", async (
+    statusCode,
+    code,
+  ) => {
+    const details = code === "INVALID_ARGUMENT"
+      ? { fields: [{ field: "expected_version", message: "字段值不符合要求。" }] }
+      : {};
+    const error = await registrationError(harness([
+      httpError(statusCode, code, details),
+    ]).source.withdraw(withdrawAttempt));
+    expect(error).toMatchObject({ code });
+  });
+
+  test.each([
+    [httpError(500, "SERVICE_UNAVAILABLE")],
+    [{ code: "NETWORK_ERROR", errMsg: "offline" }],
+    [response(200, { ...rawWithdrawnContext, private: true })],
+    [response(201, rawWithdrawnContext)],
+  ])("keeps an uncertain or malformed withdrawal result unknown", async (failure) => {
+    const error = await registrationError(harness([failure]).source.withdraw(withdrawAttempt));
+    expect(error.code).toBe("APPLICATION_RESULT_UNKNOWN");
+  });
+
   test("lists mine with exact authenticated default, encoded cursor, explicit limit, and empty cursor queries", async () => {
     const h = harness([
       response(200, rawMine),
@@ -712,8 +795,37 @@ describe("HTTP open-game registration failure certainty", () => {
 
 describe("HTTP open-game registration response authority", () => {
   test.each([
+    ["different application", contextWithWithdrawalFields({
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      persisted_status: "WITHDRAWN",
+      effective_status: "WITHDRAWN",
+      version: 2,
+      withdrawn_at: "2026-08-24T00:30:00+08:00",
+      withdrawal_kind: "APPLICATION_WITHDRAWAL",
+      available_withdrawal_action: null,
+    })],
+    ["unchanged version", { ...rawWithdrawnContext, viewer_registration: {
+      ...(rawWithdrawnContext.viewer_registration as Record<string, unknown>), version: 1,
+    } }],
+    ["wrong withdrawal kind", { ...rawWithdrawnContext, viewer_registration: {
+      ...(rawWithdrawnContext.viewer_registration as Record<string, unknown>),
+      withdrawal_kind: "GAME_EXIT",
+      decided_at: "2026-08-24T00:25:00+08:00",
+    } }],
+    ["cancelled effective result at write response", { ...rawWithdrawnContext, viewer_registration: {
+      ...(rawWithdrawnContext.viewer_registration as Record<string, unknown>),
+      effective_status: "CANCELLED",
+    } }],
+  ])("rejects a structurally valid mismatched withdrawal result: %s", async (_label, payload) => {
+    expect(() => decodeOpenGameRegistrationContext(payload)).not.toThrow();
+    const error = await registrationError(
+      harness([response(200, payload)]).source.withdraw(withdrawAttempt),
+    );
+    expect(error.code).toBe("APPLICATION_RESULT_UNKNOWN");
+  });
+
+  test.each([
     ["anonymous result", rawAnonymousContext],
-    ["viewer not authenticated", { ...rawAppliedContext, viewer_authenticated: false }],
     ["different display name", {
       ...rawAppliedContext,
       viewer_registration: {
@@ -741,6 +853,8 @@ describe("HTTP open-game registration response authority", () => {
         ...(rawAppliedContext.viewer_registration as Record<string, unknown>),
         persisted_status: "JOINED",
         effective_status: "JOINED",
+        version: 2,
+        decided_at: "2026-08-24T00:25:00+08:00",
       },
     }],
     ["rejected effective result", {
@@ -749,6 +863,8 @@ describe("HTTP open-game registration response authority", () => {
         ...(rawAppliedContext.viewer_registration as Record<string, unknown>),
         persisted_status: "REJECTED",
         effective_status: "REJECTED",
+        version: 2,
+        decided_at: "2026-08-24T00:25:00+08:00",
       },
     }],
   ])("rejects a structurally valid mismatched apply result: %s", async (_label, payload) => {

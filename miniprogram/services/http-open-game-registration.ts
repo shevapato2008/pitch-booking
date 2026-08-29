@@ -27,6 +27,7 @@ import type {
   OpenGameRegistrationApplyAttempt,
   OpenGameRegistrationDecisionAttempt,
   OpenGameRegistrationSource,
+  OpenGameRegistrationWithdrawAttempt,
 } from "./open-game-registration";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -82,7 +83,7 @@ export class OpenGameRegistrationApiError extends Error {
   }
 }
 
-type Operation = "context" | "apply" | "queue" | "decide" | "mine";
+type Operation = "context" | "apply" | "queue" | "decide" | "withdraw" | "mine";
 
 const APPLY_FIELDS = [
   "display_name",
@@ -92,6 +93,7 @@ const APPLY_FIELDS = [
   "risk_confirmed",
 ] as const;
 const DECISION_FIELDS = ["decision", "expected_version"] as const;
+const WITHDRAW_FIELDS = ["action", "expected_version"] as const;
 const APPLY_BLOCKED_REASONS = [
   "AUTH_REQUIRED",
   "OWNER_CANNOT_APPLY",
@@ -141,6 +143,12 @@ const DEFINITIVE_CODES: Readonly<
     409: ["APPLICATION_STATE_CHANGED", "APPLICATION_CAPACITY_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
     422: ["INVALID_ARGUMENT"],
   },
+  withdraw: {
+    401: ["AUTH_REQUIRED"],
+    404: ["APPLICATION_NOT_FOUND"],
+    409: ["APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
+    422: ["INVALID_ARGUMENT"],
+  },
 };
 
 function booleanAt(value: unknown, path: string): boolean {
@@ -183,7 +191,8 @@ function decodeInvalidArgumentDetails(
   const object = exactObject(value, ["fields"], "$.error.details");
   const allowedFields: readonly string[] = operation === "apply"
     ? APPLY_FIELDS
-    : operation === "decide" ? DECISION_FIELDS : [];
+    : operation === "decide" ? DECISION_FIELDS
+      : operation === "withdraw" ? WITHDRAW_FIELDS : [];
   const fields = Object.freeze(arrayAt(object.fields, "$.error.details.fields", 1).map(
     (item, index): OpenGameRegistrationFieldError => {
       const path = `$.error.details.fields[${index}]`;
@@ -516,6 +525,54 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
+  const withdraw = async (
+    attempt: OpenGameRegistrationWithdrawAttempt,
+  ): Promise<OpenGameRegistrationContext> => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const headers = {
+        ...authorizationContext.headers,
+        "Idempotency-Key": attempt.idempotencyKey,
+      };
+      const response = await transport.requestWithStatus<unknown>(
+        "POST",
+        `/api/v1/open-game-applications/${encodeURIComponent(attempt.applicationId)}/withdraw`,
+        { action: attempt.action, expected_version: attempt.expectedVersion },
+        headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      }
+      const context = decodeOpenGameRegistrationContext(response.data);
+      const registration = context.viewerRegistration;
+      const expectedVersion = attempt.expectedVersion + 1;
+      const expectedWithdrawalKind = attempt.action === "WITHDRAW_APPLICATION"
+        ? "APPLICATION_WITHDRAWAL"
+        : "GAME_EXIT";
+      if (!Number.isSafeInteger(expectedVersion)
+        || !context.viewerAuthenticated
+        || registration === null
+        || registration.id !== attempt.applicationId
+        || registration.persistedStatus !== "WITHDRAWN"
+        || registration.effectiveStatus !== "WITHDRAWN"
+        || registration.version !== expectedVersion
+        || registration.withdrawalKind !== expectedWithdrawalKind
+        || registration.withdrawnAt === null
+        || registration.availableWithdrawalAction !== null
+        || registration.lateExitWillBeRecorded) {
+        throw new Error("APPLICATION_WITHDRAWAL_AUTHORITY_MISMATCH");
+      }
+      if (attempt.action === "WITHDRAW_APPLICATION" && registration.lateExitRecorded) {
+        throw new Error("APPLICATION_WITHDRAWAL_LATE_MISMATCH");
+      }
+      return context;
+    } catch (caught) {
+      throw classifyFailure(caught, "withdraw", true, sessionStore, requestSession);
+    }
+  };
+
   return {
     login,
     currentUserId: () => sessionStore.load()?.userId ?? null,
@@ -524,5 +581,6 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     apply,
     getPending,
     decide,
+    withdraw,
   };
 }

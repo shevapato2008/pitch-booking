@@ -117,6 +117,18 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
       && Number.isSafeInteger(value.expectedVersion)
       && (value.expectedVersion as number) >= 1;
   }
+  if (value.kind === "withdraw") {
+    return exactKeys(value, [
+      "kind", "originatingUserId", "shareToken", "applicationId", "action",
+      "expectedVersion", "idempotencyKey",
+    ])
+      && typeof value.shareToken === "string"
+      && SHARE_TOKEN_PATTERN.test(value.shareToken)
+      && isUuid(value.applicationId)
+      && (value.action === "WITHDRAW_APPLICATION" || value.action === "LEAVE_GAME")
+      && Number.isSafeInteger(value.expectedVersion)
+      && (value.expectedVersion as number) >= 1;
+  }
   return false;
 }
 
@@ -140,12 +152,21 @@ function cloneAttempt(attempt: OpenGameRegistrationAttempt): OpenGameRegistratio
       idempotencyKey: attempt.idempotencyKey,
     };
   }
-  return {
+  if (attempt.kind === "decision") return {
     kind: "decision",
     originatingUserId: attempt.originatingUserId,
     gameId: attempt.gameId,
     applicationId: attempt.applicationId,
     decision: attempt.decision,
+    expectedVersion: attempt.expectedVersion,
+    idempotencyKey: attempt.idempotencyKey,
+  };
+  return {
+    kind: "withdraw",
+    originatingUserId: attempt.originatingUserId,
+    shareToken: attempt.shareToken,
+    applicationId: attempt.applicationId,
+    action: attempt.action,
     expectedVersion: attempt.expectedVersion,
     idempotencyKey: attempt.idempotencyKey,
   };
@@ -171,6 +192,12 @@ function sameMutation(left: OpenGameRegistrationAttempt, right: OpenGameRegistra
     return left.gameId === right.gameId
       && left.applicationId === right.applicationId
       && left.decision === right.decision
+      && left.expectedVersion === right.expectedVersion;
+  }
+  if (left.kind === "withdraw" && right.kind === "withdraw") {
+    return left.shareToken === right.shareToken
+      && left.applicationId === right.applicationId
+      && left.action === right.action
       && left.expectedVersion === right.expectedVersion;
   }
   return false;

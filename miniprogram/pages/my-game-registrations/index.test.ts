@@ -88,6 +88,7 @@ function source(overrides: Partial<OpenGameRegistrationSource> = {}): OpenGameRe
     apply: jest.fn(),
     getPending: jest.fn(),
     decide: jest.fn(),
+    withdraw: jest.fn(),
     ...overrides,
   } as OpenGameRegistrationSource;
 }
@@ -378,6 +379,49 @@ test("cards use only the current registration id, preserve scroll/detail return,
   call(pageInstance, "onOpenDiscovery");
   expect(wx.reLaunch).toHaveBeenNthCalledWith(1, { url: "/pages/game-discovery/index" });
   expect(wx.reLaunch).toHaveBeenNthCalledWith(2, { url: "/pages/game-discovery/index" });
+});
+
+test("same-account detail authority patches one loaded registration by id without resetting pagination or scroll", async () => {
+  registerSource({ listMine: jest.fn(async () => page(READY.items.slice(0, 3), "page-4")) });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  call(pageInstance, "onScroll", { detail: { scrollTop: 728.25 } });
+  const beforeIds = pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  );
+  const targetId = beforeIds[1];
+
+  expect(call(pageInstance, "applyRegistrationAuthority", {
+    originatingUserId: USER_A,
+    registrationId: targetId,
+    effectiveStatus: "WITHDRAWN",
+  })).toBe(true);
+  expect(pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  )).toEqual(beforeIds);
+  expect(pageInstance.data.items[1]).toMatchObject({
+    registrationId: targetId,
+    effectiveStatus: "WITHDRAWN",
+    statusLabel: "已退出",
+  });
+  expect(pageInstance.data).toMatchObject({
+    nextCursor: "page-4",
+    resultCount: 3,
+    listScrollTop: 728.25,
+  });
+
+  expect(call(pageInstance, "applyRegistrationAuthority", {
+    originatingUserId: USER_A,
+    registrationId: "40000000-0000-4000-8000-999999999999",
+    effectiveStatus: "WITHDRAWN",
+  })).toBe(false);
+  currentUserId = USER_B;
+  expect(call(pageInstance, "applyRegistrationAuthority", {
+    originatingUserId: USER_A,
+    registrationId: targetId,
+    effectiveStatus: "CANCELLED",
+  })).toBe(false);
+  expect(pageInstance.data.items[1].effectiveStatus).toBe("WITHDRAWN");
 });
 
 test("a stale account A card tap synchronizes account B without navigating to A", async () => {

@@ -29,6 +29,7 @@ import {
   type OpenGameRegistrationAttemptStore,
   type OpenGameRegistrationDecisionAttempt,
   type OpenGameRegistrationSource,
+  type OpenGameRegistrationWithdrawAttempt,
 } from "./open-game-registration";
 
 const USER_ID = "11111111-2222-4333-8444-555555555555";
@@ -74,6 +75,41 @@ const decisionAttempt: OpenGameRegistrationDecisionAttempt = {
   expectedVersion: 1,
   idempotencyKey: "decision-key-0000000000000001",
 };
+const withdrawAttempt: OpenGameRegistrationWithdrawAttempt = {
+  kind: "withdraw",
+  originatingUserId: USER_ID,
+  shareToken: SHARE_TOKEN,
+  applicationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  action: "WITHDRAW_APPLICATION",
+  expectedVersion: 1,
+  idempotencyKey: "withdraw-key-0000000000000001",
+};
+
+const appliedWithWithdrawal = {
+  ...contextApplied,
+  viewerRegistration: {
+    ...contextApplied.viewerRegistration!,
+    id: withdrawAttempt.applicationId,
+    version: 1,
+    withdrawnAt: null,
+    withdrawalKind: null,
+    lateExitRecorded: false,
+    availableWithdrawalAction: "WITHDRAW_APPLICATION" as const,
+    lateExitWillBeRecorded: false,
+  },
+};
+const withdrawnAuthority = {
+  ...appliedWithWithdrawal,
+  viewerRegistration: {
+    ...appliedWithWithdrawal.viewerRegistration,
+    version: 2,
+    persistedStatus: "WITHDRAWN" as const,
+    effectiveStatus: "WITHDRAWN" as const,
+    withdrawnAt: "2026-08-24T00:30:00+08:00",
+    withdrawalKind: "APPLICATION_WITHDRAWAL" as const,
+    availableWithdrawalAction: null,
+  },
+};
 
 function fakeSource(): OpenGameRegistrationSource {
   return {
@@ -99,6 +135,10 @@ function fakeSource(): OpenGameRegistrationSource {
     decide: async (attempt: OpenGameRegistrationDecisionAttempt): Promise<OpenGameApplicationDecisionResult> => {
       expect(attempt).toBe(decisionAttempt);
       return decisionResult;
+    },
+    withdraw: async (attempt: OpenGameRegistrationWithdrawAttempt): Promise<OpenGameRegistrationContext> => {
+      expect(attempt).toBe(withdrawAttempt);
+      return withdrawnAuthority;
     },
   } satisfies OpenGameRegistrationSource;
 }
@@ -137,6 +177,7 @@ describe("open-game registration bindings", () => {
     await expect(source.apply(applyAttempt)).resolves.toBe(contextApplied);
     await expect(source.getPending(GAME_ID)).resolves.toBe(queue);
     await expect(source.decide(decisionAttempt)).resolves.toBe(decisionResult);
+    await expect(source.withdraw(withdrawAttempt)).resolves.toBe(withdrawnAuthority);
 
     resetOpenGameRegistrationSourceForTesting();
     resetOpenGameRegistrationAttemptStoreForTesting();
@@ -183,9 +224,39 @@ describe("open-game registration recovery", () => {
     });
   });
 
+  test("withdraw recovery accepts exact terminal authority, replays only unchanged authority, and clears changed authority", () => {
+    expect(classifyOpenGameRegistrationUnknownResult(withdrawAttempt, withdrawnAuthority)).toEqual({
+      kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+      authority: withdrawnAuthority,
+      clearAttempt: true,
+    });
+    expect(classifyOpenGameRegistrationUnknownResult(withdrawAttempt, appliedWithWithdrawal)).toEqual({
+      kind: "REPLAY_SAME_ATTEMPT",
+      attempt: withdrawAttempt,
+      clearAttempt: false,
+    });
+    const acceptedByCaptain = {
+      ...appliedWithWithdrawal,
+      viewerRegistration: {
+        ...appliedWithWithdrawal.viewerRegistration,
+        version: 2,
+        persistedStatus: "JOINED" as const,
+        effectiveStatus: "JOINED" as const,
+        decidedAt: "2026-08-24T00:25:00+08:00",
+        availableWithdrawalAction: "LEAVE_GAME" as const,
+      },
+    };
+    expect(classifyOpenGameRegistrationUnknownResult(withdrawAttempt, acceptedByCaptain)).toEqual({
+      kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+      authority: acceptedByCaptain,
+      clearAttempt: true,
+    });
+  });
+
   test.each([
     [applyAttempt, { kind: "apply", shareToken: SHARE_TOKEN }],
     [decisionAttempt, { kind: "decision", gameId: GAME_ID }],
+    [withdrawAttempt, { kind: "withdraw", shareToken: SHARE_TOKEN }],
   ] as const)("allows only a same-account pending attempt for the same resource", (attempt, target) => {
     expect(classifyOpenGameRegistrationPendingAttempt(attempt, USER_ID, target)).toEqual({
       kind: "READY",
@@ -204,6 +275,11 @@ describe("open-game registration recovery", () => {
       decisionAttempt,
       { kind: "decision", gameId: "33333333-4444-4555-8666-777777777777" },
       `/pages/captain-game-applications/index?game_id=${GAME_ID}`,
+    ],
+    [
+      withdrawAttempt,
+      { kind: "withdraw", shareToken: "1234567890_abcdefghijklmnopqrstu" },
+      `/pages/captain-game-public/index?token=${SHARE_TOKEN}`,
     ],
     [
       decisionAttempt,

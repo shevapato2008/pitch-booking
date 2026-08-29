@@ -27,8 +27,94 @@ const contextApplied = fixture("open-game-registration-context-applied");
 const queuePending = fixture("open-game-applications-pending");
 const decisionJoined = fixture("open-game-application-decision-joined");
 const myApplicationsReady = fixture("my-open-game-applications-ready");
+const APPLICATION_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+function withdrawalContext(
+  base: Record<string, unknown>,
+  viewerPatch: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...base,
+    viewer_registration: {
+      ...(base.viewer_registration as Record<string, unknown>),
+      id: APPLICATION_ID,
+      version: 1,
+      withdrawn_at: null,
+      withdrawal_kind: null,
+      late_exit_recorded: false,
+      available_withdrawal_action: null,
+      late_exit_will_be_recorded: false,
+      ...viewerPatch,
+    },
+  };
+}
 
 describe("open-game registration response decoders", () => {
+  test("decodes withdrawal authority and enforces action, late, terminal, and cancellation invariants", () => {
+    const applied = withdrawalContext(contextApplied, {
+      available_withdrawal_action: "WITHDRAW_APPLICATION",
+    });
+    expect(decodeOpenGameRegistrationContext(applied).viewerRegistration).toMatchObject({
+      id: APPLICATION_ID,
+      version: 1,
+      persistedStatus: "APPLIED",
+      effectiveStatus: "APPLIED",
+      withdrawnAt: null,
+      withdrawalKind: null,
+      lateExitRecorded: false,
+      availableWithdrawalAction: "WITHDRAW_APPLICATION",
+      lateExitWillBeRecorded: false,
+    });
+
+    const joined = withdrawalContext(fixture("open-game-registration-context-joined"), {
+      version: 2,
+      available_withdrawal_action: "LEAVE_GAME",
+      late_exit_will_be_recorded: true,
+    });
+    expect(decodeOpenGameRegistrationContext(joined).viewerRegistration).toMatchObject({
+      version: 2,
+      persistedStatus: "JOINED",
+      effectiveStatus: "JOINED",
+      availableWithdrawalAction: "LEAVE_GAME",
+      lateExitWillBeRecorded: true,
+    });
+
+    const withdrawn = withdrawalContext(contextApplied, {
+      version: 2,
+      persisted_status: "WITHDRAWN",
+      effective_status: "WITHDRAWN",
+      withdrawn_at: "2026-08-24T00:30:00+08:00",
+      withdrawal_kind: "APPLICATION_WITHDRAWAL",
+    });
+    expect(decodeOpenGameRegistrationContext(withdrawn).viewerRegistration).toMatchObject({
+      persistedStatus: "WITHDRAWN",
+      effectiveStatus: "WITHDRAWN",
+      withdrawnAt: "2026-08-24T00:30:00+08:00",
+      withdrawalKind: "APPLICATION_WITHDRAWAL",
+    });
+
+    const withdrawnThenCancelled = withdrawalContext(contextApplied, {
+      version: 2,
+      persisted_status: "WITHDRAWN",
+      effective_status: "CANCELLED",
+      withdrawn_at: "2026-08-24T00:30:00+08:00",
+      withdrawal_kind: "APPLICATION_WITHDRAWAL",
+    });
+    expect(decodeOpenGameRegistrationContext(withdrawnThenCancelled).viewerRegistration)
+      .toMatchObject({ persistedStatus: "WITHDRAWN", effectiveStatus: "CANCELLED" });
+
+    for (const invalidViewerPatch of [
+      { persisted_status: "APPLIED", available_withdrawal_action: "LEAVE_GAME" },
+      { persisted_status: "JOINED", effective_status: "JOINED", decided_at: "2026-08-24T00:25:00+08:00", available_withdrawal_action: "WITHDRAW_APPLICATION" },
+      { late_exit_will_be_recorded: true, available_withdrawal_action: "WITHDRAW_APPLICATION" },
+      { persisted_status: "WITHDRAWN", effective_status: "WITHDRAWN", version: 2, withdrawn_at: null, withdrawal_kind: "GAME_EXIT", decided_at: "2026-08-24T00:25:00+08:00" },
+      { persisted_status: "WITHDRAWN", effective_status: "WITHDRAWN", version: 2, withdrawn_at: "2026-08-24T00:30:00+08:00", withdrawal_kind: "APPLICATION_WITHDRAWAL", late_exit_recorded: true },
+      { persisted_status: "JOINED", effective_status: "WITHDRAWN", decided_at: "2026-08-24T00:25:00+08:00" },
+    ]) rejected(() => decodeOpenGameRegistrationContext(
+      withdrawalContext(contextApplied, invalidViewerPatch),
+    ));
+  });
+
   test.each([
     ["anonymous", false, null, false, "AUTH_REQUIRED"],
     ["apply-ready", true, null, true, null],
@@ -44,7 +130,10 @@ describe("open-game registration response decoders", () => {
     applyBlockedReason,
   ) => {
     const value = fixture(`open-game-registration-context-${name}`);
+    const wireRegistration = value.viewer_registration as Record<string, unknown> | null;
     const viewerRegistration = status === null ? null : {
+      id: wireRegistration?.id,
+      version: wireRegistration?.version,
       displayName: "周末小翼",
       position: "FORWARD",
       note: "可以补边路，按时到场。",
@@ -52,6 +141,11 @@ describe("open-game registration response decoders", () => {
       effectiveStatus: status[1],
       appliedAt: "2026-08-24T00:18:00+08:00",
       decidedAt: status[2],
+      withdrawnAt: wireRegistration?.withdrawn_at,
+      withdrawalKind: wireRegistration?.withdrawal_kind,
+      lateExitRecorded: wireRegistration?.late_exit_recorded,
+      availableWithdrawalAction: wireRegistration?.available_withdrawal_action,
+      lateExitWillBeRecorded: wireRegistration?.late_exit_will_be_recorded,
     };
 
     expect(decodeOpenGameRegistrationContext(value)).toEqual({
@@ -164,6 +258,7 @@ describe("open-game registration response decoders", () => {
     for (const [base, patch] of [
       [contextReady, { remaining_spots: -1 }],
       [contextReady, { viewer_authenticated: null }],
+      [contextApplied, { viewer_authenticated: false }],
       [contextApplied, { viewer_registration: {
         ...(contextApplied.viewer_registration as Record<string, unknown>),
         persisted_status: "CANCELLED",
@@ -345,7 +440,7 @@ describe("my open-game applications response decoder", () => {
     expect(decoded.items[0].gameName).toBe("周日八人制友谊赛");
   });
 
-  test.each(["APPLIED", "JOINED", "REJECTED", "CANCELLED"] as const)(
+  test.each(["APPLIED", "JOINED", "REJECTED", "WITHDRAWN", "CANCELLED"] as const)(
     "accepts the shared %s effective status",
     (effectiveStatus) => {
       const value = clone(myApplicationsReady);

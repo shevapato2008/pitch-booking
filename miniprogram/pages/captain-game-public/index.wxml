@@ -84,9 +84,27 @@
         <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onLogin">登录并继续</button>
         <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onApply">申请加入</button>
         <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRefresh">刷新结果</button>
+        <button wx:elif="{{primaryAction === 'WITHDRAW'}}" class="c1a-button c1a-button--danger" hover-class="button-hover" bindtap="onOpenWithdrawalConfirm">{{withdrawalActionLabel}}</button>
         <button wx:elif="{{primaryAction === 'CONFIRM_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmResult">确认申请结果</button>
+        <button wx:elif="{{primaryAction === 'CONFIRM_WITHDRAW_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmWithdrawalResult">确认退出结果</button>
         <button wx:elif="{{primaryAction === 'GO_PENDING'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onGoPending">前往确认</button>
         <button wx:elif="{{primaryAction === 'CLEAR_PENDING'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onClearPending">清除本机待确认记录</button>
+      </view>
+
+      <view wx:if="{{withdrawalOperationState === 'CONFIRMING' || withdrawalOperationState === 'SUBMITTING'}}" class="c2a-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-label="{{withdrawalConfirmationTitle}}">
+        <view class="c2a-sheet">
+          <view class="c2a-sheet-handle" aria-hidden="true"></view>
+          <text class="c2a-sheet-title">{{withdrawalConfirmationTitle}}</text>
+          <text class="c2a-sheet-copy">{{withdrawalConfirmationCopy}}</text>
+          <view wx:if="{{lateExitWillBeRecorded}}" class="c2a-late-warning">
+            <text>距离开场不足 6 小时</text>
+            <text>会记录临时退出；首期不自动封禁或扣款。</text>
+          </view>
+          <view class="c2a-sheet-actions">
+            <button class="c2a-neutral-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelWithdrawal">保留报名</button>
+            <button class="c2a-danger-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onConfirmWithdrawal">{{withdrawalOperationState === 'SUBMITTING' ? '提交中…' : withdrawalConfirmationActionLabel}}</button>
+          </view>
+        </view>
       </view>
     </view>
   </block>

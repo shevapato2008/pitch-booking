@@ -2,6 +2,8 @@ import type { OpenGamePublic } from "../../domain/open-game";
 import type {
   OpenGameApplyBlockedReason,
   OpenGameRegistrationContext,
+  OpenGameRegistrationEffectiveStatus,
+  OpenGameRegistrationWithdrawalAction,
 } from "../../domain/open-game-registration";
 import {
   formatCents,
@@ -24,6 +26,8 @@ import {
   getOpenGameRegistrationSource,
   type OpenGameRegistrationApplyAttempt,
   type OpenGameRegistrationAttempt,
+  type OpenGameRegistrationAttemptTarget,
+  type OpenGameRegistrationWithdrawAttempt,
 } from "../../services/open-game-registration";
 import { getOpenGameSource } from "../../services/open-game";
 
@@ -41,18 +45,30 @@ type PrimaryAction =
   | "LOGIN"
   | "APPLY"
   | "REFRESH"
+  | "WITHDRAW"
   | "CONFIRM_RESULT"
+  | "CONFIRM_WITHDRAW_RESULT"
   | "GO_PENDING"
   | "CLEAR_PENDING"
   | null;
-type RegistrationStatus = "NONE" | "APPLIED" | "JOINED" | "REJECTED" | "CANCELLED";
-type StatusTone = "anonymous" | "available" | "pending" | "joined" | "rejected";
+type RegistrationStatus = "NONE" | "APPLIED" | "JOINED" | "REJECTED" | "WITHDRAWN" | "CANCELLED";
+type StatusTone = "anonymous" | "available" | "pending" | "joined" | "rejected" | "withdrawn";
+type WithdrawalOperationState = "IDLE" | "CONFIRMING" | "SUBMITTING" | "RESULT_UNKNOWN";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 
-function currentPages(): readonly { route?: string }[] {
-  return getCurrentPages() as unknown as readonly { route?: string }[];
+interface RegistrationListPage {
+  readonly route?: string;
+  applyRegistrationAuthority?(patch: {
+    readonly originatingUserId: string;
+    readonly registrationId: string;
+    readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
+  }): boolean;
+}
+
+function currentPages(): readonly RegistrationListPage[] {
+  return getCurrentPages() as unknown as readonly RegistrationListPage[];
 }
 
 function hideShare(): void {
@@ -102,6 +118,53 @@ function sameApplyAttempt(
     && left.body.adultConfirmed === right.body.adultConfirmed
     && left.body.riskConfirmed === right.body.riskConfirmed;
 }
+
+function sameWithdrawAttempt(
+  left: OpenGameRegistrationWithdrawAttempt,
+  right: OpenGameRegistrationWithdrawAttempt,
+): boolean {
+  return left.originatingUserId === right.originatingUserId
+    && left.shareToken === right.shareToken
+    && left.applicationId === right.applicationId
+    && left.action === right.action
+    && left.expectedVersion === right.expectedVersion
+    && left.idempotencyKey === right.idempotencyKey;
+}
+
+function sameAttempt(
+  left: OpenGameRegistrationAttempt,
+  right: OpenGameRegistrationAttempt,
+): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "apply" && right.kind === "apply") return sameApplyAttempt(left, right);
+  if (left.kind === "withdraw" && right.kind === "withdraw") return sameWithdrawAttempt(left, right);
+  if (left.kind === "decision" && right.kind === "decision") {
+    return left.originatingUserId === right.originatingUserId
+      && left.gameId === right.gameId
+      && left.applicationId === right.applicationId
+      && left.decision === right.decision
+      && left.expectedVersion === right.expectedVersion
+      && left.idempotencyKey === right.idempotencyKey;
+  }
+  return false;
+}
+
+function targetForAttempt(
+  attempt: OpenGameRegistrationAttempt,
+  shareToken: string,
+): OpenGameRegistrationAttemptTarget {
+  return attempt.kind === "withdraw"
+    ? { kind: "withdraw", shareToken }
+    : { kind: "apply", shareToken };
+}
+
+function withdrawalLabel(action: OpenGameRegistrationWithdrawalAction | null): string {
+  if (action === "WITHDRAW_APPLICATION") return "撤回申请";
+  if (action === "LEAVE_GAME") return "退出球局";
+  return "";
+}
+
+let withdrawalAttemptSerial = 0;
 
 function blockerPresentation(reason: OpenGameApplyBlockedReason): {
   readonly heading: string;
@@ -195,9 +258,11 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
     return {
       registrationStatus: "APPLIED",
       heading: "等待队长审核",
-      description: "申请已记录。可留在同一详情刷新结果。",
+      description: "申请已记录，正在等待队长审核。",
       tone: "pending",
-      action: "REFRESH",
+      action: context.viewerRegistration?.availableWithdrawalAction === "WITHDRAW_APPLICATION"
+        ? "WITHDRAW"
+        : null,
     };
   }
   if (effectiveStatus === "JOINED") {
@@ -206,7 +271,9 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
       heading: "已加入本场球局",
       description: "队长已接受申请；AA 到场线下结算。",
       tone: "joined",
-      action: null,
+      action: context.viewerRegistration?.availableWithdrawalAction === "LEAVE_GAME"
+        ? "WITHDRAW"
+        : null,
     };
   }
   if (effectiveStatus === "REJECTED") {
@@ -215,6 +282,19 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
       heading: "本次申请未被接受",
       description: "这是本场决定，不影响之后参加其他球局。",
       tone: "rejected",
+      action: null,
+    };
+  }
+  if (effectiveStatus === "WITHDRAWN") {
+    const applicationWithdrawal = context.viewerRegistration?.withdrawalKind
+      === "APPLICATION_WITHDRAWAL";
+    return {
+      registrationStatus: "WITHDRAWN",
+      heading: applicationWithdrawal ? "申请已撤回" : "已退出球局",
+      description: applicationWithdrawal
+        ? "本次申请已撤回；本场不可再次申请。"
+        : "你已退出本场球局；本场不可再次申请。",
+      tone: "withdrawn",
       action: null,
     };
   }
@@ -259,6 +339,16 @@ function blankData() {
     errorMessage: "",
     navigationError: "",
     pendingRoute: "",
+    withdrawalOperationState: "IDLE" as WithdrawalOperationState,
+    withdrawalAction: null as OpenGameRegistrationWithdrawalAction | null,
+    withdrawalActionLabel: "",
+    withdrawalApplicationId: "",
+    withdrawalExpectedVersion: 0,
+    withdrawalKind: null as "APPLICATION_WITHDRAWAL" | "GAME_EXIT" | null,
+    lateExitWillBeRecorded: false,
+    withdrawalConfirmationTitle: "",
+    withdrawalConfirmationCopy: "",
+    withdrawalConfirmationActionLabel: "",
     publicGame: null as OpenGamePublic | null,
     name: "",
     teamName: "",
@@ -289,6 +379,7 @@ Page({
   visible: true,
   routeToken: "",
   routeGameId: "",
+  boundRegistrationUserId: null as string | null,
   skipNextShow: false,
   pendingRoute: "",
   mutationInFlight: null as Promise<void> | null,
@@ -297,6 +388,7 @@ Page({
     this.visible = true;
     this.skipNextShow = true;
     this.pendingRoute = "";
+    this.boundRegistrationUserId = null;
     this.mutationInFlight = null;
     hideShare();
     const header = readHeaderData();
@@ -359,6 +451,20 @@ Page({
     return this.visible && generation === this.loadGeneration;
   },
 
+  activeShared(generation: number, userId: string | null): boolean {
+    return this.active(generation)
+      && this.boundRegistrationUserId === userId
+      && this.currentRegistrationUserId() === userId;
+  },
+
+  async activeSharedOrResynchronize(generation: number, userId: string): Promise<boolean> {
+    if (this.activeShared(generation, userId)) return true;
+    if (this.active(generation)
+      && this.boundRegistrationUserId === userId
+      && this.currentRegistrationUserId() !== userId) await this.loadPublic();
+    return false;
+  },
+
   currentRegistrationUserId(): string | null {
     try { return getOpenGameRegistrationSource().currentUserId(); }
     catch { return null; }
@@ -366,6 +472,10 @@ Page({
 
   async loadPublic() {
     const generation = ++this.loadGeneration;
+    const registrationUserId = this.data.mode === "shared"
+      ? this.currentRegistrationUserId()
+      : null;
+    if (this.data.mode === "shared") this.boundRegistrationUserId = registrationUserId;
     this.setData({
       status: "LOADING",
       errorMessage: "",
@@ -373,11 +483,12 @@ Page({
       showLogin: false,
       primaryAction: null,
       pendingRoute: "",
+      withdrawalOperationState: "IDLE",
     });
     try {
       if (this.data.mode === "shared") {
         const context = await getOpenGameRegistrationSource().getContext(this.routeToken);
-        if (!this.active(generation)) return;
+        if (!this.activeShared(generation, registrationUserId)) return;
         this.applySharedContext(context);
       } else {
         const game = (await getOpenGameSource().getOwnedGame(this.routeGameId)).publicView;
@@ -386,6 +497,10 @@ Page({
       }
     } catch (caught) {
       if (!this.active(generation)) return;
+      if (this.data.mode === "shared"
+        && (this.boundRegistrationUserId !== registrationUserId
+          || (this.currentRegistrationUserId() !== registrationUserId
+            && this.currentRegistrationUserId() !== null))) return;
       this.handleReadError(caught);
     }
   },
@@ -400,9 +515,26 @@ Page({
     const decision = classifyOpenGameRegistrationPendingAttempt(
       pending,
       this.currentRegistrationUserId(),
-      { kind: "apply", shareToken: this.routeToken },
+      targetForAttempt(pending, this.routeToken),
     );
-    if (decision.kind !== "READY" || decision.attempt.kind !== "apply") {
+    if (decision.kind !== "READY") {
+      this.presentPendingAttempt(pending);
+      return;
+    }
+    if (decision.attempt.kind === "withdraw") {
+      const recovery = classifyOpenGameRegistrationUnknownResult(decision.attempt, context);
+      if (recovery.kind === "ACCEPT_AUTHORITY_AND_CLEAR") {
+        if (!this.clearAttemptIfCurrent(decision.attempt)) {
+          this.presentDurableAttempt(context);
+          return;
+        }
+        this.applySharedPresentation(recovery.authority);
+      } else {
+        this.presentWithdrawalUnknown(context, "上次操作没有返回结果，请读取权威状态确认。");
+      }
+      return;
+    }
+    if (decision.attempt.kind !== "apply") {
       this.presentPendingAttempt(pending);
       return;
     }
@@ -427,6 +559,9 @@ Page({
   applySharedPresentation(context: OpenGameRegistrationContext) {
     this.applyPublic(context.game);
     const presentation = registrationPresentation(context);
+    const registration = context.viewerRegistration;
+    const action = registration?.availableWithdrawalAction ?? null;
+    const applicationWithdrawal = action === "WITHDRAW_APPLICATION";
     this.pendingRoute = "";
     this.setData({
       status: "READY",
@@ -441,6 +576,49 @@ Page({
       showReturnManage: false,
       pendingRoute: "",
       errorMessage: "",
+      withdrawalOperationState: "IDLE",
+      withdrawalAction: action,
+      withdrawalActionLabel: withdrawalLabel(action),
+      withdrawalApplicationId: registration?.id ?? "",
+      withdrawalExpectedVersion: registration?.version ?? 0,
+      withdrawalKind: registration?.withdrawalKind ?? null,
+      lateExitWillBeRecorded: registration?.lateExitWillBeRecorded ?? false,
+      withdrawalConfirmationTitle: applicationWithdrawal ? "确认撤回申请？" : "确认退出球局？",
+      withdrawalConfirmationCopy: applicationWithdrawal
+        ? "撤回后队长无需再审核，已开放名额不变；本场不可再次申请。"
+        : "退出后会立即释放 1 个公开名额；本场不可再次申请。",
+      withdrawalConfirmationActionLabel: applicationWithdrawal ? "确认撤回" : "确认退出",
+    });
+    this.writeBackRegistration(context);
+  },
+
+  presentWithdrawalUnknown(context: OpenGameRegistrationContext, message: string) {
+    this.applySharedPresentation(context);
+    this.setData({
+      status: "READY",
+      primaryAction: "CONFIRM_WITHDRAW_RESULT",
+      withdrawalOperationState: "RESULT_UNKNOWN",
+      statusHeading: "退出结果待确认",
+      statusDescription: message,
+      statusTone: "pending",
+      errorMessage: message,
+    });
+  },
+
+  writeBackRegistration(context: OpenGameRegistrationContext) {
+    const userId = this.boundRegistrationUserId;
+    const registration = context.viewerRegistration;
+    if (userId === null
+      || registration === null
+      || this.currentRegistrationUserId() !== userId) return;
+    const pages = currentPages();
+    const previous = pages[pages.length - 2];
+    if (previous?.route !== "pages/my-game-registrations/index"
+      || typeof previous.applyRegistrationAuthority !== "function") return;
+    previous.applyRegistrationAuthority({
+      originatingUserId: userId,
+      registrationId: registration.id,
+      effectiveStatus: registration.effectiveStatus,
     });
   },
 
@@ -871,7 +1049,7 @@ Page({
     const decision = classifyOpenGameRegistrationPendingAttempt(
       attempt,
       this.currentRegistrationUserId(),
-      { kind: "apply", shareToken: this.routeToken },
+      targetForAttempt(attempt, this.routeToken),
     );
     if (decision.kind === "PRESERVE_LOGIN_COMPARE_ACCOUNT") {
       this.setData({
@@ -901,21 +1079,279 @@ Page({
       });
       return;
     }
-    this.setData({
-      status: "RESULT_UNKNOWN",
-      primaryAction: "CONFIRM_RESULT",
-      errorMessage: "检测到原申请结果尚未确认。",
-    });
+    if (attempt.kind === "withdraw") {
+      this.setData({
+        status: "READY",
+        withdrawalOperationState: "RESULT_UNKNOWN",
+        primaryAction: "CONFIRM_WITHDRAW_RESULT",
+        statusHeading: "退出结果待确认",
+        statusDescription: "检测到原退出结果尚未确认。",
+        errorMessage: "检测到原退出结果尚未确认。",
+      });
+    } else {
+      this.setData({
+        status: "RESULT_UNKNOWN",
+        primaryAction: "CONFIRM_RESULT",
+        errorMessage: "检测到原申请结果尚未确认。",
+      });
+    }
   },
 
-  clearAttemptIfCurrent(attempt: OpenGameRegistrationApplyAttempt): boolean {
+  clearAttemptIfCurrent(attempt: OpenGameRegistrationAttempt): boolean {
     if (this.currentRegistrationUserId() !== attempt.originatingUserId) return false;
     const current = getOpenGameRegistrationAttemptStore().load();
     if (current === null) return true;
-    if (current.kind !== "apply" || !sameApplyAttempt(current, attempt)) return false;
+    if (!sameAttempt(current, attempt)) return false;
     getOpenGameRegistrationAttemptStore().clear();
     return true;
   },
+
+  onOpenWithdrawalConfirm() {
+    if (this.data.mode !== "shared"
+      || this.data.status !== "READY"
+      || this.data.primaryAction !== "WITHDRAW"
+      || this.data.withdrawalOperationState !== "IDLE"
+      || this.data.withdrawalAction === null) return;
+    const userId = this.boundRegistrationUserId;
+    if (userId === null || this.currentRegistrationUserId() !== userId) {
+      void this.loadPublic();
+      return;
+    }
+    this.setData({ withdrawalOperationState: "CONFIRMING" });
+  },
+
+  onCancelWithdrawal() {
+    if (this.data.withdrawalOperationState !== "CONFIRMING") return;
+    this.setData({ withdrawalOperationState: "IDLE" });
+  },
+
+  onConfirmWithdrawal() {
+    if (this.mutationInFlight !== null) return this.mutationInFlight;
+    if (this.data.mode !== "shared"
+      || this.data.status !== "READY"
+      || this.data.withdrawalOperationState !== "CONFIRMING"
+      || this.data.withdrawalAction === null
+      || !this.data.withdrawalApplicationId
+      || this.data.withdrawalExpectedVersion < 1) return Promise.resolve();
+    return this.runSingleFlight(async () => {
+      const userId = this.boundRegistrationUserId;
+      if (userId === null || this.currentRegistrationUserId() !== userId) {
+        this.setData({ withdrawalOperationState: "IDLE" });
+        await this.loadPublic();
+        return;
+      }
+      const requested: OpenGameRegistrationWithdrawAttempt = {
+        kind: "withdraw",
+        originatingUserId: userId,
+        shareToken: this.routeToken,
+        applicationId: this.data.withdrawalApplicationId,
+        action: this.data.withdrawalAction as OpenGameRegistrationWithdrawalAction,
+        expectedVersion: this.data.withdrawalExpectedVersion,
+        idempotencyKey: `withdraw-${Date.now()}-${++withdrawalAttemptSerial}`,
+      };
+      let availability;
+      try {
+        availability = getOpenGameRegistrationAttemptStore().begin(requested);
+      } catch {
+        this.setData({
+          withdrawalOperationState: "IDLE",
+          statusDescription: "无法安全保存操作记录，本次操作尚未发送，请稍后重试。",
+          errorMessage: "无法安全保存操作记录，本次操作尚未发送。",
+        });
+        return;
+      }
+      if (availability.kind !== "READY" || availability.attempt.kind !== "withdraw") {
+        this.setData({ withdrawalOperationState: "IDLE" });
+        this.presentPendingAttempt(availability.attempt);
+        return;
+      }
+      const attempt = availability.attempt;
+      const generation = this.loadGeneration;
+      this.setData({ withdrawalOperationState: "SUBMITTING", primaryAction: null });
+      try {
+        const context = await getOpenGameRegistrationSource().withdraw(attempt);
+        if (!await this.activeSharedOrResynchronize(generation, userId)) return;
+        if (!this.clearAttemptIfCurrent(attempt)) {
+          this.presentDurableAttempt(context);
+          return;
+        }
+        this.applySharedPresentation(context);
+      } catch (caught) {
+        await this.handleWithdrawalMutationError(attempt, caught, generation);
+      }
+    });
+  },
+
+  onConfirmWithdrawalResult() {
+    if (this.mutationInFlight !== null) return this.mutationInFlight;
+    if (this.data.mode !== "shared"
+      || this.data.primaryAction !== "CONFIRM_WITHDRAW_RESULT") return Promise.resolve();
+    return this.runSingleFlight(async () => { await this.confirmWithdrawalResult(); });
+  },
+
+  async confirmWithdrawalResult() {
+    let durable: OpenGameRegistrationAttempt | null;
+    try { durable = getOpenGameRegistrationAttemptStore().load(); }
+    catch {
+      this.setData({
+        status: "READY",
+        withdrawalOperationState: "RESULT_UNKNOWN",
+        primaryAction: "CONFIRM_WITHDRAW_RESULT",
+        errorMessage: "暂时无法读取本机待确认记录，请稍后重试。",
+      });
+      return;
+    }
+    if (durable === null) {
+      await this.loadPublic();
+      return;
+    }
+    const pending = classifyOpenGameRegistrationPendingAttempt(
+      durable,
+      this.currentRegistrationUserId(),
+      targetForAttempt(durable, this.routeToken),
+    );
+    if (pending.kind !== "READY" || pending.attempt.kind !== "withdraw") {
+      this.presentPendingAttempt(durable);
+      return;
+    }
+    const attempt = pending.attempt;
+    const userId = attempt.originatingUserId;
+    const generation = this.loadGeneration;
+    this.setData({
+      status: "READY",
+      withdrawalOperationState: "RESULT_UNKNOWN",
+      primaryAction: null,
+      statusHeading: "正在确认退出结果",
+      statusDescription: "正在读取服务端权威状态…",
+    });
+    let mutationSent = false;
+    try {
+      const context = await getOpenGameRegistrationSource().getContext(attempt.shareToken);
+      if (!await this.activeSharedOrResynchronize(generation, userId)) return;
+      const current = getOpenGameRegistrationAttemptStore().load();
+      if (current === null) {
+        this.applySharedPresentation(context);
+        return;
+      }
+      if (current.kind !== "withdraw" || !sameWithdrawAttempt(current, attempt)) {
+        this.presentPendingAttempt(current);
+        return;
+      }
+      const recovery = classifyOpenGameRegistrationUnknownResult(current, context);
+      if (recovery.kind === "ACCEPT_AUTHORITY_AND_CLEAR") {
+        if (!this.clearAttemptIfCurrent(current)) {
+          this.presentDurableAttempt(context);
+          return;
+        }
+        this.applySharedPresentation(recovery.authority);
+        return;
+      }
+      mutationSent = true;
+      const result = await getOpenGameRegistrationSource().withdraw(current);
+      if (!await this.activeSharedOrResynchronize(generation, userId)) return;
+      if (!this.clearAttemptIfCurrent(current)) {
+        this.presentDurableAttempt(result);
+        return;
+      }
+      this.applySharedPresentation(result);
+    } catch (caught) {
+      if (mutationSent) await this.handleWithdrawalMutationError(attempt, caught, generation);
+      else await this.handleWithdrawalReadError(attempt, caught, generation);
+    }
+  },
+
+  async handleWithdrawalReadError(
+    attempt: OpenGameRegistrationWithdrawAttempt,
+    caught: unknown,
+    generation: number,
+  ) {
+    if (!this.active(generation)
+      || this.boundRegistrationUserId !== attempt.originatingUserId) return;
+    const currentUserId = this.currentRegistrationUserId();
+    if (currentUserId !== attempt.originatingUserId) {
+      if (currentUserId !== null) await this.loadPublic();
+      else this.setData({
+        status: "AUTH_LOSS",
+        withdrawalOperationState: "RESULT_UNKNOWN",
+        primaryAction: "LOGIN",
+        showLogin: true,
+        errorMessage: "请恢复原账号后继续确认退出结果。",
+      });
+      return;
+    }
+    if (caught instanceof OpenGameRegistrationApiError
+      && (caught.code === "AUTH_REQUIRED" || caught.code === "LOGIN_FAILED")) {
+      this.setData({
+        status: "AUTH_LOSS",
+        withdrawalOperationState: "RESULT_UNKNOWN",
+        primaryAction: "LOGIN",
+        showLogin: true,
+        errorMessage: "请恢复原账号后继续确认退出结果。",
+      });
+      return;
+    }
+    this.presentWithdrawalUnknownWithoutContext();
+  },
+
+  async handleWithdrawalMutationError(
+    attempt: OpenGameRegistrationWithdrawAttempt,
+    caught: unknown,
+    generation: number,
+  ) {
+    if (!this.active(generation)
+      || this.boundRegistrationUserId !== attempt.originatingUserId) return;
+    const currentUserId = this.currentRegistrationUserId();
+    if (currentUserId !== attempt.originatingUserId) {
+      if (currentUserId !== null) await this.loadPublic();
+      else this.setData({
+        status: "AUTH_LOSS",
+        withdrawalOperationState: "RESULT_UNKNOWN",
+        primaryAction: "LOGIN",
+        showLogin: true,
+        errorMessage: "请恢复原账号后继续确认退出结果。",
+      });
+      return;
+    }
+    if (caught instanceof OpenGameRegistrationApiError
+      && (caught.code === "AUTH_REQUIRED" || caught.code === "LOGIN_FAILED")) {
+      this.setData({
+        status: "AUTH_LOSS",
+        withdrawalOperationState: "RESULT_UNKNOWN",
+        primaryAction: "LOGIN",
+        showLogin: true,
+        errorMessage: "请恢复原账号后继续确认退出结果。",
+      });
+      return;
+    }
+    if (!(caught instanceof OpenGameRegistrationApiError)) {
+      this.presentWithdrawalUnknownWithoutContext();
+      return;
+    }
+    const decision = classifyOpenGameRegistrationMutationResult(caught.code);
+    if (!decision.clearAttempt) {
+      this.presentWithdrawalUnknownWithoutContext();
+      return;
+    }
+    if (!this.clearAttemptIfCurrent(attempt)) {
+      this.presentDurableAttempt();
+      return;
+    }
+    await this.loadPublic();
+  },
+
+  presentWithdrawalUnknownWithoutContext() {
+    this.setData({
+      status: "READY",
+      withdrawalOperationState: "RESULT_UNKNOWN",
+      primaryAction: "CONFIRM_WITHDRAW_RESULT",
+      statusHeading: "退出结果待确认",
+      statusDescription: "上次操作没有返回结果，请读取权威状态确认。",
+      statusTone: "pending",
+      errorMessage: "退出结果暂时未知，请稍后继续确认。",
+    });
+  },
+
+  onBlockTouchMove() {},
 
   onGoPending() {
     if (this.data.mode !== "shared"
@@ -959,7 +1395,7 @@ Page({
         const decision = classifyOpenGameRegistrationPendingAttempt(
           durable,
           this.currentRegistrationUserId(),
-          { kind: "apply", shareToken: this.routeToken },
+          targetForAttempt(durable, this.routeToken),
         );
         if (decision.kind !== "FOREIGN_ACCOUNT_PENDING") {
           this.presentPendingAttempt(durable);

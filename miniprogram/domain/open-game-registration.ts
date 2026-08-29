@@ -4,6 +4,7 @@ export const OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES = [
   "APPLIED",
   "JOINED",
   "REJECTED",
+  "WITHDRAWN",
   "CANCELLED",
 ] as const;
 
@@ -70,14 +71,29 @@ export interface OpenGameReviewActions {
   readonly rejectBlockedReason: OpenGameReviewBlockedReason | null;
 }
 
+export type OpenGameRegistrationWithdrawalAction =
+  | "WITHDRAW_APPLICATION"
+  | "LEAVE_GAME";
+
+export type OpenGameRegistrationWithdrawalKind =
+  | "APPLICATION_WITHDRAWAL"
+  | "GAME_EXIT";
+
 export interface OpenGameViewerRegistration {
+  readonly id: string;
+  readonly version: number;
   readonly displayName: string;
   readonly position: OpenGamePosition;
   readonly note: string | null;
-  readonly persistedStatus: "APPLIED" | "JOINED" | "REJECTED";
+  readonly persistedStatus: "APPLIED" | "JOINED" | "REJECTED" | "WITHDRAWN";
   readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
   readonly appliedAt: string;
   readonly decidedAt: string | null;
+  readonly withdrawnAt: string | null;
+  readonly withdrawalKind: OpenGameRegistrationWithdrawalKind | null;
+  readonly lateExitRecorded: boolean;
+  readonly availableWithdrawalAction: OpenGameRegistrationWithdrawalAction | null;
+  readonly lateExitWillBeRecorded: boolean;
 }
 
 export interface OpenGameApplicationItem {

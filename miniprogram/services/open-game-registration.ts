@@ -4,6 +4,7 @@ import type {
   OpenGameApplicationPage,
   OpenGameApplicationSubmission,
   OpenGameRegistrationContext,
+  OpenGameRegistrationWithdrawalAction,
 } from "../domain/open-game-registration";
 
 export type OpenGameRegistrationAttempt =
@@ -22,6 +23,15 @@ export type OpenGameRegistrationAttempt =
     readonly decision: "ACCEPT" | "REJECT";
     readonly expectedVersion: number;
     readonly idempotencyKey: string;
+  }
+  | {
+    readonly kind: "withdraw";
+    readonly originatingUserId: string;
+    readonly shareToken: string;
+    readonly applicationId: string;
+    readonly action: OpenGameRegistrationWithdrawalAction;
+    readonly expectedVersion: number;
+    readonly idempotencyKey: string;
   };
 
 export type OpenGameRegistrationApplyAttempt = Extract<
@@ -31,6 +41,10 @@ export type OpenGameRegistrationApplyAttempt = Extract<
 export type OpenGameRegistrationDecisionAttempt = Extract<
   OpenGameRegistrationAttempt,
   { readonly kind: "decision" }
+>;
+export type OpenGameRegistrationWithdrawAttempt = Extract<
+  OpenGameRegistrationAttempt,
+  { readonly kind: "withdraw" }
 >;
 
 export type OpenGameRegistrationAttemptAvailability =
@@ -57,6 +71,7 @@ export interface OpenGameRegistrationSource {
   apply(attempt: OpenGameRegistrationApplyAttempt): Promise<OpenGameRegistrationContext>;
   getPending(gameId: string): Promise<OpenGameApplicationQueue>;
   decide(attempt: OpenGameRegistrationDecisionAttempt): Promise<OpenGameApplicationDecisionResult>;
+  withdraw(attempt: OpenGameRegistrationWithdrawAttempt): Promise<OpenGameRegistrationContext>;
 }
 
 export type OpenGameRegistrationApiErrorCode =
@@ -136,6 +151,10 @@ export function classifyOpenGameRegistrationUnknownResult(
   attempt: OpenGameRegistrationDecisionAttempt,
 ): OpenGameRegistrationUnknownRecoveryDecision;
 export function classifyOpenGameRegistrationUnknownResult(
+  attempt: OpenGameRegistrationWithdrawAttempt,
+  context: OpenGameRegistrationContext,
+): OpenGameRegistrationUnknownRecoveryDecision;
+export function classifyOpenGameRegistrationUnknownResult(
   attempt: OpenGameRegistrationAttempt,
   context?: OpenGameRegistrationContext,
 ): OpenGameRegistrationUnknownRecoveryDecision {
@@ -145,12 +164,40 @@ export function classifyOpenGameRegistrationUnknownResult(
       return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority: context, clearAttempt: true };
     }
   }
+  if (attempt.kind === "withdraw") {
+    if (context === undefined) throw new Error("OPEN_GAME_REGISTRATION_CONTEXT_REQUIRED");
+    const registration = context.viewerRegistration;
+    const expectedPersistedStatus = attempt.action === "WITHDRAW_APPLICATION" ? "APPLIED" : "JOINED";
+    const expectedWithdrawalKind = attempt.action === "WITHDRAW_APPLICATION"
+      ? "APPLICATION_WITHDRAWAL"
+      : "GAME_EXIT";
+    const expectedTerminalVersion = attempt.expectedVersion + 1;
+    const exactTerminal = Number.isSafeInteger(expectedTerminalVersion)
+      && registration !== null
+      && registration.id === attempt.applicationId
+      && registration.persistedStatus === "WITHDRAWN"
+      && registration.version === expectedTerminalVersion
+      && registration.withdrawalKind === expectedWithdrawalKind;
+    if (exactTerminal) {
+      return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority: context, clearAttempt: true };
+    }
+    const unchanged = registration !== null
+      && registration.id === attempt.applicationId
+      && registration.persistedStatus === expectedPersistedStatus
+      && registration.effectiveStatus === expectedPersistedStatus
+      && registration.version === attempt.expectedVersion
+      && registration.availableWithdrawalAction === attempt.action;
+    if (!unchanged) {
+      return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority: context, clearAttempt: true };
+    }
+  }
   return { kind: "REPLAY_SAME_ATTEMPT", attempt, clearAttempt: false };
 }
 
 export type OpenGameRegistrationAttemptTarget =
   | { readonly kind: "apply"; readonly shareToken: string }
-  | { readonly kind: "decision"; readonly gameId: string };
+  | { readonly kind: "decision"; readonly gameId: string }
+  | { readonly kind: "withdraw"; readonly shareToken: string };
 
 export type OpenGameRegistrationPendingAttemptDecision =
   | {
@@ -175,11 +222,13 @@ export function classifyOpenGameRegistrationPendingAttempt(
   }
   const sameResource = attempt.kind === "apply"
     ? target.kind === "apply" && target.shareToken === attempt.shareToken
-    : target.kind === "decision" && target.gameId === attempt.gameId;
+    : attempt.kind === "decision"
+      ? target.kind === "decision" && target.gameId === attempt.gameId
+      : target.kind === "withdraw" && target.shareToken === attempt.shareToken;
   if (sameResource) return { kind: "READY", attempt, clearAttempt: false };
-  const route = attempt.kind === "apply"
-    ? `/pages/captain-game-public/index?token=${attempt.shareToken}`
-    : `/pages/captain-game-applications/index?game_id=${attempt.gameId}`;
+  const route = attempt.kind === "decision"
+    ? `/pages/captain-game-applications/index?game_id=${attempt.gameId}`
+    : `/pages/captain-game-public/index?token=${attempt.shareToken}`;
   return { kind: "PRESERVE_AND_NAVIGATE", route, clearAttempt: false };
 }
 

@@ -1,5 +1,9 @@
-import type { OpenGameApplicationPage } from "../../domain/open-game-registration";
+import type {
+  OpenGameApplicationPage,
+  OpenGameRegistrationEffectiveStatus,
+} from "../../domain/open-game-registration";
 import {
+  patchMyGameRegistrationStatus,
   presentMyGameRegistration,
   type MyGameRegistrationCard,
 } from "../../presentation/my-game-registrations";
@@ -21,6 +25,12 @@ interface RegistrationEvent {
 
 interface ScrollEvent {
   readonly detail?: { readonly scrollTop?: unknown };
+}
+
+interface RegistrationAuthorityPatch {
+  readonly originatingUserId: string;
+  readonly registrationId: string;
+  readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
 }
 
 const PAGE_LIMIT = 20;
@@ -335,6 +345,21 @@ Page({
     if (typeof registrationId !== "string") return;
     const registration = this.data.items.find((item) => item.registrationId === registrationId);
     if (registration) wx.navigateTo({ url: registration.detailPath });
+  },
+
+  applyRegistrationAuthority(patch: RegistrationAuthorityPatch): boolean {
+    if (this.data.status !== "READY"
+      || this.boundUserId === null
+      || patch.originatingUserId !== this.boundUserId
+      || this.currentUserId() !== this.boundUserId) return false;
+    const index = this.data.items.findIndex(
+      ({ registrationId }) => registrationId === patch.registrationId,
+    );
+    if (index < 0) return false;
+    const items = [...this.data.items];
+    items[index] = patchMyGameRegistrationStatus(items[index], patch.effectiveStatus);
+    this.setData({ items });
+    return true;
   },
 
   onScroll(event: ScrollEvent) {

@@ -25,6 +25,7 @@ const STATUS_LABELS: Readonly<Record<OpenGameRegistrationEffectiveStatus, string
   APPLIED: "待队长审核",
   JOINED: "已加入",
   REJECTED: "未通过",
+  WITHDRAWN: "已退出",
   CANCELLED: "球局已取消",
 };
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
@@ -59,5 +60,16 @@ export function presentMyGameRegistration(item: OpenGameApplicationItem): MyGame
     pitch: item.pitchName,
     formatLabel: item.pitchSpecification,
     detailPath: item.detailPath,
+  };
+}
+
+export function patchMyGameRegistrationStatus(
+  card: MyGameRegistrationCard,
+  effectiveStatus: OpenGameRegistrationEffectiveStatus,
+): MyGameRegistrationCard {
+  return {
+    ...card,
+    effectiveStatus,
+    statusLabel: STATUS_LABELS[effectiveStatus],
   };
 }
