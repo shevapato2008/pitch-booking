@@ -241,11 +241,13 @@ Page({
 
   onRetry() {
     if (this.data.status !== "LOAD_ERROR") return;
+    if (this.currentUserId() !== this.boundUserId) return this.synchronizeAccount();
     return this.loadFirstPage("INITIAL");
   },
 
   onRefresh() {
     if (this.data.status !== "READY") return;
+    if (this.currentUserId() !== this.boundUserId) return this.synchronizeAccount();
     return this.loadFirstPage("REFRESH");
   },
 
@@ -309,7 +311,12 @@ Page({
     try {
       const userId = await getOpenGameRegistrationSource().login();
       if (!this.visible || generation !== this.generation) return;
-      if (this.currentUserId() !== userId) throw new OpenGameRegistrationApiError("LOGIN_FAILED");
+      const currentUserId = this.currentUserId();
+      if (currentUserId !== userId) {
+        if (currentUserId === null) throw new OpenGameRegistrationApiError("LOGIN_FAILED");
+        await this.synchronizeAccount();
+        return;
+      }
       this.clearAuthority("LOADING", userId);
       await this.loadFirstPage("INITIAL");
     } catch {
@@ -322,6 +329,7 @@ Page({
 
   onOpenRegistration(event: RegistrationEvent) {
     if (this.data.status !== "READY") return;
+    if (this.currentUserId() !== this.boundUserId) return this.synchronizeAccount();
     const registrationId = event.currentTarget?.dataset?.registrationId;
     if (typeof registrationId !== "string") return;
     const registration = this.data.items.find((item) => item.registrationId === registrationId);

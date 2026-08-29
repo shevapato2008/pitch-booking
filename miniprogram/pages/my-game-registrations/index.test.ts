@@ -9,12 +9,17 @@ import type {
   OpenGameApplicationItem,
   OpenGameApplicationPage,
 } from "../../domain/open-game-registration";
-import { OpenGameRegistrationApiError } from "../../services/http-open-game-registration";
+import type { StatusTransport } from "../../runtime/interfaces";
+import {
+  createHttpOpenGameRegistrationSource,
+  OpenGameRegistrationApiError,
+} from "../../services/http-open-game-registration";
 import {
   registerOpenGameRegistrationSource,
   resetOpenGameRegistrationSourceForTesting,
   type OpenGameRegistrationSource,
 } from "../../services/open-game-registration";
+import type { SessionStore, StoredSession } from "../../services/session-store";
 
 type PageDefinition = Record<string, any> & { data: Record<string, any> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
@@ -28,9 +33,10 @@ interface Deferred<T> {
 const SOURCE_PATH = "miniprogram/pages/my-game-registrations/index.ts";
 const USER_A = "11111111-2222-4333-8444-555555555555";
 const USER_B = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-const READY = decodeMyOpenGameApplications(JSON.parse(
+const RAW_READY = JSON.parse(
   readFileSync("contracts/examples/my-open-game-applications-ready.json", "utf8"),
-) as unknown);
+) as Record<string, unknown>;
+const READY = decodeMyOpenGameApplications(RAW_READY);
 const EMPTY = decodeMyOpenGameApplications(JSON.parse(
   readFileSync("contracts/examples/my-open-game-applications-empty.json", "utf8"),
 ) as unknown);
@@ -191,6 +197,32 @@ test("no session performs no read; explicit login failure stays retryable and su
   expect(pageInstance.data).toMatchObject({ status: "READY", resultCount: 4, loginBusy: false });
 });
 
+test("a visible deferred account A login resynchronizes to account B stored before completion", async () => {
+  currentUserId = null;
+  const login = deferred<string>();
+  const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };
+  const api = registerSource({
+    login: jest.fn(() => login.promise),
+    listMine: jest.fn(async () => page([bItem], null)),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  const loggingIn = call(pageInstance, "onLogin") as Promise<void>;
+  expect(pageInstance.data.loginBusy).toBe(true);
+
+  currentUserId = USER_B;
+  login.resolve(USER_A);
+  await loggingIn;
+
+  expect(api.listMine).toHaveBeenCalledWith(undefined, 20);
+  expect(pageInstance.data).toMatchObject({
+    status: "READY", loginBusy: false, resultCount: 1,
+  });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
+});
+
 test("initial failure retries, while refresh failure retains current cards", async () => {
   let calls = 0;
   const api = registerSource({
@@ -214,6 +246,57 @@ test("initial failure retries, while refresh failure retains current cards", asy
     status: "READY", refreshError: true, refreshing: false, nextCursor: "opaque-page-2",
   });
   expect(pageInstance.data.items.map((item: { registrationId: string }) => item.registrationId)).toEqual(ids);
+});
+
+test("an idle refresh after switching accounts clears A and loads account B", async () => {
+  const accountBRead = deferred<OpenGameApplicationPage>();
+  const aItem = { ...READY.items[0], gameName: "账号 A 的球局" };
+  const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };
+  const api = registerSource({
+    listMine: jest.fn(() => currentUserId === USER_A
+      ? Promise.resolve(page([aItem], "account-a-cursor"))
+      : accountBRead.promise),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+
+  currentUserId = USER_B;
+  const refreshing = call(pageInstance, "onRefresh") as Promise<void>;
+
+  expect(api.listMine).toHaveBeenCalledTimes(2);
+  expect(pageInstance.data).toMatchObject({
+    status: "LOADING", items: [], nextCursor: null, resultCount: 0, listScrollTop: 0,
+  });
+  accountBRead.resolve(page([bItem], "account-b-cursor"));
+  await refreshing;
+  expect(pageInstance.data).toMatchObject({
+    status: "READY", nextCursor: "account-b-cursor", resultCount: 1,
+  });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
+});
+
+test("an idle retry after switching accounts loads B instead of requiring login", async () => {
+  const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };
+  const api = registerSource({
+    listMine: jest.fn(async () => {
+      if (currentUserId === USER_A) throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
+      return page([bItem], null);
+    }),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  expect(pageInstance.data.status).toBe("LOAD_ERROR");
+
+  currentUserId = USER_B;
+  await call(pageInstance, "onRetry");
+
+  expect(api.listMine).toHaveBeenCalledTimes(2);
+  expect(pageInstance.data).toMatchObject({ status: "READY", resultCount: 1 });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
 });
 
 test("load-more failure retains cards and cursor; retry appends stable unique registrations", async () => {
@@ -271,6 +354,31 @@ test("cards use only the current registration id, preserve scroll/detail return,
   call(pageInstance, "onOpenDiscovery");
   expect(wx.reLaunch).toHaveBeenNthCalledWith(1, { url: "/pages/game-discovery/index" });
   expect(wx.reLaunch).toHaveBeenNthCalledWith(2, { url: "/pages/game-discovery/index" });
+});
+
+test("a stale account A card tap synchronizes account B without navigating to A", async () => {
+  const aItem = { ...READY.items[0], gameName: "账号 A 的球局" };
+  const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };
+  const api = registerSource({
+    listMine: jest.fn(async () => currentUserId === USER_A
+      ? page([aItem], null)
+      : page([bItem], null)),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  const staleRegistrationId = pageInstance.data.items[0].registrationId as string;
+
+  currentUserId = USER_B;
+  await call(pageInstance, "onOpenRegistration", {
+    currentTarget: { dataset: { registrationId: staleRegistrationId } },
+  });
+
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+  expect(api.listMine).toHaveBeenCalledTimes(2);
+  expect(pageInstance.data).toMatchObject({ status: "READY", resultCount: 1 });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
 });
 
 test("hiding during refresh clears transient busy state and ignores the late response", async () => {
@@ -408,4 +516,69 @@ test("account B wins after account A is hidden and its late response is discarde
   await aLoad;
   expect(api.listMine).toHaveBeenCalledTimes(2);
   expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual(["账号 B 的球局"]);
+});
+
+test("a real late account A 401 preserves account B session and rendered items", async () => {
+  const staleAccountA = deferred<unknown>();
+  const sessionA: StoredSession = {
+    token: "account-a-token",
+    expiresAt: "2099-01-01T00:00:00Z",
+    userId: USER_A,
+  };
+  const sessionB: StoredSession = {
+    token: "account-b-token",
+    expiresAt: "2099-02-01T00:00:00Z",
+    userId: USER_B,
+  };
+  let storedSession: StoredSession | null = sessionA;
+  const sessionStore: SessionStore = {
+    load: jest.fn(() => storedSession),
+    save: jest.fn((session: StoredSession) => { storedSession = session; }),
+    clear: jest.fn(() => { storedSession = null; }),
+  };
+  const bPayload = structuredClone(RAW_READY) as Record<string, unknown>;
+  const rawItems = bPayload.items as Array<Record<string, unknown>>;
+  bPayload.items = [{ ...rawItems[3], game_name: "账号 B 的球局" }];
+  bPayload.next_cursor = null;
+  let requestCount = 0;
+  const unsupported = async <T>(): Promise<T> => { throw new Error("UNSUPPORTED_TRANSPORT_CALL"); };
+  const transport: StatusTransport = {
+    get: unsupported,
+    post: unsupported,
+    put: unsupported,
+    requestWithStatus: async <T>() => {
+      requestCount += 1;
+      if (requestCount === 1) throw await staleAccountA.promise;
+      return { statusCode: 200, data: bPayload as T };
+    },
+  };
+  const api = createHttpOpenGameRegistrationSource({
+    transport,
+    identity: { login: jest.fn(async () => ({ code: "unused" })) },
+    sessionStore,
+  });
+  registerOpenGameRegistrationSource(api);
+  const pageInstance = loadPage();
+  const accountALoad = call(pageInstance, "onShow") as Promise<void>;
+
+  call(pageInstance, "onHide");
+  sessionStore.save(sessionB);
+  await call(pageInstance, "onShow");
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
+
+  staleAccountA.resolve({
+    code: "HTTP_ERROR",
+    statusCode: 401,
+    data: { error: { code: "AUTH_REQUIRED", message: "expired", request_id: "old-a", details: {} } },
+  });
+  await accountALoad;
+
+  expect(api.currentUserId()).toBe(USER_B);
+  expect(sessionStore.load()).toEqual(sessionB);
+  expect(pageInstance.data).toMatchObject({ status: "READY", resultCount: 1 });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
 });

@@ -24,6 +24,7 @@ const fixture = (name: string): Record<string, unknown> => JSON.parse(
 ) as Record<string, unknown>;
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
+const USER_B_ID = "00000000-0000-4000-8000-000000000002";
 const GAME_ID = "22222222-3333-4444-8555-666666666666";
 const APPLICATION_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const SHARE_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz_12345";
@@ -34,6 +35,16 @@ const rawAppliedContext = fixture("open-game-registration-context-applied");
 const rawQueue = fixture("open-game-applications-pending");
 const rawJoinedDecision = fixture("open-game-application-decision-joined");
 const rawMine = fixture("my-open-game-applications-ready");
+const REPLACEMENT_B_SESSION: StoredSession = {
+  token: "replacement-account-b-token",
+  expiresAt: "2099-02-01T00:00:00Z",
+  userId: USER_B_ID,
+};
+const REFRESHED_A_SESSION: StoredSession = {
+  token: "replacement-account-a-token",
+  expiresAt: "2099-02-01T00:00:00Z",
+  userId: USER_ID,
+};
 
 const applyAttempt: OpenGameRegistrationApplyAttempt = {
   kind: "apply",
@@ -72,6 +83,16 @@ const httpError = (statusCode: number, code: string, details: unknown = {}) => (
   data: { error: { code, message: "error", request_id: "request-id", details } },
 });
 const rejected = (value: unknown) => ({ rejectWith: value });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function isRejectedTransportValue(value: unknown): boolean {
   return typeof value === "object" && value !== null && "code" in value;
@@ -254,6 +275,26 @@ describe("HTTP open-game registration requests", () => {
     expect(h.sessionStore.clear).toHaveBeenCalledTimes(1);
     expect(h.identity.login).not.toHaveBeenCalled();
   });
+
+  test.each([
+    ["account B", REPLACEMENT_B_SESSION],
+    ["a refreshed account A token", REFRESHED_A_SESSION],
+  ])("a late account A 401 preserves %s stored after the request started", async (
+    _label,
+    replacement,
+  ) => {
+    const lateResponse = deferred<unknown>();
+    const h = harness([lateResponse.promise]);
+    const oldRequest = h.source.listMine();
+
+    h.sessionStore.save(replacement);
+    lateResponse.resolve(httpError(401, "AUTH_REQUIRED"));
+
+    await expect(oldRequest).rejects.toEqual(new OpenGameRegistrationApiError("AUTH_REQUIRED"));
+    expect(h.sessionStore.clear).not.toHaveBeenCalled();
+    expect(h.sessionStore.load()).toEqual(replacement);
+    expect(h.source.currentUserId()).toBe(replacement.userId);
+  });
 });
 
 describe("HTTP open-game registration explicit login", () => {
@@ -293,6 +334,20 @@ describe("HTTP open-game registration explicit login", () => {
     await expect(h.source.login()).rejects.toEqual(new OpenGameRegistrationApiError("LOGIN_FAILED"));
     await expect(h.source.login()).resolves.toBe(USER_ID);
     expect(h.identity.login).toHaveBeenCalledTimes(2);
+  });
+
+  test("a late account A login exchange preserves account B stored while it was in flight", async () => {
+    const exchange = deferred<unknown>();
+    const h = harness([exchange.promise]);
+    const oldLogin = h.source.login();
+
+    h.sessionStore.save(REPLACEMENT_B_SESSION);
+    exchange.resolve(response(200, rawSession));
+
+    await expect(oldLogin).resolves.toBe(USER_ID);
+    expect(h.sessionStore.save).toHaveBeenCalledTimes(1);
+    expect(h.sessionStore.load()).toEqual(REPLACEMENT_B_SESSION);
+    expect(h.source.currentUserId()).toBe(USER_B_ID);
   });
 });
 

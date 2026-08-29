@@ -28,7 +28,7 @@ import type {
   OpenGameRegistrationDecisionAttempt,
   OpenGameRegistrationSource,
 } from "./open-game-registration";
-import type { SessionStore } from "./session-store";
+import type { SessionStore, StoredSession } from "./session-store";
 
 export interface OpenGameRegistrationFieldError {
   readonly field: string;
@@ -284,17 +284,36 @@ function httpFailure(caught: unknown): { readonly statusCode: number; readonly d
   return { statusCode: candidate.statusCode as number, data: candidate.data };
 }
 
+function sameSession(left: StoredSession | null, right: StoredSession | null): boolean {
+  if (left === null || right === null) return left === right;
+  return left.token === right.token
+    && left.expiresAt === right.expiresAt
+    && left.userId === right.userId;
+}
+
+function replaceSessionIfCurrent(
+  sessionStore: SessionStore,
+  expected: StoredSession | null,
+  replacement: StoredSession | null,
+): boolean {
+  if (!sameSession(sessionStore.load(), expected)) return false;
+  if (replacement === null) sessionStore.clear();
+  else sessionStore.save(replacement);
+  return true;
+}
+
 function classifyFailure(
   caught: unknown,
   operation: Operation,
   write: boolean,
   sessionStore: SessionStore,
+  requestSession: StoredSession | null,
 ): OpenGameRegistrationApiError {
   if (caught instanceof OpenGameRegistrationApiError) return caught;
   const failure = httpFailure(caught);
-  if (failure?.statusCode === 401) {
+  if (failure?.statusCode === 401 && requestSession !== null) {
     try {
-      sessionStore.clear();
+      replaceSessionIfCurrent(sessionStore, requestSession, null);
     } catch {
       // Local cleanup cannot replace the server's strict authentication result.
     }
@@ -310,10 +329,13 @@ function classifyFailure(
   return noDetailsError(write ? "APPLICATION_RESULT_UNKNOWN" : "SERVICE_UNAVAILABLE");
 }
 
-function authorization(sessionStore: SessionStore): Readonly<Record<string, string>> {
+function authorization(sessionStore: SessionStore): {
+  readonly session: StoredSession;
+  readonly headers: Readonly<Record<string, string>>;
+} {
   const session = sessionStore.load();
   if (session === null) throw new OpenGameRegistrationApiError("AUTH_REQUIRED");
-  return { Authorization: `Bearer ${session.token}` };
+  return { session, headers: { Authorization: `Bearer ${session.token}` } };
 }
 
 export function createHttpOpenGameRegistrationSource({ transport, identity, sessionStore }: {
@@ -327,6 +349,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     if (loginInFlight !== undefined) return loginInFlight;
     const request = (async () => {
       try {
+        const expectedSession = sessionStore.load();
         const identityResult = await identity.login();
         if (identityResult.code.length === 0) throw new Error("EMPTY_WECHAT_CODE");
         const response = await transport.requestWithStatus<unknown>(
@@ -336,7 +359,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
         );
         if (response.statusCode !== 200) throw new Error("LOGIN_STATUS");
         const session = decodeWeChatSession(response.data);
-        sessionStore.save({
+        replaceSessionIfCurrent(sessionStore, expectedSession, {
           token: session.token,
           expiresAt: session.expiresAt,
           userId: session.user.userId,
@@ -355,9 +378,12 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
   };
 
   const getContext = async (shareToken: string): Promise<OpenGameRegistrationContext> => {
+    let requestSession: StoredSession | null = null;
     try {
-      const session = sessionStore.load();
-      const headers = session === null ? undefined : { Authorization: `Bearer ${session.token}` };
+      requestSession = sessionStore.load();
+      const headers = requestSession === null
+        ? undefined
+        : { Authorization: `Bearer ${requestSession.token}` };
       const response = await transport.requestWithStatus<unknown>(
         "GET",
         `/api/v1/shared-games/${encodeURIComponent(shareToken)}/registration-context`,
@@ -367,36 +393,41 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       if (response.statusCode !== 200) throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
       return decodeOpenGameRegistrationContext(response.data);
     } catch (caught) {
-      throw classifyFailure(caught, "context", false, sessionStore);
+      throw classifyFailure(caught, "context", false, sessionStore, requestSession);
     }
   };
 
   const listMine = async (cursor?: string, limit?: number) => {
+    let requestSession: StoredSession | null = null;
     try {
-      const headers = authorization(sessionStore);
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
       const query = `limit=${String(limit ?? 20)}`
         + (cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`);
       const response = await transport.requestWithStatus<unknown>(
         "GET",
         `/api/v1/open-game-applications?${query}`,
         undefined,
-        headers,
+        authorizationContext.headers,
       );
       if (response.statusCode !== 200) {
         throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
       }
       return decodeMyOpenGameApplications(response.data);
     } catch (caught) {
-      throw classifyFailure(caught, "mine", false, sessionStore);
+      throw classifyFailure(caught, "mine", false, sessionStore, requestSession);
     }
   };
 
   const apply = async (
     attempt: OpenGameRegistrationApplyAttempt,
   ): Promise<OpenGameRegistrationContext> => {
+    let requestSession: StoredSession | null = null;
     try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
       const headers = {
-        ...authorization(sessionStore),
+        ...authorizationContext.headers,
         "Idempotency-Key": attempt.idempotencyKey,
       };
       const response = await transport.requestWithStatus<unknown>(
@@ -427,30 +458,35 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       }
       return context;
     } catch (caught) {
-      throw classifyFailure(caught, "apply", true, sessionStore);
+      throw classifyFailure(caught, "apply", true, sessionStore, requestSession);
     }
   };
 
   const getPending = async (gameId: string) => {
+    let requestSession: StoredSession | null = null;
     try {
-      const headers = authorization(sessionStore);
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
       const response = await transport.requestWithStatus<unknown>(
         "GET",
         `/api/v1/games/${encodeURIComponent(gameId)}/applications`,
         undefined,
-        headers,
+        authorizationContext.headers,
       );
       if (response.statusCode !== 200) throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
       return decodeOpenGameApplicationQueue(response.data);
     } catch (caught) {
-      throw classifyFailure(caught, "queue", false, sessionStore);
+      throw classifyFailure(caught, "queue", false, sessionStore, requestSession);
     }
   };
 
   const decide = async (attempt: OpenGameRegistrationDecisionAttempt) => {
+    let requestSession: StoredSession | null = null;
     try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
       const headers = {
-        ...authorization(sessionStore),
+        ...authorizationContext.headers,
         "Idempotency-Key": attempt.idempotencyKey,
       };
       const response = await transport.requestWithStatus<unknown>(
@@ -474,7 +510,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       }
       return result;
     } catch (caught) {
-      throw classifyFailure(caught, "decide", true, sessionStore);
+      throw classifyFailure(caught, "decide", true, sessionStore, requestSession);
     }
   };
 
