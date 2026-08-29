@@ -8,6 +8,7 @@ import {
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
 import type {
@@ -81,7 +82,7 @@ export class OpenGameRegistrationApiError extends Error {
   }
 }
 
-type Operation = "context" | "apply" | "queue" | "decide";
+type Operation = "context" | "apply" | "queue" | "decide" | "mine";
 
 const APPLY_FIELDS = [
   "display_name",
@@ -128,6 +129,10 @@ const DEFINITIVE_CODES: Readonly<
   queue: {
     401: ["AUTH_REQUIRED"],
     404: ["OPEN_GAME_NOT_FOUND"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  mine: {
+    401: ["AUTH_REQUIRED"],
     422: ["INVALID_ARGUMENT"],
   },
   decide: {
@@ -366,6 +371,26 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
+  const listMine = async (cursor?: string, limit?: number) => {
+    try {
+      const headers = authorization(sessionStore);
+      const query = `limit=${String(limit ?? 20)}`
+        + (cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`);
+      const response = await transport.requestWithStatus<unknown>(
+        "GET",
+        `/api/v1/open-game-applications?${query}`,
+        undefined,
+        headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
+      }
+      return decodeMyOpenGameApplications(response.data);
+    } catch (caught) {
+      throw classifyFailure(caught, "mine", false, sessionStore);
+    }
+  };
+
   const apply = async (
     attempt: OpenGameRegistrationApplyAttempt,
   ): Promise<OpenGameRegistrationContext> => {
@@ -456,6 +481,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
   return {
     login,
     currentUserId: () => sessionStore.load()?.userId ?? null,
+    listMine,
     getContext,
     apply,
     getPending,

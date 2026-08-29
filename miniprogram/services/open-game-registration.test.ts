@@ -5,11 +5,13 @@ import { readFileSync } from "node:fs";
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
 import type {
   OpenGameApplicationDecisionResult,
   OpenGameApplicationQueue,
+  OpenGameApplicationPage,
   OpenGameRegistrationContext,
 } from "../domain/open-game-registration";
 import {
@@ -48,6 +50,7 @@ const queue = decodeOpenGameApplicationQueue(fixture("open-game-applications-pen
 const decisionResult = decodeOpenGameApplicationDecisionResult(
   fixture("open-game-application-decision-joined"),
 );
+const mine = decodeMyOpenGameApplications(fixture("my-open-game-applications-ready"));
 
 const applyAttempt: OpenGameRegistrationApplyAttempt = {
   kind: "apply",
@@ -76,6 +79,11 @@ function fakeSource(): OpenGameRegistrationSource {
   return {
     login: async (): Promise<string> => USER_ID,
     currentUserId: (): string | null => USER_ID,
+    listMine: async (cursor?: string, limit?: number): Promise<OpenGameApplicationPage> => {
+      expect(cursor).toBe("opaque-cursor");
+      expect(limit).toBe(20);
+      return mine;
+    },
     getContext: async (shareToken: string): Promise<OpenGameRegistrationContext> => {
       expect(shareToken).toBe(SHARE_TOKEN);
       return contextReady;
@@ -124,6 +132,7 @@ describe("open-game registration bindings", () => {
     expect(getOpenGameRegistrationAttemptStore()).toBe(store);
     await expect(source.login()).resolves.toBe(USER_ID);
     expect(source.currentUserId()).toBe(USER_ID);
+    await expect(source.listMine("opaque-cursor", 20)).resolves.toBe(mine);
     await expect(source.getContext(SHARE_TOKEN)).resolves.toBe(contextReady);
     await expect(source.apply(applyAttempt)).resolves.toBe(contextApplied);
     await expect(source.getPending(GAME_ID)).resolves.toBe(queue);

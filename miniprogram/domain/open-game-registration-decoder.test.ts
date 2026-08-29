@@ -7,6 +7,7 @@ import { decodeOpenGamePublic } from "./open-game-decoder";
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
   validateOpenGameApplicationDraft,
 } from "./open-game-registration-decoder";
@@ -25,6 +26,7 @@ const contextReady = fixture("open-game-registration-context-apply-ready");
 const contextApplied = fixture("open-game-registration-context-applied");
 const queuePending = fixture("open-game-applications-pending");
 const decisionJoined = fixture("open-game-application-decision-joined");
+const myApplicationsReady = fixture("my-open-game-applications-ready");
 
 describe("open-game registration response decoders", () => {
   test.each([
@@ -267,6 +269,162 @@ describe("open-game registration response decoders", () => {
       ...decisionJoined,
       allowed_actions: allowedActions,
     }));
+  });
+});
+
+describe("my open-game applications response decoder", () => {
+  test("decodes the exact ready and empty payloads to frozen camel-case pages", () => {
+    const input = clone(myApplicationsReady);
+    const decoded = decodeMyOpenGameApplications(input);
+
+    expect(decoded).toEqual({
+      items: [
+        {
+          id: "40000000-0000-4000-8000-000000000004",
+          effectiveStatus: "CANCELLED",
+          appliedAt: "2026-08-29T12:00:00+08:00",
+          detailPath: "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+          gameName: "周日八人制友谊赛",
+          startsAt: "2026-09-06T18:00:00+08:00",
+          endsAt: "2026-09-06T20:00:00+08:00",
+          timeZone: "Asia/Shanghai",
+          venueName: "逐光足球公园",
+          pitchName: "1号场",
+          pitchSpecification: "8人制",
+        },
+        {
+          id: "40000000-0000-4000-8000-000000000003",
+          effectiveStatus: "REJECTED",
+          appliedAt: "2026-08-28T12:00:00+08:00",
+          detailPath: "/pages/captain-game-public/index?token=0123456789abcdefghijklmnopqrstuv",
+          gameName: "周六七人制训练赛",
+          startsAt: "2026-09-05T19:00:00+08:00",
+          endsAt: "2026-09-05T21:00:00+08:00",
+          timeZone: "Asia/Shanghai",
+          venueName: "逐光足球公园",
+          pitchName: "2号场",
+          pitchSpecification: "7人制",
+        },
+        {
+          id: "40000000-0000-4000-8000-000000000002",
+          effectiveStatus: "JOINED",
+          appliedAt: "2026-08-27T12:00:00+08:00",
+          detailPath: "/pages/captain-game-public/index?token=zyxwvutsrqponmlkjihgfedcba543210",
+          gameName: "周三五人制夜场",
+          startsAt: "2026-09-02T20:00:00+08:00",
+          endsAt: "2026-09-02T22:00:00+08:00",
+          timeZone: "Asia/Shanghai",
+          venueName: "逐光足球公园",
+          pitchName: "3号场",
+          pitchSpecification: "5人制",
+        },
+        {
+          id: "40000000-0000-4000-8000-000000000001",
+          effectiveStatus: "APPLIED",
+          appliedAt: "2026-08-26T12:00:00+08:00",
+          detailPath: "/pages/captain-game-public/index?token=A1_b2-C3_d4-E5_f6-G7_h8-I9_j0-KL",
+          gameName: "周二六人制约球",
+          startsAt: "2026-09-01T19:00:00+08:00",
+          endsAt: "2026-09-01T21:00:00+08:00",
+          timeZone: "Asia/Shanghai",
+          venueName: "逐光足球公园",
+          pitchName: "4号场",
+          pitchSpecification: "6人制",
+        },
+      ],
+      nextCursor: myApplicationsReady.next_cursor,
+    });
+    expect(decodeMyOpenGameApplications(fixture("my-open-game-applications-empty"))).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect(Object.isFrozen(decoded)).toBe(true);
+    expect(Object.isFrozen(decoded.items)).toBe(true);
+    expect(decoded.items.every(Object.isFrozen)).toBe(true);
+    (input.items as Array<Record<string, unknown>>)[0].game_name = "被修改";
+    expect(decoded.items[0].gameName).toBe("周日八人制友谊赛");
+  });
+
+  test.each(["APPLIED", "JOINED", "REJECTED", "CANCELLED"] as const)(
+    "accepts the shared %s effective status",
+    (effectiveStatus) => {
+      const value = clone(myApplicationsReady);
+      (value.items as Array<Record<string, unknown>>)[0].effective_status = effectiveStatus;
+      expect(decodeMyOpenGameApplications(value).items[0].effectiveStatus).toBe(effectiveStatus);
+    },
+  );
+
+  test("rejects extra, private, and missing fields at both closed boundaries", () => {
+    rejected(() => decodeMyOpenGameApplications({ ...myApplicationsReady, private: true }));
+    const privateItem = clone(myApplicationsReady);
+    (privateItem.items as Array<Record<string, unknown>>)[0].applicant_user_id = "private";
+    rejected(() => decodeMyOpenGameApplications(privateItem));
+    const missingItem = clone(myApplicationsReady);
+    Reflect.deleteProperty((missingItem.items as Array<Record<string, unknown>>)[0], "venue_name");
+    rejected(() => decodeMyOpenGameApplications(missingItem));
+  });
+
+  test.each([
+    ["UUID", "id", "not-a-uuid"],
+    ["canonical lowercase UUID", "id", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"],
+    ["status", "effective_status", "WAITLISTED"],
+    ["RFC3339 applied time", "applied_at", "2026-08-29 12:00:00"],
+    ["shared detail path", "detail_path", "/pages/captain-game-public/index?token=too-short"],
+    ["IANA time zone", "time_zone", "Shanghai"],
+    ["RFC3339 start", "starts_at", "tomorrow"],
+    ["RFC3339 end", "ends_at", "later"],
+  ] as const)("rejects an invalid %s", (_label, field, invalidValue) => {
+    const value = clone(myApplicationsReady);
+    (value.items as Array<Record<string, unknown>>)[0][field] = invalidValue;
+    rejected(() => decodeMyOpenGameApplications(value));
+  });
+
+  test("requires starts_at to be strictly before ends_at", () => {
+    for (const endsAt of ["2026-09-06T18:00:00+08:00", "2026-09-06T17:59:59+08:00"]) {
+      const value = clone(myApplicationsReady);
+      (value.items as Array<Record<string, unknown>>)[0].ends_at = endsAt;
+      rejected(() => decodeMyOpenGameApplications(value));
+    }
+  });
+
+  test("accepts only a strict applied_at DESC, lowercase id DESC page without duplicate ids", () => {
+    const sortedTie = clone(myApplicationsReady);
+    const items = sortedTie.items as Array<Record<string, unknown>>;
+    items[1].applied_at = items[0].applied_at;
+    expect(() => decodeMyOpenGameApplications(sortedTie)).not.toThrow();
+
+    const ascendingTime = clone(myApplicationsReady);
+    (ascendingTime.items as Array<Record<string, unknown>>).reverse();
+    rejected(() => decodeMyOpenGameApplications(ascendingTime));
+
+    const ascendingTie = clone(sortedTie);
+    (ascendingTie.items as Array<Record<string, unknown>>).splice(
+      0,
+      2,
+      ...(ascendingTie.items as Array<Record<string, unknown>>).slice(0, 2).reverse(),
+    );
+    rejected(() => decodeMyOpenGameApplications(ascendingTie));
+
+    const duplicate = clone(myApplicationsReady);
+    (duplicate.items as Array<Record<string, unknown>>)[3].id =
+      (duplicate.items as Array<Record<string, unknown>>)[0].id;
+    rejected(() => decodeMyOpenGameApplications(duplicate));
+  });
+
+  test("treats next_cursor as opaque but rejects missing, empty, or non-string cursors", () => {
+    expect(decodeMyOpenGameApplications({
+      ...myApplicationsReady,
+      next_cursor: " opaque value the client must not decode ",
+    }).nextCursor).toBe(" opaque value the client must not decode ");
+    for (const nextCursor of ["", 0, false, {}]) {
+      rejected(() => decodeMyOpenGameApplications({
+        ...myApplicationsReady,
+        next_cursor: nextCursor,
+      }));
+    }
+    const missing = clone(myApplicationsReady);
+    Reflect.deleteProperty(missing, "next_cursor");
+    rejected(() => decodeMyOpenGameApplications(missing));
   });
 });
 

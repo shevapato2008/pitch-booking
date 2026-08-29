@@ -4,10 +4,13 @@ import {
   exactObject,
   invalid,
   rfc3339At,
+  rfc3339Before,
   stringAt,
   uuidAt,
 } from "./decoder-primitives";
 import { decodeOpenGamePublic } from "./open-game-decoder";
+import { supportedIanaTimeZoneAt } from "./zoned-time";
+import { OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES } from "./open-game-registration";
 import { OPEN_GAME_POSITIONS, type OpenGamePosition } from "./open-game";
 import type {
   CaptainOpenGameApplication,
@@ -15,6 +18,8 @@ import type {
   OpenGameApplicationDraft,
   OpenGameApplicationDraftValidation,
   OpenGameApplicationQueue,
+  OpenGameApplicationItem,
+  OpenGameApplicationPage,
   OpenGameApplicationSubmission,
   OpenGameApplyActions,
   OpenGameApplyBlockedReason,
@@ -45,7 +50,7 @@ const REVIEW_BLOCKED_REASONS = [
   "GAME_FULL",
 ] as const;
 const PERSISTED_STATUSES = ["APPLIED", "JOINED", "REJECTED"] as const;
-const EFFECTIVE_STATUSES = ["APPLIED", "JOINED", "REJECTED", "CANCELLED"] as const;
+const EFFECTIVE_STATUSES = OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES;
 
 const CONTEXT_KEYS = [
   "game", "remaining_spots", "viewer_authenticated", "viewer_registration", "allowed_actions",
@@ -60,6 +65,12 @@ const CAPTAIN_APPLICATION_KEYS = [
 const DECISION_RESULT_KEYS = [
   "application_id", "status", "version", "decided_at", "remaining_spots", "allowed_actions",
 ] as const;
+const MY_APPLICATION_PAGE_KEYS = ["items", "next_cursor"] as const;
+const MY_APPLICATION_ITEM_KEYS = [
+  "id", "effective_status", "applied_at", "detail_path", "game_name", "starts_at",
+  "ends_at", "time_zone", "venue_name", "pitch_name", "pitch_specification",
+] as const;
+const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
 
 const MAINLAND_MOBILE_PATTERN =
   /(?:^|[^0-9])(?:\+?86[\s-]?)?1[3-9](?:[\s-]?[0-9]){9}(?:$|[^0-9])/;
@@ -151,6 +162,34 @@ function decodeCaptainApplication(value: unknown, path: string): CaptainOpenGame
   });
 }
 
+function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicationItem {
+  const object = exactObject(value, MY_APPLICATION_ITEM_KEYS, path);
+  const id = uuidAt(object.id, `${path}.id`);
+  if (id !== id.toLowerCase()) invalid(`${path}.id`);
+  const detailPath = stringAt(object.detail_path, `${path}.detail_path`);
+  if (!DETAIL_PATH_PATTERN.test(detailPath)) invalid(`${path}.detail_path`);
+  const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
+  const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
+  if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
+  return Object.freeze({
+    id,
+    effectiveStatus: enumAt(
+      object.effective_status,
+      EFFECTIVE_STATUSES,
+      `${path}.effective_status`,
+    ),
+    appliedAt: rfc3339At(object.applied_at, `${path}.applied_at`),
+    detailPath,
+    gameName: stringAt(object.game_name, `${path}.game_name`),
+    startsAt,
+    endsAt,
+    timeZone: supportedIanaTimeZoneAt(object.time_zone, `${path}.time_zone`),
+    venueName: stringAt(object.venue_name, `${path}.venue_name`),
+    pitchName: stringAt(object.pitch_name, `${path}.pitch_name`),
+    pitchSpecification: stringAt(object.pitch_specification, `${path}.pitch_specification`),
+  });
+}
+
 export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegistrationContext {
   const object = exactObject(value, CONTEXT_KEYS, "$" );
   return Object.freeze({
@@ -174,6 +213,31 @@ export function decodeOpenGameApplicationQueue(value: unknown): OpenGameApplicat
     pendingCount: safeIntegerAt(object.pending_count, "$.pending_count"),
     applications,
   });
+}
+
+export function decodeMyOpenGameApplications(value: unknown): OpenGameApplicationPage {
+  const object = exactObject(value, MY_APPLICATION_PAGE_KEYS, "$");
+  const items = Object.freeze(arrayAt(object.items, "$.items").map(
+    (item, index) => decodeMyApplicationItem(item, `$.items[${index}]`),
+  ));
+  const ids = new Set<string>();
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (ids.has(item.id)) invalid(`$.items[${index}].id`);
+    ids.add(item.id);
+    if (index === 0) continue;
+    const previous = items[index - 1];
+    if (rfc3339Before(previous.appliedAt, item.appliedAt)) {
+      invalid(`$.items[${index}].applied_at`);
+    }
+    if (!rfc3339Before(item.appliedAt, previous.appliedAt) && previous.id <= item.id) {
+      invalid(`$.items[${index}].id`);
+    }
+  }
+  const nextCursor = object.next_cursor === null
+    ? null
+    : stringAt(object.next_cursor, "$.next_cursor");
+  return Object.freeze({ items, nextCursor });
 }
 
 export function decodeOpenGameApplicationDecisionResult(

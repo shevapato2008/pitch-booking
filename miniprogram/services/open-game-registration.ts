@@ -1,6 +1,7 @@
 import type {
   OpenGameApplicationDecisionResult,
   OpenGameApplicationQueue,
+  OpenGameApplicationPage,
   OpenGameApplicationSubmission,
   OpenGameRegistrationContext,
 } from "../domain/open-game-registration";
@@ -51,6 +52,7 @@ export interface OpenGameRegistrationAttemptStore {
 export interface OpenGameRegistrationSource {
   login(): Promise<string>;
   currentUserId(): string | null;
+  listMine(cursor?: string, limit?: number): Promise<OpenGameApplicationPage>;
   getContext(shareToken: string): Promise<OpenGameRegistrationContext>;
   apply(attempt: OpenGameRegistrationApplyAttempt): Promise<OpenGameRegistrationContext>;
   getPending(gameId: string): Promise<OpenGameApplicationQueue>;

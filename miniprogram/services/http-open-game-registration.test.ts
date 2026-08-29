@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
 import type { StatusTransport, WeChatIdentityCapability } from "../runtime/interfaces";
@@ -32,6 +33,7 @@ const rawAnonymousContext = fixture("open-game-registration-context-anonymous");
 const rawAppliedContext = fixture("open-game-registration-context-applied");
 const rawQueue = fixture("open-game-applications-pending");
 const rawJoinedDecision = fixture("open-game-application-decision-joined");
+const rawMine = fixture("my-open-game-applications-ready");
 
 const applyAttempt: OpenGameRegistrationApplyAttempt = {
   kind: "apply",
@@ -123,6 +125,42 @@ function harness(
 }
 
 describe("HTTP open-game registration requests", () => {
+  test("lists mine with exact authenticated default, encoded cursor, explicit limit, and empty cursor queries", async () => {
+    const h = harness([
+      response(200, rawMine),
+      response(200, rawMine),
+      response(200, rawMine),
+    ]);
+
+    await expect(h.source.listMine()).resolves.toEqual(decodeMyOpenGameApplications(rawMine));
+    await expect(h.source.listMine("opaque /+?=&游标", 7)).resolves.toEqual(
+      decodeMyOpenGameApplications(rawMine),
+    );
+    await expect(h.source.listMine("", 20)).resolves.toEqual(decodeMyOpenGameApplications(rawMine));
+
+    expect(h.calls).toEqual([
+      {
+        method: "GET",
+        path: "/api/v1/open-game-applications?limit=20",
+        body: undefined,
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "GET",
+        path: "/api/v1/open-game-applications?limit=7&cursor=opaque%20%2F%2B%3F%3D%26%E6%B8%B8%E6%A0%87",
+        body: undefined,
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "GET",
+        path: "/api/v1/open-game-applications?limit=20&cursor=",
+        body: undefined,
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+    ]);
+    expect(h.identity.login).not.toHaveBeenCalled();
+  });
+
   test("constructs the four exact encoded endpoint calls, snake_case bodies, and headers", async () => {
     const h = harness([
       response(200, rawAnonymousContext),
@@ -196,6 +234,7 @@ describe("HTTP open-game registration requests", () => {
     for (const operation of [
       h.source.apply(applyAttempt),
       h.source.getPending(GAME_ID),
+      h.source.listMine(),
       h.source.decide(decisionAttempt),
     ]) {
       await expect(operation).rejects.toEqual(new OpenGameRegistrationApiError("AUTH_REQUIRED"));
@@ -257,7 +296,7 @@ describe("HTTP open-game registration explicit login", () => {
   });
 });
 
-type Operation = "context" | "apply" | "queue" | "decide";
+type Operation = "context" | "apply" | "queue" | "decide" | "mine";
 
 function perform(
   h: ReturnType<typeof harness>,
@@ -266,6 +305,7 @@ function perform(
   if (operation === "context") return h.source.getContext(SHARE_TOKEN);
   if (operation === "apply") return h.source.apply(applyAttempt);
   if (operation === "queue") return h.source.getPending(GAME_ID);
+  if (operation === "mine") return h.source.listMine();
   return h.source.decide(decisionAttempt);
 }
 
@@ -308,6 +348,8 @@ describe("HTTP open-game registration closed errors", () => {
     ["queue", 401, "AUTH_REQUIRED", {}, undefined],
     ["queue", 404, "OPEN_GAME_NOT_FOUND", {}, undefined],
     ["queue", 422, "INVALID_ARGUMENT", fieldDetails.queue, undefined],
+    ["mine", 401, "AUTH_REQUIRED", {}, undefined],
+    ["mine", 422, "INVALID_ARGUMENT", {}, undefined],
     ["decide", 401, "AUTH_REQUIRED", {}, undefined],
     ["decide", 404, "OPEN_GAME_NOT_FOUND", {}, undefined],
     ["decide", 404, "APPLICATION_NOT_FOUND", {}, undefined],
@@ -346,6 +388,8 @@ describe("HTTP open-game registration closed errors", () => {
     ["apply", 404, "APPLICATION_NOT_FOUND"],
     ["queue", 409, "APPLICATION_STATE_CHANGED"],
     ["queue", 404, "APPLICATION_NOT_FOUND"],
+    ["mine", 404, "OPEN_GAME_NOT_FOUND"],
+    ["mine", 404, "INVALID_ARGUMENT"],
     ["decide", 409, "APPLICATION_ALREADY_EXISTS"],
     ["decide", 404, "AUTH_REQUIRED"],
   ] as const)("fails closed for out-of-matrix %s HTTP %s %s", async (
@@ -431,6 +475,10 @@ describe("HTTP open-game registration closed errors", () => {
       httpError(422, "INVALID_ARGUMENT", { fields: [{ field: "game_id", message: "bad" }] }),
     ]).source.getPending(GAME_ID));
     expect(queueError.code).toBe("SERVICE_UNAVAILABLE");
+    const mineError = await registrationError(harness([
+      httpError(422, "INVALID_ARGUMENT", { fields: [{ field: "date", message: "bad" }] }),
+    ]).source.listMine());
+    expect(mineError.code).toBe("SERVICE_UNAVAILABLE");
   });
 
   test.each([
@@ -547,7 +595,7 @@ describe("HTTP open-game registration failure certainty", () => {
     _label,
     failure,
   ) => {
-    for (const operation of ["context", "queue"] as const) {
+    for (const operation of ["context", "queue", "mine"] as const) {
       expect((await registrationError(perform(harness([failure]), operation))).code)
         .toBe("SERVICE_UNAVAILABLE");
     }
@@ -560,10 +608,12 @@ describe("HTTP open-game registration failure certainty", () => {
   test.each([
     ["context", 201, rawAnonymousContext, "SERVICE_UNAVAILABLE"],
     ["queue", 201, rawQueue, "SERVICE_UNAVAILABLE"],
+    ["mine", 201, rawMine, "SERVICE_UNAVAILABLE"],
     ["apply", 200, rawAppliedContext, "APPLICATION_RESULT_UNKNOWN"],
     ["decide", 201, rawJoinedDecision, "APPLICATION_RESULT_UNKNOWN"],
     ["context", 200, { ...rawAnonymousContext, private: true }, "SERVICE_UNAVAILABLE"],
     ["queue", 200, { ...rawQueue, private: true }, "SERVICE_UNAVAILABLE"],
+    ["mine", 200, { ...rawMine, private: true }, "SERVICE_UNAVAILABLE"],
     ["apply", 201, { ...rawAppliedContext, private: true }, "APPLICATION_RESULT_UNKNOWN"],
     ["decide", 200, { ...rawJoinedDecision, private: true }, "APPLICATION_RESULT_UNKNOWN"],
   ] as const)("maps wrong or malformed successful %s authority to %s", async (

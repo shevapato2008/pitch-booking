@@ -1,5 +1,15 @@
 import type { OpenGamePosition, OpenGamePublic } from "./open-game";
 
+export const OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES = [
+  "APPLIED",
+  "JOINED",
+  "REJECTED",
+  "CANCELLED",
+] as const;
+
+export type OpenGameRegistrationEffectiveStatus =
+  typeof OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES[number];
+
 export interface OpenGameApplicationDraft {
   readonly displayName: string;
   readonly position: OpenGamePosition | null;
@@ -65,9 +75,28 @@ export interface OpenGameViewerRegistration {
   readonly position: OpenGamePosition;
   readonly note: string | null;
   readonly persistedStatus: "APPLIED" | "JOINED" | "REJECTED";
-  readonly effectiveStatus: "APPLIED" | "JOINED" | "REJECTED" | "CANCELLED";
+  readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
   readonly appliedAt: string;
   readonly decidedAt: string | null;
+}
+
+export interface OpenGameApplicationItem {
+  readonly id: string;
+  readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
+  readonly appliedAt: string;
+  readonly detailPath: string;
+  readonly gameName: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly timeZone: string;
+  readonly venueName: string;
+  readonly pitchName: string;
+  readonly pitchSpecification: string;
+}
+
+export interface OpenGameApplicationPage {
+  readonly items: readonly OpenGameApplicationItem[];
+  readonly nextCursor: string | null;
 }
 
 export interface OpenGameRegistrationContext {

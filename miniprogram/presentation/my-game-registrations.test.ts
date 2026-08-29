@@ -1,0 +1,65 @@
+import { describe, expect, test } from "@jest/globals";
+
+import type { OpenGameApplicationItem } from "../domain/open-game-registration";
+import { presentMyGameRegistration } from "./my-game-registrations";
+
+const base: OpenGameApplicationItem = {
+  id: "40000000-0000-4000-8000-000000000001",
+  effectiveStatus: "APPLIED",
+  appliedAt: "2026-08-29T01:30:00Z",
+  detailPath: "/pages/captain-game-public/index?token=0123456789abcdef0123456789abcdef",
+  gameName: "海河周六轻松局",
+  startsAt: "2026-09-04T17:00:00Z",
+  endsAt: "2026-09-04T18:30:00Z",
+  timeZone: "Asia/Shanghai",
+  venueName: "天津河东体育中心",
+  pitchName: "笼式五人制 2 号场",
+  pitchSpecification: "5人制",
+};
+
+describe("my game registration presentation", () => {
+  test.each([
+    ["APPLIED", "待队长审核"],
+    ["JOINED", "已加入"],
+    ["REJECTED", "未通过"],
+    ["CANCELLED", "球局已取消"],
+  ] as const)("maps %s to its frozen status label", (effectiveStatus, statusLabel) => {
+    expect(presentMyGameRegistration({ ...base, effectiveStatus })).toMatchObject({
+      effectiveStatus,
+      statusLabel,
+    });
+  });
+
+  test("projects the exact approved card fields and response time zone across a UTC date boundary", () => {
+    expect(presentMyGameRegistration(base)).toEqual({
+      registrationId: base.id,
+      effectiveStatus: "APPLIED",
+      statusLabel: "待队长审核",
+      appliedAt: base.appliedAt,
+      gameName: "海河周六轻松局",
+      dateLabel: "9月5日 周六",
+      timeLabel: "01:00–02:30",
+      venue: "天津河东体育中心",
+      pitch: "笼式五人制 2 号场",
+      formatLabel: "5人制",
+      detailPath: base.detailPath,
+    });
+  });
+
+  test("uses a non-Shanghai response time zone without changing the domain value", () => {
+    const item: OpenGameApplicationItem = {
+      ...base,
+      startsAt: "2026-08-28T01:00:00Z",
+      endsAt: "2026-08-28T03:00:00Z",
+      timeZone: "America/Los_Angeles",
+      pitchSpecification: "7人制",
+    };
+
+    expect(presentMyGameRegistration(item)).toMatchObject({
+      dateLabel: "8月27日 周四",
+      timeLabel: "18:00–20:00",
+      formatLabel: "7人制",
+    });
+    expect(item.timeZone).toBe("America/Los_Angeles");
+  });
+});

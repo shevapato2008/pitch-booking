@@ -63,6 +63,7 @@
 - Modify: `miniprogram/domain/open-game-registration-decoder.ts`
 - Modify: `miniprogram/domain/open-game-registration-decoder.test.ts`
 - Modify: `miniprogram/services/open-game-registration.ts`
+- Modify: `miniprogram/services/open-game-registration.test.ts`
 - Modify: `miniprogram/services/http-open-game-registration.ts`
 - Modify: `miniprogram/services/http-open-game-registration.test.ts`
 - Create: `miniprogram/presentation/my-game-registrations.ts`
