@@ -324,6 +324,69 @@ test("401 clears old authority without auto-login", async () => {
   expect(api.login).not.toHaveBeenCalled();
 });
 
+test("a visible refresh success resynchronizes to account B instead of retaining account A", async () => {
+  const staleRefresh = deferred<OpenGameApplicationPage>();
+  const aItem = { ...READY.items[0], gameName: "账号 A 的球局" };
+  const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };
+  let calls = 0;
+  const api = registerSource({
+    listMine: jest.fn(() => {
+      calls += 1;
+      if (calls === 1) return Promise.resolve(page([aItem], "account-a-cursor"));
+      if (calls === 2) return staleRefresh.promise;
+      return Promise.resolve(page([bItem], "account-b-cursor"));
+    }),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  const refreshing = call(pageInstance, "onRefresh") as Promise<void>;
+  expect(pageInstance.data).toMatchObject({ refreshing: true, nextCursor: "account-a-cursor" });
+
+  currentUserId = USER_B;
+  staleRefresh.resolve(page([{ ...aItem, gameName: "账号 A 的过期刷新" }], null));
+  await refreshing;
+
+  expect(api.listMine).toHaveBeenCalledTimes(3);
+  expect(pageInstance.data).toMatchObject({
+    status: "READY",
+    refreshing: false,
+    loadingMore: false,
+    nextCursor: "account-b-cursor",
+    resultCount: 1,
+  });
+  expect(pageInstance.data.items.map((item: { gameName: string }) => item.gameName)).toEqual([
+    "账号 B 的球局",
+  ]);
+});
+
+test("a visible load-more error after session loss clears account A cards, cursor, and busy state", async () => {
+  const staleMore = deferred<OpenGameApplicationPage>();
+  const api = registerSource({
+    listMine: jest.fn((cursor?: string) => cursor === undefined
+      ? Promise.resolve(page(READY.items.slice(0, 2), "account-a-cursor"))
+      : staleMore.promise),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  const loadingMore = call(pageInstance, "onLoadMore") as Promise<void>;
+  expect(pageInstance.data).toMatchObject({ loadingMore: true, nextCursor: "account-a-cursor" });
+
+  currentUserId = null;
+  staleMore.reject(new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE"));
+  await loadingMore;
+
+  expect(pageInstance.data).toMatchObject({
+    status: "AUTH_REQUIRED",
+    items: [],
+    nextCursor: null,
+    resultCount: 0,
+    listScrollTop: 0,
+    refreshing: false,
+    loadingMore: false,
+  });
+  expect(api.login).not.toHaveBeenCalled();
+});
+
 test("account B wins after account A is hidden and its late response is discarded", async () => {
   const pendingA = deferred<OpenGameApplicationPage>();
   const bItem = { ...READY.items[3], gameName: "账号 B 的球局" };

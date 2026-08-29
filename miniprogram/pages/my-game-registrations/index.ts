@@ -115,6 +115,18 @@ Page({
       && this.currentUserId() === userId;
   },
 
+  resynchronizeVisibleAccount(userId: string, generation: number): Promise<void> | null {
+    if (!this.activeGeneration(userId, generation)) return null;
+    const currentUserId = this.currentUserId();
+    if (currentUserId === userId) return null;
+    if (currentUserId === null) {
+      this.enterAuthentication();
+      return Promise.resolve();
+    }
+    this.clearAuthority("LOADING", currentUserId);
+    return this.loadFirstPage("INITIAL");
+  },
+
   clearAuthority(status: RegistrationListStatus, userId: string | null) {
     this.generation += 1;
     this.readBusy = false;
@@ -178,6 +190,11 @@ Page({
     }
     try {
       const response = await getOpenGameRegistrationSource().listMine(undefined, PAGE_LIMIT);
+      const resynchronization = this.resynchronizeVisibleAccount(userId, generation);
+      if (resynchronization !== null) {
+        await resynchronization;
+        return;
+      }
       if (!this.currentRequest(userId, generation)) return;
       const items = cardsFrom(response);
       this.setData({
@@ -193,6 +210,11 @@ Page({
         loginBusy: false,
       });
     } catch (caught) {
+      const resynchronization = this.resynchronizeVisibleAccount(userId, generation);
+      if (resynchronization !== null) {
+        await resynchronization;
+        return;
+      }
       if (!this.activeGeneration(userId, generation)) return;
       if (caught instanceof OpenGameRegistrationApiError && caught.code === "AUTH_REQUIRED") {
         this.enterAuthentication();
@@ -240,6 +262,11 @@ Page({
     this.setData({ loadingMore: true, loadMoreError: false, refreshError: false });
     try {
       const response = await getOpenGameRegistrationSource().listMine(cursor, PAGE_LIMIT);
+      const resynchronization = this.resynchronizeVisibleAccount(userId, generation);
+      if (resynchronization !== null) {
+        await resynchronization;
+        return;
+      }
       if (!this.currentRequest(userId, generation)) return;
       const seen = new Set(this.data.items.map(({ registrationId }) => registrationId));
       const appended = cardsFrom(response).filter(({ registrationId }) => {
@@ -257,6 +284,11 @@ Page({
         loadingMore: false,
       });
     } catch (caught) {
+      const resynchronization = this.resynchronizeVisibleAccount(userId, generation);
+      if (resynchronization !== null) {
+        await resynchronization;
+        return;
+      }
       if (!this.activeGeneration(userId, generation)) return;
       if (caught instanceof OpenGameRegistrationApiError && caught.code === "AUTH_REQUIRED") {
         this.enterAuthentication();
