@@ -20,7 +20,7 @@ scrolling:
   fixed_bottom_bar: all-six-states
   safe_area_bottom: required
 review_slots: [reference, implementation, side-by-side, overlay-50, difference, observations]
-visual_gate: pending-user-visual-approval
+visual_gate: APPROVED
 fixture:
   planned_path: miniprogram/dev/c1a-player-application-fixture.ts
   deletion_condition: delete only after production apply, captain decision, applicant result reread, focused automation, and two-account real-device acceptance pass

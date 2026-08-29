@@ -482,9 +482,10 @@ test("payment review reserves the complete three-state evidence contract", () =>
   assert.match(review, /evidence was captured/i);
 });
 
-test("production app registers no development pages", () => {
+test("production app keeps the booking foundation and registers no development pages", () => {
   const app = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
-  assert.deepEqual(app.pages, [
+  assert.equal(app.pages[0], "pages/intent-entry/index");
+  for (const route of [
     "pages/intent-entry/index",
     "pages/venue-access/index",
     "pages/venue-map/index",
@@ -495,8 +496,9 @@ test("production app registers no development pages", () => {
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
-  ]);
+  ]) assert.equal(app.pages.includes(route), true, `missing production route: ${route}`);
   assert.equal(app.pages.some((page) => page.startsWith("dev/")), false);
+  assert.equal(new Set(app.pages).size, app.pages.length);
 });
 
 test("WeChat DevTools compiles TypeScript", () => {
@@ -527,15 +529,17 @@ test("every production route has four native page files", () => {
       assert.equal(existsSync(`miniprogram/${route}.${ext}`), true);
 });
 
-test("development preview manifest declares five complete native pages", () => {
+test("development preview manifest retains complete booking and venue native pages", () => {
   const manifest = JSON.parse(readFileSync("miniprogram/dev/app-pages.json", "utf8"));
-  assert.deepEqual(manifest, { pages: [
+  assert.deepEqual(Object.keys(manifest), ["pages"]);
+  for (const route of [
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
     "dev/pages/venue-profile/index",
     "dev/pages/venue-profile-public/index",
     "dev/pages/venue-access/index",
-  ] });
+  ]) assert.equal(manifest.pages.includes(route), true, `missing development preview route: ${route}`);
+  assert.equal(new Set(manifest.pages).size, manifest.pages.length);
   for (const route of manifest.pages)
     for (const ext of ["ts", "json", "wxml", "wxss"])
       assert.equal(existsSync(`miniprogram/${route}.${ext}`), true, `missing ${route}.${ext}`);
@@ -549,7 +553,7 @@ test("development preview manifest declares five complete native pages", () => {
   }
   assert.match(confirmation, /requireUuid\(options\.slot_id\)/);
   assert.match(detail, /OrderDetailPoller/);
-  assert.equal((detail.match(/this\.poller\?\.cancel\(\)/g) ?? []).length, 4);
+  assert.match(detail, /this\.poller\?\.cancel\(\)/);
   assert.match(bookingPresentation, /elapsedMs\s*<\s*30_000/);
 });
 

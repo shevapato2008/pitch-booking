@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 const routes = [
   "dev/pages/c1c-scenario/index",
@@ -9,6 +13,9 @@ const routes = [
   "dev/pages/c1c-my-registrations/index",
   "dev/pages/c1c-registration-detail/index",
 ];
+const execFileAsync = promisify(execFile);
+const buildScript = path.resolve("scripts/build-miniprogram.mjs");
+const testTencentMapKey = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
 
 const read = (file) => readFileSync(file, "utf8");
 
@@ -52,12 +59,18 @@ test("C1c pages keep the flex-scroll, touch, chevron, and handler contracts", ()
   assert.match(sharedStyles, /border-top:\s*4rpx solid[^}]*border-right:\s*4rpx solid/s);
 });
 
-test("production source and fresh output exclude every C1c preview marker and synthetic name", () => {
+test("production source and isolated fresh output exclude every C1c preview marker and synthetic name", async (t) => {
   const sourceManifest = JSON.parse(read("miniprogram/app.json"));
   assert.equal(sourceManifest.pages.some((route) => route.includes("c1c-")), false);
 
-  const productionRoot = "dist/miniprogram-production";
-  assert.equal(existsSync(productionRoot), true, "run a fresh production build before this isolation test");
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-c1c-production-"));
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await cp("miniprogram", path.join(projectRoot, "miniprogram"), { recursive: true });
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: projectRoot,
+    env: { ...process.env, MINIPROGRAM_TENCENT_MAP_KEY: testTencentMapKey },
+  });
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const productionManifest = JSON.parse(read(`${productionRoot}/app.json`));
   assert.equal(productionManifest.pages.some((route) => route.includes("c1c-")), false);
 

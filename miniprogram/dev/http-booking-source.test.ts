@@ -1,4 +1,4 @@
-import { afterEach, expect, jest, test } from "@jest/globals";
+import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 
 jest.mock("./fixture-data", () => ({
   FIXTURE_DATA: {
@@ -55,6 +55,11 @@ interface RequestOptions {
 
 const requests: RequestOptions[] = [];
 
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date("2026-08-25T00:00:00Z"));
+});
+
 function installRequestRuntime(): void {
   const storage = new Map<string, unknown>();
   Object.defineProperty(globalThis, "wx", {
@@ -99,6 +104,8 @@ afterEach(() => {
   resetVenueFulfillmentBindingsForTesting();
   resetVenueFulfillmentAttemptStoreForTesting();
   Reflect.deleteProperty(globalThis, "wx");
+  jest.clearAllTimers();
+  jest.useRealTimers();
 });
 
 test("development HTTP sources use the base URL, deterministic capabilities, and isolated memory sessions", async () => {

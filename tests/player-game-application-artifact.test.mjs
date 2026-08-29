@@ -45,7 +45,7 @@ test("manifest freezes exactly six 375 by 812 development-only states and review
   assert.deepEqual(manifest.states.map(({ id }) => id), states);
   assert.equal(manifest.states.filter(({ representative_capture }) => representative_capture).length, 6);
   assert.deepEqual(manifest.review_slots, ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"]);
-  assert.equal(manifest.visual_gate, "pending-user-visual-approval");
+  assert.equal(manifest.visual_gate, "APPROVED");
   assert.match(manifest.fixture.deletion_condition, /production/i);
 });
 
@@ -193,7 +193,7 @@ test("reference uses the established visual system and safe-area aligned 44px co
   assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u, "emoji cannot serve as icons");
 });
 
-test("flow and review keep every action honest and the user visual gate pending", { skip: missing.length > 0 }, () => {
+test("flow and review keep every action honest and the user visual gate approved", { skip: missing.length > 0 }, () => {
   const flow = read(files.flow);
   for (const phrase of [
     "NONE → APPLIED → JOINED", "NONE → APPLIED → REJECTED", "关闭确认层不改状态",
@@ -201,7 +201,8 @@ test("flow and review keep every action honest and the user visual gate pending"
   ]) assert.match(flow, new RegExp(esc(phrase)));
 
   const review = read(files.review);
-  assert.match(review, /pending-user-visual-approval/);
+  assert.match(review, /User visual gate:\s*`APPROVED`/);
+  assert.match(read(files.board), /User visual gate: APPROVED/);
   for (const state of states) {
     assert.match(review, new RegExp(`${esc(state)}-reference-375x812\\.png`));
     assert.match(read(files.board), new RegExp(`data-state=["']${esc(state)}["']`));

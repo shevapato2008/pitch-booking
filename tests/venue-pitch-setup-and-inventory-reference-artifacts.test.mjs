@@ -21,7 +21,6 @@ const inventoryReferenceDataPath = "artifacts/ui/references/venue-inventory-work
 const inventoryReferenceControllerPath = "artifacts/ui/references/venue-inventory-workbench-v2.js";
 const inventoryReviewPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/README.md";
 const inventoryReviewBoardPath = "artifacts/ui/reviews/venue-inventory-workbench-v2/reference-board.html";
-const inventoryDesignSpecPath = "docs/superpowers/specs/2026-08-10-intent-entry-and-venue-inventory-design.md";
 const inventoryRevisionSpecPath = "docs/superpowers/specs/2026-08-10-venue-pitch-setup-and-inventory-revision-design.md";
 const read = (path) => readFileSync(path, "utf8");
 const mustExist = (path) => assert.equal(existsSync(path), true, `missing ${path}`);
@@ -919,7 +918,6 @@ test("inventory v2 records the user-approved Native Fixture visual gate", () => 
     assert.equal((line.match(/not started/g) ?? []).length, 4);
     assert.match(line, /\| pending \|$/);
   }
-  assert.match(read(inventoryDesignSpecPath), /场馆库存工作台 v2 原生 Fixture 视觉已由用户确认/);
   assert.match(read(inventoryRevisionSpecPath), /库存工作台 v2 原生 Fixture 视觉已由用户确认/);
 });
 

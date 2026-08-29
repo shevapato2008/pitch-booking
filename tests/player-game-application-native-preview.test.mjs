@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 const token = "C1A_PLAYER_APPLICATION_FIXTURE";
 const pages = [
@@ -11,6 +15,9 @@ const pages = [
   "c1a-captain-applications",
 ];
 const routes = pages.map((page) => `dev/pages/${page}/index`);
+const execFileAsync = promisify(execFile);
+const buildScript = path.resolve("scripts/build-miniprogram.mjs");
+const testTencentMapKey = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
 
 function readTree(root) {
   if (!existsSync(root)) return "";
@@ -108,7 +115,7 @@ test("native representative layouts preserve the approved Artifact composition",
   ]) assert.match(fixture, new RegExp(sourceTruth.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-test("production source and the freshly built production package contain no C1a route or marker", () => {
+test("production source and an isolated fresh production package contain no C1a route or marker", async (t) => {
   const productionSource = [
     readFileSync("miniprogram/app.json", "utf8"),
     readTree("miniprogram/pages"),
@@ -117,8 +124,14 @@ test("production source and the freshly built production package contain no C1a 
   ].join("\n");
   assert.doesNotMatch(productionSource, /dev\/pages\/c1a-|C1A_PLAYER_APPLICATION_FIXTURE/);
 
-  const productionRoot = "dist/miniprogram-production";
-  assert.equal(existsSync(productionRoot), true, "run a fresh production build before this isolation assertion");
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-c1a-production-"));
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await cp("miniprogram", path.join(projectRoot, "miniprogram"), { recursive: true });
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: projectRoot,
+    env: { ...process.env, MINIPROGRAM_TENCENT_MAP_KEY: testTencentMapKey },
+  });
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const productionOutput = readTree(productionRoot);
   assert.doesNotMatch(productionOutput, /dev\/pages\/c1a-|C1A_PLAYER_APPLICATION_FIXTURE/);
   for (const route of routes) assert.equal(existsSync(path.join(productionRoot, `${route}.js`)), false);
