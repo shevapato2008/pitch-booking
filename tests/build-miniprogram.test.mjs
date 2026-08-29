@@ -37,9 +37,11 @@ const OPEN_GAME_REGISTRATION_ROUTES = [
   "pages/captain-game-applications/index",
 ];
 const GAME_DISCOVERY_ROUTE = "pages/game-discovery/index";
+const MY_GAME_REGISTRATIONS_ROUTE = "pages/my-game-registrations/index";
 const PRODUCTION_ROUTES = [
   EXISTING_PRODUCTION_ROUTES[0],
   GAME_DISCOVERY_ROUTE,
+  MY_GAME_REGISTRATIONS_ROUTE,
   ...EXISTING_PRODUCTION_ROUTES.slice(1, 9),
   ...CAPTAIN_OPEN_GAME_ROUTES,
   ...OPEN_GAME_REGISTRATION_ROUTES,
@@ -505,7 +507,7 @@ test("production captain game form uses the shared mobile header and fixed stepp
 test("public discovery and open game registration production routes ship in both manifests with compiled native artifacts", async (t) => {
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
-  assert.equal(sourceManifest.pages.length, 20);
+  assert.equal(sourceManifest.pages.length, 21);
 
   await build(process.cwd(), "development");
   await build(process.cwd(), "production");
@@ -517,7 +519,11 @@ test("public discovery and open game registration production routes ship in both
 
   assert.deepEqual(developmentManifest.pages.slice(0, PRODUCTION_ROUTES.length), PRODUCTION_ROUTES);
   assert.deepEqual(productionManifest.pages, PRODUCTION_ROUTES);
-  for (const route of [GAME_DISCOVERY_ROUTE, ...OPEN_GAME_REGISTRATION_ROUTES]) {
+  for (const route of [
+    GAME_DISCOVERY_ROUTE,
+    MY_GAME_REGISTRATIONS_ROUTE,
+    ...OPEN_GAME_REGISTRATION_ROUTES,
+  ]) {
     for (const root of [developmentRoot, productionRoot]) {
       for (const extension of ["js", "json", "wxml", "wxss"]) {
         assert.equal(existsSync(path.join(root, `${route}.${extension}`)), true, `${route}.${extension}`);
@@ -527,7 +533,7 @@ test("public discovery and open game registration production routes ship in both
   }
 });
 
-test("real production build preserves all fourteen existing routes and adds only the six open-game journey routes", async (t) => {
+test("real production build preserves all fourteen existing routes and adds only the seven open-game journey routes", async (t) => {
   await build(process.cwd(), "production");
   const outputRoot = path.resolve("dist/miniprogram-production");
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -536,12 +542,13 @@ test("real production build preserves all fourteen existing routes and adds only
   assert.deepEqual(
     manifest.pages.filter((route) => ![
       GAME_DISCOVERY_ROUTE,
+      MY_GAME_REGISTRATIONS_ROUTE,
       ...CAPTAIN_OPEN_GAME_ROUTES,
       ...OPEN_GAME_REGISTRATION_ROUTES,
     ].includes(route)),
     EXISTING_PRODUCTION_ROUTES,
   );
-  assert.equal(manifest.pages.length, 20);
+  assert.equal(manifest.pages.length, 21);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);

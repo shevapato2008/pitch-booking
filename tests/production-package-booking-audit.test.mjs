@@ -11,6 +11,7 @@ const audit = path.resolve("scripts/audit-production-package.mjs");
 const productionRoutes = [
   "pages/intent-entry/index",
   "pages/game-discovery/index",
+  "pages/my-game-registrations/index",
   "pages/venue-access/index",
   "pages/venue-claim/index",
   "pages/venue-create/index",
@@ -91,6 +92,18 @@ for (const token of [
   "海河周六晨练局",
   "奥体周日傍晚局",
   "水西公园夜场局",
+  "C1C_MY_GAME_REGISTRATIONS_FIXTURE",
+  "remove C1C_MY_GAME_REGISTRATIONS_FIXTURE before production integration",
+  "c1c-my-game-registrations-fixture",
+  "c1c-my-game-registrations-pages.json",
+  "dev/pages/c1c-scenario/index",
+  "dev/pages/c1c-discovery-entry/index",
+  "dev/pages/c1c-my-registrations/index",
+  "dev/pages/c1c-registration-detail/index",
+  "C1c 开发预览 · 模拟数据",
+  "c1c-page-2",
+  "reg-joined",
+  "津南周末友谊局",
 ]) {
   test(`production audit rejects ${token} and names it`, async (t) => {
     const root = await createProductionPackage(t);
