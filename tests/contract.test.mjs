@@ -123,6 +123,7 @@ test('OpenAPI document validates and exposes the frozen named path members', asy
     '/api/v1/orders/{order_id}/game',
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
+    '/api/v1/open-game-applications',
     '/api/v1/payments/wechat/notify',
     '/api/v1/refunds/wechat/notify',
     '/api/v1/shared-games/{share_token}',
@@ -151,6 +152,39 @@ test('OpenAPI document validates and exposes the frozen named path members', asy
     assert.ok(contract.paths[expectedPath], expectedPath);
   }
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
+});
+
+test('my open-game applications freeze authenticated opaque pagination and a closed public projection', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operation = contract.paths['/api/v1/open-game-applications'].get;
+  const item = contract.components.schemas.MyOpenGameApplication;
+  const response = contract.components.schemas.MyOpenGameApplicationsResponse;
+
+  assert.deepEqual(Object.keys(contract.paths['/api/v1/open-game-applications']), ['get']);
+  assert.equal(operation.operationId, 'listMyOpenGameApplications');
+  assert.deepEqual(operation.security, [{ bearerAuth: [] }]);
+  assert.deepEqual(operation.parameters, [
+    { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
+    { name: 'cursor', in: 'query', required: false, schema: { type: 'string' } },
+  ]);
+  assert.deepEqual(Object.keys(operation.responses), ['200', '401', '422', '503']);
+  assert.deepEqual(operation.responses['200'].content['application/json'].examples, {
+    Ready: { externalValue: './examples/my-open-game-applications-ready.json' },
+    Empty: { externalValue: './examples/my-open-game-applications-empty.json' },
+  });
+  assert.equal(item.additionalProperties, false);
+  assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
+  assert.deepEqual([...item.required].sort(), [
+    'applied_at', 'detail_path', 'effective_status', 'ends_at', 'game_name', 'id',
+    'pitch_name', 'pitch_specification', 'starts_at', 'time_zone', 'venue_name',
+  ]);
+  assert.deepEqual(item.properties.detail_path, {
+    type: 'string',
+    pattern: '^/pages/captain-game-public/index\\?token=[A-Za-z0-9_-]{32}$',
+  });
+  assert.equal(response.additionalProperties, false);
+  assert.deepEqual([...response.required].sort(), ['items', 'next_cursor']);
+  assert.deepEqual(Object.keys(response.properties).sort(), ['items', 'next_cursor']);
 });
 
 test('C1a registration operations expose exact named success examples', async () => {

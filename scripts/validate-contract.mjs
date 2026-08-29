@@ -80,6 +80,7 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications', '422', 'InvalidArgument'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/public-games', '422', 'InvalidArgument'),
+      attachment('/api/v1/open-game-applications', '422', 'InvalidArgument'),
     ],
   },
   {
@@ -148,6 +149,7 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications', '503', 'ServiceUnavailable'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/public-games', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/open-game-applications', '503', 'ServiceUnavailable'),
     ],
   },
   {
@@ -205,6 +207,18 @@ const exampleMap = [
     reference: './examples/my-orders-empty.json',
     schema: 'OrderListResponse',
     attachments: [attachment('/api/v1/orders', '200', 'Empty')],
+  },
+  {
+    filename: 'my-open-game-applications-ready.json',
+    reference: './examples/my-open-game-applications-ready.json',
+    schema: 'MyOpenGameApplicationsResponse',
+    attachments: [attachment('/api/v1/open-game-applications', '200', 'Ready')],
+  },
+  {
+    filename: 'my-open-game-applications-empty.json',
+    reference: './examples/my-open-game-applications-empty.json',
+    schema: 'MyOpenGameApplicationsResponse',
+    attachments: [attachment('/api/v1/open-game-applications', '200', 'Empty')],
   },
   {
     filename: 'order-expired.json',
@@ -327,6 +341,7 @@ const exampleMap = [
       attachment('/api/v1/shared-games/{share_token}/applications', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/games/{game_id}/applications', '401', 'AuthRequired'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/open-game-applications', '401', 'AuthRequired'),
     ],
   },
   {
@@ -1065,6 +1080,7 @@ const expectedOperations = new Map([
   ['/api/v1/shared-games/{share_token}/applications', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}', new Set(['get'])],
   ['/api/v1/public-games', new Set(['get'])],
+  ['/api/v1/open-game-applications', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],
@@ -1228,6 +1244,58 @@ function validatePublicGameDirectoryContract(contract) {
     $ref: '#/components/schemas/PublicGameDirectoryItem',
   })) {
     fail('public-games response item schema ref must target PublicGameDirectoryItem');
+  }
+}
+
+function validateMyOpenGameApplicationsContract(contract) {
+  const operation = contract.paths?.['/api/v1/open-game-applications']?.get;
+  if (!operation) fail('open-game-applications GET operation is required');
+  if (!isDeepStrictEqual(operation.security, [{ bearerAuth: [] }])) {
+    fail('open-game-applications must require bearer authentication');
+  }
+  const expectedParameters = [
+    {
+      name: 'limit',
+      in: 'query',
+      required: false,
+      schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+    },
+    {
+      name: 'cursor',
+      in: 'query',
+      required: false,
+      schema: { type: 'string' },
+    },
+  ];
+  if (!isDeepStrictEqual(operation.parameters, expectedParameters)) {
+    fail('open-game-applications parameters must freeze limit and opaque cursor');
+  }
+  if (!isDeepStrictEqual(Object.keys(operation.responses ?? {}), ['200', '401', '422', '503'])) {
+    fail('open-game-applications responses must be exactly 200, 401, 422, and 503');
+  }
+  const success = operation.responses['200']?.content?.['application/json'];
+  if (!isDeepStrictEqual(success?.schema, {
+    $ref: '#/components/schemas/MyOpenGameApplicationsResponse',
+  })) {
+    fail('open-game-applications 200 schema must target MyOpenGameApplicationsResponse');
+  }
+
+  const schemas = contract.components?.schemas ?? {};
+  const item = schemas.MyOpenGameApplication;
+  const itemFields = [
+    'id', 'effective_status', 'applied_at', 'detail_path', 'game_name', 'starts_at',
+    'ends_at', 'time_zone', 'venue_name', 'pitch_name', 'pitch_specification',
+  ];
+  if (item?.additionalProperties !== false
+      || !isDeepStrictEqual(new Set(item.required), new Set(itemFields))
+      || !hasExactKeys(item.properties, itemFields)) {
+    fail('MyOpenGameApplication must be a closed exact public projection');
+  }
+  const response = schemas.MyOpenGameApplicationsResponse;
+  if (response?.additionalProperties !== false
+      || !isDeepStrictEqual(new Set(response.required), new Set(['items', 'next_cursor']))
+      || !hasExactKeys(response.properties, ['items', 'next_cursor'])) {
+    fail('MyOpenGameApplicationsResponse must be closed with items and next_cursor');
   }
 }
 
@@ -1546,6 +1614,26 @@ function validatePublicGameDirectoryBusinessRules(response, filename) {
   }
 }
 
+function validateMyOpenGameApplicationsBusinessRules(response, filename) {
+  if (filename === 'my-open-game-applications-empty.json') {
+    if (response.items.length !== 0 || response.next_cursor !== null) {
+      fail(`${filename}: empty response must have no items and a null next_cursor`);
+    }
+    return;
+  }
+  if (response.items.length === 0) {
+    fail(`${filename}: ready response must contain applications`);
+  }
+  for (const item of response.items) {
+    for (const field of ['applied_at', 'starts_at', 'ends_at']) {
+      if (!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(item[field]) || !Number.isFinite(Date.parse(item[field]))) {
+        fail(`${filename}: ${field} must be an aware date-time`);
+      }
+    }
+    localDateInTimeZone(item.starts_at, item.time_zone, filename);
+  }
+}
+
 async function readJsonWithContext(filename) {
   try {
     return JSON.parse(await readFile(filename, 'utf8'));
@@ -1559,6 +1647,7 @@ export async function validateContract(contractPath = defaultContractPath) {
   const rawContract = await SwaggerParser.parse(contractPath);
   validateOperationMatrix(rawContract);
   validatePublicGameDirectoryContract(rawContract);
+  validateMyOpenGameApplicationsContract(rawContract);
   validateErrorCodeEnum(rawContract);
   findAllAttachments(rawContract);
   await SwaggerParser.validate(contractPath);
@@ -1615,6 +1704,9 @@ export async function validateContract(contractPath = defaultContractPath) {
     if (mapping.schema === 'OrderListResponse') validateOrderListBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'PublicGameDirectoryResponse') {
       validatePublicGameDirectoryBusinessRules(mapping.value, mapping.filename);
+    }
+    if (mapping.schema === 'MyOpenGameApplicationsResponse') {
+      validateMyOpenGameApplicationsBusinessRules(mapping.value, mapping.filename);
     }
     if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {

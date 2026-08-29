@@ -2003,6 +2003,63 @@ paths:
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/open-game-applications:
+    get:
+      operationId: listMyOpenGameApplications
+      description: Applications owned by the current authenticated user, newest first.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string}
+      responses:
+        '200':
+          description: Current page of the authenticated user's applications.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MyOpenGameApplicationsResponse'}
+              examples:
+                Ready: {externalValue: './examples/my-open-game-applications-ready.json'}
+                Empty: {externalValue: './examples/my-open-game-applications-empty.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '422':
+          description: Limit or cursor is invalid.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game application service is unavailable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/public-games:
     get:
       operationId: listPublicGames
@@ -3845,6 +3902,33 @@ components:
     OpenGameRegistrationEffectiveStatus:
       type: string
       enum: [APPLIED, JOINED, REJECTED, CANCELLED]
+    MyOpenGameApplication:
+      type: object
+      additionalProperties: false
+      required: [id, effective_status, applied_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
+      properties:
+        id: {type: string, format: uuid}
+        effective_status: {$ref: '#/components/schemas/OpenGameRegistrationEffectiveStatus'}
+        applied_at: {type: string, format: date-time}
+        detail_path:
+          type: string
+          pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
+        game_name: {type: string}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone: {type: string}
+        venue_name: {type: string}
+        pitch_name: {type: string}
+        pitch_specification: {type: string}
+    MyOpenGameApplicationsResponse:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/MyOpenGameApplication'}
+        next_cursor: {type: [string, 'null']}
     OpenGameApplyBlockedReason:
       type: string
       enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_FULL, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]

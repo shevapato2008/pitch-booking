@@ -1,0 +1,57 @@
+{
+  "items": [
+    {
+      "id": "40000000-0000-4000-8000-000000000004",
+      "effective_status": "CANCELLED",
+      "applied_at": "2026-08-29T12:00:00+08:00",
+      "detail_path": "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+      "game_name": "周日八人制友谊赛",
+      "starts_at": "2026-09-06T18:00:00+08:00",
+      "ends_at": "2026-09-06T20:00:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "venue_name": "逐光足球公园",
+      "pitch_name": "1号场",
+      "pitch_specification": "8人制"
+    },
+    {
+      "id": "40000000-0000-4000-8000-000000000003",
+      "effective_status": "REJECTED",
+      "applied_at": "2026-08-28T12:00:00+08:00",
+      "detail_path": "/pages/captain-game-public/index?token=0123456789abcdefghijklmnopqrstuv",
+      "game_name": "周六七人制训练赛",
+      "starts_at": "2026-09-05T19:00:00+08:00",
+      "ends_at": "2026-09-05T21:00:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "venue_name": "逐光足球公园",
+      "pitch_name": "2号场",
+      "pitch_specification": "7人制"
+    },
+    {
+      "id": "40000000-0000-4000-8000-000000000002",
+      "effective_status": "JOINED",
+      "applied_at": "2026-08-27T12:00:00+08:00",
+      "detail_path": "/pages/captain-game-public/index?token=zyxwvutsrqponmlkjihgfedcba543210",
+      "game_name": "周三五人制夜场",
+      "starts_at": "2026-09-02T20:00:00+08:00",
+      "ends_at": "2026-09-02T22:00:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "venue_name": "逐光足球公园",
+      "pitch_name": "3号场",
+      "pitch_specification": "5人制"
+    },
+    {
+      "id": "40000000-0000-4000-8000-000000000001",
+      "effective_status": "APPLIED",
+      "applied_at": "2026-08-26T12:00:00+08:00",
+      "detail_path": "/pages/captain-game-public/index?token=A1_b2-C3_d4-E5_f6-G7_h8-I9_j0-KL",
+      "game_name": "周二六人制约球",
+      "starts_at": "2026-09-01T19:00:00+08:00",
+      "ends_at": "2026-09-01T21:00:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "venue_name": "逐光足球公园",
+      "pitch_name": "4号场",
+      "pitch_specification": "6人制"
+    }
+  ],
+  "next_cursor": "eyJhcHBsaWVkX2F0IjoiMjAyNi0wOC0yNlQxMjowMDowMCswODowMCJ9"
+}

@@ -1592,6 +1592,12 @@ class OpenGameRegistration(Base):
             "id",
             postgresql_where=text("status = 'APPLIED'"),
         ),
+        Index(
+            "ix_open_game_registrations_applicant_applied",
+            "applicant_user_id",
+            "applied_at",
+            "id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

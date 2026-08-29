@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from backend.app.models import (
     OpenGameRegistrationPosition,
@@ -127,6 +128,40 @@ class Queue(_FrozenClosedModel):
     remaining_spots: Annotated[int, Field(strict=True, ge=0)]
     pending_count: Annotated[int, Field(strict=True, ge=0)]
     applications: tuple[CaptainApplication, ...]
+
+
+class MyOpenGameApplication(_FrozenClosedModel):
+    id: uuid.UUID
+    effective_status: EffectiveRegistrationStatus
+    applied_at: AwareDatetime
+    detail_path: Annotated[
+        str,
+        Field(
+            strict=True,
+            pattern=r"^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$",
+        ),
+    ]
+    game_name: Annotated[str, Field(strict=True)]
+    starts_at: AwareDatetime
+    ends_at: AwareDatetime
+    time_zone: Annotated[str, Field(strict=True)]
+    venue_name: Annotated[str, Field(strict=True)]
+    pitch_name: Annotated[str, Field(strict=True)]
+    pitch_specification: Annotated[str, Field(strict=True)]
+
+    @field_validator("time_zone")
+    @classmethod
+    def require_iana_time_zone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError("time_zone must identify an IANA time zone") from error
+        return value
+
+
+class MyOpenGameApplicationsResponse(_FrozenClosedModel):
+    items: tuple[MyOpenGameApplication, ...]
+    next_cursor: Annotated[str, Field(strict=True)] | None
 
 
 class DecisionRequest(_ClosedModel):

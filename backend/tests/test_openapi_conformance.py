@@ -26,6 +26,95 @@ REGISTRATION_OPERATIONS = {
     "/api/v1/games/{game_id}/applications/{application_id}/decision": {"post"},
 }
 
+MY_OPEN_GAME_APPLICATION_FIELDS = {
+    "id",
+    "effective_status",
+    "applied_at",
+    "detail_path",
+    "game_name",
+    "starts_at",
+    "ends_at",
+    "time_zone",
+    "venue_name",
+    "pitch_name",
+    "pitch_specification",
+}
+
+
+def test_my_open_game_applications_contract_is_closed_paginated_and_authenticated() -> None:
+    contract = _contract()
+    path = "/api/v1/open-game-applications"
+    assert path in contract["paths"], "my applications list path must be frozen"
+    assert set(contract["paths"][path]) == {"get"}
+    operation = contract["paths"][path]["get"]
+
+    assert operation["operationId"] == "listMyOpenGameApplications"
+    assert operation["security"] == [{"bearerAuth": []}]
+    assert operation["parameters"] == [
+        {
+            "name": "limit",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
+        },
+        {
+            "name": "cursor",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "string"},
+        },
+    ]
+    assert set(operation["responses"]) == {"200", "401", "422", "503"}
+    assert _response_schema(operation, "200") == {
+        "$ref": "#/components/schemas/MyOpenGameApplicationsResponse"
+    }
+    assert operation["responses"]["200"]["content"]["application/json"]["examples"] == {
+        "Ready": {"externalValue": "./examples/my-open-game-applications-ready.json"},
+        "Empty": {"externalValue": "./examples/my-open-game-applications-empty.json"},
+    }
+
+    expected_codes = {
+        "401": "AUTH_REQUIRED",
+        "422": "INVALID_ARGUMENT",
+        "503": "SERVICE_UNAVAILABLE",
+    }
+    for status, code in expected_codes.items():
+        schema = _response_schema(operation, status)
+        assert schema["allOf"][0] == {"$ref": "#/components/schemas/ErrorEnvelope"}
+        assert schema["allOf"][1]["properties"]["error"]["properties"]["code"] == {
+            "const": code
+        }
+
+    schemas = contract["components"]["schemas"]
+    item = schemas["MyOpenGameApplication"]
+    assert item["additionalProperties"] is False
+    assert set(item["required"]) == MY_OPEN_GAME_APPLICATION_FIELDS
+    assert set(item["properties"]) == MY_OPEN_GAME_APPLICATION_FIELDS
+    assert item["properties"]["detail_path"] == {
+        "type": "string",
+        "pattern": r"^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$",
+    }
+    assert item["properties"]["effective_status"] == {
+        "$ref": "#/components/schemas/OpenGameRegistrationEffectiveStatus"
+    }
+    for field in ("applied_at", "starts_at", "ends_at"):
+        assert item["properties"][field] == {"type": "string", "format": "date-time"}
+
+    response = schemas["MyOpenGameApplicationsResponse"]
+    assert response["additionalProperties"] is False
+    assert set(response["required"]) == {"items", "next_cursor"}
+    assert set(response["properties"]) == {"items", "next_cursor"}
+
+    for filename in (
+        "my-open-game-applications-ready.json",
+        "my-open-game-applications-empty.json",
+    ):
+        example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        validator = Draft202012Validator(
+            _dereference_local_schema(contract, response)
+        )
+        assert validator.is_valid(example), filename
+
 
 def _contract() -> dict[str, Any]:
     loaded = YAML.safe_load(CONTRACT_PATH.read_text())
