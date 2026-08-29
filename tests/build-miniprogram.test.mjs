@@ -205,6 +205,8 @@ test("development app invokes its single composition root before source app code
 });
 
 test("retired owner cancellation preview stays absent while production order routes remain", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const retiredSourcePaths = [
     "miniprogram/dev/order-cancellation-fixture.ts",
     "miniprogram/dev/order-cancellation-fixture.test.ts",
@@ -216,14 +218,14 @@ test("retired owner cancellation preview stays absent while production order rou
   }
 
   await assert.rejects(
-    build(process.cwd(), "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation" }),
+    build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation" }),
     /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http/,
   );
 
-  await build(process.cwd(), "development");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  await build(process.cwd(), "production");
-  const productionRoot = path.resolve("dist/miniprogram-production");
+  await build(projectRoot, "development");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  await build(projectRoot, "production");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
   const developmentText = (await Promise.all((await collectFiles(developmentRoot))
     .filter((file) => !file.endsWith(".png"))
@@ -236,8 +238,6 @@ test("retired owner cancellation preview stays absent while production order rou
   assert.equal(productionManifest.pages.includes("pages/my-orders/index"), true);
   assert.doesNotMatch(developmentText, /order-cancellation|createOrderCancellationFixture/);
   assert.doesNotMatch(productionText, /order-cancellation|createOrderCancellationFixture/);
-
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
 });
 
 test("production app registers HTTP data, public discovery, open games, registrations, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
@@ -324,11 +324,12 @@ test("production app registers HTTP data, public discovery, open games, registra
 });
 
 test("temporary map previews are absent while the approved center asset remains", async (t) => {
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
 
   for (const relativePath of [
     "services/venue-map-preview.js",
@@ -359,6 +360,8 @@ test("temporary map previews are absent while the approved center asset remains"
 });
 
 test("retired my orders previews stay absent while the production route remains", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const previewRoutes = ["dev/pages/my-orders-map/index", "dev/pages/my-orders/index"];
   const retiredSourcePaths = [
     "miniprogram/dev/my-orders-fixture.ts",
@@ -373,11 +376,10 @@ test("retired my orders previews stay absent while the production route remains"
     assert.equal(developmentSourceManifest.pages.includes(route), false, `${route} remains in the development manifest`);
   }
 
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
 
@@ -397,6 +399,8 @@ test("retired my orders previews stay absent while the production route remains"
 });
 
 test("captain open game production routes ship in both builds while temporary preview routes and Fixture stay development-only", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const previewRoutes = [
     "dev/pages/captain-game-form/index",
     "dev/pages/captain-game-manage/index",
@@ -415,11 +419,10 @@ test("captain open game production routes ship in both builds while temporary pr
   }
   assert.doesNotMatch(JSON.stringify(productionSourceManifest), isolationPattern);
 
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
 
@@ -505,15 +508,16 @@ test("production captain game form uses the shared mobile header and fixed stepp
 });
 
 test("public discovery and open game registration production routes ship in both manifests with compiled native artifacts", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
   assert.equal(sourceManifest.pages.length, 21);
 
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
 
@@ -534,9 +538,10 @@ test("public discovery and open game registration production routes ship in both
 });
 
 test("real production build preserves all fourteen existing routes and adds only the seven open-game journey routes", async (t) => {
-  await build(process.cwd(), "production");
-  const outputRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "production");
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   assert.deepEqual(manifest.pages, PRODUCTION_ROUTES);
   assert.deepEqual(
@@ -562,9 +567,10 @@ test("real production build preserves all fourteen existing routes and adds only
 });
 
 test("disabled-payment production keeps B2 owner management composed and routed", async (t) => {
-  await build(process.cwd(), "production", { MINIPROGRAM_PAYMENT_PROVIDER: "disabled" });
-  const outputRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "production", { MINIPROGRAM_PAYMENT_PROVIDER: "disabled" });
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
 
   const runtime = await readFile(path.join(outputRoot, "config/runtime.js"), "utf8");
   const app = await readFile(path.join(outputRoot, "app.js"), "utf8");
@@ -783,6 +789,14 @@ async function createBuildProject(source) {
 
 async function createRealDevelopmentBuildProject() {
   return createBuildProject("");
+}
+
+async function createIsolatedRealBuildProject() {
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-real-build-"));
+  for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) {
+    await cp(entry, path.join(projectRoot, entry), { recursive: true });
+  }
+  return projectRoot;
 }
 
 async function createBuildProjectIn(projectRoot, source) {
