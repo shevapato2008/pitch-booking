@@ -855,6 +855,7 @@ describe("HTTP open-game registration response authority", () => {
         effective_status: "JOINED",
         version: 2,
         decided_at: "2026-08-24T00:25:00+08:00",
+        available_withdrawal_action: "LEAVE_GAME",
       },
     }],
     ["rejected effective result", {
@@ -865,6 +866,7 @@ describe("HTTP open-game registration response authority", () => {
         effective_status: "REJECTED",
         version: 2,
         decided_at: "2026-08-24T00:25:00+08:00",
+        available_withdrawal_action: null,
       },
     }],
   ])("rejects a structurally valid mismatched apply result: %s", async (_label, payload) => {
