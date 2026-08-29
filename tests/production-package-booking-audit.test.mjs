@@ -102,7 +102,11 @@ for (const token of [
   "dev/pages/c1c-registration-detail/index",
   "C1c 开发预览 · 模拟数据",
   "c1c-page-2",
+  "reg-applied",
   "reg-joined",
+  "reg-rejected",
+  "reg-cancelled",
+  "海河周六轻松局",
   "津南周末友谊局",
 ]) {
   test(`production audit rejects ${token} and names it`, async (t) => {
