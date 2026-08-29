@@ -24,6 +24,7 @@ from backend.app.modules.availability.router import router as availability_route
 from backend.app.modules.checkout.router import router as checkout_router
 from backend.app.modules.inventory.router import router as inventory_router
 from backend.app.modules.open_game_registrations.router import (
+    align_my_open_game_applications_openapi,
     is_open_game_registration_mutation_request,
     open_game_registration_request_validation_handler,
 )
@@ -335,6 +336,7 @@ def create_app(
                 operation.get("responses", {}).pop("422", None)
             align_order_list_openapi(schema)
             align_public_game_directory_openapi(schema)
+            align_my_open_game_applications_openapi(schema)
             shared_game_get = (
                 schema.get("paths", {})
                 .get("/api/v1/shared-games/{share_token}", {})

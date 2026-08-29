@@ -296,10 +296,11 @@ def test_self_only_keyset_is_stable_and_cross_user_cursor_cannot_change_identity
     cursor = a_first.next_cursor
     assert cursor is not None and "=" not in cursor
     decoded = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    last_item = a_first.items[-1].model_dump(mode="json")
     assert decoded == {
         "v": 1,
-        "applied_at": applied_at.isoformat(),
-        "id": str(a_ids[1]),
+        "applied_at": last_item["applied_at"],
+        "id": last_item["id"],
     }
 
 

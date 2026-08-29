@@ -4,7 +4,7 @@ import re
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -65,6 +65,202 @@ _INVALID_ARGUMENT_EXAMPLE = {
 
 def get_open_game_registration_clock() -> datetime:
     return datetime.now(UTC)
+
+
+def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
+    request_id_header = {"$ref": "#/components/headers/RequestId"}
+
+    def error_response(
+        description: str,
+        *,
+        code: str,
+        example_name: str,
+        example_file: str,
+    ) -> dict[str, Any]:
+        return {
+            "description": description,
+            "headers": {"X-Request-Id": request_id_header},
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/ErrorEnvelope"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "error": {
+                                        "type": "object",
+                                        "properties": {"code": {"const": code}},
+                                    }
+                                },
+                            },
+                        ]
+                    },
+                    "examples": {
+                        example_name: {
+                            "externalValue": f"./examples/{example_file}"
+                        }
+                    },
+                }
+            },
+        }
+
+    schema["paths"]["/api/v1/open-game-applications"]["get"] = {
+        "operationId": "listMyOpenGameApplications",
+        "description": (
+            "Applications owned by the current authenticated user, newest first."
+        ),
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+            {
+                "name": "limit",
+                "in": "query",
+                "required": False,
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 20,
+                },
+            },
+            {
+                "name": "cursor",
+                "in": "query",
+                "required": False,
+                "schema": {"type": "string", "minLength": 1},
+            },
+        ],
+        "responses": {
+            "200": {
+                "description": (
+                    "Current page of the authenticated user's applications."
+                ),
+                "headers": {"X-Request-Id": request_id_header},
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "MyOpenGameApplicationsResponse"
+                            )
+                        },
+                        "examples": {
+                            "Ready": {
+                                "externalValue": (
+                                    "./examples/"
+                                    "my-open-game-applications-ready.json"
+                                )
+                            },
+                            "Empty": {
+                                "externalValue": (
+                                    "./examples/"
+                                    "my-open-game-applications-empty.json"
+                                )
+                            },
+                        },
+                    }
+                },
+            },
+            "401": error_response(
+                "Authentication required.",
+                code="AUTH_REQUIRED",
+                example_name="AuthRequired",
+                example_file="error-auth-required.json",
+            ),
+            "422": error_response(
+                "Limit or cursor is invalid.",
+                code="INVALID_ARGUMENT",
+                example_name="InvalidArgument",
+                example_file=(
+                    "error-my-open-game-applications-invalid-argument.json"
+                ),
+            ),
+            "503": error_response(
+                "Open game application service is unavailable.",
+                code="SERVICE_UNAVAILABLE",
+                example_name="ServiceUnavailable",
+                example_file="error-service-unavailable.json",
+            ),
+        },
+    }
+
+    components = schema["components"]
+    components.setdefault("securitySchemes", {})["bearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+    }
+    components.setdefault("headers", {})["RequestId"] = {
+        "description": "Identifier used to trace the request.",
+        "required": True,
+        "schema": {"type": "string", "minLength": 1},
+    }
+    components["schemas"].update(
+        {
+            "OpenGameRegistrationEffectiveStatus": {
+                "type": "string",
+                "enum": ["APPLIED", "JOINED", "REJECTED", "CANCELLED"],
+            },
+            "MyOpenGameApplication": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "id",
+                    "effective_status",
+                    "applied_at",
+                    "detail_path",
+                    "game_name",
+                    "starts_at",
+                    "ends_at",
+                    "time_zone",
+                    "venue_name",
+                    "pitch_name",
+                    "pitch_specification",
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "effective_status": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationEffectiveStatus"
+                        )
+                    },
+                    "applied_at": {"type": "string", "format": "date-time"},
+                    "detail_path": {
+                        "type": "string",
+                        "pattern": (
+                            r"^/pages/captain-game-public/index\?token="
+                            r"[A-Za-z0-9_-]{32}$"
+                        ),
+                    },
+                    "game_name": {"type": "string"},
+                    "starts_at": {"type": "string", "format": "date-time"},
+                    "ends_at": {"type": "string", "format": "date-time"},
+                    "time_zone": {"type": "string"},
+                    "venue_name": {"type": "string"},
+                    "pitch_name": {"type": "string"},
+                    "pitch_specification": {"type": "string"},
+                },
+            },
+            "MyOpenGameApplicationsResponse": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["items", "next_cursor"],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MyOpenGameApplication"
+                        },
+                    },
+                    "next_cursor": {
+                        "type": ["string", "null"],
+                        "minLength": 1,
+                    },
+                },
+            },
+        }
+    )
 
 
 def get_optional_open_game_registration_user(

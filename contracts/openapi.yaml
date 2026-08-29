@@ -2021,6 +2021,7 @@ paths:
       responses:
         '200':
           description: Current page of the authenticated user's applications.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MyOpenGameApplicationsResponse'}
@@ -2029,6 +2030,7 @@ paths:
                 Empty: {externalValue: './examples/my-open-game-applications-empty.json'}
         '401':
           description: Authentication required.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
           content:
             application/json:
               schema:
@@ -2040,6 +2042,7 @@ paths:
                 AuthRequired: {externalValue: './examples/error-auth-required.json'}
         '422':
           description: Limit or cursor is invalid.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
           content:
             application/json:
               schema:
@@ -2051,6 +2054,7 @@ paths:
                 InvalidArgument: {externalValue: './examples/error-my-open-game-applications-invalid-argument.json'}
         '503':
           description: Open game application service is unavailable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
           content:
             application/json:
               schema:

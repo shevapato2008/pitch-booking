@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import threading
 import time
 from collections.abc import Iterator
@@ -172,7 +174,17 @@ def test_authenticated_my_applications_journey_over_real_local_http(
         str(newest_id),
         str(older_id),
     ]
-    assert first.json()["next_cursor"] is not None
+    first_payload = first.json()
+    cursor = first_payload["next_cursor"]
+    assert cursor is not None
+    decoded_cursor = json.loads(
+        base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+    )
+    assert decoded_cursor == {
+        "v": 1,
+        "applied_at": first_payload["items"][-1]["applied_at"],
+        "id": first_payload["items"][-1]["id"],
+    }
     assert second.json()["next_cursor"] is None
     for response in (first, second):
         payload = response.json()

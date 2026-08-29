@@ -164,7 +164,7 @@ class OpenGameRegistrationService:
                 self._project_my_application(row, now=now) for row in rows
             )
             next_cursor = (
-                _encode_my_applications_cursor(rows[limit - 1])
+                _encode_my_applications_cursor(items[limit - 1])
                 if len(rows) > limit
                 else None
             )
@@ -730,12 +730,13 @@ def _decision_request_digest(
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _encode_my_applications_cursor(registration: OpenGameRegistration) -> str:
+def _encode_my_applications_cursor(application: MyOpenGameApplication) -> str:
+    serialized = application.model_dump(mode="json")
     payload = json.dumps(
         {
             "v": 1,
-            "applied_at": registration.applied_at.isoformat(),
-            "id": str(registration.id),
+            "applied_at": serialized["applied_at"],
+            "id": serialized["id"],
         },
         separators=(",", ":"),
     ).encode()

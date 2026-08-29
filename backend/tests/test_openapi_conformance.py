@@ -20,6 +20,7 @@ class _YamlLoader(Protocol):
 YAML = cast(_YamlLoader, import_module("yaml"))
 
 REGISTRATION_OPERATIONS = {
+    "/api/v1/open-game-applications": {"get"},
     "/api/v1/shared-games/{share_token}/registration-context": {"get"},
     "/api/v1/shared-games/{share_token}/applications": {"post"},
     "/api/v1/games/{game_id}/applications": {"get"},
@@ -65,6 +66,10 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
         },
     ]
     assert set(operation["responses"]) == {"200", "401", "422", "503"}
+    for response in operation["responses"].values():
+        assert response["headers"] == {
+            "X-Request-Id": {"$ref": "#/components/headers/RequestId"}
+        }
     assert _response_schema(operation, "200") == {
         "$ref": "#/components/schemas/MyOpenGameApplicationsResponse"
     }
@@ -139,6 +144,30 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
             _dereference_local_schema(contract, response)
         )
         assert validator.is_valid(example), filename
+
+
+def test_my_open_game_applications_runtime_openapi_matches_frozen_operation() -> None:
+    frozen = _contract()
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    path = "/api/v1/open-game-applications"
+
+    assert runtime["paths"][path]["get"] == frozen["paths"][path]["get"]
+    assert runtime["components"]["securitySchemes"]["bearerAuth"] == frozen[
+        "components"
+    ]["securitySchemes"]["bearerAuth"]
+    assert runtime["components"]["headers"]["RequestId"] == frozen["components"][
+        "headers"
+    ]["RequestId"]
+    for response in runtime["paths"][path]["get"]["responses"].values():
+        assert response["headers"]["X-Request-Id"] == {
+            "$ref": "#/components/headers/RequestId"
+        }
+    for name in ("MyOpenGameApplication", "MyOpenGameApplicationsResponse"):
+        assert runtime["components"]["schemas"][name] == frozen["components"][
+            "schemas"
+        ][name]
 
 
 def _contract() -> dict[str, Any]:
@@ -1181,6 +1210,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
     )
     operation_ids = {
         (
+            "/api/v1/open-game-applications",
+            "get",
+        ): "listMyOpenGameApplications",
+        (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
         ): "getOpenGameRegistrationContext",
@@ -1199,6 +1232,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
     }
     statuses = {
         (
+            "/api/v1/open-game-applications",
+            "get",
+        ): {"200", "401", "422", "503"},
+        (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
         ): {"200", "401", "404", "503"},
@@ -1216,6 +1253,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
         ): {"200", "401", "404", "409", "422", "503"},
     }
     response_schemas = {
+        (
+            "/api/v1/open-game-applications",
+            "get",
+        ): ("200", "MyOpenGameApplicationsResponse"),
         (
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
@@ -1273,6 +1314,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             },
         }
     for path in (
+        "/api/v1/open-game-applications",
         "/api/v1/shared-games/{share_token}/registration-context",
         "/api/v1/games/{game_id}/applications",
     ):
