@@ -130,6 +130,12 @@ class OpenGameRegistrationStatus(StrEnum):
     WITHDRAWN = "WITHDRAWN"
 
 
+class OpenGameAttendanceStatus(StrEnum):
+    UNMARKED = "UNMARKED"
+    PRESENT = "PRESENT"
+    NO_SHOW = "NO_SHOW"
+
+
 class OpenGameRegistrationWithdrawalKind(StrEnum):
     APPLICATION_WITHDRAWAL = "APPLICATION_WITHDRAWAL"
     WAITLIST_WITHDRAWAL = "WAITLIST_WITHDRAWAL"
@@ -1668,6 +1674,19 @@ class OpenGameRegistration(Base):
             "AND (promoted_at IS NULL OR withdrawn_at >= promoted_at))",
             name="ck_open_game_registrations_withdrawal_time",
         ),
+        CheckConstraint(
+            "(attendance_status = 'UNMARKED' "
+            "AND attendance_recorded_at IS NULL "
+            "AND attendance_recorded_by_user_id IS NULL) OR "
+            "(attendance_status IN ('PRESENT', 'NO_SHOW') "
+            "AND attendance_recorded_at IS NOT NULL "
+            "AND attendance_recorded_by_user_id IS NOT NULL)",
+            name="ck_open_game_registrations_attendance_audit",
+        ),
+        CheckConstraint(
+            "attendance_status = 'UNMARKED' OR status = 'JOINED'",
+            name="ck_open_game_registrations_attendance_joined",
+        ),
         UniqueConstraint(
             "game_id",
             "applicant_user_id",
@@ -1736,6 +1755,27 @@ class OpenGameRegistration(Base):
     note: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[OpenGameRegistrationStatus] = mapped_column(
         Enum(OpenGameRegistrationStatus, name="open_game_registration_status")
+    )
+    attendance_status: Mapped[OpenGameAttendanceStatus] = mapped_column(
+        Enum(OpenGameAttendanceStatus, name="open_game_attendance_status"),
+        nullable=False,
+        default=OpenGameAttendanceStatus.UNMARKED,
+        server_default=text("'UNMARKED'"),
+    )
+    attendance_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    attendance_recorded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name=(
+                "fk_open_game_registrations_"
+                "attendance_recorded_by_user_id_users"
+            ),
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
     )
     version: Mapped[int] = mapped_column(Integer)
     consent_version: Mapped[str] = mapped_column(String(32))

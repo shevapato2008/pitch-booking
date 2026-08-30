@@ -450,6 +450,11 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "REJECTED": models.OpenGameRegistrationStatus.REJECTED,
         "WITHDRAWN": models.OpenGameRegistrationStatus.WITHDRAWN,
     }
+    assert models.OpenGameAttendanceStatus.__members__ == {
+        "UNMARKED": models.OpenGameAttendanceStatus.UNMARKED,
+        "PRESENT": models.OpenGameAttendanceStatus.PRESENT,
+        "NO_SHOW": models.OpenGameAttendanceStatus.NO_SHOW,
+    }
     assert models.OpenGameRegistrationWithdrawalKind.__members__ == {
         "APPLICATION_WITHDRAWAL": (
             models.OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
@@ -468,6 +473,9 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "position",
         "note",
         "status",
+        "attendance_status",
+        "attendance_recorded_at",
+        "attendance_recorded_by_user_id",
         "version",
         "consent_version",
         "adult_confirmed_at",
@@ -486,6 +494,8 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
     ]
     assert {column.name for column in table.c if column.nullable} == {
         "note",
+        "attendance_recorded_at",
+        "attendance_recorded_by_user_id",
         "decided_at",
         "decided_by_user_id",
         "withdrawn_at",
@@ -499,6 +509,14 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
     assert table.c.consent_version.type.length == 32
     assert table.c.position.type.name == "open_game_registration_position"
     assert table.c.status.type.name == "open_game_registration_status"
+    assert table.c.attendance_status.type.name == "open_game_attendance_status"
+    assert (
+        table.c.attendance_status.default.arg
+        == models.OpenGameAttendanceStatus.UNMARKED
+    )
+    assert str(table.c.attendance_status.server_default.arg) == "'UNMARKED'"
+    assert table.c.attendance_recorded_at.type.timezone is True
+    assert "attendance_version" not in table.c
     assert (
         table.c.withdrawal_kind.type.name
         == "open_game_registration_withdrawal_kind"
@@ -514,6 +532,7 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "fk_open_game_registrations_game_id_open_games",
         "fk_open_game_registrations_applicant_user_id_users",
         "fk_open_game_registrations_decided_by_user_id_users",
+        "fk_open_game_registrations_attendance_recorded_by_user_id_users",
         "uq_open_game_registrations_game_applicant",
         "ck_open_game_registrations_display_name",
         "ck_open_game_registrations_note",
@@ -526,6 +545,8 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "ck_open_game_registrations_waitlist_seq",
         "ck_open_game_registrations_waitlist_history",
         "ck_open_game_registrations_waitlist_time",
+        "ck_open_game_registrations_attendance_audit",
+        "ck_open_game_registrations_attendance_joined",
         "uq_open_game_registrations_game_waitlist_seq",
         "uq_open_game_registrations_outbox_identity",
     }
@@ -656,6 +677,6 @@ def test_open_game_registration_migration_matches_model_metadata(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0020"
+        ).scalar_one() == "0021"
 
     command.check(config)
