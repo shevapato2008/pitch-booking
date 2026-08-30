@@ -11,6 +11,7 @@ const routes = [
   "dev/pages/c2c-attendance-scenario/index",
   "dev/pages/c2c-attendance/index",
 ];
+const productionRoute = "pages/captain-game-attendance/index";
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const mapKey = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
@@ -101,7 +102,7 @@ test("C2c recovery states expose row actions only for READY and UNMARKED players
   assert.doesNotMatch(template, /wx:if="{{item\.isUnmarked}}"\s+class="c2c-row-actions"/);
 });
 
-test("fresh development contains C2c while fresh production excludes every C2c source and marker", async (t) => {
+test("fresh builds contain the real attendance page while production excludes only C2c previews and markers", async (t) => {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-c2c-isolation-"));
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   for (const directory of ["miniprogram", "artifacts", "contracts", "scripts", "node_modules"]) {
@@ -112,6 +113,7 @@ test("fresh development contains C2c while fresh production excludes every C2c s
   await execFileAsync(process.execPath, [buildScript, "development"], { cwd: projectRoot, env: process.env });
   const development = JSON.parse(read(path.join(projectRoot, "dist/miniprogram-development/app.json")));
   routes.forEach((route) => assert.equal(development.pages.includes(route), true));
+  assert.equal(development.pages.includes(productionRoute), true);
 
   await execFileAsync(process.execPath, [buildScript, "production"], {
     cwd: projectRoot,
@@ -119,13 +121,15 @@ test("fresh development contains C2c while fresh production excludes every C2c s
   });
   const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const production = JSON.parse(read(path.join(productionRoot, "app.json")));
-  assert.equal(production.pages.some((route) => route.includes("c2c-attendance")), false);
+  assert.equal(production.pages.includes(productionRoute), true);
+  for (const extension of ["js", "json", "wxml", "wxss"]) {
+    assert.equal(existsSync(path.join(productionRoot, `${productionRoute}.${extension}`)), true);
+  }
   const productionFiles = collectFiles(productionRoot);
-  assert.equal(
-    productionFiles.some((file) => path.relative(productionRoot, file).includes("c2c-attendance")),
-    false,
-  );
+  assert.equal(productionFiles.some((file) => path.relative(productionRoot, file).startsWith("dev/")), false);
   const productionText = productionFiles.map(read).join("\n");
+  assert.equal(productionText.includes("getOpenGameRegistrationSource"), true);
+  assert.equal(productionText.includes("getOpenGameRegistrationAttemptStore"), true);
   for (const forbidden of [
     "C2C_ATTENDANCE_FIXTURE",
     "remove C2C_ATTENDANCE_FIXTURE before production build or integration",

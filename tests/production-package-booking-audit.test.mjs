@@ -22,6 +22,7 @@ const productionRoutes = [
   "pages/order-detail/index",
   "pages/captain-game-form/index",
   "pages/captain-game-manage/index",
+  "pages/captain-game-attendance/index",
   "pages/captain-game-public/index",
   "pages/player-game-application/index",
   "pages/captain-game-applications/index",

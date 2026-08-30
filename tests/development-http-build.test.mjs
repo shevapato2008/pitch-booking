@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const auditScript = path.resolve("scripts/audit-production-package.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+const ATTENDANCE_ROUTE = "pages/captain-game-attendance/index";
 
 async function createBuildProject(t) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-development-http-build-"));
@@ -192,6 +193,12 @@ test("development HTTP build injects an explicit localhost API URL into the type
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
     new RegExp(TEST_TENCENT_MAP_KEY),
   );
+  const developmentManifest = JSON.parse(await readFile(path.join(developmentOutput, "app.json"), "utf8"));
+  assert.equal(developmentManifest.pages.includes(ATTENDANCE_ROUTE), true);
+  const attendance = await readFile(path.join(developmentOutput, `${ATTENDANCE_ROUTE}.js`), "utf8");
+  assert.match(attendance, /getOpenGameRegistrationSource/);
+  assert.match(attendance, /getOpenGameRegistrationAttemptStore/);
+  assert.doesNotMatch(attendance, /C2C_ATTENDANCE_FIXTURE|c2c-attendance-fixture/);
 });
 
 test("development HTTP mode requires its explicit API base URL", async (t) => {
@@ -264,6 +271,12 @@ test("production ignores the development selector and excludes all development c
 
   assert.equal(existsSync(path.join(productionOutput, "dev")), false);
   const app = await readFile(path.join(productionOutput, "app.js"), "utf8");
+  const productionManifest = JSON.parse(await readFile(path.join(productionOutput, "app.json"), "utf8"));
+  assert.equal(productionManifest.pages.includes(ATTENDANCE_ROUTE), true);
+  const attendance = await readFile(path.join(productionOutput, `${ATTENDANCE_ROUTE}.js`), "utf8");
+  assert.match(attendance, /getOpenGameRegistrationSource/);
+  assert.match(attendance, /getOpenGameRegistrationAttemptStore/);
+  assert.doesNotMatch(attendance, /C2C_ATTENDANCE_FIXTURE|c2c-attendance-fixture|dev\//);
   assert.doesNotMatch(app, /dev-login-code|dev-phone-code|http-booking-source|payment-scenarios|payment-capability|payment-source|bootstrapDevelopment/);
   assert.match(app, /createHttpOpenGameSource/);
   assert.match(app, /registerOpenGameSource/);

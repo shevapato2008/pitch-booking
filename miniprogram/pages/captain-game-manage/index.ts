@@ -64,6 +64,7 @@ function blankData() {
     canCancel: false,
     canPreview: false,
     canReviewApplications: false,
+    canManageAttendance: false,
     share: null as OpenGameOwner["share"],
     order: null as OpenGameOwner["order"] | null,
     orderRange: "",
@@ -159,6 +160,7 @@ Page({
       canCancel: owner.allowedActions.canCancel,
       canPreview: owner.allowedActions.canPreview,
       canReviewApplications: owner.state === "PUBLISHED",
+      canManageAttendance: owner.allowedActions.canManageAttendance,
       share: owner.allowedActions.canShare ? owner.share : null,
       order: owner.order, orderRange: formatOpenGameRange(owner.order.startsAt, owner.order.endsAt, owner.order.timeZone),
       name: owner.name, teamName: owner.team.name,
@@ -373,6 +375,17 @@ Page({
       );
     } catch {
       this.setData({ navigationError: "暂时无法打开报名审核，请重试。" });
+    }
+  },
+  async onManageAttendance() {
+    if (this.data.status !== "READY" || !this.data.canManageAttendance) return;
+    try {
+      await navigation(
+        "navigateTo",
+        `/pages/captain-game-attendance/index?game_id=${this.data.gameId}`,
+      );
+    } catch {
+      this.setData({ navigationError: "暂时无法打开到场记录，请重试。" });
     }
   },
   onReturnOrder() {

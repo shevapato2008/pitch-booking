@@ -30,6 +30,7 @@ const EXISTING_PRODUCTION_ROUTES = [
 const CAPTAIN_OPEN_GAME_ROUTES = [
   "pages/captain-game-form/index",
   "pages/captain-game-manage/index",
+  "pages/captain-game-attendance/index",
   "pages/captain-game-public/index",
 ];
 const OPEN_GAME_REGISTRATION_ROUTES = [
@@ -507,12 +508,12 @@ test("production captain game form uses the shared mobile header and fixed stepp
   assert.match(styles, /\.scroll-space\s*\{[^}]*height:\s*calc\(136rpx \+ env\(safe-area-inset-bottom, 0px\)\)\s*;/s);
 });
 
-test("public discovery and open game registration production routes ship in both manifests with compiled native artifacts", async (t) => {
+test("public discovery, open game registration, and attendance production routes ship in both manifests with compiled native artifacts", async (t) => {
   const projectRoot = await createIsolatedRealBuildProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
-  assert.equal(sourceManifest.pages.length, 21);
+  assert.equal(sourceManifest.pages.length, 22);
 
   await build(projectRoot, "development");
   await build(projectRoot, "production");
@@ -537,7 +538,7 @@ test("public discovery and open game registration production routes ship in both
   }
 });
 
-test("real production build preserves all fourteen existing routes and adds only the seven open-game journey routes", async (t) => {
+test("real production build preserves all fourteen existing routes and adds only the eight open-game journey routes", async (t) => {
   const projectRoot = await createIsolatedRealBuildProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await build(projectRoot, "production");
@@ -553,7 +554,7 @@ test("real production build preserves all fourteen existing routes and adds only
     ].includes(route)),
     EXISTING_PRODUCTION_ROUTES,
   );
-  assert.equal(manifest.pages.length, 21);
+  assert.equal(manifest.pages.length, 22);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);

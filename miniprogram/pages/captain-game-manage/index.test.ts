@@ -137,6 +137,52 @@ test("only a READY PUBLISHED owner can open the real application review route", 
   }));
 });
 
+test("attendance entry follows only the authoritative canManageAttendance flag", async () => {
+  const authoritativeSentinel = owner({
+    state: "PUBLISHED",
+    persistedStatus: "PUBLISHED",
+    allowedActions: {
+      canEdit: false,
+      canPublish: false,
+      canShare: false,
+      canCancel: false,
+      canPreview: true,
+      canManageAttendance: true,
+    },
+    share: null,
+  });
+  registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => authoritativeSentinel) }));
+  const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
+
+  expect(page.data).toMatchObject({ status: "READY", canManageAttendance: true });
+  const template = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
+  expect(template).toContain('wx:if="{{canManageAttendance}}"');
+  expect(template).toContain('bindtap="onManageAttendance">散客到场记录');
+
+  await call(page, "onManageAttendance");
+  expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+    url: `/pages/captain-game-attendance/index?game_id=${gameId}`,
+  }));
+
+  (wx.navigateTo as unknown as jest.Mock).mockClear();
+  page.applyOwner(owner({
+    state: "PUBLISHED",
+    persistedStatus: "PUBLISHED",
+    allowedActions: {
+      canEdit: false,
+      canPublish: false,
+      canShare: false,
+      canCancel: false,
+      canPreview: true,
+      canManageAttendance: false,
+    },
+    share: null,
+  }));
+  expect(page.data.canManageAttendance).toBe(false);
+  await call(page, "onManageAttendance");
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+});
+
 test.each(["DRAFT", "SUSPENDED", "CANCELLED", "COMPLETED"] as const)(
   "%s owners never expose the application review action",
   async (state) => {
@@ -221,7 +267,7 @@ test("malformed, not-found, load-error and auth-loss expose only real recovery",
 test("approved visible buttons are native and backed by real handlers", () => {
   const wxml = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
   expect(wxml).toContain('open-type="share"');
-  for (const handler of ["onReload", "onLogin", "onOpenPublish", "onClosePanel", "onConfirmPublish", "onOpenCancel", "onConfirmCancel", "onEdit", "onPreview", "onReviewApplications", "onReturnOrder", "onHeaderBack", "onConfirmUnknown", "onConfirmPreviousOperation"]) expect(wxml).toContain(handler);
+  for (const handler of ["onReload", "onLogin", "onOpenPublish", "onClosePanel", "onConfirmPublish", "onOpenCancel", "onConfirmCancel", "onEdit", "onPreview", "onReviewApplications", "onManageAttendance", "onReturnOrder", "onHeaderBack", "onConfirmUnknown", "onConfirmPreviousOperation"]) expect(wxml).toContain(handler);
   expect(wxml).toContain("不会取消已预订场地，也不会改变订单、支付或退款状态");
   expect(wxml).toContain("正在提交操作");
   expect(wxml).not.toContain("status === 'READY' || status === 'MUTATING'");
