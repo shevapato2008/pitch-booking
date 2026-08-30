@@ -17,6 +17,7 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameAttendanceStatus,
     OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
     OpenGameNotificationStatus,
@@ -36,6 +37,10 @@ from backend.app.modules.open_game_registrations.dto import (
     DecisionResultStatus,
     MyOpenGameApplication,
     MyOpenGameApplicationsResponse,
+    OpenGameAttendanceGameSummary,
+    OpenGameAttendanceMarkRequest,
+    OpenGameAttendanceMarkResult,
+    OpenGameAttendanceRoster,
     Queue,
     RegistrationContext,
     WithdrawalRequest,
@@ -51,6 +56,7 @@ from backend.app.modules.open_game_registrations.lifecycle import (
     remaining_spots,
 )
 from backend.app.modules.open_game_registrations.privacy import (
+    project_attendance_roster_item,
     project_captain_application,
     project_captain_waitlist_application,
     project_my_open_game_application,
@@ -79,6 +85,7 @@ from backend.app.modules.orders.repository import OrderRepository
 CREATE_OPEN_GAME_APPLICATION_OPERATION = "create_open_game_application"
 DECIDE_OPEN_GAME_APPLICATION_OPERATION = "decide_open_game_application"
 WITHDRAW_OPEN_GAME_APPLICATION_OPERATION = "withdraw_open_game_application"
+MARK_OPEN_GAME_ATTENDANCE_OPERATION = "MARK_OPEN_GAME_ATTENDANCE"
 
 
 class OpenGameRegistrationService:
@@ -453,6 +460,178 @@ class OpenGameRegistrationService:
                 waitlist_count=len(waitlist),
                 waitlist=waitlist,
             )
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def get_attendance_roster(
+        self,
+        *,
+        game_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+    ) -> OpenGameAttendanceRoster:
+        try:
+            order_id = self._open_game_repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._open_game_repository.get_owned_order(
+                order_id=order_id,
+                user_id=owner_user_id,
+            )
+            if order is None:
+                raise _game_not_found()
+            game = self._open_game_repository.get_owned_game(
+                game_id=game_id,
+                user_id=owner_user_id,
+            )
+            if game is None:
+                raise _game_not_found()
+
+            authority = self._open_game_repository.get_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=self._now(),
+            )
+            if projection.state is not EffectiveOpenGameState.COMPLETED:
+                raise _attendance_state_changed()
+            registrations = self._repository.list_attendance_roster(
+                game_id=game.id
+            )
+            return _project_attendance_roster(
+                game=game,
+                projection=projection,
+                registrations=registrations,
+            )
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def mark_attendance(
+        self,
+        *,
+        game_id: uuid.UUID,
+        registration_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+        idempotency_key: str,
+        request: OpenGameAttendanceMarkRequest,
+    ) -> OpenGameAttendanceMarkResult:
+        try:
+            order_id = self._open_game_repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._repository.lock_order(order_id=order_id)
+            if order is None or order.user_id != owner_user_id:
+                raise _game_not_found()
+            game = self._open_game_repository.lock_target_game(
+                game_id=game_id,
+                order_id=order.id,
+            )
+            if game is None:
+                raise _game_not_found()
+            registration = self._repository.lock_registration(
+                game_id=game.id,
+                application_id=registration_id,
+            )
+            if registration is None:
+                raise _application_not_found()
+
+            digest = _attendance_request_digest(
+                operation=MARK_OPEN_GAME_ATTENDANCE_OPERATION,
+                game_id=game.id,
+                registration_id=registration.id,
+                request=request,
+            )
+            record, claimed = self._order_repository.claim_idempotency(
+                user_id=owner_user_id,
+                operation=MARK_OPEN_GAME_ATTENDANCE_OPERATION,
+                key=idempotency_key,
+                request_sha256=digest,
+            )
+            if not claimed and record.request_sha256 != digest:
+                raise _idempotency_key_reused()
+
+            authority = self._open_game_repository.lock_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            now = self._now()
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=now,
+            )
+            if projection.state is not EffectiveOpenGameState.COMPLETED:
+                raise _attendance_state_changed()
+
+            if not claimed:
+                registrations = self._repository.list_attendance_roster(
+                    game_id=game.id
+                )
+                response = _replay_attendance(
+                    record,
+                    digest=digest,
+                    registration=registration,
+                    owner_user_id=owner_user_id,
+                    registrations=registrations,
+                )
+                self._order_repository.commit()
+                return response
+
+            if (
+                registration.status is not OpenGameRegistrationStatus.JOINED
+                or registration.attendance_status
+                is not OpenGameAttendanceStatus.UNMARKED
+                or registration.attendance_recorded_at is not None
+                or registration.attendance_recorded_by_user_id is not None
+                or registration.version != request.expected_version
+            ):
+                raise _attendance_state_changed()
+
+            registration.attendance_status = request.attendance_status
+            registration.attendance_recorded_at = now
+            registration.attendance_recorded_by_user_id = owner_user_id
+            registration.version += 1
+            self._repository.flush()
+            registrations = self._repository.list_attendance_roster(
+                game_id=game.id
+            )
+            response = _project_attendance_mark_result(
+                registration=registration,
+                registrations=registrations,
+            )
+            self._order_repository.complete_idempotency(
+                record,
+                response_status=200,
+                response_body=response.model_dump(mode="json"),
+            )
+            self._order_repository.commit()
+            return response
         except AppError:
             self._repository.rollback()
             raise
@@ -920,6 +1099,75 @@ class OpenGameRegistrationService:
         )
 
 
+def _project_attendance_roster(
+    *,
+    game: OpenGame,
+    projection: AuthoritativePublicGameProjection,
+    registrations: list[OpenGameRegistration],
+) -> OpenGameAttendanceRoster:
+    items = tuple(
+        project_attendance_roster_item(
+            registration_id=registration.id,
+            display_name=registration.display_name,
+            position=registration.position,
+            attendance_status=registration.attendance_status,
+            attendance_recorded_at=registration.attendance_recorded_at,
+            version=registration.version,
+        )
+        for registration in registrations
+    )
+    recorded_count = sum(
+        item.attendance_status is not OpenGameAttendanceStatus.UNMARKED
+        for item in items
+    )
+    public = projection.public
+    return OpenGameAttendanceRoster(
+        game=OpenGameAttendanceGameSummary(
+            id=game.id,
+            name=public.name,
+            venue_name=public.venue_name,
+            pitch_name=public.pitch_name,
+            starts_at=public.starts_at,
+            ends_at=public.ends_at,
+            time_zone=public.time_zone,
+            state="COMPLETED",
+        ),
+        recorded_count=recorded_count,
+        total_count=len(items),
+        attendance_complete=recorded_count == len(items),
+        registrations=items,
+    )
+
+
+def _project_attendance_mark_result(
+    *,
+    registration: OpenGameRegistration,
+    registrations: list[OpenGameRegistration],
+) -> OpenGameAttendanceMarkResult:
+    if (
+        registration.attendance_status
+        not in {
+            OpenGameAttendanceStatus.PRESENT,
+            OpenGameAttendanceStatus.NO_SHOW,
+        }
+        or registration.attendance_recorded_at is None
+    ):
+        raise RuntimeError("attendance result is not terminal")
+    recorded_count = sum(
+        row.attendance_status is not OpenGameAttendanceStatus.UNMARKED
+        for row in registrations
+    )
+    return OpenGameAttendanceMarkResult(
+        registration_id=registration.id,
+        attendance_status=registration.attendance_status,
+        attendance_recorded_at=registration.attendance_recorded_at,
+        version=registration.version,
+        recorded_count=recorded_count,
+        total_count=len(registrations),
+        attendance_complete=recorded_count == len(registrations),
+    )
+
+
 def _project_context(
     *,
     game: OpenGame,
@@ -1051,6 +1299,25 @@ def _withdrawal_request_digest(
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _attendance_request_digest(
+    *,
+    operation: str,
+    game_id: uuid.UUID,
+    registration_id: uuid.UUID,
+    request: OpenGameAttendanceMarkRequest,
+) -> str:
+    payload = {
+        "operation": operation,
+        "game_id": str(game_id),
+        "registration_id": str(registration_id),
+        "attendance_status": request.attendance_status.value,
+        "expected_version": request.expected_version,
+        "version": 1,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def _encode_my_applications_cursor(application: MyOpenGameApplication) -> str:
     serialized = application.model_dump(mode="json")
     payload = json.dumps(
@@ -1132,6 +1399,37 @@ def _replay_context(
                 application_id=legacy_application_id,
             )
         )
+
+
+def _replay_attendance(
+    record: IdempotencyRecord,
+    *,
+    digest: str,
+    registration: OpenGameRegistration,
+    owner_user_id: uuid.UUID,
+    registrations: list[OpenGameRegistration],
+) -> OpenGameAttendanceMarkResult:
+    if record.request_sha256 != digest:
+        raise _idempotency_key_reused()
+    if (
+        record.state is not IdempotencyState.COMPLETED
+        or record.response_status != 200
+        or record.response_body is None
+    ):
+        raise _service_unavailable()
+    stored = OpenGameAttendanceMarkResult.model_validate(record.response_body)
+    if (
+        registration.status is not OpenGameRegistrationStatus.JOINED
+        or registration.attendance_recorded_by_user_id != owner_user_id
+    ):
+        raise _attendance_state_changed()
+    current = _project_attendance_mark_result(
+        registration=registration,
+        registrations=registrations,
+    )
+    if current != stored:
+        raise _attendance_state_changed()
+    return stored
 
 
 def _upgrade_legacy_application_context(
@@ -1328,6 +1626,14 @@ def _application_state_changed() -> AppError:
         409,
         "APPLICATION_STATE_CHANGED",
         "报名状态或版本已变化，请刷新后重试。",
+    )
+
+
+def _attendance_state_changed() -> AppError:
+    return AppError(
+        409,
+        "ATTENDANCE_STATE_CHANGED",
+        "考勤状态或版本已变化，请刷新后重试。",
     )
 
 

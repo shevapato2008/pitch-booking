@@ -212,6 +212,27 @@ class OpenGameRegistrationRepository:
             )
         )
 
+    def list_attendance_roster(
+        self,
+        *,
+        game_id: uuid.UUID,
+    ) -> list[OpenGameRegistration]:
+        return list(
+            self.session.scalars(
+                select(OpenGameRegistration)
+                .where(
+                    OpenGameRegistration.game_id == game_id,
+                    OpenGameRegistration.status
+                    == OpenGameRegistrationStatus.JOINED,
+                )
+                .order_by(
+                    OpenGameRegistration.applied_at,
+                    OpenGameRegistration.id,
+                )
+                .execution_options(populate_existing=True)
+            )
+        )
+
     def get_waitlist_position(
         self,
         *,
