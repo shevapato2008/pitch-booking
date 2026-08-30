@@ -32,7 +32,7 @@
         </button>
       </view>
 
-      <view class="c2c-boundary" role="note">
+      <view class="c2c-boundary" aria-role="note">
         <text>预览边界</text>
         <text>本页只驱动隔离 Fixture，不写入生产到场记录。</text>
       </view>

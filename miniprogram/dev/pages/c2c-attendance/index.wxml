@@ -1,6 +1,6 @@
 <view class="c2c-page">
   <view class="c2c-system" style="height: {{headerTopPx}}px;"></view>
-  <view class="c2c-header" style="height: {{headerRowHeightPx}}px;">
+  <view class="c2c-header" style="height: {{headerRowHeightPx}}px;" aria-hidden="{{decisionPanel ? true : false}}">
     <button class="c2c-header-back" hover-class="c2c-pressed" bindtap="onHeaderBack" aria-label="返回场景入口">
       <view class="c2c-back-icon" aria-hidden="true"></view>
     </button>
@@ -8,11 +8,11 @@
     <view class="c2c-header-spacer" aria-hidden="true"></view>
   </view>
 
-  <scroll-view class="c2c-scroll" scroll-y="true">
+  <scroll-view class="c2c-scroll" scroll-y="true" aria-hidden="{{decisionPanel ? true : false}}">
     <view class="c2c-content">
       <text class="c2c-preview-note">{{fixtureNotice}}</text>
 
-      <view wx:if="{{previewState === 'LOAD_ERROR'}}" class="c2c-state-card c2c-state-card--error" role="alert">
+      <view wx:if="{{previewState === 'LOAD_ERROR'}}" class="c2c-state-card c2c-state-card--error" aria-role="alert">
         <view class="c2c-state-mark c2c-state-mark--error" aria-hidden="true"></view>
         <text class="c2c-state-title">名单加载失败</text>
         <text class="c2c-state-copy">{{previewMessage}}</text>
@@ -30,7 +30,7 @@
           <text class="c2c-game-place">{{game.venue}} · {{game.pitch}}</text>
         </view>
 
-        <view wx:if="{{previewState === 'CONFLICT'}}" class="c2c-recovery-card" role="status">
+        <view wx:if="{{previewState === 'CONFLICT'}}" class="c2c-recovery-card" aria-role="status">
           <view class="c2c-recovery-copy">
             <text>名单状态已变化</text>
             <text>{{previewMessage}}</text>
@@ -38,7 +38,7 @@
           <button class="c2c-state-action c2c-state-action--secondary" hover-class="c2c-pressed" bindtap="onResolveConflict">确认最新名单</button>
         </view>
 
-        <view wx:elif="{{previewState === 'UNKNOWN_RESULT'}}" class="c2c-recovery-card" role="status">
+        <view wx:elif="{{previewState === 'UNKNOWN_RESULT'}}" class="c2c-recovery-card" aria-role="status">
           <view class="c2c-recovery-copy">
             <text>记录结果待确认</text>
             <text>{{previewMessage}}</text>
@@ -51,7 +51,7 @@
           <text>{{progressLabel}}</text>
         </view>
 
-        <view wx:if="{{isEmpty}}" class="c2c-state-card" role="status">
+        <view wx:if="{{isEmpty}}" class="c2c-state-card" aria-role="status">
           <view class="c2c-empty-mark" aria-hidden="true"><view></view><view></view><view></view></view>
           <text class="c2c-state-title">本场没有需要记录的散客</text>
           <text class="c2c-state-copy">返回场景入口，可以继续检查其他到场状态。</text>
@@ -79,7 +79,7 @@
           </view>
         </view>
 
-        <view wx:if="{{isComplete}}" class="c2c-complete-note" role="status">
+        <view wx:if="{{isComplete}}" class="c2c-complete-note" aria-role="status">
           <view class="c2c-complete-dot" aria-hidden="true"></view>
           <text>{{completionMessage}}</text>
         </view>
@@ -87,7 +87,7 @@
     </view>
   </scroll-view>
 
-  <view wx:if="{{decisionPanel}}" class="c2c-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-modal="true" aria-label="{{decisionTitle}}">
+  <view wx:if="{{decisionPanel}}" class="c2c-scrim" catchtouchmove="onBlockTouchMove" aria-role="dialog" aria-modal="true" aria-label="{{decisionTitle}}">
     <view class="c2c-sheet">
       <view class="c2c-sheet-title-row">
         <view class="c2c-sheet-heading">

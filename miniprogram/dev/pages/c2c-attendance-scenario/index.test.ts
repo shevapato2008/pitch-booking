@@ -159,3 +159,10 @@ test("all visible buttons have real handlers, press feedback, and explicit touch
   }
   expect(styles).toMatch(/\.c2c-pressed\s*\{[^}]*opacity:\s*\.\d+/s);
 });
+
+test("launcher uses Mini Program ARIA semantics", () => {
+  const template = readRequiredFile(templatePath);
+
+  expect(template).not.toMatch(/\srole="/);
+  expect(template).toContain('class="c2c-boundary" aria-role="note"');
+});

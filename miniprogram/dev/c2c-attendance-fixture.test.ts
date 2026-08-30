@@ -63,6 +63,22 @@ test("COMPLETE contains only recorded players", () => {
   ))).toBe(true);
 });
 
+test("recorded attendance times are not earlier than the completed game end", () => {
+  const { createC2cAttendanceStore } = loadFixture();
+  const gameEndedAt = Date.parse("2026-08-30T20:30:00+08:00");
+
+  for (const scenario of ["MIXED", "COMPLETE"] as const) {
+    const recordedPlayers = createC2cAttendanceStore(scenario).current().roster.filter(
+      (player: any) => player.attendanceResult !== "UNMARKED",
+    );
+
+    expect(recordedPlayers.length).toBeGreaterThan(0);
+    recordedPlayers.forEach((player: any) => {
+      expect(Date.parse(player.recordedAt)).toBeGreaterThanOrEqual(gameEndedAt);
+    });
+  }
+});
+
 test("EMPTY has zero joined players and remains a truthful empty snapshot", () => {
   const { createC2cAttendanceStore } = loadFixture();
   const snapshot = createC2cAttendanceStore("EMPTY").current();

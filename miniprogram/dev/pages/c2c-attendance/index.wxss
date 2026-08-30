@@ -58,7 +58,7 @@
 .c2c-state-title { margin-top: 18rpx; font-size: 30rpx; font-weight: 700; line-height: 44rpx; }
 .c2c-state-copy { margin-top: 8rpx; color: #526479; font-size: 23rpx; line-height: 36rpx; }
 .c2c-state-action { display: flex; width: 100%; min-height: 88rpx; align-items: center; justify-content: center; box-sizing: border-box; margin: 24rpx 0 0; padding: 0 20rpx; border-radius: 20rpx; font-size: 27rpx; font-weight: 700; line-height: 40rpx; }
-.c2c-state-action--primary { border: 1rpx solid #0284C7; background: #0284C7; color: #FFFFFF; }
+.c2c-state-action--primary { border: 1rpx solid #0369A1; background: #0369A1; color: #FFFFFF; }
 .c2c-state-action--secondary { border: 1rpx solid #7DD3FC; background: #F0F9FF; color: #0369A1; }
 .c2c-recovery-card { margin-top: 18rpx; padding: 24rpx; border: 1rpx solid #BAE6FD; border-radius: 24rpx; background: #FFFFFF; }
 .c2c-recovery-copy { display: flex; flex-direction: column; }
@@ -80,6 +80,6 @@
 .c2c-sheet-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx; margin-top: 26rpx; }
 .c2c-sheet-action { display: flex; width: 100%; min-height: 88rpx; align-items: center; justify-content: center; box-sizing: border-box; margin: 0; padding: 0 16rpx; border-radius: 20rpx; font-size: 27rpx; font-weight: 700; line-height: 40rpx; }
 .c2c-sheet-action--neutral { border: 1rpx solid #DBE5EC; background: #FFFFFF; color: #10243E; }
-.c2c-sheet-action--primary { border: 1rpx solid #0284C7; background: #0284C7; color: #FFFFFF; }
+.c2c-sheet-action--primary { border: 1rpx solid #0369A1; background: #0369A1; color: #FFFFFF; }
 .c2c-sheet-action--danger { border: 1rpx solid #B42318; background: #B42318; color: #FFFFFF; }
 .c2c-pressed { opacity: .68; }

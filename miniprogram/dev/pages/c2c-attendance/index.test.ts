@@ -129,8 +129,8 @@ test("onLoad hides sharing, reads native header geometry, and projects the stabl
   ]);
   expect(page.data.roster.map((player: any) => player.recordedTimeLabel)).toEqual([
     "",
-    "8月30日 20:12 记录",
-    "8月30日 20:14 记录",
+    "8月30日 20:32 记录",
+    "8月30日 20:34 记录",
   ]);
 });
 
@@ -338,6 +338,19 @@ test("template exposes exact copy, real button handlers, and no forbidden claims
   expect(template).not.toMatch(/c2c-footer/);
 });
 
+test("template uses Mini Program ARIA semantics and isolates content behind the decision dialog", () => {
+  const template = readRequiredFile(templatePath);
+
+  expect(template).not.toMatch(/\srole="/);
+  expect(template).toMatch(/class="c2c-header"[^>]*aria-hidden="\{\{decisionPanel \? true : false\}\}"/);
+  expect(template).toMatch(/class="c2c-scroll"[^>]*aria-hidden="\{\{decisionPanel \? true : false\}\}"/);
+  expect(template).toMatch(
+    /class="c2c-scrim"[^>]*aria-role="dialog"[^>]*aria-modal="true"[^>]*aria-label="\{\{decisionTitle\}\}"/,
+  );
+  expect(template).toMatch(/aria-role="alert"/);
+  expect(template.match(/aria-role="status"/g)).toHaveLength(4);
+});
+
 test("styles lock scroll, touch, badge, ellipsis, scrim, close-X, and safe-area rules", () => {
   const styles = readRequiredFile(stylesPath);
   const root = cssRule(styles, "\\.c2c-page");
@@ -350,6 +363,8 @@ test("styles lock scroll, touch, badge, ellipsis, scrim, close-X, and safe-area 
   const statusBadge = cssRule(styles, "\\.c2c-status-badge");
   const scrim = cssRule(styles, "\\.c2c-scrim");
   const sheetClose = cssRule(styles, "\\.c2c-sheet-close");
+  const statePrimary = cssRule(styles, "\\.c2c-state-action--primary");
+  const sheetPrimary = cssRule(styles, "\\.c2c-sheet-action--primary");
 
   expect(root).toMatch(/height:\s*100vh/);
   expect(root).toMatch(/display:\s*flex/);
@@ -390,4 +405,10 @@ test("styles lock scroll, touch, badge, ellipsis, scrim, close-X, and safe-area 
   expect(styles).toMatch(/\.c2c-close-icon::after\s*\{[^}]*rotate\(-45deg\)/s);
   expect(styles).toMatch(/\.c2c-pressed\s*\{[^}]*opacity:\s*\.\d+/s);
   expect(styles).not.toMatch(/\.c2c-footer\s*\{/);
+  for (const primary of [statePrimary, sheetPrimary]) {
+    expect(primary).toMatch(/border:\s*1rpx solid #0369A1/);
+    expect(primary).toMatch(/background:\s*#0369A1/);
+    expect(primary).toMatch(/color:\s*#FFFFFF/);
+    expect(primary).not.toMatch(/#0284C7/);
+  }
 });

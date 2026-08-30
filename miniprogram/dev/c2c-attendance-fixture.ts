@@ -113,14 +113,14 @@ const createPlayer = (
 
 const createMixedRoster = (): MutableAttendancePlayer[] => [
   createPlayer("c2c-reg-unmarked", "天津周末左边锋小王", "左边锋", "UNMARKED", null),
-  createPlayer("c2c-reg-present", "阿哲", "门将", "PRESENT", "2026-08-30T20:12:00+08:00"),
-  createPlayer("c2c-reg-no-show", "十一", "中场", "NO_SHOW", "2026-08-30T20:14:00+08:00"),
+  createPlayer("c2c-reg-present", "阿哲", "门将", "PRESENT", "2026-08-30T20:32:00+08:00"),
+  createPlayer("c2c-reg-no-show", "十一", "中场", "NO_SHOW", "2026-08-30T20:34:00+08:00"),
 ];
 
 const createCompleteRoster = (): MutableAttendancePlayer[] => [
   createPlayer("c2c-reg-unmarked", "天津周末左边锋小王", "左边锋", "PRESENT", RECORDED_AT),
-  createPlayer("c2c-reg-present", "阿哲", "门将", "PRESENT", "2026-08-30T20:12:00+08:00"),
-  createPlayer("c2c-reg-no-show", "十一", "中场", "NO_SHOW", "2026-08-30T20:14:00+08:00"),
+  createPlayer("c2c-reg-present", "阿哲", "门将", "PRESENT", "2026-08-30T20:32:00+08:00"),
+  createPlayer("c2c-reg-no-show", "十一", "中场", "NO_SHOW", "2026-08-30T20:34:00+08:00"),
 ];
 
 const isScenario = (value: unknown): value is C2cAttendanceScenario => (
