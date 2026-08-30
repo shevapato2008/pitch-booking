@@ -15,7 +15,9 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
+    OpenGameNotificationStatus,
     OpenGameRegistration,
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
@@ -231,7 +233,11 @@ def _b1_snapshot(
 def _c1a_snapshot(
     session: Session,
 ) -> dict[str, tuple[tuple[tuple[str, object], ...], ...]]:
-    tables = (OpenGameRegistration.__table__, IdempotencyRecord.__table__)
+    tables = (
+        OpenGameRegistration.__table__,
+        OpenGameNotificationOutbox.__table__,
+        IdempotencyRecord.__table__,
+    )
     return {table.name: _table_rows(session, table) for table in tables}
 
 
@@ -2198,6 +2204,298 @@ def test_withdraw_is_terminal_idempotent_and_preserves_capacity_authority(
         assert records[0].response_status == 200
 
 
+def test_full_joined_exit_promotes_exact_fifo_head_and_writes_safe_outbox(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        game.registration_deadline = NOW - timedelta(minutes=1)
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        first_user = _new_user(session, "promotion-first")
+        first = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=first_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=7,
+            waitlisted_at=NOW - timedelta(minutes=7),
+        )
+        second_user = _new_user(session, "promotion-second")
+        second = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=second_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=8,
+            waitlisted_at=NOW - timedelta(minutes=6),
+        )
+        first_decided_at = first.decided_at
+        first_decided_by = first.decided_by_user_id
+        session.commit()
+
+        service = _service(session)
+        result = service.withdraw(
+            application_id=departing.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key="full-exit-promotion-key-00000001",
+            request=_withdrawal(
+                WithdrawalAction.LEAVE_GAME,
+                expected_version=2,
+            ),
+        )
+        replay = service.withdraw(
+            application_id=departing.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key="full-exit-promotion-key-00000001",
+            request=_withdrawal(
+                WithdrawalAction.LEAVE_GAME,
+                expected_version=2,
+            ),
+        )
+
+        persisted_departing = session.get_one(OpenGameRegistration, departing.id)
+        persisted_first = session.get_one(OpenGameRegistration, first.id)
+        persisted_second = session.get_one(OpenGameRegistration, second.id)
+        events = tuple(session.scalars(select(OpenGameNotificationOutbox)))
+        assert replay == result
+        assert result.remaining_spots == 0
+        assert persisted_departing.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert persisted_first.status is OpenGameRegistrationStatus.JOINED
+        assert persisted_first.version == 3
+        assert persisted_first.promoted_at == NOW
+        assert persisted_first.decided_at == first_decided_at
+        assert persisted_first.decided_by_user_id == first_decided_by
+        assert persisted_first.waitlist_seq == 7
+        assert persisted_first.waitlisted_at == NOW - timedelta(minutes=7)
+        assert persisted_first.withdrawn_at is None
+        assert persisted_first.withdrawal_kind is None
+        assert persisted_second.status is OpenGameRegistrationStatus.WAITLISTED
+        assert persisted_second.version == 2
+        assert persisted_second.waitlist_seq == 8
+        assert len(events) == 1
+        assert events[0].dedupe_key == f"waitlist-promoted:{first.id}:3"
+        assert events[0].game_id == game.id
+        assert events[0].registration_id == first.id
+        assert events[0].recipient_user_id == first_user.id
+        assert events[0].event is OpenGameNotificationEvent.WAITLIST_PROMOTED
+        assert events[0].template_key == "waitlist-promoted"
+        assert events[0].status is OpenGameNotificationStatus.PENDING
+        assert events[0].payload == {
+            "game_name": "历史球局",
+            "starts_at": case.booking.starts_at.isoformat(),
+            "venue_name": "浦东星跃足球公园",
+        }
+        assert events[0].attempt_count == 0
+        assert events[0].available_at == NOW
+        assert events[0].claim_token is None
+        assert events[0].lease_until is None
+        assert events[0].completed_at is None
+        assert events[0].last_failure_code is None
+        assert session.get_one(OpenGame, game.id).open_spots == 1
+        second_context = service.get_context(
+            share_token=case.share_token,
+            viewer_user_id=second_user.id,
+        )
+        assert second_context.viewer_registration is not None
+        assert second_context.viewer_registration.waitlist_position == 1
+
+
+@pytest.mark.parametrize(
+    ("open_spots", "with_waitlist"),
+    [(1, False), (2, True)],
+)
+def test_exit_without_candidate_or_from_nonfull_game_has_no_promotion_side_effect(
+    pg_engine: Engine,
+    open_spots: int,
+    with_waitlist: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = open_spots
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate: OpenGameRegistration | None = None
+        if with_waitlist:
+            candidate_user = _new_user(session, "nonfull-candidate")
+            candidate = _add_registration(
+                session,
+                game_id=game.id,
+                applicant_user_id=candidate_user.id,
+                status=OpenGameRegistrationStatus.WAITLISTED,
+                decided_by_user_id=case.booking.owner_id,
+                waitlist_seq=1,
+                waitlisted_at=NOW - timedelta(minutes=5),
+            )
+        session.commit()
+
+        result = _service(session).withdraw(
+            application_id=departing.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=f"no-promotion-{open_spots}-{with_waitlist}-key-001",
+            request=_withdrawal(
+                WithdrawalAction.LEAVE_GAME,
+                expected_version=2,
+            ),
+        )
+
+        assert result.remaining_spots == open_spots
+        if candidate is not None:
+            persisted = session.get_one(OpenGameRegistration, candidate.id)
+            assert persisted.status is OpenGameRegistrationStatus.WAITLISTED
+            assert persisted.version == 2
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == 0
+
+
+@pytest.mark.parametrize(
+    ("condition", "exit_succeeds"),
+    [
+        ("suspended", True),
+        ("cancelled", False),
+        ("completed", False),
+        ("draft", False),
+        ("started", False),
+    ],
+)
+def test_exit_never_promotes_outside_healthy_published_prestart_state(
+    pg_engine: Engine,
+    condition: str,
+    exit_succeeds: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate_user = _new_user(session, f"blocked-promotion-{condition}")
+        candidate = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=candidate_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=1,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        if condition == "draft":
+            game.status = OpenGameStatus.DRAFT
+            game.published_at = None
+            now = NOW
+        else:
+            now = _set_review_authority(
+                session,
+                case=case,
+                condition=condition,
+            )
+        session.commit()
+        before = _c1a_snapshot(session)
+
+        def operation() -> Any:
+            return _service(session, now=now).withdraw(
+                application_id=departing.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=f"blocked-promotion-{condition}-key-000001",
+                request=_withdrawal(
+                    WithdrawalAction.LEAVE_GAME,
+                    expected_version=2,
+                ),
+            )
+        if exit_succeeds:
+            result = operation()
+            assert result.game.state == "SUSPENDED"
+            assert session.get_one(
+                OpenGameRegistration,
+                departing.id,
+            ).status is OpenGameRegistrationStatus.WITHDRAWN
+        else:
+            with pytest.raises(AppError) as changed:
+                operation()
+            assert changed.value.code == "APPLICATION_STATE_CHANGED"
+            assert _c1a_snapshot(session) == before
+
+        persisted_candidate = session.get_one(OpenGameRegistration, candidate.id)
+        assert persisted_candidate.status is OpenGameRegistrationStatus.WAITLISTED
+        assert persisted_candidate.version == 2
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == 0
+
+
+def test_exit_does_not_promote_when_effective_published_authority_is_unhealthy(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(
+        pg_engine,
+        refund_purpose=RefundCasePurpose.ORDER_CANCELLATION,
+    )
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate_user = _new_user(session, "unhealthy-published-promotion")
+        candidate = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=candidate_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=1,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        session.commit()
+
+        result = _service(session).withdraw(
+            application_id=departing.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key="unhealthy-published-exit-key-000001",
+            request=_withdrawal(
+                WithdrawalAction.LEAVE_GAME,
+                expected_version=2,
+            ),
+        )
+
+        assert result.game.state == "PUBLISHED"
+        assert session.get_one(
+            OpenGameRegistration,
+            departing.id,
+        ).status is OpenGameRegistrationStatus.WITHDRAWN
+        persisted_candidate = session.get_one(OpenGameRegistration, candidate.id)
+        assert persisted_candidate.status is OpenGameRegistrationStatus.WAITLISTED
+        assert persisted_candidate.version == 2
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == 0
+
+
 def test_joined_exit_records_only_strictly_inside_six_hours_and_suspended_is_allowed(
     pg_engine: Engine,
 ) -> None:
@@ -2417,6 +2715,24 @@ class _FailingWithdrawalFlushRepository(OpenGameRegistrationRepository):
         raise SQLAlchemyError("injected secret withdrawal flush failure")
 
 
+class _FailingPromotionFlushRepository(OpenGameRegistrationRepository):
+    def __init__(self, session: Session) -> None:
+        super().__init__(session)
+        self._flush_count = 0
+
+    def flush(self) -> None:
+        self._flush_count += 1
+        super().flush()
+        if self._flush_count == 2:
+            raise SQLAlchemyError("injected secret promotion flush failure")
+
+
+class _FailingOutboxRepository(OpenGameRegistrationRepository):
+    def add_notification(self, notification: OpenGameNotificationOutbox) -> None:
+        super().add_notification(notification)
+        raise SQLAlchemyError("injected secret outbox write failure")
+
+
 class _FailingCompletionOrderRepository(OrderRepository):
     def complete_idempotency(self, *args: object, **kwargs: object) -> None:
         raise SQLAlchemyError("injected secret completion failure")
@@ -2494,6 +2810,67 @@ def test_withdrawal_flush_failure_rolls_back_audit_status_and_idempotency(
                 application_id=target.id,
                 applicant_user_id=case.booking.stranger_id,
                 idempotency_key="failing-withdrawal-flush-key-00001",
+                request=_withdrawal(
+                    WithdrawalAction.LEAVE_GAME,
+                    expected_version=2,
+                ),
+            )
+
+        assert (unavailable.value.status_code, unavailable.value.code) == (
+            503,
+            "SERVICE_UNAVAILABLE",
+        )
+        assert _c1a_snapshot(session) == before_c1a
+        assert _b1_snapshot(session) == before_b1
+
+
+@pytest.mark.parametrize("failure", ["outbox", "promotion_flush", "completion"])
+def test_promotion_failure_rolls_back_exit_candidate_outbox_and_idempotency(
+    pg_engine: Engine,
+    failure: str,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate_user = _new_user(session, f"rollback-{failure}")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=candidate_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=1,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        session.commit()
+        before_c1a = _c1a_snapshot(session)
+        before_b1 = _b1_snapshot(session)
+        registration_repository: OpenGameRegistrationRepository | None = None
+        order_repository: OrderRepository | None = None
+        if failure == "outbox":
+            registration_repository = _FailingOutboxRepository(session)
+        elif failure == "promotion_flush":
+            registration_repository = _FailingPromotionFlushRepository(session)
+        else:
+            order_repository = _FailingCompletionOrderRepository(session)
+
+        with pytest.raises(AppError) as unavailable:
+            _service(
+                session,
+                registration_repository=registration_repository,
+                order_repository=order_repository,
+            ).withdraw(
+                application_id=departing.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=f"promotion-{failure}-rollback-key-0001",
                 request=_withdrawal(
                     WithdrawalAction.LEAVE_GAME,
                     expected_version=2,

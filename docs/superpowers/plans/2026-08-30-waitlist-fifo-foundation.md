@@ -48,10 +48,10 @@ Task 3 冻结边界：
 
 ## Task 6：JOINED 退出的原子 FIFO 递补
 
-- [ ] RED 覆盖单退出单递补、无候补、暂停/取消/开场、同键重放、不同键竞争、两名同时退出和候补自退竞争。
-- [ ] 在 C2a 退出事务内锁定 FIFO 首位，写 `WITHDRAWN + JOINED + outbox + idempotency` 一次提交；失败全部回滚。
-- [ ] 存在有效候补时拒绝 B2 开放名额编辑；队列为空保持既有编辑行为。
-- [ ] 明确当前无 `SUSPENDED → PUBLISHED` 恢复；未来增加恢复前必须先实现同锁序的按空位 FIFO fill hook。
+- [x] RED 覆盖单退出单递补、无候补、暂停/取消/开场、同键重放、不同键竞争、两名同时退出和候补自退竞争。
+- [x] 在 C2a 退出事务内锁定 FIFO 首位，写 `WITHDRAWN + JOINED + outbox + idempotency` 一次提交；失败全部回滚。
+- [x] 存在有效候补时拒绝 B2 开放名额编辑；队列为空保持既有编辑行为。
+- [x] 明确当前无 `SUSPENDED → PUBLISHED` 恢复；未来增加恢复前必须先实现同锁序的按空位 FIFO fill hook。
 
 ## Task 7：worker 与本地 Provider
 

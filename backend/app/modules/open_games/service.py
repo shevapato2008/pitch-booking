@@ -348,10 +348,17 @@ class OpenGameService:
             joined_count = self._registration_repository.count_joined(
                 game_id=game.id
             )
+            has_active_waitlist = (
+                request.open_spots != game.open_spots
+                and self._registration_repository.has_active_waitlist(
+                    game_id=game.id
+                )
+            )
             _validate_update_roster(
                 game=game,
                 request=request,
                 joined_count=joined_count,
+                has_active_waitlist=has_active_waitlist,
             )
 
             team = self._repository.upsert_team(
@@ -719,9 +726,17 @@ def _validate_update_roster(
     game: OpenGame,
     request: UpdateOpenGameRequest,
     joined_count: int,
+    has_active_waitlist: bool = False,
 ) -> None:
     errors: list[OpenGameFieldError] = []
-    if request.open_spots < joined_count:
+    if has_active_waitlist:
+        errors.append(
+            OpenGameFieldError(
+                "open_spots",
+                "存在候补成员时不能修改开放名额。",
+            )
+        )
+    elif request.open_spots < joined_count:
         errors.append(
             OpenGameFieldError("open_spots", "不能小于已加入人数。")
         )

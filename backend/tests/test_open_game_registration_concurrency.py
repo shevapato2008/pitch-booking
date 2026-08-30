@@ -13,6 +13,7 @@ from sqlalchemy.pool import NullPool
 from backend.app.errors import AppError
 from backend.app.models import (
     OpenGame,
+    OpenGameNotificationOutbox,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
     Order,
@@ -195,6 +196,7 @@ def _withdrawal_worker(
     expected_version: int,
     observed: tuple[Event, Event] | None,
     pid_queue: Queue[int],
+    applicant_user_id: uuid.UUID | None = None,
 ) -> tuple[str, object]:
     worker_engine = create_engine(database_url, poolclass=NullPool)
     session = Session(worker_engine)
@@ -220,7 +222,9 @@ def _withdrawal_worker(
         try:
             result = service.withdraw(
                 application_id=application_id,
-                applicant_user_id=case.booking.stranger_id,
+                applicant_user_id=(
+                    applicant_user_id or case.booking.stranger_id
+                ),
                 idempotency_key=idempotency_key,
                 request=WithdrawalRequest(
                     action=action,
@@ -734,14 +738,14 @@ def test_two_waitlist_withdrawals_serialize_and_replay_only_same_key(
 
 
 @pytest.mark.parametrize("same_key", [False, True])
-def test_two_joined_exit_requests_release_capacity_once(
+def test_two_requests_for_same_joined_exit_promote_only_once(
     pg_engine: Engine,
     same_key: bool,
 ) -> None:
     case = _seed_published_game(pg_engine)
     with Session(pg_engine) as session:
         game = session.get_one(OpenGame, case.game_id)
-        game.open_spots = 2
+        game.open_spots = 1
         target = _add_registration(
             session,
             game_id=case.game_id,
@@ -749,8 +753,19 @@ def test_two_joined_exit_requests_release_capacity_once(
             status=OpenGameRegistrationStatus.JOINED,
             decided_by_user_id=case.booking.owner_id,
         )
+        candidate_user = _new_user(session, "same-exit-promotion")
+        candidate = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=candidate_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=1,
+            waitlisted_at=NOW,
+        )
         session.commit()
         application_id = target.id
+        candidate_id = candidate.id
         before_b1 = _b1_snapshot(session)
 
     first_key = "concurrent-joined-exit-key-0000001"
@@ -793,14 +808,242 @@ def test_two_joined_exit_requests_release_capacity_once(
         row = session.get_one(OpenGameRegistration, application_id)
         assert row.status is OpenGameRegistrationStatus.WITHDRAWN
         assert row.version == 3
-        assert session.get_one(OpenGame, case.game_id).open_spots == 2
+        promoted = session.get_one(OpenGameRegistration, candidate_id)
+        assert promoted.status is OpenGameRegistrationStatus.JOINED
+        assert promoted.version == 3
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == 1
+        assert session.get_one(OpenGame, case.game_id).open_spots == 1
     game, joined_count = _assert_final_invariants(
         pg_engine,
         case=case,
         before_b1=before_b1,
     )
-    assert joined_count == 0
+    assert joined_count == 1
+    assert game.open_spots == 1
+
+
+def test_two_distinct_joined_exits_promote_two_fifo_candidates_once_each(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 2
+        first_departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        second_departing_user = _new_user(session, "second-departing")
+        second_departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=second_departing_user.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate_ids: list[uuid.UUID] = []
+        for sequence in (1, 2):
+            candidate_user = _new_user(session, f"two-exits-{sequence}")
+            candidate = _add_registration(
+                session,
+                game_id=game.id,
+                applicant_user_id=candidate_user.id,
+                status=OpenGameRegistrationStatus.WAITLISTED,
+                decided_by_user_id=case.booking.owner_id,
+                waitlist_seq=sequence,
+                waitlisted_at=NOW,
+            )
+            candidate_ids.append(candidate.id)
+        session.commit()
+        first_departing_id = first_departing.id
+        second_departing_id = second_departing.id
+        second_departing_user_id = second_departing_user.id
+        before_b1 = _b1_snapshot(session)
+
+    acquired = Event()
+    release = Event()
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=first_departing_id,
+            idempotency_key="first-distinct-exit-promotion-key-001",
+            action=WithdrawalAction.LEAVE_GAME,
+            expected_version=2,
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=second_departing_id,
+            applicant_user_id=second_departing_user_id,
+            idempotency_key="second-distinct-exit-promotion-key-01",
+            action=WithdrawalAction.LEAVE_GAME,
+            expected_version=2,
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert first[0] == second[0] == "WITHDRAWN"
+    with Session(pg_engine) as session:
+        departing_rows = [
+            session.get_one(OpenGameRegistration, application_id)
+            for application_id in (first_departing_id, second_departing_id)
+        ]
+        candidate_rows = [
+            session.get_one(OpenGameRegistration, application_id)
+            for application_id in candidate_ids
+        ]
+        assert all(
+            row.status is OpenGameRegistrationStatus.WITHDRAWN
+            for row in departing_rows
+        )
+        assert all(
+            row.status is OpenGameRegistrationStatus.JOINED
+            for row in candidate_rows
+        )
+        assert [row.version for row in candidate_rows] == [3, 3]
+        events = tuple(
+            session.scalars(
+                select(OpenGameNotificationOutbox).order_by(
+                    OpenGameNotificationOutbox.created_at,
+                    OpenGameNotificationOutbox.id,
+                )
+            )
+        )
+        assert {row.registration_id for row in events} == set(candidate_ids)
+        assert len(events) == 2
+    game, joined_count = _assert_final_invariants(
+        pg_engine,
+        case=case,
+        before_b1=before_b1,
+    )
+    assert joined_count == 2
     assert game.open_spots == 2
+
+
+@pytest.mark.parametrize("waitlist_withdraws_first", [False, True])
+def test_waitlist_withdrawal_and_joined_exit_serialize_without_stale_promotion(
+    pg_engine: Engine,
+    waitlist_withdraws_first: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate_user = _new_user(session, "withdraw-race-candidate")
+        candidate = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=candidate_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=1,
+            waitlisted_at=NOW,
+        )
+        session.commit()
+        departing_id = departing.id
+        candidate_id = candidate.id
+        candidate_user_id = candidate_user.id
+        before_b1 = _b1_snapshot(session)
+
+    acquired = Event()
+    release = Event()
+
+    def exit_game(
+        pid: Queue[int],
+        observed: tuple[Event, Event] | None,
+    ) -> tuple[str, object]:
+        return _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=departing_id,
+            idempotency_key=f"exit-waitlist-race-{waitlist_withdraws_first}-key-01",
+            action=WithdrawalAction.LEAVE_GAME,
+            expected_version=2,
+            observed=observed,
+            pid_queue=pid,
+        )
+
+    def withdraw_waitlist(
+        pid: Queue[int],
+        observed: tuple[Event, Event] | None,
+    ) -> tuple[str, object]:
+        return _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=candidate_id,
+            applicant_user_id=candidate_user_id,
+            idempotency_key=(
+                f"waitlist-exit-race-{waitlist_withdraws_first}-key-0001"
+            ),
+            action=WithdrawalAction.WITHDRAW_WAITLIST,
+            expected_version=2,
+            observed=observed,
+            pid_queue=pid,
+        )
+
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=(
+            (lambda pid: withdraw_waitlist(pid, (acquired, release)))
+            if waitlist_withdraws_first
+            else (lambda pid: exit_game(pid, (acquired, release)))
+        ),
+        second=(
+            (lambda pid: exit_game(pid, None))
+            if waitlist_withdraws_first
+            else (lambda pid: withdraw_waitlist(pid, None))
+        ),
+    )
+
+    assert first[0] == "WITHDRAWN"
+    assert second[0] == (
+        "WITHDRAWN" if waitlist_withdraws_first else "APPLICATION_STATE_CHANGED"
+    )
+    with Session(pg_engine) as session:
+        persisted_departing = session.get_one(
+            OpenGameRegistration,
+            departing_id,
+        )
+        persisted_candidate = session.get_one(
+            OpenGameRegistration,
+            candidate_id,
+        )
+        assert persisted_departing.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert persisted_candidate.status is (
+            OpenGameRegistrationStatus.WITHDRAWN
+            if waitlist_withdraws_first
+            else OpenGameRegistrationStatus.JOINED
+        )
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == (0 if waitlist_withdraws_first else 1)
+    _, joined_count = _assert_final_invariants(
+        pg_engine,
+        case=case,
+        before_b1=before_b1,
+    )
+    assert joined_count == (0 if waitlist_withdraws_first else 1)
 
 
 def test_accept_first_forces_joined_aware_edit_to_fail(pg_engine: Engine) -> None:

@@ -16,6 +16,9 @@ from backend.app.config import Settings
 from backend.app.database import get_database
 from backend.app.main import create_app
 from backend.app.models import (
+    OpenGameNotificationEvent,
+    OpenGameNotificationOutbox,
+    OpenGameNotificationStatus,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
     OpenGameStatus,
@@ -44,6 +47,7 @@ CAPTAIN_CODE = "dev-registration-http-captain"
 ACCEPTED_CODE = "dev-registration-http-accepted"
 REJECTED_CODE = "dev-registration-http-rejected"
 WAITLISTED_CODE = "dev-registration-http-waitlisted"
+PROMOTED_CODE = "dev-registration-http-promoted"
 WECHAT_APP_ID = "wx-open-game-registration-test"
 SHARE_TOKEN = "H" * 32
 ACCEPTED_APPLY_KEY = "http-registration-accepted-apply-001"
@@ -54,6 +58,8 @@ REJECT_DECISION_KEY = "http-registration-reject-decision-01"
 WAITLISTED_APPLY_KEY = "http-registration-waitlisted-apply-01"
 WAITLIST_DECISION_KEY = "http-registration-waitlist-decision-1"
 WAITLIST_WITHDRAW_KEY = "http-registration-waitlist-withdraw-1"
+PROMOTED_APPLY_KEY = "http-registration-promoted-apply-0001"
+PROMOTED_WAITLIST_KEY = "http-registration-promoted-waitlist-01"
 
 
 @pytest.fixture
@@ -140,9 +146,9 @@ def _development_openid(code: str) -> str:
     return f"dev-openid-{suffix}"
 
 
-def _seed_four_identities(
+def _seed_five_identities(
     engine: Engine,
-) -> tuple[SeededRegistrationCase, uuid.UUID, uuid.UUID]:
+) -> tuple[SeededRegistrationCase, uuid.UUID, uuid.UUID, uuid.UUID]:
     booking = seed_confirmed_order(
         engine,
         starts_at=datetime.now(UTC) + timedelta(days=3),
@@ -158,11 +164,15 @@ def _seed_four_identities(
             wechat_app_id=WECHAT_APP_ID,
             wechat_openid=_development_openid(WAITLISTED_CODE),
         )
+        promoted = User(
+            wechat_app_id=WECHAT_APP_ID,
+            wechat_openid=_development_openid(PROMOTED_CODE),
+        )
         captain.wechat_app_id = WECHAT_APP_ID
         captain.wechat_openid = _development_openid(CAPTAIN_CODE)
         accepted.wechat_app_id = WECHAT_APP_ID
         accepted.wechat_openid = _development_openid(ACCEPTED_CODE)
-        session.add_all((rejected, waitlisted))
+        session.add_all((rejected, waitlisted, promoted))
         session.flush()
         game = add_stored_game(
             session,
@@ -177,7 +187,7 @@ def _seed_four_identities(
             game_id=game.id,
             share_token=SHARE_TOKEN,
         )
-        return case, rejected.id, waitlisted.id
+        return case, rejected.id, waitlisted.id, promoted.id
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -297,16 +307,22 @@ def _login(client: httpx.Client, code: str, expected_user_id: uuid.UUID) -> str:
     return token
 
 
-def test_four_identity_registration_journey_runs_over_real_http_without_changing_b1(
+def test_five_identity_registration_journey_runs_over_real_http_without_changing_b1(
     pg_engine: Engine,
     registration_backend_url: str,
 ) -> None:
-    case, rejected_user_id, waitlisted_user_id = _seed_four_identities(pg_engine)
+    (
+        case,
+        rejected_user_id,
+        waitlisted_user_id,
+        promoted_user_id,
+    ) = _seed_five_identities(pg_engine)
     sensitive_user_ids = {
         case.booking.owner_id,
         case.booking.stranger_id,
         rejected_user_id,
         waitlisted_user_id,
+        promoted_user_id,
     }
     with Session(pg_engine) as session:
         baseline = _b1_snapshot(session)
@@ -474,6 +490,31 @@ def test_four_identity_registration_journey_runs_over_real_http_without_changing
         assert withdrawn_waitlist["viewer_registration"]["waitlisted_at"] is not None
         assert "waitlist_seq" not in waitlist_withdrawal.text
 
+        promoted_token = _login(client, PROMOTED_CODE, promoted_user_id)
+        promoted_apply = client.post(
+            f"/api/v1/shared-games/{case.share_token}/applications",
+            headers=_idempotent(PROMOTED_APPLY_KEY, token=promoted_token),
+            json=_application_body("递补球员"),
+        )
+        assert promoted_apply.status_code == 201, promoted_apply.text
+        promoted_queue = _assert_queue(
+            client.get(
+                f"/api/v1/games/{case.game_id}/applications",
+                headers=_auth(captain_token),
+            ),
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert promoted_queue["pending_count"] == 1
+        promoted_application_id = promoted_queue["applications"][0]["id"]
+        promoted_waitlist = client.post(
+            f"/api/v1/games/{case.game_id}/applications/"
+            f"{promoted_application_id}/decision",
+            headers=_idempotent(PROMOTED_WAITLIST_KEY, token=captain_token),
+            json={"decision": "WAITLIST", "expected_version": 1},
+        )
+        assert promoted_waitlist.status_code == 200, promoted_waitlist.text
+        assert promoted_waitlist.json()["status"] == "WAITLISTED"
+
         joined = _assert_context(
             client.get(
                 f"/api/v1/shared-games/{case.share_token}/registration-context",
@@ -512,7 +553,22 @@ def test_four_identity_registration_journey_runs_over_real_http_without_changing
         assert exited_body["viewer_registration"]["persisted_status"] == "WITHDRAWN"
         assert exited_body["viewer_registration"]["withdrawal_kind"] == "GAME_EXIT"
         assert exited_body["viewer_registration"]["version"] == 3
-        assert exited_body["remaining_spots"] == 1
+        assert exited_body["remaining_spots"] == 0
+
+        promoted_context = _assert_context(
+            client.get(
+                f"/api/v1/shared-games/{case.share_token}/registration-context",
+                headers=_auth(promoted_token),
+            ),
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert promoted_context["viewer_registration"]["persisted_status"] == (
+            "JOINED"
+        )
+        assert promoted_context["viewer_registration"]["version"] == 3
+        assert promoted_context["viewer_registration"]["waitlist_position"] is None
+        assert promoted_context["viewer_registration"]["waitlisted_at"] is not None
+        assert promoted_context["viewer_registration"]["promoted_at"] is not None
 
         rejected_token = _login(client, REJECTED_CODE, rejected_user_id)
         rejected_apply = client.post(
@@ -559,10 +615,22 @@ def test_four_identity_registration_journey_runs_over_real_http_without_changing
             )
         )
         assert set(statuses) == {
+            OpenGameRegistrationStatus.JOINED,
             OpenGameRegistrationStatus.WITHDRAWN,
             OpenGameRegistrationStatus.REJECTED,
         }
-        assert len(statuses) == 3
+        assert len(statuses) == 4
+        events = tuple(session.scalars(select(OpenGameNotificationOutbox)))
+        assert len(events) == 1
+        assert events[0].registration_id == uuid.UUID(promoted_application_id)
+        assert events[0].recipient_user_id == promoted_user_id
+        assert events[0].event is OpenGameNotificationEvent.WAITLIST_PROMOTED
+        assert events[0].status is OpenGameNotificationStatus.PENDING
+        assert set(events[0].payload) == {
+            "game_name",
+            "starts_at",
+            "venue_name",
+        }
         assert session.scalar(select(func.count()).select_from(Payment)) == 1
         assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
         assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0

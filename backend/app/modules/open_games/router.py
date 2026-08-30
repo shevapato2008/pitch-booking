@@ -152,8 +152,10 @@ def _field_error_message(field: str) -> str:
     return "字段值不符合要求。"
 
 
-def _service_field_error_message(field: str) -> str:
+def _service_field_error_message(field: str, message: object) -> str:
     if field == "open_spots":
+        if message == "存在候补成员时不能修改开放名额。":
+            return message
         return "不能小于已加入人数。"
     if field == "total_players":
         return "不能小于固定人数与已加入人数之和。"
@@ -182,7 +184,13 @@ def _translate_service_validation(
             continue
         seen.add(field)
         fields.append(
-            {"field": field, "message": _service_field_error_message(field)}
+            {
+                "field": field,
+                "message": _service_field_error_message(
+                    field,
+                    item.get("message"),
+                ),
+            }
         )
     deadline_only = fields and all(
         item["field"] == "registration_deadline" for item in fields

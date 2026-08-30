@@ -290,6 +290,40 @@ def add_joined_registration(
     return registration
 
 
+def add_waitlisted_registration(
+    session: Session,
+    *,
+    game_id: uuid.UUID,
+    owner_id: uuid.UUID,
+) -> OpenGameRegistration:
+    applicant = User(
+        wechat_app_id="wx-open-game-waitlist-test",
+        wechat_openid=f"open-game-waitlist-{uuid.uuid4()}",
+    )
+    session.add(applicant)
+    session.flush()
+    registration = OpenGameRegistration(
+        game_id=game_id,
+        applicant_user_id=applicant.id,
+        display_name="候补球员",
+        position=OpenGameRegistrationPosition.ANY,
+        note=None,
+        status=OpenGameRegistrationStatus.WAITLISTED,
+        version=2,
+        consent_version="c1a-2026-08-24",
+        adult_confirmed_at=NOW,
+        risk_confirmed_at=NOW,
+        applied_at=NOW,
+        decided_at=NOW,
+        decided_by_user_id=owner_id,
+        waitlist_seq=1,
+        waitlisted_at=NOW,
+    )
+    session.add(registration)
+    session.flush()
+    return registration
+
+
 def test_shared_authority_projection_preserves_public_response(pg_engine: Engine) -> None:
     seeded = seed_confirmed_order(pg_engine)
     with Session(pg_engine) as session:
@@ -890,6 +924,95 @@ def test_update_with_joined_members_reports_all_joined_invariant_fields_once(
                 },
             ]
         }
+
+
+def test_update_rejects_open_spots_change_while_active_waitlist_exists(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        game = add_stored_game(
+            session,
+            seeded=seeded,
+            status=OpenGameStatus.PUBLISHED,
+        )
+        add_waitlisted_registration(
+            session,
+            game_id=game.id,
+            owner_id=seeded.owner_id,
+        )
+        session.commit()
+        request = UpdateOpenGameRequest(
+            **(
+                draft_request(seeded).model_dump()
+                | {"total_players": 11, "open_spots": 5}
+            ),
+            expected_version=1,
+        )
+
+        with pytest.raises(AppError) as invalid:
+            service(session).update(
+                user_id=seeded.owner_id,
+                game_id=game.id,
+                idempotency_key="waitlist-capacity-edit-key-000001",
+                request=request,
+            )
+
+        assert (invalid.value.status_code, invalid.value.code) == (
+            422,
+            "INVALID_ARGUMENT",
+        )
+        assert invalid.value.details == {
+            "fields": [
+                {
+                    "field": "open_spots",
+                    "message": "存在候补成员时不能修改开放名额。",
+                }
+            ]
+        }
+        session.refresh(game)
+        assert game.open_spots == 4
+        assert game.version == 1
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_update_allows_other_fields_when_open_spots_matches_active_waitlist_game(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        game = add_stored_game(
+            session,
+            seeded=seeded,
+            status=OpenGameStatus.PUBLISHED,
+        )
+        add_waitlisted_registration(
+            session,
+            game_id=game.id,
+            owner_id=seeded.owner_id,
+        )
+        session.commit()
+        request = UpdateOpenGameRequest(
+            **(
+                draft_request(
+                    seeded,
+                    name="候补存在时只改名称",
+                ).model_dump()
+                | {"open_spots": 4}
+            ),
+            expected_version=1,
+        )
+
+        updated = service(session).update(
+            user_id=seeded.owner_id,
+            game_id=game.id,
+            idempotency_key="waitlist-same-capacity-edit-key-001",
+            request=request,
+        )
+
+        assert updated.name == "候补存在时只改名称"
+        assert updated.open_spots == 4
+        assert updated.version == 2
 
 
 def test_update_total_floor_is_reachable_when_open_spots_equals_joined(

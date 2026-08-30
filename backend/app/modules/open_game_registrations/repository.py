@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.app.models import (
     OpenGame,
+    OpenGameNotificationOutbox,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
     Order,
@@ -118,6 +119,41 @@ class OpenGameRegistrationRepository:
         )
         return int(count or 0)
 
+    def has_active_waitlist(self, *, game_id: uuid.UUID) -> bool:
+        return (
+            self.session.scalar(
+                select(OpenGameRegistration.id)
+                .where(
+                    OpenGameRegistration.game_id == game_id,
+                    OpenGameRegistration.status
+                    == OpenGameRegistrationStatus.WAITLISTED,
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
+    def lock_fifo_waitlisted(
+        self,
+        *,
+        game_id: uuid.UUID,
+    ) -> OpenGameRegistration | None:
+        return self.session.scalar(
+            select(OpenGameRegistration)
+            .where(
+                OpenGameRegistration.game_id == game_id,
+                OpenGameRegistration.status
+                == OpenGameRegistrationStatus.WAITLISTED,
+            )
+            .order_by(
+                OpenGameRegistration.waitlist_seq,
+                OpenGameRegistration.id,
+            )
+            .limit(1)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     def next_waitlist_seq(self, *, game_id: uuid.UUID) -> int:
         historical_max = self.session.scalar(
             select(func.max(OpenGameRegistration.waitlist_seq)).where(
@@ -138,6 +174,9 @@ class OpenGameRegistrationRepository:
             if _constraint_name(error) == "uq_open_game_registrations_game_applicant":
                 raise RegistrationApplicantConflictError from error
             raise
+
+    def add_notification(self, notification: OpenGameNotificationOutbox) -> None:
+        self.session.add(notification)
 
     def list_pending(self, *, game_id: uuid.UUID) -> list[OpenGameRegistration]:
         return list(

@@ -34,6 +34,7 @@ from backend.tests.test_open_game_service import (
     NOW,
     SeededOpenGameCase,
     add_joined_registration,
+    add_waitlisted_registration,
     draft_request,
     seed_confirmed_order,
 )
@@ -596,6 +597,55 @@ def test_joined_update_http_error_is_frozen_and_minimal(pg_engine: Engine) -> No
                         "field": "aa_cents",
                         "message": "已有加入成员后预计 AA 只能保持或降低。",
                     },
+                ]
+            },
+        }
+    }
+
+
+def test_waitlist_capacity_edit_http_error_is_frozen_and_minimal(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    _attach_sessions(pg_engine, seeded)
+    game_id = _create_draft(pg_engine, seeded)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, game_id)
+        game.status = OpenGameStatus.PUBLISHED
+        game.published_at = NOW
+        add_waitlisted_registration(
+            session,
+            game_id=game_id,
+            owner_id=seeded.owner_id,
+        )
+        session.commit()
+
+    body = _body(seeded) | {
+        "total_players": 11,
+        "open_spots": 5,
+        "expected_version": 1,
+    }
+    with _client(pg_engine) as client:
+        response = client.put(
+            f"/api/v1/games/{game_id}",
+            headers=_idempotent(UPDATE_KEY),
+            json=body,
+        )
+
+    assert response.status_code == 422
+    payload = response.json()
+    request_id = payload["error"].pop("request_id")
+    assert isinstance(request_id, str) and request_id
+    assert payload == {
+        "error": {
+            "code": "INVALID_ARGUMENT",
+            "message": "球局已有加入成员，开放容量或预计 AA 不符合要求。",
+            "details": {
+                "fields": [
+                    {
+                        "field": "open_spots",
+                        "message": "存在候补成员时不能修改开放名额。",
+                    }
                 ]
             },
         }

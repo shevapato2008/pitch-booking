@@ -17,11 +17,15 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameNotificationEvent,
+    OpenGameNotificationOutbox,
+    OpenGameNotificationStatus,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
     OpenGameRegistrationWithdrawalKind,
     OpenGameStatus,
     Order,
+    WaitlistPromotedNotificationPayload,
 )
 from backend.app.modules.open_game_registrations.dto import (
     OPEN_GAME_REGISTRATION_CONSENT_VERSION,
@@ -525,6 +529,7 @@ class OpenGameRegistrationService:
                 order_row=order_row,
                 now=now,
             )
+            joined_before = self._repository.count_joined(game_id=game.id)
             available = project_available_withdrawal(
                 persisted_status=registration.status,
                 game_state=projection.state,
@@ -537,6 +542,18 @@ class OpenGameRegistrationService:
                 or available.action.value != request.action.value
             ):
                 raise _application_state_changed()
+
+            should_promote = (
+                request.action is WithdrawalAction.LEAVE_GAME
+                and registration.status is OpenGameRegistrationStatus.JOINED
+                and joined_before == game.open_spots
+                and game.status is OpenGameStatus.PUBLISHED
+                and projection.state is EffectiveOpenGameState.PUBLISHED
+                and published_authority_is_healthy(
+                    projection.facts.order_facts
+                )
+                and now < projection.starts_at
+            )
 
             registration.status = OpenGameRegistrationStatus.WITHDRAWN
             registration.version += 1
@@ -559,6 +576,44 @@ class OpenGameRegistrationService:
                 available.late_exit_will_be_recorded
             )
             self._repository.flush()
+            if should_promote:
+                promoted = self._repository.lock_fifo_waitlisted(
+                    game_id=game.id
+                )
+                if promoted is not None:
+                    promoted.status = OpenGameRegistrationStatus.JOINED
+                    promoted.version += 1
+                    promoted.promoted_at = now
+                    promoted.withdrawn_at = None
+                    promoted.withdrawal_kind = None
+                    promoted.late_exit_recorded = False
+                    payload: WaitlistPromotedNotificationPayload = {
+                        "game_name": game.name,
+                        "starts_at": projection.starts_at.isoformat(),
+                        "venue_name": order_row.venue_name,
+                    }
+                    self._repository.add_notification(
+                        OpenGameNotificationOutbox(
+                            dedupe_key=(
+                                f"waitlist-promoted:{promoted.id}:"
+                                f"{promoted.version}"
+                            ),
+                            game_id=game.id,
+                            registration_id=promoted.id,
+                            recipient_user_id=promoted.applicant_user_id,
+                            event=OpenGameNotificationEvent.WAITLIST_PROMOTED,
+                            template_key="waitlist-promoted",
+                            status=OpenGameNotificationStatus.PENDING,
+                            payload=payload,
+                            attempt_count=0,
+                            available_at=now,
+                            claim_token=None,
+                            lease_until=None,
+                            completed_at=None,
+                            last_failure_code=None,
+                        )
+                    )
+                    self._repository.flush()
             joined_count = self._repository.count_joined(game_id=game.id)
             response = _project_context(
                 game=game,

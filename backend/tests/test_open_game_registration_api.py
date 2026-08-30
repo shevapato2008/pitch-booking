@@ -17,6 +17,7 @@ from backend.app.main import create_app
 from backend.app.models import (
     IdempotencyRecord,
     OpenGame,
+    OpenGameNotificationOutbox,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
     OpenGameStatus,
@@ -235,6 +236,59 @@ def test_withdrawal_route_is_self_only_closed_and_byte_stable_on_replay(
     assert replay.content == withdrawn.content
     assert reused.status_code == 409
     assert reused.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_joined_exit_route_atomically_promotes_waitlist_without_exposing_outbox(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    _attach_sessions(pg_engine, case)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        departing = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        candidate_user = _new_user(session, "api-promotion")
+        candidate = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=candidate_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=1,
+            waitlisted_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+        session.commit()
+        departing_id = departing.id
+        candidate_id = candidate.id
+
+    with _client(pg_engine) as client:
+        response = client.post(
+            f"/api/v1/open-game-applications/{departing_id}/withdraw",
+            headers=_idempotent("registration-api-promotion-exit-key-01"),
+            json=_withdrawal_body(action="LEAVE_GAME", expected_version=2),
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["remaining_spots"] == 0
+    assert response.json()["viewer_registration"]["persisted_status"] == (
+        "WITHDRAWN"
+    )
+    assert "outbox" not in response.text.lower()
+    assert "waitlist_seq" not in response.text
+    with Session(pg_engine) as session:
+        assert session.get_one(
+            OpenGameRegistration,
+            candidate_id,
+        ).status is OpenGameRegistrationStatus.JOINED
+        events = tuple(session.scalars(select(OpenGameNotificationOutbox)))
+        assert len(events) == 1
+        assert events[0].registration_id == candidate_id
 
 
 def test_withdrawal_route_samples_the_injected_clock_inside_the_locked_service(
