@@ -1495,6 +1495,29 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "{registration_id}/attendance"
     )
     mark_operation = require_attendance_operation(mark_path, "post")
+    raw_idempotency_parameters = [
+        parameter
+        for parameter in mark_operation.get("parameters", [])
+        if isinstance(parameter, dict)
+        and parameter.get("name") == "Idempotency-Key"
+    ]
+    if len(raw_idempotency_parameters) != 1:
+        raise RuntimeError(
+            "raw OpenAPI attendance mark operation is missing Idempotency-Key"
+        )
+    raw_idempotency = raw_idempotency_parameters[0]
+    raw_idempotency_schema = raw_idempotency.get("schema")
+    if (
+        raw_idempotency.get("in") != "header"
+        or raw_idempotency.get("required") is not True
+        or not isinstance(raw_idempotency_schema, dict)
+        or raw_idempotency_schema.get("type") != "string"
+        or raw_idempotency_schema.get("minLength") != 16
+        or raw_idempotency_schema.get("maxLength") != 128
+    ):
+        raise RuntimeError(
+            "raw OpenAPI attendance mark Idempotency-Key contract is invalid"
+        )
     mark_operation.clear()
     mark_operation.update(
         {

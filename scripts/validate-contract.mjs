@@ -1435,6 +1435,14 @@ function validateOpenGameAttendanceContract(contract) {
     schema: { type: 'string', format: 'uuid' },
   });
 
+  if (!isDeepStrictEqual(contract.components?.securitySchemes?.bearerAuth, {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'opaque',
+  })) {
+    fail('bearerAuth security scheme must remain exact for attendance authority');
+  }
+
   const rosterPathItem = contract.paths?.[rosterPath];
   const markPathItem = contract.paths?.[markPath];
   if (!hasExactKeys(rosterPathItem, ['get'])) {
@@ -1526,6 +1534,38 @@ function validateOpenGameAttendanceContract(contract) {
     '#/components/schemas/OpenGameAttendanceMarkResult',
     'attendance mark',
   );
+  const expectedConflictSchema = {
+    allOf: [
+      { $ref: '#/components/schemas/ErrorEnvelope' },
+      {
+        type: 'object',
+        properties: {
+          error: {
+            oneOf: [
+              {
+                type: 'object',
+                properties: {
+                  code: { const: 'ATTENDANCE_STATE_CHANGED' },
+                },
+              },
+              {
+                type: 'object',
+                properties: {
+                  code: { const: 'IDEMPOTENCY_KEY_REUSED' },
+                },
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  if (!isDeepStrictEqual(
+    mark.responses['409'].content['application/json'].schema,
+    expectedConflictSchema,
+  )) {
+    fail('attendance mark 409 conflict code overlay must remain exact');
+  }
 
   const schemas = contract.components?.schemas ?? {};
   const assertClosedSchema = (name, fields, hasOneOf = false) => {
@@ -1562,6 +1602,13 @@ function validateOpenGameAttendanceContract(contract) {
     'registration_id', 'display_name', 'position', 'attendance_status',
     'attendance_recorded_at', 'version',
   ], true);
+  if (!isDeepStrictEqual(rosterItem.properties.display_name, {
+    type: 'string',
+    minLength: 2,
+    maxLength: 24,
+  })) {
+    fail('attendance roster display_name must remain a bounded public string');
+  }
   if (!isDeepStrictEqual(rosterItem.properties.attendance_status, {
     $ref: '#/components/schemas/OpenGameAttendanceStatus',
   }) || !isDeepStrictEqual(rosterItem.properties.attendance_recorded_at, {
@@ -1605,8 +1652,11 @@ function validateOpenGameAttendanceContract(contract) {
   if (!isDeepStrictEqual(markRequest.properties.attendance_status, {
     type: 'string',
     enum: ['PRESENT', 'NO_SHOW'],
+  }) || !isDeepStrictEqual(markRequest.properties.expected_version, {
+    type: 'integer',
+    minimum: 1,
   })) {
-    fail('attendance mark request must reject UNMARKED');
+    fail('attendance mark request must reject UNMARKED and require a positive expected version');
   }
   const markResult = assertClosedSchema('OpenGameAttendanceMarkResult', [
     'registration_id', 'attendance_status', 'attendance_recorded_at', 'version',
@@ -1618,8 +1668,11 @@ function validateOpenGameAttendanceContract(contract) {
   }) || !isDeepStrictEqual(markResult.properties.attendance_recorded_at, {
     type: 'string',
     format: 'date-time',
+  }) || !isDeepStrictEqual(markResult.properties.version, {
+    type: 'integer',
+    minimum: 2,
   })) {
-    fail('attendance mark result must pair a final status with a recorded time');
+    fail('attendance mark result must pair a final status with a recorded time and incremented version');
   }
 
   const selfPair = [

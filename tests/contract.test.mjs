@@ -200,6 +200,40 @@ test('contract validator rejects attendance authority drift', async () => {
   }, /attendance.*security/i);
 });
 
+test('contract validator rejects proven attendance exactness regressions', async () => {
+  const markPath = '/api/v1/games/{game_id}/registrations/{registration_id}/attendance';
+  await assertMutatedContractRejected((contract) => {
+    const conflict = contract.paths[markPath].post.responses['409']
+      .content['application/json'].schema;
+    conflict.allOf = [conflict.allOf[0]];
+  }, /attendance.*409|conflict.*code/i);
+
+  await assertMutatedContractRejected((contract) => {
+    delete contract.components.schemas.OpenGameAttendanceMarkRequest
+      .properties.expected_version.minimum;
+  }, /attendance.*expected.version|mark request/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.OpenGameAttendanceMarkResult.properties.version.minimum = 1;
+  }, /attendance.*result.*version|mark result/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.UnsafeRosterIdentity = {
+      oneOf: [
+        { type: 'string' },
+        { $ref: '#/components/schemas/OrderContact' },
+      ],
+    };
+    contract.components.schemas.OpenGameAttendanceRosterItem.properties.display_name = {
+      $ref: '#/components/schemas/UnsafeRosterIdentity',
+    };
+  }, /attendance.*display.name|roster.*identity/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.components.securitySchemes.bearerAuth.bearerFormat = 'JWT';
+  }, /bearerAuth|bearer.*scheme/i);
+});
+
 test('C1a/C2a registration operations expose exact named success examples', async () => {
   const contract = YAML.parse(await readFile(contractPath, 'utf8'));
   const expected = [

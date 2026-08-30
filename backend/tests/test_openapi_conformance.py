@@ -4002,6 +4002,26 @@ def test_attendance_runtime_aligner_rejects_a_missing_raw_route(
         align_my_open_game_applications_openapi(raw)
 
 
+def test_attendance_runtime_aligner_rejects_a_missing_raw_idempotency_header() -> None:
+    application = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    raw = get_openapi(
+        title=application.title,
+        version=application.version,
+        routes=application.routes,
+    )
+    mark = raw["paths"][ATTENDANCE_MARK_PATH]["post"]
+    mark["parameters"] = [
+        parameter
+        for parameter in mark["parameters"]
+        if parameter.get("name") != "Idempotency-Key"
+    ]
+
+    with pytest.raises(RuntimeError, match="raw OpenAPI.*Idempotency-Key"):
+        align_my_open_game_applications_openapi(raw)
+
+
 def test_open_game_attendance_operations_and_examples_are_frozen() -> None:
     contract = _contract()
     paths = contract["paths"]
