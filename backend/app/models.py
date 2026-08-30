@@ -1849,6 +1849,11 @@ class OpenGameNotificationOutbox(Base):
             "(status != 'FAILED' OR last_failure_code IS NOT NULL)",
             name="ck_open_game_notification_outbox_failure_code",
         ),
+        CheckConstraint(
+            "(status != 'PENDING' OR delivery_started_at IS NULL) AND "
+            "(status != 'SENT' OR delivery_started_at IS NOT NULL)",
+            name="ck_open_game_notification_outbox_delivery_start",
+        ),
         ForeignKeyConstraint(
             ["registration_id", "game_id", "recipient_user_id"],
             [
@@ -1918,6 +1923,9 @@ class OpenGameNotificationOutbox(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    delivery_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

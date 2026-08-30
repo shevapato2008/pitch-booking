@@ -55,9 +55,9 @@ Task 3 冻结边界：
 
 ## Task 7：worker 与本地 Provider
 
-- [ ] RED 后实现 claim/lease/complete/retry；Provider IO 必须发生在领域事务提交后且不持有报名锁。
-- [ ] 本地 fake 只记录调用供测试；生产组合缺少真实模板/Provider 时 fail closed，不得回退 fake。
-- [ ] 重复 worker 不并发发送；租约过期、Provider 失败和取消 supersede 不改变报名状态。无 Provider 幂等能力时，明确测试并记录“已发送但未记账”崩溃窗口可能至少一次重复触达。
+- [x] RED 后实现 claim/lease/complete/retry；Provider IO 必须发生在领域事务提交后且不持有报名锁。
+- [x] 本地 fake 只记录调用供测试；生产组合缺少真实模板/Provider 时 fail closed，不得回退 fake。
+- [x] 重复 worker 不并发发送；租约过期、Provider 失败和取消 supersede 不改变报名状态。无 Provider 幂等能力时，明确测试并记录“已发送但未记账”崩溃窗口可能至少一次重复触达。
 
 ## Task 8：生产客户端集成与验证
 

@@ -24,6 +24,9 @@ from backend.app.models import (
     RefundCasePurpose,
     Team,
 )
+from backend.app.modules.open_game_notifications.repository import (
+    OpenGameNotificationRepository,
+)
 from backend.app.modules.open_game_registrations.repository import (
     OpenGameRegistrationRepository,
 )
@@ -105,22 +108,29 @@ class OpenGameService:
         repository: OpenGameRepository,
         order_repository: OrderRepository,
         registration_repository: OpenGameRegistrationRepository | None = None,
+        notification_repository: OpenGameNotificationRepository | None = None,
         now: Callable[[], datetime] | None = None,
         token_factory: Callable[[], str] | None = None,
     ) -> None:
         registration_repository = registration_repository or (
             OpenGameRegistrationRepository(repository.session)
         )
+        notification_repository = notification_repository or (
+            OpenGameNotificationRepository(repository.session)
+        )
         if (
             repository.session is not order_repository.session
             or registration_repository.session is not repository.session
+            or notification_repository.session is not repository.session
         ):
             raise ValueError(
-                "open-game, registration and order repositories must share one Session"
+                "open-game, registration, notification and order repositories "
+                "must share one Session"
             )
         self._repository = repository
         self._order_repository = order_repository
         self._registration_repository = registration_repository
+        self._notification_repository = notification_repository
         self._now = now or (lambda: datetime.now(UTC))
         self._token_factory = token_factory or (lambda: secrets.token_urlsafe(24))
 
@@ -531,6 +541,10 @@ class OpenGameService:
             game.cancelled_at = now
             game.version += 1
             self._repository.flush()
+            self._notification_repository.supersede_unsent_for_game(
+                game_id=game.id,
+                completed_at=now,
+            )
             response = self._project_owner(game, order, authority, now=now)
             self._order_repository.complete_idempotency(
                 record,

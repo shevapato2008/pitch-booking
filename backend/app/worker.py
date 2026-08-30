@@ -53,6 +53,10 @@ class ProfileModerationScan(Protocol):
     def run_once(self) -> int: ...
 
 
+class OpenGameNotificationScan(Protocol):
+    def run_once(self) -> int: ...
+
+
 class RefundRecovery(Protocol):
     @property
     def provider_name(self) -> str: ...
@@ -74,6 +78,7 @@ class ExpiryWorker:
         payment_reconciliation: PaymentRecovery | None = None,
         refund_reconciliation: RefundRecovery | None = None,
         profile_moderation: ProfileModerationScan | None = None,
+        open_game_notifications: OpenGameNotificationScan | None = None,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], None] | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -88,6 +93,7 @@ class ExpiryWorker:
         self._payment_reconciliation = payment_reconciliation
         self._refund_reconciliation = refund_reconciliation
         self._profile_moderation = profile_moderation
+        self._open_game_notifications = open_game_notifications
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper or time.sleep
         self._batch_size = batch_size
@@ -177,7 +183,19 @@ class ExpiryWorker:
                 moderation_count = self._profile_moderation.run_once()
             except Exception:
                 logger.exception("Failed to scan venue profile moderation jobs")
-        return payment_count + refund_count + len(candidate_ids) + moderation_count
+        notification_count = 0
+        if self._open_game_notifications is not None:
+            try:
+                notification_count = self._open_game_notifications.run_once()
+            except Exception:
+                logger.exception("Failed to scan open game notification outbox")
+        return (
+            payment_count
+            + refund_count
+            + len(candidate_ids)
+            + moderation_count
+            + notification_count
+        )
 
     def run(self, *, once: bool = False) -> int:
         processed = 0
@@ -211,6 +229,7 @@ def main(
     payment_reconciliation: PaymentRecovery | None = None,
     refund_reconciliation: RefundRecovery | None = None,
     profile_moderation: ProfileModerationScan | None = None,
+    open_game_notifications: OpenGameNotificationScan | None = None,
     settings: Settings | None = None,
     venue_media_store: VenueMediaStore | None = None,
     moderation_provider: ContentModerationProvider | None = None,
@@ -301,6 +320,7 @@ def main(
             payment_reconciliation=resolved_payment_reconciliation,
             refund_reconciliation=resolved_refund_reconciliation,
             profile_moderation=resolved_profile_moderation,
+            open_game_notifications=open_game_notifications,
             batch_size=arguments.batch_size,
             interval_seconds=arguments.interval_seconds,
         ).run(once=arguments.once)
