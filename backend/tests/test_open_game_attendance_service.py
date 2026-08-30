@@ -20,6 +20,7 @@ from backend.app.models import (
     OpenGameRegistrationStatus,
     Order,
     OrderStatus,
+    VenueMembership,
 )
 from backend.app.modules.open_game_registrations import service as service_module
 from backend.app.modules.open_game_registrations.dto import (
@@ -41,6 +42,7 @@ from backend.tests.test_open_game_service import NOW
 pytestmark = pytest.mark.integration
 
 ATTENDANCE_KEY = "mark-open-game-attendance-key-000001"
+SECOND_ATTENDANCE_KEY = "mark-open-game-attendance-key-000002"
 ATTENDANCE_NOW = datetime(2026, 8, 27, 12, tzinfo=UTC)
 
 
@@ -97,12 +99,21 @@ def _seed_completed_attendance_game(
             excluded_id = excluded.id
         owner_id = owner_user_id or case.booking.owner_id
         order = session.get_one(Order, case.booking.order_id)
+        fulfillment_actor = _new_user(session, "attendance-fulfillment")
+        session.add(
+            VenueMembership(
+                venue_id=order.slot.pitch.venue_id,
+                user_id=fulfillment_actor.id,
+                is_active=True,
+                can_manage_inventory=True,
+            )
+        )
         order.user_id = owner_id
         order.status = OrderStatus.COMPLETED
-        order.checked_in_at = NOW
-        order.checked_in_by_user_id = owner_id
-        order.completed_at = NOW
-        order.completed_by_user_id = owner_id
+        order.checked_in_at = case.booking.starts_at
+        order.checked_in_by_user_id = fulfillment_actor.id
+        order.completed_at = case.booking.ends_at
+        order.completed_by_user_id = fulfillment_actor.id
         session.commit()
     return AttendanceCase(case, owner_id, tuple(joined_ids), excluded_id)
 
@@ -267,9 +278,17 @@ def test_mark_attendance_is_atomic_minimal_and_strictly_idempotent(
         }
 
         row = session.get_one(OpenGameRegistration, target_id)
+        persisted_order = session.get_one(Order, seeded.game.booking.order_id)
         assert row.attendance_status is OpenGameAttendanceStatus.PRESENT
         assert row.attendance_recorded_at == ATTENDANCE_NOW
+        assert row.attendance_recorded_by_user_id == persisted_order.user_id
         assert row.attendance_recorded_by_user_id == seeded.owner_id
+        assert (
+            row.attendance_recorded_by_user_id
+            != persisted_order.completed_by_user_id
+        )
+        assert persisted_order.completed_at is not None
+        assert persisted_order.completed_at >= seeded.game.booking.ends_at
         assert row.version == 3
         assert (
             session.get_one(OpenGame, seeded.game.game_id).status,
@@ -343,6 +362,46 @@ def test_mark_attendance_is_atomic_minimal_and_strictly_idempotent(
                 status=409,
                 code="IDEMPOTENCY_KEY_REUSED",
             )
+
+
+def test_attendance_replay_preserves_saved_result_after_other_rows_are_marked(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_completed_attendance_game(pg_engine, joined_count=2)
+    first_id, second_id = seeded.joined_ids
+    request = _mark_request()
+
+    with Session(pg_engine) as session:
+        service = _service(session, now=ATTENDANCE_NOW)
+        first = service.mark_attendance(
+            game_id=seeded.game.game_id,
+            registration_id=first_id,
+            owner_user_id=seeded.owner_id,
+            idempotency_key=ATTENDANCE_KEY,
+            request=request,
+        )
+        second = service.mark_attendance(
+            game_id=seeded.game.game_id,
+            registration_id=second_id,
+            owner_user_id=seeded.owner_id,
+            idempotency_key=SECOND_ATTENDANCE_KEY,
+            request=request,
+        )
+
+        assert first.recorded_count == 1
+        assert first.attendance_complete is False
+        assert second.recorded_count == 2
+        assert second.attendance_complete is True
+
+        replay = service.mark_attendance(
+            game_id=seeded.game.game_id,
+            registration_id=first_id,
+            owner_user_id=seeded.owner_id,
+            idempotency_key=ATTENDANCE_KEY,
+            request=request,
+        )
+
+        assert replay == first
 
 
 def test_attendance_digest_covers_every_command_dimension() -> None:

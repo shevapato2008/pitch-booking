@@ -590,15 +590,11 @@ class OpenGameRegistrationService:
                 raise _attendance_state_changed()
 
             if not claimed:
-                registrations = self._repository.list_attendance_roster(
-                    game_id=game.id
-                )
                 response = _replay_attendance(
                     record,
                     digest=digest,
                     registration=registration,
                     owner_user_id=owner_user_id,
-                    registrations=registrations,
                 )
                 self._order_repository.commit()
                 return response
@@ -1407,7 +1403,6 @@ def _replay_attendance(
     digest: str,
     registration: OpenGameRegistration,
     owner_user_id: uuid.UUID,
-    registrations: list[OpenGameRegistration],
 ) -> OpenGameAttendanceMarkResult:
     if record.request_sha256 != digest:
         raise _idempotency_key_reused()
@@ -1421,13 +1416,11 @@ def _replay_attendance(
     if (
         registration.status is not OpenGameRegistrationStatus.JOINED
         or registration.attendance_recorded_by_user_id != owner_user_id
+        or stored.registration_id != registration.id
+        or stored.attendance_status is not registration.attendance_status
+        or stored.attendance_recorded_at != registration.attendance_recorded_at
+        or stored.version != registration.version
     ):
-        raise _attendance_state_changed()
-    current = _project_attendance_mark_result(
-        registration=registration,
-        registrations=registrations,
-    )
-    if current != stored:
         raise _attendance_state_changed()
     return stored
 
