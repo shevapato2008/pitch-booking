@@ -71,6 +71,10 @@
                 <text class="c1c-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
                 <text class="c1c-game-place">{{item.venue}}</text>
                 <text class="c1c-game-place">{{item.pitch}}</text>
+                <view wx:if="{{item.attendanceLabel}}" class="c1c-game-place">
+                  <text>到场：{{item.attendanceLabel}}</text>
+                  <text wx:if="{{item.attendanceRecordedAtLabel}}"> · {{item.attendanceRecordedAtLabel}}</text>
+                </view>
               </view>
               <view class="c1c-chevron" aria-hidden="true"></view>
             </button>

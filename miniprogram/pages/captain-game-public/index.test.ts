@@ -118,6 +118,24 @@ const joinedContext: OpenGameRegistrationContext = {
     availableWithdrawalAction: "LEAVE_GAME",
   },
 };
+const completedJoinedContext = (
+  attendanceStatus: "UNMARKED" | "PRESENT" | "NO_SHOW",
+  attendanceRecordedAt: string | null,
+): OpenGameRegistrationContext => ({
+  ...joinedContext,
+  game: {
+    ...joinedContext.game,
+    state: "COMPLETED",
+    stateReason: "BOOKING_COMPLETED",
+  },
+  viewerRegistration: {
+    ...joinedContext.viewerRegistration!,
+    availableWithdrawalAction: null,
+    lateExitWillBeRecorded: false,
+    attendanceStatus,
+    attendanceRecordedAt,
+  },
+});
 const promotedJoinedContext: OpenGameRegistrationContext = {
   ...waitlistedContext,
   viewerRegistration: {
@@ -248,7 +266,7 @@ test("strict shared route loads registration authority only and keeps anonymous 
   expect(page.data).toMatchObject({ status: "READY", mode: "shared", state: "PUBLISHED", primaryAction: "LOGIN", remainingSpots: 4, registrationStatus: "NONE", showReturnManage: false });
   expect(registration.getContext).toHaveBeenCalledWith(token); expect(b2.getSharedGame).not.toHaveBeenCalled(); expect(b2.getOwnedGame).not.toHaveBeenCalled();
   const pageKeys = recursiveKeys(page.data);
-  for (const privateKey of ["viewerRegistration", "displayName", "position", "note", "persistedStatus", "effectiveStatus", "appliedAt", "decidedAt", "applicantUserId"]) {
+  for (const privateKey of ["viewerRegistration", "displayName", "position", "note", "persistedStatus", "effectiveStatus", "appliedAt", "decidedAt", "applicantUserId", "attendanceStatus", "attendanceRecordedAt", "attendanceRecordedByUserId"]) {
     expect(pageKeys).not.toContain(privateKey);
   }
   const serialized = JSON.stringify(page.data);
@@ -330,6 +348,45 @@ test("APPLIED and JOINED expose server withdrawal actions while terminal and can
   }
 });
 
+test.each([
+  ["UNMARKED", null, "待队长记录", "本场已结束，队长尚未记录你的到场结果。", "pending"],
+  ["PRESENT", "2026-08-30T20:32:00+08:00", "已到场", "队长已于 8月30日 周日 20:32 记录。", "joined"],
+  ["NO_SHOW", "2026-08-30T20:32:00+08:00", "未到场", "队长已于 8月30日 周日 20:32 记录。", "rejected"],
+] as const)(
+  "completed JOINED self attendance %s is authoritative and writes back only the same registration",
+  async (attendanceStatus, attendanceRecordedAt, heading, description, tone) => {
+    const listPatch = jest.fn();
+    (globalThis as any).getCurrentPages = jest.fn(() => [
+      { route: "pages/my-game-registrations/index", applyRegistrationAuthority: listPatch },
+      { route: "pages/captain-game-public/index" },
+    ]);
+    const context = completedJoinedContext(attendanceStatus, attendanceRecordedAt);
+    registerSources({ getContext: jest.fn(async () => context) });
+    const page = loadPage();
+    call(page, "onLoad", { token });
+    await flush();
+
+    expect(page.data).toMatchObject({
+      status: "READY",
+      registrationStatus: "JOINED",
+      statusHeading: heading,
+      statusDescription: description,
+      statusTone: tone,
+      primaryAction: null,
+    });
+    expect(listPatch).toHaveBeenCalledWith({
+      originatingUserId: userId,
+      registrationId: context.viewerRegistration!.id,
+      effectiveStatus: "JOINED",
+      waitlistPosition: null,
+      waitlistedAt: null,
+      promotedAt: null,
+      attendanceStatus,
+      attendanceRecordedAt,
+    });
+  },
+);
+
 test("WAITLISTED projects position, warm tone and a real withdrawal sheet without writing on open/cancel", async () => {
   const listPatch = jest.fn();
   (globalThis as any).getCurrentPages = jest.fn(() => [
@@ -373,6 +430,8 @@ test("WAITLISTED projects position, warm tone and a real withdrawal sheet withou
     waitlistPosition: 1,
     waitlistedAt: "2026-08-24T00:25:00+08:00",
     promotedAt: null,
+    attendanceStatus: null,
+    attendanceRecordedAt: null,
   });
 });
 
@@ -835,6 +894,8 @@ test("APPLIED and JOINED use server withdrawal actions, confirmation is write-fr
     waitlistPosition: null,
     waitlistedAt: null,
     promotedAt: null,
+    attendanceStatus: null,
+    attendanceRecordedAt: null,
   });
 
   resetOpenGameRegistrationSourceForTesting();

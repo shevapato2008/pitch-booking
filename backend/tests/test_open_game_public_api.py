@@ -154,6 +154,10 @@ def test_formerly_published_states_are_token_readable_and_strictly_public(
         "contact",
         "idempotency",
         "booking_price_cents",
+        "attendance_status",
+        "attendance_recorded_at",
+        "attendance_recorded_by_user_id",
+        "recorded_by",
     ):
         assert forbidden not in serialized
 

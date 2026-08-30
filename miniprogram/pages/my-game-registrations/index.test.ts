@@ -146,6 +146,9 @@ test("production page and route use the approved native layout without preview c
   expect(styles).toMatch(/\.c1c-chevron\s*\{[^}]*border-top:[^}]*border-right:/s);
   expect(wxml).toContain("c1c-registration-card--waitlisted");
   expect(wxml).toContain("c1c-status--waitlisted");
+  expect(wxml).toContain('wx:if="{{item.attendanceLabel}}"');
+  expect(wxml).toContain("到场：{{item.attendanceLabel}}");
+  expect(wxml).toContain("{{item.attendanceRecordedAtLabel}}");
   expect(styles).toMatch(/\.c1c-registration-card--waitlisted\s*\{[^}]*#FED7AA/s);
   expect(styles).toMatch(/\.c1c-status--waitlisted\s*\{[^}]*#FFF7ED[^}]*#9A3412/s);
 });
@@ -582,6 +585,47 @@ test("same-account detail authority patches one loaded registration by id withou
     promotedAt: null,
   })).toBe(false);
   expect(pageInstance.data.items[1].effectiveStatus).toBe("WAITLISTED");
+});
+
+test("detail attendance authority patches only its registration and preserves list state", async () => {
+  registerSource({ listMine: jest.fn(async () => page(READY.items.slice(0, 3), "page-4")) });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  call(pageInstance, "onScroll", { detail: { scrollTop: 512.5 } });
+  const beforeItems = pageInstance.data.items;
+  const beforeIds = beforeItems.map((item: { registrationId: string }) => item.registrationId);
+  const targetId = beforeIds[2];
+
+  expect(call(pageInstance, "applyRegistrationAuthority", {
+    originatingUserId: USER_A,
+    registrationId: targetId,
+    effectiveStatus: "JOINED",
+    waitlistPosition: null,
+    waitlistedAt: null,
+    promotedAt: null,
+    attendanceStatus: "PRESENT",
+    attendanceRecordedAt: "2026-09-05T02:20:00Z",
+  })).toBe(true);
+
+  expect(pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  )).toEqual(beforeIds);
+  expect(pageInstance.data.items[0]).toEqual(beforeItems[0]);
+  expect(pageInstance.data.items[1]).toEqual(beforeItems[1]);
+  expect(pageInstance.data.items[2]).toMatchObject({
+    registrationId: targetId,
+    effectiveStatus: "JOINED",
+    statusLabel: "已加入",
+    attendanceStatus: "PRESENT",
+    attendanceRecordedAt: "2026-09-05T02:20:00Z",
+    attendanceLabel: "已到场",
+    attendanceRecordedAtLabel: "9月5日 周六 10:20 记录",
+  });
+  expect(pageInstance.data).toMatchObject({
+    nextCursor: "page-4",
+    resultCount: 3,
+    listScrollTop: 512.5,
+  });
 });
 
 test("a stale account A card tap synchronizes account B without navigating to A", async () => {

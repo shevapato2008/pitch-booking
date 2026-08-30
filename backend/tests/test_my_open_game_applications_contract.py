@@ -77,6 +77,13 @@ def test_my_application_dtos_are_closed_and_exact() -> None:
             {**_valid_item(), "applicant_user_id": str(uuid.uuid4())}
         )
     with pytest.raises(ValidationError):
+        MyOpenGameApplication.model_validate(
+            {
+                **_valid_item(),
+                "attendance_recorded_by_user_id": str(uuid.uuid4()),
+            }
+        )
+    with pytest.raises(ValidationError):
         MyOpenGameApplicationsResponse.model_validate(
             {"items": [], "next_cursor": None, "total": 1}
         )

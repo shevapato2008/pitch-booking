@@ -47,6 +47,8 @@ describe("my game registration presentation", () => {
       waitlistPosition: null,
       waitlistedAt: null,
       promotedAt: null,
+      attendanceStatus: null,
+      attendanceRecordedAt: null,
     })).toEqual({
       ...card,
       effectiveStatus: "WITHDRAWN",
@@ -81,6 +83,8 @@ describe("my game registration presentation", () => {
       waitlistPosition: null,
       waitlistedAt: "2026-08-29T01:35:00Z",
       promotedAt: "2026-08-29T02:00:00Z",
+      attendanceStatus: null,
+      attendanceRecordedAt: null,
     })).toMatchObject({
       effectiveStatus: "JOINED",
       statusLabel: "已加入",
@@ -99,12 +103,17 @@ describe("my game registration presentation", () => {
       waitlistPosition: null,
       waitlistedAt: null,
       promotedAt: null,
+      attendanceStatus: null,
+      attendanceRecordedAt: null,
+      attendanceLabel: null,
+      attendanceRecordedAtLabel: null,
       gameName: "海河周六轻松局",
       dateLabel: "9月5日 周六",
       timeLabel: "01:00–02:30",
       venue: "天津河东体育中心",
       pitch: "笼式五人制 2 号场",
       formatLabel: "5人制",
+      timeZone: "Asia/Shanghai",
       detailPath: base.detailPath,
     });
   });
@@ -124,5 +133,51 @@ describe("my game registration presentation", () => {
       formatLabel: "7人制",
     });
     expect(item.timeZone).toBe("America/Los_Angeles");
+  });
+
+  test.each([
+    [null, null, null, null],
+    ["UNMARKED", null, "待队长记录", null],
+    ["PRESENT", "2026-09-05T01:20:00Z", "已到场", "9月4日 周五 18:20 记录"],
+    ["NO_SHOW", "2026-09-05T01:20:00Z", "未到场", "9月4日 周五 18:20 记录"],
+  ] as const)(
+    "presents self attendance %s only when authority exposes it",
+    (attendanceStatus, attendanceRecordedAt, attendanceLabel, attendanceRecordedAtLabel) => {
+      expect(presentMyGameRegistration({
+        ...base,
+        effectiveStatus: "JOINED",
+        timeZone: "America/Los_Angeles",
+        attendanceStatus,
+        attendanceRecordedAt,
+      })).toMatchObject({
+        attendanceStatus,
+        attendanceRecordedAt,
+        attendanceLabel,
+        attendanceRecordedAtLabel,
+      });
+    },
+  );
+
+  test("patches self attendance while preserving immutable card authority", () => {
+    const card = presentMyGameRegistration({
+      ...base,
+      effectiveStatus: "JOINED",
+      attendanceStatus: "UNMARKED",
+    });
+
+    expect(patchMyGameRegistrationStatus(card, {
+      effectiveStatus: "JOINED",
+      waitlistPosition: null,
+      waitlistedAt: null,
+      promotedAt: null,
+      attendanceStatus: "PRESENT",
+      attendanceRecordedAt: "2026-09-05T02:20:00Z",
+    })).toEqual({
+      ...card,
+      attendanceStatus: "PRESENT",
+      attendanceRecordedAt: "2026-09-05T02:20:00Z",
+      attendanceLabel: "已到场",
+      attendanceRecordedAtLabel: "9月5日 周六 10:20 记录",
+    });
   });
 });

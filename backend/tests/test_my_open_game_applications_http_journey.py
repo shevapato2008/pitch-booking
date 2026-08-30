@@ -190,5 +190,7 @@ def test_authenticated_my_applications_journey_over_real_local_http(
         payload = response.json()
         assert set(payload) == {"items", "next_cursor"}
         assert set(payload["items"][0]) == ITEM_FIELDS
+        assert payload["items"][0]["attendance_status"] is None
+        assert payload["items"][0]["attendance_recorded_at"] is None
         assert not PRIVATE_FIELDS & _all_keys(payload)
         assert str(user_id) not in response.text

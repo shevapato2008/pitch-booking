@@ -112,6 +112,8 @@ def test_list_requires_bearer_and_returns_exact_self_only_privacy(pg_engine: Eng
     assert payload["items"][0]["waitlist_position"] == 1
     assert payload["items"][0]["waitlisted_at"] == "2026-08-30T08:01:00Z"
     assert payload["items"][0]["promoted_at"] is None
+    assert payload["items"][0]["attendance_status"] is None
+    assert payload["items"][0]["attendance_recorded_at"] is None
     assert all(set(item) == ITEM_FIELDS for item in payload["items"])
     assert not PRIVATE_FIELDS & _all_keys(payload)
     assert str(applicant_id) not in response.text

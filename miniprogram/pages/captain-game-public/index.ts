@@ -15,6 +15,7 @@ import {
   openGameStateReasonLabel,
   presentOpenGamePublic,
 } from "../../presentation/open-game";
+import { presentMyGameSelfAttendance } from "../../presentation/my-game-registrations";
 import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { OpenGameRegistrationApiError } from "../../services/http-open-game-registration";
 import { OpenGameApiError } from "../../services/http-open-game";
@@ -82,6 +83,8 @@ interface RegistrationListPage {
     readonly waitlistPosition: number | null;
     readonly waitlistedAt: string | null;
     readonly promotedAt: string | null;
+    readonly attendanceStatus: "UNMARKED" | "PRESENT" | "NO_SHOW" | null;
+    readonly attendanceRecordedAt: string | null;
   }): boolean;
 }
 
@@ -297,6 +300,24 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
     };
   }
   if (effectiveStatus === "JOINED") {
+    const attendanceStatus = context.viewerRegistration?.attendanceStatus ?? null;
+    if (attendanceStatus !== null) {
+      const attendance = presentMyGameSelfAttendance(
+        attendanceStatus,
+        context.viewerRegistration?.attendanceRecordedAt ?? null,
+        context.game.timeZone,
+      );
+      const unmarked = attendanceStatus === "UNMARKED";
+      return {
+        registrationStatus: "JOINED",
+        heading: attendance.attendanceLabel ?? "待队长记录",
+        description: unmarked
+          ? "本场已结束，队长尚未记录你的到场结果。"
+          : `队长已于 ${attendance.attendanceRecordedAtLabel}。`,
+        tone: unmarked ? "pending" : attendanceStatus === "PRESENT" ? "joined" : "rejected",
+        action: null,
+      };
+    }
     const promoted = context.viewerRegistration?.promotedAt !== null
       && context.viewerRegistration?.promotedAt !== undefined;
     return {
@@ -679,6 +700,8 @@ Page({
       waitlistPosition: registration.waitlistPosition,
       waitlistedAt: registration.waitlistedAt,
       promotedAt: registration.promotedAt,
+      attendanceStatus: registration.attendanceStatus,
+      attendanceRecordedAt: registration.attendanceRecordedAt,
     });
   },
 

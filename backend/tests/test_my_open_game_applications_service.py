@@ -43,6 +43,8 @@ ITEM_FIELDS = {
     "waitlist_position",
     "waitlisted_at",
     "promoted_at",
+    "attendance_status",
+    "attendance_recorded_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -71,6 +73,7 @@ PRIVATE_FIELDS = {
     "refund_case_id",
     "price_cents",
     "aa_cents",
+    "attendance_recorded_by_user_id",
 }
 
 

@@ -342,6 +342,9 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     object.attendance_recorded_at,
     path,
   );
+  if (effectiveStatus !== "JOINED" && attendance.attendanceStatus !== null) {
+    invalid(`${path}.attendance_status`);
+  }
 
   if (effectiveStatus !== persistedStatus && effectiveStatus !== "CANCELLED") invalid(path);
   for (const [field, value] of [
@@ -490,6 +493,9 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
     object.attendance_recorded_at,
     path,
   );
+  if (effectiveStatus !== "JOINED" && attendance.attendanceStatus !== null) {
+    invalid(`${path}.attendance_status`);
+  }
   if (waitlistedAt !== null && rfc3339Before(waitlistedAt, appliedAt)) {
     invalid(`${path}.waitlisted_at`);
   }
@@ -592,13 +598,21 @@ export function decodeOpenGameAttendanceMarkResult(
 
 export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegistrationContext {
   const object = exactObject(value, CONTEXT_KEYS, "$" );
+  const game = decodeOpenGamePublic(object.game, "$.game");
   const viewerAuthenticated = booleanAt(object.viewer_authenticated, "$.viewer_authenticated");
   const viewerRegistration = object.viewer_registration === null
     ? null
     : decodeViewerRegistration(object.viewer_registration, "$.viewer_registration");
   if (!viewerAuthenticated && viewerRegistration !== null) invalid("$.viewer_registration");
+  if (viewerRegistration !== null) {
+    const shouldExposeAttendance = game.state === "COMPLETED"
+      && viewerRegistration.effectiveStatus === "JOINED";
+    if (shouldExposeAttendance !== (viewerRegistration.attendanceStatus !== null)) {
+      invalid("$.viewer_registration.attendance_status");
+    }
+  }
   return Object.freeze({
-    game: decodeOpenGamePublic(object.game, "$.game"),
+    game,
     remainingSpots: safeIntegerAt(object.remaining_spots, "$.remaining_spots"),
     viewerAuthenticated,
     viewerRegistration,

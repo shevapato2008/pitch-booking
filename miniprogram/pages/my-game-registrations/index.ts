@@ -1,5 +1,6 @@
 import type {
   OpenGameApplicationPage,
+  OpenGameAttendanceStatus,
   OpenGameRegistrationEffectiveStatus,
 } from "../../domain/open-game-registration";
 import {
@@ -34,6 +35,8 @@ interface RegistrationAuthorityPatch {
   readonly waitlistPosition: number | null;
   readonly waitlistedAt: string | null;
   readonly promotedAt: string | null;
+  readonly attendanceStatus: OpenGameAttendanceStatus | null;
+  readonly attendanceRecordedAt: string | null;
 }
 
 const PAGE_LIMIT = 20;
@@ -373,11 +376,19 @@ Page({
     );
     if (index < 0) return false;
     const items = [...this.data.items];
+    const attendanceStatus = patch.attendanceStatus === undefined
+      ? items[index].attendanceStatus
+      : patch.attendanceStatus;
+    const attendanceRecordedAt = patch.attendanceRecordedAt === undefined
+      ? items[index].attendanceRecordedAt
+      : patch.attendanceRecordedAt;
     items[index] = patchMyGameRegistrationStatus(items[index], {
       effectiveStatus: patch.effectiveStatus,
       waitlistPosition: patch.waitlistPosition,
       waitlistedAt: patch.waitlistedAt,
       promotedAt: patch.promotedAt,
+      attendanceStatus,
+      attendanceRecordedAt,
     });
     this.setData({ items });
     return true;

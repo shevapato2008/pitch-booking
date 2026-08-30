@@ -411,16 +411,57 @@ describe("open-game registration response decoders", () => {
     rejected(() => decodeOpenGameApplicationDecisionResult(missing));
   });
 
-  test("decodes and enforces nullable self-attendance status/time pairs", () => {
-    const joined = clone(fixture("open-game-registration-context-joined"));
-    Object.assign(joined.viewer_registration as Record<string, unknown>, {
+  test("enforces post-game JOINED context for self attendance", () => {
+    const completedJoined = clone(fixture("open-game-registration-context-joined"));
+    Object.assign(completedJoined.game as Record<string, unknown>, {
+      state: "COMPLETED",
+      state_reason: "BOOKING_COMPLETED",
+    });
+    Object.assign(completedJoined.viewer_registration as Record<string, unknown>, {
+      available_withdrawal_action: null,
       attendance_status: "PRESENT",
       attendance_recorded_at: "2026-08-30T20:32:00+08:00",
     });
-    expect(decodeOpenGameRegistrationContext(joined).viewerRegistration).toMatchObject({
+    expect(decodeOpenGameRegistrationContext(completedJoined).viewerRegistration).toMatchObject({
       attendanceStatus: "PRESENT",
       attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
     });
+
+    const completedUnmarked = clone(completedJoined);
+    Object.assign(completedUnmarked.viewer_registration as Record<string, unknown>, {
+      attendance_status: "UNMARKED",
+      attendance_recorded_at: null,
+    });
+    expect(decodeOpenGameRegistrationContext(completedUnmarked).viewerRegistration).toMatchObject({
+      attendanceStatus: "UNMARKED",
+      attendanceRecordedAt: null,
+    });
+
+    const completedMissing = clone(completedJoined);
+    Object.assign(completedMissing.viewer_registration as Record<string, unknown>, {
+      attendance_status: null,
+      attendance_recorded_at: null,
+    });
+    rejected(() => decodeOpenGameRegistrationContext(completedMissing));
+
+    const preGameJoined = clone(fixture("open-game-registration-context-joined"));
+    Object.assign(preGameJoined.viewer_registration as Record<string, unknown>, {
+      attendance_status: "UNMARKED",
+      attendance_recorded_at: null,
+    });
+    rejected(() => decodeOpenGameRegistrationContext(preGameJoined));
+
+    const completedApplied = clone(contextApplied);
+    Object.assign(completedApplied.game as Record<string, unknown>, {
+      state: "COMPLETED",
+      state_reason: "BOOKING_COMPLETED",
+    });
+    Object.assign(completedApplied.viewer_registration as Record<string, unknown>, {
+      available_withdrawal_action: null,
+      attendance_status: "PRESENT",
+      attendance_recorded_at: "2026-08-30T20:32:00+08:00",
+    });
+    rejected(() => decodeOpenGameRegistrationContext(completedApplied));
 
     for (const patch of [
       { attendance_status: null, attendance_recorded_at: "2026-08-30T20:32:00+08:00" },
@@ -429,7 +470,7 @@ describe("open-game registration response decoders", () => {
       { attendance_status: "UNKNOWN", attendance_recorded_at: null },
       { attendance_status: "PRESENT", attendance_recorded_at: "2026-08-30 20:32:00" },
     ]) {
-      const value = clone(fixture("open-game-registration-context-joined"));
+      const value = clone(completedJoined);
       Object.assign(value.viewer_registration as Record<string, unknown>, patch);
       rejected(() => decodeOpenGameRegistrationContext(value));
     }
@@ -944,6 +985,29 @@ describe("my open-game applications response decoder", () => {
       attendanceStatus: "NO_SHOW",
       attendanceRecordedAt: "2026-09-02T22:10:00+08:00",
     });
+
+    const joinedUnmarked = clone(myApplicationsReady);
+    Object.assign((joinedUnmarked.items as Array<Record<string, unknown>>)[2], {
+      attendance_status: "UNMARKED",
+      attendance_recorded_at: null,
+    });
+    expect(decodeMyOpenGameApplications(joinedUnmarked).items[2]).toMatchObject({
+      effectiveStatus: "JOINED",
+      attendanceStatus: "UNMARKED",
+      attendanceRecordedAt: null,
+    });
+
+    for (const [index, patch] of [
+      [1, { attendance_status: "UNMARKED", attendance_recorded_at: null }],
+      [3, {
+        attendance_status: "PRESENT",
+        attendance_recorded_at: "2026-09-02T22:10:00+08:00",
+      }],
+    ] as const) {
+      const nonJoined = clone(myApplicationsReady);
+      Object.assign((nonJoined.items as Array<Record<string, unknown>>)[index], patch);
+      rejected(() => decodeMyOpenGameApplications(nonJoined));
+    }
 
     for (const patch of [
       { attendance_status: null, attendance_recorded_at: "2026-09-02T22:10:00+08:00" },
