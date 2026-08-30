@@ -144,6 +144,10 @@ test("production page and route use the approved native layout without preview c
   expect(styles).toMatch(/\.c1c-refresh-action, \.c1c-secondary-action, \.c1c-inline-error button\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
   expect(styles).toMatch(/\.c1c-content\s*\{[^}]*env\(safe-area-inset-bottom,\s*0px\)/s);
   expect(styles).toMatch(/\.c1c-chevron\s*\{[^}]*border-top:[^}]*border-right:/s);
+  expect(wxml).toContain("c1c-registration-card--waitlisted");
+  expect(wxml).toContain("c1c-status--waitlisted");
+  expect(styles).toMatch(/\.c1c-registration-card--waitlisted\s*\{[^}]*#FED7AA/s);
+  expect(styles).toMatch(/\.c1c-status--waitlisted\s*\{[^}]*#FFF7ED[^}]*#9A3412/s);
 });
 
 test("initial read renders approved cards and a real empty response renders no invented cards", async () => {
@@ -169,6 +173,76 @@ test("initial read renders approved cards and a real empty response renders no i
   await call(emptyPage, "onShow");
   expect(emptyPage.data).toMatchObject({
     status: "READY", sourceEmpty: true, items: [], resultCount: 0, nextCursor: null,
+  });
+});
+
+test("a mixed authoritative list keeps WAITLISTED warm-position copy separate from JOINED", async () => {
+  const waitlisted: OpenGameApplicationItem = {
+    ...READY.items[3],
+    effectiveStatus: "WAITLISTED",
+    waitlistPosition: 2,
+    waitlistedAt: "2026-08-29T01:35:00Z",
+    promotedAt: null,
+  };
+  const promoted: OpenGameApplicationItem = {
+    ...READY.items[2],
+    effectiveStatus: "JOINED",
+    waitlistPosition: null,
+    waitlistedAt: "2026-08-28T01:35:00Z",
+    promotedAt: "2026-08-28T02:00:00Z",
+  };
+  registerSource({ listMine: jest.fn(async () => page([waitlisted, promoted], null)) });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+
+  expect(pageInstance.data.items).toEqual([
+    expect.objectContaining({
+      effectiveStatus: "WAITLISTED",
+      statusLabel: "候补第 2 位",
+      waitlistPosition: 2,
+      promotedAt: null,
+    }),
+    expect.objectContaining({
+      effectiveStatus: "JOINED",
+      statusLabel: "已加入",
+      waitlistPosition: null,
+      promotedAt: "2026-08-28T02:00:00Z",
+    }),
+  ]);
+});
+
+test("explicit refresh replaces a waitlist position from authority without client-side arithmetic", async () => {
+  const initial = {
+    ...READY.items[3],
+    effectiveStatus: "WAITLISTED" as const,
+    waitlistPosition: 3,
+    waitlistedAt: "2026-08-29T01:35:00Z",
+    promotedAt: null,
+  };
+  const compressed = { ...initial, waitlistPosition: 2 };
+  let reads = 0;
+  const api = registerSource({
+    listMine: jest.fn(async () => {
+      reads += 1;
+      return page([reads === 1 ? initial : compressed], "waitlist-next-page");
+    }),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  call(pageInstance, "onScroll", { detail: { scrollTop: 612.5 } });
+  expect(pageInstance.data.items[0].statusLabel).toBe("候补第 3 位");
+
+  await call(pageInstance, "onRefresh");
+
+  expect(api.listMine).toHaveBeenCalledTimes(2);
+  expect(pageInstance.data.items[0]).toMatchObject({
+    effectiveStatus: "WAITLISTED",
+    statusLabel: "候补第 2 位",
+    waitlistPosition: 2,
+  });
+  expect(pageInstance.data).toMatchObject({
+    listScrollTop: 612.5,
+    nextCursor: "waitlist-next-page",
   });
 });
 
@@ -369,7 +443,7 @@ test("cards use only the current registration id, preserve scroll/detail return,
 
   call(pageInstance, "onHide");
   await call(pageInstance, "onShow");
-  expect(api.listMine).toHaveBeenCalledTimes(1);
+  expect(api.listMine).toHaveBeenCalledTimes(2);
   expect(pageInstance.data).toMatchObject({ listScrollTop: 728.25, resultCount: 2 });
 
   call(pageInstance, "onHeaderBack");
@@ -379,6 +453,80 @@ test("cards use only the current registration id, preserve scroll/detail return,
   call(pageInstance, "onOpenDiscovery");
   expect(wx.reLaunch).toHaveBeenNthCalledWith(1, { url: "/pages/game-discovery/index" });
   expect(wx.reLaunch).toHaveBeenNthCalledWith(2, { url: "/pages/game-discovery/index" });
+});
+
+test("same-account onShow refreshes first-page authority while preserving loaded tail and scroll", async () => {
+  const first = { ...READY.items[0], effectiveStatus: "WAITLISTED" as const, waitlistPosition: 1 };
+  const promoted = {
+    ...first,
+    effectiveStatus: "JOINED" as const,
+    waitlistPosition: null,
+    promotedAt: "2026-08-29T02:30:00Z",
+  };
+  const tail = READY.items[1]!;
+  let firstPageReads = 0;
+  const api = registerSource({
+    listMine: jest.fn(async (cursor?: string) => {
+      if (cursor === "page-2") return page([tail], "page-3");
+      firstPageReads += 1;
+      return firstPageReads === 1
+        ? page([first], "page-2")
+        : page([promoted], "new-first-page-cursor");
+    }),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  await call(pageInstance, "onLoadMore");
+  call(pageInstance, "onScroll", { detail: { scrollTop: 640 } });
+  call(pageInstance, "onHide");
+  await call(pageInstance, "onShow");
+
+  expect(api.listMine).toHaveBeenNthCalledWith(3, undefined, 20);
+  expect(pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  )).toEqual([promoted.id, tail.id]);
+  expect(pageInstance.data.items[0]).toMatchObject({
+    effectiveStatus: "JOINED",
+    waitlistPosition: null,
+    promotedAt: "2026-08-29T02:30:00Z",
+  });
+  expect(pageInstance.data).toMatchObject({
+    nextCursor: "page-3",
+    resultCount: 2,
+    listScrollTop: 640,
+  });
+});
+
+test("same-account onShow keeps a loaded boundary card displaced by a new first-page item", async () => {
+  const first = READY.items[0]!;
+  const displaced = READY.items[1]!;
+  const tail = READY.items[2]!;
+  const inserted = READY.items[3]!;
+  let firstPageReads = 0;
+  registerSource({
+    listMine: jest.fn(async (cursor?: string) => {
+      if (cursor === "old-page-2") return page([tail], "after-loaded-tail");
+      firstPageReads += 1;
+      return firstPageReads === 1
+        ? page([first, displaced], "old-page-2")
+        : page([inserted, first], "new-page-2");
+    }),
+  });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  await call(pageInstance, "onLoadMore");
+  call(pageInstance, "onScroll", { detail: { scrollTop: 700 } });
+  call(pageInstance, "onHide");
+  await call(pageInstance, "onShow");
+
+  expect(pageInstance.data.items.map(
+    (item: { registrationId: string }) => item.registrationId,
+  )).toEqual([inserted.id, first.id, displaced.id, tail.id]);
+  expect(pageInstance.data).toMatchObject({
+    nextCursor: "after-loaded-tail",
+    resultCount: 4,
+    listScrollTop: 700,
+  });
 });
 
 test("same-account detail authority patches one loaded registration by id without resetting pagination or scroll", async () => {
@@ -394,15 +542,21 @@ test("same-account detail authority patches one loaded registration by id withou
   expect(call(pageInstance, "applyRegistrationAuthority", {
     originatingUserId: USER_A,
     registrationId: targetId,
-    effectiveStatus: "WITHDRAWN",
+    effectiveStatus: "WAITLISTED",
+    waitlistPosition: 3,
+    waitlistedAt: "2026-08-29T01:35:00Z",
+    promotedAt: null,
   })).toBe(true);
   expect(pageInstance.data.items.map(
     (item: { registrationId: string }) => item.registrationId,
   )).toEqual(beforeIds);
   expect(pageInstance.data.items[1]).toMatchObject({
     registrationId: targetId,
-    effectiveStatus: "WITHDRAWN",
-    statusLabel: "已退出",
+    effectiveStatus: "WAITLISTED",
+    statusLabel: "候补第 3 位",
+    waitlistPosition: 3,
+    waitlistedAt: "2026-08-29T01:35:00Z",
+    promotedAt: null,
   });
   expect(pageInstance.data).toMatchObject({
     nextCursor: "page-4",
@@ -414,14 +568,20 @@ test("same-account detail authority patches one loaded registration by id withou
     originatingUserId: USER_A,
     registrationId: "40000000-0000-4000-8000-999999999999",
     effectiveStatus: "WITHDRAWN",
+    waitlistPosition: null,
+    waitlistedAt: "2026-08-29T01:35:00Z",
+    promotedAt: null,
   })).toBe(false);
   currentUserId = USER_B;
   expect(call(pageInstance, "applyRegistrationAuthority", {
     originatingUserId: USER_A,
     registrationId: targetId,
     effectiveStatus: "CANCELLED",
+    waitlistPosition: null,
+    waitlistedAt: "2026-08-29T01:35:00Z",
+    promotedAt: null,
   })).toBe(false);
-  expect(pageInstance.data.items[1].effectiveStatus).toBe("WITHDRAWN");
+  expect(pageInstance.data.items[1].effectiveStatus).toBe("WAITLISTED");
 });
 
 test("a stale account A card tap synchronizes account B without navigating to A", async () => {
@@ -455,9 +615,8 @@ test("hiding during refresh clears transient busy state and ignores the late res
   const api = registerSource({
     listMine: jest.fn(() => {
       calls += 1;
-      return calls === 1
-        ? Promise.resolve(page(READY.items.slice(0, 2), null))
-        : refresh.promise;
+      if (calls === 2) return refresh.promise;
+      return Promise.resolve(page(READY.items.slice(0, 2), null));
     }),
   });
   const pageInstance = loadPage();
@@ -469,7 +628,7 @@ test("hiding during refresh clears transient busy state and ignores the late res
   call(pageInstance, "onHide");
   await call(pageInstance, "onShow");
   expect(pageInstance.data.refreshing).toBe(false);
-  expect(api.listMine).toHaveBeenCalledTimes(2);
+  expect(api.listMine).toHaveBeenCalledTimes(3);
   expect(pageInstance.data.items.map((item: { registrationId: string }) => item.registrationId)).toEqual(ids);
 
   refresh.resolve(page([READY.items[3]], null));

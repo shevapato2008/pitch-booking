@@ -24,6 +24,13 @@ export interface MyGameRegistrationCard {
   readonly detailPath: string;
 }
 
+export interface MyGameRegistrationAuthority {
+  readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
+  readonly waitlistPosition: number | null;
+  readonly waitlistedAt: string | null;
+  readonly promotedAt: string | null;
+}
+
 const STATUS_LABELS: Readonly<Record<OpenGameRegistrationEffectiveStatus, string>> = {
   APPLIED: "待队长审核",
   WAITLISTED: "候补中",
@@ -49,13 +56,23 @@ function two(value: number): string {
   return String(value).padStart(2, "0");
 }
 
+function statusLabel(
+  effectiveStatus: OpenGameRegistrationEffectiveStatus,
+  waitlistPosition: number | null,
+): string {
+  if (effectiveStatus === "WAITLISTED" && waitlistPosition !== null) {
+    return `候补第 ${waitlistPosition} 位`;
+  }
+  return STATUS_LABELS[effectiveStatus];
+}
+
 export function presentMyGameRegistration(item: OpenGameApplicationItem): MyGameRegistrationCard {
   const start = partsAt(item, item.startsAt, "$.starts_at");
   const end = partsAt(item, item.endsAt, "$.ends_at");
   return {
     registrationId: item.id,
     effectiveStatus: item.effectiveStatus,
-    statusLabel: STATUS_LABELS[item.effectiveStatus],
+    statusLabel: statusLabel(item.effectiveStatus, item.waitlistPosition),
     appliedAt: item.appliedAt,
     waitlistPosition: item.waitlistPosition,
     waitlistedAt: item.waitlistedAt,
@@ -72,11 +89,11 @@ export function presentMyGameRegistration(item: OpenGameApplicationItem): MyGame
 
 export function patchMyGameRegistrationStatus(
   card: MyGameRegistrationCard,
-  effectiveStatus: OpenGameRegistrationEffectiveStatus,
+  authority: MyGameRegistrationAuthority,
 ): MyGameRegistrationCard {
   return {
     ...card,
-    effectiveStatus,
-    statusLabel: STATUS_LABELS[effectiveStatus],
+    ...authority,
+    statusLabel: statusLabel(authority.effectiveStatus, authority.waitlistPosition),
   };
 }

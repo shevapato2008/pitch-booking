@@ -17,7 +17,7 @@ type RegistrationListStatus =
   | "AUTH_REQUIRED"
   | "LOGIN_FAILED"
   | "LOAD_ERROR";
-type FirstPageRead = "INITIAL" | "REFRESH";
+type FirstPageRead = "INITIAL" | "REFRESH" | "RESUME";
 
 interface RegistrationEvent {
   readonly currentTarget?: { readonly dataset?: { readonly registrationId?: unknown } };
@@ -31,6 +31,9 @@ interface RegistrationAuthorityPatch {
   readonly originatingUserId: string;
   readonly registrationId: string;
   readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
+  readonly waitlistPosition: number | null;
+  readonly waitlistedAt: string | null;
+  readonly promotedAt: string | null;
 }
 
 const PAGE_LIMIT = 20;
@@ -81,6 +84,7 @@ Page({
   initialized: false,
   boundUserId: null as string | null,
   readBusy: false,
+  loadedBeyondFirstPage: false,
 
   onLoad() {
     this.visible = true;
@@ -142,6 +146,7 @@ Page({
     this.readBusy = false;
     this.initialized = true;
     this.boundUserId = userId;
+    this.loadedBeyondFirstPage = false;
     this.setData({
       status,
       items: [],
@@ -171,7 +176,7 @@ Page({
       this.clearAuthority("LOADING", userId);
       return this.loadFirstPage("INITIAL");
     }
-    return;
+    return this.loadFirstPage(this.data.status === "READY" ? "RESUME" : "INITIAL");
   },
 
   async loadFirstPage(kind: FirstPageRead) {
@@ -206,11 +211,21 @@ Page({
         return;
       }
       if (!this.currentRequest(userId, generation)) return;
-      const items = cardsFrom(response);
+      const freshItems = cardsFrom(response);
+      const preserveLoadedTail = kind === "RESUME" && this.loadedBeyondFirstPage;
+      const freshIds = new Set(freshItems.map(({ registrationId }) => registrationId));
+      const preservedTail = preserveLoadedTail
+        ? this.data.items.filter(({ registrationId }) => (
+          !freshIds.has(registrationId)
+        ))
+        : [];
+      const items = [...freshItems, ...preservedTail];
+      const nextCursor = preserveLoadedTail ? this.data.nextCursor : response.nextCursor;
+      if (!preserveLoadedTail) this.loadedBeyondFirstPage = false;
       this.setData({
         status: "READY",
         items,
-        nextCursor: response.nextCursor,
+        nextCursor,
         sourceEmpty: items.length === 0,
         resultCount: items.length,
         refreshError: false,
@@ -231,7 +246,7 @@ Page({
         return;
       }
       if (!this.currentRequest(userId, generation)) return;
-      if (kind === "REFRESH") {
+      if (kind !== "INITIAL") {
         this.setData({ status: "READY", refreshing: false, refreshError: true });
       } else {
         this.setData({
@@ -288,6 +303,7 @@ Page({
         return true;
       });
       const items = [...this.data.items, ...appended];
+      this.loadedBeyondFirstPage = true;
       this.setData({
         items,
         nextCursor: response.nextCursor,
@@ -357,7 +373,12 @@ Page({
     );
     if (index < 0) return false;
     const items = [...this.data.items];
-    items[index] = patchMyGameRegistrationStatus(items[index], patch.effectiveStatus);
+    items[index] = patchMyGameRegistrationStatus(items[index], {
+      effectiveStatus: patch.effectiveStatus,
+      waitlistPosition: patch.waitlistPosition,
+      waitlistedAt: patch.waitlistedAt,
+      promotedAt: patch.promotedAt,
+    });
     this.setData({ items });
     return true;
   },

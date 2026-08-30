@@ -106,11 +106,27 @@ const withdrawnWaitlistContext: OpenGameRegistrationContext = {
     availableWithdrawalAction: null,
   },
 };
+const suspendedWaitlistedContext: OpenGameRegistrationContext = {
+  ...waitlistedContext,
+  game: { ...waitlistedContext.game, state: "SUSPENDED", stateReason: "BOOKING_UNAVAILABLE" },
+};
 const decodedJoinedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-joined"));
 const joinedContext: OpenGameRegistrationContext = {
   ...decodedJoinedContext,
   viewerRegistration: {
     ...decodedJoinedContext.viewerRegistration!,
+    availableWithdrawalAction: "LEAVE_GAME",
+  },
+};
+const promotedJoinedContext: OpenGameRegistrationContext = {
+  ...waitlistedContext,
+  viewerRegistration: {
+    ...waitlistedContext.viewerRegistration!,
+    version: 3,
+    persistedStatus: "JOINED",
+    effectiveStatus: "JOINED",
+    waitlistPosition: null,
+    promotedAt: "2026-08-24T00:35:00+08:00",
     availableWithdrawalAction: "LEAVE_GAME",
   },
 };
@@ -145,6 +161,13 @@ const withdrawAttempt: Extract<OpenGameRegistrationAttempt, { kind: "withdraw" }
   applicationId: appliedContext.viewerRegistration!.id,
   action: "WITHDRAW_APPLICATION", expectedVersion: 1,
   idempotencyKey: "withdraw-key-0000000000000001",
+};
+const waitlistWithdrawAttempt: Extract<OpenGameRegistrationAttempt, { kind: "withdraw" }> = {
+  ...withdrawAttempt,
+  applicationId: waitlistedContext.viewerRegistration!.id,
+  action: "WITHDRAW_WAITLIST",
+  expectedVersion: waitlistedContext.viewerRegistration!.version,
+  idempotencyKey: "withdraw-waitlist-key-00000001",
 };
 
 function publicGame(state: OpenGamePublic["state"] = "PUBLISHED"): OpenGamePublic {
@@ -307,7 +330,12 @@ test("APPLIED and JOINED expose server withdrawal actions while terminal and can
   }
 });
 
-test("waitlist read states stay truthful without exposing or sending future mutations", async () => {
+test("WAITLISTED projects position, warm tone and a real withdrawal sheet without writing on open/cancel", async () => {
+  const listPatch = jest.fn();
+  (globalThis as any).getCurrentPages = jest.fn(() => [
+    { route: "pages/my-game-registrations/index", applyRegistrationAuthority: listPatch },
+    { route: "pages/captain-game-public/index" },
+  ]);
   const { registration } = registerSources({
     getContext: jest.fn(async () => waitlistedContext),
   });
@@ -318,23 +346,117 @@ test("waitlist read states stay truthful without exposing or sending future muta
   expect(page.data).toMatchObject({
     status: "READY",
     registrationStatus: "WAITLISTED",
-    statusHeading: "候补中",
-    statusDescription: "当前候补第 1 位，请等待空位。",
-    primaryAction: null,
-    withdrawalAction: null,
+    statusHeading: "候补中 · 当前第 1 位",
+    statusDescription: "位置会随前方候补退出或正式名额释放而更新。",
+    statusTone: "waitlisted",
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "WITHDRAW_WAITLIST",
+    withdrawalActionLabel: "退出候补",
+    withdrawalConfirmationTitle: "确认退出候补？",
+    withdrawalConfirmationCopy: "退出后将从当前候补队列移除；正式成员人数和公开名额不变。本场不可再次申请。",
+    withdrawalConfirmationActionLabel: "确认退出",
+    withdrawalCancelLabel: "继续候补",
     withdrawalOperationState: "IDLE",
   });
   call(page, "onOpenWithdrawalConfirm");
-  await call(page, "onConfirmWithdrawal");
-
+  expect(page.data.withdrawalOperationState).toBe("CONFIRMING");
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+  call(page, "onCancelWithdrawal");
   expect(page.data.withdrawalOperationState).toBe("IDLE");
   expect(registration.withdraw).not.toHaveBeenCalled();
   expect(attemptStore.load()).toBeNull();
+  expect(listPatch).toHaveBeenCalledWith({
+    originatingUserId: userId,
+    registrationId: waitlistedContext.viewerRegistration!.id,
+    effectiveStatus: "WAITLISTED",
+    waitlistPosition: 1,
+    waitlistedAt: "2026-08-24T00:25:00+08:00",
+    promotedAt: null,
+  });
+});
 
-  resetOpenGameRegistrationSourceForTesting();
+test("WAITLISTED withdrawal persists before one POST, is single-flight, and converges to terminal authority", async () => {
+  let resolveWithdraw!: (context: OpenGameRegistrationContext) => void;
+  const pending = new Promise<OpenGameRegistrationContext>((resolve) => {
+    resolveWithdraw = resolve;
+  });
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => waitlistedContext),
+    withdraw: jest.fn(() => pending),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  call(page, "onOpenWithdrawalConfirm");
+  const first = call(page, "onConfirmWithdrawal") as Promise<void>;
+  const duplicate = call(page, "onConfirmWithdrawal") as Promise<void>;
+
+  expect(first).toBe(duplicate);
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  const stable = jest.mocked(registration.withdraw).mock.calls[0][0];
+  expect(stable).toMatchObject({
+    kind: "withdraw",
+    originatingUserId: userId,
+    shareToken: token,
+    applicationId: waitlistedContext.viewerRegistration!.id,
+    action: "WITHDRAW_WAITLIST",
+    expectedVersion: 2,
+  });
+  expect(attemptStore.load()).toEqual(stable);
+  resolveWithdraw(withdrawnWaitlistContext);
+  await first;
+  await duplicate;
+
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({
+    registrationStatus: "WITHDRAWN",
+    statusHeading: "已退出候补",
+    statusDescription: "你已退出本场候补队列；本场不可再次申请。",
+    primaryAction: null,
+    withdrawalAction: null,
+  });
+});
+
+test("SUSPENDED waitlist remains withdrawable and promoted JOINED keeps only LEAVE_GAME", async () => {
+  let reads = 0;
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? suspendedWaitlistedContext : promotedJoinedContext;
+    }),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(page.data).toMatchObject({
+    registrationStatus: "WAITLISTED",
+    statusHeading: "球局暂停中",
+    statusDescription: "暂停期间不会自动递补；你仍可随时退出候补。",
+    statusTone: "blocked",
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "WITHDRAW_WAITLIST",
+  });
+
+  await call(page, "loadPublic");
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    registrationStatus: "JOINED",
+    statusHeading: "已加入本场球局",
+    statusDescription: "你已按候补顺序转为正式成员，请以当前权威状态为准。",
+    statusTone: "joined",
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "LEAVE_GAME",
+    withdrawalActionLabel: "退出球局",
+    withdrawalConfirmationCopy: "退出后会释放你的正式席位；如有候补，将按服务端顺序自动递补。本场不可再次申请。",
+  });
+});
+
+test("WAITLIST_WITHDRAWAL is terminal and exposes no second mutation", async () => {
   const withdrawnRegistration = registrationSource({
     getContext: jest.fn(async () => withdrawnWaitlistContext),
   });
+  registerOpenGameSource(ownerSource());
   registerOpenGameRegistrationSource(withdrawnRegistration);
   const withdrawn = loadPage();
   call(withdrawn, "onLoad", { token });
@@ -710,6 +832,9 @@ test("APPLIED and JOINED use server withdrawal actions, confirmation is write-fr
     originatingUserId: userId,
     registrationId: appliedContext.viewerRegistration!.id,
     effectiveStatus: "WITHDRAWN",
+    waitlistPosition: null,
+    waitlistedAt: null,
+    promotedAt: null,
   });
 
   resetOpenGameRegistrationSourceForTesting();
@@ -759,6 +884,39 @@ test("unknown withdrawal reads authority first, replays only the unchanged origi
   expect(registration.withdraw).toHaveBeenCalledTimes(1);
   expect(attemptStore.load()).toBeNull();
   expect(page.data).toMatchObject({ registrationStatus: "WITHDRAWN", primaryAction: null });
+});
+
+test("unknown waitlist withdrawal reads authority first and replays only the exact original key", async () => {
+  seedAttempt(waitlistWithdrawAttempt);
+  const getContext = jest.fn<(shareToken: string) => Promise<OpenGameRegistrationContext>>()
+    .mockResolvedValueOnce(waitlistedContext)
+    .mockResolvedValueOnce(waitlistedContext)
+    .mockResolvedValueOnce(withdrawnWaitlistContext);
+  const withdraw = jest.fn(async () => {
+    throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+  });
+  const { registration } = registerSources({ getContext, withdraw });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(page.data).toMatchObject({
+    withdrawalOperationState: "RESULT_UNKNOWN",
+    primaryAction: "CONFIRM_WITHDRAW_RESULT",
+  });
+
+  await call(page, "onConfirmWithdrawalResult");
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  expect(registration.withdraw).toHaveBeenCalledWith(waitlistWithdrawAttempt);
+  expect(attemptStore.load()).toEqual(waitlistWithdrawAttempt);
+
+  await call(page, "onConfirmWithdrawalResult");
+  expect(registration.withdraw).toHaveBeenCalledTimes(1);
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({
+    registrationStatus: "WITHDRAWN",
+    statusHeading: "已退出候补",
+    primaryAction: null,
+  });
 });
 
 test("unknown withdrawal preserves its durable attempt when the authority read returns not found", async () => {
@@ -991,6 +1149,7 @@ test("account switching during withdrawal preserves the owning attempt and block
 });
 
 test("approved shared composition is production-only and every visible button has a real handler", () => {
+  const source = readFileSync("miniprogram/pages/captain-game-public/index.ts", "utf8");
   const wxml = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8"); const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
   expect(wxml).toContain("c1a-status-card"); expect(wxml).toContain("真实订场已确认"); expect(wxml).toContain("到场线下结算"); expect(wxml).toContain("当前仅供查看，申请加入即将开放");
   expect(wxml).toContain("mode === 'shared'"); expect(wxml).toContain("mode === 'owner'");
@@ -998,8 +1157,12 @@ test("approved shared composition is production-only and every visible button ha
   const buttons = wxml.match(/<button\b[^>]*>/g) ?? []; expect(buttons.length).toBeGreaterThan(0); for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
   for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onOpenWithdrawalConfirm", "onCancelWithdrawal", "onConfirmWithdrawal", "onConfirmWithdrawalResult", "onReturnManage"]) expect(wxml).toContain(`bindtap="${handler}"`);
   expect(wxml).toContain("lateExitWillBeRecorded");
-  expect(wxml).toContain("保留报名");
+  expect(wxml).toContain("withdrawalCancelLabel");
+  expect(source).toContain("继续候补");
+  expect(source).toContain("退出后将从当前候补队列移除");
   expect(styles).toMatch(/\.c2a-scrim\s*\{[^}]*position:\s*fixed[^}]*align-items:\s*flex-end/s);
+  expect(styles).toMatch(/\.c1a-status-card--waitlisted\s*\{[^}]*#FED7AA[^}]*#FFF7ED/s);
+  expect(styles).toMatch(/\.c1a-status-card--waitlisted \.c1a-status-dot\s*\{[^}]*#9A3412/s);
   const buttonRule = styles.match(/\.c1a-button\s*\{([^}]*)\}/s)?.[1] ?? "";
   for (const declaration of [/min-height:\s*88rpx/, /display:\s*flex/, /align-items:\s*center/, /justify-content:\s*center/]) expect(buttonRule).toMatch(declaration);
   const footerRule = styles.match(/\.c1a-footer\s*\{([^}]*)\}/s)?.[1] ?? "";

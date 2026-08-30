@@ -101,7 +101,7 @@
             <text>会记录临时退出；首期不自动封禁或扣款。</text>
           </view>
           <view class="c2a-sheet-actions">
-            <button class="c2a-neutral-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelWithdrawal">保留报名</button>
+            <button class="c2a-neutral-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelWithdrawal">{{withdrawalCancelLabel}}</button>
             <button class="c2a-danger-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onConfirmWithdrawal">{{withdrawalOperationState === 'SUBMITTING' ? '提交中…' : withdrawalConfirmationActionLabel}}</button>
           </view>
         </view>

@@ -59,7 +59,15 @@ type RegistrationStatus =
   | "REJECTED"
   | "WITHDRAWN"
   | "CANCELLED";
-type StatusTone = "anonymous" | "available" | "pending" | "joined" | "rejected" | "withdrawn";
+type StatusTone =
+  | "anonymous"
+  | "available"
+  | "pending"
+  | "waitlisted"
+  | "blocked"
+  | "joined"
+  | "rejected"
+  | "withdrawn";
 type WithdrawalOperationState = "IDLE" | "CONFIRMING" | "SUBMITTING" | "RESULT_UNKNOWN";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -71,6 +79,9 @@ interface RegistrationListPage {
     readonly originatingUserId: string;
     readonly registrationId: string;
     readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
+    readonly waitlistPosition: number | null;
+    readonly waitlistedAt: string | null;
+    readonly promotedAt: string | null;
   }): boolean;
 }
 
@@ -167,6 +178,7 @@ function targetForAttempt(
 
 function withdrawalLabel(action: OpenGameRegistrationWithdrawalAction | null): string {
   if (action === "WITHDRAW_APPLICATION") return "撤回申请";
+  if (action === "WITHDRAW_WAITLIST") return "退出候补";
   if (action === "LEAVE_GAME") return "退出球局";
   return "";
 }
@@ -267,21 +279,32 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
   }
   if (effectiveStatus === "WAITLISTED") {
     const position = context.viewerRegistration?.waitlistPosition;
+    const suspended = context.game.state === "SUSPENDED";
     return {
       registrationStatus: "WAITLISTED",
-      heading: "候补中",
-      description: position === null || position === undefined
-        ? "候补顺位暂时无法读取，请刷新后重试。"
-        : `当前候补第 ${position} 位，请等待空位。`,
-      tone: "pending",
-      action: null,
+      heading: suspended
+        ? "球局暂停中"
+        : position === null || position === undefined
+          ? "候补中"
+          : `候补中 · 当前第 ${position} 位`,
+      description: suspended
+        ? "暂停期间不会自动递补；你仍可随时退出候补。"
+        : "位置会随前方候补退出或正式名额释放而更新。",
+      tone: suspended ? "blocked" : "waitlisted",
+      action: context.viewerRegistration?.availableWithdrawalAction === "WITHDRAW_WAITLIST"
+        ? "WITHDRAW"
+        : null,
     };
   }
   if (effectiveStatus === "JOINED") {
+    const promoted = context.viewerRegistration?.promotedAt !== null
+      && context.viewerRegistration?.promotedAt !== undefined;
     return {
       registrationStatus: "JOINED",
       heading: "已加入本场球局",
-      description: "队长已接受申请；AA 到场线下结算。",
+      description: promoted
+        ? "你已按候补顺序转为正式成员，请以当前权威状态为准。"
+        : "队长已接受申请；AA 到场线下结算。",
       tone: "joined",
       action: context.viewerRegistration?.availableWithdrawalAction === "LEAVE_GAME"
         ? "WITHDRAW"
@@ -362,11 +385,12 @@ function blankData() {
     withdrawalActionLabel: "",
     withdrawalApplicationId: "",
     withdrawalExpectedVersion: 0,
-    withdrawalKind: null as "APPLICATION_WITHDRAWAL" | "GAME_EXIT" | null,
+    withdrawalKind: null as "APPLICATION_WITHDRAWAL" | "WAITLIST_WITHDRAWAL" | "GAME_EXIT" | null,
     lateExitWillBeRecorded: false,
     withdrawalConfirmationTitle: "",
     withdrawalConfirmationCopy: "",
     withdrawalConfirmationActionLabel: "",
+    withdrawalCancelLabel: "保留报名",
     publicGame: null as OpenGamePublic | null,
     name: "",
     teamName: "",
@@ -579,11 +603,17 @@ Page({
     const presentation = registrationPresentation(context);
     const registration = context.viewerRegistration;
     const availableAction = registration?.availableWithdrawalAction ?? null;
-    const action: OpenGameRegistrationWithdrawalAction | null =
-      availableAction === "WITHDRAW_APPLICATION" || availableAction === "LEAVE_GAME"
+    const action: OpenGameRegistrationWithdrawalAction | null = registration?.effectiveStatus === "APPLIED"
+      && availableAction === "WITHDRAW_APPLICATION"
+      ? availableAction
+      : registration?.effectiveStatus === "WAITLISTED"
+        && availableAction === "WITHDRAW_WAITLIST"
         ? availableAction
-        : null;
+        : registration?.effectiveStatus === "JOINED" && availableAction === "LEAVE_GAME"
+          ? availableAction
+          : null;
     const applicationWithdrawal = action === "WITHDRAW_APPLICATION";
+    const waitlistWithdrawal = action === "WITHDRAW_WAITLIST";
     this.pendingRoute = "";
     this.setData({
       status: "READY",
@@ -603,15 +633,18 @@ Page({
       withdrawalActionLabel: withdrawalLabel(action),
       withdrawalApplicationId: registration?.id ?? "",
       withdrawalExpectedVersion: registration?.version ?? 0,
-      withdrawalKind: registration?.withdrawalKind === "WAITLIST_WITHDRAWAL"
-        ? null
-        : registration?.withdrawalKind ?? null,
+      withdrawalKind: registration?.withdrawalKind ?? null,
       lateExitWillBeRecorded: registration?.lateExitWillBeRecorded ?? false,
-      withdrawalConfirmationTitle: applicationWithdrawal ? "确认撤回申请？" : "确认退出球局？",
+      withdrawalConfirmationTitle: applicationWithdrawal
+        ? "确认撤回申请？"
+        : waitlistWithdrawal ? "确认退出候补？" : "确认退出球局？",
       withdrawalConfirmationCopy: applicationWithdrawal
         ? "撤回后队长无需再审核，已开放名额不变；本场不可再次申请。"
-        : "退出后会立即释放 1 个公开名额；本场不可再次申请。",
+        : waitlistWithdrawal
+          ? "退出后将从当前候补队列移除；正式成员人数和公开名额不变。本场不可再次申请。"
+          : "退出后会释放你的正式席位；如有候补，将按服务端顺序自动递补。本场不可再次申请。",
       withdrawalConfirmationActionLabel: applicationWithdrawal ? "确认撤回" : "确认退出",
+      withdrawalCancelLabel: waitlistWithdrawal ? "继续候补" : "保留报名",
     });
     this.writeBackRegistration(context);
   },
@@ -643,6 +676,9 @@ Page({
       originatingUserId: userId,
       registrationId: registration.id,
       effectiveStatus: registration.effectiveStatus,
+      waitlistPosition: registration.waitlistPosition,
+      waitlistedAt: registration.waitlistedAt,
+      promotedAt: registration.promotedAt,
     });
   },
 

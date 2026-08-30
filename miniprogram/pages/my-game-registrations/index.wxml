@@ -56,7 +56,7 @@
             <button
               wx:for="{{items}}"
               wx:key="registrationId"
-              class="c1c-registration-card"
+              class="c1c-registration-card {{item.effectiveStatus === 'WAITLISTED' ? 'c1c-registration-card--waitlisted' : ''}}"
               hover-class="c1c-pressed"
               bindtap="onOpenRegistration"
               data-registration-id="{{item.registrationId}}"
@@ -64,7 +64,7 @@
             >
               <view class="c1c-card-body">
                 <view class="c1c-card-top">
-                  <text class="c1c-status-badge {{item.effectiveStatus === 'APPLIED' ? 'c1c-status--applied' : item.effectiveStatus === 'JOINED' ? 'c1c-status--joined' : 'c1c-status--neutral'}}">{{item.statusLabel}}</text>
+                  <text class="c1c-status-badge {{item.effectiveStatus === 'WAITLISTED' ? 'c1c-status--waitlisted' : item.effectiveStatus === 'APPLIED' ? 'c1c-status--applied' : item.effectiveStatus === 'JOINED' ? 'c1c-status--joined' : 'c1c-status--neutral'}}">{{item.statusLabel}}</text>
                   <text class="c1c-format-badge">{{item.formatLabel}}</text>
                 </view>
                 <text class="c1c-game-name">{{item.gameName}}</text>

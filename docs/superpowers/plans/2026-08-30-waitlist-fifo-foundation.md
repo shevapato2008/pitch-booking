@@ -61,9 +61,11 @@ Task 3 冻结边界：
 
 ## Task 8：生产客户端集成与验证
 
-- [ ] 视觉确认后把已批准状态接入真实 production pages/source/attempt store；删除重复 Fixture 逻辑前保持 production audit 隔离。
-- [ ] 聚焦后端、契约、Node/Jest、typecheck、fresh builds、package audit 通过；变更文件 lint 通过。
-- [ ] 独立 code review 无未解决 Important/Critical；冻结 exact candidate，但不部署/上传真实 C2b 候选。
+- [x] 视觉确认后把已批准状态接入真实 production pages/source/attempt store；删除重复 Fixture 逻辑前保持 production audit 隔离。
+- [x] 聚焦后端、契约、Node/Jest、typecheck、fresh builds、package audit 通过；变更文件 lint 通过。
+- [x] 独立 code review 无未解决 Important/Critical；冻结 exact candidate，但不部署/上传真实 C2b 候选。
+
+2026-08-30 内部门记录：官方微信开发者工具 iPhone 12/13 Pro（390×844）已在真实 production page composition 完成满员审核、候补确认层、候补/暂停/退出、转正和混合列表的点击与人工视觉检查。两位独立 reviewer 发现的“未知审核结果未先权威读取”“同账号 `onShow` 未权威收敛”“首屏刷新挤掉已加载边界卡片”和“正式席位退出文案不够准确”均已修复并回归；development composition 也改用独立内存 attempt storage，避免碰触生产调试态。官方 CLI 无设备型号切换能力，因此 Nexus 5X 的 production page composition 复验仍待 GUI 可控时补做；Task 2 已批准的 Android development preview 证据不替代该门。此项不影响冻结 exact foundation candidate，但在下方物理设备与 staging 外部门完成前不得合并、部署、上传或删除 Fixture。
 
 ## 外部完成门
 

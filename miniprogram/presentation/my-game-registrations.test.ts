@@ -31,16 +31,21 @@ describe("my game registration presentation", () => {
     ["REJECTED", "未通过"],
     ["WITHDRAWN", "已退出"],
     ["CANCELLED", "球局已取消"],
-  ] as const)("maps %s to its frozen status label", (effectiveStatus, statusLabel) => {
+  ] as const)("maps %s with no active position to its status label", (effectiveStatus, statusLabel) => {
     expect(presentMyGameRegistration({ ...base, effectiveStatus })).toMatchObject({
       effectiveStatus,
       statusLabel,
     });
   });
 
-  test("patches only effective status presentation while preserving the exact loaded card", () => {
+  test("patches complete registration authority while preserving immutable card fields", () => {
     const card = presentMyGameRegistration(base);
-    expect(patchMyGameRegistrationStatus(card, "WITHDRAWN")).toEqual({
+    expect(patchMyGameRegistrationStatus(card, {
+      effectiveStatus: "WITHDRAWN",
+      waitlistPosition: null,
+      waitlistedAt: null,
+      promotedAt: null,
+    })).toEqual({
       ...card,
       effectiveStatus: "WITHDRAWN",
       statusLabel: "已退出",
@@ -55,10 +60,31 @@ describe("my game registration presentation", () => {
       waitlistPosition: 2,
       waitlistedAt: "2026-08-29T01:35:00Z",
     })).toMatchObject({
-      statusLabel: "候补中",
+      statusLabel: "候补第 2 位",
       waitlistPosition: 2,
       waitlistedAt: "2026-08-29T01:35:00Z",
       promotedAt: null,
+    });
+  });
+
+  test("a promoted authority patch removes the active position but retains waitlist history", () => {
+    const waitlisted = presentMyGameRegistration({
+      ...base,
+      effectiveStatus: "WAITLISTED",
+      waitlistPosition: 2,
+      waitlistedAt: "2026-08-29T01:35:00Z",
+    });
+    expect(patchMyGameRegistrationStatus(waitlisted, {
+      effectiveStatus: "JOINED",
+      waitlistPosition: null,
+      waitlistedAt: "2026-08-29T01:35:00Z",
+      promotedAt: "2026-08-29T02:00:00Z",
+    })).toMatchObject({
+      effectiveStatus: "JOINED",
+      statusLabel: "已加入",
+      waitlistPosition: null,
+      waitlistedAt: "2026-08-29T01:35:00Z",
+      promotedAt: "2026-08-29T02:00:00Z",
     });
   });
 

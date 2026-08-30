@@ -21,10 +21,12 @@
 .c1c-result-line text:last-child { color: #10243E; font-weight: 700; }
 .c1c-registration-list { display: grid; gap: 20rpx; }
 .c1c-registration-card { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; min-height: 308rpx; margin: 0; padding: 26rpx 66rpx 26rpx 26rpx; overflow: hidden; border: 1rpx solid #DBE5EC; border-radius: 28rpx; background: #FFFFFF; color: #10243E; text-align: left; }
+.c1c-registration-card--waitlisted { border-color: #FED7AA; }
 .c1c-card-body { display: block; width: 100%; min-width: 0; }
 .c1c-card-top { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
 .c1c-status-badge, .c1c-format-badge { display: inline-flex; align-items: center; justify-content: center; min-height: 48rpx; padding: 4rpx 16rpx; border-radius: 24rpx; font-size: 22rpx; font-weight: 700; line-height: 32rpx; }
 .c1c-status--applied { background: #F0F9FF; color: #0369A1; }
+.c1c-status--waitlisted { background: #FFF7ED; color: #9A3412; }
 .c1c-status--joined { background: #ECFDF5; color: #047857; }
 .c1c-status--neutral, .c1c-format-badge { background: #F1F5F9; color: #526479; }
 .c1c-game-name, .c1c-game-time, .c1c-game-place { display: block; }

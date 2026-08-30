@@ -41,11 +41,17 @@ const fixture = (name: string): Record<string, unknown> => JSON.parse(
 ) as Record<string, unknown>;
 const pendingQueue = decodeOpenGameApplicationQueue(fixture("open-game-applications-pending"));
 const emptyQueue = decodeOpenGameApplicationQueue(fixture("open-game-applications-empty"));
+const fullWaitlistQueue = decodeOpenGameApplicationQueue(
+  fixture("open-game-applications-full-waitlist"),
+);
 const joinedResult = decodeOpenGameApplicationDecisionResult(
   fixture("open-game-application-decision-joined"),
 );
 const rejectedResult = decodeOpenGameApplicationDecisionResult(
   fixture("open-game-application-decision-rejected"),
+);
+const waitlistedResult = decodeOpenGameApplicationDecisionResult(
+  fixture("open-game-application-decision-waitlisted"),
 );
 const firstApplication = pendingQueue.applications[0]!;
 const secondApplication = pendingQueue.applications[1]!;
@@ -103,9 +109,11 @@ function registrationSource(
     getContext: jest.fn(),
     apply: jest.fn(),
     getPending: jest.fn(async () => pendingQueue),
-    decide: jest.fn(async (attempt: OpenGameRegistrationDecisionAttempt) => (
-      attempt.decision === "ACCEPT" ? joinedResult : rejectedResult
-    )),
+    decide: jest.fn(async (attempt: OpenGameRegistrationDecisionAttempt) => {
+      if (attempt.decision === "ACCEPT") return joinedResult;
+      if (attempt.decision === "WAITLIST") return waitlistedResult;
+      return rejectedResult;
+    }),
     ...overrides,
   } as OpenGameRegistrationSource;
 }
@@ -202,20 +210,25 @@ test("migrates the approved native review layout and backs every production butt
   expect(template).toContain("条待审核申请");
   expect(template).toContain("{{pendingCount}}");
   expect(template).toContain("仅展示申请人主动填写的本场信息");
-  expect(template).toContain("确认接受加入？");
-  expect(template).toContain("确认婉拒申请？");
+  expect(source).toContain("确认接受加入？");
+  expect(source).toContain("确认加入候补？");
+  expect(source).toContain("确认婉拒申请？");
+  expect(template).toContain("当前球局已满员");
+  expect(template).toContain("可以按申请审核顺序加入候补，或婉拒本场申请");
   expect(template).not.toMatch(/Fixture|开发预览|preview|dev\/pages|c1a-scenario/);
   expect(template).not.toMatch(/返回预览入口|切换到申请人视角|角色切换/);
   expect(template).not.toContain("game.name");
   expect(template).not.toMatch(/application\.(?:id|version)/);
-  expect(template).toMatch(/<button[^>]*disabled="{{!canAccept}}"[^>]*bindtap="onAccept"/);
+  expect(template).toMatch(/<button[^>]*wx:elif="{{canAccept}}"[^>]*bindtap="onAccept"/);
+  expect(template).toMatch(/<button[^>]*wx:if="{{canWaitlist}}"[^>]*bindtap="onWaitlist"/);
   expect(template).toMatch(/<button[^>]*disabled="{{!canReject}}"[^>]*bindtap="onReject"/);
   const buttons = template.match(/<button\b[^>]*>/g) ?? [];
   expect(buttons.length).toBeGreaterThan(0);
   for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
   for (const handler of [
     "onHeaderBack", "onReload", "onLogin", "onReturnNotFound", "onGoPending",
-    "onClearPending", "onRefreshApplications", "onReturnManage", "onAccept", "onReject",
+    "onClearPending", "onRefreshApplications", "onReturnManage", "onAccept", "onWaitlist",
+    "onReject",
     "onClosePanel", "onConfirmDecision", "onConfirmDecisionResult", "onCloseUnknown",
   ]) expect(template).toContain(`bindtap="${handler}"`);
 
@@ -326,7 +339,38 @@ test("opens and closes accept/reject confirmation without persisting or sending 
   expect(api.decide).not.toHaveBeenCalled();
 });
 
-test("uses the four allowedActions fields alone: full disables accept, keeps reject, and never checks remainingSpots", async () => {
+test("a full application exposes only reject and waitlist, and opening its sheet performs no write", async () => {
+  const api = registerSource({ getPending: jest.fn(async () => fullWaitlistQueue) });
+  const page = loadPage();
+  await openPending(page);
+
+  expect(page.data).toMatchObject({
+    canAccept: false,
+    canWaitlist: true,
+    canReject: true,
+    fullWaitlist: true,
+    blockerMessage: "",
+  });
+  call(page, "onAccept");
+  expect(page.data.panel).toBeNull();
+  call(page, "onWaitlist");
+  expect(page.data).toMatchObject({
+    panel: "WAITLIST",
+    decisionTitle: "确认加入候补？",
+    decisionCopy: "确认后将按本场不可复用的先后顺序排入候补，当前不会增加已加入人数。",
+    decisionButton: "确认加入候补",
+  });
+  expect(page.panelSelection).toEqual({
+    applicationId: fullWaitlistQueue.applications[0]!.id,
+    expectedVersion: fullWaitlistQueue.applications[0]!.version,
+    decision: "WAITLIST",
+  });
+  call(page, "onClosePanel");
+  expect(attemptStore.load()).toBeNull();
+  expect(api.decide).not.toHaveBeenCalled();
+});
+
+test("uses allowedActions alone: disabled waitlist stays hidden and remainingSpots never enables accept", async () => {
   const fullApplication: CaptainOpenGameApplication = {
     ...firstApplication,
     allowedActions: {
@@ -341,8 +385,16 @@ test("uses the four allowedActions fields alone: full disables accept, keeps rej
   registerSource({ getPending: jest.fn(async () => queue([fullApplication], 1, 12)) });
   const full = loadPage();
   await openPending(full);
-  expect(full.data).toMatchObject({ canAccept: false, canReject: true, remainingSpots: 12 });
+  expect(full.data).toMatchObject({
+    canAccept: false,
+    canWaitlist: false,
+    canReject: true,
+    fullWaitlist: false,
+    remainingSpots: 12,
+  });
   call(full, "onAccept");
+  expect(full.data.panel).toBeNull();
+  call(full, "onWaitlist");
   expect(full.data.panel).toBeNull();
   call(full, "onReject");
   expect(full.data.panel).toBe("REJECT");
@@ -364,6 +416,51 @@ test("uses the four allowedActions fields alone: full disables accept, keeps rej
   await openPending(strange);
   call(strange, "onAccept");
   expect(strange.data.panel).toBe("ACCEPT");
+});
+
+test("persists a WAITLIST attempt before one POST, then clears it and authoritatively reloads", async () => {
+  let resolveDecision!: (result: OpenGameApplicationDecisionResult) => void;
+  const pendingDecision = new Promise<OpenGameApplicationDecisionResult>(
+    (resolve) => { resolveDecision = resolve; },
+  );
+  let reads = 0;
+  const api = registerSource({
+    getPending: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? fullWaitlistQueue : emptyQueue;
+    }),
+    decide: jest.fn((attempt: OpenGameRegistrationDecisionAttempt) => {
+      expect(attemptStore.load()).toEqual(attempt);
+      return pendingDecision;
+    }),
+  });
+  const page = loadPage();
+  await openPending(page);
+  call(page, "onWaitlist");
+  const first = call(page, "onConfirmDecision");
+  const duplicate = call(page, "onConfirmDecision");
+  const stored = attemptStore.load();
+
+  expect(api.decide).toHaveBeenCalledTimes(1);
+  expect(stored).toMatchObject({
+    kind: "decision",
+    originatingUserId: USER_ID,
+    gameId: GAME_ID,
+    applicationId: fullWaitlistQueue.applications[0]!.id,
+    decision: "WAITLIST",
+    expectedVersion: fullWaitlistQueue.applications[0]!.version,
+  });
+  resolveDecision(waitlistedResult);
+  await first;
+  await duplicate;
+
+  expect(attemptStore.load()).toBeNull();
+  expect(api.getPending).toHaveBeenCalledTimes(2);
+  expect(page.data).toMatchObject({
+    status: "READY",
+    hasPending: false,
+    noticeMessage: "已将上一条申请加入候补，并读取最新待审核列表。",
+  });
 });
 
 test("freezes the selected id/version/decision and never confirms a changed first item", async () => {
@@ -581,8 +678,8 @@ test("capacity conflict preserves the current row and requires an explicit autho
   const blockedActions = {
     canAccept: false as const,
     acceptBlockedReason: "GAME_FULL" as const,
-    canWaitlist: false as const,
-    waitlistBlockedReason: "WAITLIST_NOT_ENABLED" as const,
+    canWaitlist: true as const,
+    waitlistBlockedReason: null,
     canReject: true as const,
     rejectBlockedReason: null,
   };
@@ -609,6 +706,7 @@ test("capacity conflict preserves the current row and requires an explicit autho
     status: "CAPACITY_CHANGED",
     remainingSpots: 0,
     canAccept: false,
+    canWaitlist: true,
     canReject: true,
   });
   expect(page.data.application.id).toBe(firstApplication.id);
@@ -618,6 +716,9 @@ test("capacity conflict preserves the current row and requires an explicit autho
   await call(page, "onRefreshApplications");
   expect(api.getPending).toHaveBeenCalledTimes(2);
   expect(page.data.application.id).toBe(firstApplication.id);
+  expect(api.decide).toHaveBeenCalledTimes(1);
+  call(page, "onWaitlist");
+  expect(page.data.panel).toBe("WAITLIST");
 });
 
 test("state conflict never shifts locally and automatically rereads the authoritative queue", async () => {
@@ -669,7 +770,56 @@ test("unknown decision preserves and replays the exact durable attempt key", asy
   expect(api.decide).toHaveBeenCalledTimes(2);
   expect((api.decide as jest.Mock).mock.calls[1]?.[0]).toEqual(original);
   expect(attemptStore.load()).toBeNull();
-  expect(api.getPending).toHaveBeenCalledTimes(2);
+  expect(api.getPending).toHaveBeenCalledTimes(3);
+  expect((api.getPending as jest.Mock).mock.invocationCallOrder[1])
+    .toBeLessThan((api.decide as jest.Mock).mock.invocationCallOrder[1]!);
+});
+
+test("a waitlist result stays unknown even when the read queue already projects the row without a version", async () => {
+  const application = fullWaitlistQueue.applications[0]!;
+  const projectedWaitlist = {
+    ...emptyQueue,
+    remainingSpots: 0,
+    waitlistCount: 1,
+    waitlist: [{
+      id: application.id,
+      displayName: application.displayName,
+      position: application.position,
+      note: application.note,
+      appliedAt: application.appliedAt,
+      waitlistedAt: waitlistedResult.decidedAt!,
+      waitlistPosition: 1,
+    }],
+  };
+  let reads = 0;
+  let sends = 0;
+  const api = registerSource({
+    getPending: jest.fn(async () => {
+      reads += 1;
+      if (reads === 1) return fullWaitlistQueue;
+      if (reads === 2) return projectedWaitlist;
+      return emptyQueue;
+    }),
+    decide: jest.fn(async () => {
+      sends += 1;
+      if (sends === 1) throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      return waitlistedResult;
+    }),
+  });
+  const page = loadPage();
+  await openPending(page);
+  call(page, "onWaitlist");
+  await call(page, "onConfirmDecision");
+  const original = attemptStore.load();
+  expect(original).toMatchObject({ decision: "WAITLIST" });
+
+  await call(page, "onConfirmDecisionResult");
+  expect(api.decide).toHaveBeenCalledTimes(2);
+  expect((api.decide as jest.Mock).mock.calls[1]?.[0]).toEqual(original);
+  expect(attemptStore.load()).toBeNull();
+  expect(api.getPending).toHaveBeenCalledTimes(3);
+  expect((api.getPending as jest.Mock).mock.invocationCallOrder[1])
+    .toBeLessThan((api.decide as jest.Mock).mock.invocationCallOrder[1]!);
 });
 
 test("401 preserves the attempt; explicit same-account login reloads before an explicit same-key replay", async () => {

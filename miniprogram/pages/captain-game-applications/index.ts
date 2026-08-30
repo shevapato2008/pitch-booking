@@ -37,7 +37,7 @@ type ReviewStatus =
 interface FrozenDecision {
   readonly applicationId: string;
   readonly expectedVersion: number;
-  readonly decision: "ACCEPT" | "REJECT";
+  readonly decision: "ACCEPT" | "WAITLIST" | "REJECT";
 }
 
 type AttemptReconciliation =
@@ -87,7 +87,10 @@ function appliedAtLabel(value: string): string {
   return formatOpenGameDateTime(value, "Asia/Shanghai");
 }
 
-function blockerMessage(reason: OpenGameReviewActions["acceptBlockedReason"]): string {
+function blockerMessage(actions: OpenGameReviewActions): string {
+  if (actions.canWaitlist) return "";
+  const reason = actions.acceptBlockedReason ?? actions.waitlistBlockedReason
+    ?? actions.rejectBlockedReason;
   switch (reason) {
     case "APPLICATION_NOT_PENDING": return "这条申请已不在待审核状态。";
     case "GAME_SUSPENDED": return "球局当前暂停，暂时不能处理申请。";
@@ -135,10 +138,13 @@ function blankData() {
     appliedAtLabel: "",
     canAccept: false,
     acceptBlockedReason: null as OpenGameReviewActions["acceptBlockedReason"],
+    canWaitlist: false,
+    waitlistBlockedReason: null as OpenGameReviewActions["waitlistBlockedReason"],
     canReject: false,
     rejectBlockedReason: null as OpenGameReviewActions["rejectBlockedReason"],
+    fullWaitlist: false,
     blockerMessage: "",
-    panel: null as "ACCEPT" | "REJECT" | null,
+    panel: null as "ACCEPT" | "WAITLIST" | "REJECT" | null,
     decisionTitle: "",
     decisionCopy: "",
     decisionButton: "",
@@ -170,7 +176,11 @@ function decisionResultMatches(
   const expectedVersion = attempt.expectedVersion + 1;
   return Number.isSafeInteger(expectedVersion)
     && result.applicationId === attempt.applicationId
-    && result.status === (attempt.decision === "ACCEPT" ? "JOINED" : "REJECTED")
+    && result.status === (attempt.decision === "ACCEPT"
+      ? "JOINED"
+      : attempt.decision === "WAITLIST"
+        ? "WAITLISTED"
+        : "REJECTED")
     && result.version === expectedVersion;
 }
 
@@ -291,6 +301,8 @@ Page({
     const actions = first?.allowedActions ?? {
       canAccept: false,
       acceptBlockedReason: null,
+      canWaitlist: false,
+      waitlistBlockedReason: null,
       canReject: false,
       rejectBlockedReason: null,
     };
@@ -304,9 +316,12 @@ Page({
       appliedAtLabel: first === null ? "" : appliedAtLabel(first.appliedAt),
       canAccept: actions.canAccept,
       acceptBlockedReason: actions.acceptBlockedReason,
+      canWaitlist: actions.canWaitlist,
+      waitlistBlockedReason: actions.waitlistBlockedReason,
       canReject: actions.canReject,
       rejectBlockedReason: actions.rejectBlockedReason,
-      blockerMessage: blockerMessage(actions.acceptBlockedReason ?? actions.rejectBlockedReason),
+      fullWaitlist: actions.canWaitlist,
+      blockerMessage: blockerMessage(actions),
       panel: null,
     });
     this.panelSelection = null;
@@ -442,13 +457,15 @@ Page({
     }
   },
 
-  openPanel(decision: "ACCEPT" | "REJECT") {
+  openPanel(decision: "ACCEPT" | "WAITLIST" | "REJECT") {
     if (this.data.status !== "READY" || this.mutationInFlight !== null) return;
     const application = this.firstApplication;
     if (application === null) return;
     const allowed = decision === "ACCEPT"
       ? application.allowedActions.canAccept
-      : application.allowedActions.canReject;
+      : decision === "WAITLIST"
+        ? application.allowedActions.canWaitlist
+        : application.allowedActions.canReject;
     if (!allowed) return;
     this.panelSelection = {
       applicationId: application.id,
@@ -457,17 +474,31 @@ Page({
     };
     this.setData({
       panel: decision,
-      decisionTitle: decision === "ACCEPT" ? "确认接受加入？" : "确认婉拒申请？",
+      decisionTitle: decision === "ACCEPT"
+        ? "确认接受加入？"
+        : decision === "WAITLIST"
+          ? "确认加入候补？"
+          : "确认婉拒申请？",
       decisionCopy: decision === "ACCEPT"
         ? "接受后，申请人会在同一球局详情看到已加入结果。"
-        : "婉拒仅代表本场决定，申请人会在同一详情看到结果。",
-      decisionButton: decision === "ACCEPT" ? "确认接受" : "确认婉拒",
+        : decision === "WAITLIST"
+          ? "确认后将按本场不可复用的先后顺序排入候补，当前不会增加已加入人数。"
+          : "婉拒仅代表本场决定，申请人会在同一详情看到结果。",
+      decisionButton: decision === "ACCEPT"
+        ? "确认接受"
+        : decision === "WAITLIST"
+          ? "确认加入候补"
+          : "确认婉拒",
       navigationError: "",
     });
   },
 
   onAccept() {
     this.openPanel("ACCEPT");
+  },
+
+  onWaitlist() {
+    this.openPanel("WAITLIST");
   },
 
   onReject() {
@@ -490,6 +521,7 @@ Page({
       || application.id !== frozen.applicationId
       || application.version !== frozen.expectedVersion
       || (frozen.decision === "ACCEPT" && !application.allowedActions.canAccept)
+      || (frozen.decision === "WAITLIST" && !application.allowedActions.canWaitlist)
       || (frozen.decision === "REJECT" && !application.allowedActions.canReject)) {
       this.panelSelection = null;
       this.setData({
@@ -578,7 +610,9 @@ Page({
       this.unknownAttempt = null;
       const notice = result.status === "JOINED"
         ? "已接受上一条申请，并读取最新待审核列表。"
-        : "已婉拒上一条申请，并读取最新待审核列表。";
+        : result.status === "WAITLISTED"
+          ? "已将上一条申请加入候补，并读取最新待审核列表。"
+          : "已婉拒上一条申请，并读取最新待审核列表。";
       await this.loadAuthority(notice);
     } catch (caught) {
       if (!this.active(generation)) return;
@@ -674,11 +708,12 @@ Page({
         application: projectApplication(updated),
         canAccept: details.allowedActions.canAccept,
         acceptBlockedReason: details.allowedActions.acceptBlockedReason,
+        canWaitlist: details.allowedActions.canWaitlist,
+        waitlistBlockedReason: details.allowedActions.waitlistBlockedReason,
         canReject: details.allowedActions.canReject,
         rejectBlockedReason: details.allowedActions.rejectBlockedReason,
-        blockerMessage: blockerMessage(
-          details.allowedActions.acceptBlockedReason ?? details.allowedActions.rejectBlockedReason,
-        ),
+        fullWaitlist: details.allowedActions.canWaitlist,
+        blockerMessage: blockerMessage(details.allowedActions),
       });
     }
     this.setData({
@@ -715,8 +750,37 @@ Page({
       this.presentPendingAttempt(classification.attempt, userId);
       return Promise.resolve();
     }
-    this.unknownAttempt = classification.attempt;
-    const promise = this.executeDecision(classification.attempt).finally(() => {
+    const originalAttempt = classification.attempt;
+    this.unknownAttempt = originalAttempt;
+    const promise = (async () => {
+      await this.loadAuthority("已读取最新待审核列表，正在确认原审核。");
+      if (this.data.status !== "RESULT_UNKNOWN"
+        || this.unknownAttempt === null
+        || !sameDecisionAttempt(this.unknownAttempt, originalAttempt)) return;
+      let refreshed: OpenGameRegistrationAttempt | null;
+      try {
+        refreshed = getOpenGameRegistrationAttemptStore().load();
+      } catch {
+        this.setData({
+          status: "LOAD_ERROR",
+          errorMessage: "本机审核记录暂时无法读取，没有发送新的操作。",
+        });
+        return;
+      }
+      if (refreshed === null) return;
+      const refreshedClassification = classifyOpenGameRegistrationPendingAttempt(
+        refreshed,
+        this.currentUserId(),
+        { kind: "decision", gameId: this.routeGameId },
+      );
+      if (refreshedClassification.kind !== "READY"
+        || refreshedClassification.attempt.kind !== "decision"
+        || !sameDecisionAttempt(refreshedClassification.attempt, originalAttempt)) {
+        this.presentPendingAttempt(refreshed, this.currentUserId());
+        return;
+      }
+      await this.executeDecision(refreshedClassification.attempt);
+    })().finally(() => {
       if (this.mutationInFlight === promise) this.mutationInFlight = null;
     });
     this.mutationInFlight = promise;

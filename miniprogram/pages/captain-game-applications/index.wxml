@@ -89,6 +89,10 @@
         <text class="c1a-privacy-note">仅展示申请人主动填写的本场信息。</text>
         <text wx:if="{{blockerMessage}}" class="c1a-help c1a-blocker" role="status">{{blockerMessage}}</text>
       </view>
+      <view wx:if="{{hasPending && fullWaitlist}}" class="c1a-full-note" role="note">
+        <view class="c1a-full-dot" aria-hidden="true"></view>
+        <view><text>当前球局已满员</text><text>可以按申请审核顺序加入候补，或婉拒本场申请。</text></view>
+      </view>
       <view wx:elif="{{empty}}" class="c1a-card c1a-empty" role="status">
         <view class="c1a-empty-mark"><view></view><view></view><view></view></view>
         <text class="c1a-heading">当前没有待审核申请</text>
@@ -99,10 +103,11 @@
     <text wx:if="{{navigationError}}" class="c1a-error c1a-navigation-error" role="alert">{{navigationError}}</text>
   </scroll-view>
 
-  <view wx:if="{{status === 'READY' && hasPending}}" class="c1a-footer">
+  <view wx:if="{{status === 'READY' && hasPending && (canReject || canAccept || canWaitlist)}}" class="c1a-footer">
     <view class="c1a-footer-actions">
       <button class="c1a-button c1a-button--neutral" hover-class="button-hover" disabled="{{!canReject}}" bindtap="onReject">婉拒</button>
-      <button class="c1a-button c1a-button--primary" hover-class="button-hover" disabled="{{!canAccept}}" bindtap="onAccept">接受加入</button>
+      <button wx:if="{{canWaitlist}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onWaitlist">加入候补</button>
+      <button wx:elif="{{canAccept}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onAccept">接受加入</button>
     </view>
   </view>
 
@@ -110,14 +115,14 @@
     <view class="c1a-sheet" role="dialog" aria-modal="true">
       <view class="c1a-sheet-title-row">
         <view>
-          <text class="c1a-sheet-title">{{panel === 'ACCEPT' ? '确认接受加入？' : '确认婉拒申请？'}}</text>
+          <text class="c1a-sheet-title">{{decisionTitle}}</text>
           <text class="c1a-sheet-copy">{{decisionCopy}}</text>
         </view>
         <button class="c1a-sheet-close" hover-class="button-hover" bindtap="onClosePanel" aria-label="关闭确认层"><view class="c1a-close-glyph"></view></button>
       </view>
       <view class="c1a-sheet-actions">
         <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onClosePanel">返回审核</button>
-        <button class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmDecision">{{decisionButton}}</button>
+        <button class="c1a-button {{panel === 'REJECT' ? 'c1a-button--danger' : 'c1a-button--primary'}}" hover-class="button-hover" bindtap="onConfirmDecision">{{decisionButton}}</button>
       </view>
     </view>
   </view>
