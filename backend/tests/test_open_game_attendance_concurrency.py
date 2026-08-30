@@ -1,9 +1,10 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from queue import Queue
 from threading import Barrier, Event
+from typing import Literal
 
 import pytest
-from sqlalchemy import Engine, create_engine, func, select, text
+from sqlalchemy import URL, Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
@@ -39,12 +40,17 @@ from backend.tests.test_open_game_registration_concurrency import (
 
 pytestmark = pytest.mark.integration
 
+AttendanceMarkStatus = Literal[
+    OpenGameAttendanceStatus.PRESENT,
+    OpenGameAttendanceStatus.NO_SHOW,
+]
+
 
 def _attendance_worker(
     *,
-    database_url: object,
+    database_url: str | URL,
     case: AttendanceCase,
-    attendance_status: OpenGameAttendanceStatus,
+    attendance_status: AttendanceMarkStatus,
     idempotency_key: str,
     pid_queue: Queue[int],
     barrier: Barrier | None = None,
@@ -85,7 +91,7 @@ def _attendance_worker(
 
 def _authority_worker(
     *,
-    database_url: object,
+    database_url: str | URL,
     case: AttendanceCase,
     authority_kind: str,
     acquired: Event,
@@ -134,6 +140,16 @@ def test_concurrent_opposite_attendance_marks_have_one_winner_without_deadlock(
     case = _seed_completed_attendance_game(pg_engine)
     barrier = Barrier(2)
     pids: Queue[int] = Queue()
+    attempts: tuple[tuple[AttendanceMarkStatus, str], ...] = (
+        (
+            OpenGameAttendanceStatus.PRESENT,
+            "concurrent-attendance-present-key-001",
+        ),
+        (
+            OpenGameAttendanceStatus.NO_SHOW,
+            "concurrent-attendance-no-show-key-001",
+        ),
+    )
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [
             executor.submit(
@@ -145,16 +161,7 @@ def test_concurrent_opposite_attendance_marks_have_one_winner_without_deadlock(
                 pid_queue=pids,
                 barrier=barrier,
             )
-            for status, key in (
-                (
-                    OpenGameAttendanceStatus.PRESENT,
-                    "concurrent-attendance-present-key-001",
-                ),
-                (
-                    OpenGameAttendanceStatus.NO_SHOW,
-                    "concurrent-attendance-no-show-key-001",
-                ),
-            )
+            for status, key in attempts
         ]
         assert pids.get(timeout=5) > 0
         assert pids.get(timeout=5) > 0

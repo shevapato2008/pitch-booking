@@ -4119,17 +4119,17 @@ def test_open_game_attendance_operations_and_examples_are_frozen() -> None:
         "open-game-attendance-mark-no-show.json": "OpenGameAttendanceMarkResult",
         "error-attendance-state-changed.json": "ErrorEnvelope",
     }
-    examples = {}
+    loaded_examples: dict[str, dict[str, Any]] = {}
     for filename, schema_name in example_schemas.items():
         value = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
-        examples[filename] = value
+        loaded_examples[filename] = value
         assert Draft202012Validator(
             _dereference_local_schema(contract, schemas[schema_name])
         ).is_valid(value), filename
-    ready = examples["open-game-attendance-roster-ready.json"]
+    ready = loaded_examples["open-game-attendance-roster-ready.json"]
     assert (ready["recorded_count"], ready["total_count"]) == (2, 3)
     assert ready["attendance_complete"] is False
-    empty = examples["open-game-attendance-roster-empty.json"]
+    empty = loaded_examples["open-game-attendance-roster-empty.json"]
     assert (empty["recorded_count"], empty["total_count"]) == (0, 0)
     assert empty["attendance_complete"] is True
 

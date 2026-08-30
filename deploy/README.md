@@ -33,12 +33,51 @@ uv run python -m scripts.verify_staging \
   --output /tmp/pitch-booking-staging-report.json
 ```
 
-Build the production Mini Program against this real API without changing checked-in configuration:
+Build a development Mini Program against this loopback API without changing checked-in
+configuration:
 
 ```bash
-MINIPROGRAM_API_BASE_URL=http://127.0.0.1:8080 npm run build:miniprogram:production
-npm run audit:miniprogram-package
+MINIPROGRAM_DEV_BOOKING_SOURCE=http \
+  MINIPROGRAM_API_BASE_URL=http://127.0.0.1:8080 \
+  npm run build:miniprogram:development
 ```
+
+Production builds remain fail-closed: source the ignored live build inputs so
+`MINIPROGRAM_API_BASE_URL` is a public HTTPS origin, then run
+`npm run build:miniprogram:production && npm run audit:miniprogram-package`. A production build must
+never target loopback staging.
+
+## C2c attendance staging gate
+
+Run this irreversible gate only against a real, ended booking whose open game has the named JOINED
+player registration. Use three pairwise-distinct business sessions: the venue manager who can
+fulfill the order, the captain who owns the game, and the player who owns the registration. Keep
+bearer values in the shell environment rather than command arguments. The verifier first
+cross-checks the game's order ID, then calls the real venue check-in and completion endpoints before
+recording attendance; it never writes the database directly.
+
+```bash
+export C2C_STAGING_VENUE_BEARER='...'
+export C2C_STAGING_CAPTAIN_BEARER='...'
+export C2C_STAGING_PLAYER_BEARER='...'
+uv run python -m scripts.verify_open_game_attendance_staging \
+  --base-url https://pitch-api-staging.modelstella.com \
+  --venue-id 00000000-0000-4000-8000-000000000001 \
+  --order-id 00000000-0000-4000-8000-000000000002 \
+  --game-id 00000000-0000-4000-8000-000000000003 \
+  --registration-id 00000000-0000-4000-8000-000000000004 \
+  --attendance-status PRESENT \
+  --confirm-registration-id 00000000-0000-4000-8000-000000000004 \
+  --expected-revision "$(git rev-parse HEAD)" \
+  --output /tmp/pitch-booking-c2c-attendance-report.json
+unset C2C_STAGING_VENUE_BEARER C2C_STAGING_CAPTAIN_BEARER \
+  C2C_STAGING_PLAYER_BEARER
+```
+
+`PRESENT` and `NO_SHOW` cannot be changed by the captain. The repeated registration ID is therefore
+a required safety acknowledgement. Stable idempotency keys make an exact rerun safe: an existing
+matching result is verified through the captain roster and the player's own applications instead
+of being rewritten. The JSON report contains identifiers and results, never bearer credentials.
 
 Stop containers without deleting the persistent database:
 

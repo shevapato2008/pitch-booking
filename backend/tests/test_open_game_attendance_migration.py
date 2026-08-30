@@ -9,6 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import DateTime, Engine, create_engine, inspect, text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.exc import DBAPIError
 
 from backend.tests.postgres_test_database import (
@@ -28,7 +29,7 @@ RECORDED_AT = datetime(2026, 8, 30, 12, 32, tzinfo=UTC)
 REGISTRATION_ID = UUID("30000000-0000-0000-0000-000000000301")
 
 
-@pytest.fixture  # type: ignore[untyped-decorator]
+@pytest.fixture
 def migration_engine(test_database_url: str) -> Iterator[Engine]:
     with disposable_database(test_database_url) as migration_url:
         rendered = migration_url.render_as_string(hide_password=False)
@@ -176,9 +177,9 @@ def test_0021_round_trips_empty_attendance_storage_and_preserves_0020_rows(
         for column in inspector.get_columns("open_game_registrations")
     }
     assert columns["attendance_status"]["nullable"] is False
-    assert columns["attendance_status"]["type"].name == (
-        "open_game_attendance_status"
-    )
+    attendance_status_type = columns["attendance_status"]["type"]
+    assert isinstance(attendance_status_type, SAEnum)
+    assert attendance_status_type.name == "open_game_attendance_status"
     assert "UNMARKED" in str(columns["attendance_status"]["default"])
     assert columns["attendance_recorded_at"]["nullable"] is True
     assert isinstance(columns["attendance_recorded_at"]["type"], DateTime)
@@ -210,7 +211,7 @@ def test_0021_round_trips_empty_attendance_storage_and_preserves_0020_rows(
         "ck_open_game_registrations_attendance_joined",
     }
     assert not any(
-        "attendance" in item["name"]
+        item["name"] is not None and "attendance" in item["name"]
         for item in inspector.get_indexes("open_game_registrations")
     )
     with migration_engine.connect() as connection:

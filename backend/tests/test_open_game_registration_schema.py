@@ -7,7 +7,16 @@ from uuid import UUID
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import DateTime, Engine, Integer, String, create_engine, inspect, text
+from sqlalchemy import (
+    DateTime,
+    Engine,
+    Integer,
+    String,
+    create_engine,
+    inspect,
+    text,
+)
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.exc import DBAPIError
 
 from backend.app import models
@@ -509,13 +518,17 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
     assert table.c.consent_version.type.length == 32
     assert table.c.position.type.name == "open_game_registration_position"
     assert table.c.status.type.name == "open_game_registration_status"
-    assert table.c.attendance_status.type.name == "open_game_attendance_status"
+    attendance_status_type = table.c.attendance_status.type
+    assert isinstance(attendance_status_type, SAEnum)
+    assert attendance_status_type.name == "open_game_attendance_status"
     assert (
         table.c.attendance_status.default.arg
         == models.OpenGameAttendanceStatus.UNMARKED
     )
     assert str(table.c.attendance_status.server_default.arg) == "'UNMARKED'"
-    assert table.c.attendance_recorded_at.type.timezone is True
+    attendance_recorded_at_type = table.c.attendance_recorded_at.type
+    assert isinstance(attendance_recorded_at_type, DateTime)
+    assert attendance_recorded_at_type.timezone is True
     assert "attendance_version" not in table.c
     assert (
         table.c.withdrawal_kind.type.name

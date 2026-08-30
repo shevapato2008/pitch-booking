@@ -26,7 +26,9 @@ def _login(client: httpx.Client, code: str, expected_user_id: uuid.UUID) -> str:
     response = client.post("/api/v1/auth/wechat/session", json={"code": code})
     assert response.status_code == 200, response.text
     assert response.json()["user"]["id"] == str(expected_user_id)
-    return response.json()["session_token"]
+    token = response.json()["session_token"]
+    assert isinstance(token, str) and token
+    return token
 
 
 def _auth(token: str) -> dict[str, str]:

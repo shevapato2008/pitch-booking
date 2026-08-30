@@ -4,6 +4,8 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
+from typing import Literal
 
 import pytest
 from sqlalchemy import Engine, select
@@ -119,7 +121,10 @@ def _seed_completed_attendance_game(
 
 
 def _mark_request(
-    status: OpenGameAttendanceStatus = OpenGameAttendanceStatus.PRESENT,
+    status: Literal[
+        OpenGameAttendanceStatus.PRESENT,
+        OpenGameAttendanceStatus.NO_SHOW,
+    ] = OpenGameAttendanceStatus.PRESENT,
     *,
     expected_version: int = 2,
 ) -> OpenGameAttendanceMarkRequest:
@@ -219,7 +224,8 @@ def test_roster_hides_missing_and_non_owned_games_and_requires_completed_state(
             (completed.game.game_id, completed.game.booking.stranger_id),
         ):
             _assert_error(
-                lambda game_id=game_id, user_id=user_id: service.get_attendance_roster(
+                partial(
+                    service.get_attendance_roster,
                     game_id=game_id,
                     owner_user_id=user_id,
                 ),
@@ -336,7 +342,8 @@ def test_mark_attendance_is_atomic_minimal_and_strictly_idempotent(
             _mark_request(expected_version=3),
         ):
             _assert_error(
-                lambda changed_request=changed_request: service.mark_attendance(
+                partial(
+                    service.mark_attendance,
                     game_id=seeded.game.game_id,
                     registration_id=target_id,
                     owner_user_id=seeded.owner_id,
@@ -351,8 +358,8 @@ def test_mark_attendance_is_atomic_minimal_and_strictly_idempotent(
             (other_game.game.game_id, other_game.joined_ids[0]),
         ):
             _assert_error(
-                lambda changed_game_id=changed_game_id,
-                changed_registration_id=changed_registration_id: service.mark_attendance(
+                partial(
+                    service.mark_attendance,
                     game_id=changed_game_id,
                     registration_id=changed_registration_id,
                     owner_user_id=seeded.owner_id,
