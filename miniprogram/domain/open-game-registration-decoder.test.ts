@@ -115,6 +115,72 @@ describe("open-game registration response decoders", () => {
     ));
   });
 
+  test("decodes the waitlist lifecycle matrix and rejects inverted or incomplete history", () => {
+    const waitlisted = withdrawalContext(contextApplied, {
+      version: 2,
+      persisted_status: "WAITLISTED",
+      effective_status: "WAITLISTED",
+      decided_at: "2026-08-24T00:25:00+08:00",
+      waitlist_position: 2,
+      waitlisted_at: "2026-08-24T00:25:00+08:00",
+      promoted_at: null,
+      available_withdrawal_action: "WITHDRAW_WAITLIST",
+    });
+    expect(decodeOpenGameRegistrationContext(waitlisted).viewerRegistration).toMatchObject({
+      persistedStatus: "WAITLISTED",
+      effectiveStatus: "WAITLISTED",
+      waitlistPosition: 2,
+      waitlistedAt: "2026-08-24T00:25:00+08:00",
+      promotedAt: null,
+      availableWithdrawalAction: "WITHDRAW_WAITLIST",
+    });
+
+    const promoted = withdrawalContext(contextApplied, {
+      version: 3,
+      persisted_status: "JOINED",
+      effective_status: "JOINED",
+      decided_at: "2026-08-24T00:25:00+08:00",
+      waitlist_position: null,
+      waitlisted_at: "2026-08-24T00:25:00+08:00",
+      promoted_at: "2026-08-24T00:30:00+08:00",
+      available_withdrawal_action: "LEAVE_GAME",
+    });
+    expect(decodeOpenGameRegistrationContext(promoted).viewerRegistration).toMatchObject({
+      persistedStatus: "JOINED",
+      waitlistPosition: null,
+      waitlistedAt: "2026-08-24T00:25:00+08:00",
+      promotedAt: "2026-08-24T00:30:00+08:00",
+    });
+
+    const withdrawn = withdrawalContext(contextApplied, {
+      version: 3,
+      persisted_status: "WITHDRAWN",
+      effective_status: "WITHDRAWN",
+      decided_at: "2026-08-24T00:25:00+08:00",
+      withdrawn_at: "2026-08-24T00:30:00+08:00",
+      withdrawal_kind: "WAITLIST_WITHDRAWAL",
+      waitlist_position: null,
+      waitlisted_at: "2026-08-24T00:25:00+08:00",
+      promoted_at: null,
+    });
+    expect(decodeOpenGameRegistrationContext(withdrawn).viewerRegistration).toMatchObject({
+      withdrawalKind: "WAITLIST_WITHDRAWAL",
+      waitlistPosition: null,
+      waitlistedAt: "2026-08-24T00:25:00+08:00",
+      promotedAt: null,
+    });
+
+    for (const invalidViewerPatch of [
+      { persisted_status: "WAITLISTED", effective_status: "WAITLISTED", decided_at: null, waitlist_position: 1, waitlisted_at: "2026-08-24T00:25:00+08:00" },
+      { persisted_status: "WAITLISTED", effective_status: "WAITLISTED", decided_at: "2026-08-24T00:25:00+08:00", waitlist_position: 0, waitlisted_at: "2026-08-24T00:25:00+08:00" },
+      { persisted_status: "JOINED", effective_status: "JOINED", decided_at: "2026-08-24T00:25:00+08:00", waitlisted_at: "2026-08-24T00:25:00+08:00", promoted_at: null },
+      { persisted_status: "JOINED", effective_status: "JOINED", decided_at: "2026-08-24T00:25:00+08:00", waitlisted_at: "2026-08-24T00:30:00+08:00", promoted_at: "2026-08-24T00:25:00+08:00" },
+      { persisted_status: "WAITLISTED", effective_status: "WAITLISTED", decided_at: "2026-08-24T00:25:00+08:00", waitlist_position: 1, waitlisted_at: "2026-08-24T00:17:00+08:00" },
+    ]) rejected(() => decodeOpenGameRegistrationContext(
+      withdrawalContext(contextApplied, invalidViewerPatch),
+    ));
+  });
+
   test.each([
     ["anonymous", false, null, false, "AUTH_REQUIRED"],
     ["apply-ready", true, null, true, null],
@@ -146,6 +212,9 @@ describe("open-game registration response decoders", () => {
       lateExitRecorded: wireRegistration?.late_exit_recorded,
       availableWithdrawalAction: wireRegistration?.available_withdrawal_action,
       lateExitWillBeRecorded: wireRegistration?.late_exit_will_be_recorded,
+      waitlistPosition: wireRegistration?.waitlist_position,
+      waitlistedAt: wireRegistration?.waitlisted_at,
+      promotedAt: wireRegistration?.promoted_at,
     };
 
     expect(decodeOpenGameRegistrationContext(value)).toEqual({
@@ -174,6 +243,8 @@ describe("open-game registration response decoders", () => {
           allowedActions: {
             canAccept: true,
             acceptBlockedReason: null,
+            canWaitlist: false,
+            waitlistBlockedReason: "GAME_NOT_FULL",
             canReject: true,
             rejectBlockedReason: null,
           },
@@ -188,20 +259,83 @@ describe("open-game registration response decoders", () => {
           allowedActions: {
             canAccept: true,
             acceptBlockedReason: null,
+            canWaitlist: false,
+            waitlistBlockedReason: "GAME_NOT_FULL",
             canReject: true,
             rejectBlockedReason: null,
           },
         },
       ],
+      waitlistCount: 0,
+      waitlist: [],
     });
     expect(decodeOpenGameApplicationQueue(fixture("open-game-applications-empty"))).toEqual({
       remainingSpots: 3,
       pendingCount: 0,
       applications: [],
+      waitlistCount: 0,
+      waitlist: [],
     });
     expect(Object.isFrozen(decoded.applications)).toBe(true);
     (input.applications as Array<Record<string, unknown>>)[0].display_name = "被修改";
     expect(decoded.applications[0].displayName).toBe("周末小翼");
+  });
+
+  test("decodes a future non-empty waitlist in strict server position order", () => {
+    const first = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      display_name: "候补一号",
+      position: "DEFENDER",
+      note: null,
+      applied_at: "2026-08-24T00:18:00+08:00",
+      waitlisted_at: "2026-08-24T00:25:00+08:00",
+      waitlist_position: 1,
+    };
+    const value = {
+      ...queuePending,
+      waitlist_count: 2,
+      waitlist: [
+        first,
+        {
+          ...first,
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          display_name: "候补二号",
+          waitlist_position: 2,
+        },
+      ],
+    };
+    expect(decodeOpenGameApplicationQueue(value).waitlist).toEqual([
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        displayName: "候补一号",
+        position: "DEFENDER",
+        note: null,
+        appliedAt: "2026-08-24T00:18:00+08:00",
+        waitlistedAt: "2026-08-24T00:25:00+08:00",
+        waitlistPosition: 1,
+      },
+      {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        displayName: "候补二号",
+        position: "DEFENDER",
+        note: null,
+        appliedAt: "2026-08-24T00:18:00+08:00",
+        waitlistedAt: "2026-08-24T00:25:00+08:00",
+        waitlistPosition: 2,
+      },
+    ]);
+
+    for (const patch of [
+      { waitlist_count: 0 },
+      { waitlist: [{ ...first, waitlist_position: 2 }] },
+      { waitlist: [{ ...first, allowed_actions: {} }] },
+      { waitlist: [{ ...first, waitlisted_at: "2026-08-24T00:17:00+08:00" }] },
+    ]) rejected(() => decodeOpenGameApplicationQueue({
+      ...queuePending,
+      waitlist_count: 1,
+      waitlist: [first],
+      ...patch,
+    }));
   });
 
   test.each([
@@ -219,10 +353,19 @@ describe("open-game registration response decoders", () => {
       allowedActions: {
         canAccept: false,
         acceptBlockedReason: "APPLICATION_NOT_PENDING",
+        canWaitlist: false,
+        waitlistBlockedReason: "APPLICATION_NOT_PENDING",
         canReject: false,
         rejectBlockedReason: "APPLICATION_NOT_PENDING",
       },
     });
+  });
+
+  test("decodes WAITLISTED as a read-only decision response status", () => {
+    expect(decodeOpenGameApplicationDecisionResult({
+      ...decisionJoined,
+      status: "WAITLISTED",
+    }).status).toBe("WAITLISTED");
   });
 
   test("rejects extra or missing fields at every registration nesting boundary", () => {
@@ -333,8 +476,9 @@ describe("open-game registration response decoders", () => {
 
   test("enforces apply and review boolean-to-blocker pairs", () => {
     for (const allowedActions of [
-      { can_apply: true, apply_blocked_reason: "GAME_FULL" },
+      { can_apply: true, apply_blocked_reason: "REGISTRATION_DEADLINE_PASSED" },
       { can_apply: false, apply_blocked_reason: null },
+      { can_apply: false, apply_blocked_reason: "GAME_FULL" },
       { can_apply: false, apply_blocked_reason: "UNKNOWN" },
     ]) rejected(() => decodeOpenGameRegistrationContext({
       ...contextReady,
@@ -342,24 +486,40 @@ describe("open-game registration response decoders", () => {
     }));
 
     for (const allowedActions of [
-      { can_accept: true, accept_blocked_reason: "GAME_FULL", can_reject: true, reject_blocked_reason: null },
-      { can_accept: false, accept_blocked_reason: null, can_reject: true, reject_blocked_reason: null },
-      { can_accept: true, accept_blocked_reason: null, can_reject: true, reject_blocked_reason: "GAME_STARTED" },
-      { can_accept: true, accept_blocked_reason: null, can_reject: false, reject_blocked_reason: null },
-      { can_accept: true, accept_blocked_reason: null, can_reject: false, reject_blocked_reason: "GAME_FULL" },
-      { can_accept: false, accept_blocked_reason: "UNKNOWN", can_reject: true, reject_blocked_reason: null },
+      { can_accept: true, accept_blocked_reason: "GAME_FULL", can_waitlist: false, waitlist_blocked_reason: "GAME_NOT_FULL", can_reject: true, reject_blocked_reason: null },
+      { can_accept: false, accept_blocked_reason: null, can_waitlist: false, waitlist_blocked_reason: "WAITLIST_NOT_ENABLED", can_reject: true, reject_blocked_reason: null },
+      { can_accept: true, accept_blocked_reason: null, can_waitlist: true, waitlist_blocked_reason: null, can_reject: true, reject_blocked_reason: null },
+      { can_accept: true, accept_blocked_reason: null, can_waitlist: false, waitlist_blocked_reason: null, can_reject: true, reject_blocked_reason: null },
+      { can_accept: true, accept_blocked_reason: null, can_waitlist: false, waitlist_blocked_reason: "GAME_NOT_FULL", can_reject: true, reject_blocked_reason: "GAME_STARTED" },
+      { can_accept: true, accept_blocked_reason: null, can_waitlist: false, waitlist_blocked_reason: "GAME_NOT_FULL", can_reject: false, reject_blocked_reason: null },
+      { can_accept: true, accept_blocked_reason: null, can_waitlist: false, waitlist_blocked_reason: "GAME_NOT_FULL", can_reject: false, reject_blocked_reason: "GAME_FULL" },
+      { can_accept: false, accept_blocked_reason: "UNKNOWN", can_waitlist: false, waitlist_blocked_reason: "WAITLIST_NOT_ENABLED", can_reject: true, reject_blocked_reason: null },
+      { can_accept: false, accept_blocked_reason: "GAME_FULL", can_waitlist: false, waitlist_blocked_reason: "GAME_NOT_FULL", can_reject: true, reject_blocked_reason: null },
+      { can_accept: false, accept_blocked_reason: "GAME_STARTED", can_waitlist: false, waitlist_blocked_reason: "GAME_CANCELLED", can_reject: false, reject_blocked_reason: "GAME_STARTED" },
     ]) {
       const value = clone(queuePending);
       (value.applications as Array<Record<string, unknown>>)[0].allowed_actions = allowedActions;
       rejected(() => decodeOpenGameApplicationQueue(value));
     }
+
+    const future = clone(queuePending);
+    (future.applications as Array<Record<string, unknown>>)[0].allowed_actions = {
+      can_accept: false,
+      accept_blocked_reason: "GAME_FULL",
+      can_waitlist: true,
+      waitlist_blocked_reason: null,
+      can_reject: true,
+      reject_blocked_reason: null,
+    };
+    expect(decodeOpenGameApplicationQueue(future).applications[0].allowedActions.canWaitlist)
+      .toBe(true);
   });
 
   test("requires both terminal decision blockers to be APPLICATION_NOT_PENDING", () => {
     for (const allowedActions of [
-      { can_accept: false, accept_blocked_reason: "GAME_CANCELLED", can_reject: false, reject_blocked_reason: "GAME_CANCELLED" },
-      { can_accept: false, accept_blocked_reason: "APPLICATION_NOT_PENDING", can_reject: false, reject_blocked_reason: "GAME_STARTED" },
-      { can_accept: true, accept_blocked_reason: null, can_reject: true, reject_blocked_reason: null },
+      { can_accept: false, accept_blocked_reason: "GAME_CANCELLED", can_waitlist: false, waitlist_blocked_reason: "GAME_CANCELLED", can_reject: false, reject_blocked_reason: "GAME_CANCELLED" },
+      { can_accept: false, accept_blocked_reason: "APPLICATION_NOT_PENDING", can_waitlist: false, waitlist_blocked_reason: "APPLICATION_NOT_PENDING", can_reject: false, reject_blocked_reason: "GAME_STARTED" },
+      { can_accept: true, accept_blocked_reason: null, can_waitlist: false, waitlist_blocked_reason: "GAME_NOT_FULL", can_reject: true, reject_blocked_reason: null },
     ]) rejected(() => decodeOpenGameApplicationDecisionResult({
       ...decisionJoined,
       allowed_actions: allowedActions,
@@ -378,6 +538,9 @@ describe("my open-game applications response decoder", () => {
           id: "40000000-0000-4000-8000-000000000004",
           effectiveStatus: "CANCELLED",
           appliedAt: "2026-08-29T12:00:00+08:00",
+          waitlistPosition: null,
+          waitlistedAt: null,
+          promotedAt: null,
           detailPath: "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345",
           gameName: "周日八人制友谊赛",
           startsAt: "2026-09-06T18:00:00+08:00",
@@ -391,6 +554,9 @@ describe("my open-game applications response decoder", () => {
           id: "40000000-0000-4000-8000-000000000003",
           effectiveStatus: "REJECTED",
           appliedAt: "2026-08-28T12:00:00+08:00",
+          waitlistPosition: null,
+          waitlistedAt: null,
+          promotedAt: null,
           detailPath: "/pages/captain-game-public/index?token=0123456789abcdefghijklmnopqrstuv",
           gameName: "周六七人制训练赛",
           startsAt: "2026-09-05T19:00:00+08:00",
@@ -404,6 +570,9 @@ describe("my open-game applications response decoder", () => {
           id: "40000000-0000-4000-8000-000000000002",
           effectiveStatus: "JOINED",
           appliedAt: "2026-08-27T12:00:00+08:00",
+          waitlistPosition: null,
+          waitlistedAt: null,
+          promotedAt: null,
           detailPath: "/pages/captain-game-public/index?token=zyxwvutsrqponmlkjihgfedcba543210",
           gameName: "周三五人制夜场",
           startsAt: "2026-09-02T20:00:00+08:00",
@@ -417,6 +586,9 @@ describe("my open-game applications response decoder", () => {
           id: "40000000-0000-4000-8000-000000000001",
           effectiveStatus: "APPLIED",
           appliedAt: "2026-08-26T12:00:00+08:00",
+          waitlistPosition: null,
+          waitlistedAt: null,
+          promotedAt: null,
           detailPath: "/pages/captain-game-public/index?token=A1_b2-C3_d4-E5_f6-G7_h8-I9_j0-KL",
           gameName: "周二六人制约球",
           startsAt: "2026-09-01T19:00:00+08:00",
@@ -449,6 +621,42 @@ describe("my open-game applications response decoder", () => {
     },
   );
 
+  test("decodes WAITLISTED and promoted waitlist history for my applications", () => {
+    const value = clone(myApplicationsReady);
+    const first = (value.items as Array<Record<string, unknown>>)[0];
+    first.effective_status = "WAITLISTED";
+    first.waitlist_position = 3;
+    first.waitlisted_at = "2026-08-29T12:05:00+08:00";
+    expect(decodeMyOpenGameApplications(value).items[0]).toMatchObject({
+      effectiveStatus: "WAITLISTED",
+      waitlistPosition: 3,
+      waitlistedAt: "2026-08-29T12:05:00+08:00",
+      promotedAt: null,
+    });
+
+    first.effective_status = "JOINED";
+    first.waitlist_position = null;
+    first.promoted_at = "2026-08-29T12:10:00+08:00";
+    expect(decodeMyOpenGameApplications(value).items[0]).toMatchObject({
+      effectiveStatus: "JOINED",
+      waitlistPosition: null,
+      waitlistedAt: "2026-08-29T12:05:00+08:00",
+      promotedAt: "2026-08-29T12:10:00+08:00",
+    });
+
+    for (const patch of [
+      { effective_status: "WAITLISTED", waitlist_position: null, waitlisted_at: "2026-08-29T12:05:00+08:00" },
+      { effective_status: "WAITLISTED", waitlist_position: 1, waitlisted_at: null },
+      { effective_status: "JOINED", waitlist_position: null, waitlisted_at: "2026-08-29T12:05:00+08:00", promoted_at: null },
+      { effective_status: "JOINED", waitlist_position: null, waitlisted_at: "2026-08-29T12:10:00+08:00", promoted_at: "2026-08-29T12:05:00+08:00" },
+      { effective_status: "CANCELLED", waitlist_position: 1, waitlisted_at: "2026-08-29T12:05:00+08:00", promoted_at: "2026-08-29T12:10:00+08:00" },
+    ]) {
+      const invalidValue = clone(myApplicationsReady);
+      Object.assign((invalidValue.items as Array<Record<string, unknown>>)[0], patch);
+      rejected(() => decodeMyOpenGameApplications(invalidValue));
+    }
+  });
+
   test("rejects extra, private, and missing fields at both closed boundaries", () => {
     rejected(() => decodeMyOpenGameApplications({ ...myApplicationsReady, private: true }));
     const privateItem = clone(myApplicationsReady);
@@ -462,7 +670,7 @@ describe("my open-game applications response decoder", () => {
   test.each([
     ["UUID", "id", "not-a-uuid"],
     ["canonical lowercase UUID", "id", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"],
-    ["status", "effective_status", "WAITLISTED"],
+    ["status", "effective_status", "PENDING"],
     ["RFC3339 applied time", "applied_at", "2026-08-29 12:00:00"],
     ["shared detail path", "detail_path", "/pages/captain-game-public/index?token=too-short"],
     ["IANA time zone", "time_zone", "Shanghai"],

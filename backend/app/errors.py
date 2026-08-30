@@ -8,6 +8,46 @@ from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
 
+_OPEN_GAME_COMMON_REVIEW_BLOCKERS = (
+    "APPLICATION_NOT_PENDING",
+    "GAME_SUSPENDED",
+    "GAME_CANCELLED",
+    "GAME_COMPLETED",
+    "GAME_STARTED",
+)
+
+
+def open_game_review_action_matrix_schema() -> list[dict[str, Any]]:
+    """Return the closed current/future read matrices for review actions."""
+    matrices: list[
+        tuple[bool, str | None, bool, str | None, bool, str | None]
+    ] = [
+        (True, None, False, "GAME_NOT_FULL", True, None),
+        (False, "GAME_FULL", False, "WAITLIST_NOT_ENABLED", True, None),
+        (False, "GAME_FULL", True, None, True, None),
+    ]
+    matrices.extend(
+        (False, blocker, False, blocker, False, blocker)
+        for blocker in _OPEN_GAME_COMMON_REVIEW_BLOCKERS
+    )
+    fields = (
+        "can_accept",
+        "accept_blocked_reason",
+        "can_waitlist",
+        "waitlist_blocked_reason",
+        "can_reject",
+        "reject_blocked_reason",
+    )
+    return [
+        {
+            "properties": {
+                field: {"const": value}
+                for field, value in zip(fields, matrix, strict=True)
+            }
+        }
+        for matrix in matrices
+    ]
+
 
 class ErrorBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -387,7 +427,6 @@ def align_error_schemas_openapi(schema: dict[str, Any]) -> None:
                     "ALREADY_APPLIED",
                     "GAME_NOT_PUBLISHED",
                     "REGISTRATION_DEADLINE_PASSED",
-                    "GAME_FULL",
                     "GAME_SUSPENDED",
                     "GAME_CANCELLED",
                     "GAME_COMPLETED",
@@ -405,12 +444,26 @@ def align_error_schemas_openapi(schema: dict[str, Any]) -> None:
                     "GAME_FULL",
                 ],
             },
+            "OpenGameWaitlistBlockedReason": {
+                "type": "string",
+                "enum": [
+                    "APPLICATION_NOT_PENDING",
+                    "GAME_SUSPENDED",
+                    "GAME_CANCELLED",
+                    "GAME_COMPLETED",
+                    "GAME_STARTED",
+                    "GAME_NOT_FULL",
+                    "WAITLIST_NOT_ENABLED",
+                ],
+            },
             "OpenGameReviewActions": {
                 "type": "object",
                 "additionalProperties": False,
                 "required": [
                     "can_accept",
                     "accept_blocked_reason",
+                    "can_waitlist",
+                    "waitlist_blocked_reason",
                     "can_reject",
                     "reject_blocked_reason",
                 ],
@@ -422,6 +475,18 @@ def align_error_schemas_openapi(schema: dict[str, Any]) -> None:
                                 "$ref": (
                                     "#/components/schemas/"
                                     "OpenGameReviewBlockedReason"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "can_waitlist": {"type": "boolean"},
+                    "waitlist_blocked_reason": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameWaitlistBlockedReason"
                                 )
                             },
                             {"type": "null"},
@@ -466,6 +531,27 @@ def align_error_schemas_openapi(schema: dict[str, Any]) -> None:
                         "oneOf": [
                             {
                                 "properties": {
+                                    "can_waitlist": {"const": True},
+                                    "waitlist_blocked_reason": {"const": None},
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "can_waitlist": {"const": False},
+                                    "waitlist_blocked_reason": {
+                                        "$ref": (
+                                            "#/components/schemas/"
+                                            "OpenGameWaitlistBlockedReason"
+                                        )
+                                    },
+                                }
+                            },
+                        ]
+                    },
+                    {
+                        "oneOf": [
+                            {
+                                "properties": {
                                     "can_reject": {"const": True},
                                     "reject_blocked_reason": {"const": None},
                                 }
@@ -487,7 +573,16 @@ def align_error_schemas_openapi(schema: dict[str, Any]) -> None:
                             },
                         ]
                     },
+                    {
+                        "not": {
+                            "properties": {
+                                "can_accept": {"const": True},
+                                "can_waitlist": {"const": True},
+                            }
+                        }
+                    },
                 ],
+                "oneOf": open_game_review_action_matrix_schema(),
             },
         }
     )

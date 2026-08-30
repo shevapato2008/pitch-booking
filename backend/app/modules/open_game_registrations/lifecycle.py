@@ -13,6 +13,7 @@ from backend.app.modules.open_games.lifecycle import EffectiveOpenGameState
 
 class EffectiveRegistrationStatus(StrEnum):
     APPLIED = "APPLIED"
+    WAITLISTED = "WAITLISTED"
     JOINED = "JOINED"
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
@@ -24,9 +25,15 @@ class WithdrawalAction(StrEnum):
     LEAVE_GAME = "LEAVE_GAME"
 
 
+class AvailableWithdrawalAction(StrEnum):
+    WITHDRAW_APPLICATION = "WITHDRAW_APPLICATION"
+    WITHDRAW_WAITLIST = "WITHDRAW_WAITLIST"
+    LEAVE_GAME = "LEAVE_GAME"
+
+
 @dataclass(frozen=True, slots=True)
 class AvailableWithdrawal:
-    action: WithdrawalAction | None
+    action: AvailableWithdrawalAction | None
     late_exit_will_be_recorded: bool
 
 
@@ -36,7 +43,6 @@ class ApplyBlockedReason(StrEnum):
     ALREADY_APPLIED = "ALREADY_APPLIED"
     GAME_NOT_PUBLISHED = "GAME_NOT_PUBLISHED"
     REGISTRATION_DEADLINE_PASSED = "REGISTRATION_DEADLINE_PASSED"
-    GAME_FULL = "GAME_FULL"
     GAME_SUSPENDED = "GAME_SUSPENDED"
     GAME_CANCELLED = "GAME_CANCELLED"
     GAME_COMPLETED = "GAME_COMPLETED"
@@ -50,6 +56,27 @@ class ReviewBlockedReason(StrEnum):
     GAME_COMPLETED = "GAME_COMPLETED"
     GAME_STARTED = "GAME_STARTED"
     GAME_FULL = "GAME_FULL"
+
+
+class WaitlistBlockedReason(StrEnum):
+    APPLICATION_NOT_PENDING = "APPLICATION_NOT_PENDING"
+    GAME_SUSPENDED = "GAME_SUSPENDED"
+    GAME_CANCELLED = "GAME_CANCELLED"
+    GAME_COMPLETED = "GAME_COMPLETED"
+    GAME_STARTED = "GAME_STARTED"
+    GAME_NOT_FULL = "GAME_NOT_FULL"
+    WAITLIST_NOT_ENABLED = "WAITLIST_NOT_ENABLED"
+
+
+_COMMON_REVIEW_BLOCKERS = frozenset(
+    {
+        ReviewBlockedReason.APPLICATION_NOT_PENDING,
+        ReviewBlockedReason.GAME_SUSPENDED,
+        ReviewBlockedReason.GAME_CANCELLED,
+        ReviewBlockedReason.GAME_COMPLETED,
+        ReviewBlockedReason.GAME_STARTED,
+    }
+)
 
 
 class _FrozenClosedModel(BaseModel):
@@ -70,6 +97,8 @@ class ApplyActions(_FrozenClosedModel):
 class ReviewActions(_FrozenClosedModel):
     can_accept: Annotated[bool, Field(strict=True)]
     accept_blocked_reason: ReviewBlockedReason | None
+    can_waitlist: Annotated[bool, Field(strict=True)]
+    waitlist_blocked_reason: WaitlistBlockedReason | None
     can_reject: Annotated[bool, Field(strict=True)]
     reject_blocked_reason: ReviewBlockedReason | None
 
@@ -79,12 +108,46 @@ class ReviewActions(_FrozenClosedModel):
             raise ValueError(
                 "can_accept must correspond exactly to accept_blocked_reason"
             )
+        if self.can_waitlist is not (self.waitlist_blocked_reason is None):
+            raise ValueError(
+                "can_waitlist must correspond exactly to waitlist_blocked_reason"
+            )
         if self.can_reject is not (self.reject_blocked_reason is None):
             raise ValueError(
                 "can_reject must correspond exactly to reject_blocked_reason"
             )
         if self.reject_blocked_reason is ReviewBlockedReason.GAME_FULL:
             raise ValueError("GAME_FULL must not block rejection")
+        if self.can_accept and self.can_waitlist:
+            raise ValueError("accept and waitlist actions must be mutually exclusive")
+        capacity_available = (
+            self.can_accept
+            and not self.can_waitlist
+            and self.waitlist_blocked_reason is WaitlistBlockedReason.GAME_NOT_FULL
+            and self.can_reject
+        )
+        full_capacity = (
+            not self.can_accept
+            and self.accept_blocked_reason is ReviewBlockedReason.GAME_FULL
+            and self.can_reject
+            and (
+                self.can_waitlist
+                or self.waitlist_blocked_reason
+                is WaitlistBlockedReason.WAITLIST_NOT_ENABLED
+            )
+        )
+        common_blocked = (
+            not self.can_accept
+            and not self.can_waitlist
+            and not self.can_reject
+            and self.accept_blocked_reason in _COMMON_REVIEW_BLOCKERS
+            and self.reject_blocked_reason is self.accept_blocked_reason
+            and self.waitlist_blocked_reason is not None
+            and self.waitlist_blocked_reason.value
+            == self.accept_blocked_reason.value
+        )
+        if not (capacity_available or full_capacity or common_blocked):
+            raise ValueError("review actions do not match a supported authority matrix")
         return self
 
 
@@ -123,10 +186,6 @@ def project_apply_actions(facts: RegistrationFacts, now: datetime) -> ApplyActio
         blocker = ApplyBlockedReason.OWNER_CANNOT_APPLY
     elif now >= facts.registration_deadline:
         blocker = ApplyBlockedReason.REGISTRATION_DEADLINE_PASSED
-    elif remaining_spots(
-        open_spots=facts.open_spots, joined_count=facts.joined_count
-    ) == 0:
-        blocker = ApplyBlockedReason.GAME_FULL
     elif not facts.viewer_authenticated:
         blocker = ApplyBlockedReason.AUTH_REQUIRED
     else:
@@ -144,6 +203,8 @@ def project_review_actions(
         return ReviewActions(
             can_accept=False,
             accept_blocked_reason=common_blocker,
+            can_waitlist=False,
+            waitlist_blocked_reason=WaitlistBlockedReason(common_blocker.value),
             can_reject=False,
             reject_blocked_reason=common_blocker,
         )
@@ -153,12 +214,16 @@ def project_review_actions(
         return ReviewActions(
             can_accept=False,
             accept_blocked_reason=ReviewBlockedReason.GAME_FULL,
+            can_waitlist=False,
+            waitlist_blocked_reason=WaitlistBlockedReason.WAITLIST_NOT_ENABLED,
             can_reject=True,
             reject_blocked_reason=None,
         )
     return ReviewActions(
         can_accept=True,
         accept_blocked_reason=None,
+        can_waitlist=False,
+        waitlist_blocked_reason=WaitlistBlockedReason.GAME_NOT_FULL,
         can_reject=True,
         reject_blocked_reason=None,
     )
@@ -188,12 +253,12 @@ def project_available_withdrawal(
         return AvailableWithdrawal(action=None, late_exit_will_be_recorded=False)
     if persisted_status is OpenGameRegistrationStatus.APPLIED:
         return AvailableWithdrawal(
-            action=WithdrawalAction.WITHDRAW_APPLICATION,
+            action=AvailableWithdrawalAction.WITHDRAW_APPLICATION,
             late_exit_will_be_recorded=False,
         )
     if persisted_status is OpenGameRegistrationStatus.JOINED:
         return AvailableWithdrawal(
-            action=WithdrawalAction.LEAVE_GAME,
+            action=AvailableWithdrawalAction.LEAVE_GAME,
             late_exit_will_be_recorded=now > starts_at - timedelta(hours=6),
         )
     return AvailableWithdrawal(action=None, late_exit_will_be_recorded=False)

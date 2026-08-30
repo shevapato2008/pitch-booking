@@ -238,13 +238,23 @@ def _assert_queue(
 ) -> dict[str, Any]:
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert set(payload) == {"remaining_spots", "pending_count", "applications"}
+    assert set(payload) == {
+        "remaining_spots",
+        "pending_count",
+        "applications",
+        "waitlist_count",
+        "waitlist",
+    }
     assert payload["pending_count"] == len(payload["applications"])
+    assert payload["waitlist_count"] == 0
+    assert payload["waitlist"] == []
     for application in payload["applications"]:
         assert set(application) == CAPTAIN_APPLICATION_FIELDS
         assert set(application["allowed_actions"]) == {
             "can_accept",
             "accept_blocked_reason",
+            "can_waitlist",
+            "waitlist_blocked_reason",
             "can_reject",
             "reject_blocked_reason",
         }

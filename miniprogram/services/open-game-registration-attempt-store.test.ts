@@ -200,6 +200,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["withdraw missing token", { ...withdrawAttempt, shareToken: undefined }],
     ["withdraw invalid application id", { ...withdrawAttempt, applicationId: "not-a-uuid" }],
     ["withdraw unknown action", { ...withdrawAttempt, action: "AUTO" }],
+    ["withdraw waitlist remains closed", { ...withdrawAttempt, action: "WITHDRAW_WAITLIST" }],
     ["withdraw zero expected version", { ...withdrawAttempt, expectedVersion: 0 }],
   ])("rejects an invalid begin with zero persistence writes: %s", (_label, invalid) => {
     const storage = memoryStorage();
@@ -216,6 +217,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["extra attempt property", { ...applyAttempt, extra: true }],
     ["malformed nested body", { ...applyAttempt, body: { ...body, note: undefined } }],
     ["invalid decision", { ...decisionAttempt, decision: "WAITLIST" }],
+    ["invalid withdrawal", { ...withdrawAttempt, action: "WITHDRAW_WAITLIST" }],
   ])("self-clears corrupt persisted state: %s", (_label, invalid) => {
     const storage = memoryStorage([[KEY, invalid]]);
     const store = createOpenGameRegistrationAttemptStore(storage);

@@ -14,6 +14,8 @@ from backend.app.models import (
 from backend.app.modules.open_game_registrations.dto import (
     CaptainApplication,
     MyOpenGameApplication,
+    RegistrationPersistedStatus,
+    RegistrationWithdrawalKind,
     ViewerRegistration,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
@@ -44,6 +46,9 @@ VIEWER_REGISTRATION_FIELDS = frozenset(
         "late_exit_recorded",
         "available_withdrawal_action",
         "late_exit_will_be_recorded",
+        "waitlist_position",
+        "waitlisted_at",
+        "promoted_at",
     }
 )
 
@@ -64,6 +69,9 @@ MY_OPEN_GAME_APPLICATION_FIELDS = frozenset(
         "id",
         "effective_status",
         "applied_at",
+        "waitlist_position",
+        "waitlisted_at",
+        "promoted_at",
         "detail_path",
         "game_name",
         "starts_at",
@@ -105,7 +113,7 @@ def project_viewer_registration(
         display_name=display_name,
         position=position,
         note=note,
-        persisted_status=persisted_status,
+        persisted_status=RegistrationPersistedStatus(persisted_status.value),
         effective_status=project_effective_registration_status(
             persisted_status, game_state
         ),
@@ -113,10 +121,17 @@ def project_viewer_registration(
         applied_at=applied_at,
         decided_at=decided_at,
         withdrawn_at=withdrawn_at,
-        withdrawal_kind=withdrawal_kind,
+        withdrawal_kind=(
+            RegistrationWithdrawalKind(withdrawal_kind.value)
+            if withdrawal_kind is not None
+            else None
+        ),
         late_exit_recorded=late_exit_recorded,
         available_withdrawal_action=withdrawal.action,
         late_exit_will_be_recorded=withdrawal.late_exit_will_be_recorded,
+        waitlist_position=None,
+        waitlisted_at=None,
+        promoted_at=None,
     )
 
 
@@ -159,6 +174,9 @@ def project_my_open_game_application(
             projection.state,
         ),
         applied_at=applied_at,
+        waitlist_position=None,
+        waitlisted_at=None,
+        promoted_at=None,
         detail_path=f"/pages/captain-game-public/index?token={share_token}",
         game_name=public.name,
         starts_at=public.starts_at,

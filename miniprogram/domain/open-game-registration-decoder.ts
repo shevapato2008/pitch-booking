@@ -14,6 +14,7 @@ import { OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES } from "./open-game-registrat
 import { OPEN_GAME_POSITIONS, type OpenGamePosition } from "./open-game";
 import type {
   CaptainOpenGameApplication,
+  CaptainOpenGameWaitlistApplication,
   OpenGameApplicationDecisionResult,
   OpenGameApplicationDraft,
   OpenGameApplicationDraftValidation,
@@ -24,10 +25,11 @@ import type {
   OpenGameApplyActions,
   OpenGameApplyBlockedReason,
   OpenGameRegistrationContext,
+  OpenGameRegistrationAvailableWithdrawalAction,
   OpenGameReviewActions,
   OpenGameReviewBlockedReason,
+  OpenGameWaitlistBlockedReason,
   OpenGameViewerRegistration,
-  OpenGameRegistrationWithdrawalAction,
   OpenGameRegistrationWithdrawalKind,
 } from "./open-game-registration";
 
@@ -37,7 +39,6 @@ const APPLY_BLOCKED_REASONS = [
   "ALREADY_APPLIED",
   "GAME_NOT_PUBLISHED",
   "REGISTRATION_DEADLINE_PASSED",
-  "GAME_FULL",
   "GAME_SUSPENDED",
   "GAME_CANCELLED",
   "GAME_COMPLETED",
@@ -51,10 +52,25 @@ const REVIEW_BLOCKED_REASONS = [
   "GAME_STARTED",
   "GAME_FULL",
 ] as const;
-const PERSISTED_STATUSES = ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN"] as const;
+const WAITLIST_BLOCKED_REASONS = [
+  "APPLICATION_NOT_PENDING",
+  "GAME_SUSPENDED",
+  "GAME_CANCELLED",
+  "GAME_COMPLETED",
+  "GAME_STARTED",
+  "GAME_NOT_FULL",
+  "WAITLIST_NOT_ENABLED",
+] as const;
+const PERSISTED_STATUSES = [
+  "APPLIED", "WAITLISTED", "JOINED", "REJECTED", "WITHDRAWN",
+] as const;
 const EFFECTIVE_STATUSES = OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES;
-const WITHDRAWAL_ACTIONS = ["WITHDRAW_APPLICATION", "LEAVE_GAME"] as const;
-const WITHDRAWAL_KINDS = ["APPLICATION_WITHDRAWAL", "GAME_EXIT"] as const;
+const AVAILABLE_WITHDRAWAL_ACTIONS = [
+  "WITHDRAW_APPLICATION", "WITHDRAW_WAITLIST", "LEAVE_GAME",
+] as const;
+const WITHDRAWAL_KINDS = [
+  "APPLICATION_WITHDRAWAL", "WAITLIST_WITHDRAWAL", "GAME_EXIT",
+] as const;
 
 const CONTEXT_KEYS = [
   "game", "remaining_spots", "viewer_authenticated", "viewer_registration", "allowed_actions",
@@ -62,19 +78,27 @@ const CONTEXT_KEYS = [
 const VIEWER_REGISTRATION_KEYS = [
   "id", "version", "display_name", "position", "note", "persisted_status", "effective_status",
   "applied_at", "decided_at", "withdrawn_at", "withdrawal_kind", "late_exit_recorded",
-  "available_withdrawal_action", "late_exit_will_be_recorded",
+  "available_withdrawal_action", "late_exit_will_be_recorded", "waitlist_position",
+  "waitlisted_at", "promoted_at",
 ] as const;
-const QUEUE_KEYS = ["remaining_spots", "pending_count", "applications"] as const;
+const QUEUE_KEYS = [
+  "remaining_spots", "pending_count", "applications", "waitlist_count", "waitlist",
+] as const;
 const CAPTAIN_APPLICATION_KEYS = [
   "id", "display_name", "position", "note", "applied_at", "version", "allowed_actions",
+] as const;
+const CAPTAIN_WAITLIST_APPLICATION_KEYS = [
+  "id", "display_name", "position", "note", "applied_at", "waitlisted_at",
+  "waitlist_position",
 ] as const;
 const DECISION_RESULT_KEYS = [
   "application_id", "status", "version", "decided_at", "remaining_spots", "allowed_actions",
 ] as const;
 const MY_APPLICATION_PAGE_KEYS = ["items", "next_cursor"] as const;
 const MY_APPLICATION_ITEM_KEYS = [
-  "id", "effective_status", "applied_at", "detail_path", "game_name", "starts_at",
-  "ends_at", "time_zone", "venue_name", "pitch_name", "pitch_specification",
+  "id", "effective_status", "applied_at", "waitlist_position", "waitlisted_at", "promoted_at",
+  "detail_path", "game_name", "starts_at", "ends_at", "time_zone", "venue_name", "pitch_name",
+  "pitch_specification",
 ] as const;
 const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
 
@@ -112,6 +136,10 @@ function nullableRfc3339At(value: unknown, path: string): string | null {
   return value === null ? null : rfc3339At(value, path);
 }
 
+function nullablePositiveIntegerAt(value: unknown, path: string): number | null {
+  return value === null ? null : safeIntegerAt(value, path, 1);
+}
+
 function decodeApplyActions(value: unknown, path: string): OpenGameApplyActions {
   const object = exactObject(value, ["can_apply", "apply_blocked_reason"], path);
   const canApply = booleanAt(object.can_apply, `${path}.can_apply`);
@@ -125,21 +153,58 @@ function decodeApplyActions(value: unknown, path: string): OpenGameApplyActions 
 function decodeReviewActions(value: unknown, path: string): OpenGameReviewActions {
   const object = exactObject(
     value,
-    ["can_accept", "accept_blocked_reason", "can_reject", "reject_blocked_reason"],
+    [
+      "can_accept", "accept_blocked_reason", "can_waitlist", "waitlist_blocked_reason",
+      "can_reject", "reject_blocked_reason",
+    ],
     path,
   );
   const canAccept = booleanAt(object.can_accept, `${path}.can_accept`);
   const acceptBlockedReason: OpenGameReviewBlockedReason | null = object.accept_blocked_reason === null
     ? null
     : enumAt(object.accept_blocked_reason, REVIEW_BLOCKED_REASONS, `${path}.accept_blocked_reason`);
+  const canWaitlist = booleanAt(object.can_waitlist, `${path}.can_waitlist`);
+  const waitlistBlockedReason: OpenGameWaitlistBlockedReason | null =
+    object.waitlist_blocked_reason === null
+      ? null
+      : enumAt(
+        object.waitlist_blocked_reason,
+        WAITLIST_BLOCKED_REASONS,
+        `${path}.waitlist_blocked_reason`,
+      );
   const canReject = booleanAt(object.can_reject, `${path}.can_reject`);
   const rejectBlockedReason: OpenGameReviewBlockedReason | null = object.reject_blocked_reason === null
     ? null
     : enumAt(object.reject_blocked_reason, REVIEW_BLOCKED_REASONS, `${path}.reject_blocked_reason`);
+  const capacityAvailable = canAccept
+    && !canWaitlist
+    && waitlistBlockedReason === "GAME_NOT_FULL"
+    && canReject;
+  const fullCapacity = !canAccept
+    && acceptBlockedReason === "GAME_FULL"
+    && canReject
+    && (canWaitlist || waitlistBlockedReason === "WAITLIST_NOT_ENABLED");
+  const commonBlocked = !canAccept
+    && !canWaitlist
+    && !canReject
+    && acceptBlockedReason !== null
+    && acceptBlockedReason !== "GAME_FULL"
+    && rejectBlockedReason === acceptBlockedReason
+    && waitlistBlockedReason === acceptBlockedReason;
   if (canAccept !== (acceptBlockedReason === null)
+    || canWaitlist !== (waitlistBlockedReason === null)
     || canReject !== (rejectBlockedReason === null)
-    || rejectBlockedReason === "GAME_FULL") invalid(path);
-  return Object.freeze({ canAccept, acceptBlockedReason, canReject, rejectBlockedReason });
+    || rejectBlockedReason === "GAME_FULL"
+    || (canAccept && canWaitlist)
+    || (!capacityAvailable && !fullCapacity && !commonBlocked)) invalid(path);
+  return Object.freeze({
+    canAccept,
+    acceptBlockedReason,
+    canWaitlist,
+    waitlistBlockedReason,
+    canReject,
+    rejectBlockedReason,
+  });
 }
 
 function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerRegistration {
@@ -161,38 +226,85 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     ? null
     : enumAt(object.withdrawal_kind, WITHDRAWAL_KINDS, `${path}.withdrawal_kind`);
   const lateExitRecorded = booleanAt(object.late_exit_recorded, `${path}.late_exit_recorded`);
-  const availableWithdrawalAction: OpenGameRegistrationWithdrawalAction | null =
+  const availableWithdrawalAction: OpenGameRegistrationAvailableWithdrawalAction | null =
     object.available_withdrawal_action === null
       ? null
       : enumAt(
         object.available_withdrawal_action,
-        WITHDRAWAL_ACTIONS,
+        AVAILABLE_WITHDRAWAL_ACTIONS,
         `${path}.available_withdrawal_action`,
       );
   const lateExitWillBeRecorded = booleanAt(
     object.late_exit_will_be_recorded,
     `${path}.late_exit_will_be_recorded`,
   );
+  const waitlistPosition = nullablePositiveIntegerAt(
+    object.waitlist_position,
+    `${path}.waitlist_position`,
+  );
+  const waitlistedAt = nullableRfc3339At(object.waitlisted_at, `${path}.waitlisted_at`);
+  const promotedAt = nullableRfc3339At(object.promoted_at, `${path}.promoted_at`);
 
   if (effectiveStatus !== persistedStatus && effectiveStatus !== "CANCELLED") invalid(path);
-  if (persistedStatus === "APPLIED" && decidedAt !== null) invalid(`${path}.decided_at`);
-  if ((persistedStatus === "JOINED" || persistedStatus === "REJECTED") && decidedAt === null) {
-    invalid(`${path}.decided_at`);
+  for (const [field, value] of [
+    ["decided_at", decidedAt],
+    ["withdrawn_at", withdrawnAt],
+    ["waitlisted_at", waitlistedAt],
+    ["promoted_at", promotedAt],
+  ] as const) {
+    if (value !== null && rfc3339Before(value, appliedAt)) invalid(`${path}.${field}`);
   }
+  if (decidedAt !== null && waitlistedAt !== null && rfc3339Before(waitlistedAt, decidedAt)) {
+    invalid(`${path}.waitlisted_at`);
+  }
+  if (promotedAt !== null
+    && (waitlistedAt === null || rfc3339Before(promotedAt, waitlistedAt))) {
+    invalid(`${path}.promoted_at`);
+  }
+  if (withdrawnAt !== null) {
+    for (const [field, value] of [
+      ["decided_at", decidedAt],
+      ["waitlisted_at", waitlistedAt],
+      ["promoted_at", promotedAt],
+    ] as const) {
+      if (value !== null && rfc3339Before(withdrawnAt, value)) invalid(`${path}.${field}`);
+    }
+  }
+
+  const noWaitlistHistory = waitlistPosition === null
+    && waitlistedAt === null
+    && promotedAt === null;
+  const promotedHistory = waitlistPosition === null
+    && waitlistedAt !== null
+    && promotedAt !== null;
+  if (persistedStatus === "APPLIED") {
+    if (decidedAt !== null || !noWaitlistHistory) invalid(path);
+  } else if (persistedStatus === "WAITLISTED") {
+    if (decidedAt === null || waitlistPosition === null
+      || waitlistedAt === null || promotedAt !== null) invalid(path);
+  } else if (persistedStatus === "JOINED") {
+    if (decidedAt === null || (!noWaitlistHistory && !promotedHistory)) invalid(path);
+  } else if (persistedStatus === "REJECTED") {
+    if (decidedAt === null || !noWaitlistHistory) invalid(path);
+  }
+
   if (persistedStatus !== "WITHDRAWN") {
     if (withdrawnAt !== null || withdrawalKind !== null || lateExitRecorded) invalid(path);
   } else {
     if (withdrawnAt === null || withdrawalKind === null) invalid(path);
-    if (rfc3339Before(withdrawnAt, appliedAt)) invalid(`${path}.withdrawn_at`);
     if (withdrawalKind === "APPLICATION_WITHDRAWAL") {
-      if (decidedAt !== null || lateExitRecorded) invalid(path);
-    } else {
-      if (decidedAt === null || rfc3339Before(withdrawnAt, decidedAt)) invalid(path);
+      if (decidedAt !== null || !noWaitlistHistory || lateExitRecorded) invalid(path);
+    } else if (withdrawalKind === "WAITLIST_WITHDRAWAL") {
+      if (decidedAt === null || waitlistPosition !== null || waitlistedAt === null
+        || promotedAt !== null || lateExitRecorded) invalid(path);
+    } else if (decidedAt === null || (!noWaitlistHistory && !promotedHistory)) {
+      invalid(path);
     }
   }
   if (availableWithdrawalAction !== null) {
     if (effectiveStatus === "CANCELLED"
       || (availableWithdrawalAction === "WITHDRAW_APPLICATION" && persistedStatus !== "APPLIED")
+      || (availableWithdrawalAction === "WITHDRAW_WAITLIST" && persistedStatus !== "WAITLISTED")
       || (availableWithdrawalAction === "LEAVE_GAME" && persistedStatus !== "JOINED")) invalid(path);
   }
   if (lateExitWillBeRecorded && availableWithdrawalAction !== "LEAVE_GAME") invalid(path);
@@ -215,6 +327,9 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     lateExitRecorded,
     availableWithdrawalAction,
     lateExitWillBeRecorded,
+    waitlistPosition,
+    waitlistedAt,
+    promotedAt,
   });
 }
 
@@ -231,6 +346,25 @@ function decodeCaptainApplication(value: unknown, path: string): CaptainOpenGame
   });
 }
 
+function decodeCaptainWaitlistApplication(
+  value: unknown,
+  path: string,
+): CaptainOpenGameWaitlistApplication {
+  const object = exactObject(value, CAPTAIN_WAITLIST_APPLICATION_KEYS, path);
+  const appliedAt = rfc3339At(object.applied_at, `${path}.applied_at`);
+  const waitlistedAt = rfc3339At(object.waitlisted_at, `${path}.waitlisted_at`);
+  if (rfc3339Before(waitlistedAt, appliedAt)) invalid(`${path}.waitlisted_at`);
+  return Object.freeze({
+    id: uuidAt(object.id, `${path}.id`),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
+    note: nullableBoundedStringAt(object.note, `${path}.note`, 120),
+    appliedAt,
+    waitlistedAt,
+    waitlistPosition: safeIntegerAt(object.waitlist_position, `${path}.waitlist_position`, 1),
+  });
+}
+
 function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicationItem {
   const object = exactObject(value, MY_APPLICATION_ITEM_KEYS, path);
   const id = uuidAt(object.id, `${path}.id`);
@@ -240,14 +374,49 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
   const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
   const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
   if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
+  const effectiveStatus = enumAt(
+    object.effective_status,
+    EFFECTIVE_STATUSES,
+    `${path}.effective_status`,
+  );
+  const appliedAt = rfc3339At(object.applied_at, `${path}.applied_at`);
+  const waitlistPosition = nullablePositiveIntegerAt(
+    object.waitlist_position,
+    `${path}.waitlist_position`,
+  );
+  const waitlistedAt = nullableRfc3339At(object.waitlisted_at, `${path}.waitlisted_at`);
+  const promotedAt = nullableRfc3339At(object.promoted_at, `${path}.promoted_at`);
+  if (waitlistedAt !== null && rfc3339Before(waitlistedAt, appliedAt)) {
+    invalid(`${path}.waitlisted_at`);
+  }
+  if (promotedAt !== null
+    && (waitlistedAt === null || rfc3339Before(promotedAt, waitlistedAt))) {
+    invalid(`${path}.promoted_at`);
+  }
+  const noHistory = waitlistPosition === null && waitlistedAt === null && promotedAt === null;
+  const currentWaitlist = waitlistPosition !== null
+    && waitlistedAt !== null
+    && promotedAt === null;
+  const withdrawnWaitlist = waitlistPosition === null
+    && waitlistedAt !== null
+    && promotedAt === null;
+  const promotedHistory = waitlistPosition === null
+    && waitlistedAt !== null
+    && promotedAt !== null;
+  if ((effectiveStatus === "WAITLISTED" && !currentWaitlist)
+    || (effectiveStatus === "JOINED" && !noHistory && !promotedHistory)
+    || ((effectiveStatus === "APPLIED" || effectiveStatus === "REJECTED") && !noHistory)
+    || (effectiveStatus === "WITHDRAWN"
+      && !noHistory && !withdrawnWaitlist && !promotedHistory)
+    || (effectiveStatus === "CANCELLED"
+      && !noHistory && !currentWaitlist && !withdrawnWaitlist && !promotedHistory)) invalid(path);
   return Object.freeze({
     id,
-    effectiveStatus: enumAt(
-      object.effective_status,
-      EFFECTIVE_STATUSES,
-      `${path}.effective_status`,
-    ),
-    appliedAt: rfc3339At(object.applied_at, `${path}.applied_at`),
+    effectiveStatus,
+    appliedAt,
+    waitlistPosition,
+    waitlistedAt,
+    promotedAt,
     detailPath,
     gameName: stringAt(object.game_name, `${path}.game_name`),
     startsAt,
@@ -280,10 +449,27 @@ export function decodeOpenGameApplicationQueue(value: unknown): OpenGameApplicat
   const applications = Object.freeze(arrayAt(object.applications, "$.applications").map(
     (application, index) => decodeCaptainApplication(application, `$.applications[${index}]`),
   ));
+  const waitlist = Object.freeze(arrayAt(object.waitlist, "$.waitlist").map(
+    (application, index) => decodeCaptainWaitlistApplication(
+      application,
+      `$.waitlist[${index}]`,
+    ),
+  ));
+  const pendingCount = safeIntegerAt(object.pending_count, "$.pending_count");
+  const waitlistCount = safeIntegerAt(object.waitlist_count, "$.waitlist_count");
+  if (pendingCount !== applications.length) invalid("$.pending_count");
+  if (waitlistCount !== waitlist.length) invalid("$.waitlist_count");
+  waitlist.forEach((application, index) => {
+    if (application.waitlistPosition !== index + 1) {
+      invalid(`$.waitlist[${index}].waitlist_position`);
+    }
+  });
   return Object.freeze({
     remainingSpots: safeIntegerAt(object.remaining_spots, "$.remaining_spots"),
-    pendingCount: safeIntegerAt(object.pending_count, "$.pending_count"),
+    pendingCount,
     applications,
+    waitlistCount,
+    waitlist,
   });
 }
 
@@ -317,14 +503,15 @@ export function decodeOpenGameApplicationDecisionResult(
 ): OpenGameApplicationDecisionResult {
   const object = exactObject(value, DECISION_RESULT_KEYS, "$" );
   const allowedActions = decodeReviewActions(object.allowed_actions, "$.allowed_actions");
-  if (allowedActions.canAccept || allowedActions.canReject
+  if (allowedActions.canAccept || allowedActions.canWaitlist || allowedActions.canReject
     || allowedActions.acceptBlockedReason !== "APPLICATION_NOT_PENDING"
+    || allowedActions.waitlistBlockedReason !== "APPLICATION_NOT_PENDING"
     || allowedActions.rejectBlockedReason !== "APPLICATION_NOT_PENDING") {
     invalid("$.allowed_actions");
   }
   return Object.freeze({
     applicationId: uuidAt(object.application_id, "$.application_id"),
-    status: enumAt(object.status, ["JOINED", "REJECTED"] as const, "$.status"),
+    status: enumAt(object.status, ["WAITLISTED", "JOINED", "REJECTED"] as const, "$.status"),
     version: safeIntegerAt(object.version, "$.version", 1),
     decidedAt: nullableRfc3339At(object.decided_at, "$.decided_at"),
     remainingSpots: safeIntegerAt(object.remaining_spots, "$.remaining_spots"),

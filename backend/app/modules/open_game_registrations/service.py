@@ -406,6 +406,8 @@ class OpenGameRegistrationService:
                 ),
                 pending_count=len(applications),
                 applications=applications,
+                waitlist_count=0,
+                waitlist=(),
             )
         except AppError:
             self._repository.rollback()
@@ -428,6 +430,8 @@ class OpenGameRegistrationService:
         idempotency_key: str,
         request: WithdrawalRequest,
     ) -> RegistrationContext:
+        if not isinstance(request.action, WithdrawalAction):
+            raise _invalid_argument()
         try:
             target = self._repository.locate_withdrawal_target(
                 application_id=application_id,
@@ -489,18 +493,24 @@ class OpenGameRegistrationService:
             )
             if (
                 registration.version != request.expected_version
-                or available.action is not request.action
+                or available.action is None
+                or available.action.value != request.action.value
             ):
                 raise _application_state_changed()
 
             registration.status = OpenGameRegistrationStatus.WITHDRAWN
             registration.version += 1
             registration.withdrawn_at = now
-            registration.withdrawal_kind = (
-                OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
-                if request.action is WithdrawalAction.WITHDRAW_APPLICATION
-                else OpenGameRegistrationWithdrawalKind.GAME_EXIT
-            )
+            if request.action is WithdrawalAction.WITHDRAW_APPLICATION:
+                registration.withdrawal_kind = (
+                    OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
+                )
+            elif request.action is WithdrawalAction.LEAVE_GAME:
+                registration.withdrawal_kind = (
+                    OpenGameRegistrationWithdrawalKind.GAME_EXIT
+                )
+            else:
+                raise RuntimeError("withdrawal request contains an unsupported action")
             registration.late_exit_recorded = (
                 available.late_exit_will_be_recorded
             )
@@ -543,6 +553,8 @@ class OpenGameRegistrationService:
         idempotency_key: str,
         request: DecisionRequest,
     ) -> DecisionResult:
+        if not isinstance(request.decision, ApplicationDecision):
+            raise _invalid_argument()
         try:
             order_id = self._open_game_repository.locate_order_id(game_id=game_id)
             if order_id is None:
@@ -627,12 +639,14 @@ class OpenGameRegistrationService:
                     },
                 )
 
-            accepted = request.decision is ApplicationDecision.ACCEPT
-            registration.status = (
-                OpenGameRegistrationStatus.JOINED
-                if accepted
-                else OpenGameRegistrationStatus.REJECTED
-            )
+            if request.decision is ApplicationDecision.ACCEPT:
+                accepted = True
+                registration.status = OpenGameRegistrationStatus.JOINED
+            elif request.decision is ApplicationDecision.REJECT:
+                accepted = False
+                registration.status = OpenGameRegistrationStatus.REJECTED
+            else:
+                raise RuntimeError("decision request contains an unsupported action")
             registration.version += 1
             registration.decided_at = now
             registration.decided_by_user_id = owner_user_id
@@ -976,8 +990,8 @@ def _upgrade_legacy_application_context(
     *,
     application_id: uuid.UUID | None,
 ) -> dict[str, object]:
-    """Add only the C2a viewer fields missing from a trusted C1a apply replay."""
-    if application_id is None or set(response_body) != {
+    """Upgrade only trusted historic registration-context response shapes."""
+    if set(response_body) != {
         "game",
         "remaining_spots",
         "viewer_authenticated",
@@ -986,7 +1000,9 @@ def _upgrade_legacy_application_context(
     }:
         raise ValueError("legacy application response is not recoverable")
     viewer = response_body.get("viewer_registration")
-    if not isinstance(viewer, dict) or set(viewer) != {
+    if not isinstance(viewer, dict):
+        raise ValueError("legacy application viewer is not an object")
+    c1a_fields = {
         "display_name",
         "position",
         "note",
@@ -994,19 +1010,35 @@ def _upgrade_legacy_application_context(
         "effective_status",
         "applied_at",
         "decided_at",
-    }:
-        raise ValueError("legacy application viewer is not exact")
-    if (
-        response_body.get("viewer_authenticated") is not True
-        or viewer.get("persisted_status") != "APPLIED"
-        or viewer.get("effective_status") != "APPLIED"
-        or viewer.get("decided_at") is not None
-    ):
-        raise ValueError("legacy application viewer is not an apply result")
+    }
+    c2a_fields = {
+        "id",
+        "display_name",
+        "position",
+        "note",
+        "persisted_status",
+        "effective_status",
+        "version",
+        "applied_at",
+        "decided_at",
+        "withdrawn_at",
+        "withdrawal_kind",
+        "late_exit_recorded",
+        "available_withdrawal_action",
+        "late_exit_will_be_recorded",
+    }
 
     upgraded_viewer = dict(viewer)
-    upgraded_viewer.update(
-        {
+    if set(viewer) == c1a_fields:
+        if (
+            application_id is None
+            or response_body.get("viewer_authenticated") is not True
+            or viewer.get("persisted_status") != "APPLIED"
+            or viewer.get("effective_status") != "APPLIED"
+            or viewer.get("decided_at") is not None
+        ):
+            raise ValueError("legacy application viewer is not an apply result")
+        upgraded_viewer.update({
             "id": str(application_id),
             "version": 1,
             "withdrawn_at": None,
@@ -1014,6 +1046,14 @@ def _upgrade_legacy_application_context(
             "late_exit_recorded": False,
             "available_withdrawal_action": None,
             "late_exit_will_be_recorded": False,
+        })
+    elif set(viewer) != c2a_fields:
+        raise ValueError("legacy application viewer is not exact")
+    upgraded_viewer.update(
+        {
+            "waitlist_position": None,
+            "waitlisted_at": None,
+            "promoted_at": None,
         }
     )
     upgraded = dict(response_body)
@@ -1034,7 +1074,15 @@ def _replay_decision(
         or record.response_body is None
     ):
         raise _service_unavailable()
-    return DecisionResult.model_validate(record.response_body)
+    try:
+        return DecisionResult.model_validate(record.response_body)
+    except ValidationError:
+        body = dict(record.response_body)
+        actions = body.get("allowed_actions")
+        if not isinstance(actions, dict):
+            raise ValueError("legacy decision actions are not an object") from None
+        body["allowed_actions"] = _upgrade_legacy_review_actions(actions)
+        return DecisionResult.model_validate(body)
 
 
 def _replay_withdrawal(
@@ -1050,7 +1098,49 @@ def _replay_withdrawal(
         or record.response_body is None
     ):
         raise _service_unavailable()
-    return RegistrationContext.model_validate(record.response_body)
+    try:
+        return RegistrationContext.model_validate(record.response_body)
+    except ValidationError:
+        return RegistrationContext.model_validate(
+            _upgrade_legacy_application_context(
+                record.response_body,
+                application_id=None,
+            )
+        )
+
+
+def _upgrade_legacy_review_actions(
+    actions: dict[str, object],
+) -> dict[str, object]:
+    if set(actions) != {
+        "can_accept",
+        "accept_blocked_reason",
+        "can_reject",
+        "reject_blocked_reason",
+    }:
+        raise ValueError("legacy review actions are not exact")
+    waitlist_blocker: object
+    if actions.get("can_accept") is True:
+        waitlist_blocker = "GAME_NOT_FULL"
+    elif (
+        actions.get("accept_blocked_reason") == "GAME_FULL"
+        and actions.get("can_reject") is True
+    ):
+        waitlist_blocker = "WAITLIST_NOT_ENABLED"
+    elif (
+        actions.get("can_accept") is False
+        and actions.get("can_reject") is False
+        and actions.get("accept_blocked_reason")
+        == actions.get("reject_blocked_reason")
+    ):
+        waitlist_blocker = actions.get("accept_blocked_reason")
+    else:
+        raise ValueError("legacy review actions are not recoverable")
+    return {
+        **actions,
+        "can_waitlist": False,
+        "waitlist_blocked_reason": waitlist_blocker,
+    }
 
 
 def _game_not_found() -> AppError:

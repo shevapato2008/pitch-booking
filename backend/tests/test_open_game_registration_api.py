@@ -63,7 +63,9 @@ CONTEXT_FIELDS = frozenset(
         "allowed_actions",
     }
 )
-QUEUE_FIELDS = frozenset({"remaining_spots", "pending_count", "applications"})
+QUEUE_FIELDS = frozenset(
+    {"remaining_spots", "pending_count", "applications", "waitlist_count", "waitlist"}
+)
 PRIVATE_REGISTRATION_FIELDS = frozenset(
     {
         "applicant_user_id",
@@ -303,9 +305,13 @@ def _assert_queue_privacy(payload: dict[str, Any]) -> None:
         assert set(application["allowed_actions"]) == {
             "can_accept",
             "accept_blocked_reason",
+            "can_waitlist",
+            "waitlist_blocked_reason",
             "can_reject",
             "reject_blocked_reason",
         }
+    assert payload["waitlist_count"] == 0
+    assert payload["waitlist"] == []
     assert not PRIVATE_REGISTRATION_FIELDS & _all_keys(payload)
 
 
@@ -497,6 +503,19 @@ def test_registration_validation_exposes_only_known_first_level_body_fields(
                 "unexpected": "must-not-echo",
             },
         )
+        unopened_waitlist_decision = client.post(
+            f"/api/v1/games/{case.game_id}/applications/{uuid.uuid4()}/decision",
+            headers=_idempotent(
+                "registration-api-unopened-waitlist-01",
+                token=OWNER_TOKEN,
+            ),
+            json={"decision": "WAITLIST", "expected_version": 1},
+        )
+        unopened_waitlist_withdrawal = client.post(
+            f"/api/v1/open-game-applications/{uuid.uuid4()}/withdraw",
+            headers=_idempotent("registration-api-unopened-withdraw-01"),
+            json={"action": "WITHDRAW_WAITLIST", "expected_version": 1},
+        )
         invalid_path = client.post(
             "/api/v1/games/not-a-uuid/applications/not-a-uuid/decision",
             headers=_idempotent(DECISION_KEY, token=OWNER_TOKEN),
@@ -509,6 +528,14 @@ def test_registration_validation_exposes_only_known_first_level_body_fields(
         )
 
     assert invalid_apply.status_code == invalid_decision.status_code == 422
+    assert unopened_waitlist_decision.status_code == 422
+    assert unopened_waitlist_withdrawal.status_code == 422
+    assert unopened_waitlist_decision.json()["error"]["details"] == {
+        "fields": [{"field": "decision", "message": "字段值不符合要求。"}]
+    }
+    assert unopened_waitlist_withdrawal.json()["error"]["details"] == {
+        "fields": [{"field": "action", "message": "字段值不符合要求。"}]
+    }
     apply_details = invalid_apply.json()["error"]["details"]
     decision_details = invalid_decision.json()["error"]["details"]
     assert {item["field"] for item in apply_details["fields"]} == {
@@ -529,6 +556,11 @@ def test_registration_validation_exposes_only_known_first_level_body_fields(
     assert invalid_path.status_code == missing_key.status_code == 422
     assert invalid_path.json()["error"]["details"] == {}
     assert missing_key.json()["error"]["details"] == {}
+    with Session(pg_engine) as session:
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameRegistration)
+        ) == 0
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
 
 
 def test_owner_and_application_relationships_are_hidden_by_symmetric_404s(
@@ -698,6 +730,8 @@ def test_decision_conflicts_keep_exact_closed_codes_and_details(
             "allowed_actions": {
                 "can_accept": False,
                 "accept_blocked_reason": "GAME_FULL",
+                "can_waitlist": False,
+                "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
                 "can_reject": True,
                 "reject_blocked_reason": None,
             },

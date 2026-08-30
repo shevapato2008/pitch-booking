@@ -77,6 +77,35 @@ const appliedContext: OpenGameRegistrationContext = {
     availableWithdrawalAction: "WITHDRAW_APPLICATION",
   },
 };
+const waitlistedContext: OpenGameRegistrationContext = {
+  ...appliedContext,
+  remainingSpots: 0,
+  allowedActions: { canApply: false, applyBlockedReason: "ALREADY_APPLIED" },
+  viewerRegistration: {
+    ...appliedContext.viewerRegistration!,
+    version: 2,
+    persistedStatus: "WAITLISTED",
+    effectiveStatus: "WAITLISTED",
+    decidedAt: "2026-08-24T00:25:00+08:00",
+    waitlistPosition: 1,
+    waitlistedAt: "2026-08-24T00:25:00+08:00",
+    promotedAt: null,
+    availableWithdrawalAction: "WITHDRAW_WAITLIST",
+  },
+};
+const withdrawnWaitlistContext: OpenGameRegistrationContext = {
+  ...waitlistedContext,
+  viewerRegistration: {
+    ...waitlistedContext.viewerRegistration!,
+    version: 3,
+    persistedStatus: "WITHDRAWN",
+    effectiveStatus: "WITHDRAWN",
+    withdrawnAt: "2026-08-24T00:30:00+08:00",
+    withdrawalKind: "WAITLIST_WITHDRAWAL",
+    waitlistPosition: null,
+    availableWithdrawalAction: null,
+  },
+};
 const decodedJoinedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-joined"));
 const joinedContext: OpenGameRegistrationContext = {
   ...decodedJoinedContext,
@@ -278,10 +307,56 @@ test("APPLIED and JOINED expose server withdrawal actions while terminal and can
   }
 });
 
+test("waitlist read states stay truthful without exposing or sending future mutations", async () => {
+  const { registration } = registerSources({
+    getContext: jest.fn(async () => waitlistedContext),
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data).toMatchObject({
+    status: "READY",
+    registrationStatus: "WAITLISTED",
+    statusHeading: "候补中",
+    statusDescription: "当前候补第 1 位，请等待空位。",
+    primaryAction: null,
+    withdrawalAction: null,
+    withdrawalOperationState: "IDLE",
+  });
+  call(page, "onOpenWithdrawalConfirm");
+  await call(page, "onConfirmWithdrawal");
+
+  expect(page.data.withdrawalOperationState).toBe("IDLE");
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+
+  resetOpenGameRegistrationSourceForTesting();
+  const withdrawnRegistration = registrationSource({
+    getContext: jest.fn(async () => withdrawnWaitlistContext),
+  });
+  registerOpenGameRegistrationSource(withdrawnRegistration);
+  const withdrawn = loadPage();
+  call(withdrawn, "onLoad", { token });
+  await flush();
+
+  expect(withdrawn.data).toMatchObject({
+    registrationStatus: "WITHDRAWN",
+    statusHeading: "已退出候补",
+    statusDescription: "你已退出本场候补队列；本场不可再次申请。",
+    primaryAction: null,
+    withdrawalAction: null,
+  });
+  call(withdrawn, "onOpenWithdrawalConfirm");
+  await call(withdrawn, "onConfirmWithdrawal");
+  expect(withdrawnRegistration.withdraw).not.toHaveBeenCalled();
+  expect(attemptStore.load()).toBeNull();
+});
+
 test.each([
   ["AUTH_REQUIRED", false, "登录后可提交申请", "LOGIN"], ["OWNER_CANNOT_APPLY", true, "队长不能申请自己组织的球局", null],
   ["ALREADY_APPLIED", true, "你已经申请过这场球局", null], ["GAME_NOT_PUBLISHED", true, "球局暂未开放申请", null],
-  ["REGISTRATION_DEADLINE_PASSED", true, "报名已经截止", null], ["GAME_FULL", true, "名额已满", null],
+  ["REGISTRATION_DEADLINE_PASSED", true, "报名已经截止", null],
   ["GAME_SUSPENDED", true, "球局暂时停止报名", null], ["GAME_CANCELLED", true, "球局已取消", null],
   ["GAME_COMPLETED", true, "球局已结束", null], ["GAME_STARTED", true, "球局已经开始", null],
 ] as const)("renders server apply blocker %s without inventing an action", async (reason, viewerAuthenticated, statusHeading, primaryAction) => {

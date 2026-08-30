@@ -16,6 +16,7 @@ import type {
   OpenGameRegistrationContext,
   OpenGameReviewActions,
   OpenGameReviewBlockedReason,
+  OpenGameWaitlistBlockedReason,
 } from "../domain/open-game-registration";
 import type {
   StatusTransport,
@@ -100,11 +101,19 @@ const APPLY_BLOCKED_REASONS = [
   "ALREADY_APPLIED",
   "GAME_NOT_PUBLISHED",
   "REGISTRATION_DEADLINE_PASSED",
-  "GAME_FULL",
   "GAME_SUSPENDED",
   "GAME_CANCELLED",
   "GAME_COMPLETED",
   "GAME_STARTED",
+] as const;
+const WAITLIST_BLOCKED_REASONS = [
+  "APPLICATION_NOT_PENDING",
+  "GAME_SUSPENDED",
+  "GAME_CANCELLED",
+  "GAME_COMPLETED",
+  "GAME_STARTED",
+  "GAME_NOT_FULL",
+  "WAITLIST_NOT_ENABLED",
 ] as const;
 const REVIEW_BLOCKED_REASONS = [
   "APPLICATION_NOT_PENDING",
@@ -161,24 +170,73 @@ function safeIntegerAt(value: unknown, path: string): number {
   return value as number;
 }
 
+function expectedDecisionStatus(value: unknown): "JOINED" | "REJECTED" {
+  if (value === "ACCEPT") return "JOINED";
+  if (value === "REJECT") return "REJECTED";
+  throw new Error("UNSUPPORTED_APPLICATION_DECISION");
+}
+
+function withdrawalKindForAction(value: unknown): "APPLICATION_WITHDRAWAL" | "GAME_EXIT" {
+  if (value === "WITHDRAW_APPLICATION") return "APPLICATION_WITHDRAWAL";
+  if (value === "LEAVE_GAME") return "GAME_EXIT";
+  throw new Error("UNSUPPORTED_APPLICATION_WITHDRAWAL");
+}
+
 function decodeReviewActions(value: unknown, path: string): OpenGameReviewActions {
   const object = exactObject(
     value,
-    ["can_accept", "accept_blocked_reason", "can_reject", "reject_blocked_reason"],
+    [
+      "can_accept", "accept_blocked_reason", "can_waitlist", "waitlist_blocked_reason",
+      "can_reject", "reject_blocked_reason",
+    ],
     path,
   );
   const canAccept = booleanAt(object.can_accept, `${path}.can_accept`);
   const acceptBlockedReason: OpenGameReviewBlockedReason | null = object.accept_blocked_reason === null
     ? null
     : enumAt(object.accept_blocked_reason, REVIEW_BLOCKED_REASONS, `${path}.accept_blocked_reason`);
+  const canWaitlist = booleanAt(object.can_waitlist, `${path}.can_waitlist`);
+  const waitlistBlockedReason: OpenGameWaitlistBlockedReason | null =
+    object.waitlist_blocked_reason === null
+      ? null
+      : enumAt(
+        object.waitlist_blocked_reason,
+        WAITLIST_BLOCKED_REASONS,
+        `${path}.waitlist_blocked_reason`,
+      );
   const canReject = booleanAt(object.can_reject, `${path}.can_reject`);
   const rejectBlockedReason: OpenGameReviewBlockedReason | null = object.reject_blocked_reason === null
     ? null
     : enumAt(object.reject_blocked_reason, REVIEW_BLOCKED_REASONS, `${path}.reject_blocked_reason`);
+  const capacityAvailable = canAccept
+    && !canWaitlist
+    && waitlistBlockedReason === "GAME_NOT_FULL"
+    && canReject;
+  const fullCapacity = !canAccept
+    && acceptBlockedReason === "GAME_FULL"
+    && canReject
+    && (canWaitlist || waitlistBlockedReason === "WAITLIST_NOT_ENABLED");
+  const commonBlocked = !canAccept
+    && !canWaitlist
+    && !canReject
+    && acceptBlockedReason !== null
+    && acceptBlockedReason !== "GAME_FULL"
+    && rejectBlockedReason === acceptBlockedReason
+    && waitlistBlockedReason === acceptBlockedReason;
   if (canAccept !== (acceptBlockedReason === null)
+    || canWaitlist !== (waitlistBlockedReason === null)
     || canReject !== (rejectBlockedReason === null)
-    || rejectBlockedReason === "GAME_FULL") throw new Error(path);
-  return Object.freeze({ canAccept, acceptBlockedReason, canReject, rejectBlockedReason });
+    || rejectBlockedReason === "GAME_FULL"
+    || (canAccept && canWaitlist)
+    || (!capacityAvailable && !fullCapacity && !commonBlocked)) throw new Error(path);
+  return Object.freeze({
+    canAccept,
+    acceptBlockedReason,
+    canWaitlist,
+    waitlistBlockedReason,
+    canReject,
+    rejectBlockedReason,
+  });
 }
 
 function decodeInvalidArgumentDetails(
@@ -494,6 +552,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
   const decide = async (attempt: OpenGameRegistrationDecisionAttempt) => {
     let requestSession: StoredSession | null = null;
     try {
+      const expectedStatus = expectedDecisionStatus(attempt.decision);
       const authorizationContext = authorization(sessionStore);
       requestSession = authorizationContext.session;
       const headers = {
@@ -512,7 +571,6 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       }
       const result = decodeOpenGameApplicationDecisionResult(response.data);
       const expectedVersion = attempt.expectedVersion + 1;
-      const expectedStatus = attempt.decision === "ACCEPT" ? "JOINED" : "REJECTED";
       if (!Number.isSafeInteger(expectedVersion)
         || result.applicationId !== attempt.applicationId
         || result.status !== expectedStatus
@@ -530,6 +588,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
   ): Promise<OpenGameRegistrationContext> => {
     let requestSession: StoredSession | null = null;
     try {
+      const expectedWithdrawalKind = withdrawalKindForAction(attempt.action);
       const authorizationContext = authorization(sessionStore);
       requestSession = authorizationContext.session;
       const headers = {
@@ -548,9 +607,6 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       const context = decodeOpenGameRegistrationContext(response.data);
       const registration = context.viewerRegistration;
       const expectedVersion = attempt.expectedVersion + 1;
-      const expectedWithdrawalKind = attempt.action === "WITHDRAW_APPLICATION"
-        ? "APPLICATION_WITHDRAWAL"
-        : "GAME_EXIT";
       if (!Number.isSafeInteger(expectedVersion)
         || !context.viewerAuthenticated
         || registration === null

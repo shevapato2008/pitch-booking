@@ -4,8 +4,8 @@
     "message": "当前球局暂不允许提交申请。",
     "request_id": "req-contract-application-not-allowed",
     "details": {
-      "apply_blocked_reason": "GAME_FULL",
-      "remaining_spots": 0
+      "apply_blocked_reason": "REGISTRATION_DEADLINE_PASSED",
+      "remaining_spots": 4
     }
   }
 }

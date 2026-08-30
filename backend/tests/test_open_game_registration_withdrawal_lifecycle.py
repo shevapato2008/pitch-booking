@@ -35,6 +35,7 @@ def test_withdrawal_kind_and_effective_status_are_closed_enums() -> None:
     ]
     assert [status.value for status in lifecycle.EffectiveRegistrationStatus] == [
         "APPLIED",
+        "WAITLISTED",
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
@@ -69,6 +70,9 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         "late_exit_recorded",
         "available_withdrawal_action",
         "late_exit_will_be_recorded",
+        "waitlist_position",
+        "waitlisted_at",
+        "promoted_at",
     }
     assert set(ViewerRegistration.model_fields) == expected_fields
     assert VIEWER_REGISTRATION_FIELDS == expected_fields
@@ -105,6 +109,9 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         "late_exit_recorded": False,
         "available_withdrawal_action": None,
         "late_exit_will_be_recorded": False,
+        "waitlist_position": None,
+        "waitlisted_at": None,
+        "promoted_at": None,
     }
 
 

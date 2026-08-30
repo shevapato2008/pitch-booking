@@ -253,6 +253,15 @@ describe("open-game registration recovery", () => {
     });
   });
 
+  test("does not map a future waitlist withdrawal through the legacy binary recovery", () => {
+    const invalid = {
+      ...withdrawAttempt,
+      action: "WITHDRAW_WAITLIST",
+    } as unknown as OpenGameRegistrationWithdrawAttempt;
+    expect(() => classifyOpenGameRegistrationUnknownResult(invalid, appliedWithWithdrawal))
+      .toThrow("INVALID_OPEN_GAME_REGISTRATION_WITHDRAWAL_ACTION");
+  });
+
   test.each([
     [applyAttempt, { kind: "apply", shareToken: SHARE_TOKEN }],
     [decisionAttempt, { kind: "decision", gameId: GAME_ID }],

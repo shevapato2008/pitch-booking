@@ -103,6 +103,8 @@ function cloneActions(actions: OpenGameReviewActions): OpenGameReviewActions {
   return {
     canAccept: actions.canAccept,
     acceptBlockedReason: actions.acceptBlockedReason,
+    canWaitlist: actions.canWaitlist,
+    waitlistBlockedReason: actions.waitlistBlockedReason,
     canReject: actions.canReject,
     rejectBlockedReason: actions.rejectBlockedReason,
   };

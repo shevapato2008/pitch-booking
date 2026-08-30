@@ -1319,8 +1319,9 @@ function validateMyOpenGameApplicationsContract(contract) {
   const schemas = contract.components?.schemas ?? {};
   const item = schemas.MyOpenGameApplication;
   const itemFields = [
-    'id', 'effective_status', 'applied_at', 'detail_path', 'game_name', 'starts_at',
-    'ends_at', 'time_zone', 'venue_name', 'pitch_name', 'pitch_specification',
+    'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
+    'promoted_at', 'detail_path', 'game_name', 'starts_at', 'ends_at', 'time_zone',
+    'venue_name', 'pitch_name', 'pitch_specification',
   ];
   if (item?.additionalProperties !== false
       || !isDeepStrictEqual(new Set(item.required), new Set(itemFields))
@@ -1670,6 +1671,13 @@ function validateMyOpenGameApplicationsBusinessRules(response, filename) {
     for (const field of ['applied_at', 'starts_at', 'ends_at']) {
       if (!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(item[field]) || !Number.isFinite(Date.parse(item[field]))) {
         fail(`${filename}: ${field} must be an aware date-time`);
+      }
+    }
+    for (const field of ['waitlisted_at', 'promoted_at']) {
+      if (item[field] !== null
+          && (!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(item[field])
+            || !Number.isFinite(Date.parse(item[field])))) {
+        fail(`${filename}: ${field} must be null or an aware date-time`);
       }
     }
     localDateInTimeZone(item.starts_at, item.time_zone, filename);

@@ -47,6 +47,7 @@ from backend.app.modules.open_game_registrations.repository import (
 from backend.app.modules.open_game_registrations.service import (
     CREATE_OPEN_GAME_APPLICATION_OPERATION,
     DECIDE_OPEN_GAME_APPLICATION_OPERATION,
+    WITHDRAW_OPEN_GAME_APPLICATION_OPERATION,
     OpenGameRegistrationService,
     _application_request_digest,
     _decision_request_digest,
@@ -228,6 +229,50 @@ def _decision(
     )
 
 
+def test_future_write_commands_are_rejected_before_repository_or_transaction_work(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with Session(pg_engine) as session:
+        service = _service(session)
+
+        def unexpected(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("future write command reached repository work")
+
+        monkeypatch.setattr(service._open_game_repository, "locate_order_id", unexpected)
+        monkeypatch.setattr(service._repository, "locate_withdrawal_target", unexpected)
+        monkeypatch.setattr(service._repository, "rollback", unexpected)
+
+        operations = (
+            lambda: service.decide(
+                game_id=uuid.uuid4(),
+                application_id=uuid.uuid4(),
+                owner_user_id=uuid.uuid4(),
+                idempotency_key=DECISION_KEY,
+                request=DecisionRequest.model_construct(
+                    decision="WAITLIST",
+                    expected_version=1,
+                ),
+            ),
+            lambda: service.withdraw(
+                application_id=uuid.uuid4(),
+                applicant_user_id=uuid.uuid4(),
+                idempotency_key=WITHDRAWAL_KEY,
+                request=WithdrawalRequest.model_construct(
+                    action="WITHDRAW_WAITLIST",
+                    expected_version=1,
+                ),
+            ),
+        )
+        for operation in operations:
+            with pytest.raises(AppError) as rejected:
+                operation()
+            assert (rejected.value.status_code, rejected.value.code) == (
+                422,
+                "INVALID_ARGUMENT",
+            )
+
+
 def _withdrawal(
     action: WithdrawalAction,
     *,
@@ -263,9 +308,17 @@ def _assert_context_privacy(context: Any) -> None:
 
 def _assert_queue_privacy(queue: Any) -> None:
     dumped = queue.model_dump(mode="json")
-    assert set(dumped) == {"remaining_spots", "pending_count", "applications"}
+    assert set(dumped) == {
+        "remaining_spots",
+        "pending_count",
+        "applications",
+        "waitlist_count",
+        "waitlist",
+    }
     for application in dumped["applications"]:
         assert set(application) == CAPTAIN_APPLICATION_FIELDS
+    assert dumped["waitlist_count"] == len(dumped["waitlist"])
+    assert dumped["waitlist"] == []
     serialized = json.dumps(dumped, ensure_ascii=False)
     for private_key in (
         "applicant_user_id",
@@ -400,6 +453,9 @@ def test_context_reads_withdrawn_audit_fields_but_keeps_write_action_closed(
         "late_exit_recorded": False,
         "available_withdrawal_action": None,
         "late_exit_will_be_recorded": False,
+        "waitlist_position": None,
+        "waitlisted_at": None,
+        "promoted_at": None,
     }
 
 
@@ -489,7 +545,6 @@ def test_context_uses_one_clock_snapshot_for_public_and_actions(
     ("condition", "expected_reason"),
     [
         ("deadline", "REGISTRATION_DEADLINE_PASSED"),
-        ("full", "GAME_FULL"),
         ("cancelled", "GAME_CANCELLED"),
     ],
 )
@@ -503,16 +558,6 @@ def test_context_projects_authoritative_deadline_capacity_and_cancellation(
         game = session.get_one(OpenGame, case.game_id)
         if condition == "deadline":
             game.registration_deadline = NOW
-        elif condition == "full":
-            game.open_spots = 1
-            joined = _new_user(session, "joined")
-            _add_registration(
-                session,
-                game_id=game.id,
-                applicant_user_id=joined.id,
-                status=OpenGameRegistrationStatus.JOINED,
-                decided_by_user_id=case.booking.owner_id,
-            )
         else:
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = NOW
@@ -530,8 +575,6 @@ def test_context_projects_authoritative_deadline_capacity_and_cancellation(
             viewer_user_id=case.booking.stranger_id,
         )
         assert context.allowed_actions.apply_blocked_reason == expected_reason
-        if condition == "full":
-            assert context.remaining_spots == 0
         if condition == "cancelled":
             assert context.game.state == "CANCELLED"
             assert context.viewer_registration is not None
@@ -599,6 +642,46 @@ def test_apply_is_idempotent_persists_server_authority_and_leaves_b1_unchanged(
         assert _b1_snapshot(session) == before
 
 
+def test_full_game_still_creates_a_plain_applied_registration_with_zero_remaining(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        joined = _new_user(session, "full-apply-joined")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=joined.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        session.commit()
+
+        context = _service(session).apply(
+            share_token=case.share_token,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key="full-plain-application-key-000001",
+            request=_request(),
+        )
+
+        registration = session.scalar(
+            select(OpenGameRegistration).where(
+                OpenGameRegistration.applicant_user_id
+                == case.booking.stranger_id
+            )
+        )
+        assert registration is not None
+        assert registration.status is OpenGameRegistrationStatus.APPLIED
+        assert context.remaining_spots == 0
+        assert context.viewer_registration is not None
+        assert context.viewer_registration.persisted_status.value == "APPLIED"
+        assert context.viewer_registration.waitlist_position is None
+        assert context.viewer_registration.waitlisted_at is None
+        assert context.viewer_registration.promoted_at is None
+
+
 def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
     pg_engine: Engine,
 ) -> None:
@@ -626,6 +709,9 @@ def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
             "late_exit_recorded",
             "available_withdrawal_action",
             "late_exit_will_be_recorded",
+            "waitlist_position",
+            "waitlisted_at",
+            "promoted_at",
         ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer
@@ -731,7 +817,6 @@ def test_apply_duplicate_and_idempotency_reuse_are_distinct(pg_engine: Engine) -
     [
         ("owner", "OWNER_CANNOT_APPLY", 4),
         ("deadline", "REGISTRATION_DEADLINE_PASSED", 4),
-        ("full", "GAME_FULL", 0),
         ("cancelled", "GAME_CANCELLED", 4),
     ],
 )
@@ -749,16 +834,6 @@ def test_apply_blockers_return_closed_details_and_rollback_claim(
             applicant_user_id = case.booking.owner_id
         elif condition == "deadline":
             game.registration_deadline = NOW
-        elif condition == "full":
-            game.open_spots = 1
-            joined = _new_user(session, "full-capacity")
-            _add_registration(
-                session,
-                game_id=game.id,
-                applicant_user_id=joined.id,
-                status=OpenGameRegistrationStatus.JOINED,
-                decided_by_user_id=case.booking.owner_id,
-            )
         else:
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = NOW
@@ -943,6 +1018,8 @@ def test_owner_queue_is_complete_ordered_pending_only_and_private(
         row.allowed_actions.model_dump() == {
             "can_accept": True,
             "accept_blocked_reason": None,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "GAME_NOT_FULL",
             "can_reject": True,
             "reject_blocked_reason": None,
         }
@@ -1009,6 +1086,8 @@ def test_queue_projects_review_blockers_from_current_authority(
     assert queue.applications[0].allowed_actions.model_dump() == {
         "can_accept": False,
         "accept_blocked_reason": blocked_reason,
+        "can_waitlist": False,
+        "waitlist_blocked_reason": blocked_reason,
         "can_reject": False,
         "reject_blocked_reason": blocked_reason,
     }
@@ -1044,6 +1123,8 @@ def test_queue_projects_current_capacity_for_accept_only(pg_engine: Engine) -> N
     assert queue.applications[0].allowed_actions.model_dump() == {
         "can_accept": False,
         "accept_blocked_reason": "GAME_FULL",
+        "can_waitlist": False,
+        "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
         "can_reject": True,
         "reject_blocked_reason": None,
     }
@@ -1105,6 +1186,8 @@ def test_decision_persists_server_terminal_state_without_mutating_b1(
         assert result.allowed_actions.model_dump() == {
             "can_accept": False,
             "accept_blocked_reason": "APPLICATION_NOT_PENDING",
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "APPLICATION_NOT_PENDING",
             "can_reject": False,
             "reject_blocked_reason": "APPLICATION_NOT_PENDING",
         }
@@ -1147,6 +1230,20 @@ def test_decision_replays_stored_result_after_terminal_capacity_and_authority_ch
         game = session.get_one(OpenGame, case.game_id)
         game.status = OpenGameStatus.CANCELLED
         game.cancelled_at = NOW
+        record = session.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.operation
+                == DECIDE_OPEN_GAME_APPLICATION_OPERATION
+            )
+        )
+        assert record is not None
+        assert record.response_body is not None
+        legacy_body = dict(record.response_body)
+        legacy_actions = dict(legacy_body["allowed_actions"])
+        legacy_actions.pop("can_waitlist")
+        legacy_actions.pop("waitlist_blocked_reason")
+        legacy_body["allowed_actions"] = legacy_actions
+        record.response_body = legacy_body
         session.commit()
 
         replay = service.decide(
@@ -1459,6 +1556,8 @@ def test_accept_capacity_change_is_closed_and_leaves_target_pending(
             "allowed_actions": {
                 "can_accept": False,
                 "accept_blocked_reason": "GAME_FULL",
+                "can_waitlist": False,
+                "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
                 "can_reject": True,
                 "reject_blocked_reason": None,
             },
@@ -1516,6 +1615,21 @@ def test_withdraw_is_terminal_idempotent_and_preserves_capacity_authority(
             idempotency_key=WITHDRAWAL_KEY,
             request=_withdrawal(action, expected_version=expected_version),
         )
+        record = session.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.operation
+                == WITHDRAW_OPEN_GAME_APPLICATION_OPERATION
+            )
+        )
+        assert record is not None
+        assert record.response_body is not None
+        legacy_body = dict(record.response_body)
+        legacy_viewer = dict(legacy_body["viewer_registration"])
+        for field in ("waitlist_position", "waitlisted_at", "promoted_at"):
+            legacy_viewer.pop(field)
+        legacy_body["viewer_registration"] = legacy_viewer
+        record.response_body = legacy_body
+        session.commit()
         replay = service.withdraw(
             application_id=target.id,
             applicant_user_id=case.booking.stranger_id,

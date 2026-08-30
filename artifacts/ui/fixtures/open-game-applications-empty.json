@@ -1,5 +1,7 @@
 {
   "remaining_spots": 3,
   "pending_count": 0,
-  "applications": []
+  "applications": [],
+  "waitlist_count": 0,
+  "waitlist": []
 }

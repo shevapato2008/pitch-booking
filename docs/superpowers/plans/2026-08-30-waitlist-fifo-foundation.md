@@ -22,8 +22,16 @@
 
 ## Task 3：封闭契约与 compatibility 读基础
 
-- [ ] TDD 扩展静态 OpenAPI、Pydantic DTO、examples、TS domain/decoder：`WAITLISTED`、`WAITLIST`、`WITHDRAW_WAITLIST`、本人 `waitlist_position/waitlisted_at/promoted_at`。
-- [ ] 队长队列加入只读 FIFO 候补区和显式互斥 allowed actions；移除既有 `GAME_FULL` 申请 blocker，使满员时仍可创建普通 `APPLIED`，但绝不直接创建 `WAITLISTED`。
+- [x] TDD 扩展静态 OpenAPI、Pydantic DTO、examples、TS domain/decoder：只读 `WAITLISTED`、response-only `WITHDRAW_WAITLIST`、`can_waitlist`，以及本人 `waitlist_position/waitlisted_at/promoted_at`。
+- [x] 队长队列加入只读 FIFO 候补区和显式互斥 allowed actions；移除既有 `GAME_FULL` 申请 blocker，使满员时仍可创建普通 `APPLIED`，但绝不直接创建 `WAITLISTED`。
+
+Task 3 冻结边界：
+
+- 当前仍运行在 `0018`：旧四状态运行时投影三个候补时间/顺位字段为 `null`，队长队列诚实返回 `waitlist_count=0` 与 `waitlist=[]`，且任何公开响应都不得泄露内部 `waitlist_seq`。Task 4 才拥有 `0019`、ORM 字段和真实候补数据。
+- 写请求继续严格限定为决定 `ACCEPT|REJECT` 与退出 `WITHDRAW_APPLICATION|LEAVE_GAME`。`WAITLISTED`、`WITHDRAW_WAITLIST` 和 `can_waitlist` 仅扩展响应/读取能力；Task 5 才能增加 `WAITLIST`、`WITHDRAW_WAITLIST` 请求与 mutation。
+- 既有二元 `decide`/`withdraw` 不得把未知命令兜底映射为 `REJECT`/`GAME_EXIT`；HTTP decoder、attempt store 和 service 都必须在进入副作用前拒绝未来写命令。
+- Task 3 compatibility blockers 固定为：有容量时 `can_waitlist=false / GAME_NOT_FULL`；满员时 `can_accept=false / GAME_FULL` 且 `can_waitlist=false / WAITLIST_NOT_ENABLED`。共同阻塞或已决定时三个决定动作都为 false，并共享对应 blocker。
+- 生产页面在 Task 8 前只做 fail-closed 的最小只读兼容：旧共享详情显示 `WAITLISTED` 顺位和“已退出候补”，同时将 response-only `WITHDRAW_WAITLIST` 显式收敛为 `null`，不生成按钮、attempt 或网络写请求；队长审核页只保留新增只读字段；C1c 卡片模型携带候补三字段并能显示 `WAITLISTED` 标签。完整候补交互仍属于 Task 8。
 
 ## Task 4：`0019` 数据约束与 outbox
 

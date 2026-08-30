@@ -37,7 +37,10 @@
     "withdrawal_kind": "APPLICATION_WITHDRAWAL",
     "late_exit_recorded": false,
     "available_withdrawal_action": null,
-    "late_exit_will_be_recorded": false
+    "late_exit_will_be_recorded": false,
+    "waitlist_position": null,
+    "waitlisted_at": null,
+    "promoted_at": null
   },
   "allowed_actions": {
     "can_apply": false,

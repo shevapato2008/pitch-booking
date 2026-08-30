@@ -10,6 +10,9 @@ const base: OpenGameApplicationItem = {
   id: "40000000-0000-4000-8000-000000000001",
   effectiveStatus: "APPLIED",
   appliedAt: "2026-08-29T01:30:00Z",
+  waitlistPosition: null,
+  waitlistedAt: null,
+  promotedAt: null,
   detailPath: "/pages/captain-game-public/index?token=0123456789abcdef0123456789abcdef",
   gameName: "海河周六轻松局",
   startsAt: "2026-09-04T17:00:00Z",
@@ -23,6 +26,7 @@ const base: OpenGameApplicationItem = {
 describe("my game registration presentation", () => {
   test.each([
     ["APPLIED", "待队长审核"],
+    ["WAITLISTED", "候补中"],
     ["JOINED", "已加入"],
     ["REJECTED", "未通过"],
     ["WITHDRAWN", "已退出"],
@@ -44,12 +48,29 @@ describe("my game registration presentation", () => {
     expect(card).toMatchObject({ effectiveStatus: "APPLIED", statusLabel: "待队长审核" });
   });
 
+  test("preserves waitlist position and promotion history as read-only card authority", () => {
+    expect(presentMyGameRegistration({
+      ...base,
+      effectiveStatus: "WAITLISTED",
+      waitlistPosition: 2,
+      waitlistedAt: "2026-08-29T01:35:00Z",
+    })).toMatchObject({
+      statusLabel: "候补中",
+      waitlistPosition: 2,
+      waitlistedAt: "2026-08-29T01:35:00Z",
+      promotedAt: null,
+    });
+  });
+
   test("projects the exact approved card fields and response time zone across a UTC date boundary", () => {
     expect(presentMyGameRegistration(base)).toEqual({
       registrationId: base.id,
       effectiveStatus: "APPLIED",
       statusLabel: "待队长审核",
       appliedAt: base.appliedAt,
+      waitlistPosition: null,
+      waitlistedAt: null,
+      promotedAt: null,
       gameName: "海河周六轻松局",
       dateLabel: "9月5日 周六",
       timeLabel: "01:00–02:30",

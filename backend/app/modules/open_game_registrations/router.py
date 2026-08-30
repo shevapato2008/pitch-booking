@@ -14,7 +14,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_database
-from backend.app.errors import AppError, ErrorEnvelope, app_error_handler
+from backend.app.errors import (
+    AppError,
+    ErrorEnvelope,
+    app_error_handler,
+    open_game_review_action_matrix_schema,
+)
 from backend.app.models import User
 from backend.app.modules.auth.repository import AuthRepository
 from backend.app.modules.auth.service import resolve_authenticated_user
@@ -205,9 +210,15 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "required": True,
         "schema": {"type": "string", "minLength": 1},
     }
-    shared_apply_blocked_reason = components["schemas"].get(
-        "OpenGameApplyBlockedReason"
-    )
+    shared_error_schemas = {
+        name: components["schemas"].get(name)
+        for name in (
+            "OpenGameApplyBlockedReason",
+            "OpenGameReviewBlockedReason",
+            "OpenGameWaitlistBlockedReason",
+            "OpenGameReviewActions",
+        )
+    }
     components["schemas"].update(
         {
             "OpenGameRegistrationPosition": {
@@ -222,12 +233,19 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             },
             "OpenGameRegistrationPersistedStatus": {
                 "type": "string",
-                "enum": ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN"],
+                "enum": [
+                    "APPLIED",
+                    "WAITLISTED",
+                    "JOINED",
+                    "REJECTED",
+                    "WITHDRAWN",
+                ],
             },
             "OpenGameRegistrationEffectiveStatus": {
                 "type": "string",
                 "enum": [
                     "APPLIED",
+                    "WAITLISTED",
                     "JOINED",
                     "REJECTED",
                     "WITHDRAWN",
@@ -236,7 +254,19 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             },
             "OpenGameRegistrationWithdrawalKind": {
                 "type": "string",
-                "enum": ["APPLICATION_WITHDRAWAL", "GAME_EXIT"],
+                "enum": [
+                    "APPLICATION_WITHDRAWAL",
+                    "WAITLIST_WITHDRAWAL",
+                    "GAME_EXIT",
+                ],
+            },
+            "OpenGameRegistrationAvailableWithdrawalAction": {
+                "type": "string",
+                "enum": [
+                    "WITHDRAW_APPLICATION",
+                    "WITHDRAW_WAITLIST",
+                    "LEAVE_GAME",
+                ],
             },
             "OpenGameRegistrationWithdrawalAction": {
                 "type": "string",
@@ -250,7 +280,6 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "ALREADY_APPLIED",
                     "GAME_NOT_PUBLISHED",
                     "REGISTRATION_DEADLINE_PASSED",
-                    "GAME_FULL",
                     "GAME_SUSPENDED",
                     "GAME_CANCELLED",
                     "GAME_COMPLETED",
@@ -295,6 +324,157 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                 ],
             },
+            "OpenGameReviewBlockedReason": {
+                "type": "string",
+                "enum": [
+                    "APPLICATION_NOT_PENDING",
+                    "GAME_SUSPENDED",
+                    "GAME_CANCELLED",
+                    "GAME_COMPLETED",
+                    "GAME_STARTED",
+                    "GAME_FULL",
+                ],
+            },
+            "OpenGameWaitlistBlockedReason": {
+                "type": "string",
+                "enum": [
+                    "APPLICATION_NOT_PENDING",
+                    "GAME_SUSPENDED",
+                    "GAME_CANCELLED",
+                    "GAME_COMPLETED",
+                    "GAME_STARTED",
+                    "GAME_NOT_FULL",
+                    "WAITLIST_NOT_ENABLED",
+                ],
+            },
+            "OpenGameReviewActions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "can_accept",
+                    "accept_blocked_reason",
+                    "can_waitlist",
+                    "waitlist_blocked_reason",
+                    "can_reject",
+                    "reject_blocked_reason",
+                ],
+                "properties": {
+                    "can_accept": {"type": "boolean"},
+                    "accept_blocked_reason": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameReviewBlockedReason"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "can_waitlist": {"type": "boolean"},
+                    "waitlist_blocked_reason": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameWaitlistBlockedReason"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "can_reject": {"type": "boolean"},
+                    "reject_blocked_reason": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameReviewBlockedReason"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                },
+                "allOf": [
+                    {
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "can_accept": {"const": True},
+                                    "accept_blocked_reason": {"const": None},
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "can_accept": {"const": False},
+                                    "accept_blocked_reason": {
+                                        "$ref": (
+                                            "#/components/schemas/"
+                                            "OpenGameReviewBlockedReason"
+                                        )
+                                    },
+                                }
+                            },
+                        ]
+                    },
+                    {
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "can_waitlist": {"const": True},
+                                    "waitlist_blocked_reason": {"const": None},
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "can_waitlist": {"const": False},
+                                    "waitlist_blocked_reason": {
+                                        "$ref": (
+                                            "#/components/schemas/"
+                                            "OpenGameWaitlistBlockedReason"
+                                        )
+                                    },
+                                }
+                            },
+                        ]
+                    },
+                    {
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "can_reject": {"const": True},
+                                    "reject_blocked_reason": {"const": None},
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "can_reject": {"const": False},
+                                    "reject_blocked_reason": {
+                                        "type": "string",
+                                        "enum": [
+                                            "APPLICATION_NOT_PENDING",
+                                            "GAME_SUSPENDED",
+                                            "GAME_CANCELLED",
+                                            "GAME_COMPLETED",
+                                            "GAME_STARTED",
+                                        ],
+                                    },
+                                }
+                            },
+                        ]
+                    },
+                    {
+                        "not": {
+                            "properties": {
+                                "can_accept": {"const": True},
+                                "can_waitlist": {"const": True},
+                            }
+                        }
+                    },
+                ],
+                "oneOf": open_game_review_action_matrix_schema(),
+            },
             "OpenGameViewerRegistration": {
                 "type": "object",
                 "additionalProperties": False,
@@ -313,6 +493,9 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "late_exit_recorded",
                     "available_withdrawal_action",
                     "late_exit_will_be_recorded",
+                    "waitlist_position",
+                    "waitlisted_at",
+                    "promoted_at",
                 ],
                 "properties": {
                     "id": {"type": "string", "format": "uuid"},
@@ -370,13 +553,25 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             {
                                 "$ref": (
                                     "#/components/schemas/"
-                                    "OpenGameRegistrationWithdrawalAction"
+                                    "OpenGameRegistrationAvailableWithdrawalAction"
                                 )
                             },
                             {"type": "null"},
                         ]
                     },
                     "late_exit_will_be_recorded": {"type": "boolean"},
+                    "waitlist_position": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                    },
+                    "waitlisted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "promoted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
                 },
             },
             "OpenGameRegistrationContext": {
@@ -409,6 +604,174 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                 },
             },
+            "CreateOpenGameApplicationRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "display_name",
+                    "position",
+                    "note",
+                    "adult_confirmed",
+                    "risk_confirmed",
+                ],
+                "properties": {
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "note": {"type": ["string", "null"], "maxLength": 120},
+                    "adult_confirmed": {"type": "boolean", "const": True},
+                    "risk_confirmed": {"type": "boolean", "const": True},
+                },
+            },
+            "CaptainOpenGameApplication": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "id",
+                    "display_name",
+                    "position",
+                    "note",
+                    "applied_at",
+                    "version",
+                    "allowed_actions",
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "note": {"type": ["string", "null"], "maxLength": 120},
+                    "applied_at": {"type": "string", "format": "date-time"},
+                    "version": {"type": "integer", "minimum": 1},
+                    "allowed_actions": {
+                        "$ref": "#/components/schemas/OpenGameReviewActions"
+                    },
+                },
+            },
+            "CaptainOpenGameWaitlistApplication": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "id",
+                    "display_name",
+                    "position",
+                    "note",
+                    "applied_at",
+                    "waitlisted_at",
+                    "waitlist_position",
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "note": {"type": ["string", "null"], "maxLength": 120},
+                    "applied_at": {"type": "string", "format": "date-time"},
+                    "waitlisted_at": {
+                        "type": "string",
+                        "format": "date-time",
+                    },
+                    "waitlist_position": {"type": "integer", "minimum": 1},
+                },
+            },
+            "OpenGameApplicationQueue": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "remaining_spots",
+                    "pending_count",
+                    "applications",
+                    "waitlist_count",
+                    "waitlist",
+                ],
+                "properties": {
+                    "remaining_spots": {"type": "integer", "minimum": 0},
+                    "pending_count": {"type": "integer", "minimum": 0},
+                    "applications": {
+                        "type": "array",
+                        "items": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "CaptainOpenGameApplication"
+                            )
+                        },
+                    },
+                    "waitlist_count": {"type": "integer", "minimum": 0},
+                    "waitlist": {
+                        "type": "array",
+                        "items": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "CaptainOpenGameWaitlistApplication"
+                            )
+                        },
+                    },
+                },
+            },
+            "OpenGameApplicationDecisionRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["decision", "expected_version"],
+                "properties": {
+                    "decision": {
+                        "type": "string",
+                        "enum": ["ACCEPT", "REJECT"],
+                    },
+                    "expected_version": {"type": "integer", "minimum": 1},
+                },
+            },
+            "OpenGameApplicationDecisionResult": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "application_id",
+                    "status",
+                    "version",
+                    "decided_at",
+                    "remaining_spots",
+                    "allowed_actions",
+                ],
+                "properties": {
+                    "application_id": {"type": "string", "format": "uuid"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["WAITLISTED", "JOINED", "REJECTED"],
+                    },
+                    "version": {"type": "integer", "minimum": 1},
+                    "decided_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "remaining_spots": {"type": "integer", "minimum": 0},
+                    "allowed_actions": {
+                        "$ref": "#/components/schemas/OpenGameReviewActions"
+                    },
+                },
+            },
             "OpenGameApplicationWithdrawalRequest": {
                 "type": "object",
                 "additionalProperties": False,
@@ -433,6 +796,9 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "id",
                     "effective_status",
                     "applied_at",
+                    "waitlist_position",
+                    "waitlisted_at",
+                    "promoted_at",
                     "detail_path",
                     "game_name",
                     "starts_at",
@@ -451,6 +817,18 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         )
                     },
                     "applied_at": {"type": "string", "format": "date-time"},
+                    "waitlist_position": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                    },
+                    "waitlisted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "promoted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
                     "detail_path": {
                         "type": "string",
                         "pattern": (
@@ -486,10 +864,9 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             },
         }
     )
-    if shared_apply_blocked_reason is not None:
-        components["schemas"][
-            "OpenGameApplyBlockedReason"
-        ] = shared_apply_blocked_reason
+    for name, shared_schema in shared_error_schemas.items():
+        if shared_schema is not None:
+            components["schemas"][name] = shared_schema
 
     context_ref = {"$ref": "#/components/schemas/OpenGameRegistrationContext"}
     context_operation = schema["paths"].get(
@@ -506,6 +883,33 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         apply_operation["post"]["responses"]["201"]["content"][
             "application/json"
         ]["schema"] = dict(context_ref)
+        apply_operation["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ] = {
+            "$ref": "#/components/schemas/CreateOpenGameApplicationRequest"
+        }
+    queue_operation = schema["paths"].get(
+        "/api/v1/games/{game_id}/applications"
+    )
+    if queue_operation is not None:
+        queue_operation["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"] = {
+            "$ref": "#/components/schemas/OpenGameApplicationQueue"
+        }
+    decision_operation = schema["paths"].get(
+        "/api/v1/games/{game_id}/applications/{application_id}/decision"
+    )
+    if decision_operation is not None:
+        decision_post = decision_operation["post"]
+        decision_post["requestBody"]["content"]["application/json"]["schema"] = {
+            "$ref": "#/components/schemas/OpenGameApplicationDecisionRequest"
+        }
+        decision_post["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ] = {
+            "$ref": "#/components/schemas/OpenGameApplicationDecisionResult"
+        }
     withdrawal_path = (
         "/api/v1/open-game-applications/{application_id}/withdraw"
     )

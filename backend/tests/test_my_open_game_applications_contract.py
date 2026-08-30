@@ -19,6 +19,9 @@ ITEM_FIELDS = {
     "id",
     "effective_status",
     "applied_at",
+    "waitlist_position",
+    "waitlisted_at",
+    "promoted_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -38,6 +41,9 @@ def _valid_item() -> dict[str, object]:
         "id": "40000000-0000-4000-8000-000000000001",
         "effective_status": "APPLIED",
         "applied_at": "2026-08-30T09:00:00+08:00",
+        "waitlist_position": None,
+        "waitlisted_at": None,
+        "promoted_at": None,
         "detail_path": (
             "/pages/captain-game-public/index?token="
             "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -103,6 +109,15 @@ def test_my_application_accepts_every_effective_status_and_aware_datetimes() -> 
         assert item.applied_at.tzinfo is not None
         assert item.starts_at.tzinfo is not None
         assert item.ends_at.tzinfo is not None
+
+    waitlisted = MyOpenGameApplication.model_validate({
+        **_valid_item(),
+        "effective_status": "WAITLISTED",
+        "waitlist_position": 2,
+        "waitlisted_at": "2026-08-30T09:05:00+08:00",
+    })
+    assert waitlisted.effective_status == "WAITLISTED"
+    assert waitlisted.waitlist_position == 2
 
     invalid = {**_valid_item(), "effective_status": "PENDING"}
     with pytest.raises(ValidationError):

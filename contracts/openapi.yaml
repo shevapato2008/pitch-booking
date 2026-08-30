@@ -3998,24 +3998,30 @@ components:
       enum: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD, ANY]
     OpenGameRegistrationPersistedStatus:
       type: string
-      enum: [APPLIED, JOINED, REJECTED, WITHDRAWN]
+      enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN]
     OpenGameRegistrationEffectiveStatus:
       type: string
-      enum: [APPLIED, JOINED, REJECTED, WITHDRAWN, CANCELLED]
+      enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN, CANCELLED]
     OpenGameRegistrationWithdrawalKind:
       type: string
-      enum: [APPLICATION_WITHDRAWAL, GAME_EXIT]
+      enum: [APPLICATION_WITHDRAWAL, WAITLIST_WITHDRAWAL, GAME_EXIT]
+    OpenGameRegistrationAvailableWithdrawalAction:
+      type: string
+      enum: [WITHDRAW_APPLICATION, WITHDRAW_WAITLIST, LEAVE_GAME]
     OpenGameRegistrationWithdrawalAction:
       type: string
       enum: [WITHDRAW_APPLICATION, LEAVE_GAME]
     MyOpenGameApplication:
       type: object
       additionalProperties: false
-      required: [id, effective_status, applied_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
+      required: [id, effective_status, applied_at, waitlist_position, waitlisted_at, promoted_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
       properties:
         id: {type: string, format: uuid}
         effective_status: {$ref: '#/components/schemas/OpenGameRegistrationEffectiveStatus'}
         applied_at: {type: string, format: date-time}
+        waitlist_position: {type: [integer, 'null'], minimum: 1}
+        waitlisted_at: {type: [string, 'null'], format: date-time}
+        promoted_at: {type: [string, 'null'], format: date-time}
         detail_path:
           type: string
           pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
@@ -4037,10 +4043,13 @@ components:
         next_cursor: {type: [string, 'null'], minLength: 1}
     OpenGameApplyBlockedReason:
       type: string
-      enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_FULL, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
+      enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
     OpenGameReviewBlockedReason:
       type: string
       enum: [APPLICATION_NOT_PENDING, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED, GAME_FULL]
+    OpenGameWaitlistBlockedReason:
+      type: string
+      enum: [APPLICATION_NOT_PENDING, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED, GAME_NOT_FULL, WAITLIST_NOT_ENABLED]
     OpenGameApplyActions:
       type: object
       additionalProperties: false
@@ -4061,12 +4070,17 @@ components:
     OpenGameReviewActions:
       type: object
       additionalProperties: false
-      required: [can_accept, accept_blocked_reason, can_reject, reject_blocked_reason]
+      required: [can_accept, accept_blocked_reason, can_waitlist, waitlist_blocked_reason, can_reject, reject_blocked_reason]
       properties:
         can_accept: {type: boolean}
         accept_blocked_reason:
           oneOf:
             - $ref: '#/components/schemas/OpenGameReviewBlockedReason'
+            - type: 'null'
+        can_waitlist: {type: boolean}
+        waitlist_blocked_reason:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameWaitlistBlockedReason'
             - type: 'null'
         can_reject: {type: boolean}
         reject_blocked_reason:
@@ -4083,6 +4097,13 @@ components:
                 accept_blocked_reason: {$ref: '#/components/schemas/OpenGameReviewBlockedReason'}
         - oneOf:
             - properties:
+                can_waitlist: {const: true}
+                waitlist_blocked_reason: {const: null}
+            - properties:
+                can_waitlist: {const: false}
+                waitlist_blocked_reason: {$ref: '#/components/schemas/OpenGameWaitlistBlockedReason'}
+        - oneOf:
+            - properties:
                 can_reject: {const: true}
                 reject_blocked_reason: {const: null}
             - properties:
@@ -4090,10 +4111,71 @@ components:
                 reject_blocked_reason:
                   type: string
                   enum: [APPLICATION_NOT_PENDING, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
+        - not:
+            properties:
+              can_accept: {const: true}
+              can_waitlist: {const: true}
+      oneOf:
+        - properties:
+            can_accept: {const: true}
+            accept_blocked_reason: {const: null}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: GAME_NOT_FULL}
+            can_reject: {const: true}
+            reject_blocked_reason: {const: null}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: GAME_FULL}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: WAITLIST_NOT_ENABLED}
+            can_reject: {const: true}
+            reject_blocked_reason: {const: null}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: GAME_FULL}
+            can_waitlist: {const: true}
+            waitlist_blocked_reason: {const: null}
+            can_reject: {const: true}
+            reject_blocked_reason: {const: null}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: APPLICATION_NOT_PENDING}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: APPLICATION_NOT_PENDING}
+            can_reject: {const: false}
+            reject_blocked_reason: {const: APPLICATION_NOT_PENDING}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: GAME_SUSPENDED}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: GAME_SUSPENDED}
+            can_reject: {const: false}
+            reject_blocked_reason: {const: GAME_SUSPENDED}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: GAME_CANCELLED}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: GAME_CANCELLED}
+            can_reject: {const: false}
+            reject_blocked_reason: {const: GAME_CANCELLED}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: GAME_COMPLETED}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: GAME_COMPLETED}
+            can_reject: {const: false}
+            reject_blocked_reason: {const: GAME_COMPLETED}
+        - properties:
+            can_accept: {const: false}
+            accept_blocked_reason: {const: GAME_STARTED}
+            can_waitlist: {const: false}
+            waitlist_blocked_reason: {const: GAME_STARTED}
+            can_reject: {const: false}
+            reject_blocked_reason: {const: GAME_STARTED}
     OpenGameViewerRegistration:
       type: object
       additionalProperties: false
-      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded]
+      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at]
       properties:
         id: {type: string, format: uuid}
         display_name: {type: string, minLength: 2, maxLength: 24}
@@ -4112,9 +4194,12 @@ components:
         late_exit_recorded: {type: boolean}
         available_withdrawal_action:
           oneOf:
-            - $ref: '#/components/schemas/OpenGameRegistrationWithdrawalAction'
+            - $ref: '#/components/schemas/OpenGameRegistrationAvailableWithdrawalAction'
             - type: 'null'
         late_exit_will_be_recorded: {type: boolean}
+        waitlist_position: {type: [integer, 'null'], minimum: 1}
+        waitlisted_at: {type: [string, 'null'], format: date-time}
+        promoted_at: {type: [string, 'null'], format: date-time}
     OpenGameRegistrationContext:
       type: object
       additionalProperties: false
@@ -4150,16 +4235,32 @@ components:
         applied_at: {type: string, format: date-time}
         version: {type: integer, minimum: 1}
         allowed_actions: {$ref: '#/components/schemas/OpenGameReviewActions'}
+    CaptainOpenGameWaitlistApplication:
+      type: object
+      additionalProperties: false
+      required: [id, display_name, position, note, applied_at, waitlisted_at, waitlist_position]
+      properties:
+        id: {type: string, format: uuid}
+        display_name: {type: string, minLength: 2, maxLength: 24}
+        position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
+        note: {type: [string, 'null'], maxLength: 120}
+        applied_at: {type: string, format: date-time}
+        waitlisted_at: {type: string, format: date-time}
+        waitlist_position: {type: integer, minimum: 1}
     OpenGameApplicationQueue:
       type: object
       additionalProperties: false
-      required: [remaining_spots, pending_count, applications]
+      required: [remaining_spots, pending_count, applications, waitlist_count, waitlist]
       properties:
         remaining_spots: {type: integer, minimum: 0}
         pending_count: {type: integer, minimum: 0}
         applications:
           type: array
           items: {$ref: '#/components/schemas/CaptainOpenGameApplication'}
+        waitlist_count: {type: integer, minimum: 0}
+        waitlist:
+          type: array
+          items: {$ref: '#/components/schemas/CaptainOpenGameWaitlistApplication'}
     OpenGameApplicationDecisionRequest:
       type: object
       additionalProperties: false
@@ -4180,7 +4281,7 @@ components:
       required: [application_id, status, version, decided_at, remaining_spots, allowed_actions]
       properties:
         application_id: {type: string, format: uuid}
-        status: {type: string, enum: [JOINED, REJECTED]}
+        status: {type: string, enum: [WAITLISTED, JOINED, REJECTED]}
         version: {type: integer, minimum: 1}
         decided_at: {type: [string, 'null'], format: date-time}
         remaining_spots: {type: integer, minimum: 0}

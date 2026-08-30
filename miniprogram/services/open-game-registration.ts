@@ -143,6 +143,19 @@ export type OpenGameRegistrationUnknownRecoveryDecision =
     readonly clearAttempt: false;
   };
 
+function withdrawalAuthorityForAction(value: unknown): {
+  readonly persistedStatus: "APPLIED" | "JOINED";
+  readonly withdrawalKind: "APPLICATION_WITHDRAWAL" | "GAME_EXIT";
+} {
+  if (value === "WITHDRAW_APPLICATION") {
+    return { persistedStatus: "APPLIED", withdrawalKind: "APPLICATION_WITHDRAWAL" };
+  }
+  if (value === "LEAVE_GAME") {
+    return { persistedStatus: "JOINED", withdrawalKind: "GAME_EXIT" };
+  }
+  throw new Error("INVALID_OPEN_GAME_REGISTRATION_WITHDRAWAL_ACTION");
+}
+
 export function classifyOpenGameRegistrationUnknownResult(
   attempt: OpenGameRegistrationApplyAttempt,
   context: OpenGameRegistrationContext,
@@ -167,24 +180,21 @@ export function classifyOpenGameRegistrationUnknownResult(
   if (attempt.kind === "withdraw") {
     if (context === undefined) throw new Error("OPEN_GAME_REGISTRATION_CONTEXT_REQUIRED");
     const registration = context.viewerRegistration;
-    const expectedPersistedStatus = attempt.action === "WITHDRAW_APPLICATION" ? "APPLIED" : "JOINED";
-    const expectedWithdrawalKind = attempt.action === "WITHDRAW_APPLICATION"
-      ? "APPLICATION_WITHDRAWAL"
-      : "GAME_EXIT";
+    const authority = withdrawalAuthorityForAction(attempt.action);
     const expectedTerminalVersion = attempt.expectedVersion + 1;
     const exactTerminal = Number.isSafeInteger(expectedTerminalVersion)
       && registration !== null
       && registration.id === attempt.applicationId
       && registration.persistedStatus === "WITHDRAWN"
       && registration.version === expectedTerminalVersion
-      && registration.withdrawalKind === expectedWithdrawalKind;
+      && registration.withdrawalKind === authority.withdrawalKind;
     if (exactTerminal) {
       return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority: context, clearAttempt: true };
     }
     const unchanged = registration !== null
       && registration.id === attempt.applicationId
-      && registration.persistedStatus === expectedPersistedStatus
-      && registration.effectiveStatus === expectedPersistedStatus
+      && registration.persistedStatus === authority.persistedStatus
+      && registration.effectiveStatus === authority.persistedStatus
       && registration.version === attempt.expectedVersion
       && registration.availableWithdrawalAction === attempt.action;
     if (!unchanged) {

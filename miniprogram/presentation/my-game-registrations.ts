@@ -12,6 +12,9 @@ export interface MyGameRegistrationCard {
   readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
   readonly statusLabel: string;
   readonly appliedAt: string;
+  readonly waitlistPosition: number | null;
+  readonly waitlistedAt: string | null;
+  readonly promotedAt: string | null;
   readonly gameName: string;
   readonly dateLabel: string;
   readonly timeLabel: string;
@@ -23,6 +26,7 @@ export interface MyGameRegistrationCard {
 
 const STATUS_LABELS: Readonly<Record<OpenGameRegistrationEffectiveStatus, string>> = {
   APPLIED: "待队长审核",
+  WAITLISTED: "候补中",
   JOINED: "已加入",
   REJECTED: "未通过",
   WITHDRAWN: "已退出",
@@ -53,6 +57,9 @@ export function presentMyGameRegistration(item: OpenGameApplicationItem): MyGame
     effectiveStatus: item.effectiveStatus,
     statusLabel: STATUS_LABELS[item.effectiveStatus],
     appliedAt: item.appliedAt,
+    waitlistPosition: item.waitlistPosition,
+    waitlistedAt: item.waitlistedAt,
+    promotedAt: item.promotedAt,
     gameName: item.gameName,
     dateLabel: `${start.month}月${start.day}日 ${weekdayAt(start)}`,
     timeLabel: `${two(start.hour)}:${two(start.minute)}–${two(end.hour)}:${two(end.minute)}`,

@@ -7,6 +7,8 @@
   "allowed_actions": {
     "can_accept": false,
     "accept_blocked_reason": "APPLICATION_NOT_PENDING",
+    "can_waitlist": false,
+    "waitlist_blocked_reason": "APPLICATION_NOT_PENDING",
     "can_reject": false,
     "reject_blocked_reason": "APPLICATION_NOT_PENDING"
   }

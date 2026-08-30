@@ -12,6 +12,8 @@
       "allowed_actions": {
         "can_accept": true,
         "accept_blocked_reason": null,
+        "can_waitlist": false,
+        "waitlist_blocked_reason": "GAME_NOT_FULL",
         "can_reject": true,
         "reject_blocked_reason": null
       }
@@ -26,9 +28,13 @@
       "allowed_actions": {
         "can_accept": true,
         "accept_blocked_reason": null,
+        "can_waitlist": false,
+        "waitlist_blocked_reason": "GAME_NOT_FULL",
         "can_reject": true,
         "reject_blocked_reason": null
       }
     }
-  ]
+  ],
+  "waitlist_count": 0,
+  "waitlist": []
 }

@@ -332,6 +332,26 @@ describe("HTTP open-game registration requests", () => {
     expect(h.identity.login).not.toHaveBeenCalled();
   });
 
+  test("rejects future waitlist write commands before transport", async () => {
+    const h = harness([]);
+    const invalidDecision = {
+      ...decisionAttempt,
+      decision: "WAITLIST",
+    } as unknown as OpenGameRegistrationDecisionAttempt;
+    const invalidWithdrawal = {
+      ...withdrawAttempt,
+      action: "WITHDRAW_WAITLIST",
+    } as unknown as OpenGameRegistrationWithdrawAttempt;
+
+    await expect(h.source.decide(invalidDecision)).rejects.toMatchObject({
+      code: "APPLICATION_RESULT_UNKNOWN",
+    });
+    await expect(h.source.withdraw(invalidWithdrawal)).rejects.toMatchObject({
+      code: "APPLICATION_RESULT_UNKNOWN",
+    });
+    expect(h.calls).toEqual([]);
+  });
+
   test("required operations fail locally without silently logging in", async () => {
     const h = harness([], null);
 
@@ -478,8 +498,8 @@ describe("HTTP open-game registration closed errors", () => {
     ["apply", 404, "OPEN_GAME_NOT_FOUND", {}, undefined],
     ["apply", 409, "APPLICATION_ALREADY_EXISTS", {}, undefined],
     ["apply", 409, "APPLICATION_NOT_ALLOWED", notAllowedDetails, {
-      applyBlockedReason: "GAME_FULL",
-      remainingSpots: 0,
+      applyBlockedReason: "REGISTRATION_DEADLINE_PASSED",
+      remainingSpots: 4,
     }],
     ["apply", 409, "IDEMPOTENCY_KEY_REUSED", {}, undefined],
     ["apply", 422, "INVALID_ARGUMENT", fieldDetails.apply, fieldDetails.apply],
@@ -497,6 +517,8 @@ describe("HTTP open-game registration closed errors", () => {
       allowedActions: {
         canAccept: false,
         acceptBlockedReason: "GAME_FULL",
+        canWaitlist: false,
+        waitlistBlockedReason: "WAITLIST_NOT_ENABLED",
         canReject: true,
         rejectBlockedReason: null,
       },
@@ -621,13 +643,13 @@ describe("HTTP open-game registration closed errors", () => {
 
   test.each([
     ["not-allowed extra key", 409, "APPLICATION_NOT_ALLOWED", {
-      apply_blocked_reason: "GAME_FULL", remaining_spots: 0, private: true,
+      apply_blocked_reason: "REGISTRATION_DEADLINE_PASSED", remaining_spots: 4, private: true,
     }],
     ["not-allowed unknown blocker", 409, "APPLICATION_NOT_ALLOWED", {
       apply_blocked_reason: "WAITLISTED", remaining_spots: 0,
     }],
     ["not-allowed negative spots", 409, "APPLICATION_NOT_ALLOWED", {
-      apply_blocked_reason: "GAME_FULL", remaining_spots: -1,
+      apply_blocked_reason: "REGISTRATION_DEADLINE_PASSED", remaining_spots: -1,
     }],
     ["capacity extra key", 409, "APPLICATION_CAPACITY_CHANGED", {
       ...(capacityDetails as Record<string, unknown>), private: true,
@@ -637,6 +659,8 @@ describe("HTTP open-game registration closed errors", () => {
       allowed_actions: {
         can_accept: true,
         accept_blocked_reason: "GAME_FULL",
+        can_waitlist: false,
+        waitlist_blocked_reason: "GAME_NOT_FULL",
         can_reject: true,
         reject_blocked_reason: null,
       },
@@ -646,8 +670,21 @@ describe("HTTP open-game registration closed errors", () => {
       allowed_actions: {
         can_accept: false,
         accept_blocked_reason: "GAME_FULL",
+        can_waitlist: false,
+        waitlist_blocked_reason: "WAITLIST_NOT_ENABLED",
         can_reject: false,
         reject_blocked_reason: "GAME_FULL",
+      },
+    }],
+    ["capacity contradictory waitlist blocker", 409, "APPLICATION_CAPACITY_CHANGED", {
+      remaining_spots: 0,
+      allowed_actions: {
+        can_accept: false,
+        accept_blocked_reason: "GAME_FULL",
+        can_waitlist: false,
+        waitlist_blocked_reason: "GAME_NOT_FULL",
+        can_reject: true,
+        reject_blocked_reason: null,
       },
     }],
   ])("rejects malformed closed 409 details: %s", async (_label, status, code, details) => {
@@ -934,14 +971,19 @@ describe("OpenGameRegistrationApiError detail typing", () => {
       fields: [{ field: "display_name", message: "bad" }],
     }).details).toEqual({ fields: [{ field: "display_name", message: "bad" }] });
     expect(new OpenGameRegistrationApiError("APPLICATION_NOT_ALLOWED", {
-      applyBlockedReason: "GAME_FULL",
-      remainingSpots: 0,
-    }).details).toEqual({ applyBlockedReason: "GAME_FULL", remainingSpots: 0 });
+      applyBlockedReason: "REGISTRATION_DEADLINE_PASSED",
+      remainingSpots: 4,
+    }).details).toEqual({
+      applyBlockedReason: "REGISTRATION_DEADLINE_PASSED",
+      remainingSpots: 4,
+    });
     expect(new OpenGameRegistrationApiError("APPLICATION_CAPACITY_CHANGED", {
       remainingSpots: 0,
       allowedActions: {
         canAccept: false,
         acceptBlockedReason: "GAME_FULL",
+        canWaitlist: false,
+        waitlistBlockedReason: "WAITLIST_NOT_ENABLED",
         canReject: true,
         rejectBlockedReason: null,
       },
@@ -960,6 +1002,8 @@ describe("OpenGameRegistrationApiError detail typing", () => {
         allowedActions: {
           canAccept: false,
           acceptBlockedReason: "GAME_FULL",
+          canWaitlist: false,
+          waitlistBlockedReason: "WAITLIST_NOT_ENABLED",
           canReject: true,
           rejectBlockedReason: null,
         },

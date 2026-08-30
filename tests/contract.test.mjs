@@ -177,7 +177,8 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
   assert.deepEqual([...item.required].sort(), [
     'applied_at', 'detail_path', 'effective_status', 'ends_at', 'game_name', 'id',
-    'pitch_name', 'pitch_specification', 'starts_at', 'time_zone', 'venue_name',
+    'pitch_name', 'pitch_specification', 'promoted_at', 'starts_at', 'time_zone',
+    'venue_name', 'waitlist_position', 'waitlisted_at',
   ]);
   assert.deepEqual(item.properties.detail_path, {
     type: 'string',

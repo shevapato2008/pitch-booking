@@ -436,20 +436,19 @@ test("server validation is inline and definite full/state failures clear the att
   expect(invalidApi.getContext).toHaveBeenCalledTimes(1);
 
   resetOpenGameRegistrationSourceForTesting();
-  const fullContext: OpenGameRegistrationContext = {
+  const deadlineContext: OpenGameRegistrationContext = {
     ...readyContext,
-    remainingSpots: 0,
-    allowedActions: { canApply: false, applyBlockedReason: "GAME_FULL" },
+    allowedActions: { canApply: false, applyBlockedReason: "REGISTRATION_DEADLINE_PASSED" },
   };
   let contextCalls = 0;
   const fullApi = registerSource({
     getContext: jest.fn(async () => {
       contextCalls += 1;
-      return contextCalls === 1 ? readyContext : fullContext;
+      return contextCalls === 1 ? readyContext : deadlineContext;
     }),
     apply: jest.fn(async () => {
       throw new OpenGameRegistrationApiError("APPLICATION_NOT_ALLOWED", {
-        applyBlockedReason: "GAME_FULL", remainingSpots: 0,
+        applyBlockedReason: "REGISTRATION_DEADLINE_PASSED", remainingSpots: 4,
       });
     }),
   });

@@ -35,6 +35,9 @@ MY_OPEN_GAME_APPLICATION_FIELDS = {
     "id",
     "effective_status",
     "applied_at",
+    "waitlist_position",
+    "waitlisted_at",
+    "promoted_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -129,6 +132,15 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
     }
     for field in ("applied_at", "starts_at", "ends_at"):
         assert item["properties"][field] == {"type": "string", "format": "date-time"}
+    assert item["properties"]["waitlist_position"] == {
+        "type": ["integer", "null"],
+        "minimum": 1,
+    }
+    for field in ("waitlisted_at", "promoted_at"):
+        assert item["properties"][field] == {
+            "type": ["string", "null"],
+            "format": "date-time",
+        }
 
     response = schemas["MyOpenGameApplicationsResponse"]
     assert response["additionalProperties"] is False
@@ -1690,11 +1702,18 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
         "OpenGameRegistrationPersistedStatus",
         "OpenGameRegistrationEffectiveStatus",
         "OpenGameRegistrationWithdrawalKind",
+        "OpenGameRegistrationAvailableWithdrawalAction",
         "OpenGameRegistrationWithdrawalAction",
         "OpenGameApplyBlockedReason",
         "OpenGameApplyActions",
+        "OpenGameReviewBlockedReason",
+        "OpenGameWaitlistBlockedReason",
+        "OpenGameReviewActions",
         "OpenGameViewerRegistration",
         "OpenGameRegistrationContext",
+        "CaptainOpenGameWaitlistApplication",
+        "OpenGameApplicationQueue",
+        "OpenGameApplicationDecisionResult",
         "OpenGameApplicationWithdrawalRequest",
     )
     for schema_name in affected_schemas:
@@ -1711,6 +1730,8 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         "OpenGameReviewActions": {
             "can_accept",
             "accept_blocked_reason",
+            "can_waitlist",
+            "waitlist_blocked_reason",
             "can_reject",
             "reject_blocked_reason",
         },
@@ -1729,6 +1750,9 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "late_exit_recorded",
             "available_withdrawal_action",
             "late_exit_will_be_recorded",
+            "waitlist_position",
+            "waitlisted_at",
+            "promoted_at",
         },
         "OpenGameRegistrationContext": {
             "game",
@@ -1757,6 +1781,17 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "remaining_spots",
             "pending_count",
             "applications",
+            "waitlist_count",
+            "waitlist",
+        },
+        "CaptainOpenGameWaitlistApplication": {
+            "id",
+            "display_name",
+            "position",
+            "note",
+            "applied_at",
+            "waitlisted_at",
+            "waitlist_position",
         },
         "OpenGameApplicationDecisionRequest": {"decision", "expected_version"},
         "OpenGameApplicationWithdrawalRequest": {"action", "expected_version"},
@@ -1790,15 +1825,22 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     }
     assert schemas["OpenGameRegistrationPersistedStatus"] == {
         "type": "string",
-        "enum": ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN"],
+        "enum": ["APPLIED", "WAITLISTED", "JOINED", "REJECTED", "WITHDRAWN"],
     }
     assert schemas["OpenGameRegistrationEffectiveStatus"] == {
         "type": "string",
-        "enum": ["APPLIED", "JOINED", "REJECTED", "WITHDRAWN", "CANCELLED"],
+        "enum": [
+            "APPLIED",
+            "WAITLISTED",
+            "JOINED",
+            "REJECTED",
+            "WITHDRAWN",
+            "CANCELLED",
+        ],
     }
     assert schemas["OpenGameRegistrationWithdrawalKind"] == {
         "type": "string",
-        "enum": ["APPLICATION_WITHDRAWAL", "GAME_EXIT"],
+        "enum": ["APPLICATION_WITHDRAWAL", "WAITLIST_WITHDRAWAL", "GAME_EXIT"],
     }
     assert schemas["OpenGameRegistrationWithdrawalAction"] == {
         "type": "string",
@@ -1812,7 +1854,6 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "ALREADY_APPLIED",
             "GAME_NOT_PUBLISHED",
             "REGISTRATION_DEADLINE_PASSED",
-            "GAME_FULL",
             "GAME_SUSPENDED",
             "GAME_CANCELLED",
             "GAME_COMPLETED",
@@ -1834,6 +1875,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         "OpenGameViewerRegistration",
         "CreateOpenGameApplicationRequest",
         "CaptainOpenGameApplication",
+        "CaptainOpenGameWaitlistApplication",
     ):
         properties = schemas[schema_name]["properties"]
         assert properties["display_name"] == {
@@ -1879,11 +1921,25 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     assert viewer["late_exit_recorded"] == {"type": "boolean"}
     assert viewer["available_withdrawal_action"] == {
         "oneOf": [
-            {"$ref": "#/components/schemas/OpenGameRegistrationWithdrawalAction"},
+            {
+                "$ref": (
+                    "#/components/schemas/"
+                    "OpenGameRegistrationAvailableWithdrawalAction"
+                )
+            },
             {"type": "null"},
         ]
     }
     assert viewer["late_exit_will_be_recorded"] == {"type": "boolean"}
+    assert viewer["waitlist_position"] == {
+        "type": ["integer", "null"],
+        "minimum": 1,
+    }
+    for field in ("waitlisted_at", "promoted_at"):
+        assert viewer[field] == {
+            "type": ["string", "null"],
+            "format": "date-time",
+        }
 
     context = schemas["OpenGameRegistrationContext"]["properties"]
     assert context["game"] == {"$ref": "#/components/schemas/OpenGamePublic"}
@@ -1913,6 +1969,13 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         "type": "array",
         "items": {"$ref": "#/components/schemas/CaptainOpenGameApplication"},
     }
+    assert queue["waitlist_count"] == {"type": "integer", "minimum": 0}
+    assert queue["waitlist"] == {
+        "type": "array",
+        "items": {
+            "$ref": "#/components/schemas/CaptainOpenGameWaitlistApplication"
+        },
+    }
 
     decision_request = schemas["OpenGameApplicationDecisionRequest"]["properties"]
     assert decision_request["decision"] == {
@@ -1938,7 +2001,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     }
     assert decision_result["status"] == {
         "type": "string",
-        "enum": ["JOINED", "REJECTED"],
+        "enum": ["WAITLISTED", "JOINED", "REJECTED"],
     }
     assert decision_result["version"] == {"type": "integer", "minimum": 1}
     assert decision_result["decided_at"] == {
@@ -1974,10 +2037,16 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         {"can_apply": True, "apply_blocked_reason": None}
     )
     assert apply_actions.is_valid(
-        {"can_apply": False, "apply_blocked_reason": "GAME_FULL"}
+        {
+            "can_apply": False,
+            "apply_blocked_reason": "REGISTRATION_DEADLINE_PASSED",
+        }
     )
     assert not apply_actions.is_valid(
-        {"can_apply": True, "apply_blocked_reason": "GAME_FULL"}
+        {
+            "can_apply": True,
+            "apply_blocked_reason": "REGISTRATION_DEADLINE_PASSED",
+        }
     )
     assert not apply_actions.is_valid(
         {"can_apply": False, "apply_blocked_reason": None}
@@ -1990,6 +2059,8 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         {
             "can_accept": True,
             "accept_blocked_reason": None,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "GAME_NOT_FULL",
             "can_reject": True,
             "reject_blocked_reason": None,
         }
@@ -1998,6 +2069,18 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         {
             "can_accept": False,
             "accept_blocked_reason": "GAME_FULL",
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+    )
+    assert review_actions.is_valid(
+        {
+            "can_accept": False,
+            "accept_blocked_reason": "GAME_FULL",
+            "can_waitlist": True,
+            "waitlist_blocked_reason": None,
             "can_reject": True,
             "reject_blocked_reason": None,
         }
@@ -2006,6 +2089,8 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         {
             "can_accept": True,
             "accept_blocked_reason": "GAME_FULL",
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "GAME_NOT_FULL",
             "can_reject": True,
             "reject_blocked_reason": None,
         }
@@ -2014,10 +2099,184 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         {
             "can_accept": False,
             "accept_blocked_reason": "GAME_FULL",
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "GAME_NOT_FULL",
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+    )
+    assert not review_actions.is_valid(
+        {
+            "can_accept": False,
+            "accept_blocked_reason": "GAME_STARTED",
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "GAME_CANCELLED",
+            "can_reject": False,
+            "reject_blocked_reason": "GAME_STARTED",
+        }
+    )
+    assert not review_actions.is_valid(
+        {
+            "can_accept": False,
+            "accept_blocked_reason": "GAME_FULL",
+            "can_waitlist": False,
+            "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
             "can_reject": False,
             "reject_blocked_reason": "GAME_FULL",
         }
     )
+    assert not review_actions.is_valid(
+        {
+            "can_accept": True,
+            "accept_blocked_reason": None,
+            "can_waitlist": True,
+            "waitlist_blocked_reason": None,
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+    )
+
+
+def test_waitlist_read_contract_expands_responses_but_keeps_write_commands_closed() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+
+    assert schemas["OpenGameRegistrationPersistedStatus"]["enum"] == [
+        "APPLIED",
+        "WAITLISTED",
+        "JOINED",
+        "REJECTED",
+        "WITHDRAWN",
+    ]
+    assert schemas["OpenGameRegistrationEffectiveStatus"]["enum"] == [
+        "APPLIED",
+        "WAITLISTED",
+        "JOINED",
+        "REJECTED",
+        "WITHDRAWN",
+        "CANCELLED",
+    ]
+    assert schemas["OpenGameRegistrationWithdrawalKind"]["enum"] == [
+        "APPLICATION_WITHDRAWAL",
+        "WAITLIST_WITHDRAWAL",
+        "GAME_EXIT",
+    ]
+    assert schemas["OpenGameRegistrationAvailableWithdrawalAction"]["enum"] == [
+        "WITHDRAW_APPLICATION",
+        "WITHDRAW_WAITLIST",
+        "LEAVE_GAME",
+    ]
+    assert schemas["OpenGameRegistrationWithdrawalAction"]["enum"] == [
+        "WITHDRAW_APPLICATION",
+        "LEAVE_GAME",
+    ]
+    assert schemas["OpenGameApplicationDecisionRequest"]["properties"]["decision"][
+        "enum"
+    ] == ["ACCEPT", "REJECT"]
+    assert schemas["OpenGameApplicationWithdrawalRequest"]["properties"]["action"] == {
+        "$ref": "#/components/schemas/OpenGameRegistrationWithdrawalAction"
+    }
+
+    assert "GAME_FULL" not in schemas["OpenGameApplyBlockedReason"]["enum"]
+    assert schemas["OpenGameWaitlistBlockedReason"]["enum"] == [
+        "APPLICATION_NOT_PENDING",
+        "GAME_SUSPENDED",
+        "GAME_CANCELLED",
+        "GAME_COMPLETED",
+        "GAME_STARTED",
+        "GAME_NOT_FULL",
+        "WAITLIST_NOT_ENABLED",
+    ]
+    review = schemas["OpenGameReviewActions"]
+    assert set(review["required"]) == {
+        "can_accept",
+        "accept_blocked_reason",
+        "can_waitlist",
+        "waitlist_blocked_reason",
+        "can_reject",
+        "reject_blocked_reason",
+    }
+    assert set(review["properties"]) == set(review["required"])
+
+    viewer = schemas["OpenGameViewerRegistration"]
+    assert {"waitlist_position", "waitlisted_at", "promoted_at"} <= set(
+        viewer["required"]
+    )
+    assert viewer["properties"]["waitlist_position"] == {
+        "type": ["integer", "null"],
+        "minimum": 1,
+    }
+    for field in ("waitlisted_at", "promoted_at"):
+        assert viewer["properties"][field] == {
+            "type": ["string", "null"],
+            "format": "date-time",
+        }
+    assert viewer["properties"]["available_withdrawal_action"] == {
+        "oneOf": [
+            {
+                "$ref": (
+                    "#/components/schemas/"
+                    "OpenGameRegistrationAvailableWithdrawalAction"
+                )
+            },
+            {"type": "null"},
+        ]
+    }
+
+    mine = schemas["MyOpenGameApplication"]
+    assert {"waitlist_position", "waitlisted_at", "promoted_at"} <= set(
+        mine["required"]
+    )
+
+    queue = schemas["OpenGameApplicationQueue"]
+    assert set(queue["required"]) == {
+        "remaining_spots",
+        "pending_count",
+        "applications",
+        "waitlist_count",
+        "waitlist",
+    }
+    assert queue["properties"]["waitlist"] == {
+        "type": "array",
+        "items": {
+            "$ref": "#/components/schemas/CaptainOpenGameWaitlistApplication"
+        },
+    }
+    waitlist_item = schemas["CaptainOpenGameWaitlistApplication"]
+    assert set(waitlist_item["required"]) == {
+        "id",
+        "display_name",
+        "position",
+        "note",
+        "applied_at",
+        "waitlisted_at",
+        "waitlist_position",
+    }
+    assert "allowed_actions" not in waitlist_item["properties"]
+    assert "waitlist_seq" not in waitlist_item["properties"]
+    assert schemas["OpenGameApplicationDecisionResult"]["properties"]["status"][
+        "enum"
+    ] == ["WAITLISTED", "JOINED", "REJECTED"]
+
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    for schema_name in (
+        "OpenGameRegistrationPersistedStatus",
+        "OpenGameRegistrationEffectiveStatus",
+        "OpenGameRegistrationWithdrawalKind",
+        "OpenGameRegistrationAvailableWithdrawalAction",
+        "OpenGameApplyBlockedReason",
+        "OpenGameReviewBlockedReason",
+        "OpenGameWaitlistBlockedReason",
+        "OpenGameReviewActions",
+        "OpenGameViewerRegistration",
+        "MyOpenGameApplication",
+        "CaptainOpenGameWaitlistApplication",
+        "OpenGameApplicationQueue",
+        "OpenGameApplicationDecisionResult",
+    ):
+        assert runtime["components"]["schemas"][schema_name] == schemas[schema_name]
 
 
 def test_registration_withdrawal_feature_contract_opens_only_the_frozen_write() -> None:

@@ -143,7 +143,13 @@ function queue(
   pendingCount = applications.length,
   remainingSpots = 4,
 ): OpenGameApplicationQueue {
-  return { remainingSpots, pendingCount, applications };
+  return {
+    remainingSpots,
+    pendingCount,
+    applications,
+    waitlistCount: 0,
+    waitlist: [],
+  };
 }
 
 async function openPending(page: RuntimePage): Promise<void> {
@@ -260,7 +266,8 @@ test("preserves server order, shows pendingCount, renders only applications[0], 
     "allowedActions", "appliedAt", "displayName", "id", "note", "position", "version",
   ].sort());
   expect(Object.keys(page.data.application.allowedActions).sort()).toEqual([
-    "acceptBlockedReason", "canAccept", "canReject", "rejectBlockedReason",
+    "acceptBlockedReason", "canAccept", "canWaitlist", "canReject", "rejectBlockedReason",
+    "waitlistBlockedReason",
   ].sort());
   expect(JSON.stringify(page.data)).not.toContain(firstApplication.displayName);
   for (const forbidden of ["userId", "phone", "wechat", "avatar", "order", "payment", "rating"]) {
@@ -325,6 +332,8 @@ test("uses the four allowedActions fields alone: full disables accept, keeps rej
     allowedActions: {
       canAccept: false,
       acceptBlockedReason: "GAME_FULL",
+      canWaitlist: false,
+      waitlistBlockedReason: "WAITLIST_NOT_ENABLED",
       canReject: true,
       rejectBlockedReason: null,
     },
@@ -344,6 +353,8 @@ test("uses the four allowedActions fields alone: full disables accept, keeps rej
     allowedActions: {
       canAccept: true,
       acceptBlockedReason: null,
+      canWaitlist: false,
+      waitlistBlockedReason: "GAME_NOT_FULL",
       canReject: true,
       rejectBlockedReason: null,
     },
@@ -491,6 +502,8 @@ test("an active definitive error also reclassifies a replacement durable record 
     allowedActions: {
       canAccept: false,
       acceptBlockedReason: "GAME_FULL",
+      canWaitlist: false,
+      waitlistBlockedReason: "WAITLIST_NOT_ENABLED",
       canReject: true,
       rejectBlockedReason: null,
     },
@@ -568,6 +581,8 @@ test("capacity conflict preserves the current row and requires an explicit autho
   const blockedActions = {
     canAccept: false as const,
     acceptBlockedReason: "GAME_FULL" as const,
+    canWaitlist: false as const,
+    waitlistBlockedReason: "WAITLIST_NOT_ENABLED" as const,
     canReject: true as const,
     rejectBlockedReason: null,
   };

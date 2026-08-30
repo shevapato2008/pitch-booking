@@ -22,17 +22,22 @@ from backend.app.modules.open_game_registrations.dto import (
     DecisionRequest,
     DecisionResult,
     DecisionResultStatus,
+    MyOpenGameApplication,
     Queue,
+    RegistrationPersistedStatus,
+    RegistrationWithdrawalKind,
     ViewerRegistration,
     WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     ApplyActions,
     ApplyBlockedReason,
+    AvailableWithdrawalAction,
     EffectiveRegistrationStatus,
     RegistrationFacts,
     ReviewActions,
     ReviewBlockedReason,
+    WaitlistBlockedReason,
     WithdrawalAction,
     project_apply_actions,
     project_available_withdrawal,
@@ -83,6 +88,8 @@ def _review_actions() -> ReviewActions:
     return ReviewActions(
         can_accept=True,
         accept_blocked_reason=None,
+        can_waitlist=False,
+        waitlist_blocked_reason="GAME_NOT_FULL",
         can_reject=True,
         reject_blocked_reason=None,
     )
@@ -145,6 +152,7 @@ def test_withdrawal_request_is_closed_strict_and_explicit() -> None:
     for invalid in (
         {"action": "LEAVE_GAME"},
         {"action": "LEAVE_GAME", "expected_version": 0},
+        {"action": "WITHDRAW_WAITLIST", "expected_version": 1},
         {"action": "AUTO", "expected_version": 1},
         {"action": "LEAVE_GAME", "expected_version": 2, "late": True},
     ):
@@ -159,35 +167,35 @@ def test_withdrawal_request_is_closed_strict_and_explicit() -> None:
             OpenGameRegistrationStatus.APPLIED,
             EffectiveOpenGameState.PUBLISHED,
             NOW,
-            WithdrawalAction.WITHDRAW_APPLICATION,
+            AvailableWithdrawalAction.WITHDRAW_APPLICATION,
             False,
         ),
         (
             OpenGameRegistrationStatus.APPLIED,
             EffectiveOpenGameState.SUSPENDED,
             NOW,
-            WithdrawalAction.WITHDRAW_APPLICATION,
+            AvailableWithdrawalAction.WITHDRAW_APPLICATION,
             False,
         ),
         (
             OpenGameRegistrationStatus.JOINED,
             EffectiveOpenGameState.PUBLISHED,
             NOW,
-            WithdrawalAction.LEAVE_GAME,
+            AvailableWithdrawalAction.LEAVE_GAME,
             False,
         ),
         (
             OpenGameRegistrationStatus.JOINED,
             EffectiveOpenGameState.PUBLISHED,
             NOW + timedelta(microseconds=1),
-            WithdrawalAction.LEAVE_GAME,
+            AvailableWithdrawalAction.LEAVE_GAME,
             True,
         ),
         (
             OpenGameRegistrationStatus.JOINED,
             EffectiveOpenGameState.SUSPENDED,
             NOW + timedelta(microseconds=1),
-            WithdrawalAction.LEAVE_GAME,
+            AvailableWithdrawalAction.LEAVE_GAME,
             True,
         ),
         (
@@ -231,7 +239,7 @@ def test_available_withdrawal_projection_freezes_status_state_and_exact_six_hour
     status: OpenGameRegistrationStatus,
     game_state: EffectiveOpenGameState,
     now: datetime,
-    expected_action: WithdrawalAction | None,
+    expected_action: AvailableWithdrawalAction | None,
     expected_late: bool,
 ) -> None:
     projection = project_available_withdrawal(
@@ -480,10 +488,7 @@ def test_remaining_spots_is_clamped_at_zero(
                 "viewer_authenticated": False,
             },
         ),
-        (
-            ApplyBlockedReason.GAME_FULL,
-            {"open_spots": 1, "joined_count": 1, "viewer_authenticated": False},
-        ),
+        (None, {"open_spots": 1, "joined_count": 1}),
         (ApplyBlockedReason.AUTH_REQUIRED, {"viewer_authenticated": False}),
         (None, {}),
     ],
@@ -494,6 +499,11 @@ def test_apply_blocker_precedence_is_exact(
     actions = project_apply_actions(_facts(**overrides), NOW)
     assert actions.apply_blocked_reason is expected
     assert actions.can_apply is (expected is None)
+
+
+def test_full_game_still_allows_an_authenticated_nonowner_to_apply() -> None:
+    actions = project_apply_actions(_facts(open_spots=1, joined_count=1), NOW)
+    assert actions == ApplyActions(can_apply=True, apply_blocked_reason=None)
 
 
 def test_apply_deadline_equality_is_blocked_but_one_microsecond_before_is_open() -> None:
@@ -524,7 +534,7 @@ def test_apply_start_equality_has_precedence_over_every_later_blocker() -> None:
 
 def test_apply_actions_require_exact_action_blocker_pairing_and_are_frozen() -> None:
     for values in (
-        {"can_apply": True, "apply_blocked_reason": ApplyBlockedReason.GAME_FULL},
+        {"can_apply": True, "apply_blocked_reason": ApplyBlockedReason.AUTH_REQUIRED},
         {"can_apply": False, "apply_blocked_reason": None},
     ):
         with pytest.raises(ValidationError):
@@ -574,6 +584,8 @@ def test_review_common_blocker_precedence_is_exact(
     assert actions == ReviewActions(
         can_accept=False,
         accept_blocked_reason=expected,
+        can_waitlist=False,
+        waitlist_blocked_reason=WaitlistBlockedReason(expected.value),
         can_reject=False,
         reject_blocked_reason=expected,
     )
@@ -583,24 +595,356 @@ def test_game_full_blocks_accept_but_never_reject() -> None:
     actions = project_review_actions(
         _facts(open_spots=1, joined_count=1), OpenGameRegistrationStatus.APPLIED, NOW
     )
-    assert actions == ReviewActions(
-        can_accept=False,
-        accept_blocked_reason=ReviewBlockedReason.GAME_FULL,
-        can_reject=True,
-        reject_blocked_reason=None,
-    )
+    assert actions.model_dump(mode="json") == {
+        "can_accept": False,
+        "accept_blocked_reason": "GAME_FULL",
+        "can_waitlist": False,
+        "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+        "can_reject": True,
+        "reject_blocked_reason": None,
+    }
 
 
 def test_pending_review_has_both_actions_when_common_guards_and_capacity_allow() -> None:
     actions = project_review_actions(
         _facts(), OpenGameRegistrationStatus.APPLIED, NOW
     )
-    assert actions == ReviewActions(
-        can_accept=True,
-        accept_blocked_reason=None,
+    assert actions.model_dump(mode="json") == {
+        "can_accept": True,
+        "accept_blocked_reason": None,
+        "can_waitlist": False,
+        "waitlist_blocked_reason": "GAME_NOT_FULL",
+        "can_reject": True,
+        "reject_blocked_reason": None,
+    }
+
+
+def test_waitlist_read_shapes_accept_future_records_without_opening_write_commands() -> None:
+    waitlisted = ViewerRegistration.model_validate(
+        {
+            "id": "30000000-0000-0000-0000-000000000041",
+            "display_name": "中场老范",
+            "position": "MIDFIELDER",
+            "note": None,
+            "persisted_status": "WAITLISTED",
+            "effective_status": "WAITLISTED",
+            "version": 2,
+            "applied_at": NOW,
+            "decided_at": NOW + timedelta(minutes=1),
+            "withdrawn_at": None,
+            "withdrawal_kind": None,
+            "late_exit_recorded": False,
+            "available_withdrawal_action": "WITHDRAW_WAITLIST",
+            "late_exit_will_be_recorded": False,
+            "waitlist_position": 1,
+            "waitlisted_at": NOW + timedelta(minutes=1),
+            "promoted_at": None,
+        }
+    )
+    assert waitlisted.persisted_status.value == "WAITLISTED"
+    assert waitlisted.effective_status.value == "WAITLISTED"
+    assert waitlisted.waitlist_position == 1
+
+    decision = DecisionResult.model_validate(
+        {
+            "application_id": "30000000-0000-0000-0000-000000000041",
+            "status": "WAITLISTED",
+            "version": 2,
+            "decided_at": NOW + timedelta(minutes=1),
+            "remaining_spots": 0,
+            "allowed_actions": {
+                "can_accept": False,
+                "accept_blocked_reason": "APPLICATION_NOT_PENDING",
+                "can_waitlist": False,
+                "waitlist_blocked_reason": "APPLICATION_NOT_PENDING",
+                "can_reject": False,
+                "reject_blocked_reason": "APPLICATION_NOT_PENDING",
+            },
+        }
+    )
+    assert decision.status.value == "WAITLISTED"
+
+
+def test_queue_and_my_application_accept_future_waitlist_read_shapes() -> None:
+    queue = Queue.model_validate(
+        {
+            "remaining_spots": 0,
+            "pending_count": 0,
+            "applications": [],
+            "waitlist_count": 2,
+            "waitlist": [
+                {
+                    "id": "30000000-0000-0000-0000-000000000041",
+                    "display_name": "中场老范",
+                    "position": "MIDFIELDER",
+                    "note": None,
+                    "applied_at": NOW,
+                    "waitlisted_at": NOW + timedelta(minutes=1),
+                    "waitlist_position": 1,
+                },
+                {
+                    "id": "30000000-0000-0000-0000-000000000042",
+                    "display_name": "门前老陈",
+                    "position": "GOALKEEPER",
+                    "note": "可以候补",
+                    "applied_at": NOW + timedelta(seconds=1),
+                    "waitlisted_at": NOW + timedelta(minutes=2),
+                    "waitlist_position": 2,
+                },
+            ],
+        }
+    )
+    assert queue.waitlist_count == len(queue.waitlist) == 2
+    assert [row.waitlist_position for row in queue.waitlist] == [1, 2]
+    assert "allowed_actions" not in queue.model_dump(mode="json")["waitlist"][0]
+    assert "waitlist_seq" not in queue.model_dump(mode="json")["waitlist"][0]
+
+    mine = MyOpenGameApplication.model_validate(
+        {
+            "id": "30000000-0000-0000-0000-000000000041",
+            "effective_status": "WAITLISTED",
+            "applied_at": NOW,
+            "waitlist_position": 1,
+            "waitlisted_at": NOW + timedelta(minutes=1),
+            "promoted_at": None,
+            "detail_path": (
+                "/pages/captain-game-public/index?token="
+                "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+            ),
+            "game_name": "周五浦东七人制",
+            "starts_at": NOW + timedelta(hours=2),
+            "ends_at": NOW + timedelta(hours=4),
+            "time_zone": "Asia/Shanghai",
+            "venue_name": "浦东星火足球公园",
+            "pitch_name": "A1 场",
+            "pitch_specification": "7人制",
+        }
+    )
+    assert mine.effective_status.value == "WAITLISTED"
+    assert mine.waitlist_position == 1
+
+
+def test_viewer_waitlist_lifecycle_rejects_inconsistent_or_inverted_history() -> None:
+    valid = {
+        "id": "30000000-0000-0000-0000-000000000041",
+        "display_name": "中场老范",
+        "position": "MIDFIELDER",
+        "note": None,
+        "persisted_status": "WAITLISTED",
+        "effective_status": "WAITLISTED",
+        "version": 2,
+        "applied_at": NOW,
+        "decided_at": NOW + timedelta(minutes=1),
+        "withdrawn_at": None,
+        "withdrawal_kind": None,
+        "late_exit_recorded": False,
+        "available_withdrawal_action": "WITHDRAW_WAITLIST",
+        "late_exit_will_be_recorded": False,
+        "waitlist_position": 1,
+        "waitlisted_at": NOW + timedelta(minutes=1),
+        "promoted_at": None,
+    }
+    invalid_patches = (
+        {"decided_at": None},
+        {"waitlist_position": None},
+        {"waitlisted_at": None},
+        {"promoted_at": NOW + timedelta(minutes=2)},
+        {"decided_at": NOW - timedelta(seconds=1)},
+        {"waitlisted_at": NOW - timedelta(seconds=1)},
+        {"available_withdrawal_action": "LEAVE_GAME"},
+        {"effective_status": "JOINED"},
+        {
+            "persisted_status": "JOINED",
+            "effective_status": "JOINED",
+            "waitlist_position": 1,
+            "promoted_at": NOW + timedelta(minutes=2),
+            "available_withdrawal_action": "LEAVE_GAME",
+        },
+        {
+            "persisted_status": "WITHDRAWN",
+            "effective_status": "WITHDRAWN",
+            "withdrawal_kind": "WAITLIST_WITHDRAWAL",
+            "withdrawn_at": NOW + timedelta(minutes=2),
+            "waitlist_position": 1,
+            "available_withdrawal_action": None,
+        },
+    )
+    for patch in invalid_patches:
+        with pytest.raises(ValidationError):
+            ViewerRegistration.model_validate(valid | patch)
+
+
+def test_viewer_waitlist_lifecycle_accepts_promoted_direct_and_waitlist_withdrawal() -> None:
+    base = {
+        "id": "30000000-0000-0000-0000-000000000041",
+        "display_name": "中场老范",
+        "position": "MIDFIELDER",
+        "note": None,
+        "version": 3,
+        "applied_at": NOW,
+        "decided_at": NOW + timedelta(minutes=1),
+        "withdrawn_at": None,
+        "withdrawal_kind": None,
+        "late_exit_recorded": False,
+        "available_withdrawal_action": "LEAVE_GAME",
+        "late_exit_will_be_recorded": False,
+    }
+    promoted = ViewerRegistration.model_validate(
+        base
+        | {
+            "persisted_status": "JOINED",
+            "effective_status": "JOINED",
+            "waitlist_position": None,
+            "waitlisted_at": NOW + timedelta(minutes=1),
+            "promoted_at": NOW + timedelta(minutes=2),
+        }
+    )
+    direct = ViewerRegistration.model_validate(
+        base
+        | {
+            "persisted_status": "JOINED",
+            "effective_status": "JOINED",
+            "waitlist_position": None,
+            "waitlisted_at": None,
+            "promoted_at": None,
+        }
+    )
+    withdrawn = ViewerRegistration.model_validate(
+        base
+        | {
+            "persisted_status": "WITHDRAWN",
+            "effective_status": "WITHDRAWN",
+            "withdrawn_at": NOW + timedelta(minutes=2),
+            "withdrawal_kind": "WAITLIST_WITHDRAWAL",
+            "available_withdrawal_action": None,
+            "waitlist_position": None,
+            "waitlisted_at": NOW + timedelta(minutes=1),
+            "promoted_at": None,
+        }
+    )
+    assert promoted.waitlisted_at is not None and promoted.promoted_at is not None
+    assert direct.waitlisted_at is direct.promoted_at is None
+    assert withdrawn.withdrawal_kind.value == "WAITLIST_WITHDRAWAL"
+
+
+def test_application_withdrawal_cannot_carry_a_late_game_exit_marker() -> None:
+    with pytest.raises(ValidationError):
+        ViewerRegistration.model_validate(
+            {
+                "id": "30000000-0000-0000-0000-000000000041",
+                "display_name": "中场老范",
+                "position": "MIDFIELDER",
+                "note": None,
+                "persisted_status": "WITHDRAWN",
+                "effective_status": "WITHDRAWN",
+                "version": 2,
+                "applied_at": NOW,
+                "decided_at": None,
+                "withdrawn_at": NOW + timedelta(minutes=1),
+                "withdrawal_kind": "APPLICATION_WITHDRAWAL",
+                "late_exit_recorded": True,
+                "available_withdrawal_action": None,
+                "late_exit_will_be_recorded": False,
+                "waitlist_position": None,
+                "waitlisted_at": None,
+                "promoted_at": None,
+            }
+        )
+
+
+def test_queue_requires_count_and_contiguous_server_ordered_waitlist_positions() -> None:
+    row = {
+        "id": "30000000-0000-0000-0000-000000000041",
+        "display_name": "中场老范",
+        "position": "MIDFIELDER",
+        "note": None,
+        "applied_at": NOW,
+        "waitlisted_at": NOW + timedelta(minutes=1),
+        "waitlist_position": 1,
+    }
+    base = {
+        "remaining_spots": 0,
+        "pending_count": 0,
+        "applications": [],
+        "waitlist_count": 1,
+        "waitlist": [row],
+    }
+    for payload in (
+        base | {"waitlist_count": 0},
+        base | {"waitlist": [row | {"waitlist_position": 2}]},
+        base | {"waitlist": [row | {"waitlisted_at": NOW - timedelta(seconds=1)}]},
+    ):
+        with pytest.raises(ValidationError):
+            Queue.model_validate(payload)
+
+
+def test_review_actions_forbid_accept_and_waitlist_being_available_together() -> None:
+    with pytest.raises(ValidationError):
+        ReviewActions(
+            can_accept=True,
+            accept_blocked_reason=None,
+            can_waitlist=True,
+            waitlist_blocked_reason=None,
+            can_reject=True,
+            reject_blocked_reason=None,
+        )
+
+
+def test_review_actions_enforce_closed_capacity_and_common_blocker_matrix() -> None:
+    future_waitlist = ReviewActions(
+        can_accept=False,
+        accept_blocked_reason=ReviewBlockedReason.GAME_FULL,
+        can_waitlist=True,
+        waitlist_blocked_reason=None,
         can_reject=True,
         reject_blocked_reason=None,
     )
+    assert future_waitlist.can_waitlist
+
+    for values in (
+        {
+            "can_accept": False,
+            "accept_blocked_reason": ReviewBlockedReason.GAME_FULL,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": WaitlistBlockedReason.GAME_NOT_FULL,
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        },
+        {
+            "can_accept": False,
+            "accept_blocked_reason": ReviewBlockedReason.GAME_STARTED,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": WaitlistBlockedReason.GAME_CANCELLED,
+            "can_reject": False,
+            "reject_blocked_reason": ReviewBlockedReason.GAME_STARTED,
+        },
+    ):
+        with pytest.raises(ValidationError):
+            ReviewActions(**values)  # type: ignore[arg-type]
+
+
+def test_my_waitlisted_item_requires_position_and_waitlisted_time() -> None:
+    payload = {
+        "id": "30000000-0000-0000-0000-000000000041",
+        "effective_status": "WAITLISTED",
+        "applied_at": NOW,
+        "waitlist_position": None,
+        "waitlisted_at": None,
+        "promoted_at": None,
+        "detail_path": (
+            "/pages/captain-game-public/index?token="
+            "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+        ),
+        "game_name": "周五浦东七人制",
+        "starts_at": NOW + timedelta(hours=2),
+        "ends_at": NOW + timedelta(hours=4),
+        "time_zone": "Asia/Shanghai",
+        "venue_name": "浦东星火足球公园",
+        "pitch_name": "A1 场",
+        "pitch_specification": "7人制",
+    }
+    with pytest.raises(ValidationError):
+        MyOpenGameApplication.model_validate(payload)
 
 
 def test_review_start_equality_is_blocked_but_one_microsecond_before_is_open() -> None:
@@ -622,24 +966,32 @@ def test_review_start_equality_is_blocked_but_one_microsecond_before_is_open() -
         {
             "can_accept": True,
             "accept_blocked_reason": ReviewBlockedReason.GAME_FULL,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": WaitlistBlockedReason.GAME_NOT_FULL,
             "can_reject": True,
             "reject_blocked_reason": None,
         },
         {
             "can_accept": False,
             "accept_blocked_reason": None,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": WaitlistBlockedReason.GAME_NOT_FULL,
             "can_reject": True,
             "reject_blocked_reason": None,
         },
         {
             "can_accept": True,
             "accept_blocked_reason": None,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": WaitlistBlockedReason.GAME_NOT_FULL,
             "can_reject": False,
             "reject_blocked_reason": None,
         },
         {
             "can_accept": False,
             "accept_blocked_reason": ReviewBlockedReason.GAME_FULL,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": WaitlistBlockedReason.WAITLIST_NOT_ENABLED,
             "can_reject": False,
             "reject_blocked_reason": ReviewBlockedReason.GAME_FULL,
         },
@@ -688,12 +1040,20 @@ def test_all_dto_shapes_are_closed_exact_and_required_nullable_fields_stay_requi
     assert set(ReviewActions.model_fields) == {
         "can_accept",
         "accept_blocked_reason",
+        "can_waitlist",
+        "waitlist_blocked_reason",
         "can_reject",
         "reject_blocked_reason",
     }
     assert set(ViewerRegistration.model_fields) == VIEWER_REGISTRATION_FIELDS
     assert set(CaptainApplication.model_fields) == CAPTAIN_APPLICATION_FIELDS
-    assert set(Queue.model_fields) == {"remaining_spots", "pending_count", "applications"}
+    assert set(Queue.model_fields) == {
+        "remaining_spots",
+        "pending_count",
+        "applications",
+        "waitlist_count",
+        "waitlist",
+    }
     assert set(DecisionRequest.model_fields) == {"decision", "expected_version"}
     assert set(DecisionResult.model_fields) == {
         "application_id",
@@ -704,7 +1064,19 @@ def test_all_dto_shapes_are_closed_exact_and_required_nullable_fields_stay_requi
         "allowed_actions",
     }
     for model, nullable_fields in (
-        (ViewerRegistration, {"note", "decided_at"}),
+        (
+            ViewerRegistration,
+            {
+                "note",
+                "decided_at",
+                "withdrawn_at",
+                "withdrawal_kind",
+                "available_withdrawal_action",
+                "waitlist_position",
+                "waitlisted_at",
+                "promoted_at",
+            },
+        ),
         (CaptainApplication, {"note"}),
         (DecisionResult, {"decided_at"}),
     ):
@@ -756,6 +1128,9 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
             "late_exit_recorded",
             "available_withdrawal_action",
             "late_exit_will_be_recorded",
+            "waitlist_position",
+            "waitlisted_at",
+            "promoted_at",
         }
     )
     projected = project_viewer_registration(
@@ -775,7 +1150,7 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
         now=NOW,
     )
     assert set(projected.model_dump()) == VIEWER_REGISTRATION_FIELDS
-    assert projected.persisted_status is OpenGameRegistrationStatus.JOINED
+    assert projected.persisted_status is RegistrationPersistedStatus.JOINED
     assert projected.effective_status is EffectiveRegistrationStatus.CANCELLED
 
 
@@ -868,6 +1243,9 @@ def test_response_models_are_closed_and_frozen() -> None:
         late_exit_recorded=False,
         available_withdrawal_action=None,
         late_exit_will_be_recorded=False,
+        waitlist_position=None,
+        waitlisted_at=None,
+        promoted_at=None,
     )
     with pytest.raises(ValidationError):
         ViewerRegistration.model_validate({**viewer.model_dump(), "internal": True})
@@ -885,7 +1263,13 @@ def test_queue_is_closed_frozen_and_keeps_the_wire_shape() -> None:
         version=1,
         allowed_actions=_review_actions(),
     )
-    queue = Queue(remaining_spots=3, pending_count=1, applications=[application])
+    queue = Queue(
+        remaining_spots=3,
+        pending_count=1,
+        applications=[application],
+        waitlist_count=0,
+        waitlist=[],
+    )
     assert queue.pending_count == 1
     with pytest.raises(ValidationError):
         Queue(remaining_spots=True, pending_count=1, applications=[])  # type: ignore[arg-type]
@@ -912,6 +1296,8 @@ def test_queue_applications_are_deeply_frozen_but_serialize_as_a_json_array() ->
         remaining_spots=3,
         pending_count=1,
         applications=input_applications,
+        waitlist_count=0,
+        waitlist=[],
     )
 
     with pytest.raises(AttributeError):
@@ -931,6 +1317,7 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
     ]
     assert [status.value for status in EffectiveRegistrationStatus] == [
         "APPLIED",
+        "WAITLISTED",
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
@@ -942,7 +1329,6 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "ALREADY_APPLIED",
         "GAME_NOT_PUBLISHED",
         "REGISTRATION_DEADLINE_PASSED",
-        "GAME_FULL",
         "GAME_SUSPENDED",
         "GAME_CANCELLED",
         "GAME_COMPLETED",
@@ -956,8 +1342,33 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "GAME_STARTED",
         "GAME_FULL",
     ]
+    assert [reason.value for reason in WaitlistBlockedReason] == [
+        "APPLICATION_NOT_PENDING",
+        "GAME_SUSPENDED",
+        "GAME_CANCELLED",
+        "GAME_COMPLETED",
+        "GAME_STARTED",
+        "GAME_NOT_FULL",
+        "WAITLIST_NOT_ENABLED",
+    ]
+    assert [status.value for status in RegistrationPersistedStatus] == [
+        "APPLIED",
+        "WAITLISTED",
+        "JOINED",
+        "REJECTED",
+        "WITHDRAWN",
+    ]
+    assert [kind.value for kind in RegistrationWithdrawalKind] == [
+        "APPLICATION_WITHDRAWAL",
+        "WAITLIST_WITHDRAWAL",
+        "GAME_EXIT",
+    ]
     assert [decision.value for decision in ApplicationDecision] == ["ACCEPT", "REJECT"]
-    assert [status.value for status in DecisionResultStatus] == ["JOINED", "REJECTED"]
+    assert [status.value for status in DecisionResultStatus] == [
+        "WAITLISTED",
+        "JOINED",
+        "REJECTED",
+    ]
 
 
 def test_models_do_not_accidentally_serialize_any_unexpected_nested_key() -> None:
@@ -970,6 +1381,8 @@ def test_models_do_not_accidentally_serialize_any_unexpected_nested_key() -> Non
         allowed_actions=ReviewActions(
             can_accept=False,
             accept_blocked_reason=ReviewBlockedReason.APPLICATION_NOT_PENDING,
+            can_waitlist=False,
+            waitlist_blocked_reason=WaitlistBlockedReason.APPLICATION_NOT_PENDING,
             can_reject=False,
             reject_blocked_reason=ReviewBlockedReason.APPLICATION_NOT_PENDING,
         ),
@@ -981,9 +1394,13 @@ def test_models_do_not_accidentally_serialize_any_unexpected_nested_key() -> Non
         "decided_at": None,
         "remaining_spots": 3,
         "allowed_actions": {
-            "can_accept": False,
-            "accept_blocked_reason": ReviewBlockedReason.APPLICATION_NOT_PENDING,
-            "can_reject": False,
+                "can_accept": False,
+                "accept_blocked_reason": ReviewBlockedReason.APPLICATION_NOT_PENDING,
+                "can_waitlist": False,
+                "waitlist_blocked_reason": (
+                    WaitlistBlockedReason.APPLICATION_NOT_PENDING
+                ),
+                "can_reject": False,
             "reject_blocked_reason": ReviewBlockedReason.APPLICATION_NOT_PENDING,
         },
     }

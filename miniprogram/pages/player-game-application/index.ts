@@ -187,7 +187,6 @@ function errorMessageForAuthority(context: OpenGameRegistrationContext): string 
     case "ALREADY_APPLIED": return "你已经申请过这场球局，请返回详情查看结果。";
     case "GAME_NOT_PUBLISHED": return "这场球局暂未开放申请。";
     case "REGISTRATION_DEADLINE_PASSED": return "报名已经截止。";
-    case "GAME_FULL": return "当前名额已满。";
     case "GAME_SUSPENDED": return "球局暂时停止报名。";
     case "GAME_CANCELLED": return "球局已取消。";
     case "GAME_COMPLETED": return "球局已结束。";

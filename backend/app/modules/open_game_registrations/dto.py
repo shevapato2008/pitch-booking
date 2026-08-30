@@ -5,18 +5,24 @@ import unicodedata
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from backend.app.models import (
     OpenGameRegistrationPosition,
-    OpenGameRegistrationStatus,
-    OpenGameRegistrationWithdrawalKind,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
     ApplyActions,
+    AvailableWithdrawalAction,
     EffectiveRegistrationStatus,
     ReviewActions,
     WithdrawalAction,
@@ -56,8 +62,23 @@ class ApplicationDecision(StrEnum):
 
 
 class DecisionResultStatus(StrEnum):
+    WAITLISTED = "WAITLISTED"
     JOINED = "JOINED"
     REJECTED = "REJECTED"
+
+
+class RegistrationPersistedStatus(StrEnum):
+    APPLIED = "APPLIED"
+    WAITLISTED = "WAITLISTED"
+    JOINED = "JOINED"
+    REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
+
+
+class RegistrationWithdrawalKind(StrEnum):
+    APPLICATION_WITHDRAWAL = "APPLICATION_WITHDRAWAL"
+    WAITLIST_WITHDRAWAL = "WAITLIST_WITHDRAWAL"
+    GAME_EXIT = "GAME_EXIT"
 
 
 class CreateApplicationRequest(_ClosedModel):
@@ -103,16 +124,149 @@ class ViewerRegistration(_FrozenClosedModel):
     display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
     position: OpenGameRegistrationPosition
     note: Annotated[str, Field(strict=True, max_length=120)] | None
-    persisted_status: OpenGameRegistrationStatus
+    persisted_status: RegistrationPersistedStatus
     effective_status: EffectiveRegistrationStatus
     version: Annotated[int, Field(strict=True, ge=1)]
-    applied_at: datetime
-    decided_at: datetime | None
-    withdrawn_at: datetime | None
-    withdrawal_kind: OpenGameRegistrationWithdrawalKind | None
+    applied_at: AwareDatetime
+    decided_at: AwareDatetime | None
+    withdrawn_at: AwareDatetime | None
+    withdrawal_kind: RegistrationWithdrawalKind | None
     late_exit_recorded: Annotated[bool, Field(strict=True)]
-    available_withdrawal_action: WithdrawalAction | None
+    available_withdrawal_action: AvailableWithdrawalAction | None
     late_exit_will_be_recorded: Annotated[bool, Field(strict=True)]
+    waitlist_position: Annotated[int, Field(strict=True, ge=1)] | None
+    waitlisted_at: AwareDatetime | None
+    promoted_at: AwareDatetime | None
+
+    @model_validator(mode="after")
+    def validate_lifecycle(self) -> Self:
+        expected_effective = EffectiveRegistrationStatus(self.persisted_status.value)
+        if self.effective_status not in {
+            expected_effective,
+            EffectiveRegistrationStatus.CANCELLED,
+        }:
+            raise ValueError("effective status must preserve persisted status or cancel it")
+        for field_name in (
+            "decided_at",
+            "withdrawn_at",
+            "waitlisted_at",
+            "promoted_at",
+        ):
+            value = getattr(self, field_name)
+            if value is not None and value < self.applied_at:
+                raise ValueError(f"{field_name} must not precede applied_at")
+        if (
+            self.decided_at is not None
+            and self.waitlisted_at is not None
+            and self.waitlisted_at < self.decided_at
+        ):
+            raise ValueError("waitlisted_at must not precede decided_at")
+        if (
+            self.promoted_at is not None
+            and (
+                self.waitlisted_at is None
+                or self.promoted_at < self.waitlisted_at
+            )
+        ):
+            raise ValueError("promoted_at must follow waitlisted_at")
+        if self.withdrawn_at is not None:
+            for field_name in ("decided_at", "waitlisted_at", "promoted_at"):
+                value = getattr(self, field_name)
+                if value is not None and self.withdrawn_at < value:
+                    raise ValueError(f"withdrawn_at must not precede {field_name}")
+
+        no_waitlist_history = (
+            self.waitlist_position is None
+            and self.waitlisted_at is None
+            and self.promoted_at is None
+        )
+        promoted_history = (
+            self.waitlist_position is None
+            and self.waitlisted_at is not None
+            and self.promoted_at is not None
+        )
+        status = self.persisted_status
+        if status is RegistrationPersistedStatus.APPLIED:
+            if self.decided_at is not None or not no_waitlist_history:
+                raise ValueError("APPLIED lifecycle is inconsistent")
+        elif status is RegistrationPersistedStatus.WAITLISTED:
+            if (
+                self.decided_at is None
+                or self.waitlist_position is None
+                or self.waitlisted_at is None
+                or self.promoted_at is not None
+            ):
+                raise ValueError("WAITLISTED lifecycle is inconsistent")
+        elif status is RegistrationPersistedStatus.JOINED:
+            if self.decided_at is None or not (
+                no_waitlist_history or promoted_history
+            ):
+                raise ValueError("JOINED lifecycle is inconsistent")
+        elif status is RegistrationPersistedStatus.REJECTED:
+            if self.decided_at is None or not no_waitlist_history:
+                raise ValueError("REJECTED lifecycle is inconsistent")
+
+        if status is not RegistrationPersistedStatus.WITHDRAWN:
+            if (
+                self.withdrawn_at is not None
+                or self.withdrawal_kind is not None
+                or self.late_exit_recorded
+            ):
+                raise ValueError("non-withdrawn lifecycle contains withdrawal audit")
+        else:
+            if self.withdrawn_at is None or self.withdrawal_kind is None:
+                raise ValueError("WITHDRAWN lifecycle requires withdrawal audit")
+            if self.withdrawal_kind is RegistrationWithdrawalKind.APPLICATION_WITHDRAWAL:
+                if (
+                    self.decided_at is not None
+                    or not no_waitlist_history
+                    or self.late_exit_recorded
+                ):
+                    raise ValueError("application withdrawal lifecycle is inconsistent")
+            elif self.withdrawal_kind is RegistrationWithdrawalKind.WAITLIST_WITHDRAWAL:
+                if (
+                    self.decided_at is None
+                    or self.waitlist_position is not None
+                    or self.waitlisted_at is None
+                    or self.promoted_at is not None
+                    or self.late_exit_recorded
+                ):
+                    raise ValueError("waitlist withdrawal lifecycle is inconsistent")
+            elif (
+                self.decided_at is None
+                or not (no_waitlist_history or promoted_history)
+            ):
+                raise ValueError("game exit lifecycle is inconsistent")
+
+        expected_action = {
+            RegistrationPersistedStatus.APPLIED: (
+                AvailableWithdrawalAction.WITHDRAW_APPLICATION
+            ),
+            RegistrationPersistedStatus.WAITLISTED: (
+                AvailableWithdrawalAction.WITHDRAW_WAITLIST
+            ),
+            RegistrationPersistedStatus.JOINED: AvailableWithdrawalAction.LEAVE_GAME,
+            RegistrationPersistedStatus.REJECTED: None,
+            RegistrationPersistedStatus.WITHDRAWN: None,
+        }[status]
+        if self.available_withdrawal_action not in {None, expected_action}:
+            raise ValueError("available withdrawal action does not match lifecycle")
+        if (
+            self.effective_status is EffectiveRegistrationStatus.CANCELLED
+            and self.available_withdrawal_action is not None
+        ):
+            raise ValueError("cancelled registration cannot expose a withdrawal action")
+        if self.late_exit_will_be_recorded and (
+            self.available_withdrawal_action
+            is not AvailableWithdrawalAction.LEAVE_GAME
+        ):
+            raise ValueError("late exit warning requires LEAVE_GAME")
+        if status is RegistrationPersistedStatus.WITHDRAWN and (
+            self.available_withdrawal_action is not None
+            or self.late_exit_will_be_recorded
+        ):
+            raise ValueError("withdrawn registration cannot expose another withdrawal")
+        return self
 
 
 class CaptainApplication(_FrozenClosedModel):
@@ -133,16 +287,50 @@ class RegistrationContext(_FrozenClosedModel):
     allowed_actions: ApplyActions
 
 
+class CaptainWaitlistApplication(_FrozenClosedModel):
+    id: uuid.UUID
+    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    position: OpenGameRegistrationPosition
+    note: Annotated[str, Field(strict=True, max_length=120)] | None
+    applied_at: AwareDatetime
+    waitlisted_at: AwareDatetime
+    waitlist_position: Annotated[int, Field(strict=True, ge=1)]
+
+    @model_validator(mode="after")
+    def validate_lifecycle(self) -> Self:
+        if self.waitlisted_at < self.applied_at:
+            raise ValueError("waitlisted_at must not precede applied_at")
+        return self
+
+
 class Queue(_FrozenClosedModel):
     remaining_spots: Annotated[int, Field(strict=True, ge=0)]
     pending_count: Annotated[int, Field(strict=True, ge=0)]
     applications: tuple[CaptainApplication, ...]
+    waitlist_count: Annotated[int, Field(strict=True, ge=0)]
+    waitlist: tuple[CaptainWaitlistApplication, ...]
+
+    @model_validator(mode="after")
+    def validate_counts_and_order(self) -> Self:
+        if self.pending_count != len(self.applications):
+            raise ValueError("pending_count must equal applications length")
+        if self.waitlist_count != len(self.waitlist):
+            raise ValueError("waitlist_count must equal waitlist length")
+        if any(
+            item.waitlist_position != index
+            for index, item in enumerate(self.waitlist, start=1)
+        ):
+            raise ValueError("waitlist must be in contiguous one-based server order")
+        return self
 
 
 class MyOpenGameApplication(_FrozenClosedModel):
     id: uuid.UUID
     effective_status: EffectiveRegistrationStatus
     applied_at: AwareDatetime
+    waitlist_position: Annotated[int, Field(strict=True, ge=1)] | None
+    waitlisted_at: AwareDatetime | None
+    promoted_at: AwareDatetime | None
     detail_path: Annotated[
         str,
         Field(
@@ -166,6 +354,51 @@ class MyOpenGameApplication(_FrozenClosedModel):
         except ZoneInfoNotFoundError as error:
             raise ValueError("time_zone must identify an IANA time zone") from error
         return value
+
+    @model_validator(mode="after")
+    def validate_waitlist_history(self) -> Self:
+        if self.waitlisted_at is not None and self.waitlisted_at < self.applied_at:
+            raise ValueError("waitlisted_at must not precede applied_at")
+        if self.promoted_at is not None and (
+            self.waitlisted_at is None or self.promoted_at < self.waitlisted_at
+        ):
+            raise ValueError("promoted_at must follow waitlisted_at")
+        no_history = (
+            self.waitlist_position is None
+            and self.waitlisted_at is None
+            and self.promoted_at is None
+        )
+        current_waitlist = (
+            self.waitlist_position is not None
+            and self.waitlisted_at is not None
+            and self.promoted_at is None
+        )
+        waitlist_history = (
+            self.waitlist_position is None
+            and self.waitlisted_at is not None
+            and self.promoted_at is None
+        )
+        promoted_history = (
+            self.waitlist_position is None
+            and self.waitlisted_at is not None
+            and self.promoted_at is not None
+        )
+        if self.effective_status is EffectiveRegistrationStatus.WAITLISTED:
+            valid = current_waitlist
+        elif self.effective_status is EffectiveRegistrationStatus.JOINED:
+            valid = no_history or promoted_history
+        elif self.effective_status in {
+            EffectiveRegistrationStatus.APPLIED,
+            EffectiveRegistrationStatus.REJECTED,
+        }:
+            valid = no_history
+        elif self.effective_status is EffectiveRegistrationStatus.WITHDRAWN:
+            valid = no_history or waitlist_history or promoted_history
+        else:
+            valid = no_history or current_waitlist or waitlist_history or promoted_history
+        if not valid:
+            raise ValueError("waitlist history does not match effective status")
+        return self
 
 
 class MyOpenGameApplicationsResponse(_FrozenClosedModel):
