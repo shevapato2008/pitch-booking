@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from backend.app.models import (
+    OpenGameAttendanceStatus,
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
     OpenGameRegistrationWithdrawalKind,
@@ -15,6 +16,7 @@ from backend.app.modules.open_game_registrations.dto import (
     CaptainApplication,
     CaptainWaitlistApplication,
     MyOpenGameApplication,
+    OpenGameAttendanceRosterItem,
     RegistrationPersistedStatus,
     RegistrationWithdrawalKind,
     ViewerRegistration,
@@ -50,6 +52,8 @@ VIEWER_REGISTRATION_FIELDS = frozenset(
         "waitlist_position",
         "waitlisted_at",
         "promoted_at",
+        "attendance_status",
+        "attendance_recorded_at",
     }
 )
 
@@ -73,6 +77,8 @@ MY_OPEN_GAME_APPLICATION_FIELDS = frozenset(
         "waitlist_position",
         "waitlisted_at",
         "promoted_at",
+        "attendance_status",
+        "attendance_recorded_at",
         "detail_path",
         "game_name",
         "starts_at",
@@ -81,6 +87,17 @@ MY_OPEN_GAME_APPLICATION_FIELDS = frozenset(
         "venue_name",
         "pitch_name",
         "pitch_specification",
+    }
+)
+
+ATTENDANCE_ROSTER_ITEM_FIELDS = frozenset(
+    {
+        "registration_id",
+        "display_name",
+        "position",
+        "attendance_status",
+        "attendance_recorded_at",
+        "version",
     }
 )
 
@@ -104,6 +121,8 @@ def project_viewer_registration(
     waitlist_position: int | None = None,
     waitlisted_at: datetime | None = None,
     promoted_at: datetime | None = None,
+    attendance_status: OpenGameAttendanceStatus = OpenGameAttendanceStatus.UNMARKED,
+    attendance_recorded_at: datetime | None = None,
 ) -> ViewerRegistration:
     """Rebuild the applicant response from its reviewed field whitelist."""
     withdrawal = project_available_withdrawal(
@@ -111,6 +130,14 @@ def project_viewer_registration(
         game_state=game_state,
         starts_at=starts_at,
         now=now,
+    )
+    projected_attendance_status, projected_attendance_recorded_at = (
+        _project_self_attendance(
+            persisted_status=persisted_status,
+            game_state=game_state,
+            attendance_status=attendance_status,
+            attendance_recorded_at=attendance_recorded_at,
+        )
     )
     return ViewerRegistration(
         id=application_id,
@@ -136,6 +163,8 @@ def project_viewer_registration(
         waitlist_position=waitlist_position,
         waitlisted_at=waitlisted_at,
         promoted_at=promoted_at,
+        attendance_status=projected_attendance_status,
+        attendance_recorded_at=projected_attendance_recorded_at,
     )
 
 
@@ -158,6 +187,26 @@ def project_captain_application(
         applied_at=applied_at,
         version=version,
         allowed_actions=allowed_actions,
+    )
+
+
+def project_attendance_roster_item(
+    *,
+    registration_id: uuid.UUID,
+    display_name: str,
+    position: OpenGameRegistrationPosition,
+    attendance_status: OpenGameAttendanceStatus,
+    attendance_recorded_at: datetime | None,
+    version: int,
+) -> OpenGameAttendanceRosterItem:
+    """Project only the per-game identity and attendance fields the captain needs."""
+    return OpenGameAttendanceRosterItem(
+        registration_id=registration_id,
+        display_name=display_name,
+        position=position,
+        attendance_status=attendance_status,
+        attendance_recorded_at=attendance_recorded_at,
+        version=version,
     )
 
 
@@ -193,9 +242,19 @@ def project_my_open_game_application(
     waitlist_position: int | None = None,
     waitlisted_at: datetime | None = None,
     promoted_at: datetime | None = None,
+    attendance_status: OpenGameAttendanceStatus = OpenGameAttendanceStatus.UNMARKED,
+    attendance_recorded_at: datetime | None = None,
 ) -> MyOpenGameApplication:
     """Rebuild the self-only list item from its closed public whitelist."""
     public = projection.public
+    projected_attendance_status, projected_attendance_recorded_at = (
+        _project_self_attendance(
+            persisted_status=persisted_status,
+            game_state=projection.state,
+            attendance_status=attendance_status,
+            attendance_recorded_at=attendance_recorded_at,
+        )
+    )
     return MyOpenGameApplication(
         id=application_id,
         effective_status=project_effective_registration_status(
@@ -206,6 +265,8 @@ def project_my_open_game_application(
         waitlist_position=waitlist_position,
         waitlisted_at=waitlisted_at,
         promoted_at=promoted_at,
+        attendance_status=projected_attendance_status,
+        attendance_recorded_at=projected_attendance_recorded_at,
         detail_path=f"/pages/captain-game-public/index?token={share_token}",
         game_name=public.name,
         starts_at=public.starts_at,
@@ -215,3 +276,18 @@ def project_my_open_game_application(
         pitch_name=public.pitch_name,
         pitch_specification=public.pitch_specification,
     )
+
+
+def _project_self_attendance(
+    *,
+    persisted_status: OpenGameRegistrationStatus,
+    game_state: EffectiveOpenGameState,
+    attendance_status: OpenGameAttendanceStatus,
+    attendance_recorded_at: datetime | None,
+) -> tuple[OpenGameAttendanceStatus | None, datetime | None]:
+    if (
+        persisted_status is not OpenGameRegistrationStatus.JOINED
+        or game_state is not EffectiveOpenGameState.COMPLETED
+    ):
+        return None, None
+    return attendance_status, attendance_recorded_at

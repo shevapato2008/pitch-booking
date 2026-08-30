@@ -27,7 +27,7 @@
   "state": "CANCELLED",
   "state_reason": "CAPTAIN_CANCELLED",
   "version": 5,
-  "allowed_actions": {"can_edit": false, "can_publish": false, "can_share": false, "can_cancel": false, "can_preview": false},
+  "allowed_actions": {"can_edit": false, "can_publish": false, "can_share": false, "can_cancel": false, "can_preview": false, "can_manage_attendance": false},
   "share": null,
   "public_view": {
     "name": "周五浦东七人制",

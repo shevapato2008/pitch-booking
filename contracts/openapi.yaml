@@ -1856,6 +1856,189 @@ paths:
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/attendance-roster:
+    get:
+      operationId: getOpenGameAttendanceRoster
+      description: Owner-only attendance roster for an effectively completed open game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Minimal joined-player attendance roster.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameAttendanceRoster'}
+              examples:
+                Ready: {externalValue: './examples/open-game-attendance-roster-ready.json'}
+                Empty: {externalValue: './examples/open-game-attendance-roster-empty.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game does not exist or is not owned by this user.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '422':
+          description: Game identifier is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game attendance service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/registrations/{registration_id}/attendance:
+    post:
+      operationId: markOpenGameAttendance
+      description: Irreversibly mark one joined player's attendance for a completed game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: registration_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameAttendanceMarkRequest'}
+      responses:
+        '200':
+          description: Attendance mark applied or idempotently replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameAttendanceMarkResult'}
+              examples:
+                MarkedPresent: {externalValue: './examples/open-game-attendance-mark-present.json'}
+                MarkedNoShow: {externalValue: './examples/open-game-attendance-mark-no-show.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game or registration does not exist, or the game is not owned by this user.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [APPLICATION_NOT_FOUND, OPEN_GAME_NOT_FOUND]}
+              examples:
+                ApplicationNotFound: {externalValue: './examples/error-application-not-found.json'}
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Attendance state, version, or idempotency authority changed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        oneOf:
+                          - type: object
+                            properties: {code: {const: ATTENDANCE_STATE_CHANGED}}
+                          - type: object
+                            properties: {code: {const: IDEMPOTENCY_KEY_REUSED}}
+              examples:
+                AttendanceStateChanged: {externalValue: './examples/error-attendance-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path, attendance status, expected version, or idempotency key is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game attendance service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/shared-games/{share_token}/registration-context:
     get:
       operationId: getOpenGameRegistrationContext
@@ -4001,6 +4184,9 @@ components:
     OpenGameRegistrationPosition:
       type: string
       enum: [GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD, ANY]
+    OpenGameAttendanceStatus:
+      type: string
+      enum: [UNMARKED, PRESENT, NO_SHOW]
     OpenGameRegistrationPersistedStatus:
       type: string
       enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN]
@@ -4019,7 +4205,7 @@ components:
     MyOpenGameApplication:
       type: object
       additionalProperties: false
-      required: [id, effective_status, applied_at, waitlist_position, waitlisted_at, promoted_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
+      required: [id, effective_status, applied_at, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
       properties:
         id: {type: string, format: uuid}
         effective_status: {$ref: '#/components/schemas/OpenGameRegistrationEffectiveStatus'}
@@ -4027,6 +4213,11 @@ components:
         waitlist_position: {type: [integer, 'null'], minimum: 1}
         waitlisted_at: {type: [string, 'null'], format: date-time}
         promoted_at: {type: [string, 'null'], format: date-time}
+        attendance_status:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameAttendanceStatus'
+            - type: 'null'
+        attendance_recorded_at: {type: [string, 'null'], format: date-time}
         detail_path:
           type: string
           pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
@@ -4046,6 +4237,68 @@ components:
           type: array
           items: {$ref: '#/components/schemas/MyOpenGameApplication'}
         next_cursor: {type: [string, 'null'], minLength: 1}
+    OpenGameAttendanceGameSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, venue_name, pitch_name, starts_at, ends_at, time_zone, state]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 2, maxLength: 30}
+        venue_name: {type: string, minLength: 1}
+        pitch_name: {type: string, minLength: 1}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone: {type: string}
+        state: {type: string, const: COMPLETED}
+    OpenGameAttendanceRosterItem:
+      type: object
+      additionalProperties: false
+      required: [registration_id, display_name, position, attendance_status, attendance_recorded_at, version]
+      properties:
+        registration_id: {type: string, format: uuid}
+        display_name: {type: string, minLength: 2, maxLength: 24}
+        position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
+        attendance_status: {$ref: '#/components/schemas/OpenGameAttendanceStatus'}
+        attendance_recorded_at: {type: [string, 'null'], format: date-time}
+        version: {type: integer, minimum: 1}
+      oneOf:
+        - properties:
+            attendance_status: {const: UNMARKED}
+            attendance_recorded_at: {const: null}
+        - properties:
+            attendance_status: {enum: [PRESENT, NO_SHOW]}
+            attendance_recorded_at: {type: string, format: date-time}
+    OpenGameAttendanceRoster:
+      type: object
+      additionalProperties: false
+      required: [game, recorded_count, total_count, attendance_complete, registrations]
+      properties:
+        game: {$ref: '#/components/schemas/OpenGameAttendanceGameSummary'}
+        recorded_count: {type: integer, minimum: 0}
+        total_count: {type: integer, minimum: 0}
+        attendance_complete: {type: boolean}
+        registrations:
+          type: array
+          items: {$ref: '#/components/schemas/OpenGameAttendanceRosterItem'}
+    OpenGameAttendanceMarkRequest:
+      type: object
+      additionalProperties: false
+      required: [attendance_status, expected_version]
+      properties:
+        attendance_status: {type: string, enum: [PRESENT, NO_SHOW]}
+        expected_version: {type: integer, minimum: 1}
+    OpenGameAttendanceMarkResult:
+      type: object
+      additionalProperties: false
+      required: [registration_id, attendance_status, attendance_recorded_at, version, recorded_count, total_count, attendance_complete]
+      properties:
+        registration_id: {type: string, format: uuid}
+        attendance_status: {type: string, enum: [PRESENT, NO_SHOW]}
+        attendance_recorded_at: {type: string, format: date-time}
+        version: {type: integer, minimum: 2}
+        recorded_count: {type: integer, minimum: 1}
+        total_count: {type: integer, minimum: 1}
+        attendance_complete: {type: boolean}
     OpenGameApplyBlockedReason:
       type: string
       enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
@@ -4180,7 +4433,7 @@ components:
     OpenGameViewerRegistration:
       type: object
       additionalProperties: false
-      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at]
+      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at]
       properties:
         id: {type: string, format: uuid}
         display_name: {type: string, minLength: 2, maxLength: 24}
@@ -4205,6 +4458,11 @@ components:
         waitlist_position: {type: [integer, 'null'], minimum: 1}
         waitlisted_at: {type: [string, 'null'], format: date-time}
         promoted_at: {type: [string, 'null'], format: date-time}
+        attendance_status:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameAttendanceStatus'
+            - type: 'null'
+        attendance_recorded_at: {type: [string, 'null'], format: date-time}
     OpenGameRegistrationContext:
       type: object
       additionalProperties: false
@@ -4422,13 +4680,14 @@ components:
     OpenGameAllowedActions:
       type: object
       additionalProperties: false
-      required: [can_edit, can_publish, can_share, can_cancel, can_preview]
+      required: [can_edit, can_publish, can_share, can_cancel, can_preview, can_manage_attendance]
       properties:
         can_edit: {type: boolean}
         can_publish: {type: boolean}
         can_share: {type: boolean}
         can_cancel: {type: boolean}
         can_preview: {type: boolean}
+        can_manage_attendance: {type: boolean}
     OpenGameShare:
       type: object
       additionalProperties: false
@@ -4524,7 +4783,7 @@ components:
                 persisted_status: {const: DRAFT}
                 state: {const: DRAFT}
                 state_reason: {const: null}
-                allowed_actions: {const: {can_edit: true, can_publish: true, can_share: false, can_cancel: true, can_preview: true}}
+                allowed_actions: {const: {can_edit: true, can_publish: true, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -4533,7 +4792,7 @@ components:
                 persisted_status: {const: DRAFT}
                 state: {const: DRAFT}
                 state_reason: {const: REGISTRATION_DEADLINE_PASSED}
-                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
+                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -4542,7 +4801,7 @@ components:
                 persisted_status: {const: DRAFT}
                 state: {const: DRAFT}
                 state_reason: {const: REGISTRATION_WINDOW_CLOSED}
-                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -4551,7 +4810,7 @@ components:
                 persisted_status: {const: PUBLISHED}
                 state: {const: PUBLISHED}
                 state_reason: {const: null}
-                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true}}
+                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true, can_manage_attendance: false}}
                 share: {$ref: '#/components/schemas/OpenGameShare'}
                 public_view:
                   type: object
@@ -4560,7 +4819,7 @@ components:
                 persisted_status: {const: PUBLISHED}
                 state: {const: PUBLISHED}
                 state_reason: {const: REGISTRATION_DEADLINE_PASSED}
-                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true}}
+                allowed_actions: {const: {can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true, can_manage_attendance: false}}
                 share: {$ref: '#/components/schemas/OpenGameShare'}
                 public_view:
                   type: object
@@ -4569,7 +4828,7 @@ components:
                 persisted_status: {enum: [DRAFT, PUBLISHED]}
                 state: {const: SUSPENDED}
                 state_reason: {enum: [ORDER_CANCELLATION_PENDING, ORDER_PAYMENT_EXCEPTION, ORDER_REFUND_PENDING, ORDER_REFUND_FAILED]}
-                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true}}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -4578,7 +4837,7 @@ components:
                 persisted_status: {const: CANCELLED}
                 state: {const: CANCELLED}
                 state_reason: {const: CAPTAIN_CANCELLED}
-                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false}}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false, can_manage_attendance: false}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -4587,7 +4846,7 @@ components:
                 persisted_status: {enum: [DRAFT, PUBLISHED]}
                 state: {const: CANCELLED}
                 state_reason: {enum: [ORDER_CANCELLED, ORDER_REFUNDED]}
-                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false}}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false, can_manage_attendance: false}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -4596,7 +4855,7 @@ components:
                 persisted_status: {enum: [DRAFT, PUBLISHED]}
                 state: {const: COMPLETED}
                 state_reason: {const: ORDER_COMPLETED}
-                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: true}}
+                allowed_actions: {const: {can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: true, can_manage_attendance: true}}
                 share: {const: null}
                 public_view:
                   type: object
@@ -6923,6 +7182,7 @@ components:
             - APPLICATION_NOT_ALLOWED
             - APPLICATION_STATE_CHANGED
             - APPLICATION_CAPACITY_CHANGED
+            - ATTENDANCE_STATE_CHANGED
         message:
           type: string
           minLength: 1

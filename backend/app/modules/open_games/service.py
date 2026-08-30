@@ -912,7 +912,33 @@ def _replay_owner(
         or record.response_body is None
     ):
         raise _service_unavailable()
-    return OpenGameOwner.model_validate(record.response_body)
+    try:
+        return OpenGameOwner.model_validate(record.response_body)
+    except ValidationError:
+        return OpenGameOwner.model_validate(
+            _upgrade_legacy_owner(record.response_body)
+        )
+
+
+def _upgrade_legacy_owner(response_body: dict[str, object]) -> dict[str, object]:
+    """Upgrade only the exact owner response preceding attendance actions."""
+    if set(response_body) != set(OpenGameOwner.model_fields):
+        raise ValueError("legacy owner response is not exact")
+    actions = response_body.get("allowed_actions")
+    if not isinstance(actions, dict) or set(actions) != {
+        "can_edit",
+        "can_publish",
+        "can_share",
+        "can_cancel",
+        "can_preview",
+    }:
+        raise ValueError("legacy owner actions are not exact")
+    upgraded = dict(response_body)
+    upgraded["allowed_actions"] = {
+        **actions,
+        "can_manage_attendance": response_body.get("state") == "COMPLETED",
+    }
+    return upgraded
 
 
 def _validation_error(error: OpenGameValidationError) -> AppError:

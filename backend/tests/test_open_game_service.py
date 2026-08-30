@@ -632,6 +632,63 @@ def test_create_replay_wins_before_current_authority_and_body_reuse_conflicts(
     )
 
 
+def test_owner_replay_upgrades_only_the_exact_previous_action_shape(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    request = draft_request(seeded)
+    with Session(pg_engine) as session:
+        first = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=request,
+        )
+        assert first.allowed_actions.can_manage_attendance is False
+        record = session.scalar(select(IdempotencyRecord))
+        assert record is not None
+        assert record.response_body is not None
+        current_body = json.loads(json.dumps(record.response_body))
+        legacy_body = json.loads(json.dumps(current_body))
+        legacy_body["allowed_actions"].pop("can_manage_attendance")
+        record.response_body = legacy_body
+        session.commit()
+
+        replay = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=request,
+        )
+        assert replay.allowed_actions.can_manage_attendance is False
+
+        invalid_bodies = []
+        with_extra_action = json.loads(json.dumps(legacy_body))
+        with_extra_action["allowed_actions"]["future_action"] = False
+        invalid_bodies.append(with_extra_action)
+        with_missing_old_action = json.loads(json.dumps(legacy_body))
+        with_missing_old_action["allowed_actions"].pop("can_preview")
+        invalid_bodies.append(with_missing_old_action)
+        with_extra_top_level = json.loads(json.dumps(legacy_body))
+        with_extra_top_level["future_field"] = None
+        invalid_bodies.append(with_extra_top_level)
+
+        for invalid_body in invalid_bodies:
+            record.response_body = invalid_body
+            session.commit()
+            with pytest.raises(AppError) as unavailable:
+                service(session).create_draft(
+                    user_id=seeded.owner_id,
+                    order_id=seeded.order_id,
+                    idempotency_key=CREATE_KEY,
+                    request=request,
+                )
+            assert (unavailable.value.status_code, unavailable.value.code) == (
+                503,
+                "SERVICE_UNAVAILABLE",
+            )
+
+
 @pytest.mark.parametrize(
     ("starts_at", "cancel_requested", "refund_purpose"),
     [

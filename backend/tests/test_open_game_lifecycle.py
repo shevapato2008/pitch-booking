@@ -192,6 +192,7 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
         "can_share": False,
         "can_cancel": True,
         "can_preview": True,
+        "can_manage_attendance": False,
     }
 
     deadline_elapsed = project_open_game_actions(
@@ -203,6 +204,7 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
         "can_share": False,
         "can_cancel": True,
         "can_preview": True,
+        "can_manage_attendance": False,
     }
 
     window_closed = project_open_game_actions(
@@ -218,6 +220,7 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
         "can_share": False,
         "can_cancel": True,
         "can_preview": True,
+        "can_manage_attendance": False,
     }
 
 
@@ -229,24 +232,25 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
                 stored_status=OpenGameStatus.PUBLISHED,
                 registration_deadline=NOW - timedelta(days=1),
             ),
-            (True, False, True, True, True),
+            (True, False, True, True, True, False),
         ),
         (
             _game_facts(order_facts=_order_facts(status=OrderStatus.REFUND_PENDING)),
-            (False, False, False, True, True),
+            (False, False, False, True, True, False),
         ),
         (
             _game_facts(stored_status=OpenGameStatus.CANCELLED),
-            (False, False, False, False, False),
+            (False, False, False, False, False, False),
         ),
         (
             _game_facts(order_facts=_order_facts(status=OrderStatus.COMPLETED)),
-            (False, False, False, False, True),
+            (False, False, False, False, True, True),
         ),
     ],
 )
 def test_non_draft_action_matrix(
-    facts: OpenGameFacts, expected: tuple[bool, bool, bool, bool, bool]
+    facts: OpenGameFacts,
+    expected: tuple[bool, bool, bool, bool, bool, bool],
 ) -> None:
     actions = project_open_game_actions(facts, now=NOW)
     assert (
@@ -255,6 +259,7 @@ def test_non_draft_action_matrix(
         actions.can_share,
         actions.can_cancel,
         actions.can_preview,
+        actions.can_manage_attendance,
     ) == expected
 
 

@@ -80,6 +80,8 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications', '422', 'InvalidArgument'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/open-game-applications/{application_id}/withdraw', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '422', 'InvalidArgument'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/public-games', '422', 'InvalidArgument'),
     ],
   },
@@ -151,6 +153,8 @@ const exampleMap = [
       attachment('/api/v1/public-games', '503', 'ServiceUnavailable'),
       attachment('/api/v1/open-game-applications', '503', 'ServiceUnavailable'),
       attachment('/api/v1/open-game-applications/{application_id}/withdraw', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '503', 'ServiceUnavailable', 'post'),
     ],
   },
   {
@@ -352,6 +356,8 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/open-game-applications', '401', 'AuthRequired'),
       attachment('/api/v1/open-game-applications/{application_id}/withdraw', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '401', 'AuthRequired'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '401', 'AuthRequired', 'post'),
     ],
   },
   {
@@ -425,6 +431,7 @@ const exampleMap = [
       attachment('/api/v1/shared-games/{share_token}/applications', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/open-game-applications/{application_id}/withdraw', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '409', 'IdempotencyKeyReused', 'post'),
     ],
   },
   {
@@ -723,6 +730,38 @@ const exampleMap = [
     attachments: [attachment('/api/v1/orders/{order_id}/game', '200', 'None')],
   },
   {
+    filename: 'open-game-attendance-roster-ready.json',
+    reference: './examples/open-game-attendance-roster-ready.json',
+    schema: 'OpenGameAttendanceRoster',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/attendance-roster', '200', 'Ready'),
+    ],
+  },
+  {
+    filename: 'open-game-attendance-roster-empty.json',
+    reference: './examples/open-game-attendance-roster-empty.json',
+    schema: 'OpenGameAttendanceRoster',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/attendance-roster', '200', 'Empty'),
+    ],
+  },
+  {
+    filename: 'open-game-attendance-mark-present.json',
+    reference: './examples/open-game-attendance-mark-present.json',
+    schema: 'OpenGameAttendanceMarkResult',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '200', 'MarkedPresent', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-attendance-mark-no-show.json',
+    reference: './examples/open-game-attendance-mark-no-show.json',
+    schema: 'OpenGameAttendanceMarkResult',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '200', 'MarkedNoShow', 'post'),
+    ],
+  },
+  {
     filename: 'open-game-owner-draft.json',
     reference: './examples/open-game-owner-draft.json',
     schema: 'OpenGameOwner',
@@ -907,6 +946,8 @@ const exampleMap = [
       attachment('/api/v1/shared-games/{share_token}/applications', '404', 'OpenGameNotFound', 'post'),
       attachment('/api/v1/games/{game_id}/applications', '404', 'OpenGameNotFound'),
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '404', 'OpenGameNotFound', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '404', 'OpenGameNotFound'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '404', 'OpenGameNotFound', 'post'),
     ],
   },
   {
@@ -932,6 +973,7 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '404', 'ApplicationNotFound', 'post'),
       attachment('/api/v1/open-game-applications/{application_id}/withdraw', '404', 'ApplicationNotFound', 'post'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '404', 'ApplicationNotFound', 'post'),
     ],
   },
   {
@@ -960,6 +1002,14 @@ const exampleMap = [
     reference: './examples/error-application-capacity-changed.json',
     schema: 'ErrorEnvelope',
     attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'ApplicationCapacityChanged', 'post')],
+  },
+  {
+    filename: 'error-attendance-state-changed.json',
+    reference: './examples/error-attendance-state-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '409', 'AttendanceStateChanged', 'post'),
+    ],
   },
   {
     filename: 'error-open-game-joined-update-invalid.json',
@@ -1104,6 +1154,7 @@ const requiredErrorCodes = new Set([
   'APPLICATION_NOT_ALLOWED',
   'APPLICATION_STATE_CHANGED',
   'APPLICATION_CAPACITY_CHANGED',
+  'ATTENDANCE_STATE_CHANGED',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -1138,6 +1189,8 @@ const expectedOperations = new Map([
   ['/api/v1/games/{game_id}/cancel', new Set(['post'])],
   ['/api/v1/games/{game_id}/applications', new Set(['get'])],
   ['/api/v1/games/{game_id}/applications/{application_id}/decision', new Set(['post'])],
+  ['/api/v1/games/{game_id}/attendance-roster', new Set(['get'])],
+  ['/api/v1/games/{game_id}/registrations/{registration_id}/attendance', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}/registration-context', new Set(['get'])],
   ['/api/v1/shared-games/{share_token}/applications', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}', new Set(['get'])],
@@ -1347,7 +1400,8 @@ function validateMyOpenGameApplicationsContract(contract) {
   const item = schemas.MyOpenGameApplication;
   const itemFields = [
     'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
-    'promoted_at', 'detail_path', 'game_name', 'starts_at', 'ends_at', 'time_zone',
+    'promoted_at', 'attendance_status', 'attendance_recorded_at', 'detail_path',
+    'game_name', 'starts_at', 'ends_at', 'time_zone',
     'venue_name', 'pitch_name', 'pitch_specification',
   ];
   if (item?.additionalProperties !== false

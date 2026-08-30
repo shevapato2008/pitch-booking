@@ -28,6 +28,9 @@ from backend.app.modules.open_game_registrations.dto import (
     DecisionRequest,
     DecisionResult,
     MyOpenGameApplicationsResponse,
+    OpenGameAttendanceMarkRequest,
+    OpenGameAttendanceMarkResult,
+    OpenGameAttendanceRoster,
     Queue,
     RegistrationContext,
     WithdrawalRequest,
@@ -53,6 +56,9 @@ _DECISION_PATH = re.compile(
 _WITHDRAWAL_PATH = re.compile(
     r"^/api/v1/open-game-applications/[^/]+/withdraw$"
 )
+_ATTENDANCE_PATH = re.compile(
+    r"^/api/v1/games/[^/]+/registrations/[^/]+/attendance$"
+)
 _APPLICATION_FIELDS = frozenset(
     {
         "display_name",
@@ -64,6 +70,7 @@ _APPLICATION_FIELDS = frozenset(
 )
 _DECISION_FIELDS = frozenset({"decision", "expected_version"})
 _WITHDRAWAL_FIELDS = frozenset({"action", "expected_version"})
+_ATTENDANCE_FIELDS = frozenset({"attendance_status", "expected_version"})
 _INVALID_ARGUMENT_EXAMPLE = {
     "error": {
         "code": "INVALID_ARGUMENT",
@@ -210,6 +217,17 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "required": True,
         "schema": {"type": "string", "minLength": 1},
     }
+    error_codes = (
+        components["schemas"].get("Error", {})
+        .get("properties", {})
+        .get("code", {})
+        .get("enum")
+    )
+    if (
+        isinstance(error_codes, list)
+        and "ATTENDANCE_STATE_CHANGED" not in error_codes
+    ):
+        error_codes.append("ATTENDANCE_STATE_CHANGED")
     shared_error_schemas = {
         name: components["schemas"].get(name)
         for name in (
@@ -275,6 +293,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "WITHDRAW_WAITLIST",
                     "LEAVE_GAME",
                 ],
+            },
+            "OpenGameAttendanceStatus": {
+                "type": "string",
+                "enum": ["UNMARKED", "PRESENT", "NO_SHOW"],
             },
             "OpenGameApplyBlockedReason": {
                 "type": "string",
@@ -500,6 +522,8 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "waitlist_position",
                     "waitlisted_at",
                     "promoted_at",
+                    "attendance_status",
+                    "attendance_recorded_at",
                 ],
                 "properties": {
                     "id": {"type": "string", "format": "uuid"},
@@ -573,6 +597,21 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "format": "date-time",
                     },
                     "promoted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "attendance_status": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameAttendanceStatus"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "attendance_recorded_at": {
                         "type": ["string", "null"],
                         "format": "date-time",
                     },
@@ -793,6 +832,158 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                 },
             },
+            "OpenGameAttendanceGameSummary": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "id",
+                    "name",
+                    "venue_name",
+                    "pitch_name",
+                    "starts_at",
+                    "ends_at",
+                    "time_zone",
+                    "state",
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 30,
+                    },
+                    "venue_name": {"type": "string", "minLength": 1},
+                    "pitch_name": {"type": "string", "minLength": 1},
+                    "starts_at": {"type": "string", "format": "date-time"},
+                    "ends_at": {"type": "string", "format": "date-time"},
+                    "time_zone": {"type": "string"},
+                    "state": {"type": "string", "const": "COMPLETED"},
+                },
+            },
+            "OpenGameAttendanceRosterItem": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "registration_id",
+                    "display_name",
+                    "position",
+                    "attendance_status",
+                    "attendance_recorded_at",
+                    "version",
+                ],
+                "properties": {
+                    "registration_id": {"type": "string", "format": "uuid"},
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "attendance_status": {
+                        "$ref": "#/components/schemas/OpenGameAttendanceStatus"
+                    },
+                    "attendance_recorded_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "version": {"type": "integer", "minimum": 1},
+                },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "attendance_status": {"const": "UNMARKED"},
+                            "attendance_recorded_at": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "attendance_status": {
+                                "enum": ["PRESENT", "NO_SHOW"]
+                            },
+                            "attendance_recorded_at": {
+                                "type": "string",
+                                "format": "date-time",
+                            },
+                        }
+                    },
+                ],
+            },
+            "OpenGameAttendanceRoster": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "game",
+                    "recorded_count",
+                    "total_count",
+                    "attendance_complete",
+                    "registrations",
+                ],
+                "properties": {
+                    "game": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameAttendanceGameSummary"
+                        )
+                    },
+                    "recorded_count": {"type": "integer", "minimum": 0},
+                    "total_count": {"type": "integer", "minimum": 0},
+                    "attendance_complete": {"type": "boolean"},
+                    "registrations": {
+                        "type": "array",
+                        "items": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "OpenGameAttendanceRosterItem"
+                            )
+                        },
+                    },
+                },
+            },
+            "OpenGameAttendanceMarkRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["attendance_status", "expected_version"],
+                "properties": {
+                    "attendance_status": {
+                        "type": "string",
+                        "enum": ["PRESENT", "NO_SHOW"],
+                    },
+                    "expected_version": {"type": "integer", "minimum": 1},
+                },
+            },
+            "OpenGameAttendanceMarkResult": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "registration_id",
+                    "attendance_status",
+                    "attendance_recorded_at",
+                    "version",
+                    "recorded_count",
+                    "total_count",
+                    "attendance_complete",
+                ],
+                "properties": {
+                    "registration_id": {"type": "string", "format": "uuid"},
+                    "attendance_status": {
+                        "type": "string",
+                        "enum": ["PRESENT", "NO_SHOW"],
+                    },
+                    "attendance_recorded_at": {
+                        "type": "string",
+                        "format": "date-time",
+                    },
+                    "version": {"type": "integer", "minimum": 2},
+                    "recorded_count": {"type": "integer", "minimum": 1},
+                    "total_count": {"type": "integer", "minimum": 1},
+                    "attendance_complete": {"type": "boolean"},
+                },
+            },
             "MyOpenGameApplication": {
                 "type": "object",
                 "additionalProperties": False,
@@ -803,6 +994,8 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "waitlist_position",
                     "waitlisted_at",
                     "promoted_at",
+                    "attendance_status",
+                    "attendance_recorded_at",
                     "detail_path",
                     "game_name",
                     "starts_at",
@@ -830,6 +1023,21 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "format": "date-time",
                     },
                     "promoted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "attendance_status": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameAttendanceStatus"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "attendance_recorded_at": {
                         "type": ["string", "null"],
                         "format": "date-time",
                     },
@@ -1062,6 +1270,258 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             },
         }
 
+    roster_path = "/api/v1/games/{game_id}/attendance-roster"
+    schema["paths"][roster_path] = {
+        "get": {
+            "operationId": "getOpenGameAttendanceRoster",
+            "description": (
+                "Owner-only attendance roster for an effectively completed "
+                "open game."
+            ),
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "game_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Minimal joined-player attendance roster.",
+                    "headers": {"X-Request-Id": request_id_header},
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameAttendanceRoster"
+                                )
+                            },
+                            "examples": {
+                                "Ready": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-attendance-roster-ready.json"
+                                    )
+                                },
+                                "Empty": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-attendance-roster-empty.json"
+                                    )
+                                },
+                            },
+                        }
+                    },
+                },
+                "401": error_response(
+                    "Authentication required.",
+                    code="AUTH_REQUIRED",
+                    example_name="AuthRequired",
+                    example_file="error-auth-required.json",
+                ),
+                "404": error_response(
+                    "Game does not exist or is not owned by this user.",
+                    code="OPEN_GAME_NOT_FOUND",
+                    example_name="OpenGameNotFound",
+                    example_file="error-open-game-not-found.json",
+                ),
+                "422": error_response(
+                    "Game identifier is invalid.",
+                    code="INVALID_ARGUMENT",
+                    example_name="InvalidArgument",
+                    example_file="error-invalid-argument.json",
+                ),
+                "503": error_response(
+                    "Open game attendance service is unavailable.",
+                    code="SERVICE_UNAVAILABLE",
+                    example_name="ServiceUnavailable",
+                    example_file="error-service-unavailable.json",
+                ),
+            },
+        }
+    }
+
+    mark_not_found = error_response(
+        (
+            "Game or registration does not exist, or the game is not owned "
+            "by this user."
+        ),
+        code="APPLICATION_NOT_FOUND",
+        example_name="ApplicationNotFound",
+        example_file="error-application-not-found.json",
+    )
+    mark_not_found["content"]["application/json"]["schema"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/ErrorEnvelope"},
+            {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "enum": [
+                                    "APPLICATION_NOT_FOUND",
+                                    "OPEN_GAME_NOT_FOUND",
+                                ]
+                            }
+                        },
+                    }
+                },
+            },
+        ]
+    }
+    mark_not_found["content"]["application/json"]["examples"] = {
+        "ApplicationNotFound": {
+            "externalValue": "./examples/error-application-not-found.json"
+        },
+        "OpenGameNotFound": {
+            "externalValue": "./examples/error-open-game-not-found.json"
+        },
+    }
+    mark_conflict = error_response(
+        "Attendance state, version, or idempotency authority changed.",
+        code="ATTENDANCE_STATE_CHANGED",
+        example_name="AttendanceStateChanged",
+        example_file="error-attendance-state-changed.json",
+    )
+    mark_conflict["content"]["application/json"]["schema"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/ErrorEnvelope"},
+            {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "const": "ATTENDANCE_STATE_CHANGED"
+                                    }
+                                },
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "code": {"const": "IDEMPOTENCY_KEY_REUSED"}
+                                },
+                            },
+                        ]
+                    }
+                },
+            },
+        ]
+    }
+    mark_conflict["content"]["application/json"]["examples"] = {
+        "AttendanceStateChanged": {
+            "externalValue": "./examples/error-attendance-state-changed.json"
+        },
+        "IdempotencyKeyReused": {
+            "externalValue": "./examples/error-idempotency-key-reused.json"
+        },
+    }
+    mark_path = (
+        "/api/v1/games/{game_id}/registrations/"
+        "{registration_id}/attendance"
+    )
+    schema["paths"][mark_path] = {
+        "post": {
+            "operationId": "markOpenGameAttendance",
+            "description": (
+                "Irreversibly mark one joined player's attendance for a "
+                "completed game."
+            ),
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "game_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {
+                    "name": "registration_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {"$ref": "#/components/parameters/IdempotencyKey"},
+            ],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "OpenGameAttendanceMarkRequest"
+                            )
+                        }
+                    }
+                },
+            },
+            "responses": {
+                "200": {
+                    "description": (
+                        "Attendance mark applied or idempotently replayed."
+                    ),
+                    "headers": {"X-Request-Id": request_id_header},
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameAttendanceMarkResult"
+                                )
+                            },
+                            "examples": {
+                                "MarkedPresent": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-attendance-mark-present.json"
+                                    )
+                                },
+                                "MarkedNoShow": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-attendance-mark-no-show.json"
+                                    )
+                                },
+                            },
+                        }
+                    },
+                },
+                "401": error_response(
+                    "Authentication required.",
+                    code="AUTH_REQUIRED",
+                    example_name="AuthRequired",
+                    example_file="error-auth-required.json",
+                ),
+                "404": mark_not_found,
+                "409": mark_conflict,
+                "422": error_response(
+                    (
+                        "Path, attendance status, expected version, or "
+                        "idempotency key is invalid."
+                    ),
+                    code="INVALID_ARGUMENT",
+                    example_name="InvalidArgument",
+                    example_file="error-invalid-argument.json",
+                ),
+                "503": error_response(
+                    "Open game attendance service is unavailable.",
+                    code="SERVICE_UNAVAILABLE",
+                    example_name="ServiceUnavailable",
+                    example_file="error-service-unavailable.json",
+                ),
+            },
+        }
+    }
+
 
 def get_optional_open_game_registration_user(
     request: Request,
@@ -1104,6 +1564,7 @@ def is_open_game_registration_mutation_request(request: Request) -> bool:
         _APPLICATION_PATH.fullmatch(path) is not None
         or _DECISION_PATH.fullmatch(path) is not None
         or _WITHDRAWAL_PATH.fullmatch(path) is not None
+        or _ATTENDANCE_PATH.fullmatch(path) is not None
     )
 
 
@@ -1115,6 +1576,8 @@ async def open_game_registration_request_validation_handler(
         allowed_fields = _DECISION_FIELDS
     elif _WITHDRAWAL_PATH.fullmatch(request.url.path) is not None:
         allowed_fields = _WITHDRAWAL_FIELDS
+    elif _ATTENDANCE_PATH.fullmatch(request.url.path) is not None:
+        allowed_fields = _ATTENDANCE_FIELDS
     else:
         allowed_fields = _APPLICATION_FIELDS
     fields: list[dict[str, str]] = []
@@ -1272,6 +1735,66 @@ def create_open_game_application(
     return _service(database, clock=clock).apply(
         share_token=share_token,
         applicant_user_id=user.id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+
+
+@router.get(
+    "/api/v1/games/{game_id}/attendance-roster",
+    operation_id="getOpenGameAttendanceRoster",
+    response_model=OpenGameAttendanceRoster,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def get_open_game_attendance_roster(
+    game_id: uuid.UUID,
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
+) -> OpenGameAttendanceRoster:
+    return _service(database, clock=clock).get_attendance_roster(
+        game_id=game_id,
+        owner_user_id=user.id,
+    )
+
+
+@router.post(
+    "/api/v1/games/{game_id}/registrations/{registration_id}/attendance",
+    operation_id="markOpenGameAttendance",
+    response_model=OpenGameAttendanceMarkResult,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def mark_open_game_attendance(
+    game_id: uuid.UUID,
+    registration_id: uuid.UUID,
+    body: OpenGameAttendanceMarkRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
+) -> OpenGameAttendanceMarkResult:
+    return _service(database, clock=clock).mark_attendance(
+        game_id=game_id,
+        registration_id=registration_id,
+        owner_user_id=user.id,
         idempotency_key=idempotency_key,
         request=body,
     )

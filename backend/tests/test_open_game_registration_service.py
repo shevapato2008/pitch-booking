@@ -6,15 +6,19 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import Engine, Table, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.errors import AppError
+from backend.app.modules.open_game_registrations import dto as registration_dto
+from backend.app.modules.open_game_registrations import privacy as registration_privacy
 from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameAttendanceStatus,
     OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
     OpenGameNotificationStatus,
@@ -37,6 +41,7 @@ from backend.app.modules.open_game_registrations.dto import (
     ApplicationDecision,
     CreateApplicationRequest,
     DecisionRequest,
+    RegistrationContext,
     WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.lifecycle import WithdrawalAction
@@ -52,6 +57,7 @@ from backend.app.modules.open_game_registrations.service import (
     DECIDE_OPEN_GAME_APPLICATION_OPERATION,
     WITHDRAW_OPEN_GAME_APPLICATION_OPERATION,
     OpenGameRegistrationService,
+    _upgrade_legacy_application_context,
     _application_request_digest,
     _decision_request_digest,
 )
@@ -155,6 +161,11 @@ def _add_registration(
     waitlist_seq: int | None = None,
     waitlisted_at: datetime | None = None,
     promoted_at: datetime | None = None,
+    attendance_status: OpenGameAttendanceStatus = (
+        OpenGameAttendanceStatus.UNMARKED
+    ),
+    attendance_recorded_at: datetime | None = None,
+    attendance_recorded_by_user_id: uuid.UUID | None = None,
 ) -> OpenGameRegistration:
     decision_required = status in {
         OpenGameRegistrationStatus.WAITLISTED,
@@ -193,6 +204,9 @@ def _add_registration(
         waitlist_seq=waitlist_seq,
         waitlisted_at=waitlisted_at,
         promoted_at=promoted_at,
+        attendance_status=attendance_status,
+        attendance_recorded_at=attendance_recorded_at,
+        attendance_recorded_by_user_id=attendance_recorded_by_user_id,
     )
     session.add(row)
     session.flush()
@@ -479,7 +493,217 @@ def test_context_reads_withdrawn_audit_fields_but_keeps_write_action_closed(
         "waitlist_position": None,
         "waitlisted_at": None,
         "promoted_at": None,
+        "attendance_status": None,
+        "attendance_recorded_at": None,
     }
+
+
+def test_self_attendance_projection_is_required_nullable_and_completed_only(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    recorded_at = NOW + timedelta(minutes=1)
+    with Session(pg_engine) as session:
+        registration = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+            attendance_status=OpenGameAttendanceStatus.PRESENT,
+            attendance_recorded_at=recorded_at,
+            attendance_recorded_by_user_id=case.booking.owner_id,
+        )
+        session.commit()
+
+        before_completion = _service(session).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+        assert before_completion.viewer_registration is not None
+        assert before_completion.viewer_registration.attendance_status is None
+        assert before_completion.viewer_registration.attendance_recorded_at is None
+        before_list_item = _service(session)._project_my_application(
+            registration,
+            now=NOW,
+            waitlist_position=None,
+        )
+        assert before_list_item.attendance_status is None
+        assert before_list_item.attendance_recorded_at is None
+
+        _set_review_authority(session, case=case, condition="completed")
+        session.commit()
+        completed = _service(session, now=recorded_at).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+        assert completed.viewer_registration is not None
+        assert completed.viewer_registration.attendance_status == "PRESENT"
+        assert completed.viewer_registration.attendance_recorded_at == recorded_at
+        completed_list_item = _service(session)._project_my_application(
+            registration,
+            now=recorded_at,
+            waitlist_position=None,
+        )
+        assert completed_list_item.attendance_status == "PRESENT"
+        assert completed_list_item.attendance_recorded_at == recorded_at
+        serialized = json.dumps(
+            {
+                "context": completed.model_dump(mode="json"),
+                "list_item": completed_list_item.model_dump(mode="json"),
+            }
+        )
+        assert "attendance_recorded_by_user_id" not in serialized
+
+
+def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        current = _service(session).apply(
+            share_token=case.share_token,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=APPLICATION_KEY,
+            request=_request(),
+        ).model_dump(mode="json")
+        viewer = current["viewer_registration"]
+        assert isinstance(viewer, dict)
+
+        c2b = json.loads(json.dumps(current))
+        c2b_viewer = c2b["viewer_registration"]
+        c2b_viewer.pop("attendance_status")
+        c2b_viewer.pop("attendance_recorded_at")
+        upgraded = _upgrade_legacy_application_context(
+            c2b,
+            application_id=None,
+        )
+        replay = RegistrationContext.model_validate(upgraded)
+        assert replay.viewer_registration is not None
+        assert replay.viewer_registration.attendance_status is None
+        assert replay.viewer_registration.attendance_recorded_at is None
+
+        for invalid in (
+            {**c2b_viewer, "attendance_status": None},
+            {**c2b_viewer, "future_field": None},
+        ):
+            invalid_body = json.loads(json.dumps(c2b))
+            invalid_body["viewer_registration"] = invalid
+            with pytest.raises(ValueError, match="legacy application viewer"):
+                _upgrade_legacy_application_context(
+                    invalid_body,
+                    application_id=None,
+                )
+
+
+def test_attendance_runtime_dtos_and_roster_projector_are_closed_and_private() -> None:
+    request_model = getattr(registration_dto, "OpenGameAttendanceMarkRequest")
+    item_model = getattr(registration_dto, "OpenGameAttendanceRosterItem")
+    roster_model = getattr(registration_dto, "OpenGameAttendanceRoster")
+    result_model = getattr(registration_dto, "OpenGameAttendanceMarkResult")
+    projector = getattr(registration_privacy, "project_attendance_roster_item")
+    item_fields = getattr(registration_privacy, "ATTENDANCE_ROSTER_ITEM_FIELDS")
+
+    request = request_model.model_validate(
+        {"attendance_status": "PRESENT", "expected_version": 2}
+    )
+    assert set(request.model_dump()) == {"attendance_status", "expected_version"}
+    for invalid in (
+        {"attendance_status": "UNMARKED", "expected_version": 2},
+        {
+            "attendance_status": "PRESENT",
+            "expected_version": 2,
+            "recorder_user_id": str(uuid.uuid4()),
+        },
+    ):
+        with pytest.raises(ValidationError):
+            request_model.model_validate(invalid)
+
+    registration_id = uuid.uuid4()
+    item = projector(
+        registration_id=registration_id,
+        display_name="天津周末左边锋小王",
+        position=OpenGameRegistrationPosition.FORWARD,
+        attendance_status=OpenGameAttendanceStatus.PRESENT,
+        attendance_recorded_at=NOW,
+        version=3,
+    )
+    assert set(item.model_dump()) == item_fields == {
+        "registration_id",
+        "display_name",
+        "position",
+        "attendance_status",
+        "attendance_recorded_at",
+        "version",
+    }
+    serialized = json.dumps(item.model_dump(mode="json"))
+    for forbidden in (
+        "note",
+        "applicant_user_id",
+        "user_id",
+        "recorded_by",
+        "adult_confirmed",
+        "risk_confirmed",
+        "consent_version",
+        "created_at",
+        "updated_at",
+    ):
+        assert forbidden not in serialized
+
+    game = {
+        "id": str(uuid.uuid4()),
+        "name": "奥体周日傍晚局",
+        "venue_name": "天津奥体足球场",
+        "pitch_name": "七人制 A 场",
+        "starts_at": "2026-08-30T18:30:00+08:00",
+        "ends_at": "2026-08-30T20:30:00+08:00",
+        "time_zone": "Asia/Shanghai",
+        "state": "COMPLETED",
+    }
+    ready = roster_model.model_validate(
+        {
+            "game": game,
+            "recorded_count": 1,
+            "total_count": 1,
+            "attendance_complete": True,
+            "registrations": [item.model_dump(mode="json")],
+        }
+    )
+    assert ready.attendance_complete is True
+    empty = roster_model.model_validate(
+        {
+            "game": game,
+            "recorded_count": 0,
+            "total_count": 0,
+            "attendance_complete": True,
+            "registrations": [],
+        }
+    )
+    assert empty.attendance_complete is True
+    with pytest.raises(ValidationError):
+        roster_model.model_validate(
+            {
+                "game": game,
+                "recorded_count": 0,
+                "total_count": 0,
+                "attendance_complete": False,
+                "registrations": [],
+            }
+        )
+
+    result = result_model.model_validate(
+        {
+            "registration_id": str(registration_id),
+            "attendance_status": "PRESENT",
+            "attendance_recorded_at": NOW.isoformat(),
+            "version": 3,
+            "recorded_count": 1,
+            "total_count": 1,
+            "attendance_complete": True,
+        }
+    )
+    assert item_model.model_validate(item.model_dump()) == item
+    assert result.registration_id == registration_id
 
 
 @pytest.mark.parametrize(
@@ -735,6 +959,8 @@ def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
             "waitlist_position",
             "waitlisted_at",
             "promoted_at",
+            "attendance_status",
+            "attendance_recorded_at",
         ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer
@@ -2153,7 +2379,13 @@ def test_withdraw_is_terminal_idempotent_and_preserves_capacity_authority(
         assert record.response_body is not None
         legacy_body = dict(record.response_body)
         legacy_viewer = dict(legacy_body["viewer_registration"])
-        for field in ("waitlist_position", "waitlisted_at", "promoted_at"):
+        for field in (
+            "waitlist_position",
+            "waitlisted_at",
+            "promoted_at",
+            "attendance_status",
+            "attendance_recorded_at",
+        ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer
         record.response_body = legacy_body

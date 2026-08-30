@@ -915,6 +915,8 @@ class OpenGameRegistrationService:
             waitlist_position=waitlist_position,
             waitlisted_at=registration.waitlisted_at,
             promoted_at=registration.promoted_at,
+            attendance_status=registration.attendance_status,
+            attendance_recorded_at=registration.attendance_recorded_at,
         )
 
 
@@ -954,6 +956,8 @@ def _project_context(
             waitlist_position=waitlist_position,
             waitlisted_at=registration.waitlisted_at,
             promoted_at=registration.promoted_at,
+            attendance_status=registration.attendance_status,
+            attendance_recorded_at=registration.attendance_recorded_at,
         )
         if registration is not None
         else None
@@ -1172,6 +1176,11 @@ def _upgrade_legacy_application_context(
         "available_withdrawal_action",
         "late_exit_will_be_recorded",
     }
+    c2b_fields = c2a_fields | {
+        "waitlist_position",
+        "waitlisted_at",
+        "promoted_at",
+    }
 
     upgraded_viewer = dict(viewer)
     if set(viewer) == c1a_fields:
@@ -1192,13 +1201,23 @@ def _upgrade_legacy_application_context(
             "available_withdrawal_action": None,
             "late_exit_will_be_recorded": False,
         })
-    elif set(viewer) != c2a_fields:
+    elif frozenset(viewer) not in {
+        frozenset(c2a_fields),
+        frozenset(c2b_fields),
+    }:
         raise ValueError("legacy application viewer is not exact")
+    if set(viewer) != c2b_fields:
+        upgraded_viewer.update(
+            {
+                "waitlist_position": None,
+                "waitlisted_at": None,
+                "promoted_at": None,
+            }
+        )
     upgraded_viewer.update(
         {
-            "waitlist_position": None,
-            "waitlisted_at": None,
-            "promoted_at": None,
+            "attendance_status": None,
+            "attendance_recorded_at": None,
         }
     )
     upgraded = dict(response_body)

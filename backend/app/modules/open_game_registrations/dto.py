@@ -18,6 +18,7 @@ from pydantic import (
 )
 
 from backend.app.models import (
+    OpenGameAttendanceStatus,
     OpenGameRegistrationPosition,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
@@ -138,6 +139,8 @@ class ViewerRegistration(_FrozenClosedModel):
     waitlist_position: Annotated[int, Field(strict=True, ge=1)] | None
     waitlisted_at: AwareDatetime | None
     promoted_at: AwareDatetime | None
+    attendance_status: OpenGameAttendanceStatus | None
+    attendance_recorded_at: AwareDatetime | None
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> Self:
@@ -267,6 +270,10 @@ class ViewerRegistration(_FrozenClosedModel):
             or self.late_exit_will_be_recorded
         ):
             raise ValueError("withdrawn registration cannot expose another withdrawal")
+        _validate_self_attendance(
+            status=self.attendance_status,
+            recorded_at=self.attendance_recorded_at,
+        )
         return self
 
 
@@ -332,6 +339,8 @@ class MyOpenGameApplication(_FrozenClosedModel):
     waitlist_position: Annotated[int, Field(strict=True, ge=1)] | None
     waitlisted_at: AwareDatetime | None
     promoted_at: AwareDatetime | None
+    attendance_status: OpenGameAttendanceStatus | None
+    attendance_recorded_at: AwareDatetime | None
     detail_path: Annotated[
         str,
         Field(
@@ -399,6 +408,10 @@ class MyOpenGameApplication(_FrozenClosedModel):
             valid = no_history or current_waitlist or waitlist_history or promoted_history
         if not valid:
             raise ValueError("waitlist history does not match effective status")
+        _validate_self_attendance(
+            status=self.attendance_status,
+            recorded_at=self.attendance_recorded_at,
+        )
         return self
 
 
@@ -424,6 +437,128 @@ class DecisionResult(_FrozenClosedModel):
     decided_at: datetime | None
     remaining_spots: Annotated[int, Field(strict=True, ge=0)]
     allowed_actions: ReviewActions
+
+
+class OpenGameAttendanceGameSummary(_FrozenClosedModel):
+    id: uuid.UUID
+    name: Annotated[str, Field(strict=True, min_length=2, max_length=30)]
+    venue_name: Annotated[str, Field(strict=True, min_length=1)]
+    pitch_name: Annotated[str, Field(strict=True, min_length=1)]
+    starts_at: AwareDatetime
+    ends_at: AwareDatetime
+    time_zone: Annotated[str, Field(strict=True)]
+    state: Literal["COMPLETED"]
+
+    @field_validator("time_zone")
+    @classmethod
+    def require_iana_time_zone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError("time_zone must identify an IANA time zone") from error
+        return value
+
+    @model_validator(mode="after")
+    def validate_times(self) -> Self:
+        if self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be after starts_at")
+        return self
+
+
+class OpenGameAttendanceRosterItem(_FrozenClosedModel):
+    registration_id: uuid.UUID
+    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    position: OpenGameRegistrationPosition
+    attendance_status: OpenGameAttendanceStatus
+    attendance_recorded_at: AwareDatetime | None
+    version: Annotated[int, Field(strict=True, ge=1)]
+
+    @model_validator(mode="after")
+    def validate_attendance(self) -> Self:
+        _validate_attendance_pair(
+            status=self.attendance_status,
+            recorded_at=self.attendance_recorded_at,
+        )
+        return self
+
+
+class OpenGameAttendanceRoster(_FrozenClosedModel):
+    game: OpenGameAttendanceGameSummary
+    recorded_count: Annotated[int, Field(strict=True, ge=0)]
+    total_count: Annotated[int, Field(strict=True, ge=0)]
+    attendance_complete: Annotated[bool, Field(strict=True)]
+    registrations: tuple[OpenGameAttendanceRosterItem, ...]
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        recorded = sum(
+            item.attendance_status is not OpenGameAttendanceStatus.UNMARKED
+            for item in self.registrations
+        )
+        if self.total_count != len(self.registrations):
+            raise ValueError("total_count must equal registrations length")
+        if self.recorded_count != recorded:
+            raise ValueError("recorded_count must equal terminal attendance rows")
+        if self.attendance_complete is not (recorded == self.total_count):
+            raise ValueError("attendance_complete must match the counts")
+        return self
+
+
+class OpenGameAttendanceMarkRequest(_ClosedModel):
+    attendance_status: Literal[
+        OpenGameAttendanceStatus.PRESENT,
+        OpenGameAttendanceStatus.NO_SHOW,
+    ]
+    expected_version: Annotated[int, Field(strict=True, ge=1)]
+
+
+class OpenGameAttendanceMarkResult(_FrozenClosedModel):
+    registration_id: uuid.UUID
+    attendance_status: Literal[
+        OpenGameAttendanceStatus.PRESENT,
+        OpenGameAttendanceStatus.NO_SHOW,
+    ]
+    attendance_recorded_at: AwareDatetime
+    version: Annotated[int, Field(strict=True, ge=2)]
+    recorded_count: Annotated[int, Field(strict=True, ge=1)]
+    total_count: Annotated[int, Field(strict=True, ge=1)]
+    attendance_complete: Annotated[bool, Field(strict=True)]
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        if self.recorded_count > self.total_count:
+            raise ValueError("recorded_count must not exceed total_count")
+        if self.attendance_complete is not (
+            self.recorded_count == self.total_count
+        ):
+            raise ValueError("attendance_complete must match the counts")
+        return self
+
+
+def _validate_self_attendance(
+    *,
+    status: OpenGameAttendanceStatus | None,
+    recorded_at: datetime | None,
+) -> None:
+    if status in {None, OpenGameAttendanceStatus.UNMARKED}:
+        if recorded_at is not None:
+            raise ValueError("unavailable or unmarked attendance has no recorded time")
+        return
+    if recorded_at is None:
+        raise ValueError("recorded attendance requires a recorded time")
+
+
+def _validate_attendance_pair(
+    *,
+    status: OpenGameAttendanceStatus,
+    recorded_at: datetime | None,
+) -> None:
+    if status is OpenGameAttendanceStatus.UNMARKED:
+        if recorded_at is not None:
+            raise ValueError("unmarked attendance has no recorded time")
+        return
+    if recorded_at is None:
+        raise ValueError("terminal attendance requires a recorded time")
 
 
 def validate_registration_visible_text(value: str) -> str:

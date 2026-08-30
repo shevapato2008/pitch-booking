@@ -38,6 +38,8 @@ MY_OPEN_GAME_APPLICATION_FIELDS = {
     "waitlist_position",
     "waitlisted_at",
     "promoted_at",
+    "attendance_status",
+    "attendance_recorded_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -47,6 +49,11 @@ MY_OPEN_GAME_APPLICATION_FIELDS = {
     "pitch_name",
     "pitch_specification",
 }
+
+ATTENDANCE_ROSTER_PATH = "/api/v1/games/{game_id}/attendance-roster"
+ATTENDANCE_MARK_PATH = (
+    "/api/v1/games/{game_id}/registrations/{registration_id}/attendance"
+)
 
 
 def test_my_open_game_applications_contract_is_closed_paginated_and_authenticated() -> None:
@@ -1762,6 +1769,8 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "waitlist_position",
             "waitlisted_at",
             "promoted_at",
+            "attendance_status",
+            "attendance_recorded_at",
         },
         "OpenGameRegistrationContext": {
             "game",
@@ -2587,6 +2596,7 @@ def test_open_game_public_states_are_coarse_and_position_inputs_are_unordered() 
                 "can_share": False,
                 "can_cancel": False,
                 "can_preview": False,
+                "can_manage_attendance": False,
             },
             "share": None,
         }
@@ -3941,3 +3951,241 @@ def test_public_game_directory_contract_is_anonymous_closed_and_exampled() -> No
             "members",
         ):
             assert private not in serialized, private
+
+
+def test_open_game_attendance_operations_and_examples_are_frozen() -> None:
+    contract = _contract()
+    paths = contract["paths"]
+    schemas = contract["components"]["schemas"]
+    expected = {
+        (ATTENDANCE_ROSTER_PATH, "get"): (
+            "getOpenGameAttendanceRoster",
+            {"200", "401", "404", "422", "503"},
+            "OpenGameAttendanceRoster",
+        ),
+        (ATTENDANCE_MARK_PATH, "post"): (
+            "markOpenGameAttendance",
+            {"200", "401", "404", "409", "422", "503"},
+            "OpenGameAttendanceMarkResult",
+        ),
+    }
+    assert set(paths[ATTENDANCE_ROSTER_PATH]) == {"get"}
+    assert set(paths[ATTENDANCE_MARK_PATH]) == {"post"}
+    for (path, method), (operation_id, statuses, response_schema) in expected.items():
+        operation = paths[path][method]
+        assert operation["operationId"] == operation_id
+        assert operation["security"] == [{"bearerAuth": []}]
+        assert set(operation["responses"]) == statuses
+        assert _response_schema(operation, "200") == {
+            "$ref": f"#/components/schemas/{response_schema}"
+        }
+        for response in operation["responses"].values():
+            assert response["headers"] == {
+                "X-Request-Id": {"$ref": "#/components/headers/RequestId"}
+            }
+
+    roster_parameters = paths[ATTENDANCE_ROSTER_PATH]["get"]["parameters"]
+    assert roster_parameters == [
+        {
+            "name": "game_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string", "format": "uuid"},
+        }
+    ]
+    mark = paths[ATTENDANCE_MARK_PATH]["post"]
+    assert mark["parameters"] == [
+        {
+            "name": "game_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string", "format": "uuid"},
+        },
+        {
+            "name": "registration_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string", "format": "uuid"},
+        },
+        {"$ref": "#/components/parameters/IdempotencyKey"},
+    ]
+    assert mark["requestBody"] == {
+        "required": True,
+        "content": {
+            "application/json": {
+                "schema": {
+                    "$ref": "#/components/schemas/OpenGameAttendanceMarkRequest"
+                }
+            }
+        },
+    }
+    assert "requestBody" not in paths[ATTENDANCE_ROSTER_PATH]["get"]
+
+    expected_examples = {
+        (ATTENDANCE_ROSTER_PATH, "get", "200"): {
+            "Ready": "open-game-attendance-roster-ready.json",
+            "Empty": "open-game-attendance-roster-empty.json",
+        },
+        (ATTENDANCE_MARK_PATH, "post", "200"): {
+            "MarkedPresent": "open-game-attendance-mark-present.json",
+            "MarkedNoShow": "open-game-attendance-mark-no-show.json",
+        },
+        (ATTENDANCE_MARK_PATH, "post", "409"): {
+            "AttendanceStateChanged": "error-attendance-state-changed.json",
+            "IdempotencyKeyReused": "error-idempotency-key-reused.json",
+        },
+    }
+    for (path, method, status), examples in expected_examples.items():
+        assert paths[path][method]["responses"][status]["content"][
+            "application/json"
+        ]["examples"] == {
+            name: {"externalValue": f"./examples/{filename}"}
+            for name, filename in examples.items()
+        }
+
+    example_schemas = {
+        "open-game-attendance-roster-ready.json": "OpenGameAttendanceRoster",
+        "open-game-attendance-roster-empty.json": "OpenGameAttendanceRoster",
+        "open-game-attendance-mark-present.json": "OpenGameAttendanceMarkResult",
+        "open-game-attendance-mark-no-show.json": "OpenGameAttendanceMarkResult",
+        "error-attendance-state-changed.json": "ErrorEnvelope",
+    }
+    examples = {}
+    for filename, schema_name in example_schemas.items():
+        value = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
+        examples[filename] = value
+        assert Draft202012Validator(
+            _dereference_local_schema(contract, schemas[schema_name])
+        ).is_valid(value), filename
+    ready = examples["open-game-attendance-roster-ready.json"]
+    assert (ready["recorded_count"], ready["total_count"]) == (2, 3)
+    assert ready["attendance_complete"] is False
+    empty = examples["open-game-attendance-roster-empty.json"]
+    assert (empty["recorded_count"], empty["total_count"]) == (0, 0)
+    assert empty["attendance_complete"] is True
+
+
+def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -> None:
+    contract = _contract()
+    schemas = contract["components"]["schemas"]
+    required_fields = {
+        "OpenGameAttendanceGameSummary": {
+            "id",
+            "name",
+            "venue_name",
+            "pitch_name",
+            "starts_at",
+            "ends_at",
+            "time_zone",
+            "state",
+        },
+        "OpenGameAttendanceRosterItem": {
+            "registration_id",
+            "display_name",
+            "position",
+            "attendance_status",
+            "attendance_recorded_at",
+            "version",
+        },
+        "OpenGameAttendanceRoster": {
+            "game",
+            "recorded_count",
+            "total_count",
+            "attendance_complete",
+            "registrations",
+        },
+        "OpenGameAttendanceMarkRequest": {
+            "attendance_status",
+            "expected_version",
+        },
+        "OpenGameAttendanceMarkResult": {
+            "registration_id",
+            "attendance_status",
+            "attendance_recorded_at",
+            "version",
+            "recorded_count",
+            "total_count",
+            "attendance_complete",
+        },
+    }
+    for schema_name, fields in required_fields.items():
+        schema = schemas[schema_name]
+        assert schema["type"] == "object"
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == fields
+        assert set(schema["properties"]) == fields
+    assert schemas["OpenGameAttendanceStatus"] == {
+        "type": "string",
+        "enum": ["UNMARKED", "PRESENT", "NO_SHOW"],
+    }
+    assert schemas["OpenGameAttendanceGameSummary"]["properties"]["state"] == {
+        "type": "string",
+        "const": "COMPLETED",
+    }
+    assert schemas["OpenGameAttendanceMarkRequest"]["properties"][
+        "attendance_status"
+    ] == {"type": "string", "enum": ["PRESENT", "NO_SHOW"]}
+
+    roster_serialized = json.dumps(
+        {
+            "schema": schemas["OpenGameAttendanceRoster"],
+            "item": schemas["OpenGameAttendanceRosterItem"],
+            "ready": json.loads(
+                (EXAMPLES_DIRECTORY / "open-game-attendance-roster-ready.json").read_text()
+            ),
+        }
+    ).lower()
+    for forbidden in (
+        "note",
+        "applicant_user_id",
+        "user_id",
+        "recorded_by",
+        "adult_confirmed",
+        "risk_confirmed",
+        "consent_version",
+        "created_at",
+        "updated_at",
+    ):
+        assert forbidden not in roster_serialized, forbidden
+    assert not any(
+        "attendance" in field
+        for field in schemas["OpenGamePublic"]["properties"]
+    )
+
+    owner_actions = schemas["OpenGameAllowedActions"]
+    assert set(owner_actions["required"]) == {
+        "can_edit",
+        "can_publish",
+        "can_share",
+        "can_cancel",
+        "can_preview",
+        "can_manage_attendance",
+    }
+    assert set(owner_actions["properties"]) == set(owner_actions["required"])
+    for self_schema_name in ("OpenGameViewerRegistration", "MyOpenGameApplication"):
+        self_schema = schemas[self_schema_name]
+        assert {"attendance_status", "attendance_recorded_at"} <= set(
+            self_schema["required"]
+        )
+        assert self_schema["properties"]["attendance_status"] == {
+            "oneOf": [
+                {"$ref": "#/components/schemas/OpenGameAttendanceStatus"},
+                {"type": "null"},
+            ]
+        }
+        assert self_schema["properties"]["attendance_recorded_at"] == {
+            "type": ["string", "null"],
+            "format": "date-time",
+        }
+        assert "attendance_recorded_by_user_id" not in self_schema["properties"]
+
+    runtime = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    ).openapi()
+    for path, method in (
+        (ATTENDANCE_ROSTER_PATH, "get"),
+        (ATTENDANCE_MARK_PATH, "post"),
+    ):
+        assert runtime["paths"][path][method] == contract["paths"][path][method]
+    for schema_name in (*required_fields, "OpenGameAttendanceStatus"):
+        assert runtime["components"]["schemas"][schema_name] == schemas[schema_name]

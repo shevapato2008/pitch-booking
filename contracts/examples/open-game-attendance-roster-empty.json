@@ -1,0 +1,16 @@
+{
+  "game": {
+    "id": "30000000-0000-4000-8000-000000000202",
+    "name": "海河周六轻松局",
+    "venue_name": "天津河东体育中心",
+    "pitch_name": "笼式五人制 2 号场",
+    "starts_at": "2026-08-29T18:00:00+08:00",
+    "ends_at": "2026-08-29T19:30:00+08:00",
+    "time_zone": "Asia/Shanghai",
+    "state": "COMPLETED"
+  },
+  "recorded_count": 0,
+  "total_count": 0,
+  "attendance_complete": true,
+  "registrations": []
+}

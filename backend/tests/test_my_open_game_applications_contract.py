@@ -22,6 +22,8 @@ ITEM_FIELDS = {
     "waitlist_position",
     "waitlisted_at",
     "promoted_at",
+    "attendance_status",
+    "attendance_recorded_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -44,6 +46,8 @@ def _valid_item() -> dict[str, object]:
         "waitlist_position": None,
         "waitlisted_at": None,
         "promoted_at": None,
+        "attendance_status": None,
+        "attendance_recorded_at": None,
         "detail_path": (
             "/pages/captain-game-public/index?token="
             "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -80,6 +84,12 @@ def test_my_application_dtos_are_closed_and_exact() -> None:
         MyOpenGameApplicationsResponse.model_validate(
             {"items": [], "next_cursor": ""}
         )
+
+    for required_nullable in ("attendance_status", "attendance_recorded_at"):
+        missing = _valid_item()
+        missing.pop(required_nullable)
+        with pytest.raises(ValidationError):
+            MyOpenGameApplication.model_validate(missing)
 
 
 @pytest.mark.parametrize(
