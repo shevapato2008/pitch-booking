@@ -3,6 +3,9 @@ import type {
   OpenGameApplicationQueue,
   OpenGameApplicationPage,
   OpenGameApplicationSubmission,
+  OpenGameAttendanceMarkResult,
+  OpenGameAttendanceMarkStatus,
+  OpenGameAttendanceRoster,
   OpenGameRegistrationContext,
   OpenGameRegistrationWithdrawalAction,
 } from "../domain/open-game-registration";
@@ -32,6 +35,15 @@ export type OpenGameRegistrationAttempt =
     readonly action: OpenGameRegistrationWithdrawalAction;
     readonly expectedVersion: number;
     readonly idempotencyKey: string;
+  }
+  | {
+    readonly kind: "attendance";
+    readonly originatingUserId: string;
+    readonly gameId: string;
+    readonly registrationId: string;
+    readonly attendanceStatus: OpenGameAttendanceMarkStatus;
+    readonly expectedVersion: number;
+    readonly idempotencyKey: string;
   };
 
 export type OpenGameRegistrationApplyAttempt = Extract<
@@ -45,6 +57,10 @@ export type OpenGameRegistrationDecisionAttempt = Extract<
 export type OpenGameRegistrationWithdrawAttempt = Extract<
   OpenGameRegistrationAttempt,
   { readonly kind: "withdraw" }
+>;
+export type OpenGameAttendanceMarkAttempt = Extract<
+  OpenGameRegistrationAttempt,
+  { readonly kind: "attendance" }
 >;
 
 export type OpenGameRegistrationAttemptAvailability =
@@ -72,6 +88,8 @@ export interface OpenGameRegistrationSource {
   getPending(gameId: string): Promise<OpenGameApplicationQueue>;
   decide(attempt: OpenGameRegistrationDecisionAttempt): Promise<OpenGameApplicationDecisionResult>;
   withdraw(attempt: OpenGameRegistrationWithdrawAttempt): Promise<OpenGameRegistrationContext>;
+  getAttendanceRoster(gameId: string): Promise<OpenGameAttendanceRoster>;
+  markAttendance(attempt: OpenGameAttendanceMarkAttempt): Promise<OpenGameAttendanceMarkResult>;
 }
 
 export type OpenGameRegistrationApiErrorCode =
@@ -83,6 +101,7 @@ export type OpenGameRegistrationApiErrorCode =
   | "APPLICATION_NOT_ALLOWED"
   | "APPLICATION_STATE_CHANGED"
   | "APPLICATION_CAPACITY_CHANGED"
+  | "ATTENDANCE_STATE_CHANGED"
   | "IDEMPOTENCY_KEY_REUSED"
   | "INVALID_ARGUMENT"
   | "SERVICE_UNAVAILABLE"
@@ -95,6 +114,7 @@ export type OpenGameRegistrationMutationRecoveryDecision =
   | { readonly kind: "PRESERVE_READ_CONTEXT_THEN_CLEAR"; readonly clearAttempt: false }
   | { readonly kind: "CLEAR_AND_REFRESH_CONTEXT"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_REFRESH_QUEUE"; readonly clearAttempt: true }
+  | { readonly kind: "CLEAR_AND_REFRESH_ROSTER"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_SHOW_CONFLICT"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_CORRECT_OR_REFRESH"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_RETURN"; readonly clearAttempt: true }
@@ -119,6 +139,9 @@ export function classifyOpenGameRegistrationMutationResult(
   if (result === "APPLICATION_STATE_CHANGED" || result === "APPLICATION_CAPACITY_CHANGED") {
     return { kind: "CLEAR_AND_REFRESH_QUEUE", clearAttempt: true };
   }
+  if (result === "ATTENDANCE_STATE_CHANGED") {
+    return { kind: "CLEAR_AND_REFRESH_ROSTER", clearAttempt: true };
+  }
   if (result === "IDEMPOTENCY_KEY_REUSED") {
     return { kind: "CLEAR_AND_SHOW_CONFLICT", clearAttempt: true };
   }
@@ -142,6 +165,38 @@ export type OpenGameRegistrationUnknownRecoveryDecision =
     readonly attempt: OpenGameRegistrationAttempt;
     readonly clearAttempt: false;
   };
+
+export type OpenGameAttendanceUnknownRecoveryDecision =
+  | {
+    readonly kind: "ACCEPT_AUTHORITY_AND_CLEAR";
+    readonly authority: OpenGameAttendanceRoster;
+    readonly clearAttempt: true;
+  }
+  | {
+    readonly kind: "REPLAY_SAME_ATTEMPT";
+    readonly attempt: OpenGameAttendanceMarkAttempt;
+    readonly clearAttempt: false;
+  };
+
+export function classifyOpenGameAttendanceUnknownResult(
+  attempt: OpenGameAttendanceMarkAttempt,
+  authority: OpenGameAttendanceRoster,
+): OpenGameAttendanceUnknownRecoveryDecision {
+  const registration = authority.game.id === attempt.gameId
+    ? authority.registrations.find((item) => item.registrationId === attempt.registrationId)
+    : undefined;
+  const expectedTerminalVersion = attempt.expectedVersion + 1;
+  const matchingTerminal = Number.isSafeInteger(expectedTerminalVersion)
+    && registration?.version === expectedTerminalVersion
+    && registration.attendanceStatus === attempt.attendanceStatus;
+  if (matchingTerminal) {
+    return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority, clearAttempt: true };
+  }
+  const unchanged = registration?.version === attempt.expectedVersion
+    && registration.attendanceStatus === "UNMARKED";
+  if (unchanged) return { kind: "REPLAY_SAME_ATTEMPT", attempt, clearAttempt: false };
+  return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority, clearAttempt: true };
+}
 
 function withdrawalAuthorityForAction(value: unknown): {
   readonly persistedStatus: "APPLIED" | "WAITLISTED" | "JOINED";
@@ -210,7 +265,8 @@ export function classifyOpenGameRegistrationUnknownResult(
 export type OpenGameRegistrationAttemptTarget =
   | { readonly kind: "apply"; readonly shareToken: string }
   | { readonly kind: "decision"; readonly gameId: string }
-  | { readonly kind: "withdraw"; readonly shareToken: string };
+  | { readonly kind: "withdraw"; readonly shareToken: string }
+  | { readonly kind: "attendance"; readonly gameId: string };
 
 export type OpenGameRegistrationPendingAttemptDecision =
   | {
@@ -237,11 +293,15 @@ export function classifyOpenGameRegistrationPendingAttempt(
     ? target.kind === "apply" && target.shareToken === attempt.shareToken
     : attempt.kind === "decision"
       ? target.kind === "decision" && target.gameId === attempt.gameId
-      : target.kind === "withdraw" && target.shareToken === attempt.shareToken;
+      : attempt.kind === "withdraw"
+        ? target.kind === "withdraw" && target.shareToken === attempt.shareToken
+        : target.kind === "attendance" && target.gameId === attempt.gameId;
   if (sameResource) return { kind: "READY", attempt, clearAttempt: false };
   const route = attempt.kind === "decision"
     ? `/pages/captain-game-applications/index?game_id=${attempt.gameId}`
-    : `/pages/captain-game-public/index?token=${attempt.shareToken}`;
+    : attempt.kind === "attendance"
+      ? `/pages/captain-game-attendance/index?game_id=${attempt.gameId}`
+      : `/pages/captain-game-public/index?token=${attempt.shareToken}`;
   return { kind: "PRESERVE_AND_NAVIGATE", route, clearAttempt: false };
 }
 

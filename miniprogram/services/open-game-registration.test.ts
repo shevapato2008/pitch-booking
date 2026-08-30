@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeOpenGameAttendanceMarkResult,
+  decodeOpenGameAttendanceRoster,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
@@ -12,9 +14,12 @@ import type {
   OpenGameApplicationDecisionResult,
   OpenGameApplicationQueue,
   OpenGameApplicationPage,
+  OpenGameAttendanceMarkResult,
+  OpenGameAttendanceRoster,
   OpenGameRegistrationContext,
 } from "../domain/open-game-registration";
 import {
+  classifyOpenGameAttendanceUnknownResult,
   classifyOpenGameRegistrationMutationResult,
   classifyOpenGameRegistrationPendingAttempt,
   classifyOpenGameRegistrationUnknownResult,
@@ -27,6 +32,7 @@ import {
   type OpenGameRegistrationApplyAttempt,
   type OpenGameRegistrationAttempt,
   type OpenGameRegistrationAttemptStore,
+  type OpenGameAttendanceMarkAttempt,
   type OpenGameRegistrationDecisionAttempt,
   type OpenGameRegistrationSource,
   type OpenGameRegistrationWithdrawAttempt,
@@ -35,6 +41,7 @@ import {
 const USER_ID = "11111111-2222-4333-8444-555555555555";
 const OTHER_USER_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const GAME_ID = "22222222-3333-4444-8555-666666666666";
+const ATTENDANCE_GAME_ID = "30000000-0000-4000-8000-000000000201";
 const SHARE_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz_12345";
 
 const fixture = (name: string): Record<string, unknown> => JSON.parse(
@@ -58,6 +65,12 @@ const decisionResult = decodeOpenGameApplicationDecisionResult(
   fixture("open-game-application-decision-joined"),
 );
 const mine = decodeMyOpenGameApplications(fixture("my-open-game-applications-ready"));
+const decodedAttendanceRoster = decodeOpenGameAttendanceRoster(
+  fixture("open-game-attendance-roster-ready"),
+);
+const attendanceMarkResult = decodeOpenGameAttendanceMarkResult(
+  fixture("open-game-attendance-mark-present"),
+);
 
 const applyAttempt: OpenGameRegistrationApplyAttempt = {
   kind: "apply",
@@ -89,6 +102,15 @@ const withdrawAttempt: OpenGameRegistrationWithdrawAttempt = {
   action: "WITHDRAW_APPLICATION",
   expectedVersion: 1,
   idempotencyKey: "withdraw-key-0000000000000001",
+};
+const attendanceAttempt: OpenGameAttendanceMarkAttempt = {
+  kind: "attendance",
+  originatingUserId: USER_ID,
+  gameId: ATTENDANCE_GAME_ID,
+  registrationId: "40000000-0000-4000-8000-000000000201",
+  attendanceStatus: "PRESENT",
+  expectedVersion: 2,
+  idempotencyKey: "attendance-key-00000000000001",
 };
 const waitlistDecisionAttempt = {
   ...decisionAttempt,
@@ -156,6 +178,14 @@ function fakeSource(): OpenGameRegistrationSource {
       expect(attempt).toBe(withdrawAttempt);
       return withdrawnAuthority;
     },
+    getAttendanceRoster: async (gameId: string): Promise<OpenGameAttendanceRoster> => {
+      expect(gameId).toBe(ATTENDANCE_GAME_ID);
+      return decodedAttendanceRoster;
+    },
+    markAttendance: async (attempt: OpenGameAttendanceMarkAttempt): Promise<OpenGameAttendanceMarkResult> => {
+      expect(attempt).toBe(attendanceAttempt);
+      return attendanceMarkResult;
+    },
   } satisfies OpenGameRegistrationSource;
 }
 
@@ -194,6 +224,9 @@ describe("open-game registration bindings", () => {
     await expect(source.getPending(GAME_ID)).resolves.toBe(queue);
     await expect(source.decide(decisionAttempt)).resolves.toBe(decisionResult);
     await expect(source.withdraw(withdrawAttempt)).resolves.toBe(withdrawnAuthority);
+    await expect(source.getAttendanceRoster(ATTENDANCE_GAME_ID))
+      .resolves.toBe(decodedAttendanceRoster);
+    await expect(source.markAttendance(attendanceAttempt)).resolves.toBe(attendanceMarkResult);
 
     resetOpenGameRegistrationSourceForTesting();
     resetOpenGameRegistrationAttemptStoreForTesting();
@@ -217,6 +250,11 @@ describe("open-game registration recovery", () => {
     ["SERVICE_UNAVAILABLE", "RETRY_READ", false],
   ] as const)("classifies %s as %s without inventing authority", (result, kind, clearAttempt) => {
     expect(classifyOpenGameRegistrationMutationResult(result)).toEqual({ kind, clearAttempt });
+  });
+
+  test("clears an attendance attempt and refreshes roster after authoritative state change", () => {
+    expect(classifyOpenGameRegistrationMutationResult("ATTENDANCE_STATE_CHANGED" as never))
+      .toEqual({ kind: "CLEAR_AND_REFRESH_ROSTER", clearAttempt: true });
   });
 
   test("accepts authoritative apply context only when it contains the viewer registration", () => {
@@ -302,6 +340,113 @@ describe("open-game registration recovery", () => {
       kind: "READY",
       attempt,
       clearAttempt: false,
+    });
+  });
+
+  test("keeps an attendance attempt on its game and exposes the attendance recovery route", () => {
+    expect(classifyOpenGameRegistrationPendingAttempt(
+      attendanceAttempt,
+      USER_ID,
+      { kind: "attendance", gameId: ATTENDANCE_GAME_ID },
+    )).toEqual({ kind: "READY", attempt: attendanceAttempt, clearAttempt: false });
+    expect(classifyOpenGameRegistrationPendingAttempt(
+      attendanceAttempt,
+      USER_ID,
+      {
+        kind: "attendance",
+        gameId: "33333333-4444-4555-8666-777777777777",
+      } as never,
+    )).toEqual({
+      kind: "PRESERVE_AND_NAVIGATE",
+      route: `/pages/captain-game-attendance/index?game_id=${ATTENDANCE_GAME_ID}`,
+      clearAttempt: false,
+    });
+  });
+
+  test("attendance recovery accepts the matching next version and replays only unchanged authority", () => {
+    const matchingAuthority = {
+      ...decodedAttendanceRoster,
+      recordedCount: 3,
+      attendanceComplete: true,
+      registrations: decodedAttendanceRoster.registrations.map((item) => (
+        item.registrationId === attendanceAttempt.registrationId
+          ? {
+            ...item,
+            attendanceStatus: "PRESENT" as const,
+            attendanceRecordedAt: "2026-08-30T20:36:00+08:00",
+            version: 3,
+          }
+          : item
+      )),
+    };
+    expect(classifyOpenGameAttendanceUnknownResult(attendanceAttempt, matchingAuthority)).toEqual({
+      kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+      authority: matchingAuthority,
+      clearAttempt: true,
+    });
+    expect(classifyOpenGameAttendanceUnknownResult(
+      attendanceAttempt,
+      decodedAttendanceRoster,
+    )).toEqual({
+      kind: "REPLAY_SAME_ATTEMPT",
+      attempt: attendanceAttempt,
+      clearAttempt: false,
+    });
+  });
+
+  test.each([
+    ["opposite result", {
+      ...decodedAttendanceRoster.registrations[0],
+      attendanceStatus: "NO_SHOW" as const,
+      attendanceRecordedAt: "2026-08-30T20:36:00+08:00",
+      version: 3,
+    }],
+    ["advanced unmarked version", {
+      ...decodedAttendanceRoster.registrations[0],
+      version: 3,
+    }],
+    ["same result at another version", {
+      ...decodedAttendanceRoster.registrations[0],
+      attendanceStatus: "PRESENT" as const,
+      attendanceRecordedAt: "2026-08-30T20:36:00+08:00",
+      version: 4,
+    }],
+  ] as const)("attendance recovery clears and displays %s authority", (_label, item) => {
+    const changedAuthority = {
+      ...decodedAttendanceRoster,
+      recordedCount: item.attendanceStatus === "UNMARKED" ? 2 : 3,
+      attendanceComplete: item.attendanceStatus !== "UNMARKED",
+      registrations: decodedAttendanceRoster.registrations.map((registration) => (
+        registration.registrationId === attendanceAttempt.registrationId ? item : registration
+      )),
+    };
+    expect(classifyOpenGameAttendanceUnknownResult(
+      attendanceAttempt,
+      changedAuthority,
+    )).toEqual({
+      kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+      authority: changedAuthority,
+      clearAttempt: true,
+    });
+  });
+
+  test("attendance recovery clears when the registration is no longer authoritative roster data", () => {
+    const changedAuthority = {
+      ...decodedAttendanceRoster,
+      totalCount: 2,
+      recordedCount: 2,
+      attendanceComplete: true,
+      registrations: decodedAttendanceRoster.registrations.filter(
+        (item) => item.registrationId !== attendanceAttempt.registrationId,
+      ),
+    };
+    expect(classifyOpenGameAttendanceUnknownResult(
+      attendanceAttempt,
+      changedAuthority,
+    )).toEqual({
+      kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+      authority: changedAuthority,
+      clearAttempt: true,
     });
   });
 

@@ -13,6 +13,8 @@ const base: OpenGameApplicationItem = {
   waitlistPosition: null,
   waitlistedAt: null,
   promotedAt: null,
+  attendanceStatus: null,
+  attendanceRecordedAt: null,
   detailPath: "/pages/captain-game-public/index?token=0123456789abcdef0123456789abcdef",
   gameName: "海河周六轻松局",
   startsAt: "2026-09-04T17:00:00Z",

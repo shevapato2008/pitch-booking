@@ -10,7 +10,10 @@ import {
 } from "./decoder-primitives";
 import { decodeOpenGamePublic } from "./open-game-decoder";
 import { supportedIanaTimeZoneAt } from "./zoned-time";
-import { OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES } from "./open-game-registration";
+import {
+  OPEN_GAME_ATTENDANCE_STATUSES,
+  OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES,
+} from "./open-game-registration";
 import { OPEN_GAME_POSITIONS, type OpenGamePosition } from "./open-game";
 import type {
   CaptainOpenGameApplication,
@@ -24,6 +27,11 @@ import type {
   OpenGameApplicationSubmission,
   OpenGameApplyActions,
   OpenGameApplyBlockedReason,
+  OpenGameAttendanceGameSummary,
+  OpenGameAttendanceMarkResult,
+  OpenGameAttendanceRoster,
+  OpenGameAttendanceRosterItem,
+  OpenGameAttendanceStatus,
   OpenGameRegistrationContext,
   OpenGameRegistrationAvailableWithdrawalAction,
   OpenGameReviewActions,
@@ -79,7 +87,7 @@ const VIEWER_REGISTRATION_KEYS = [
   "id", "version", "display_name", "position", "note", "persisted_status", "effective_status",
   "applied_at", "decided_at", "withdrawn_at", "withdrawal_kind", "late_exit_recorded",
   "available_withdrawal_action", "late_exit_will_be_recorded", "waitlist_position",
-  "waitlisted_at", "promoted_at",
+  "waitlisted_at", "promoted_at", "attendance_status", "attendance_recorded_at",
 ] as const;
 const QUEUE_KEYS = [
   "remaining_spots", "pending_count", "applications", "waitlist_count", "waitlist",
@@ -97,9 +105,24 @@ const DECISION_RESULT_KEYS = [
 const MY_APPLICATION_PAGE_KEYS = ["items", "next_cursor"] as const;
 const MY_APPLICATION_ITEM_KEYS = [
   "id", "effective_status", "applied_at", "waitlist_position", "waitlisted_at", "promoted_at",
-  "detail_path", "game_name", "starts_at", "ends_at", "time_zone", "venue_name", "pitch_name",
-  "pitch_specification",
+  "attendance_status", "attendance_recorded_at", "detail_path", "game_name", "starts_at",
+  "ends_at", "time_zone", "venue_name", "pitch_name", "pitch_specification",
 ] as const;
+const ATTENDANCE_GAME_KEYS = [
+  "id", "name", "venue_name", "pitch_name", "starts_at", "ends_at", "time_zone", "state",
+] as const;
+const ATTENDANCE_ROSTER_ITEM_KEYS = [
+  "registration_id", "display_name", "position", "attendance_status",
+  "attendance_recorded_at", "version",
+] as const;
+const ATTENDANCE_ROSTER_KEYS = [
+  "game", "recorded_count", "total_count", "attendance_complete", "registrations",
+] as const;
+const ATTENDANCE_MARK_RESULT_KEYS = [
+  "registration_id", "attendance_status", "attendance_recorded_at", "version",
+  "recorded_count", "total_count", "attendance_complete",
+] as const;
+const TERMINAL_ATTENDANCE_STATUSES = ["PRESENT", "NO_SHOW"] as const;
 const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
 
 const MAINLAND_MOBILE_PATTERN =
@@ -138,6 +161,76 @@ function nullableRfc3339At(value: unknown, path: string): string | null {
 
 function nullablePositiveIntegerAt(value: unknown, path: string): number | null {
   return value === null ? null : safeIntegerAt(value, path, 1);
+}
+
+interface DecodedSelfAttendance {
+  readonly attendanceStatus: OpenGameAttendanceStatus | null;
+  readonly attendanceRecordedAt: string | null;
+}
+
+function decodeSelfAttendance(
+  statusValue: unknown,
+  recordedAtValue: unknown,
+  path: string,
+): DecodedSelfAttendance {
+  const attendanceStatus = statusValue === null
+    ? null
+    : enumAt(statusValue, OPEN_GAME_ATTENDANCE_STATUSES, `${path}.attendance_status`);
+  const attendanceRecordedAt = nullableRfc3339At(
+    recordedAtValue,
+    `${path}.attendance_recorded_at`,
+  );
+  const hasTerminalStatus = attendanceStatus === "PRESENT" || attendanceStatus === "NO_SHOW";
+  if (hasTerminalStatus !== (attendanceRecordedAt !== null)) {
+    invalid(`${path}.attendance_recorded_at`);
+  }
+  return { attendanceStatus, attendanceRecordedAt };
+}
+
+function decodeAttendanceGameSummary(
+  value: unknown,
+  path: string,
+): OpenGameAttendanceGameSummary {
+  const object = exactObject(value, ATTENDANCE_GAME_KEYS, path);
+  const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
+  const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
+  if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
+  return Object.freeze({
+    id: uuidAt(object.id, `${path}.id`),
+    name: boundedStringAt(object.name, `${path}.name`, 2, 30),
+    venueName: stringAt(object.venue_name, `${path}.venue_name`),
+    pitchName: stringAt(object.pitch_name, `${path}.pitch_name`),
+    startsAt,
+    endsAt,
+    timeZone: supportedIanaTimeZoneAt(object.time_zone, `${path}.time_zone`),
+    state: enumAt(object.state, ["COMPLETED"] as const, `${path}.state`),
+  });
+}
+
+function decodeAttendanceRosterItem(
+  value: unknown,
+  path: string,
+): OpenGameAttendanceRosterItem {
+  const object = exactObject(value, ATTENDANCE_ROSTER_ITEM_KEYS, path);
+  const attendanceStatus = enumAt(
+    object.attendance_status,
+    OPEN_GAME_ATTENDANCE_STATUSES,
+    `${path}.attendance_status`,
+  );
+  const attendanceRecordedAt = nullableRfc3339At(
+    object.attendance_recorded_at,
+    `${path}.attendance_recorded_at`,
+  );
+  const terminal = attendanceStatus === "PRESENT" || attendanceStatus === "NO_SHOW";
+  if (terminal !== (attendanceRecordedAt !== null)) invalid(`${path}.attendance_recorded_at`);
+  return Object.freeze({
+    registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
+    attendanceStatus,
+    attendanceRecordedAt,
+    version: safeIntegerAt(object.version, `${path}.version`, 1),
+  });
 }
 
 function decodeApplyActions(value: unknown, path: string): OpenGameApplyActions {
@@ -244,6 +337,11 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
   );
   const waitlistedAt = nullableRfc3339At(object.waitlisted_at, `${path}.waitlisted_at`);
   const promotedAt = nullableRfc3339At(object.promoted_at, `${path}.promoted_at`);
+  const attendance = decodeSelfAttendance(
+    object.attendance_status,
+    object.attendance_recorded_at,
+    path,
+  );
 
   if (effectiveStatus !== persistedStatus && effectiveStatus !== "CANCELLED") invalid(path);
   for (const [field, value] of [
@@ -330,6 +428,7 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     waitlistPosition,
     waitlistedAt,
     promotedAt,
+    ...attendance,
   });
 }
 
@@ -386,6 +485,11 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
   );
   const waitlistedAt = nullableRfc3339At(object.waitlisted_at, `${path}.waitlisted_at`);
   const promotedAt = nullableRfc3339At(object.promoted_at, `${path}.promoted_at`);
+  const attendance = decodeSelfAttendance(
+    object.attendance_status,
+    object.attendance_recorded_at,
+    path,
+  );
   if (waitlistedAt !== null && rfc3339Before(waitlistedAt, appliedAt)) {
     invalid(`${path}.waitlisted_at`);
   }
@@ -417,6 +521,7 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
     waitlistPosition,
     waitlistedAt,
     promotedAt,
+    ...attendance,
     detailPath,
     gameName: stringAt(object.game_name, `${path}.game_name`),
     startsAt,
@@ -425,6 +530,63 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
     venueName: stringAt(object.venue_name, `${path}.venue_name`),
     pitchName: stringAt(object.pitch_name, `${path}.pitch_name`),
     pitchSpecification: stringAt(object.pitch_specification, `${path}.pitch_specification`),
+  });
+}
+
+export function decodeOpenGameAttendanceRoster(value: unknown): OpenGameAttendanceRoster {
+  const object = exactObject(value, ATTENDANCE_ROSTER_KEYS, "$" );
+  const registrations = Object.freeze(arrayAt(object.registrations, "$.registrations").map(
+    (registration, index) => decodeAttendanceRosterItem(
+      registration,
+      `$.registrations[${index}]`,
+    ),
+  ));
+  const recordedCount = safeIntegerAt(object.recorded_count, "$.recorded_count");
+  const totalCount = safeIntegerAt(object.total_count, "$.total_count");
+  const attendanceComplete = booleanAt(object.attendance_complete, "$.attendance_complete");
+  const terminalCount = registrations.filter(
+    (registration) => registration.attendanceStatus !== "UNMARKED",
+  ).length;
+  if (totalCount !== registrations.length) invalid("$.total_count");
+  if (recordedCount !== terminalCount) invalid("$.recorded_count");
+  if (attendanceComplete !== (recordedCount === totalCount)) {
+    invalid("$.attendance_complete");
+  }
+  return Object.freeze({
+    game: decodeAttendanceGameSummary(object.game, "$.game"),
+    recordedCount,
+    totalCount,
+    attendanceComplete,
+    registrations,
+  });
+}
+
+export function decodeOpenGameAttendanceMarkResult(
+  value: unknown,
+): OpenGameAttendanceMarkResult {
+  const object = exactObject(value, ATTENDANCE_MARK_RESULT_KEYS, "$" );
+  const recordedCount = safeIntegerAt(object.recorded_count, "$.recorded_count", 1);
+  const totalCount = safeIntegerAt(object.total_count, "$.total_count", 1);
+  const attendanceComplete = booleanAt(object.attendance_complete, "$.attendance_complete");
+  if (recordedCount > totalCount) invalid("$.recorded_count");
+  if (attendanceComplete !== (recordedCount === totalCount)) {
+    invalid("$.attendance_complete");
+  }
+  return Object.freeze({
+    registrationId: uuidAt(object.registration_id, "$.registration_id"),
+    attendanceStatus: enumAt(
+      object.attendance_status,
+      TERMINAL_ATTENDANCE_STATUSES,
+      "$.attendance_status",
+    ),
+    attendanceRecordedAt: rfc3339At(
+      object.attendance_recorded_at,
+      "$.attendance_recorded_at",
+    ),
+    version: safeIntegerAt(object.version, "$.version", 2),
+    recordedCount,
+    totalCount,
+    attendanceComplete,
   });
 }
 

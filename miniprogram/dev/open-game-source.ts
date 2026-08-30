@@ -106,6 +106,7 @@ export function createDevelopmentOpenGameSource(): OpenGameSource {
         canShare: published,
         canCancel: draft || published,
         canPreview: draft || published,
+        canManageAttendance: false,
       },
       share: published ? {
         title: `${currentDraft.name} · 8月23日 14:00`,

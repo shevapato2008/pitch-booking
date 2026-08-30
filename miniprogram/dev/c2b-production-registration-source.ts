@@ -118,6 +118,8 @@ function viewerRegistration(
       waitlistPosition: null,
       waitlistedAt: primaryTerminal === "GAME_EXIT" ? WAITLISTED_AT : null,
       promotedAt: primaryTerminal === "GAME_EXIT" ? registration.promotedAt : null,
+      attendanceStatus: null,
+      attendanceRecordedAt: null,
     };
   }
   const persisted = registration.persistedStatus;
@@ -145,6 +147,8 @@ function viewerRegistration(
     waitlistPosition: registration.waitlistPosition,
     waitlistedAt: registration.waitlistSeq === null ? null : WAITLISTED_AT,
     promotedAt: registration.promotedAt,
+    attendanceStatus: null,
+    attendanceRecordedAt: null,
   };
 }
 
@@ -185,6 +189,8 @@ function secondaryContext(secondaryExited: boolean): OpenGameRegistrationContext
       waitlistPosition: null,
       waitlistedAt: null,
       promotedAt: null,
+      attendanceStatus: null,
+      attendanceRecordedAt: null,
     },
     allowedActions: { canApply: false, applyBlockedReason: "ALREADY_APPLIED" },
   };
@@ -203,6 +209,8 @@ function applicationItem(
     waitlistPosition: registration.waitlistPosition,
     waitlistedAt: registration.waitlistedAt,
     promotedAt: registration.promotedAt,
+    attendanceStatus: registration.attendanceStatus,
+    attendanceRecordedAt: registration.attendanceRecordedAt,
     detailPath,
     gameName: context.game.name,
     startsAt: context.game.startsAt,
@@ -356,6 +364,12 @@ export function createC2bProductionPreviewSource(
         primaryTerminal = "GAME_EXIT";
       }
       return primaryContext(store, primaryTerminal);
+    },
+    async getAttendanceRoster() {
+      throw new Error("C2B_PRODUCTION_PREVIEW_ATTENDANCE_NOT_AVAILABLE");
+    },
+    async markAttendance() {
+      throw new Error("C2B_PRODUCTION_PREVIEW_ATTENDANCE_NOT_AVAILABLE");
     },
   };
 

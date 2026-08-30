@@ -190,7 +190,7 @@ function owner(): OpenGameOwner {
     fixedPlayers: game.fixedPlayers, openSpots: game.openSpots, intensity: game.intensity, minimumExperience: game.minimumExperience,
     positions: game.positions, aaCents: game.aaCents, registrationDeadline: game.registrationDeadline,
     equipmentAndArrivalNotes: game.equipmentAndArrivalNotes, visibility: game.visibility, persistedStatus: "DRAFT", state: "DRAFT",
-    stateReason: null, version: 1, allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true },
+    stateReason: null, version: 1, allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
     share: null, publicView: { ...game, state: "DRAFT" },
   };
 }

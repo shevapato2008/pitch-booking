@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeOpenGameAttendanceMarkResult,
+  decodeOpenGameAttendanceRoster,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
@@ -15,6 +17,7 @@ import {
 } from "./http-open-game-registration";
 import type {
   OpenGameRegistrationApplyAttempt,
+  OpenGameAttendanceMarkAttempt,
   OpenGameRegistrationDecisionAttempt,
   OpenGameRegistrationWithdrawAttempt,
 } from "./open-game-registration";
@@ -40,6 +43,11 @@ const rawWithdrawnWaitlistContext = fixture(
   "open-game-registration-context-withdrawn-waitlist",
 );
 const rawMine = fixture("my-open-game-applications-ready");
+const rawAttendanceRoster = fixture("open-game-attendance-roster-ready");
+const rawAttendanceMarkPresent = fixture("open-game-attendance-mark-present");
+const rawAttendanceMarkNoShow = fixture("open-game-attendance-mark-no-show");
+const ATTENDANCE_GAME_ID = "30000000-0000-4000-8000-000000000201";
+const ATTENDANCE_REGISTRATION_ID = "40000000-0000-4000-8000-000000000201";
 const REPLACEMENT_B_SESSION: StoredSession = {
   token: "replacement-account-b-token",
   expiresAt: "2099-02-01T00:00:00Z",
@@ -81,6 +89,15 @@ const withdrawAttempt: OpenGameRegistrationWithdrawAttempt = {
   action: "WITHDRAW_APPLICATION",
   expectedVersion: 1,
   idempotencyKey: "withdraw-key-0000000000000001",
+};
+const attendanceAttempt: OpenGameAttendanceMarkAttempt = {
+  kind: "attendance",
+  originatingUserId: USER_ID,
+  gameId: ATTENDANCE_GAME_ID,
+  registrationId: ATTENDANCE_REGISTRATION_ID,
+  attendanceStatus: "PRESENT",
+  expectedVersion: 2,
+  idempotencyKey: "attendance-key-00000000000001",
 };
 
 function contextWithWithdrawalFields(viewerPatch: Record<string, unknown>): Record<string, unknown> {
@@ -186,6 +203,39 @@ function harness(
 }
 
 describe("HTTP open-game registration requests", () => {
+  test("reads and marks attendance through the exact paths, body, bearer, and original key", async () => {
+    const h = harness([
+      response(200, rawAttendanceRoster),
+      response(200, rawAttendanceMarkPresent),
+    ]);
+
+    await expect(h.source.getAttendanceRoster(ATTENDANCE_GAME_ID)).resolves.toEqual(
+      decodeOpenGameAttendanceRoster(rawAttendanceRoster),
+    );
+    await expect(h.source.markAttendance(attendanceAttempt)).resolves.toEqual(
+      decodeOpenGameAttendanceMarkResult(rawAttendanceMarkPresent),
+    );
+
+    expect(h.calls).toEqual([
+      {
+        method: "GET",
+        path: `/api/v1/games/${ATTENDANCE_GAME_ID}/attendance-roster`,
+        body: undefined,
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "POST",
+        path: `/api/v1/games/${ATTENDANCE_GAME_ID}`
+          + `/registrations/${ATTENDANCE_REGISTRATION_ID}/attendance`,
+        body: { attendance_status: "PRESENT", expected_version: 2 },
+        headers: {
+          Authorization: `Bearer ${SESSION_TOKEN}`,
+          "Idempotency-Key": attendanceAttempt.idempotencyKey,
+        },
+      },
+    ]);
+  });
+
   test("withdraws through the exact self-only endpoint with explicit action, version, bearer, and key", async () => {
     const h = harness([response(200, rawWithdrawnContext)]);
 
@@ -384,12 +434,15 @@ describe("HTTP open-game registration requests", () => {
     const h = harness([], null);
 
     for (const operation of [
-      h.source.apply(applyAttempt),
-      h.source.getPending(GAME_ID),
-      h.source.listMine(),
-      h.source.decide(decisionAttempt),
+      () => h.source.apply(applyAttempt),
+      () => h.source.getPending(GAME_ID),
+      () => h.source.listMine(),
+      () => h.source.decide(decisionAttempt),
+      () => h.source.getAttendanceRoster(ATTENDANCE_GAME_ID),
+      () => h.source.markAttendance(attendanceAttempt),
     ]) {
-      await expect(operation).rejects.toEqual(new OpenGameRegistrationApiError("AUTH_REQUIRED"));
+      await expect(operation())
+        .rejects.toEqual(new OpenGameRegistrationApiError("AUTH_REQUIRED"));
     }
     expect(h.calls).toEqual([]);
     expect(h.identity.login).not.toHaveBeenCalled();
@@ -482,7 +535,14 @@ describe("HTTP open-game registration explicit login", () => {
   });
 });
 
-type Operation = "context" | "apply" | "queue" | "decide" | "mine";
+type Operation =
+  | "context"
+  | "apply"
+  | "queue"
+  | "decide"
+  | "mine"
+  | "roster"
+  | "attendance";
 
 function perform(
   h: ReturnType<typeof harness>,
@@ -492,7 +552,9 @@ function perform(
   if (operation === "apply") return h.source.apply(applyAttempt);
   if (operation === "queue") return h.source.getPending(GAME_ID);
   if (operation === "mine") return h.source.listMine();
-  return h.source.decide(decisionAttempt);
+  if (operation === "decide") return h.source.decide(decisionAttempt);
+  if (operation === "roster") return h.source.getAttendanceRoster(ATTENDANCE_GAME_ID);
+  return h.source.markAttendance(attendanceAttempt);
 }
 
 async function registrationError(promise: Promise<unknown>): Promise<OpenGameRegistrationApiError> {
@@ -511,6 +573,7 @@ describe("HTTP open-game registration closed errors", () => {
     apply: { fields: [{ field: "display_name", message: "字段值不符合要求。" }] },
     queue: {},
     decide: { fields: [{ field: "expected_version", message: "字段值不符合要求。" }] },
+    attendance: { fields: [{ field: "attendance_status", message: "字段值不符合要求。" }] },
   } as const;
   const notAllowedDetails = (
     fixture("error-application-not-allowed").error as Record<string, unknown>
@@ -553,6 +616,15 @@ describe("HTTP open-game registration closed errors", () => {
     }],
     ["decide", 409, "IDEMPOTENCY_KEY_REUSED", {}, undefined],
     ["decide", 422, "INVALID_ARGUMENT", fieldDetails.decide, fieldDetails.decide],
+    ["roster", 401, "AUTH_REQUIRED", {}, undefined],
+    ["roster", 404, "OPEN_GAME_NOT_FOUND", {}, undefined],
+    ["roster", 422, "INVALID_ARGUMENT", {}, undefined],
+    ["attendance", 401, "AUTH_REQUIRED", {}, undefined],
+    ["attendance", 404, "OPEN_GAME_NOT_FOUND", {}, undefined],
+    ["attendance", 404, "APPLICATION_NOT_FOUND", {}, undefined],
+    ["attendance", 409, "ATTENDANCE_STATE_CHANGED", {}, undefined],
+    ["attendance", 409, "IDEMPOTENCY_KEY_REUSED", {}, undefined],
+    ["attendance", 422, "INVALID_ARGUMENT", fieldDetails.attendance, fieldDetails.attendance],
   ] as const)("maps %s HTTP %s %s only from its matrix row", async (
     operation,
     statusCode,
@@ -580,6 +652,10 @@ describe("HTTP open-game registration closed errors", () => {
     ["mine", 404, "INVALID_ARGUMENT"],
     ["decide", 409, "APPLICATION_ALREADY_EXISTS"],
     ["decide", 404, "AUTH_REQUIRED"],
+    ["roster", 409, "ATTENDANCE_STATE_CHANGED"],
+    ["roster", 404, "APPLICATION_NOT_FOUND"],
+    ["attendance", 409, "APPLICATION_STATE_CHANGED"],
+    ["attendance", 409, "APPLICATION_CAPACITY_CHANGED"],
   ] as const)("fails closed for out-of-matrix %s HTTP %s %s", async (
     operation,
     statusCode,
@@ -589,9 +665,11 @@ describe("HTTP open-game registration closed errors", () => {
       harness([httpError(statusCode, code)]),
       operation,
     ));
-    expect(error.code).toBe(operation === "apply" || operation === "decide"
+    expect(error.code).toBe(
+      operation === "apply" || operation === "decide" || operation === "attendance"
       ? "APPLICATION_RESULT_UNKNOWN"
-      : "SERVICE_UNAVAILABLE");
+      : "SERVICE_UNAVAILABLE",
+    );
   });
 
   test.each([
@@ -657,6 +735,12 @@ describe("HTTP open-game registration closed errors", () => {
       const error = await registrationError(harness([
         httpError(422, "INVALID_ARGUMENT", { fields: [{ field, message: "bad" }] }),
       ]).source.decide(decisionAttempt));
+      expect(error.details).toEqual({ fields: [{ field, message: "bad" }] });
+    }
+    for (const field of ["attendance_status", "expected_version"]) {
+      const error = await registrationError(harness([
+        httpError(422, "INVALID_ARGUMENT", { fields: [{ field, message: "bad" }] }),
+      ]).source.markAttendance(attendanceAttempt));
       expect(error.details).toEqual({ fields: [{ field, message: "bad" }] });
     }
     const queueError = await registrationError(harness([
@@ -798,11 +882,11 @@ describe("HTTP open-game registration failure certainty", () => {
     _label,
     failure,
   ) => {
-    for (const operation of ["context", "queue", "mine"] as const) {
+    for (const operation of ["context", "queue", "mine", "roster"] as const) {
       expect((await registrationError(perform(harness([failure]), operation))).code)
         .toBe("SERVICE_UNAVAILABLE");
     }
-    for (const operation of ["apply", "decide"] as const) {
+    for (const operation of ["apply", "decide", "attendance"] as const) {
       expect((await registrationError(perform(harness([failure]), operation))).code)
         .toBe("APPLICATION_RESULT_UNKNOWN");
     }
@@ -814,11 +898,20 @@ describe("HTTP open-game registration failure certainty", () => {
     ["mine", 201, rawMine, "SERVICE_UNAVAILABLE"],
     ["apply", 200, rawAppliedContext, "APPLICATION_RESULT_UNKNOWN"],
     ["decide", 201, rawJoinedDecision, "APPLICATION_RESULT_UNKNOWN"],
+    ["roster", 201, rawAttendanceRoster, "SERVICE_UNAVAILABLE"],
+    ["attendance", 201, rawAttendanceMarkPresent, "APPLICATION_RESULT_UNKNOWN"],
     ["context", 200, { ...rawAnonymousContext, private: true }, "SERVICE_UNAVAILABLE"],
     ["queue", 200, { ...rawQueue, private: true }, "SERVICE_UNAVAILABLE"],
     ["mine", 200, { ...rawMine, private: true }, "SERVICE_UNAVAILABLE"],
     ["apply", 201, { ...rawAppliedContext, private: true }, "APPLICATION_RESULT_UNKNOWN"],
     ["decide", 200, { ...rawJoinedDecision, private: true }, "APPLICATION_RESULT_UNKNOWN"],
+    ["roster", 200, { ...rawAttendanceRoster, private: true }, "SERVICE_UNAVAILABLE"],
+    [
+      "attendance",
+      200,
+      { ...rawAttendanceMarkPresent, private: true },
+      "APPLICATION_RESULT_UNKNOWN",
+    ],
   ] as const)("maps wrong or malformed successful %s authority to %s", async (
     operation,
     status,
@@ -856,9 +949,83 @@ describe("HTTP open-game registration failure certainty", () => {
       idempotencyKey: "verbatim-key-0000000000001",
     });
   });
+
+  test("encodes attendance path segments and sends the original key on a definitive failure", async () => {
+    const h = harness([httpError(409, "ATTENDANCE_STATE_CHANGED")]);
+    const unusual = {
+      ...attendanceAttempt,
+      gameId: "game/id +?=",
+      registrationId: "registration/id +?=",
+      idempotencyKey: "verbatim-attendance-key-0001",
+    };
+
+    await registrationError(h.source.markAttendance(unusual));
+
+    expect(h.calls).toEqual([{
+      method: "POST",
+      path: "/api/v1/games/game%2Fid%20%2B%3F%3D/registrations/"
+        + "registration%2Fid%20%2B%3F%3D/attendance",
+      body: { attendance_status: "PRESENT", expected_version: 2 },
+      headers: {
+        Authorization: `Bearer ${SESSION_TOKEN}`,
+        "Idempotency-Key": "verbatim-attendance-key-0001",
+      },
+    }]);
+    expect(unusual.idempotencyKey).toBe("verbatim-attendance-key-0001");
+  });
 });
 
 describe("HTTP open-game registration response authority", () => {
+  test("rejects a roster whose decoded game does not match the requested authority", async () => {
+    const error = await registrationError(harness([
+      response(200, rawAttendanceRoster),
+    ]).source.getAttendanceRoster("30000000-0000-4000-8000-000000000299"));
+
+    expect(error.code).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  test.each([
+    ["different registration", attendanceAttempt, {
+      ...rawAttendanceMarkPresent,
+      registration_id: "40000000-0000-4000-8000-000000000299",
+    }],
+    ["opposite result", attendanceAttempt, rawAttendanceMarkNoShow],
+    ["unchanged version", attendanceAttempt, { ...rawAttendanceMarkPresent, version: 2 }],
+    ["skipped version", attendanceAttempt, { ...rawAttendanceMarkPresent, version: 4 }],
+    ["unsafe expected increment", {
+      ...attendanceAttempt,
+      expectedVersion: Number.MAX_SAFE_INTEGER,
+    }, rawAttendanceMarkPresent],
+  ] as const)("rejects structurally valid mismatched attendance authority: %s", async (
+    _label,
+    attempt,
+    payload,
+  ) => {
+    expect(() => decodeOpenGameAttendanceMarkResult(payload)).not.toThrow();
+    const error = await registrationError(
+      harness([response(200, payload)]).source.markAttendance(attempt),
+    );
+    expect(error.code).toBe("APPLICATION_RESULT_UNKNOWN");
+  });
+
+  test("accepts exact PRESENT and NO_SHOW attendance authority", async () => {
+    const noShowAttempt = {
+      ...attendanceAttempt,
+      attendanceStatus: "NO_SHOW" as const,
+    };
+    const h = harness([
+      response(200, rawAttendanceMarkPresent),
+      response(200, rawAttendanceMarkNoShow),
+    ]);
+
+    await expect(h.source.markAttendance(attendanceAttempt)).resolves.toEqual(
+      decodeOpenGameAttendanceMarkResult(rawAttendanceMarkPresent),
+    );
+    await expect(h.source.markAttendance(noShowAttempt)).resolves.toEqual(
+      decodeOpenGameAttendanceMarkResult(rawAttendanceMarkNoShow),
+    );
+  });
+
   test.each([
     ["different application", contextWithWithdrawalFields({
       id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",

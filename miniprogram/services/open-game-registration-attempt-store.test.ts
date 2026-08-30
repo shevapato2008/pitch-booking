@@ -51,6 +51,16 @@ const withdrawAttempt = {
   idempotencyKey: "withdraw-key-0000000000000001",
 };
 
+const attendanceAttempt = {
+  kind: "attendance" as const,
+  originatingUserId: USER_ID,
+  gameId: GAME_ID,
+  registrationId: APPLICATION_ID,
+  attendanceStatus: "PRESENT" as const,
+  expectedVersion: 2,
+  idempotencyKey: "attendance-key-00000000000001",
+};
+
 function memoryStorage(initial: ReadonlyArray<readonly [string, unknown]> = []) {
   const values = new Map<string, unknown>(initial);
   return {
@@ -81,8 +91,13 @@ describe("OpenGameRegistrationAttemptStore", () => {
     expect(restored.body).not.toBe(body);
   });
 
-  test("restores apply, decision, and withdrawal attempts through a new factory instance", () => {
-    for (const attempt of [applyAttempt, decisionAttempt, withdrawAttempt] satisfies readonly OpenGameRegistrationAttempt[]) {
+  test("restores apply, decision, withdrawal, and attendance attempts through a new factory instance", () => {
+    for (const attempt of [
+      applyAttempt,
+      decisionAttempt,
+      withdrawAttempt,
+      attendanceAttempt,
+    ] satisfies readonly OpenGameRegistrationAttempt[]) {
       const storage = memoryStorage();
       createOpenGameRegistrationAttemptStore(storage).begin(attempt);
 
@@ -154,6 +169,40 @@ describe("OpenGameRegistrationAttemptStore", () => {
     expect(storage.set).toHaveBeenCalledTimes(1);
   });
 
+  test("reuses the original attendance key and never overwrites another attendance mutation", () => {
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+    store.begin(attendanceAttempt);
+
+    expect(store.begin({
+      ...attendanceAttempt,
+      idempotencyKey: "replacement-attendance-key-0001",
+    })).toEqual({
+      kind: "READY",
+      attempt: attendanceAttempt,
+    });
+    for (const changed of [
+      { ...attendanceAttempt, attendanceStatus: "NO_SHOW" as const },
+      { ...attendanceAttempt, expectedVersion: 3 },
+      { ...attendanceAttempt, registrationId: "88888888-8888-4888-8aaa-bbbbbbbbbbbb" },
+      { ...attendanceAttempt, gameId: "33333333-4444-4555-8666-777777777777" },
+    ]) {
+      expect(store.begin(changed)).toEqual({
+        kind: "SAME_ACCOUNT_PENDING",
+        attempt: attendanceAttempt,
+      });
+    }
+    expect(store.begin({
+      ...attendanceAttempt,
+      originatingUserId: OTHER_USER_ID,
+    })).toEqual({
+      kind: "FOREIGN_ACCOUNT_PENDING",
+      attempt: attendanceAttempt,
+    });
+    expect(store.load()).toEqual(attendanceAttempt);
+    expect(storage.set).toHaveBeenCalledTimes(1);
+  });
+
   test("distinguishes same-account pending mutations from foreign-account pending attempts", () => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -194,6 +243,8 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["withdraw waitlist", { ...withdrawAttempt, action: "WITHDRAW_WAITLIST" }],
     ["reject decision", { ...decisionAttempt, decision: "REJECT" }],
     ["waitlist decision", { ...decisionAttempt, decision: "WAITLIST" }],
+    ["mark present attendance", attendanceAttempt],
+    ["mark no-show attendance", { ...attendanceAttempt, attendanceStatus: "NO_SHOW" }],
     ["null note", { ...applyAttempt, body: { ...body, note: null } }],
     ["goalkeeper", { ...applyAttempt, body: { ...body, position: "GOALKEEPER" } }],
     ["defender", { ...applyAttempt, body: { ...body, position: "DEFENDER" } }],
@@ -232,6 +283,13 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["withdraw invalid application id", { ...withdrawAttempt, applicationId: "not-a-uuid" }],
     ["withdraw unknown action", { ...withdrawAttempt, action: "AUTO" }],
     ["withdraw zero expected version", { ...withdrawAttempt, expectedVersion: 0 }],
+    ["attendance invalid game id", { ...attendanceAttempt, gameId: "not-a-uuid" }],
+    ["attendance invalid registration id", {
+      ...attendanceAttempt, registrationId: "not-a-uuid",
+    }],
+    ["attendance unmarked result", { ...attendanceAttempt, attendanceStatus: "UNMARKED" }],
+    ["attendance unknown result", { ...attendanceAttempt, attendanceStatus: "LATE" }],
+    ["attendance zero expected version", { ...attendanceAttempt, expectedVersion: 0 }],
   ])("rejects an invalid begin with zero persistence writes: %s", (_label, invalid) => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -248,6 +306,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["malformed nested body", { ...applyAttempt, body: { ...body, note: undefined } }],
     ["invalid decision", { ...decisionAttempt, decision: "PROMOTE_FROM_WAITLIST" }],
     ["invalid withdrawal", { ...withdrawAttempt, action: "AUTO" }],
+    ["invalid attendance", { ...attendanceAttempt, attendanceStatus: "UNMARKED" }],
   ])("self-clears corrupt persisted state: %s", (_label, invalid) => {
     const storage = memoryStorage([[KEY, invalid]]);
     const store = createOpenGameRegistrationAttemptStore(storage);

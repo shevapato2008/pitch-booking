@@ -8,6 +8,8 @@ import {
 import {
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
+  decodeOpenGameAttendanceMarkResult,
+  decodeOpenGameAttendanceRoster,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
@@ -26,6 +28,7 @@ import type {
 import type {
   OpenGameRegistrationApiErrorCode,
   OpenGameRegistrationApplyAttempt,
+  OpenGameAttendanceMarkAttempt,
   OpenGameRegistrationDecisionAttempt,
   OpenGameRegistrationSource,
   OpenGameRegistrationWithdrawAttempt,
@@ -84,7 +87,15 @@ export class OpenGameRegistrationApiError extends Error {
   }
 }
 
-type Operation = "context" | "apply" | "queue" | "decide" | "withdraw" | "mine";
+type Operation =
+  | "context"
+  | "apply"
+  | "queue"
+  | "decide"
+  | "withdraw"
+  | "mine"
+  | "roster"
+  | "attendance";
 
 const APPLY_FIELDS = [
   "display_name",
@@ -95,6 +106,7 @@ const APPLY_FIELDS = [
 ] as const;
 const DECISION_FIELDS = ["decision", "expected_version"] as const;
 const WITHDRAW_FIELDS = ["action", "expected_version"] as const;
+const ATTENDANCE_FIELDS = ["attendance_status", "expected_version"] as const;
 const APPLY_BLOCKED_REASONS = [
   "AUTH_REQUIRED",
   "OWNER_CANNOT_APPLY",
@@ -156,6 +168,17 @@ const DEFINITIVE_CODES: Readonly<
     401: ["AUTH_REQUIRED"],
     404: ["APPLICATION_NOT_FOUND"],
     409: ["APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  roster: {
+    401: ["AUTH_REQUIRED"],
+    404: ["OPEN_GAME_NOT_FOUND"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  attendance: {
+    401: ["AUTH_REQUIRED"],
+    404: ["OPEN_GAME_NOT_FOUND", "APPLICATION_NOT_FOUND"],
+    409: ["ATTENDANCE_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
     422: ["INVALID_ARGUMENT"],
   },
 };
@@ -254,7 +277,8 @@ function decodeInvalidArgumentDetails(
   const allowedFields: readonly string[] = operation === "apply"
     ? APPLY_FIELDS
     : operation === "decide" ? DECISION_FIELDS
-      : operation === "withdraw" ? WITHDRAW_FIELDS : [];
+      : operation === "withdraw" ? WITHDRAW_FIELDS
+        : operation === "attendance" ? ATTENDANCE_FIELDS : [];
   const fields = Object.freeze(arrayAt(object.fields, "$.error.details.fields", 1).map(
     (item, index): OpenGameRegistrationFieldError => {
       const path = `$.error.details.fields[${index}]`;
@@ -304,6 +328,7 @@ function noDetailsError(
     case "APPLICATION_NOT_FOUND": return new OpenGameRegistrationApiError("APPLICATION_NOT_FOUND");
     case "APPLICATION_ALREADY_EXISTS": return new OpenGameRegistrationApiError("APPLICATION_ALREADY_EXISTS");
     case "APPLICATION_STATE_CHANGED": return new OpenGameRegistrationApiError("APPLICATION_STATE_CHANGED");
+    case "ATTENDANCE_STATE_CHANGED": return new OpenGameRegistrationApiError("ATTENDANCE_STATE_CHANGED");
     case "IDEMPOTENCY_KEY_REUSED": return new OpenGameRegistrationApiError("IDEMPOTENCY_KEY_REUSED");
     case "SERVICE_UNAVAILABLE": return new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
     case "APPLICATION_RESULT_UNKNOWN": return new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
@@ -633,6 +658,64 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
+  const getAttendanceRoster = async (gameId: string) => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "GET",
+        `/api/v1/games/${encodeURIComponent(gameId)}/attendance-roster`,
+        undefined,
+        authorizationContext.headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
+      }
+      const roster = decodeOpenGameAttendanceRoster(response.data);
+      if (roster.game.id !== gameId) throw new Error("ATTENDANCE_ROSTER_AUTHORITY_MISMATCH");
+      return roster;
+    } catch (caught) {
+      throw classifyFailure(caught, "roster", false, sessionStore, requestSession);
+    }
+  };
+
+  const markAttendance = async (attempt: OpenGameAttendanceMarkAttempt) => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const headers = {
+        ...authorizationContext.headers,
+        "Idempotency-Key": attempt.idempotencyKey,
+      };
+      const response = await transport.requestWithStatus<unknown>(
+        "POST",
+        `/api/v1/games/${encodeURIComponent(attempt.gameId)}`
+          + `/registrations/${encodeURIComponent(attempt.registrationId)}/attendance`,
+        {
+          attendance_status: attempt.attendanceStatus,
+          expected_version: attempt.expectedVersion,
+        },
+        headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      }
+      const result = decodeOpenGameAttendanceMarkResult(response.data);
+      const expectedVersion = attempt.expectedVersion + 1;
+      if (!Number.isSafeInteger(expectedVersion)
+        || result.registrationId !== attempt.registrationId
+        || result.attendanceStatus !== attempt.attendanceStatus
+        || result.version !== expectedVersion) {
+        throw new Error("ATTENDANCE_MARK_AUTHORITY_MISMATCH");
+      }
+      return result;
+    } catch (caught) {
+      throw classifyFailure(caught, "attendance", true, sessionStore, requestSession);
+    }
+  };
+
   return {
     login,
     currentUserId: () => sessionStore.load()?.userId ?? null,
@@ -642,5 +725,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     getPending,
     decide,
     withdraw,
+    getAttendanceRoster,
+    markAttendance,
   };
 }

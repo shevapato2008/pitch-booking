@@ -2,7 +2,10 @@
 
 import { beforeEach, expect, test } from "@jest/globals";
 
-import type { OpenGameRegistrationDecisionAttempt } from "../services/open-game-registration";
+import type {
+  OpenGameAttendanceMarkAttempt,
+  OpenGameRegistrationDecisionAttempt,
+} from "../services/open-game-registration";
 import {
   C2B_PRODUCTION_PREVIEW_APPLICATION_ID,
   C2B_PRODUCTION_PREVIEW_GAME_ID,
@@ -12,6 +15,18 @@ import {
 } from "./c2b-production-registration-source";
 
 let preview: ReturnType<typeof createC2bProductionPreviewSource>;
+
+const ATTENDANCE_GAME_ID = "30000000-0000-4000-8000-000000000201";
+const ATTENDANCE_REGISTRATION_ID = "40000000-0000-4000-8000-000000000201";
+const attendanceAttempt: OpenGameAttendanceMarkAttempt = {
+  kind: "attendance",
+  originatingUserId: C2B_PRODUCTION_PREVIEW_USER_ID,
+  gameId: ATTENDANCE_GAME_ID,
+  registrationId: ATTENDANCE_REGISTRATION_ID,
+  attendanceStatus: "PRESENT",
+  expectedVersion: 2,
+  idempotencyKey: "c2b-attendance-unavailable-0001",
+};
 
 beforeEach(() => {
   preview = createC2bProductionPreviewSource();
@@ -27,6 +42,13 @@ function waitlistAttempt(): OpenGameRegistrationDecisionAttempt {
     idempotencyKey: "c2b-production-preview-waitlist-0001",
   };
 }
+
+test("attendance is explicitly unavailable inside the isolated C2b preview", async () => {
+  await expect(preview.source.getAttendanceRoster(ATTENDANCE_GAME_ID))
+    .rejects.toEqual(new Error("C2B_PRODUCTION_PREVIEW_ATTENDANCE_NOT_AVAILABLE"));
+  await expect(preview.source.markAttendance(attendanceAttempt))
+    .rejects.toEqual(new Error("C2B_PRODUCTION_PREVIEW_ATTENDANCE_NOT_AVAILABLE"));
+});
 
 test("full review projects a real full queue with WAITLIST and REJECT only", async () => {
   preview.reset("FULL_REVIEW");

@@ -133,6 +133,17 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
       && Number.isSafeInteger(value.expectedVersion)
       && (value.expectedVersion as number) >= 1;
   }
+  if (value.kind === "attendance") {
+    return exactKeys(value, [
+      "kind", "originatingUserId", "gameId", "registrationId", "attendanceStatus",
+      "expectedVersion", "idempotencyKey",
+    ])
+      && isUuid(value.gameId)
+      && isUuid(value.registrationId)
+      && (value.attendanceStatus === "PRESENT" || value.attendanceStatus === "NO_SHOW")
+      && Number.isSafeInteger(value.expectedVersion)
+      && (value.expectedVersion as number) >= 1;
+  }
   return false;
 }
 
@@ -165,12 +176,21 @@ function cloneAttempt(attempt: OpenGameRegistrationAttempt): OpenGameRegistratio
     expectedVersion: attempt.expectedVersion,
     idempotencyKey: attempt.idempotencyKey,
   };
-  return {
+  if (attempt.kind === "withdraw") return {
     kind: "withdraw",
     originatingUserId: attempt.originatingUserId,
     shareToken: attempt.shareToken,
     applicationId: attempt.applicationId,
     action: attempt.action,
+    expectedVersion: attempt.expectedVersion,
+    idempotencyKey: attempt.idempotencyKey,
+  };
+  return {
+    kind: "attendance",
+    originatingUserId: attempt.originatingUserId,
+    gameId: attempt.gameId,
+    registrationId: attempt.registrationId,
+    attendanceStatus: attempt.attendanceStatus,
     expectedVersion: attempt.expectedVersion,
     idempotencyKey: attempt.idempotencyKey,
   };
@@ -202,6 +222,12 @@ function sameMutation(left: OpenGameRegistrationAttempt, right: OpenGameRegistra
     return left.shareToken === right.shareToken
       && left.applicationId === right.applicationId
       && left.action === right.action
+      && left.expectedVersion === right.expectedVersion;
+  }
+  if (left.kind === "attendance" && right.kind === "attendance") {
+    return left.gameId === right.gameId
+      && left.registrationId === right.registrationId
+      && left.attendanceStatus === right.attendanceStatus
       && left.expectedVersion === right.expectedVersion;
   }
   return false;

@@ -12,6 +12,15 @@ export const OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES = [
 export type OpenGameRegistrationEffectiveStatus =
   typeof OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES[number];
 
+export const OPEN_GAME_ATTENDANCE_STATUSES = [
+  "UNMARKED",
+  "PRESENT",
+  "NO_SHOW",
+] as const;
+
+export type OpenGameAttendanceStatus = typeof OPEN_GAME_ATTENDANCE_STATUSES[number];
+export type OpenGameAttendanceMarkStatus = Exclude<OpenGameAttendanceStatus, "UNMARKED">;
+
 export interface OpenGameApplicationDraft {
   readonly displayName: string;
   readonly position: OpenGamePosition | null;
@@ -115,6 +124,8 @@ export interface OpenGameViewerRegistration {
   readonly waitlistPosition: number | null;
   readonly waitlistedAt: string | null;
   readonly promotedAt: string | null;
+  readonly attendanceStatus: OpenGameAttendanceStatus | null;
+  readonly attendanceRecordedAt: string | null;
 }
 
 export interface OpenGameApplicationItem {
@@ -124,6 +135,8 @@ export interface OpenGameApplicationItem {
   readonly waitlistPosition: number | null;
   readonly waitlistedAt: string | null;
   readonly promotedAt: string | null;
+  readonly attendanceStatus: OpenGameAttendanceStatus | null;
+  readonly attendanceRecordedAt: string | null;
   readonly detailPath: string;
   readonly gameName: string;
   readonly startsAt: string;
@@ -137,6 +150,44 @@ export interface OpenGameApplicationItem {
 export interface OpenGameApplicationPage {
   readonly items: readonly OpenGameApplicationItem[];
   readonly nextCursor: string | null;
+}
+
+export interface OpenGameAttendanceGameSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly venueName: string;
+  readonly pitchName: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly timeZone: string;
+  readonly state: "COMPLETED";
+}
+
+export interface OpenGameAttendanceRosterItem {
+  readonly registrationId: string;
+  readonly displayName: string;
+  readonly position: OpenGamePosition;
+  readonly attendanceStatus: OpenGameAttendanceStatus;
+  readonly attendanceRecordedAt: string | null;
+  readonly version: number;
+}
+
+export interface OpenGameAttendanceRoster {
+  readonly game: OpenGameAttendanceGameSummary;
+  readonly recordedCount: number;
+  readonly totalCount: number;
+  readonly attendanceComplete: boolean;
+  readonly registrations: readonly OpenGameAttendanceRosterItem[];
+}
+
+export interface OpenGameAttendanceMarkResult {
+  readonly registrationId: string;
+  readonly attendanceStatus: OpenGameAttendanceMarkStatus;
+  readonly attendanceRecordedAt: string;
+  readonly version: number;
+  readonly recordedCount: number;
+  readonly totalCount: number;
+  readonly attendanceComplete: boolean;
 }
 
 export interface OpenGameRegistrationContext {

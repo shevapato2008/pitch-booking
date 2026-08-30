@@ -64,20 +64,21 @@ describe("open-game owner decoder", () => {
       team: { name: "海风联队" },
       totalPlayers: 14,
       registrationDeadline: "2026-08-28T18:00:00+08:00",
+      allowedActions: { canManageAttendance: false },
       publicView: { teamName: "海风联队" },
     });
   });
 
   test.each([
-    ["DRAFT", null, "DRAFT", null, { can_edit: true, can_publish: true, can_share: false, can_cancel: true, can_preview: true }, null, "DRAFT", null],
-    ["DRAFT", "REGISTRATION_DEADLINE_PASSED", "DRAFT", null, { can_edit: true, can_publish: false, can_share: false, can_cancel: true, can_preview: true }, null, "DRAFT", "REGISTRATION_DEADLINE_PASSED"],
-    ["DRAFT", "REGISTRATION_WINDOW_CLOSED", "DRAFT", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true }, null, "DRAFT", "REGISTRATION_WINDOW_CLOSED"],
-    ["PUBLISHED", null, "PUBLISHED", published.share, { can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true }, published.share, "PUBLISHED", null],
-    ["PUBLISHED", "REGISTRATION_DEADLINE_PASSED", "PUBLISHED", published.share, { can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true }, published.share, "PUBLISHED", "REGISTRATION_DEADLINE_PASSED"],
-    ["SUSPENDED", "ORDER_REFUND_PENDING", "PUBLISHED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true }, null, "SUSPENDED", "BOOKING_UNAVAILABLE"],
-    ["CANCELLED", "CAPTAIN_CANCELLED", "CANCELLED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false }, null, "CANCELLED", "CAPTAIN_CANCELLED"],
-    ["CANCELLED", "ORDER_REFUNDED", "PUBLISHED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false }, null, "CANCELLED", "BOOKING_UNAVAILABLE"],
-    ["COMPLETED", "ORDER_COMPLETED", "PUBLISHED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: true }, null, "COMPLETED", "BOOKING_COMPLETED"],
+    ["DRAFT", null, "DRAFT", null, { can_edit: true, can_publish: true, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false }, null, "DRAFT", null],
+    ["DRAFT", "REGISTRATION_DEADLINE_PASSED", "DRAFT", null, { can_edit: true, can_publish: false, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false }, null, "DRAFT", "REGISTRATION_DEADLINE_PASSED"],
+    ["DRAFT", "REGISTRATION_WINDOW_CLOSED", "DRAFT", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false }, null, "DRAFT", "REGISTRATION_WINDOW_CLOSED"],
+    ["PUBLISHED", null, "PUBLISHED", published.share, { can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true, can_manage_attendance: false }, published.share, "PUBLISHED", null],
+    ["PUBLISHED", "REGISTRATION_DEADLINE_PASSED", "PUBLISHED", published.share, { can_edit: true, can_publish: false, can_share: true, can_cancel: true, can_preview: true, can_manage_attendance: false }, published.share, "PUBLISHED", "REGISTRATION_DEADLINE_PASSED"],
+    ["SUSPENDED", "ORDER_REFUND_PENDING", "PUBLISHED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: true, can_preview: true, can_manage_attendance: false }, null, "SUSPENDED", "BOOKING_UNAVAILABLE"],
+    ["CANCELLED", "CAPTAIN_CANCELLED", "CANCELLED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false, can_manage_attendance: false }, null, "CANCELLED", "CAPTAIN_CANCELLED"],
+    ["CANCELLED", "ORDER_REFUNDED", "PUBLISHED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: false, can_manage_attendance: false }, null, "CANCELLED", "BOOKING_UNAVAILABLE"],
+    ["COMPLETED", "ORDER_COMPLETED", "PUBLISHED", null, { can_edit: false, can_publish: false, can_share: false, can_cancel: false, can_preview: true, can_manage_attendance: true }, null, "COMPLETED", "BOOKING_COMPLETED"],
   ] as const)("accepts the frozen owner row %#", (state, reason, persistedStatus, share, actions, expectedShare, publicState, publicReason) => {
     const value = clone(draft);
     value.persisted_status = persistedStatus;
@@ -91,6 +92,7 @@ describe("open-game owner decoder", () => {
     expect(decodeOpenGameOwner(value)).toMatchObject({
       state,
       persistedStatus,
+      allowedActions: { canManageAttendance: state === "COMPLETED" },
       share: expectedShare === null
         ? null
         : { title: expect.any(String), path: expect.any(String), imageUrl: expect.any(String) },
@@ -104,6 +106,10 @@ describe("open-game owner decoder", () => {
     const draftWithShare = clone(draft);
     draftWithShare.share = published.share;
     rejected(() => decodeOpenGameOwner(draftWithShare));
+
+    const prematureAttendance = clone(draft);
+    (prematureAttendance.allowed_actions as Record<string, unknown>).can_manage_attendance = true;
+    rejected(() => decodeOpenGameOwner(prematureAttendance));
   });
 
   test("preserves contract-valid empty optional strings", () => {

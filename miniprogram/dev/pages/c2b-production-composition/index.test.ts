@@ -48,6 +48,8 @@ test.each([
   route,
 ) => {
   const page = loadPage();
+  expect(() => getOpenGameRegistrationSource())
+    .toThrow("OPEN_GAME_REGISTRATION_SOURCE_NOT_CONFIGURED");
 
   page.onLoad({ scenario, target });
 

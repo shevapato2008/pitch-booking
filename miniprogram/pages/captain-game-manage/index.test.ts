@@ -57,7 +57,7 @@ function owner(overrides: Partial<OpenGameOwner> = {}): OpenGameOwner {
     persistedStatus: state === "CANCELLED" ? "CANCELLED" : state === "DRAFT" ? "DRAFT" : "PUBLISHED",
     state, stateReason: state === "SUSPENDED" ? "ORDER_REFUND_PENDING" : state === "CANCELLED" ? "CAPTAIN_CANCELLED" : state === "COMPLETED" ? "ORDER_COMPLETED" : null,
     version: 1,
-    allowedActions: { canEdit: state === "DRAFT" || state === "PUBLISHED", canPublish: state === "DRAFT", canShare: state === "PUBLISHED", canCancel: state === "DRAFT" || state === "PUBLISHED" || state === "SUSPENDED", canPreview: state !== "CANCELLED" },
+    allowedActions: { canEdit: state === "DRAFT" || state === "PUBLISHED", canPublish: state === "DRAFT", canShare: state === "PUBLISHED", canCancel: state === "DRAFT" || state === "PUBLISHED" || state === "SUSPENDED", canPreview: state !== "CANCELLED", canManageAttendance: state === "COMPLETED" },
     share: state === "PUBLISHED" ? { title: "周末轻松局 · 周六 20:00", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } : null,
     publicView, ...overrides,
   };
@@ -76,8 +76,8 @@ const store: OpenGameMutationAttemptStore = {
 function source(overrides: Partial<OpenGameSource> = {}): OpenGameSource {
   return {
     login: jest.fn(async () => undefined), getEntry: jest.fn(), getOwnedGame: jest.fn(async () => owner()), getSharedGame: jest.fn(),
-    create: jest.fn(), update: jest.fn(), publish: jest.fn(async () => owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", version: 2, allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } })),
-    cancel: jest.fn(async () => owner({ state: "CANCELLED", persistedStatus: "CANCELLED", version: 2, allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false }, share: null })),
+    create: jest.fn(), update: jest.fn(), publish: jest.fn(async () => owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", version: 2, allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } })),
+    cancel: jest.fn(async () => owner({ state: "CANCELLED", persistedStatus: "CANCELLED", version: 2, allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false }, share: null })),
     ...overrides,
   } as OpenGameSource;
 }
@@ -102,7 +102,7 @@ test("loads authority, hides share by default, and projects every action indepen
   expect(page.data).toMatchObject({ status: "READY", state: "DRAFT", canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canReviewApplications: false });
   expect(wx.showShareMenu).not.toHaveBeenCalled();
 
-  const latePublished = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", registrationDeadline: "2020-01-01T08:00:00+08:00", allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
+  const latePublished = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", registrationDeadline: "2020-01-01T08:00:00+08:00", allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
   resetOpenGameSourceForTesting(); registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => latePublished) }));
   const published = loadPage(); call(published, "onLoad", { game_id: gameId }); await flush();
   expect(published.data).toMatchObject({
@@ -120,7 +120,7 @@ test("only a READY PUBLISHED owner can open the real application review route", 
   const published = owner({
     state: "PUBLISHED",
     persistedStatus: "PUBLISHED",
-    allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true },
+    allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false },
   });
   registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => published) }));
   const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
@@ -155,7 +155,7 @@ test("a new manager restores and resolves its persisted same-game terminal publi
     state: "PUBLISHED",
     persistedStatus: "PUBLISHED",
     version: 2,
-    allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true },
+    allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false },
     share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null },
   });
   const api = source({ getOwnedGame: jest.fn(async () => published) });
@@ -228,7 +228,7 @@ test("approved visible buttons are native and backed by real handlers", () => {
 });
 
 test("native share uses only authoritative share and never mutates state", async () => {
-  const published = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true }, share: { title: "安全标题", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
+  const published = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false }, share: { title: "安全标题", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
   registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => published) }));
   const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
   expect(call(page, "onShareAppMessage")).toEqual({ title: "安全标题", path: published.share?.path });
@@ -243,7 +243,7 @@ test("publish modal closes without mutation, serializes confirm, and applies aut
   call(page, "onOpenPublish"); const first = call(page, "onConfirmPublish"); const duplicate = call(page, "onConfirmPublish");
   expect(api.publish).toHaveBeenCalledTimes(1); expect(page.data.status).toBe("MUTATING");
   expect(readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8")).toContain("wx:if=\"{{status === 'READY'}}\"");
-  resolve(owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", version: 2, allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } }));
+  resolve(owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", version: 2, allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } }));
   await first; await duplicate; expect(page.data.state).toBe("PUBLISHED"); expect(store.clear).toHaveBeenCalledTimes(1);
 });
 
@@ -282,7 +282,7 @@ test("unknown publish replays the original attempt and state-change clamps autho
   expect((api.publish as jest.Mock).mock.calls[1]?.[0]).toEqual(original); expect(store.clear).toHaveBeenCalled();
 
   resetOpenGameSourceForTesting(); storedAttempt = null;
-  const latest = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", version: 2, allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
+  const latest = owner({ state: "PUBLISHED", persistedStatus: "PUBLISHED", version: 2, allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false }, share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null } });
   const changed = source({ publish: jest.fn(async () => { throw new OpenGameApiError("OPEN_GAME_STATE_CHANGED"); }), getOwnedGame: jest.fn(async () => latest) }); registerOpenGameSource(changed);
   const clamped = loadPage(); call(clamped, "onLoad", { game_id: gameId }); await flush(); call(clamped, "onOpenPublish"); await call(clamped, "onConfirmPublish");
   expect(clamped.data.state).toBe("PUBLISHED"); expect(store.clear).toHaveBeenCalled();
@@ -291,7 +291,7 @@ test("unknown publish replays the original attempt and state-change clamps autho
 test("foreign pending replaces mutations and resolves its own resource", async () => {
   const foreignId = "00000000-0000-4000-8000-000000000399";
   storedAttempt = { kind: "cancel", gameId: foreignId, expectedVersion: 4, idempotencyKey: "open-game-existing-0002" };
-  const api = source({ getOwnedGame: jest.fn(async (id) => id === foreignId ? owner({ id: foreignId, state: "CANCELLED", persistedStatus: "CANCELLED", version: 5, allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false }, share: null }) : owner()) });
+  const api = source({ getOwnedGame: jest.fn(async (id) => id === foreignId ? owner({ id: foreignId, state: "CANCELLED", persistedStatus: "CANCELLED", version: 5, allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false }, share: null }) : owner()) });
   registerOpenGameSource(api); const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
   call(page, "onOpenPublish"); await call(page, "onConfirmPublish"); expect(page.data.status).toBe("FOREIGN_PENDING");
   await call(page, "onConfirmPreviousOperation"); expect(api.getOwnedGame).toHaveBeenCalledWith(foreignId); expect(store.clear).toHaveBeenCalled(); expect(page.data.status).toBe("READY");
@@ -306,6 +306,6 @@ test("cancel is confirmed, navigation actions are real, and suspended reason is 
   expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/captain-game-form/index?game_id=${gameId}` }));
   expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/captain-game-public/index?game_id=${gameId}&preview=1` }));
 
-  resetOpenGameSourceForTesting(); registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => owner({ state: "SUSPENDED", persistedStatus: "PUBLISHED", allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: true, canPreview: true }, share: null })) }));
+  resetOpenGameSourceForTesting(); registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => owner({ state: "SUSPENDED", persistedStatus: "PUBLISHED", allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false }, share: null })) }));
   const suspended = loadPage(); call(suspended, "onLoad", { game_id: gameId }); await flush(); expect(suspended.data.stateReasonText).toContain("退款"); expect(suspended.data.canEdit).toBe(false);
 });

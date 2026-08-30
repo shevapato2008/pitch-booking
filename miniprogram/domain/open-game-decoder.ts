@@ -170,13 +170,24 @@ function decodeTeam(value: unknown, path: string): OpenGameTeam {
 }
 
 function decodeActions(value: unknown, path: string): OpenGameAllowedActions {
-  const object = exactObject(value, ["can_edit", "can_publish", "can_share", "can_cancel", "can_preview"], path);
+  const object = exactObject(
+    value,
+    [
+      "can_edit", "can_publish", "can_share", "can_cancel", "can_preview",
+      "can_manage_attendance",
+    ],
+    path,
+  );
   return {
     canEdit: booleanAt(object.can_edit, `${path}.can_edit`),
     canPublish: booleanAt(object.can_publish, `${path}.can_publish`),
     canShare: booleanAt(object.can_share, `${path}.can_share`),
     canCancel: booleanAt(object.can_cancel, `${path}.can_cancel`),
     canPreview: booleanAt(object.can_preview, `${path}.can_preview`),
+    canManageAttendance: booleanAt(
+      object.can_manage_attendance,
+      `${path}.can_manage_attendance`,
+    ),
   };
 }
 
@@ -248,19 +259,20 @@ export function decodeOpenGamePublic(value: unknown, path = "$" ): OpenGamePubli
 }
 
 const ACTIONS = {
-  draft: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true },
-  draftDeadline: { canEdit: true, canPublish: false, canShare: false, canCancel: true, canPreview: true },
-  draftClosed: { canEdit: false, canPublish: false, canShare: false, canCancel: true, canPreview: true },
-  published: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true },
-  suspended: { canEdit: false, canPublish: false, canShare: false, canCancel: true, canPreview: true },
-  terminal: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false },
-  completed: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: true },
+  draft: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
+  draftDeadline: { canEdit: true, canPublish: false, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
+  draftClosed: { canEdit: false, canPublish: false, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
+  published: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false },
+  suspended: { canEdit: false, canPublish: false, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
+  terminal: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false },
+  completed: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: true, canManageAttendance: true },
 } as const;
 
 function sameActions(left: OpenGameAllowedActions, right: OpenGameAllowedActions): boolean {
   return left.canEdit === right.canEdit && left.canPublish === right.canPublish
     && left.canShare === right.canShare && left.canCancel === right.canCancel
-    && left.canPreview === right.canPreview;
+    && left.canPreview === right.canPreview
+    && left.canManageAttendance === right.canManageAttendance;
 }
 
 function expectedOwnerRow(owner: Pick<OpenGameOwner, "persistedStatus" | "state" | "stateReason">): {

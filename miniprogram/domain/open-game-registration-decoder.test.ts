@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import { ApiResponseError } from "./contracts";
 import { decodeOpenGamePublic } from "./open-game-decoder";
 import {
+  decodeOpenGameAttendanceMarkResult as decodeAttendanceMarkResult,
+  decodeOpenGameAttendanceRoster as decodeAttendanceRoster,
   decodeOpenGameApplicationDecisionResult,
   decodeOpenGameApplicationQueue,
   decodeMyOpenGameApplications,
@@ -27,6 +29,9 @@ const contextApplied = fixture("open-game-registration-context-applied");
 const queuePending = fixture("open-game-applications-pending");
 const decisionJoined = fixture("open-game-application-decision-joined");
 const myApplicationsReady = fixture("my-open-game-applications-ready");
+const attendanceRosterReady = fixture("open-game-attendance-roster-ready");
+const attendanceRosterEmpty = fixture("open-game-attendance-roster-empty");
+const attendanceMarkPresent = fixture("open-game-attendance-mark-present");
 const APPLICATION_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 function withdrawalContext(
@@ -215,6 +220,8 @@ describe("open-game registration response decoders", () => {
       waitlistPosition: wireRegistration?.waitlist_position,
       waitlistedAt: wireRegistration?.waitlisted_at,
       promotedAt: wireRegistration?.promoted_at,
+      attendanceStatus: wireRegistration?.attendance_status,
+      attendanceRecordedAt: wireRegistration?.attendance_recorded_at,
     };
 
     expect(decodeOpenGameRegistrationContext(value)).toEqual({
@@ -383,6 +390,13 @@ describe("open-game registration response decoders", () => {
     (viewer.viewer_registration as Record<string, unknown>).private = true;
     rejected(() => decodeOpenGameRegistrationContext(viewer));
 
+    const viewerMissingAttendance = clone(contextApplied);
+    Reflect.deleteProperty(
+      viewerMissingAttendance.viewer_registration as Record<string, unknown>,
+      "attendance_status",
+    );
+    rejected(() => decodeOpenGameRegistrationContext(viewerMissingAttendance));
+
     const queueApplication = clone(queuePending);
     (queueApplication.applications as Array<Record<string, unknown>>)[0].private = true;
     rejected(() => decodeOpenGameApplicationQueue(queueApplication));
@@ -395,6 +409,30 @@ describe("open-game registration response decoders", () => {
     const missing = clone(decisionJoined);
     Reflect.deleteProperty(missing, "version");
     rejected(() => decodeOpenGameApplicationDecisionResult(missing));
+  });
+
+  test("decodes and enforces nullable self-attendance status/time pairs", () => {
+    const joined = clone(fixture("open-game-registration-context-joined"));
+    Object.assign(joined.viewer_registration as Record<string, unknown>, {
+      attendance_status: "PRESENT",
+      attendance_recorded_at: "2026-08-30T20:32:00+08:00",
+    });
+    expect(decodeOpenGameRegistrationContext(joined).viewerRegistration).toMatchObject({
+      attendanceStatus: "PRESENT",
+      attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+    });
+
+    for (const patch of [
+      { attendance_status: null, attendance_recorded_at: "2026-08-30T20:32:00+08:00" },
+      { attendance_status: "UNMARKED", attendance_recorded_at: "2026-08-30T20:32:00+08:00" },
+      { attendance_status: "NO_SHOW", attendance_recorded_at: null },
+      { attendance_status: "UNKNOWN", attendance_recorded_at: null },
+      { attendance_status: "PRESENT", attendance_recorded_at: "2026-08-30 20:32:00" },
+    ]) {
+      const value = clone(fixture("open-game-registration-context-joined"));
+      Object.assign(value.viewer_registration as Record<string, unknown>, patch);
+      rejected(() => decodeOpenGameRegistrationContext(value));
+    }
   });
 
   test("rejects wrong nullability, bounds, enum, UUID and RFC3339 values", () => {
@@ -527,6 +565,220 @@ describe("open-game registration response decoders", () => {
   });
 });
 
+describe("open-game attendance response decoders", () => {
+  test("decodes the exact ready and empty roster examples into frozen camel-case DTOs", () => {
+    const input = clone(attendanceRosterReady);
+    const decoded = decodeAttendanceRoster(input);
+    expect(decoded).toEqual({
+      game: {
+        id: "30000000-0000-4000-8000-000000000201",
+        name: "奥体周日傍晚局",
+        venueName: "天津奥体足球场",
+        pitchName: "七人制 A 场",
+        startsAt: "2026-08-30T18:30:00+08:00",
+        endsAt: "2026-08-30T20:30:00+08:00",
+        timeZone: "Asia/Shanghai",
+        state: "COMPLETED",
+      },
+      recordedCount: 2,
+      totalCount: 3,
+      attendanceComplete: false,
+      registrations: [
+        {
+          registrationId: "40000000-0000-4000-8000-000000000201",
+          displayName: "天津周末左边锋小王",
+          position: "FORWARD",
+          attendanceStatus: "UNMARKED",
+          attendanceRecordedAt: null,
+          version: 2,
+        },
+        {
+          registrationId: "40000000-0000-4000-8000-000000000202",
+          displayName: "阿哲",
+          position: "GOALKEEPER",
+          attendanceStatus: "PRESENT",
+          attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+          version: 3,
+        },
+        {
+          registrationId: "40000000-0000-4000-8000-000000000203",
+          displayName: "十一",
+          position: "MIDFIELDER",
+          attendanceStatus: "NO_SHOW",
+          attendanceRecordedAt: "2026-08-30T20:34:00+08:00",
+          version: 3,
+        },
+      ],
+    });
+    expect(decodeAttendanceRoster(attendanceRosterEmpty)).toMatchObject({
+      recordedCount: 0,
+      totalCount: 0,
+      attendanceComplete: true,
+      registrations: [],
+    });
+    expect(Object.isFrozen(decoded)).toBe(true);
+    expect(Object.isFrozen(decoded.game)).toBe(true);
+    expect(Object.isFrozen(decoded.registrations)).toBe(true);
+    expect(decoded.registrations.every(Object.isFrozen)).toBe(true);
+    ((input.registrations as Array<Record<string, unknown>>)[0]).display_name = "被修改";
+    expect(decoded.registrations[0].displayName).toBe("天津周末左边锋小王");
+  });
+
+  test.each([
+    ["open-game-attendance-mark-present", "PRESENT", true],
+    ["open-game-attendance-mark-no-show", "NO_SHOW", false],
+  ] as const)("decodes the exact %s mark result", (name, attendanceStatus, complete) => {
+    expect(decodeAttendanceMarkResult(fixture(name))).toEqual({
+      registrationId: "40000000-0000-4000-8000-000000000201",
+      attendanceStatus,
+      attendanceRecordedAt: "2026-08-30T20:36:00+08:00",
+      version: 3,
+      recordedCount: complete ? 3 : 2,
+      totalCount: 3,
+      attendanceComplete: complete,
+    });
+  });
+
+  test("rejects extra, missing, and private roster fields at every nesting boundary", () => {
+    rejected(() => decodeAttendanceRoster({ ...attendanceRosterReady, private: true }));
+
+    const missingRoot = clone(attendanceRosterReady);
+    Reflect.deleteProperty(missingRoot, "recorded_count");
+    rejected(() => decodeAttendanceRoster(missingRoot));
+
+    const extraGame = clone(attendanceRosterReady);
+    (extraGame.game as Record<string, unknown>).order_id = "private";
+    rejected(() => decodeAttendanceRoster(extraGame));
+
+    const missingGame = clone(attendanceRosterReady);
+    Reflect.deleteProperty(missingGame.game as Record<string, unknown>, "state");
+    rejected(() => decodeAttendanceRoster(missingGame));
+
+    for (const field of ["note", "applicant_user_id", "attendance_recorded_by_user_id"]) {
+      const privateItem = clone(attendanceRosterReady);
+      (privateItem.registrations as Array<Record<string, unknown>>)[0][field] = "private";
+      rejected(() => decodeAttendanceRoster(privateItem));
+    }
+
+    const missingItem = clone(attendanceRosterReady);
+    Reflect.deleteProperty(
+      (missingItem.registrations as Array<Record<string, unknown>>)[0],
+      "version",
+    );
+    rejected(() => decodeAttendanceRoster(missingItem));
+  });
+
+  test("rejects extra or missing mark-result fields", () => {
+    rejected(() => decodeAttendanceMarkResult({ ...attendanceMarkPresent, private: true }));
+    const missing = clone(attendanceMarkPresent);
+    Reflect.deleteProperty(missing, "registration_id");
+    rejected(() => decodeAttendanceMarkResult(missing));
+  });
+
+  test("rejects invalid roster enums, UUIDs, RFC3339 timestamps, and IANA time zones", () => {
+    const mutations: Array<(value: Record<string, unknown>) => void> = [
+      (value) => { (value.game as Record<string, unknown>).id = "not-a-uuid"; },
+      (value) => { (value.game as Record<string, unknown>).state = "PUBLISHED"; },
+      (value) => { (value.game as Record<string, unknown>).starts_at = "2026-08-30 18:30:00"; },
+      (value) => { (value.game as Record<string, unknown>).time_zone = "Shanghai"; },
+      (value) => {
+        (value.registrations as Array<Record<string, unknown>>)[0].registration_id = "bad";
+      },
+      (value) => {
+        (value.registrations as Array<Record<string, unknown>>)[0].position = "SWEEPER";
+      },
+      (value) => {
+        (value.registrations as Array<Record<string, unknown>>)[0].attendance_status = "ABSENT";
+      },
+      (value) => {
+        const item = (value.registrations as Array<Record<string, unknown>>)[1];
+        item.attendance_recorded_at = "2026-08-30T20:32:00";
+      },
+    ];
+    for (const mutate of mutations) {
+      const value = clone(attendanceRosterReady);
+      mutate(value);
+      rejected(() => decodeAttendanceRoster(value));
+    }
+  });
+
+  test("rejects unsafe roster integers", () => {
+    for (const mutate of [
+      (value: Record<string, unknown>) => { value.recorded_count = Number.MAX_SAFE_INTEGER + 1; },
+      (value: Record<string, unknown>) => { value.total_count = Number.MAX_SAFE_INTEGER + 1; },
+      (value: Record<string, unknown>) => {
+        (value.registrations as Array<Record<string, unknown>>)[0].version =
+          Number.MAX_SAFE_INTEGER + 1;
+      },
+    ]) {
+      const value = clone(attendanceRosterReady);
+      mutate(value);
+      rejected(() => decodeAttendanceRoster(value));
+    }
+  });
+
+  test("enforces roster attendance status/time pairing", () => {
+    for (const patch of [
+      { attendance_status: "UNMARKED", attendance_recorded_at: "2026-08-30T20:32:00+08:00" },
+      { attendance_status: "PRESENT", attendance_recorded_at: null },
+      { attendance_status: "NO_SHOW", attendance_recorded_at: null },
+    ]) {
+      const value = clone(attendanceRosterReady);
+      Object.assign((value.registrations as Array<Record<string, unknown>>)[0], patch);
+      rejected(() => decodeAttendanceRoster(value));
+    }
+  });
+
+  test("enforces roster length, recorded-count, and completion invariants", () => {
+    for (const patch of [
+      { total_count: 2 },
+      { recorded_count: 1 },
+      { attendance_complete: true },
+    ]) rejected(() => decodeAttendanceRoster({ ...attendanceRosterReady, ...patch }));
+    rejected(() => decodeAttendanceRoster({ ...attendanceRosterEmpty, attendance_complete: false }));
+  });
+
+  test("enforces attendance game and visible-text bounds", () => {
+    for (const mutate of [
+      (value: Record<string, unknown>) => { (value.game as Record<string, unknown>).name = "一"; },
+      (value: Record<string, unknown>) => { (value.game as Record<string, unknown>).venue_name = ""; },
+      (value: Record<string, unknown>) => {
+        (value.registrations as Array<Record<string, unknown>>)[0].display_name = "一";
+      },
+      (value: Record<string, unknown>) => {
+        (value.game as Record<string, unknown>).ends_at = "2026-08-30T18:30:00+08:00";
+      },
+    ]) {
+      const value = clone(attendanceRosterReady);
+      mutate(value);
+      rejected(() => decodeAttendanceRoster(value));
+    }
+  });
+
+  test("rejects invalid mark-result scalar authority", () => {
+    for (const patch of [
+      { registration_id: "not-a-uuid" },
+      { attendance_status: "UNMARKED" },
+      { attendance_status: "ABSENT" },
+      { attendance_recorded_at: "2026-08-30T20:36:00" },
+      { version: 1 },
+      { recorded_count: 0 },
+      { total_count: 0 },
+      { version: Number.MAX_SAFE_INTEGER + 1 },
+      { recorded_count: Number.MAX_SAFE_INTEGER + 1 },
+      { total_count: Number.MAX_SAFE_INTEGER + 1 },
+    ]) rejected(() => decodeAttendanceMarkResult({ ...attendanceMarkPresent, ...patch }));
+  });
+
+  test("enforces mark-result count and completion invariants", () => {
+    for (const patch of [
+      { recorded_count: 4 },
+      { recorded_count: 2, attendance_complete: true },
+      { recorded_count: 3, attendance_complete: false },
+    ]) rejected(() => decodeAttendanceMarkResult({ ...attendanceMarkPresent, ...patch }));
+  });
+});
+
 describe("my open-game applications response decoder", () => {
   test("decodes the exact ready and empty payloads to frozen camel-case pages", () => {
     const input = clone(myApplicationsReady);
@@ -541,6 +793,8 @@ describe("my open-game applications response decoder", () => {
           waitlistPosition: null,
           waitlistedAt: null,
           promotedAt: null,
+          attendanceStatus: null,
+          attendanceRecordedAt: null,
           detailPath: "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345",
           gameName: "周日八人制友谊赛",
           startsAt: "2026-09-06T18:00:00+08:00",
@@ -557,6 +811,8 @@ describe("my open-game applications response decoder", () => {
           waitlistPosition: null,
           waitlistedAt: null,
           promotedAt: null,
+          attendanceStatus: null,
+          attendanceRecordedAt: null,
           detailPath: "/pages/captain-game-public/index?token=0123456789abcdefghijklmnopqrstuv",
           gameName: "周六七人制训练赛",
           startsAt: "2026-09-05T19:00:00+08:00",
@@ -573,6 +829,8 @@ describe("my open-game applications response decoder", () => {
           waitlistPosition: null,
           waitlistedAt: null,
           promotedAt: null,
+          attendanceStatus: null,
+          attendanceRecordedAt: null,
           detailPath: "/pages/captain-game-public/index?token=zyxwvutsrqponmlkjihgfedcba543210",
           gameName: "周三五人制夜场",
           startsAt: "2026-09-02T20:00:00+08:00",
@@ -589,6 +847,8 @@ describe("my open-game applications response decoder", () => {
           waitlistPosition: null,
           waitlistedAt: null,
           promotedAt: null,
+          attendanceStatus: null,
+          attendanceRecordedAt: null,
           detailPath: "/pages/captain-game-public/index?token=A1_b2-C3_d4-E5_f6-G7_h8-I9_j0-KL",
           gameName: "周二六人制约球",
           startsAt: "2026-09-01T19:00:00+08:00",
@@ -665,6 +925,37 @@ describe("my open-game applications response decoder", () => {
     const missingItem = clone(myApplicationsReady);
     Reflect.deleteProperty((missingItem.items as Array<Record<string, unknown>>)[0], "venue_name");
     rejected(() => decodeMyOpenGameApplications(missingItem));
+
+    const missingAttendance = clone(myApplicationsReady);
+    Reflect.deleteProperty(
+      (missingAttendance.items as Array<Record<string, unknown>>)[0],
+      "attendance_recorded_at",
+    );
+    rejected(() => decodeMyOpenGameApplications(missingAttendance));
+  });
+
+  test("decodes and enforces nullable attendance pairs in existing application items", () => {
+    const value = clone(myApplicationsReady);
+    Object.assign((value.items as Array<Record<string, unknown>>)[2], {
+      attendance_status: "NO_SHOW",
+      attendance_recorded_at: "2026-09-02T22:10:00+08:00",
+    });
+    expect(decodeMyOpenGameApplications(value).items[2]).toMatchObject({
+      attendanceStatus: "NO_SHOW",
+      attendanceRecordedAt: "2026-09-02T22:10:00+08:00",
+    });
+
+    for (const patch of [
+      { attendance_status: null, attendance_recorded_at: "2026-09-02T22:10:00+08:00" },
+      { attendance_status: "UNMARKED", attendance_recorded_at: "2026-09-02T22:10:00+08:00" },
+      { attendance_status: "PRESENT", attendance_recorded_at: null },
+      { attendance_status: "ABSENT", attendance_recorded_at: null },
+      { attendance_status: "NO_SHOW", attendance_recorded_at: "2026-09-02 22:10:00" },
+    ]) {
+      const invalidValue = clone(myApplicationsReady);
+      Object.assign((invalidValue.items as Array<Record<string, unknown>>)[2], patch);
+      rejected(() => decodeMyOpenGameApplications(invalidValue));
+    }
   });
 
   test.each([
