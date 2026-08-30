@@ -239,6 +239,18 @@ test("invalid or already-recorded row actions are inert", () => {
   expect(page.data.decisionPanel).toBeNull();
 });
 
+test.each(["CONFLICT", "UNKNOWN_RESULT"] as const)(
+  "%s hides unmarked row actions until authority recovery",
+  (scenario) => {
+    const page = resetAndLoad(scenario);
+    const unmarked = page.data.roster.find((player: any) => player.isUnmarked);
+    const template = readRequiredFile(templatePath);
+
+    expect(unmarked).toMatchObject({ isUnmarked: true, canMark: false });
+    expect(template).toContain('wx:if="{{item.canMark}}" class="c2c-row-actions"');
+  },
+);
+
 test("EMPTY stays truthful and its button returns to the scenario route", () => {
   (getCurrentPages as unknown as jest.Mock).mockReturnValue([{}]);
   const page = resetAndLoad("EMPTY");

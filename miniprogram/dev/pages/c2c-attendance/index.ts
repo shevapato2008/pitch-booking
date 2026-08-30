@@ -24,10 +24,11 @@ function resultLabel(result: C2cAttendanceResult): string {
   return "待记录";
 }
 
-function projectPlayer(player: C2cAttendancePlayer) {
+function projectPlayer(player: C2cAttendancePlayer, canManage: boolean) {
   return {
     ...player,
     isUnmarked: player.attendanceResult === "UNMARKED",
+    canMark: canManage && player.attendanceResult === "UNMARKED",
     resultLabel: resultLabel(player.attendanceResult),
     recordedTimeLabel: formatRecordedAt(player.recordedAt),
   };
@@ -45,7 +46,7 @@ function project() {
     previewState: current.previewState,
     previewMessage: current.previewMessage,
     game: current.game,
-    roster: current.roster.map(projectPlayer),
+    roster: current.roster.map((player) => projectPlayer(player, current.previewState === "READY")),
     progressLabel: `已记录 ${current.recorded} / ${current.total}`,
     isEmpty: current.previewState === "READY" && current.total === 0,
     isComplete: current.previewState === "READY"
