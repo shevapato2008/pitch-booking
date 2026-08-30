@@ -12,8 +12,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.errors import AppError
-from backend.app.modules.open_game_registrations import dto as registration_dto
-from backend.app.modules.open_game_registrations import privacy as registration_privacy
 from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
@@ -36,6 +34,8 @@ from backend.app.models import (
     Slot,
     User,
 )
+from backend.app.modules.open_game_registrations import dto as registration_dto
+from backend.app.modules.open_game_registrations import privacy as registration_privacy
 from backend.app.modules.open_game_registrations.dto import (
     OPEN_GAME_REGISTRATION_CONSENT_VERSION,
     ApplicationDecision,
@@ -57,9 +57,9 @@ from backend.app.modules.open_game_registrations.service import (
     DECIDE_OPEN_GAME_APPLICATION_OPERATION,
     WITHDRAW_OPEN_GAME_APPLICATION_OPERATION,
     OpenGameRegistrationService,
-    _upgrade_legacy_application_context,
     _application_request_digest,
     _decision_request_digest,
+    _upgrade_legacy_application_context,
 )
 from backend.app.modules.open_games.privacy import PUBLIC_OPEN_GAME_FIELDS
 from backend.app.modules.open_games.repository import OpenGameRepository
@@ -597,12 +597,12 @@ def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
 
 
 def test_attendance_runtime_dtos_and_roster_projector_are_closed_and_private() -> None:
-    request_model = getattr(registration_dto, "OpenGameAttendanceMarkRequest")
-    item_model = getattr(registration_dto, "OpenGameAttendanceRosterItem")
-    roster_model = getattr(registration_dto, "OpenGameAttendanceRoster")
-    result_model = getattr(registration_dto, "OpenGameAttendanceMarkResult")
-    projector = getattr(registration_privacy, "project_attendance_roster_item")
-    item_fields = getattr(registration_privacy, "ATTENDANCE_ROSTER_ITEM_FIELDS")
+    request_model = registration_dto.OpenGameAttendanceMarkRequest
+    item_model = registration_dto.OpenGameAttendanceRosterItem
+    roster_model = registration_dto.OpenGameAttendanceRoster
+    result_model = registration_dto.OpenGameAttendanceMarkResult
+    projector = registration_privacy.project_attendance_roster_item
+    item_fields = registration_privacy.ATTENDANCE_ROSTER_ITEM_FIELDS
 
     request = request_model.model_validate(
         {"attendance_status": "PRESENT", "expected_version": 2}
