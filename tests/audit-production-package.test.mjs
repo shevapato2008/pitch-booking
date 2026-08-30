@@ -108,6 +108,17 @@ for (const token of [
   "C2b 开发预览 · 模拟数据",
   "c2b-open-game-20260906-1800",
   "奥体周日候补局",
+  "C2C_ATTENDANCE_FIXTURE",
+  "remove C2C_ATTENDANCE_FIXTURE before production build or integration",
+  "c2c-attendance-fixture",
+  "c2c-attendance-pages.json",
+  "dev/pages/c2c-attendance-scenario/index",
+  "dev/pages/c2c-attendance/index",
+  "C2c 开发预览 · 模拟数据",
+  "c2c-open-game-20260830-1830",
+  "c2c-reg-unmarked",
+  "c2c-reg-present",
+  "c2c-reg-no-show",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
