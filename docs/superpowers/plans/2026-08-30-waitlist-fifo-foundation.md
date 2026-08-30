@@ -10,15 +10,15 @@
 
 - [x] 从 C2a candidate 建立 `feature/c2b-waitlist-foundation` worktree。
 - [x] 冻结显式 `WAITLIST`、每球局单调 `waitlist_seq`、`WITHDRAW_WAITLIST`、原子单人递补、outbox 和 compatibility rollback 边界。
-- [ ] 独立复核设计与计划；修正文档歧义后提交一次。
+- [x] 独立复核设计与计划；修正文档歧义后提交一次。
 
 ## Task 2：Artifact 与 development-only 原生预览
 
-- [ ] 先写 Artifact/Fixture 聚焦 RED：`FULL_REVIEW`、`WAITLISTED_FIRST`、`PROMOTED`、退出确认、代表性阻塞态。
-- [ ] 新增四个 dev-only 原生页面：场景入口、队长审核、我的报名、报名详情；所有按钮必须产生真实 Fixture transition。
-- [ ] 复用现有颜色、字体、卡片、标题栏、确认层和 safe-area 底栏；候补使用暖色语义且同时显示文字/顺位。
-- [ ] fresh development build；官方微信开发者工具 iPhone 12/13 Pro 与 Nexus 5X 真实点击和人工视觉自审。
-- [ ] fresh production build/audit，证明 `C2B_WAITLIST_FIXTURE`、C2b routes 与 fake notification 均未进入生产包。
+- [x] 先写 Artifact/Fixture 聚焦 RED：`FULL_REVIEW`、`WAITLISTED_FIRST`、`PROMOTED`、退出确认、代表性阻塞态。
+- [x] 新增四个 dev-only 原生页面：场景入口、队长审核、我的报名、报名详情；所有按钮必须产生真实 Fixture transition。
+- [x] 复用现有颜色、字体、卡片、标题栏、确认层和 safe-area 底栏；候补使用暖色语义且同时显示文字/顺位。
+- [x] fresh development build；官方微信开发者工具 iPhone 12/13 Pro 与 Nexus 5X 真实点击和人工视觉自审。
+- [x] fresh production build/audit，证明 `C2B_WAITLIST_FIXTURE`、C2b routes 与 fake notification 均未进入生产包。
 
 ## Task 3：封闭契约与 compatibility 读基础
 

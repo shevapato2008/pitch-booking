@@ -97,6 +97,17 @@ for (const token of [
   "reg-cancelled",
   "海河周六轻松局",
   "津南周末友谊局",
+  "C2B_WAITLIST_FIXTURE",
+  "remove C2B_WAITLIST_FIXTURE before production build or integration",
+  "c2b-waitlist-fixture",
+  "c2b-waitlist-pages.json",
+  "dev/pages/c2b-waitlist-scenario/index",
+  "dev/pages/c2b-captain-applications/index",
+  "dev/pages/c2b-my-registrations/index",
+  "dev/pages/c2b-registration-detail/index",
+  "C2b 开发预览 · 模拟数据",
+  "c2b-open-game-20260906-1800",
+  "奥体周日候补局",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
