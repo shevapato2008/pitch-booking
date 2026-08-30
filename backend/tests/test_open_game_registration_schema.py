@@ -445,6 +445,7 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
     }
     assert models.OpenGameRegistrationStatus.__members__ == {
         "APPLIED": models.OpenGameRegistrationStatus.APPLIED,
+        "WAITLISTED": models.OpenGameRegistrationStatus.WAITLISTED,
         "JOINED": models.OpenGameRegistrationStatus.JOINED,
         "REJECTED": models.OpenGameRegistrationStatus.REJECTED,
         "WITHDRAWN": models.OpenGameRegistrationStatus.WITHDRAWN,
@@ -452,6 +453,9 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
     assert models.OpenGameRegistrationWithdrawalKind.__members__ == {
         "APPLICATION_WITHDRAWAL": (
             models.OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
+        ),
+        "WAITLIST_WITHDRAWAL": (
+            models.OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL
         ),
         "GAME_EXIT": models.OpenGameRegistrationWithdrawalKind.GAME_EXIT,
     }
@@ -474,6 +478,9 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "withdrawn_at",
         "withdrawal_kind",
         "late_exit_recorded",
+        "waitlist_seq",
+        "waitlisted_at",
+        "promoted_at",
         "created_at",
         "updated_at",
     ]
@@ -483,6 +490,9 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "decided_by_user_id",
         "withdrawn_at",
         "withdrawal_kind",
+        "waitlist_seq",
+        "waitlisted_at",
+        "promoted_at",
     }
     assert table.c.display_name.type.length == 24
     assert table.c.note.type.length == 120
@@ -513,6 +523,11 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "ck_open_game_registrations_decision_time",
         "ck_open_game_registrations_withdrawal_pair",
         "ck_open_game_registrations_withdrawal_time",
+        "ck_open_game_registrations_waitlist_seq",
+        "ck_open_game_registrations_waitlist_history",
+        "ck_open_game_registrations_waitlist_time",
+        "uq_open_game_registrations_game_waitlist_seq",
+        "uq_open_game_registrations_outbox_identity",
     }
     pending_index = next(
         item
@@ -524,6 +539,16 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "status",
         "applied_at",
         "id",
+    ]
+    waitlist_index = next(
+        item
+        for item in table.indexes
+        if item.name == "ix_open_game_registrations_active_waitlist"
+    )
+    assert [column.name for column in waitlist_index.columns] == [
+        "game_id",
+        "status",
+        "waitlist_seq",
     ]
     relationships = {
         (models.User, "open_game_registrations"): (
@@ -551,6 +576,75 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         assert relationship.back_populates == back_populates
 
 
+def test_open_game_notification_outbox_model_matches_persistence_contract() -> None:
+    assert models.OpenGameNotificationEvent.__members__ == {
+        "WAITLIST_PROMOTED": models.OpenGameNotificationEvent.WAITLIST_PROMOTED,
+    }
+    assert models.OpenGameNotificationStatus.__members__ == {
+        "PENDING": models.OpenGameNotificationStatus.PENDING,
+        "CLAIMED": models.OpenGameNotificationStatus.CLAIMED,
+        "SENT": models.OpenGameNotificationStatus.SENT,
+        "FAILED": models.OpenGameNotificationStatus.FAILED,
+        "SUPERSEDED": models.OpenGameNotificationStatus.SUPERSEDED,
+    }
+    table = models.OpenGameNotificationOutbox.__table__
+    assert list(table.c.keys()) == [
+        "id",
+        "dedupe_key",
+        "game_id",
+        "registration_id",
+        "recipient_user_id",
+        "event",
+        "template_key",
+        "status",
+        "payload",
+        "attempt_count",
+        "available_at",
+        "claim_token",
+        "lease_until",
+        "created_at",
+        "completed_at",
+        "last_failure_code",
+    ]
+    assert {column.name for column in table.c if column.nullable} == {
+        "claim_token",
+        "lease_until",
+        "completed_at",
+        "last_failure_code",
+    }
+    assert table.c.dedupe_key.type.length == 200
+    assert table.c.template_key.type.length == 64
+    assert table.c.last_failure_code.type.length == 64
+    assert table.c.event.type.name == "open_game_notification_event"
+    assert table.c.status.type.name == "open_game_notification_status"
+    assert str(table.c.created_at.server_default.arg) == "now()"
+    assert {constraint.name for constraint in table.constraints} >= {
+        "pk_open_game_notification_outbox",
+        "uq_open_game_notification_outbox_dedupe_key",
+        "fk_open_game_notification_outbox_game_id_open_games",
+        "fk_open_game_notification_outbox_registration",
+        "fk_open_game_notification_outbox_recipient_user_id_users",
+        "fk_open_game_notification_outbox_registration_identity",
+        "ck_open_game_notification_outbox_dedupe_key",
+        "ck_open_game_notification_outbox_template_key",
+        "ck_open_game_notification_outbox_payload_object",
+        "ck_open_game_notification_outbox_payload_waitlist_promoted",
+        "ck_open_game_notification_outbox_attempt_count",
+        "ck_open_game_notification_outbox_claim_lease",
+        "ck_open_game_notification_outbox_completion",
+        "ck_open_game_notification_outbox_failure_code",
+    }
+    due_index = next(
+        item
+        for item in table.indexes
+        if item.name == "ix_open_game_notification_outbox_due"
+    )
+    assert [column.name for column in due_index.columns] == [
+        "available_at",
+        "id",
+    ]
+
+
 def test_open_game_registration_migration_matches_model_metadata(
     migration_engine: Engine,
 ) -> None:
@@ -559,6 +653,6 @@ def test_open_game_registration_migration_matches_model_metadata(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0018"
+        ).scalar_one() == "0019"
 
     command.check(config)

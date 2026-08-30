@@ -35,10 +35,10 @@ Task 3 冻结边界：
 
 ## Task 4：`0019` 数据约束与 outbox
 
-- [ ] TDD 新增 `WAITLISTED`、`WAITLIST_WITHDRAWAL`、不可复用 `waitlist_seq`、候补时间字段、FIFO 索引和全生命周期约束。
-- [ ] 新增窄域 `open_game_notification_outbox`，仅承载候补转正领域事实；唯一去重键、租约、重试和安全 payload 必须持久化。
-- [ ] 覆盖 0018→0019、空数据 downgrade；任意候补序号/时间历史或 outbox 存在时拒绝 downgrade，不能只检查当前 `WAITLISTED`。
-- [ ] 完成 `0019`、模型和严格只读兼容后再提交 compatibility SHA；它不暴露候补/退出候补写操作或自动递补。
+- [x] TDD 新增 `WAITLISTED`、`WAITLIST_WITHDRAWAL`、不可复用 `waitlist_seq`、候补时间字段、FIFO 索引和全生命周期约束。
+- [x] 新增窄域 `open_game_notification_outbox`，仅承载候补转正领域事实；唯一去重键、租约、重试和安全 payload 必须持久化。
+- [x] 覆盖 0018→0019、空数据 downgrade；任意候补序号/时间历史或 outbox 存在时拒绝 downgrade，不能只检查当前 `WAITLISTED`。
+- [x] 完成 `0019`、模型和严格只读兼容后再提交 compatibility SHA；它不暴露候补/退出候补写操作或自动递补。
 
 ## Task 5：队长候补决定与本人退出候补
 

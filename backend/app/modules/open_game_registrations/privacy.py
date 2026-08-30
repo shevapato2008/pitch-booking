@@ -13,6 +13,7 @@ from backend.app.models import (
 )
 from backend.app.modules.open_game_registrations.dto import (
     CaptainApplication,
+    CaptainWaitlistApplication,
     MyOpenGameApplication,
     RegistrationPersistedStatus,
     RegistrationWithdrawalKind,
@@ -100,6 +101,9 @@ def project_viewer_registration(
     late_exit_recorded: bool,
     starts_at: datetime,
     now: datetime,
+    waitlist_position: int | None = None,
+    waitlisted_at: datetime | None = None,
+    promoted_at: datetime | None = None,
 ) -> ViewerRegistration:
     """Rebuild the applicant response from its reviewed field whitelist."""
     withdrawal = project_available_withdrawal(
@@ -129,9 +133,9 @@ def project_viewer_registration(
         late_exit_recorded=late_exit_recorded,
         available_withdrawal_action=withdrawal.action,
         late_exit_will_be_recorded=withdrawal.late_exit_will_be_recorded,
-        waitlist_position=None,
-        waitlisted_at=None,
-        promoted_at=None,
+        waitlist_position=waitlist_position,
+        waitlisted_at=waitlisted_at,
+        promoted_at=promoted_at,
     )
 
 
@@ -157,6 +161,28 @@ def project_captain_application(
     )
 
 
+def project_captain_waitlist_application(
+    *,
+    application_id: uuid.UUID,
+    display_name: str,
+    position: OpenGameRegistrationPosition,
+    note: str | None,
+    applied_at: datetime,
+    waitlisted_at: datetime,
+    waitlist_position: int,
+) -> CaptainWaitlistApplication:
+    """Rebuild an active waitlist item from its reviewed field whitelist."""
+    return CaptainWaitlistApplication(
+        id=application_id,
+        display_name=display_name,
+        position=position,
+        note=note,
+        applied_at=applied_at,
+        waitlisted_at=waitlisted_at,
+        waitlist_position=waitlist_position,
+    )
+
+
 def project_my_open_game_application(
     *,
     application_id: uuid.UUID,
@@ -164,6 +190,9 @@ def project_my_open_game_application(
     applied_at: datetime,
     share_token: str,
     projection: AuthoritativePublicGameProjection,
+    waitlist_position: int | None = None,
+    waitlisted_at: datetime | None = None,
+    promoted_at: datetime | None = None,
 ) -> MyOpenGameApplication:
     """Rebuild the self-only list item from its closed public whitelist."""
     public = projection.public
@@ -174,9 +203,9 @@ def project_my_open_game_application(
             projection.state,
         ),
         applied_at=applied_at,
-        waitlist_position=None,
-        waitlisted_at=None,
-        promoted_at=None,
+        waitlist_position=waitlist_position,
+        waitlisted_at=waitlisted_at,
+        promoted_at=promoted_at,
         detail_path=f"/pages/captain-game-public/index?token={share_token}",
         game_name=public.name,
         starts_at=public.starts_at,

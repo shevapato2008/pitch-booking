@@ -148,13 +148,21 @@ def _add_registration(
     withdrawal_kind: OpenGameRegistrationWithdrawalKind | None = None,
     withdrawn_at: datetime | None = None,
     late_exit_recorded: bool = False,
+    waitlist_seq: int | None = None,
+    waitlisted_at: datetime | None = None,
+    promoted_at: datetime | None = None,
 ) -> OpenGameRegistration:
     decision_required = status in {
+        OpenGameRegistrationStatus.WAITLISTED,
         OpenGameRegistrationStatus.JOINED,
         OpenGameRegistrationStatus.REJECTED,
     } or (
         status is OpenGameRegistrationStatus.WITHDRAWN
-        and withdrawal_kind is OpenGameRegistrationWithdrawalKind.GAME_EXIT
+        and withdrawal_kind
+        in {
+            OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+            OpenGameRegistrationWithdrawalKind.GAME_EXIT,
+        }
     )
     row = OpenGameRegistration(
         id=application_id or uuid.uuid4(),
@@ -169,11 +177,18 @@ def _add_registration(
         adult_confirmed_at=applied_at,
         risk_confirmed_at=applied_at,
         applied_at=applied_at,
-        decided_at=NOW - timedelta(minutes=5) if decision_required else None,
+        decided_at=(
+            waitlisted_at or NOW - timedelta(minutes=5)
+            if decision_required
+            else None
+        ),
         decided_by_user_id=decided_by_user_id if decision_required else None,
         withdrawn_at=withdrawn_at,
         withdrawal_kind=withdrawal_kind,
         late_exit_recorded=late_exit_recorded,
+        waitlist_seq=waitlist_seq,
+        waitlisted_at=waitlisted_at,
+        promoted_at=promoted_at,
     )
     session.add(row)
     session.flush()
@@ -955,6 +970,73 @@ def test_repository_returns_joined_count_and_complete_pending_order(
         assert repository.lock_order(order_id=case.booking.order_id).id == case.booking.order_id
 
 
+def test_repository_projects_only_active_waitlist_in_immutable_fifo_order(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        waitlisted_at = NOW - timedelta(minutes=5)
+        active_nine = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            application_id=uuid.UUID(int=1),
+            applied_at=NOW - timedelta(minutes=20),
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=9,
+            waitlisted_at=waitlisted_at,
+        )
+        active_three_user = _new_user(session, "waitlist-three")
+        active_three = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=active_three_user.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            application_id=uuid.UUID(int=99),
+            applied_at=NOW - timedelta(minutes=10),
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=3,
+            waitlisted_at=waitlisted_at,
+        )
+        withdrawn_user = _new_user(session, "waitlist-withdrawn")
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=withdrawn_user.id,
+            status=OpenGameRegistrationStatus.WITHDRAWN,
+            applied_at=NOW - timedelta(minutes=12),
+            decided_by_user_id=case.booking.owner_id,
+            withdrawal_kind=OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+            withdrawn_at=NOW - timedelta(minutes=1),
+            waitlist_seq=5,
+            waitlisted_at=waitlisted_at,
+        )
+        promoted_user = _new_user(session, "waitlist-promoted")
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=promoted_user.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            applied_at=NOW - timedelta(minutes=15),
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=7,
+            waitlisted_at=waitlisted_at,
+            promoted_at=NOW - timedelta(minutes=2),
+        )
+        session.commit()
+
+        repository = OpenGameRegistrationRepository(session)
+        assert [
+            row.id for row in repository.list_waitlisted(game_id=case.game_id)
+        ] == [active_three.id, active_nine.id]
+        assert repository.get_waitlist_position(
+            game_id=case.game_id,
+            application_id=active_nine.id,
+            waitlist_seq=9,
+        ) == 2
+
+
 def test_owner_queue_is_complete_ordered_pending_only_and_private(
     pg_engine: Engine,
 ) -> None:
@@ -1026,6 +1108,101 @@ def test_owner_queue_is_complete_ordered_pending_only_and_private(
         for row in queue.applications
     )
     _assert_queue_privacy(queue)
+
+
+def test_owner_queue_projects_active_waitlist_fifo_without_internal_sequence(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        waitlisted_at = NOW - timedelta(minutes=5)
+        rows: list[OpenGameRegistration] = []
+        for index, waitlist_seq in enumerate((8, 2)):
+            applicant = _new_user(session, f"owner-waitlist-{index}")
+            rows.append(
+                _add_registration(
+                    session,
+                    game_id=case.game_id,
+                    applicant_user_id=applicant.id,
+                    status=OpenGameRegistrationStatus.WAITLISTED,
+                    display_name=f"候补球员{index}",
+                    applied_at=NOW - timedelta(minutes=20 - index),
+                    decided_by_user_id=case.booking.owner_id,
+                    waitlist_seq=waitlist_seq,
+                    waitlisted_at=waitlisted_at,
+                )
+            )
+        session.commit()
+
+        queue = _service(session).get_queue(
+            game_id=case.game_id,
+            owner_user_id=case.booking.owner_id,
+        )
+
+    assert queue.waitlist_count == 2
+    assert [item.id for item in queue.waitlist] == [rows[1].id, rows[0].id]
+    assert [item.waitlist_position for item in queue.waitlist] == [1, 2]
+    assert all(item.waitlisted_at == waitlisted_at for item in queue.waitlist)
+    dumped = queue.model_dump(mode="json")
+    assert "waitlist_seq" not in json.dumps(dumped)
+    assert "applicant_user_id" not in json.dumps(dumped)
+
+
+def test_context_projects_waitlisted_viewer_with_compressed_visible_position(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        waitlisted_at = NOW - timedelta(minutes=5)
+        earlier = _new_user(session, "context-earlier")
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=earlier.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=3,
+            waitlisted_at=waitlisted_at,
+        )
+        viewer = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=9,
+            waitlisted_at=waitlisted_at,
+        )
+        departed = _new_user(session, "context-departed")
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=departed.id,
+            status=OpenGameRegistrationStatus.WITHDRAWN,
+            decided_by_user_id=case.booking.owner_id,
+            withdrawal_kind=OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+            withdrawn_at=NOW - timedelta(minutes=1),
+            waitlist_seq=5,
+            waitlisted_at=waitlisted_at,
+        )
+        session.commit()
+
+        context = _service(session).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+
+    assert context.viewer_registration is not None
+    assert context.viewer_registration.id == viewer.id
+    assert context.viewer_registration.persisted_status == "WAITLISTED"
+    assert context.viewer_registration.effective_status == "WAITLISTED"
+    assert context.viewer_registration.waitlist_position == 2
+    assert context.viewer_registration.waitlisted_at == waitlisted_at
+    assert context.viewer_registration.promoted_at is None
+    assert context.viewer_registration.available_withdrawal_action is None
+    assert "waitlist_seq" not in json.dumps(
+        context.model_dump(mode="json"),
+    )
 
 
 def test_queue_hides_nonowner_and_missing_games_symmetrically(

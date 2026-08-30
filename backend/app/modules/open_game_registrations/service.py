@@ -46,6 +46,7 @@ from backend.app.modules.open_game_registrations.lifecycle import (
 )
 from backend.app.modules.open_game_registrations.privacy import (
     project_captain_application,
+    project_captain_waitlist_application,
     project_my_open_game_application,
     project_viewer_registration,
 )
@@ -126,6 +127,17 @@ class OpenGameRegistrationService:
                 if viewer_user_id is not None
                 else None
             )
+            waitlist_position = (
+                self._repository.get_waitlist_position(
+                    game_id=game.id,
+                    application_id=registration.id,
+                    waitlist_seq=registration.waitlist_seq,
+                )
+                if registration is not None
+                and registration.status is OpenGameRegistrationStatus.WAITLISTED
+                and registration.waitlist_seq is not None
+                else None
+            )
             return _project_context(
                 game=game,
                 projection=projection,
@@ -133,6 +145,7 @@ class OpenGameRegistrationService:
                 registration=registration,
                 joined_count=joined_count,
                 now=now,
+                waitlist_position=waitlist_position,
             )
         except AppError:
             self._repository.rollback()
@@ -166,7 +179,12 @@ class OpenGameRegistrationService:
             )
             now = self._now()
             items = tuple(
-                self._project_my_application(row, now=now) for row in rows
+                self._project_my_application(
+                    row.registration,
+                    now=now,
+                    waitlist_position=row.waitlist_position,
+                )
+                for row in rows
             )
             next_cursor = (
                 _encode_my_applications_cursor(items[limit - 1])
@@ -376,6 +394,7 @@ class OpenGameRegistrationService:
             )
             joined_count = self._repository.count_joined(game_id=game.id)
             rows = self._repository.list_pending(game_id=game.id)
+            waitlisted_rows = self._repository.list_waitlisted(game_id=game.id)
             facts = _registration_facts(
                 game=game,
                 projection=projection,
@@ -399,6 +418,21 @@ class OpenGameRegistrationService:
                 )
                 for row in rows
             )
+            waitlist = tuple(
+                project_captain_waitlist_application(
+                    application_id=row.id,
+                    display_name=row.display_name,
+                    position=row.position,
+                    note=row.note,
+                    applied_at=row.applied_at,
+                    waitlisted_at=row.waitlisted_at,
+                    waitlist_position=index,
+                )
+                for index, row in enumerate(waitlisted_rows, start=1)
+                if row.waitlisted_at is not None
+            )
+            if len(waitlist) != len(waitlisted_rows):
+                raise RuntimeError("WAITLISTED row is missing waitlisted_at")
             return Queue(
                 remaining_spots=remaining_spots(
                     open_spots=game.open_spots,
@@ -406,8 +440,8 @@ class OpenGameRegistrationService:
                 ),
                 pending_count=len(applications),
                 applications=applications,
-                waitlist_count=0,
-                waitlist=(),
+                waitlist_count=len(waitlist),
+                waitlist=waitlist,
             )
         except AppError:
             self._repository.rollback()
@@ -727,6 +761,7 @@ class OpenGameRegistrationService:
         registration: OpenGameRegistration,
         *,
         now: datetime,
+        waitlist_position: int | None,
     ) -> MyOpenGameApplication:
         game = registration.game
         if game.published_at is None:
@@ -774,6 +809,9 @@ class OpenGameRegistrationService:
             applied_at=registration.applied_at,
             share_token=game.share_token,
             projection=projection,
+            waitlist_position=waitlist_position,
+            waitlisted_at=registration.waitlisted_at,
+            promoted_at=registration.promoted_at,
         )
 
 
@@ -785,6 +823,7 @@ def _project_context(
     registration: OpenGameRegistration | None,
     joined_count: int,
     now: datetime,
+    waitlist_position: int | None = None,
 ) -> RegistrationContext:
     facts = _registration_facts(
         game=game,
@@ -809,6 +848,9 @@ def _project_context(
             late_exit_recorded=registration.late_exit_recorded,
             starts_at=projection.starts_at,
             now=now,
+            waitlist_position=waitlist_position,
+            waitlisted_at=registration.waitlisted_at,
+            promoted_at=registration.promoted_at,
         )
         if registration is not None
         else None

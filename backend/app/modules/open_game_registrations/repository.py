@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -28,6 +28,12 @@ class RegistrationApplicantConflictError(RuntimeError):
 class WithdrawalTarget:
     game_id: uuid.UUID
     order_id: uuid.UUID
+
+
+@dataclass(frozen=True, slots=True)
+class MyRegistrationProjectionRow:
+    registration: OpenGameRegistration
+    waitlist_position: int | None
 
 
 class OpenGameRegistrationRepository:
@@ -142,6 +148,48 @@ class OpenGameRegistrationRepository:
             )
         )
 
+    def list_waitlisted(self, *, game_id: uuid.UUID) -> list[OpenGameRegistration]:
+        return list(
+            self.session.scalars(
+                select(OpenGameRegistration)
+                .where(
+                    OpenGameRegistration.game_id == game_id,
+                    OpenGameRegistration.status
+                    == OpenGameRegistrationStatus.WAITLISTED,
+                )
+                .order_by(
+                    OpenGameRegistration.waitlist_seq,
+                    OpenGameRegistration.id,
+                )
+                .execution_options(populate_existing=True)
+            )
+        )
+
+    def get_waitlist_position(
+        self,
+        *,
+        game_id: uuid.UUID,
+        application_id: uuid.UUID,
+        waitlist_seq: int,
+    ) -> int:
+        preceding = self.session.scalar(
+            select(func.count())
+            .select_from(OpenGameRegistration)
+            .where(
+                OpenGameRegistration.game_id == game_id,
+                OpenGameRegistration.status
+                == OpenGameRegistrationStatus.WAITLISTED,
+                or_(
+                    OpenGameRegistration.waitlist_seq < waitlist_seq,
+                    and_(
+                        OpenGameRegistration.waitlist_seq == waitlist_seq,
+                        OpenGameRegistration.id < application_id,
+                    ),
+                ),
+            )
+        )
+        return int(preceding or 0) + 1
+
     def list_mine(
         self,
         *,
@@ -149,10 +197,37 @@ class OpenGameRegistrationRepository:
         limit: int,
         cursor_applied_at: datetime | None,
         cursor_id: uuid.UUID | None,
-    ) -> list[OpenGameRegistration]:
+    ) -> list[MyRegistrationProjectionRow]:
+        queued = OpenGameRegistration.__table__.alias("queued_registration")
+        preceding_count = (
+            select(func.count())
+            .select_from(queued)
+            .where(
+                queued.c.game_id == OpenGameRegistration.game_id,
+                queued.c.status == OpenGameRegistrationStatus.WAITLISTED,
+                or_(
+                    queued.c.waitlist_seq < OpenGameRegistration.waitlist_seq,
+                    and_(
+                        queued.c.waitlist_seq
+                        == OpenGameRegistration.waitlist_seq,
+                        queued.c.id < OpenGameRegistration.id,
+                    ),
+                ),
+            )
+            .correlate(OpenGameRegistration)
+            .scalar_subquery()
+        )
+        waitlist_position = case(
+            (
+                OpenGameRegistration.status
+                == OpenGameRegistrationStatus.WAITLISTED,
+                preceding_count + 1,
+            ),
+            else_=None,
+        ).label("waitlist_position")
         game_order = joinedload(OpenGameRegistration.game).joinedload(OpenGame.order)
         statement = (
-            select(OpenGameRegistration)
+            select(OpenGameRegistration, waitlist_position)
             .where(OpenGameRegistration.applicant_user_id == applicant_user_id)
             .options(
                 joinedload(OpenGameRegistration.game).joinedload(OpenGame.team),
@@ -175,16 +250,25 @@ class OpenGameRegistrationRepository:
                     ),
                 )
             )
-        return list(
-            self.session.scalars(
-                statement.order_by(
-                    OpenGameRegistration.applied_at.desc(),
-                    OpenGameRegistration.id.desc(),
-                )
-                .limit(limit)
-                .execution_options(populate_existing=True)
+        rows = self.session.execute(
+            statement.order_by(
+                OpenGameRegistration.applied_at.desc(),
+                OpenGameRegistration.id.desc(),
             )
+            .limit(limit)
+            .execution_options(populate_existing=True)
         )
+        return [
+            MyRegistrationProjectionRow(
+                registration=row[0],
+                waitlist_position=(
+                    int(row.waitlist_position)
+                    if row.waitlist_position is not None
+                    else None
+                ),
+            )
+            for row in rows
+        ]
 
     def flush(self) -> None:
         self.session.flush()

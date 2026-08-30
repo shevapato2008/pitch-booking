@@ -1017,7 +1017,13 @@ def test_cancelled_game_projects_cancelled_without_mutating_persisted_status(
     assert project_effective_registration_status(
         persisted_status, EffectiveOpenGameState.CANCELLED
     ) is EffectiveRegistrationStatus.CANCELLED
-    assert persisted_status.value in {"APPLIED", "JOINED", "REJECTED", "WITHDRAWN"}
+    assert persisted_status.value in {
+        "APPLIED",
+        "WAITLISTED",
+        "JOINED",
+        "REJECTED",
+        "WITHDRAWN",
+    }
 
 
 @pytest.mark.parametrize("persisted_status", list(OpenGameRegistrationStatus))
@@ -1311,6 +1317,7 @@ def test_queue_applications_are_deeply_frozen_but_serialize_as_a_json_array() ->
 def test_closed_enum_values_match_the_wire_contract() -> None:
     assert [status.value for status in OpenGameRegistrationStatus] == [
         "APPLIED",
+        "WAITLISTED",
         "JOINED",
         "REJECTED",
         "WITHDRAWN",

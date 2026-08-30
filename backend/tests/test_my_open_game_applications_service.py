@@ -15,6 +15,7 @@ from backend.app.models import (
     OpenGameRegistration,
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
+    OpenGameRegistrationWithdrawalKind,
     OpenGameStatus,
     OpenGameVisibility,
     Pitch,
@@ -39,6 +40,9 @@ ITEM_FIELDS = {
     "id",
     "effective_status",
     "applied_at",
+    "waitlist_position",
+    "waitlisted_at",
+    "promoted_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -93,6 +97,11 @@ def _seed_application(
     visibility: OpenGameVisibility = OpenGameVisibility.PUBLIC,
     starts_at: datetime | None = None,
     time_zone: str = "Asia/Shanghai",
+    waitlist_seq: int | None = None,
+    waitlisted_at: datetime | None = None,
+    promoted_at: datetime | None = None,
+    withdrawal_kind: OpenGameRegistrationWithdrawalKind | None = None,
+    withdrawn_at: datetime | None = None,
 ) -> uuid.UUID:
     booking = seed_confirmed_order(
         engine,
@@ -117,7 +126,18 @@ def _seed_application(
         if game_status is OpenGameStatus.CANCELLED:
             game.published_at = NOW - timedelta(days=1)
             game.cancelled_at = NOW
-        terminal = registration_status is not OpenGameRegistrationStatus.APPLIED
+        terminal = registration_status in {
+            OpenGameRegistrationStatus.WAITLISTED,
+            OpenGameRegistrationStatus.JOINED,
+            OpenGameRegistrationStatus.REJECTED,
+        } or (
+            registration_status is OpenGameRegistrationStatus.WITHDRAWN
+            and withdrawal_kind
+            in {
+                OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+                OpenGameRegistrationWithdrawalKind.GAME_EXIT,
+            }
+        )
         registration = OpenGameRegistration(
             id=application_id or uuid.uuid4(),
             game_id=game.id,
@@ -133,6 +153,12 @@ def _seed_application(
             applied_at=applied_at,
             decided_at=applied_at + timedelta(minutes=1) if terminal else None,
             decided_by_user_id=booking.owner_id if terminal else None,
+            withdrawn_at=withdrawn_at,
+            withdrawal_kind=withdrawal_kind,
+            late_exit_recorded=False,
+            waitlist_seq=waitlist_seq,
+            waitlisted_at=waitlisted_at,
+            promoted_at=promoted_at,
         )
         session.add(registration)
         session.commit()
@@ -231,6 +257,126 @@ def test_lists_all_authoritative_status_visibility_and_time_categories_privately
     assert set(dumped) == {"items", "next_cursor"}
     assert all(set(item) == ITEM_FIELDS for item in dumped["items"])
     assert not PRIVATE_FIELDS & _all_keys(dumped)
+
+
+def test_projects_current_and_historical_waitlist_fields_with_compressed_position(
+    pg_engine: Engine,
+) -> None:
+    applicant_id = _new_user(pg_engine, "waitlist-history")
+    current_applied = NOW - timedelta(minutes=30)
+    current_waitlisted = current_applied + timedelta(minutes=1)
+    current_id = _seed_application(
+        pg_engine,
+        applicant_user_id=applicant_id,
+        label="当前候补",
+        applied_at=current_applied,
+        registration_status=OpenGameRegistrationStatus.WAITLISTED,
+        waitlist_seq=9,
+        waitlisted_at=current_waitlisted,
+    )
+    promoted_applied = NOW - timedelta(minutes=40)
+    promoted_waitlisted = promoted_applied + timedelta(minutes=1)
+    promoted_at = promoted_waitlisted + timedelta(minutes=3)
+    promoted_id = _seed_application(
+        pg_engine,
+        applicant_user_id=applicant_id,
+        label="已递补",
+        applied_at=promoted_applied,
+        registration_status=OpenGameRegistrationStatus.JOINED,
+        waitlist_seq=7,
+        waitlisted_at=promoted_waitlisted,
+        promoted_at=promoted_at,
+    )
+    withdrawn_applied = NOW - timedelta(minutes=50)
+    withdrawn_waitlisted = withdrawn_applied + timedelta(minutes=1)
+    withdrawn_id = _seed_application(
+        pg_engine,
+        applicant_user_id=applicant_id,
+        label="退出候补",
+        applied_at=withdrawn_applied,
+        registration_status=OpenGameRegistrationStatus.WITHDRAWN,
+        waitlist_seq=8,
+        waitlisted_at=withdrawn_waitlisted,
+        withdrawal_kind=OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+        withdrawn_at=withdrawn_waitlisted + timedelta(minutes=2),
+    )
+
+    with Session(pg_engine) as session:
+        current = session.get_one(OpenGameRegistration, current_id)
+        earlier = User(
+            wechat_app_id="wx-my-applications-test",
+            wechat_openid=f"waitlist-earlier-{uuid.uuid4()}",
+        )
+        departed = User(
+            wechat_app_id="wx-my-applications-test",
+            wechat_openid=f"waitlist-departed-{uuid.uuid4()}",
+        )
+        session.add_all((earlier, departed))
+        session.flush()
+        session.add_all(
+            (
+                OpenGameRegistration(
+                    id=uuid.uuid4(),
+                    game_id=current.game_id,
+                    applicant_user_id=earlier.id,
+                    display_name="前序候补",
+                    position=OpenGameRegistrationPosition.ANY,
+                    note=None,
+                    status=OpenGameRegistrationStatus.WAITLISTED,
+                    version=2,
+                    consent_version="c1a-2026-08-24",
+                    adult_confirmed_at=current_applied,
+                    risk_confirmed_at=current_applied,
+                    applied_at=current_applied,
+                    decided_at=current_waitlisted,
+                    decided_by_user_id=current.game.order.user_id,
+                    waitlist_seq=3,
+                    waitlisted_at=current_waitlisted,
+                ),
+                OpenGameRegistration(
+                    id=uuid.uuid4(),
+                    game_id=current.game_id,
+                    applicant_user_id=departed.id,
+                    display_name="退出候补",
+                    position=OpenGameRegistrationPosition.ANY,
+                    note=None,
+                    status=OpenGameRegistrationStatus.WITHDRAWN,
+                    version=3,
+                    consent_version="c1a-2026-08-24",
+                    adult_confirmed_at=current_applied,
+                    risk_confirmed_at=current_applied,
+                    applied_at=current_applied,
+                    decided_at=current_waitlisted,
+                    decided_by_user_id=current.game.order.user_id,
+                    withdrawn_at=current_waitlisted + timedelta(minutes=2),
+                    withdrawal_kind=(
+                        OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL
+                    ),
+                    late_exit_recorded=False,
+                    waitlist_seq=5,
+                    waitlisted_at=current_waitlisted,
+                ),
+            )
+        )
+        session.commit()
+
+        page = _service(session).list_my_applications(
+            applicant_user_id=applicant_id,
+            limit=20,
+            cursor=None,
+        )
+
+    items = {item.id: item for item in page.items}
+    assert items[current_id].waitlist_position == 2
+    assert items[current_id].waitlisted_at == current_waitlisted
+    assert items[current_id].promoted_at is None
+    assert items[promoted_id].waitlist_position is None
+    assert items[promoted_id].waitlisted_at == promoted_waitlisted
+    assert items[promoted_id].promoted_at == promoted_at
+    assert items[withdrawn_id].waitlist_position is None
+    assert items[withdrawn_id].waitlisted_at == withdrawn_waitlisted
+    assert items[withdrawn_id].promoted_at is None
+    assert "waitlist_seq" not in json.dumps(page.model_dump(mode="json"))
 
 
 def test_self_only_keyset_is_stable_and_cross_user_cursor_cannot_change_identity(
@@ -376,6 +522,13 @@ def test_authority_preload_query_count_is_bounded_by_page_not_item_count(
             applicant_user_id=applicant_id,
             label=f"有界{index}",
             applied_at=NOW - timedelta(minutes=index),
+            registration_status=(
+                OpenGameRegistrationStatus.WAITLISTED
+                if index == 0
+                else OpenGameRegistrationStatus.APPLIED
+            ),
+            waitlist_seq=1 if index == 0 else None,
+            waitlisted_at=(NOW + timedelta(minutes=1) if index == 0 else None),
         )
 
     statements: list[str] = []
@@ -403,4 +556,5 @@ def test_authority_preload_query_count_is_bounded_by_page_not_item_count(
         event.remove(pg_engine, "before_cursor_execute", record_statement)
 
     assert len(page.items) == 4
+    assert page.items[0].waitlist_position == 1
     assert len(statements) <= 4

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from backend.app.config import Settings
 from backend.app.database import get_database
 from backend.app.main import create_app
-from backend.app.models import User, UserSession
+from backend.app.models import OpenGameRegistrationStatus, User, UserSession
 from backend.tests.test_my_open_game_applications_service import (
     ITEM_FIELDS,
     NOW,
@@ -82,6 +82,9 @@ def test_list_requires_bearer_and_returns_exact_self_only_privacy(pg_engine: Eng
         applicant_user_id=applicant_id,
         label="自己的",
         applied_at=NOW,
+        registration_status=OpenGameRegistrationStatus.WAITLISTED,
+        waitlist_seq=1,
+        waitlisted_at=NOW + timedelta(minutes=1),
     )
     _seed_application(
         pg_engine,
@@ -105,6 +108,10 @@ def test_list_requires_bearer_and_returns_exact_self_only_privacy(pg_engine: Eng
     assert set(payload) == {"items", "next_cursor"}
     assert payload["next_cursor"] is None
     assert [item["id"] for item in payload["items"]] == [str(own_id)]
+    assert payload["items"][0]["effective_status"] == "WAITLISTED"
+    assert payload["items"][0]["waitlist_position"] == 1
+    assert payload["items"][0]["waitlisted_at"] == "2026-08-30T08:01:00Z"
+    assert payload["items"][0]["promoted_at"] is None
     assert all(set(item) == ITEM_FIELDS for item in payload["items"])
     assert not PRIVATE_FIELDS & _all_keys(payload)
     assert str(applicant_id) not in response.text

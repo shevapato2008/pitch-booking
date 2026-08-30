@@ -1,4 +1,5 @@
 import hashlib
+import json
 import uuid
 from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime, timedelta
@@ -310,9 +311,71 @@ def _assert_queue_privacy(payload: dict[str, Any]) -> None:
             "can_reject",
             "reject_blocked_reason",
         }
-    assert payload["waitlist_count"] == 0
-    assert payload["waitlist"] == []
+    assert payload["waitlist_count"] == len(payload["waitlist"])
+    for waitlist_item in payload["waitlist"]:
+        assert set(waitlist_item) == {
+            "id",
+            "display_name",
+            "position",
+            "note",
+            "applied_at",
+            "waitlisted_at",
+            "waitlist_position",
+        }
     assert not PRIVATE_REGISTRATION_FIELDS & _all_keys(payload)
+
+
+def test_context_and_owner_queue_project_real_waitlist_without_internal_sequence(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    _attach_sessions(pg_engine, case)
+    waitlisted_at = datetime.now(UTC) - timedelta(minutes=2)
+    with Session(pg_engine) as session:
+        earlier = _new_user(session, "api-waitlist-earlier")
+        _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=earlier.id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=2,
+            waitlisted_at=waitlisted_at,
+        )
+        viewer = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=8,
+            waitlisted_at=waitlisted_at,
+        )
+        session.commit()
+        viewer_id = viewer.id
+
+    with _client(pg_engine) as client:
+        context = client.get(
+            f"/api/v1/shared-games/{case.share_token}/registration-context",
+            headers=_auth(),
+        )
+        queue = client.get(
+            f"/api/v1/games/{case.game_id}/applications",
+            headers=_auth(OWNER_TOKEN),
+        )
+
+    assert context.status_code == 200, context.text
+    context_body = context.json()
+    _assert_context_privacy(context_body)
+    assert context_body["viewer_registration"]["id"] == str(viewer_id)
+    assert context_body["viewer_registration"]["persisted_status"] == "WAITLISTED"
+    assert context_body["viewer_registration"]["waitlist_position"] == 2
+    assert context_body["viewer_registration"]["promoted_at"] is None
+    assert queue.status_code == 200, queue.text
+    queue_body = queue.json()
+    _assert_queue_privacy(queue_body)
+    assert [item["waitlist_position"] for item in queue_body["waitlist"]] == [1, 2]
+    assert "waitlist_seq" not in json.dumps(queue_body)
 
 
 def _error(response: Any) -> dict[str, Any]:

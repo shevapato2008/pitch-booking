@@ -22,6 +22,7 @@ NOW = datetime(2026, 8, 30, 12, tzinfo=UTC)
 def test_persisted_registration_status_includes_terminal_withdrawn() -> None:
     assert [status.value for status in OpenGameRegistrationStatus] == [
         "APPLIED",
+        "WAITLISTED",
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
@@ -31,6 +32,7 @@ def test_persisted_registration_status_includes_terminal_withdrawn() -> None:
 def test_withdrawal_kind_and_effective_status_are_closed_enums() -> None:
     assert [kind.value for kind in models.OpenGameRegistrationWithdrawalKind] == [
         "APPLICATION_WITHDRAWAL",
+        "WAITLIST_WITHDRAWAL",
         "GAME_EXIT",
     ]
     assert [status.value for status in lifecycle.EffectiveRegistrationStatus] == [
