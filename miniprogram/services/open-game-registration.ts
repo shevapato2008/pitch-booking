@@ -20,7 +20,7 @@ export type OpenGameRegistrationAttempt =
     readonly originatingUserId: string;
     readonly gameId: string;
     readonly applicationId: string;
-    readonly decision: "ACCEPT" | "REJECT";
+    readonly decision: "ACCEPT" | "REJECT" | "WAITLIST";
     readonly expectedVersion: number;
     readonly idempotencyKey: string;
   }
@@ -144,14 +144,17 @@ export type OpenGameRegistrationUnknownRecoveryDecision =
   };
 
 function withdrawalAuthorityForAction(value: unknown): {
-  readonly persistedStatus: "APPLIED" | "JOINED";
-  readonly withdrawalKind: "APPLICATION_WITHDRAWAL" | "GAME_EXIT";
+  readonly persistedStatus: "APPLIED" | "WAITLISTED" | "JOINED";
+  readonly withdrawalKind: "APPLICATION_WITHDRAWAL" | "WAITLIST_WITHDRAWAL" | "GAME_EXIT";
 } {
   if (value === "WITHDRAW_APPLICATION") {
     return { persistedStatus: "APPLIED", withdrawalKind: "APPLICATION_WITHDRAWAL" };
   }
   if (value === "LEAVE_GAME") {
     return { persistedStatus: "JOINED", withdrawalKind: "GAME_EXIT" };
+  }
+  if (value === "WITHDRAW_WAITLIST") {
+    return { persistedStatus: "WAITLISTED", withdrawalKind: "WAITLIST_WITHDRAWAL" };
   }
   throw new Error("INVALID_OPEN_GAME_REGISTRATION_WITHDRAWAL_ACTION");
 }

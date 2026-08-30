@@ -113,7 +113,9 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
     ])
       && isUuid(value.gameId)
       && isUuid(value.applicationId)
-      && (value.decision === "ACCEPT" || value.decision === "REJECT")
+      && (value.decision === "ACCEPT"
+        || value.decision === "REJECT"
+        || value.decision === "WAITLIST")
       && Number.isSafeInteger(value.expectedVersion)
       && (value.expectedVersion as number) >= 1;
   }
@@ -125,7 +127,9 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
       && typeof value.shareToken === "string"
       && SHARE_TOKEN_PATTERN.test(value.shareToken)
       && isUuid(value.applicationId)
-      && (value.action === "WITHDRAW_APPLICATION" || value.action === "LEAVE_GAME")
+      && (value.action === "WITHDRAW_APPLICATION"
+        || value.action === "WITHDRAW_WAITLIST"
+        || value.action === "LEAVE_GAME")
       && Number.isSafeInteger(value.expectedVersion)
       && (value.expectedVersion as number) >= 1;
   }

@@ -118,6 +118,14 @@ class OpenGameRegistrationRepository:
         )
         return int(count or 0)
 
+    def next_waitlist_seq(self, *, game_id: uuid.UUID) -> int:
+        historical_max = self.session.scalar(
+            select(func.max(OpenGameRegistration.waitlist_seq)).where(
+                OpenGameRegistration.game_id == game_id,
+            )
+        )
+        return int(historical_max or 0) + 1
+
     def lock_order(self, *, order_id: uuid.UUID) -> Order | None:
         return lock_order_row(self.session, order_id)
 

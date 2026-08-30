@@ -59,6 +59,7 @@ class _FrozenClosedModel(BaseModel):
 class ApplicationDecision(StrEnum):
     ACCEPT = "ACCEPT"
     REJECT = "REJECT"
+    WAITLIST = "WAITLIST"
 
 
 class DecisionResultStatus(StrEnum):

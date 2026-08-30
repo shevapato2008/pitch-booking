@@ -1421,10 +1421,14 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "Anonymous": "open-game-registration-context-anonymous.json",
             "ApplyReady": "open-game-registration-context-apply-ready.json",
             "Applied": "open-game-registration-context-applied.json",
+            "Waitlisted": "open-game-registration-context-waitlisted.json",
             "Joined": "open-game-registration-context-joined.json",
             "Rejected": "open-game-registration-context-rejected.json",
             "WithdrawnApplication": (
                 "open-game-registration-context-withdrawn-application.json"
+            ),
+            "WithdrawnWaitlist": (
+                "open-game-registration-context-withdrawn-waitlist.json"
             ),
             "WithdrawnGameExit": (
                 "open-game-registration-context-withdrawn-game-exit.json"
@@ -1453,6 +1457,9 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
         ): {
             "ApplicationWithdrawn": (
                 "open-game-registration-context-withdrawn-application.json"
+            ),
+            "WaitlistWithdrawn": (
+                "open-game-registration-context-withdrawn-waitlist.json"
             ),
             "GameExited": "open-game-registration-context-withdrawn-game-exit.json",
         },
@@ -1524,6 +1531,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "200",
         ): {
             "Pending": "open-game-applications-pending.json",
+            "FullWaitlist": "open-game-applications-full-waitlist.json",
             "Empty": "open-game-applications-empty.json",
         },
         (
@@ -1551,6 +1559,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "post",
             "200",
         ): {
+            "Waitlisted": "open-game-application-decision-waitlisted.json",
             "Joined": "open-game-application-decision-joined.json",
             "Rejected": "open-game-application-decision-rejected.json",
         },
@@ -1844,7 +1853,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     }
     assert schemas["OpenGameRegistrationWithdrawalAction"] == {
         "type": "string",
-        "enum": ["WITHDRAW_APPLICATION", "LEAVE_GAME"],
+        "enum": ["WITHDRAW_APPLICATION", "WITHDRAW_WAITLIST", "LEAVE_GAME"],
     }
     assert schemas["OpenGameApplyBlockedReason"] == {
         "type": "string",
@@ -1980,7 +1989,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     decision_request = schemas["OpenGameApplicationDecisionRequest"]["properties"]
     assert decision_request["decision"] == {
         "type": "string",
-        "enum": ["ACCEPT", "REJECT"],
+        "enum": ["ACCEPT", "REJECT", "WAITLIST"],
     }
     assert decision_request["expected_version"] == {
         "type": "integer",
@@ -2137,7 +2146,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     )
 
 
-def test_waitlist_read_contract_expands_responses_but_keeps_write_commands_closed() -> None:
+def test_waitlist_contract_opens_only_explicit_waitlist_writes() -> None:
     contract = _contract()
     schemas = contract["components"]["schemas"]
 
@@ -2168,11 +2177,12 @@ def test_waitlist_read_contract_expands_responses_but_keeps_write_commands_close
     ]
     assert schemas["OpenGameRegistrationWithdrawalAction"]["enum"] == [
         "WITHDRAW_APPLICATION",
+        "WITHDRAW_WAITLIST",
         "LEAVE_GAME",
     ]
     assert schemas["OpenGameApplicationDecisionRequest"]["properties"]["decision"][
         "enum"
-    ] == ["ACCEPT", "REJECT"]
+    ] == ["ACCEPT", "REJECT", "WAITLIST"]
     assert schemas["OpenGameApplicationWithdrawalRequest"]["properties"]["action"] == {
         "$ref": "#/components/schemas/OpenGameRegistrationWithdrawalAction"
     }
@@ -2305,6 +2315,9 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
         "open-game-registration-context-applied.json": (
             "OpenGameRegistrationContext"
         ),
+        "open-game-registration-context-waitlisted.json": (
+            "OpenGameRegistrationContext"
+        ),
         "open-game-registration-context-joined.json": (
             "OpenGameRegistrationContext"
         ),
@@ -2314,6 +2327,9 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
         "open-game-registration-context-withdrawn-application.json": (
             "OpenGameRegistrationContext"
         ),
+        "open-game-registration-context-withdrawn-waitlist.json": (
+            "OpenGameRegistrationContext"
+        ),
         "open-game-registration-context-withdrawn-game-exit.json": (
             "OpenGameRegistrationContext"
         ),
@@ -2321,8 +2337,12 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             "OpenGameRegistrationContext"
         ),
         "open-game-applications-pending.json": "OpenGameApplicationQueue",
+        "open-game-applications-full-waitlist.json": "OpenGameApplicationQueue",
         "open-game-applications-empty.json": "OpenGameApplicationQueue",
         "open-game-application-decision-joined.json": (
+            "OpenGameApplicationDecisionResult"
+        ),
+        "open-game-application-decision-waitlisted.json": (
             "OpenGameApplicationDecisionResult"
         ),
         "open-game-application-decision-rejected.json": (
@@ -2360,6 +2380,13 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             False,
             "ALREADY_APPLIED",
         ),
+        "open-game-registration-context-waitlisted.json": (
+            True,
+            "WAITLISTED",
+            "WAITLISTED",
+            False,
+            "ALREADY_APPLIED",
+        ),
         "open-game-registration-context-joined.json": (
             True,
             "JOINED",
@@ -2375,6 +2402,13 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             "ALREADY_APPLIED",
         ),
         "open-game-registration-context-withdrawn-application.json": (
+            True,
+            "WITHDRAWN",
+            "WITHDRAWN",
+            False,
+            "ALREADY_APPLIED",
+        ),
+        "open-game-registration-context-withdrawn-waitlist.json": (
             True,
             "WITHDRAWN",
             "WITHDRAWN",
@@ -2412,6 +2446,7 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
         if registration is not None:
             expected_withdrawal_action = {
                 "APPLIED": "WITHDRAW_APPLICATION",
+                "WAITLISTED": "WITHDRAW_WAITLIST",
                 "JOINED": (
                     None
                     if registration["effective_status"] == "CANCELLED"
@@ -2433,6 +2468,9 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
     assert examples["open-game-applications-empty.json"]["pending_count"] == 0
     assert examples["open-game-application-decision-joined.json"]["status"] == (
         "JOINED"
+    )
+    assert examples["open-game-application-decision-waitlisted.json"]["status"] == (
+        "WAITLISTED"
     )
     assert examples["open-game-application-decision-rejected.json"]["status"] == (
         "REJECTED"

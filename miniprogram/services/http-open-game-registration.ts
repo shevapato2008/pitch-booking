@@ -170,14 +170,18 @@ function safeIntegerAt(value: unknown, path: string): number {
   return value as number;
 }
 
-function expectedDecisionStatus(value: unknown): "JOINED" | "REJECTED" {
+function expectedDecisionStatus(value: unknown): "WAITLISTED" | "JOINED" | "REJECTED" {
   if (value === "ACCEPT") return "JOINED";
   if (value === "REJECT") return "REJECTED";
+  if (value === "WAITLIST") return "WAITLISTED";
   throw new Error("UNSUPPORTED_APPLICATION_DECISION");
 }
 
-function withdrawalKindForAction(value: unknown): "APPLICATION_WITHDRAWAL" | "GAME_EXIT" {
+function withdrawalKindForAction(
+  value: unknown,
+): "APPLICATION_WITHDRAWAL" | "WAITLIST_WITHDRAWAL" | "GAME_EXIT" {
   if (value === "WITHDRAW_APPLICATION") return "APPLICATION_WITHDRAWAL";
+  if (value === "WITHDRAW_WAITLIST") return "WAITLIST_WITHDRAWAL";
   if (value === "LEAVE_GAME") return "GAME_EXIT";
   throw new Error("UNSUPPORTED_APPLICATION_WITHDRAWAL");
 }

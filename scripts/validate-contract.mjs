@@ -797,6 +797,12 @@ const exampleMap = [
     ],
   },
   {
+    filename: 'open-game-registration-context-waitlisted.json',
+    reference: './examples/open-game-registration-context-waitlisted.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Waitlisted')],
+  },
+  {
     filename: 'open-game-registration-context-joined.json',
     reference: './examples/open-game-registration-context-joined.json',
     schema: 'OpenGameRegistrationContext',
@@ -815,6 +821,15 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnApplication'),
       attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'ApplicationWithdrawn', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-registration-context-withdrawn-waitlist.json',
+    reference: './examples/open-game-registration-context-withdrawn-waitlist.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnWaitlist'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'WaitlistWithdrawn', 'post'),
     ],
   },
   {
@@ -839,6 +854,12 @@ const exampleMap = [
     attachments: [attachment('/api/v1/games/{game_id}/applications', '200', 'Pending')],
   },
   {
+    filename: 'open-game-applications-full-waitlist.json',
+    reference: './examples/open-game-applications-full-waitlist.json',
+    schema: 'OpenGameApplicationQueue',
+    attachments: [attachment('/api/v1/games/{game_id}/applications', '200', 'FullWaitlist')],
+  },
+  {
     filename: 'open-game-applications-empty.json',
     reference: './examples/open-game-applications-empty.json',
     schema: 'OpenGameApplicationQueue',
@@ -849,6 +870,12 @@ const exampleMap = [
     reference: './examples/open-game-application-decision-joined.json',
     schema: 'OpenGameApplicationDecisionResult',
     attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '200', 'Joined', 'post')],
+  },
+  {
+    filename: 'open-game-application-decision-waitlisted.json',
+    reference: './examples/open-game-application-decision-waitlisted.json',
+    schema: 'OpenGameApplicationDecisionResult',
+    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '200', 'Waitlisted', 'post')],
   },
   {
     filename: 'open-game-application-decision-rejected.json',

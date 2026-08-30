@@ -20,6 +20,7 @@ from backend.app.models import (
     OpenGameRegistration,
     OpenGameRegistrationStatus,
     OpenGameRegistrationWithdrawalKind,
+    OpenGameStatus,
     Order,
 )
 from backend.app.modules.open_game_registrations.dto import (
@@ -38,6 +39,7 @@ from backend.app.modules.open_game_registrations.dto import (
 from backend.app.modules.open_game_registrations.lifecycle import (
     RegistrationFacts,
     ReviewBlockedReason,
+    WaitlistBlockedReason,
     WithdrawalAction,
     project_apply_actions,
     project_available_withdrawal,
@@ -54,7 +56,11 @@ from backend.app.modules.open_game_registrations.repository import (
     OpenGameRegistrationRepository,
     RegistrationApplicantConflictError,
 )
-from backend.app.modules.open_games.lifecycle import OpenGameProjectionInvariantError
+from backend.app.modules.open_games.lifecycle import (
+    EffectiveOpenGameState,
+    OpenGameProjectionInvariantError,
+    published_authority_is_healthy,
+)
 from backend.app.modules.open_games.repository import (
     OpenGameOrderRow,
     OpenGameRepository,
@@ -539,6 +545,10 @@ class OpenGameRegistrationService:
                 registration.withdrawal_kind = (
                     OpenGameRegistrationWithdrawalKind.APPLICATION_WITHDRAWAL
                 )
+            elif request.action is WithdrawalAction.WITHDRAW_WAITLIST:
+                registration.withdrawal_kind = (
+                    OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL
+                )
             elif request.action is WithdrawalAction.LEAVE_GAME:
                 registration.withdrawal_kind = (
                     OpenGameRegistrationWithdrawalKind.GAME_EXIT
@@ -638,6 +648,14 @@ class OpenGameRegistrationService:
                 order_row=order_row,
                 now=now,
             )
+            if request.decision is ApplicationDecision.WAITLIST and (
+                game.status is not OpenGameStatus.PUBLISHED
+                or projection.state is not EffectiveOpenGameState.PUBLISHED
+                or not published_authority_is_healthy(
+                    projection.facts.order_facts
+                )
+            ):
+                raise _application_state_changed()
             joined_count = self._repository.count_joined(game_id=game.id)
             facts = _registration_facts(
                 game=game,
@@ -672,6 +690,27 @@ class OpenGameRegistrationService:
                         "allowed_actions": actions.model_dump(mode="json"),
                     },
                 )
+            if (
+                request.decision is ApplicationDecision.WAITLIST
+                and not actions.can_waitlist
+            ):
+                if (
+                    actions.waitlist_blocked_reason
+                    is not WaitlistBlockedReason.GAME_NOT_FULL
+                ):
+                    raise RuntimeError("waitlist projection has an unexpected blocker")
+                raise AppError(
+                    409,
+                    "APPLICATION_CAPACITY_CHANGED",
+                    "剩余名额已变化，请刷新报名队列。",
+                    details={
+                        "remaining_spots": remaining_spots(
+                            open_spots=game.open_spots,
+                            joined_count=joined_count,
+                        ),
+                        "allowed_actions": actions.model_dump(mode="json"),
+                    },
+                )
 
             if request.decision is ApplicationDecision.ACCEPT:
                 accepted = True
@@ -679,6 +718,15 @@ class OpenGameRegistrationService:
             elif request.decision is ApplicationDecision.REJECT:
                 accepted = False
                 registration.status = OpenGameRegistrationStatus.REJECTED
+            elif request.decision is ApplicationDecision.WAITLIST:
+                accepted = False
+                next_waitlist_seq = self._repository.next_waitlist_seq(
+                    game_id=game.id
+                )
+                registration.status = OpenGameRegistrationStatus.WAITLISTED
+                registration.waitlist_seq = next_waitlist_seq
+                registration.waitlisted_at = now
+                registration.promoted_at = None
             else:
                 raise RuntimeError("decision request contains an unsupported action")
             registration.version += 1

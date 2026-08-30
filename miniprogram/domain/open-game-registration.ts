@@ -84,6 +84,7 @@ export interface OpenGameReviewActions {
 
 export type OpenGameRegistrationWithdrawalAction =
   | "WITHDRAW_APPLICATION"
+  | "WITHDRAW_WAITLIST"
   | "LEAVE_GAME";
 
 export type OpenGameRegistrationAvailableWithdrawalAction =

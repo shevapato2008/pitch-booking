@@ -15,6 +15,7 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameNotificationOutbox,
     OpenGameRegistration,
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
@@ -81,10 +82,11 @@ def _seed_published_game(
     engine: Engine,
     *,
     share_token: str = SHARE_TOKEN,
+    refund_purpose: RefundCasePurpose | None = RefundCasePurpose.DUPLICATE_CHARGE,
 ) -> SeededRegistrationCase:
     booking = seed_confirmed_order(
         engine,
-        refund_purpose=RefundCasePurpose.DUPLICATE_CHARGE,
+        refund_purpose=refund_purpose,
     )
     with Session(engine) as session:
         game = add_stored_game(
@@ -244,7 +246,7 @@ def _decision(
     )
 
 
-def test_future_write_commands_are_rejected_before_repository_or_transaction_work(
+def test_unknown_write_commands_are_rejected_before_repository_or_transaction_work(
     pg_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -265,7 +267,7 @@ def test_future_write_commands_are_rejected_before_repository_or_transaction_wor
                 owner_user_id=uuid.uuid4(),
                 idempotency_key=DECISION_KEY,
                 request=DecisionRequest.model_construct(
-                    decision="WAITLIST",
+                    decision="PROMOTE_FROM_WAITLIST",
                     expected_version=1,
                 ),
             ),
@@ -274,7 +276,7 @@ def test_future_write_commands_are_rejected_before_repository_or_transaction_wor
                 applicant_user_id=uuid.uuid4(),
                 idempotency_key=WITHDRAWAL_KEY,
                 request=WithdrawalRequest.model_construct(
-                    action="WITHDRAW_WAITLIST",
+                    action="AUTO",
                     expected_version=1,
                 ),
             ),
@@ -1199,7 +1201,10 @@ def test_context_projects_waitlisted_viewer_with_compressed_visible_position(
     assert context.viewer_registration.waitlist_position == 2
     assert context.viewer_registration.waitlisted_at == waitlisted_at
     assert context.viewer_registration.promoted_at is None
-    assert context.viewer_registration.available_withdrawal_action is None
+    assert (
+        context.viewer_registration.available_withdrawal_action
+        == "WITHDRAW_WAITLIST"
+    )
     assert "waitlist_seq" not in json.dumps(
         context.model_dump(mode="json"),
     )
@@ -1300,8 +1305,8 @@ def test_queue_projects_current_capacity_for_accept_only(pg_engine: Engine) -> N
     assert queue.applications[0].allowed_actions.model_dump() == {
         "can_accept": False,
         "accept_blocked_reason": "GAME_FULL",
-        "can_waitlist": False,
-        "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+        "can_waitlist": True,
+        "waitlist_blocked_reason": None,
         "can_reject": True,
         "reject_blocked_reason": None,
     }
@@ -1489,6 +1494,7 @@ def test_decision_idempotency_rejects_changed_target_decision_and_version(
             (first_case.game_id, another.id, _decision(ApplicationDecision.REJECT)),
             (second_game.id, second.id, _decision(ApplicationDecision.REJECT)),
             (first_case.game_id, first.id, _decision(ApplicationDecision.ACCEPT)),
+            (first_case.game_id, first.id, _decision(ApplicationDecision.WAITLIST)),
             (
                 first_case.game_id,
                 first.id,
@@ -1529,6 +1535,7 @@ def test_decision_digest_covers_operation_game_application_decision_and_version(
         {"game_id": uuid.uuid4()},
         {"application_id": uuid.uuid4()},
         {"request": _decision(ApplicationDecision.REJECT)},
+        {"request": _decision(ApplicationDecision.WAITLIST)},
         {
             "request": _decision(
                 ApplicationDecision.ACCEPT,
@@ -1640,9 +1647,14 @@ def test_decision_hides_nonowner_game_before_idempotency_history(
     "condition",
     ["terminal", "version", "cancelled", "suspended", "completed", "started"],
 )
+@pytest.mark.parametrize(
+    "decision",
+    [ApplicationDecision.ACCEPT, ApplicationDecision.WAITLIST],
+)
 def test_decision_state_or_authority_change_rolls_back_claim(
     pg_engine: Engine,
     condition: str,
+    decision: ApplicationDecision,
 ) -> None:
     case = _seed_published_game(pg_engine)
     with Session(pg_engine) as session:
@@ -1675,7 +1687,7 @@ def test_decision_state_or_authority_change_rolls_back_claim(
                 owner_user_id=case.booking.owner_id,
                 idempotency_key=f"state-{condition}-decision-key-000001",
                 request=_decision(
-                    ApplicationDecision.ACCEPT,
+                    decision,
                     expected_version=expected_version,
                 ),
             )
@@ -1733,14 +1745,347 @@ def test_accept_capacity_change_is_closed_and_leaves_target_pending(
             "allowed_actions": {
                 "can_accept": False,
                 "accept_blocked_reason": "GAME_FULL",
-                "can_waitlist": False,
-                "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+                "can_waitlist": True,
+                "waitlist_blocked_reason": None,
                 "can_reject": True,
                 "reject_blocked_reason": None,
             },
         }
         assert _c1a_snapshot(session) == before_c1a
         assert _b1_snapshot(session) == before_b1
+
+
+def test_waitlist_decision_persists_historical_fifo_without_capacity_or_outbox(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    other_case = _seed_published_game(pg_engine, share_token="W" * 32)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        game.registration_deadline = NOW - timedelta(minutes=1)
+        joined_user = _new_user(session, "waitlist-full-joined")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=joined_user.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=9,
+            waitlisted_at=NOW - timedelta(minutes=6),
+            promoted_at=NOW - timedelta(minutes=2),
+        )
+        withdrawn_user = _new_user(session, "waitlist-history-withdrawn")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=withdrawn_user.id,
+            status=OpenGameRegistrationStatus.WITHDRAWN,
+            decided_by_user_id=case.booking.owner_id,
+            withdrawal_kind=OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+            withdrawn_at=NOW - timedelta(minutes=1),
+            waitlist_seq=7,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        target = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        unrelated_user = _new_user(session, "waitlist-other-game-history")
+        _add_registration(
+            session,
+            game_id=other_case.game_id,
+            applicant_user_id=unrelated_user.id,
+            status=OpenGameRegistrationStatus.WITHDRAWN,
+            decided_by_user_id=other_case.booking.owner_id,
+            withdrawal_kind=OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL,
+            withdrawn_at=NOW - timedelta(minutes=1),
+            waitlist_seq=99,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        session.commit()
+        before_b1 = _b1_snapshot(session)
+
+        service = _service(session)
+        first = service.decide(
+            game_id=game.id,
+            application_id=target.id,
+            owner_user_id=case.booking.owner_id,
+            idempotency_key="waitlist-decision-key-00000000001",
+            request=_decision(ApplicationDecision.WAITLIST),
+        )
+        replay = service.decide(
+            game_id=game.id,
+            application_id=target.id,
+            owner_user_id=case.booking.owner_id,
+            idempotency_key="waitlist-decision-key-00000000001",
+            request=_decision(ApplicationDecision.WAITLIST),
+        )
+
+        persisted = session.get_one(OpenGameRegistration, target.id)
+        assert first == replay
+        assert first.status == "WAITLISTED"
+        assert first.version == 2
+        assert first.decided_at == NOW
+        assert first.remaining_spots == 0
+        assert "waitlist_seq" not in json.dumps(first.model_dump(mode="json"))
+        assert persisted.status is OpenGameRegistrationStatus.WAITLISTED
+        assert persisted.version == 2
+        assert persisted.decided_at == NOW
+        assert persisted.decided_by_user_id == case.booking.owner_id
+        assert persisted.waitlist_seq == 10
+        assert persisted.waitlisted_at == NOW
+        assert persisted.promoted_at is None
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == 0
+        assert _b1_snapshot(session) == before_b1
+
+        queue = service.get_queue(
+            game_id=game.id,
+            owner_user_id=case.booking.owner_id,
+        )
+        context = service.get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+        assert queue.pending_count == 0
+        assert queue.waitlist_count == 1
+        assert queue.waitlist[0].id == target.id
+        assert context.viewer_registration is not None
+        assert context.viewer_registration.persisted_status == "WAITLISTED"
+        assert context.viewer_registration.waitlist_position == 1
+        assert "waitlist_seq" not in json.dumps(context.model_dump(mode="json"))
+
+
+def test_waitlist_decision_requires_full_game_and_rolls_back_claim(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        before = _c1a_snapshot(session)
+
+        with pytest.raises(AppError) as changed:
+            _service(session).decide(
+                game_id=case.game_id,
+                application_id=target.id,
+                owner_user_id=case.booking.owner_id,
+                idempotency_key="waitlist-game-not-full-key-0000001",
+                request=_decision(ApplicationDecision.WAITLIST),
+            )
+
+        assert (changed.value.status_code, changed.value.code) == (
+            409,
+            "APPLICATION_CAPACITY_CHANGED",
+        )
+        assert changed.value.details == {
+            "remaining_spots": 4,
+            "allowed_actions": {
+                "can_accept": True,
+                "accept_blocked_reason": None,
+                "can_waitlist": False,
+                "waitlist_blocked_reason": "GAME_NOT_FULL",
+                "can_reject": True,
+                "reject_blocked_reason": None,
+            },
+        }
+        assert _c1a_snapshot(session) == before
+
+
+@pytest.mark.parametrize("condition", ["draft", "unhealthy_authority"])
+def test_waitlist_decision_requires_published_healthy_authority(
+    pg_engine: Engine,
+    condition: str,
+) -> None:
+    case = _seed_published_game(
+        pg_engine,
+        refund_purpose=(
+            RefundCasePurpose.ORDER_CANCELLATION
+            if condition == "unhealthy_authority"
+            else RefundCasePurpose.DUPLICATE_CHARGE
+        ),
+    )
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        if condition == "draft":
+            game.status = OpenGameStatus.DRAFT
+            game.published_at = None
+        joined_user = _new_user(session, f"waitlist-{condition}-joined")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=joined_user.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        target = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        before_c1a = _c1a_snapshot(session)
+        before_b1 = _b1_snapshot(session)
+
+        with pytest.raises(AppError) as changed:
+            _service(session).decide(
+                game_id=game.id,
+                application_id=target.id,
+                owner_user_id=case.booking.owner_id,
+                idempotency_key=f"waitlist-{condition}-authority-key-0001",
+                request=_decision(ApplicationDecision.WAITLIST),
+            )
+
+        assert (changed.value.status_code, changed.value.code) == (
+            409,
+            "APPLICATION_STATE_CHANGED",
+        )
+        assert _c1a_snapshot(session) == before_c1a
+        assert _b1_snapshot(session) == before_b1
+
+
+@pytest.mark.parametrize("suspended", [False, True])
+def test_withdraw_waitlist_preserves_history_capacity_and_has_no_side_effects(
+    pg_engine: Engine,
+    suspended: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=11,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        if suspended:
+            session.get_one(Order, case.booking.order_id).status = (
+                OrderStatus.PAYMENT_EXCEPTION
+            )
+        session.commit()
+        before_b1 = _b1_snapshot(session)
+
+        service = _service(session)
+        first = service.withdraw(
+            application_id=target.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=f"waitlist-withdraw-{suspended}-key-000001",
+            request=_withdrawal(
+                WithdrawalAction.WITHDRAW_WAITLIST,
+                expected_version=2,
+            ),
+        )
+        replay = service.withdraw(
+            application_id=target.id,
+            applicant_user_id=case.booking.stranger_id,
+            idempotency_key=f"waitlist-withdraw-{suspended}-key-000001",
+            request=_withdrawal(
+                WithdrawalAction.WITHDRAW_WAITLIST,
+                expected_version=2,
+            ),
+        )
+
+        persisted = session.get_one(OpenGameRegistration, target.id)
+        assert first == replay
+        assert first.remaining_spots == 4
+        assert first.viewer_registration is not None
+        assert first.viewer_registration.persisted_status == "WITHDRAWN"
+        assert first.viewer_registration.withdrawal_kind == "WAITLIST_WITHDRAWAL"
+        assert first.viewer_registration.waitlist_position is None
+        assert first.viewer_registration.waitlisted_at == NOW - timedelta(minutes=5)
+        assert persisted.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert persisted.version == 3
+        assert persisted.withdrawn_at == NOW
+        assert persisted.withdrawal_kind is (
+            OpenGameRegistrationWithdrawalKind.WAITLIST_WITHDRAWAL
+        )
+        assert persisted.late_exit_recorded is False
+        assert persisted.waitlist_seq == 11
+        assert persisted.waitlisted_at == NOW - timedelta(minutes=5)
+        assert persisted.promoted_at is None
+        assert session.scalar(
+            select(func.count()).select_from(OpenGameNotificationOutbox)
+        ) == 0
+        assert _b1_snapshot(session) == before_b1
+
+        with pytest.raises(AppError) as second_key:
+            service.withdraw(
+                application_id=target.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=f"waitlist-withdraw-second-{suspended}-0001",
+                request=_withdrawal(
+                    WithdrawalAction.WITHDRAW_WAITLIST,
+                    expected_version=2,
+                ),
+            )
+        assert second_key.value.code == "APPLICATION_STATE_CHANGED"
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected_version"),
+    [
+        ("wrong_action", 2),
+        ("stale_version", 3),
+        ("cancelled", 2),
+        ("completed", 2),
+        ("started", 2),
+    ],
+)
+def test_withdraw_waitlist_rejects_nonmatching_or_closed_authority_atomically(
+    pg_engine: Engine,
+    condition: str,
+    expected_version: int,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=3,
+            waitlisted_at=NOW - timedelta(minutes=5),
+        )
+        now = (
+            _set_review_authority(session, case=case, condition=condition)
+            if condition in {"cancelled", "completed", "started"}
+            else NOW
+        )
+        session.commit()
+        before = _c1a_snapshot(session)
+
+        action = (
+            WithdrawalAction.WITHDRAW_APPLICATION
+            if condition == "wrong_action"
+            else WithdrawalAction.WITHDRAW_WAITLIST
+        )
+        with pytest.raises(AppError) as changed:
+            _service(session, now=now).withdraw(
+                application_id=target.id,
+                applicant_user_id=case.booking.stranger_id,
+                idempotency_key=f"waitlist-withdraw-invalid-{condition}-001",
+                request=_withdrawal(action, expected_version=expected_version),
+            )
+
+        assert (changed.value.status_code, changed.value.code) == (
+            409,
+            "APPLICATION_STATE_CHANGED",
+        )
+        assert _c1a_snapshot(session) == before
 
 
 @pytest.mark.parametrize(
@@ -2080,6 +2425,49 @@ class _FailingCompletionOrderRepository(OrderRepository):
 class _FailingCommitOrderRepository(OrderRepository):
     def commit(self) -> None:
         raise SQLAlchemyError("injected secret commit failure")
+
+
+def test_waitlist_flush_failure_rolls_back_sequence_timestamps_and_idempotency(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        joined_user = _new_user(session, "waitlist-flush-joined")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=joined_user.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        target = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        before = _c1a_snapshot(session)
+
+        with pytest.raises(AppError) as unavailable:
+            _service(
+                session,
+                registration_repository=_FailingDecisionFlushRepository(session),
+            ).decide(
+                game_id=game.id,
+                application_id=target.id,
+                owner_user_id=case.booking.owner_id,
+                idempotency_key="waitlist-failing-flush-key-000001",
+                request=_decision(ApplicationDecision.WAITLIST),
+            )
+
+        assert (unavailable.value.status_code, unavailable.value.code) == (
+            503,
+            "SERVICE_UNAVAILABLE",
+        )
+        assert _c1a_snapshot(session) == before
 
 
 def test_withdrawal_flush_failure_rolls_back_audit_status_and_idempotency(

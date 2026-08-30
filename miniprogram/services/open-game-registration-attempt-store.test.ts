@@ -125,6 +125,35 @@ describe("OpenGameRegistrationAttemptStore", () => {
     expect(storage.set).toHaveBeenCalledTimes(1);
   });
 
+  test("reuses an exact waitlist decision but never changes its key, target, version, decision, or account", () => {
+    const waitlistAttempt = {
+      ...decisionAttempt,
+      decision: "WAITLIST" as const,
+    };
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+    store.begin(waitlistAttempt);
+
+    expect(store.begin({
+      ...waitlistAttempt,
+      idempotencyKey: "replacement-waitlist-key-000001",
+    })).toEqual({ kind: "READY", attempt: waitlistAttempt });
+    for (const changed of [
+      { ...waitlistAttempt, decision: "ACCEPT" as const },
+      { ...waitlistAttempt, expectedVersion: 2 },
+      { ...waitlistAttempt, applicationId: "88888888-8888-4888-8aaa-bbbbbbbbbbbb" },
+      { ...waitlistAttempt, gameId: "33333333-4444-4555-8666-777777777777" },
+    ]) {
+      expect(store.begin(changed)).toEqual({
+        kind: "SAME_ACCOUNT_PENDING",
+        attempt: waitlistAttempt,
+      });
+    }
+    expect(store.begin({ ...waitlistAttempt, originatingUserId: OTHER_USER_ID }))
+      .toEqual({ kind: "FOREIGN_ACCOUNT_PENDING", attempt: waitlistAttempt });
+    expect(storage.set).toHaveBeenCalledTimes(1);
+  });
+
   test("distinguishes same-account pending mutations from foreign-account pending attempts", () => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -162,7 +191,9 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["decision", decisionAttempt],
     ["withdraw application", withdrawAttempt],
     ["leave game", { ...withdrawAttempt, action: "LEAVE_GAME" }],
+    ["withdraw waitlist", { ...withdrawAttempt, action: "WITHDRAW_WAITLIST" }],
     ["reject decision", { ...decisionAttempt, decision: "REJECT" }],
+    ["waitlist decision", { ...decisionAttempt, decision: "WAITLIST" }],
     ["null note", { ...applyAttempt, body: { ...body, note: null } }],
     ["goalkeeper", { ...applyAttempt, body: { ...body, position: "GOALKEEPER" } }],
     ["defender", { ...applyAttempt, body: { ...body, position: "DEFENDER" } }],
@@ -194,13 +225,12 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["missing risk confirmation", { ...applyAttempt, body: { ...body, riskConfirmed: false } }],
     ["invalid game id", { ...decisionAttempt, gameId: "not-a-uuid" }],
     ["invalid application id", { ...decisionAttempt, applicationId: "not-a-uuid" }],
-    ["unknown decision", { ...decisionAttempt, decision: "WAITLIST" }],
+    ["unknown decision", { ...decisionAttempt, decision: "PROMOTE_FROM_WAITLIST" }],
     ["zero expected version", { ...decisionAttempt, expectedVersion: 0 }],
     ["unsafe expected version", { ...decisionAttempt, expectedVersion: Number.MAX_SAFE_INTEGER + 1 }],
     ["withdraw missing token", { ...withdrawAttempt, shareToken: undefined }],
     ["withdraw invalid application id", { ...withdrawAttempt, applicationId: "not-a-uuid" }],
     ["withdraw unknown action", { ...withdrawAttempt, action: "AUTO" }],
-    ["withdraw waitlist remains closed", { ...withdrawAttempt, action: "WITHDRAW_WAITLIST" }],
     ["withdraw zero expected version", { ...withdrawAttempt, expectedVersion: 0 }],
   ])("rejects an invalid begin with zero persistence writes: %s", (_label, invalid) => {
     const storage = memoryStorage();
@@ -216,8 +246,8 @@ describe("OpenGameRegistrationAttemptStore", () => {
   test.each([
     ["extra attempt property", { ...applyAttempt, extra: true }],
     ["malformed nested body", { ...applyAttempt, body: { ...body, note: undefined } }],
-    ["invalid decision", { ...decisionAttempt, decision: "WAITLIST" }],
-    ["invalid withdrawal", { ...withdrawAttempt, action: "WITHDRAW_WAITLIST" }],
+    ["invalid decision", { ...decisionAttempt, decision: "PROMOTE_FROM_WAITLIST" }],
+    ["invalid withdrawal", { ...withdrawAttempt, action: "AUTO" }],
   ])("self-clears corrupt persisted state: %s", (_label, invalid) => {
     const storage = memoryStorage([[KEY, invalid]]);
     const store = createOpenGameRegistrationAttemptStore(storage);

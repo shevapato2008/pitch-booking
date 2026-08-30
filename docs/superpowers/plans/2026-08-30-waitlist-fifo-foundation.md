@@ -42,9 +42,9 @@ Task 3 冻结边界：
 
 ## Task 5：队长候补决定与本人退出候补
 
-- [ ] RED 后实现 `APPLIED → WAITLISTED`：Order→OpenGame→Registration 锁序、满员互斥动作、版本与幂等恢复。
-- [ ] RED 后实现 `WAITLISTED → WITHDRAWN`：只匹配 `WITHDRAW_WAITLIST`，不释放容量、不递补、不可重报；`SUSPENDED` 且未开场仍允许退出候补。
-- [ ] 队长候补只读列表按 `waitlist_seq`；本人可见顺位由当前有效队列重新投影。
+- [x] RED 后实现 `APPLIED → WAITLISTED`：Order→OpenGame→Registration 锁序、满员互斥动作、版本与幂等恢复。
+- [x] RED 后实现 `WAITLISTED → WITHDRAWN`：只匹配 `WITHDRAW_WAITLIST`，不释放容量、不递补、不可重报；`SUSPENDED` 且未开场仍允许退出候补。
+- [x] 队长候补只读列表按 `waitlist_seq`；本人可见顺位由当前有效队列重新投影。
 
 ## Task 6：JOINED 退出的原子 FIFO 递补
 

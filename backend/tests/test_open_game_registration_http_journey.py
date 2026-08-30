@@ -43,6 +43,7 @@ pytestmark = pytest.mark.integration
 CAPTAIN_CODE = "dev-registration-http-captain"
 ACCEPTED_CODE = "dev-registration-http-accepted"
 REJECTED_CODE = "dev-registration-http-rejected"
+WAITLISTED_CODE = "dev-registration-http-waitlisted"
 WECHAT_APP_ID = "wx-open-game-registration-test"
 SHARE_TOKEN = "H" * 32
 ACCEPTED_APPLY_KEY = "http-registration-accepted-apply-001"
@@ -50,6 +51,9 @@ ACCEPT_DECISION_KEY = "http-registration-accept-decision-01"
 EXIT_KEY = "http-registration-joined-exit-key-0001"
 REJECTED_APPLY_KEY = "http-registration-rejected-apply-001"
 REJECT_DECISION_KEY = "http-registration-reject-decision-01"
+WAITLISTED_APPLY_KEY = "http-registration-waitlisted-apply-01"
+WAITLIST_DECISION_KEY = "http-registration-waitlist-decision-1"
+WAITLIST_WITHDRAW_KEY = "http-registration-waitlist-withdraw-1"
 
 
 @pytest.fixture
@@ -136,9 +140,9 @@ def _development_openid(code: str) -> str:
     return f"dev-openid-{suffix}"
 
 
-def _seed_three_identities(
+def _seed_four_identities(
     engine: Engine,
-) -> tuple[SeededRegistrationCase, uuid.UUID]:
+) -> tuple[SeededRegistrationCase, uuid.UUID, uuid.UUID]:
     booking = seed_confirmed_order(
         engine,
         starts_at=datetime.now(UTC) + timedelta(days=3),
@@ -150,11 +154,15 @@ def _seed_three_identities(
             wechat_app_id=WECHAT_APP_ID,
             wechat_openid=_development_openid(REJECTED_CODE),
         )
+        waitlisted = User(
+            wechat_app_id=WECHAT_APP_ID,
+            wechat_openid=_development_openid(WAITLISTED_CODE),
+        )
         captain.wechat_app_id = WECHAT_APP_ID
         captain.wechat_openid = _development_openid(CAPTAIN_CODE)
         accepted.wechat_app_id = WECHAT_APP_ID
         accepted.wechat_openid = _development_openid(ACCEPTED_CODE)
-        session.add(rejected)
+        session.add_all((rejected, waitlisted))
         session.flush()
         game = add_stored_game(
             session,
@@ -162,13 +170,14 @@ def _seed_three_identities(
             status=OpenGameStatus.PUBLISHED,
             share_token=SHARE_TOKEN,
         )
+        game.open_spots = 1
         session.commit()
         case = SeededRegistrationCase(
             booking=booking,
             game_id=game.id,
             share_token=SHARE_TOKEN,
         )
-        return case, rejected.id
+        return case, rejected.id, waitlisted.id
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -246,8 +255,7 @@ def _assert_queue(
         "waitlist",
     }
     assert payload["pending_count"] == len(payload["applications"])
-    assert payload["waitlist_count"] == 0
-    assert payload["waitlist"] == []
+    assert payload["waitlist_count"] == len(payload["waitlist"])
     for application in payload["applications"]:
         assert set(application) == CAPTAIN_APPLICATION_FIELDS
         assert set(application["allowed_actions"]) == {
@@ -258,6 +266,17 @@ def _assert_queue(
             "can_reject",
             "reject_blocked_reason",
         }
+    for position, application in enumerate(payload["waitlist"], start=1):
+        assert set(application) == {
+            "id",
+            "display_name",
+            "position",
+            "note",
+            "applied_at",
+            "waitlisted_at",
+            "waitlist_position",
+        }
+        assert application["waitlist_position"] == position
     assert not {
         "applicant_user_id",
         "decided_by_user_id",
@@ -278,15 +297,16 @@ def _login(client: httpx.Client, code: str, expected_user_id: uuid.UUID) -> str:
     return token
 
 
-def test_three_identity_registration_journey_runs_over_real_http_without_changing_b1(
+def test_four_identity_registration_journey_runs_over_real_http_without_changing_b1(
     pg_engine: Engine,
     registration_backend_url: str,
 ) -> None:
-    case, rejected_user_id = _seed_three_identities(pg_engine)
+    case, rejected_user_id, waitlisted_user_id = _seed_four_identities(pg_engine)
     sensitive_user_ids = {
         case.booking.owner_id,
         case.booking.stranger_id,
         rejected_user_id,
+        waitlisted_user_id,
     }
     with Session(pg_engine) as session:
         baseline = _b1_snapshot(session)
@@ -359,6 +379,101 @@ def test_three_identity_registration_journey_runs_over_real_http_without_changin
         assert accepted_decision_replay.status_code == 200
         assert accepted_decision_replay.content == accepted_decision.content
 
+        waitlisted_token = _login(client, WAITLISTED_CODE, waitlisted_user_id)
+        waitlisted_apply = client.post(
+            f"/api/v1/shared-games/{case.share_token}/applications",
+            headers=_idempotent(WAITLISTED_APPLY_KEY, token=waitlisted_token),
+            json=_application_body("候补球员"),
+        )
+        assert waitlisted_apply.status_code == 201, waitlisted_apply.text
+        waitlisted_queue = _assert_queue(
+            client.get(
+                f"/api/v1/games/{case.game_id}/applications",
+                headers=_auth(captain_token),
+            ),
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert waitlisted_queue["remaining_spots"] == 0
+        assert waitlisted_queue["pending_count"] == 1
+        waitlisted_application_id = waitlisted_queue["applications"][0]["id"]
+        assert waitlisted_queue["applications"][0]["allowed_actions"] == {
+            "can_accept": False,
+            "accept_blocked_reason": "GAME_FULL",
+            "can_waitlist": True,
+            "waitlist_blocked_reason": None,
+            "can_reject": True,
+            "reject_blocked_reason": None,
+        }
+        waitlist_decision = client.post(
+            f"/api/v1/games/{case.game_id}/applications/"
+            f"{waitlisted_application_id}/decision",
+            headers=_idempotent(WAITLIST_DECISION_KEY, token=captain_token),
+            json={"decision": "WAITLIST", "expected_version": 1},
+        )
+        assert waitlist_decision.status_code == 200, waitlist_decision.text
+        assert waitlist_decision.json()["status"] == "WAITLISTED"
+        assert "waitlist_seq" not in waitlist_decision.text
+        waitlist_decision_replay = client.post(
+            f"/api/v1/games/{case.game_id}/applications/"
+            f"{waitlisted_application_id}/decision",
+            headers=_idempotent(WAITLIST_DECISION_KEY, token=captain_token),
+            json={"decision": "WAITLIST", "expected_version": 1},
+        )
+        assert waitlist_decision_replay.status_code == 200
+        assert waitlist_decision_replay.content == waitlist_decision.content
+
+        waitlist_queue = _assert_queue(
+            client.get(
+                f"/api/v1/games/{case.game_id}/applications",
+                headers=_auth(captain_token),
+            ),
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert waitlist_queue["pending_count"] == 0
+        assert waitlist_queue["waitlist_count"] == 1
+        assert waitlist_queue["waitlist"][0]["id"] == waitlisted_application_id
+        assert waitlist_queue["waitlist"][0]["waitlist_position"] == 1
+        assert "waitlist_seq" not in str(waitlist_queue)
+
+        waitlisted = _assert_context(
+            client.get(
+                f"/api/v1/shared-games/{case.share_token}/registration-context",
+                headers=_auth(waitlisted_token),
+            ),
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert waitlisted["viewer_registration"]["persisted_status"] == "WAITLISTED"
+        assert waitlisted["viewer_registration"]["waitlist_position"] == 1
+        assert waitlisted["viewer_registration"]["available_withdrawal_action"] == (
+            "WITHDRAW_WAITLIST"
+        )
+        waitlist_withdrawal = client.post(
+            f"/api/v1/open-game-applications/{waitlisted_application_id}/withdraw",
+            headers=_idempotent(WAITLIST_WITHDRAW_KEY, token=waitlisted_token),
+            json={"action": "WITHDRAW_WAITLIST", "expected_version": 2},
+        )
+        waitlist_withdrawal_replay = client.post(
+            f"/api/v1/open-game-applications/{waitlisted_application_id}/withdraw",
+            headers=_idempotent(WAITLIST_WITHDRAW_KEY, token=waitlisted_token),
+            json={"action": "WITHDRAW_WAITLIST", "expected_version": 2},
+        )
+        withdrawn_waitlist = _assert_context(
+            waitlist_withdrawal,
+            sensitive_user_ids=sensitive_user_ids,
+        )
+        assert waitlist_withdrawal_replay.status_code == 200
+        assert waitlist_withdrawal_replay.content == waitlist_withdrawal.content
+        assert withdrawn_waitlist["remaining_spots"] == 0
+        assert withdrawn_waitlist["viewer_registration"]["persisted_status"] == (
+            "WITHDRAWN"
+        )
+        assert withdrawn_waitlist["viewer_registration"]["withdrawal_kind"] == (
+            "WAITLIST_WITHDRAWAL"
+        )
+        assert withdrawn_waitlist["viewer_registration"]["waitlist_position"] is None
+        assert withdrawn_waitlist["viewer_registration"]["waitlisted_at"] is not None
+        assert "waitlist_seq" not in waitlist_withdrawal.text
+
         joined = _assert_context(
             client.get(
                 f"/api/v1/shared-games/{case.share_token}/registration-context",
@@ -397,7 +512,7 @@ def test_three_identity_registration_journey_runs_over_real_http_without_changin
         assert exited_body["viewer_registration"]["persisted_status"] == "WITHDRAWN"
         assert exited_body["viewer_registration"]["withdrawal_kind"] == "GAME_EXIT"
         assert exited_body["viewer_registration"]["version"] == 3
-        assert exited_body["remaining_spots"] == 4
+        assert exited_body["remaining_spots"] == 1
 
         rejected_token = _login(client, REJECTED_CODE, rejected_user_id)
         rejected_apply = client.post(
@@ -447,7 +562,7 @@ def test_three_identity_registration_journey_runs_over_real_http_without_changin
             OpenGameRegistrationStatus.WITHDRAWN,
             OpenGameRegistrationStatus.REJECTED,
         }
-        assert len(statuses) == 2
+        assert len(statuses) == 3
         assert session.scalar(select(func.count()).select_from(Payment)) == 1
         assert session.scalar(select(func.count()).select_from(RefundCase)) == 0
         assert session.scalar(select(func.count()).select_from(RefundAttempt)) == 0

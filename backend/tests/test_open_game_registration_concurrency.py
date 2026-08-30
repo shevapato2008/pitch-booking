@@ -140,6 +140,7 @@ def _decision_worker(
     case: SeededRegistrationCase,
     application_id: uuid.UUID,
     idempotency_key: str,
+    decision: ApplicationDecision = ApplicationDecision.ACCEPT,
     observed: tuple[Event, Event] | None,
     pid_queue: Queue[int],
 ) -> tuple[str, object]:
@@ -171,7 +172,7 @@ def _decision_worker(
                 owner_user_id=case.booking.owner_id,
                 idempotency_key=idempotency_key,
                 request=DecisionRequest(
-                    decision=ApplicationDecision.ACCEPT,
+                    decision=decision,
                     expected_version=1,
                 ),
             )
@@ -396,6 +397,122 @@ def test_two_accepts_for_last_place_are_serialized(pg_engine: Engine) -> None:
     assert game.aa_cents == 3600
 
 
+def test_two_waitlist_decisions_allocate_distinct_historical_sequence(
+    pg_engine: Engine,
+) -> None:
+    case, first_application_id, _, before_b1 = _seed_pending(
+        pg_engine,
+        existing_joined=True,
+    )
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        second_user = _new_user(session, "second-waitlist-pending")
+        second = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=second_user.id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        second_application_id = second.id
+        before_b1 = _b1_snapshot(session)
+
+    acquired = Event()
+    release = Event()
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=first_application_id,
+            idempotency_key="concurrent-first-waitlist-key-0001",
+            decision=ApplicationDecision.WAITLIST,
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=second_application_id,
+            idempotency_key="concurrent-second-waitlist-key-001",
+            decision=ApplicationDecision.WAITLIST,
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert first[0] == second[0] == "WAITLISTED"
+    with Session(pg_engine) as session:
+        rows = [
+            session.get_one(OpenGameRegistration, application_id)
+            for application_id in (first_application_id, second_application_id)
+        ]
+        assert [row.waitlist_seq for row in rows] == [1, 2]
+        assert all(row.status is OpenGameRegistrationStatus.WAITLISTED for row in rows)
+    _, joined_count = _assert_final_invariants(
+        pg_engine,
+        case=case,
+        before_b1=before_b1,
+    )
+    assert joined_count == 1
+
+
+@pytest.mark.parametrize("same_key", [False, True])
+def test_same_target_waitlist_decisions_serialize_and_replay_only_same_key(
+    pg_engine: Engine,
+    same_key: bool,
+) -> None:
+    case, application_id, _, before_b1 = _seed_pending(
+        pg_engine,
+        existing_joined=True,
+    )
+    with Session(pg_engine) as session:
+        session.get_one(OpenGame, case.game_id).open_spots = 1
+        session.commit()
+        before_b1 = _b1_snapshot(session)
+
+    first_key = "concurrent-same-target-waitlist-0001"
+    second_key = first_key if same_key else "concurrent-other-target-waitlist-001"
+    acquired = Event()
+    release = Event()
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=first_key,
+            decision=ApplicationDecision.WAITLIST,
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=second_key,
+            decision=ApplicationDecision.WAITLIST,
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert first[0] == "WAITLISTED"
+    assert second[0] == ("WAITLISTED" if same_key else "APPLICATION_STATE_CHANGED")
+    if same_key:
+        assert second[1] == first[1]
+    with Session(pg_engine) as session:
+        row = session.get_one(OpenGameRegistration, application_id)
+        assert row.status is OpenGameRegistrationStatus.WAITLISTED
+        assert row.waitlist_seq == 1
+    _assert_final_invariants(pg_engine, case=case, before_b1=before_b1)
+
+
 def test_withdraw_and_accept_from_application_v1_serialize_to_one_success(
     pg_engine: Engine,
 ) -> None:
@@ -483,6 +600,137 @@ def test_accept_and_old_withdraw_from_application_v1_serialize_to_one_success(
         before_b1=before_b1,
     )
     assert joined_count == 1
+
+
+@pytest.mark.parametrize("withdraw_first", [False, True])
+def test_waitlist_and_application_withdrawal_serialize_to_one_success(
+    pg_engine: Engine,
+    withdraw_first: bool,
+) -> None:
+    case, application_id, _, before_b1 = _seed_pending(
+        pg_engine,
+        existing_joined=True,
+    )
+    with Session(pg_engine) as session:
+        session.get_one(OpenGame, case.game_id).open_spots = 1
+        session.commit()
+        before_b1 = _b1_snapshot(session)
+
+    acquired = Event()
+    release = Event()
+
+    def waitlist(pid: Queue[int], observed: tuple[Event, Event] | None) -> tuple[str, object]:
+        return _decision_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=f"waitlist-race-{withdraw_first}-key-0001",
+            decision=ApplicationDecision.WAITLIST,
+            observed=observed,
+            pid_queue=pid,
+        )
+
+    def withdraw(pid: Queue[int], observed: tuple[Event, Event] | None) -> tuple[str, object]:
+        return _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=f"application-withdraw-race-{withdraw_first}-001",
+            action=WithdrawalAction.WITHDRAW_APPLICATION,
+            expected_version=1,
+            observed=observed,
+            pid_queue=pid,
+        )
+
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=(
+            (lambda pid: withdraw(pid, (acquired, release)))
+            if withdraw_first
+            else (lambda pid: waitlist(pid, (acquired, release)))
+        ),
+        second=(
+            (lambda pid: waitlist(pid, None))
+            if withdraw_first
+            else (lambda pid: withdraw(pid, None))
+        ),
+    )
+
+    assert first[0] == ("WITHDRAWN" if withdraw_first else "WAITLISTED")
+    assert second[0] == "APPLICATION_STATE_CHANGED"
+    with Session(pg_engine) as session:
+        row = session.get_one(OpenGameRegistration, application_id)
+        assert row.status is (
+            OpenGameRegistrationStatus.WITHDRAWN
+            if withdraw_first
+            else OpenGameRegistrationStatus.WAITLISTED
+        )
+        assert row.waitlist_seq == (None if withdraw_first else 1)
+    _assert_final_invariants(pg_engine, case=case, before_b1=before_b1)
+
+
+@pytest.mark.parametrize("same_key", [False, True])
+def test_two_waitlist_withdrawals_serialize_and_replay_only_same_key(
+    pg_engine: Engine,
+    same_key: bool,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        target = _add_registration(
+            session,
+            game_id=case.game_id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.WAITLISTED,
+            decided_by_user_id=case.booking.owner_id,
+            waitlist_seq=4,
+            waitlisted_at=NOW,
+        )
+        session.commit()
+        application_id = target.id
+        before_b1 = _b1_snapshot(session)
+
+    first_key = "concurrent-waitlist-withdraw-key-0001"
+    second_key = first_key if same_key else "concurrent-other-waitlist-withdraw-01"
+    acquired = Event()
+    release = Event()
+    first, second = _run_serialized_pair(
+        engine=pg_engine,
+        acquired=acquired,
+        release=release,
+        first=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=first_key,
+            action=WithdrawalAction.WITHDRAW_WAITLIST,
+            expected_version=2,
+            observed=(acquired, release),
+            pid_queue=pid,
+        ),
+        second=lambda pid: _withdrawal_worker(
+            database_url=pg_engine.url,
+            case=case,
+            application_id=application_id,
+            idempotency_key=second_key,
+            action=WithdrawalAction.WITHDRAW_WAITLIST,
+            expected_version=2,
+            observed=None,
+            pid_queue=pid,
+        ),
+    )
+
+    assert first[0] == "WITHDRAWN"
+    assert second[0] == ("WITHDRAWN" if same_key else "APPLICATION_STATE_CHANGED")
+    if same_key:
+        assert second[1] == first[1]
+    with Session(pg_engine) as session:
+        row = session.get_one(OpenGameRegistration, application_id)
+        assert row.status is OpenGameRegistrationStatus.WITHDRAWN
+        assert row.version == 3
+        assert row.waitlist_seq == 4
+    _assert_final_invariants(pg_engine, case=case, before_b1=before_b1)
 
 
 @pytest.mark.parametrize("same_key", [False, True])

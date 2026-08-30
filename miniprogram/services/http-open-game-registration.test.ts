@@ -35,6 +35,10 @@ const rawAnonymousContext = fixture("open-game-registration-context-anonymous");
 const rawAppliedContext = fixture("open-game-registration-context-applied");
 const rawQueue = fixture("open-game-applications-pending");
 const rawJoinedDecision = fixture("open-game-application-decision-joined");
+const rawWaitlistedDecision = fixture("open-game-application-decision-waitlisted");
+const rawWithdrawnWaitlistContext = fixture(
+  "open-game-registration-context-withdrawn-waitlist",
+);
 const rawMine = fixture("my-open-game-applications-ready");
 const REPLACEMENT_B_SESSION: StoredSession = {
   token: "replacement-account-b-token",
@@ -332,24 +336,48 @@ describe("HTTP open-game registration requests", () => {
     expect(h.identity.login).not.toHaveBeenCalled();
   });
 
-  test("rejects future waitlist write commands before transport", async () => {
-    const h = harness([]);
-    const invalidDecision = {
+  test("sends explicit waitlist writes and accepts only their exact terminal authority", async () => {
+    const waitlistDecision = {
       ...decisionAttempt,
-      decision: "WAITLIST",
-    } as unknown as OpenGameRegistrationDecisionAttempt;
-    const invalidWithdrawal = {
+      decision: "WAITLIST" as const,
+    };
+    const waitlistWithdrawal = {
       ...withdrawAttempt,
-      action: "WITHDRAW_WAITLIST",
-    } as unknown as OpenGameRegistrationWithdrawAttempt;
+      applicationId: "40000000-0000-4000-8000-000000000107",
+      action: "WITHDRAW_WAITLIST" as const,
+      expectedVersion: 2,
+    };
+    const h = harness([
+      response(200, rawWaitlistedDecision),
+      response(200, rawWithdrawnWaitlistContext),
+    ]);
 
-    await expect(h.source.decide(invalidDecision)).rejects.toMatchObject({
-      code: "APPLICATION_RESULT_UNKNOWN",
-    });
-    await expect(h.source.withdraw(invalidWithdrawal)).rejects.toMatchObject({
-      code: "APPLICATION_RESULT_UNKNOWN",
-    });
-    expect(h.calls).toEqual([]);
+    await expect(h.source.decide(waitlistDecision)).resolves.toEqual(
+      decodeOpenGameApplicationDecisionResult(rawWaitlistedDecision),
+    );
+    await expect(h.source.withdraw(waitlistWithdrawal)).resolves.toEqual(
+      decodeOpenGameRegistrationContext(rawWithdrawnWaitlistContext),
+    );
+    expect(h.calls).toEqual([
+      {
+        method: "POST",
+        path: `/api/v1/games/${GAME_ID}/applications/${APPLICATION_ID}/decision`,
+        body: { decision: "WAITLIST", expected_version: 1 },
+        headers: {
+          Authorization: `Bearer ${SESSION_TOKEN}`,
+          "Idempotency-Key": decisionAttempt.idempotencyKey,
+        },
+      },
+      {
+        method: "POST",
+        path: "/api/v1/open-game-applications/40000000-0000-4000-8000-000000000107/withdraw",
+        body: { action: "WITHDRAW_WAITLIST", expected_version: 2 },
+        headers: {
+          Authorization: `Bearer ${SESSION_TOKEN}`,
+          "Idempotency-Key": withdrawAttempt.idempotencyKey,
+        },
+      },
+    ]);
   });
 
   test("required operations fail locally without silently logging in", async () => {
@@ -517,8 +545,8 @@ describe("HTTP open-game registration closed errors", () => {
       allowedActions: {
         canAccept: false,
         acceptBlockedReason: "GAME_FULL",
-        canWaitlist: false,
-        waitlistBlockedReason: "WAITLIST_NOT_ENABLED",
+        canWaitlist: true,
+        waitlistBlockedReason: null,
         canReject: true,
         rejectBlockedReason: null,
       },
@@ -947,12 +975,17 @@ describe("HTTP open-game registration response authority", () => {
     expect(error.code).toBe("APPLICATION_RESULT_UNKNOWN");
   });
 
-  test("accepts both exact ACCEPT and REJECT authority without inventing a result", async () => {
+  test("accepts exact ACCEPT, REJECT, and WAITLIST authority without inventing a result", async () => {
     const rejectAttempt = { ...decisionAttempt, decision: "REJECT" as const };
+    const waitlistAttempt = {
+      ...decisionAttempt,
+      decision: "WAITLIST" as const,
+    };
     const rawRejected = fixture("open-game-application-decision-rejected");
     const h = harness([
       response(200, rawJoinedDecision),
       response(200, rawRejected),
+      response(200, rawWaitlistedDecision),
     ]);
 
     await expect(h.source.decide(decisionAttempt)).resolves.toEqual(
@@ -960,6 +993,9 @@ describe("HTTP open-game registration response authority", () => {
     );
     await expect(h.source.decide(rejectAttempt)).resolves.toEqual(
       decodeOpenGameApplicationDecisionResult(rawRejected),
+    );
+    await expect(h.source.decide(waitlistAttempt)).resolves.toEqual(
+      decodeOpenGameApplicationDecisionResult(rawWaitlistedDecision),
     );
   });
 });

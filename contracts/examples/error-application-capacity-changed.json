@@ -8,8 +8,8 @@
       "allowed_actions": {
         "can_accept": false,
         "accept_blocked_reason": "GAME_FULL",
-        "can_waitlist": false,
-        "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+        "can_waitlist": true,
+        "waitlist_blocked_reason": null,
         "can_reject": true,
         "reject_blocked_reason": null
       }

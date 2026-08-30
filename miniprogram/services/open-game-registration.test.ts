@@ -47,6 +47,12 @@ const contextReady = decodeOpenGameRegistrationContext(
 const contextApplied = decodeOpenGameRegistrationContext(
   fixture("open-game-registration-context-applied"),
 );
+const contextWaitlisted = decodeOpenGameRegistrationContext(
+  fixture("open-game-registration-context-waitlisted"),
+);
+const contextWithdrawnWaitlist = decodeOpenGameRegistrationContext(
+  fixture("open-game-registration-context-withdrawn-waitlist"),
+);
 const queue = decodeOpenGameApplicationQueue(fixture("open-game-applications-pending"));
 const decisionResult = decodeOpenGameApplicationDecisionResult(
   fixture("open-game-application-decision-joined"),
@@ -83,6 +89,16 @@ const withdrawAttempt: OpenGameRegistrationWithdrawAttempt = {
   action: "WITHDRAW_APPLICATION",
   expectedVersion: 1,
   idempotencyKey: "withdraw-key-0000000000000001",
+};
+const waitlistDecisionAttempt = {
+  ...decisionAttempt,
+  decision: "WAITLIST" as const,
+};
+const waitlistWithdrawAttempt = {
+  ...withdrawAttempt,
+  applicationId: contextWaitlisted.viewerRegistration!.id,
+  action: "WITHDRAW_WAITLIST" as const,
+  expectedVersion: 2,
 };
 
 const appliedWithWithdrawal = {
@@ -253,13 +269,28 @@ describe("open-game registration recovery", () => {
     });
   });
 
-  test("does not map a future waitlist withdrawal through the legacy binary recovery", () => {
-    const invalid = {
-      ...withdrawAttempt,
-      action: "WITHDRAW_WAITLIST",
-    } as unknown as OpenGameRegistrationWithdrawAttempt;
-    expect(() => classifyOpenGameRegistrationUnknownResult(invalid, appliedWithWithdrawal))
-      .toThrow("INVALID_OPEN_GAME_REGISTRATION_WITHDRAWAL_ACTION");
+  test("reuses exact waitlist attempts and resolves only exact waitlist withdrawal authority", () => {
+    expect(classifyOpenGameRegistrationUnknownResult(waitlistDecisionAttempt)).toEqual({
+      kind: "REPLAY_SAME_ATTEMPT",
+      attempt: waitlistDecisionAttempt,
+      clearAttempt: false,
+    });
+    expect(classifyOpenGameRegistrationUnknownResult(
+      waitlistWithdrawAttempt,
+      contextWaitlisted,
+    )).toEqual({
+      kind: "REPLAY_SAME_ATTEMPT",
+      attempt: waitlistWithdrawAttempt,
+      clearAttempt: false,
+    });
+    expect(classifyOpenGameRegistrationUnknownResult(
+      waitlistWithdrawAttempt,
+      contextWithdrawnWaitlist,
+    )).toEqual({
+      kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+      authority: contextWithdrawnWaitlist,
+      clearAttempt: true,
+    });
   });
 
   test.each([

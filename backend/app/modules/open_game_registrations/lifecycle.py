@@ -22,6 +22,7 @@ class EffectiveRegistrationStatus(StrEnum):
 
 class WithdrawalAction(StrEnum):
     WITHDRAW_APPLICATION = "WITHDRAW_APPLICATION"
+    WITHDRAW_WAITLIST = "WITHDRAW_WAITLIST"
     LEAVE_GAME = "LEAVE_GAME"
 
 
@@ -214,8 +215,8 @@ def project_review_actions(
         return ReviewActions(
             can_accept=False,
             accept_blocked_reason=ReviewBlockedReason.GAME_FULL,
-            can_waitlist=False,
-            waitlist_blocked_reason=WaitlistBlockedReason.WAITLIST_NOT_ENABLED,
+            can_waitlist=True,
+            waitlist_blocked_reason=None,
             can_reject=True,
             reject_blocked_reason=None,
         )
@@ -254,6 +255,11 @@ def project_available_withdrawal(
     if persisted_status is OpenGameRegistrationStatus.APPLIED:
         return AvailableWithdrawal(
             action=AvailableWithdrawalAction.WITHDRAW_APPLICATION,
+            late_exit_will_be_recorded=False,
+        )
+    if persisted_status is OpenGameRegistrationStatus.WAITLISTED:
+        return AvailableWithdrawal(
+            action=AvailableWithdrawalAction.WITHDRAW_WAITLIST,
             late_exit_will_be_recorded=False,
         )
     if persisted_status is OpenGameRegistrationStatus.JOINED:

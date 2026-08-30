@@ -149,10 +149,12 @@ def test_withdrawal_request_is_closed_strict_and_explicit() -> None:
     assert WithdrawalRequest.model_validate(
         {"action": "LEAVE_GAME", "expected_version": 2}
     ).action is WithdrawalAction.LEAVE_GAME
+    assert WithdrawalRequest.model_validate(
+        {"action": "WITHDRAW_WAITLIST", "expected_version": 2}
+    ).action is WithdrawalAction.WITHDRAW_WAITLIST
     for invalid in (
         {"action": "LEAVE_GAME"},
         {"action": "LEAVE_GAME", "expected_version": 0},
-        {"action": "WITHDRAW_WAITLIST", "expected_version": 1},
         {"action": "AUTO", "expected_version": 1},
         {"action": "LEAVE_GAME", "expected_version": 2, "late": True},
     ):
@@ -197,6 +199,20 @@ def test_withdrawal_request_is_closed_strict_and_explicit() -> None:
             NOW + timedelta(microseconds=1),
             AvailableWithdrawalAction.LEAVE_GAME,
             True,
+        ),
+        (
+            OpenGameRegistrationStatus.WAITLISTED,
+            EffectiveOpenGameState.PUBLISHED,
+            NOW,
+            AvailableWithdrawalAction.WITHDRAW_WAITLIST,
+            False,
+        ),
+        (
+            OpenGameRegistrationStatus.WAITLISTED,
+            EffectiveOpenGameState.SUSPENDED,
+            NOW,
+            AvailableWithdrawalAction.WITHDRAW_WAITLIST,
+            False,
         ),
         (
             OpenGameRegistrationStatus.REJECTED,
@@ -598,8 +614,8 @@ def test_game_full_blocks_accept_but_never_reject() -> None:
     assert actions.model_dump(mode="json") == {
         "can_accept": False,
         "accept_blocked_reason": "GAME_FULL",
-        "can_waitlist": False,
-        "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+        "can_waitlist": True,
+        "waitlist_blocked_reason": None,
         "can_reject": True,
         "reject_blocked_reason": None,
     }
@@ -1092,6 +1108,10 @@ def test_all_dto_shapes_are_closed_exact_and_required_nullable_fields_stay_requi
 def test_decision_request_and_response_scalar_boundaries_are_strict() -> None:
     request = DecisionRequest(decision="ACCEPT", expected_version=1)
     assert request.decision is ApplicationDecision.ACCEPT
+    assert (
+        DecisionRequest(decision="WAITLIST", expected_version=1).decision
+        is ApplicationDecision.WAITLIST
+    )
     for value in (True, 1.0, "1"):
         with pytest.raises(ValidationError):
             DecisionRequest(decision="REJECT", expected_version=value)  # type: ignore[arg-type]
@@ -1370,7 +1390,11 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "WAITLIST_WITHDRAWAL",
         "GAME_EXIT",
     ]
-    assert [decision.value for decision in ApplicationDecision] == ["ACCEPT", "REJECT"]
+    assert [decision.value for decision in ApplicationDecision] == [
+        "ACCEPT",
+        "REJECT",
+        "WAITLIST",
+    ]
     assert [status.value for status in DecisionResultStatus] == [
         "WAITLISTED",
         "JOINED",

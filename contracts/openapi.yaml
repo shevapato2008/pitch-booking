@@ -1707,6 +1707,7 @@ paths:
               schema: {$ref: '#/components/schemas/OpenGameApplicationQueue'}
               examples:
                 Pending: {externalValue: './examples/open-game-applications-pending.json'}
+                FullWaitlist: {externalValue: './examples/open-game-applications-full-waitlist.json'}
                 Empty: {externalValue: './examples/open-game-applications-empty.json'}
         '401':
           description: Authentication required.
@@ -1779,6 +1780,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/OpenGameApplicationDecisionResult'}
               examples:
+                Waitlisted: {externalValue: './examples/open-game-application-decision-waitlisted.json'}
                 Joined: {externalValue: './examples/open-game-application-decision-joined.json'}
                 Rejected: {externalValue: './examples/open-game-application-decision-rejected.json'}
         '401':
@@ -1875,9 +1877,11 @@ paths:
                 Anonymous: {externalValue: './examples/open-game-registration-context-anonymous.json'}
                 ApplyReady: {externalValue: './examples/open-game-registration-context-apply-ready.json'}
                 Applied: {externalValue: './examples/open-game-registration-context-applied.json'}
+                Waitlisted: {externalValue: './examples/open-game-registration-context-waitlisted.json'}
                 Joined: {externalValue: './examples/open-game-registration-context-joined.json'}
                 Rejected: {externalValue: './examples/open-game-registration-context-rejected.json'}
                 WithdrawnApplication: {externalValue: './examples/open-game-registration-context-withdrawn-application.json'}
+                WithdrawnWaitlist: {externalValue: './examples/open-game-registration-context-withdrawn-waitlist.json'}
                 WithdrawnGameExit: {externalValue: './examples/open-game-registration-context-withdrawn-game-exit.json'}
                 Cancelled: {externalValue: './examples/open-game-registration-context-cancelled.json'}
         '401':
@@ -2069,7 +2073,7 @@ paths:
   /api/v1/open-game-applications/{application_id}/withdraw:
     post:
       operationId: withdrawOpenGameApplication
-      description: Withdraw the current user's pending application or leave a joined game.
+      description: Withdraw the current user's pending application or waitlist entry, or leave a joined game.
       security:
         - bearerAuth: []
       parameters:
@@ -2092,6 +2096,7 @@ paths:
               schema: {$ref: '#/components/schemas/OpenGameRegistrationContext'}
               examples:
                 ApplicationWithdrawn: {externalValue: './examples/open-game-registration-context-withdrawn-application.json'}
+                WaitlistWithdrawn: {externalValue: './examples/open-game-registration-context-withdrawn-waitlist.json'}
                 GameExited: {externalValue: './examples/open-game-registration-context-withdrawn-game-exit.json'}
         '401':
           description: Authentication required.
@@ -4010,7 +4015,7 @@ components:
       enum: [WITHDRAW_APPLICATION, WITHDRAW_WAITLIST, LEAVE_GAME]
     OpenGameRegistrationWithdrawalAction:
       type: string
-      enum: [WITHDRAW_APPLICATION, LEAVE_GAME]
+      enum: [WITHDRAW_APPLICATION, WITHDRAW_WAITLIST, LEAVE_GAME]
     MyOpenGameApplication:
       type: object
       additionalProperties: false
@@ -4266,7 +4271,7 @@ components:
       additionalProperties: false
       required: [decision, expected_version]
       properties:
-        decision: {type: string, enum: [ACCEPT, REJECT]}
+        decision: {type: string, enum: [ACCEPT, REJECT, WAITLIST]}
         expected_version: {type: integer, minimum: 1}
     OpenGameApplicationWithdrawalRequest:
       type: object

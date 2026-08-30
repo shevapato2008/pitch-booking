@@ -205,9 +205,11 @@ test('C1a/C2a registration operations expose exact named success examples', asyn
         Anonymous: 'open-game-registration-context-anonymous.json',
         ApplyReady: 'open-game-registration-context-apply-ready.json',
         Applied: 'open-game-registration-context-applied.json',
+        Waitlisted: 'open-game-registration-context-waitlisted.json',
         Joined: 'open-game-registration-context-joined.json',
         Rejected: 'open-game-registration-context-rejected.json',
         WithdrawnApplication: 'open-game-registration-context-withdrawn-application.json',
+        WithdrawnWaitlist: 'open-game-registration-context-withdrawn-waitlist.json',
         WithdrawnGameExit: 'open-game-registration-context-withdrawn-game-exit.json',
         Cancelled: 'open-game-registration-context-cancelled.json',
       },
@@ -219,6 +221,7 @@ test('C1a/C2a registration operations expose exact named success examples', asyn
       status: '200',
       examples: {
         ApplicationWithdrawn: 'open-game-registration-context-withdrawn-application.json',
+        WaitlistWithdrawn: 'open-game-registration-context-withdrawn-waitlist.json',
         GameExited: 'open-game-registration-context-withdrawn-game-exit.json',
       },
     },
@@ -236,6 +239,7 @@ test('C1a/C2a registration operations expose exact named success examples', asyn
       status: '200',
       examples: {
         Pending: 'open-game-applications-pending.json',
+        FullWaitlist: 'open-game-applications-full-waitlist.json',
         Empty: 'open-game-applications-empty.json',
       },
     },
@@ -246,6 +250,7 @@ test('C1a/C2a registration operations expose exact named success examples', asyn
       status: '200',
       examples: {
         Joined: 'open-game-application-decision-joined.json',
+        Waitlisted: 'open-game-application-decision-waitlisted.json',
         Rejected: 'open-game-application-decision-rejected.json',
       },
     },

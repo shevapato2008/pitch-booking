@@ -378,6 +378,94 @@ def test_context_and_owner_queue_project_real_waitlist_without_internal_sequence
     assert "waitlist_seq" not in json.dumps(queue_body)
 
 
+def test_waitlist_decision_and_self_withdrawal_http_journey_is_authoritative(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    _attach_sessions(pg_engine, case)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, case.game_id)
+        game.open_spots = 1
+        joined_user = _new_user(session, "api-waitlist-full")
+        _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=joined_user.id,
+            status=OpenGameRegistrationStatus.JOINED,
+            decided_by_user_id=case.booking.owner_id,
+        )
+        target = _add_registration(
+            session,
+            game_id=game.id,
+            applicant_user_id=case.booking.stranger_id,
+            status=OpenGameRegistrationStatus.APPLIED,
+        )
+        session.commit()
+        target_id = target.id
+
+    decision_path = (
+        f"/api/v1/games/{case.game_id}/applications/{target_id}/decision"
+    )
+    context_path = (
+        f"/api/v1/shared-games/{case.share_token}/registration-context"
+    )
+    withdrawal_path = f"/api/v1/open-game-applications/{target_id}/withdraw"
+    with _client(pg_engine) as client:
+        queued = client.post(
+            decision_path,
+            headers=_idempotent(
+                "registration-api-waitlist-decision-001",
+                token=OWNER_TOKEN,
+            ),
+            json={"decision": "WAITLIST", "expected_version": 1},
+        )
+        replay = client.post(
+            decision_path,
+            headers=_idempotent(
+                "registration-api-waitlist-decision-001",
+                token=OWNER_TOKEN,
+            ),
+            json={"decision": "WAITLIST", "expected_version": 1},
+        )
+        context = client.get(context_path, headers=_auth())
+        owner_queue = client.get(
+            f"/api/v1/games/{case.game_id}/applications",
+            headers=_auth(OWNER_TOKEN),
+        )
+        withdrawn = client.post(
+            withdrawal_path,
+            headers=_idempotent("registration-api-waitlist-withdraw-001"),
+            json={"action": "WITHDRAW_WAITLIST", "expected_version": 2},
+        )
+
+    assert queued.status_code == replay.status_code == 200
+    assert queued.content == replay.content
+    assert queued.json()["status"] == "WAITLISTED"
+    assert queued.json()["remaining_spots"] == 0
+    assert "waitlist_seq" not in queued.text
+    assert context.status_code == 200
+    viewer_registration = context.json()["viewer_registration"]
+    assert viewer_registration["persisted_status"] == "WAITLISTED"
+    assert viewer_registration["effective_status"] == "WAITLISTED"
+    assert viewer_registration["version"] == 2
+    assert viewer_registration["available_withdrawal_action"] == (
+        "WITHDRAW_WAITLIST"
+    )
+    assert viewer_registration["waitlist_position"] == 1
+    assert owner_queue.status_code == 200
+    assert owner_queue.json()["pending_count"] == 0
+    assert owner_queue.json()["waitlist_count"] == 1
+    assert owner_queue.json()["waitlist"][0]["id"] == str(target_id)
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["viewer_registration"]["persisted_status"] == "WITHDRAWN"
+    assert withdrawn.json()["viewer_registration"]["withdrawal_kind"] == (
+        "WAITLIST_WITHDRAWAL"
+    )
+    assert withdrawn.json()["viewer_registration"]["waitlisted_at"] is not None
+    assert withdrawn.json()["viewer_registration"]["waitlist_position"] is None
+    assert "waitlist_seq" not in withdrawn.text
+
+
 def _error(response: Any) -> dict[str, Any]:
     payload = response.json()["error"]
     assert isinstance(payload.pop("request_id"), str)
@@ -566,7 +654,7 @@ def test_registration_validation_exposes_only_known_first_level_body_fields(
                 "unexpected": "must-not-echo",
             },
         )
-        unopened_waitlist_decision = client.post(
+        missing_waitlist_decision = client.post(
             f"/api/v1/games/{case.game_id}/applications/{uuid.uuid4()}/decision",
             headers=_idempotent(
                 "registration-api-unopened-waitlist-01",
@@ -574,7 +662,7 @@ def test_registration_validation_exposes_only_known_first_level_body_fields(
             ),
             json={"decision": "WAITLIST", "expected_version": 1},
         )
-        unopened_waitlist_withdrawal = client.post(
+        missing_waitlist_withdrawal = client.post(
             f"/api/v1/open-game-applications/{uuid.uuid4()}/withdraw",
             headers=_idempotent("registration-api-unopened-withdraw-01"),
             json={"action": "WITHDRAW_WAITLIST", "expected_version": 1},
@@ -591,14 +679,10 @@ def test_registration_validation_exposes_only_known_first_level_body_fields(
         )
 
     assert invalid_apply.status_code == invalid_decision.status_code == 422
-    assert unopened_waitlist_decision.status_code == 422
-    assert unopened_waitlist_withdrawal.status_code == 422
-    assert unopened_waitlist_decision.json()["error"]["details"] == {
-        "fields": [{"field": "decision", "message": "字段值不符合要求。"}]
-    }
-    assert unopened_waitlist_withdrawal.json()["error"]["details"] == {
-        "fields": [{"field": "action", "message": "字段值不符合要求。"}]
-    }
+    assert missing_waitlist_decision.status_code == 404
+    assert missing_waitlist_decision.json()["error"]["code"] == "APPLICATION_NOT_FOUND"
+    assert missing_waitlist_withdrawal.status_code == 404
+    assert missing_waitlist_withdrawal.json()["error"]["code"] == "APPLICATION_NOT_FOUND"
     apply_details = invalid_apply.json()["error"]["details"]
     decision_details = invalid_decision.json()["error"]["details"]
     assert {item["field"] for item in apply_details["fields"]} == {
@@ -793,8 +877,8 @@ def test_decision_conflicts_keep_exact_closed_codes_and_details(
             "allowed_actions": {
                 "can_accept": False,
                 "accept_blocked_reason": "GAME_FULL",
-                "can_waitlist": False,
-                "waitlist_blocked_reason": "WAITLIST_NOT_ENABLED",
+                "can_waitlist": True,
+                "waitlist_blocked_reason": None,
                 "can_reject": True,
                 "reject_blocked_reason": None,
             },

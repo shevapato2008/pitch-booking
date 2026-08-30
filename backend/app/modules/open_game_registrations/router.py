@@ -270,7 +270,11 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             },
             "OpenGameRegistrationWithdrawalAction": {
                 "type": "string",
-                "enum": ["WITHDRAW_APPLICATION", "LEAVE_GAME"],
+                "enum": [
+                    "WITHDRAW_APPLICATION",
+                    "WITHDRAW_WAITLIST",
+                    "LEAVE_GAME",
+                ],
             },
             "OpenGameApplyBlockedReason": {
                 "type": "string",
@@ -739,7 +743,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "properties": {
                     "decision": {
                         "type": "string",
-                        "enum": ["ACCEPT", "REJECT"],
+                        "enum": ["ACCEPT", "REJECT", "WAITLIST"],
                     },
                     "expected_version": {"type": "integer", "minimum": 1},
                 },
@@ -962,8 +966,8 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         schema["paths"][withdrawal_path]["post"] = {
             "operationId": "withdrawOpenGameApplication",
             "description": (
-                "Withdraw the current user's pending application or leave a "
-                "joined game."
+                "Withdraw the current user's pending application or waitlist "
+                "entry, or leave a joined game."
             ),
             "security": [{"bearerAuth": []}],
             "parameters": [
@@ -1004,6 +1008,13 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                                         "./examples/"
                                         "open-game-registration-context-"
                                         "withdrawn-application.json"
+                                    )
+                                },
+                                "WaitlistWithdrawn": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-registration-context-"
+                                        "withdrawn-waitlist.json"
                                     )
                                 },
                                 "GameExited": {
