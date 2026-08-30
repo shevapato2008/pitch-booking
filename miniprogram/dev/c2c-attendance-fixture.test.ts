@@ -65,13 +65,15 @@ test("COMPLETE contains only recorded players", () => {
 
 test("recorded attendance times are not earlier than the completed game end", () => {
   const { createC2cAttendanceStore } = loadFixture();
-  const gameEndedAt = Date.parse("2026-08-30T20:30:00+08:00");
 
   for (const scenario of ["MIXED", "COMPLETE"] as const) {
-    const recordedPlayers = createC2cAttendanceStore(scenario).current().roster.filter(
+    const snapshot = createC2cAttendanceStore(scenario).current();
+    const gameEndedAt = Date.parse(snapshot.game.endsAt);
+    const recordedPlayers = snapshot.roster.filter(
       (player: any) => player.attendanceResult !== "UNMARKED",
     );
 
+    expect(Number.isNaN(gameEndedAt)).toBe(false);
     expect(recordedPlayers.length).toBeGreaterThan(0);
     recordedPlayers.forEach((player: any) => {
       expect(Date.parse(player.recordedAt)).toBeGreaterThanOrEqual(gameEndedAt);
@@ -138,10 +140,17 @@ test("openDecision permits PRESENT or NO_SHOW only for an unmarked player", () =
 test("confirmDecision records the deterministic time, closes the panel, and updates progress", () => {
   const { createC2cAttendanceStore } = loadFixture();
   const store = createC2cAttendanceStore("MIXED");
-  const target = store.current().roster.find((player: any) => player.attendanceResult === "UNMARKED");
+  const before = store.current();
+  const target = before.roster.find((player: any) => player.attendanceResult === "UNMARKED");
+  const latestRecordedAtBefore = Math.max(...before.roster
+    .filter((player: any) => typeof player.recordedAt === "string")
+    .map((player: any) => Date.parse(player.recordedAt)));
 
   store.openDecision(target.registrationId, "NO_SHOW");
   const confirmed = store.confirmDecision();
+  const confirmedTarget = confirmed.roster.find(
+    (player: any) => player.registrationId === target.registrationId,
+  );
 
   expect(confirmed).toMatchObject({
     decisionPanel: null,
@@ -149,10 +158,12 @@ test("confirmDecision records the deterministic time, closes the panel, and upda
     total: 3,
     attendanceComplete: true,
   });
-  expect(confirmed.roster.find((player: any) => player.registrationId === target.registrationId)).toMatchObject({
+  expect(confirmedTarget).toMatchObject({
     attendanceResult: "NO_SHOW",
-    recordedAt: "2026-08-30T20:30:00+08:00",
+    recordedAt: "2026-08-30T20:36:00+08:00",
   });
+  expect(Date.parse(confirmedTarget.recordedAt)).toBeGreaterThanOrEqual(latestRecordedAtBefore);
+  expect(Date.parse(confirmedTarget.recordedAt)).toBeGreaterThanOrEqual(Date.parse(confirmed.game.endsAt));
   expect(store.confirmDecision()).toEqual(confirmed);
 });
 
@@ -249,6 +260,7 @@ test("fixture snapshots expose only game summary, per-game names, positions, att
 
   expect(Object.keys(snapshot.game).sort()).toEqual([
     "dateLabel",
+    "endsAt",
     "gameId",
     "gameName",
     "pitch",

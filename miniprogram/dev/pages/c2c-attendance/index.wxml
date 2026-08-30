@@ -90,7 +90,7 @@
   <view wx:if="{{decisionPanel}}" class="c2c-scrim" catchtouchmove="onBlockTouchMove" aria-role="dialog" aria-modal="true" aria-label="{{decisionTitle}}">
     <view class="c2c-sheet">
       <view class="c2c-sheet-title-row">
-        <view class="c2c-sheet-heading">
+        <view class="c2c-sheet-heading" tabindex="0">
           <text class="c2c-sheet-title">{{decisionTitle}}</text>
           <text class="c2c-sheet-player">本场称呼：{{decisionPlayerName}}</text>
         </view>

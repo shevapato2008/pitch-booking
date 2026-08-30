@@ -109,6 +109,7 @@ test("onLoad hides sharing, reads native header geometry, and projects the stabl
     isEmpty: false,
     isComplete: false,
     game: {
+      endsAt: "2026-08-30T20:30:00+08:00",
       gameName: "奥体周日傍晚局",
       venue: "天津奥体足球场",
       pitch: "七人制 A 场",
@@ -210,12 +211,12 @@ test("confirm performs the real transition once and replaces row actions with re
   expect(recorded.roster[0]).toMatchObject({
     registrationId: target.registrationId,
     attendanceResult: "PRESENT",
-    recordedAt: "2026-08-30T20:30:00+08:00",
+    recordedAt: "2026-08-30T20:36:00+08:00",
   });
   expect(page.data.roster[0]).toMatchObject({
     isUnmarked: false,
     resultLabel: "已到场",
-    recordedTimeLabel: "8月30日 20:30 记录",
+    recordedTimeLabel: "8月30日 20:36 记录",
   });
   expect(page.data).toMatchObject({
     progressLabel: "已记录 3 / 3",
@@ -347,6 +348,8 @@ test("template uses Mini Program ARIA semantics and isolates content behind the 
   expect(template).toMatch(
     /class="c2c-scrim"[^>]*aria-role="dialog"[^>]*aria-modal="true"[^>]*aria-label="\{\{decisionTitle\}\}"/,
   );
+  expect(template).toMatch(/class="c2c-sheet-heading"\s+tabindex="0"/);
+  expect(template).not.toMatch(/\sfocus=/);
   expect(template).toMatch(/aria-role="alert"/);
   expect(template.match(/aria-role="status"/g)).toHaveLength(4);
 });

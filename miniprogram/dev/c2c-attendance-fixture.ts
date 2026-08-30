@@ -20,6 +20,7 @@ export interface C2cAttendanceGameSummary {
   readonly venue: string;
   readonly pitch: string;
   readonly state: "COMPLETED";
+  readonly endsAt: string;
   readonly dateLabel: string;
   readonly timeLabel: string;
 }
@@ -71,13 +72,15 @@ const deepFreeze = <T>(value: T): T => {
 };
 
 const NOTICE = "C2c 开发预览 · 模拟数据";
-const RECORDED_AT = "2026-08-30T20:30:00+08:00";
+const GAME_ENDS_AT = "2026-08-30T20:30:00+08:00";
+const RECORDED_AT = "2026-08-30T20:36:00+08:00";
 const GAME_SUMMARY: C2cAttendanceGameSummary = {
   gameId: "c2c-open-game-20260830-1830",
   gameName: "奥体周日傍晚局",
   venue: "天津奥体足球场",
   pitch: "七人制 A 场",
   state: "COMPLETED",
+  endsAt: GAME_ENDS_AT,
   dateLabel: "8月30日 周日",
   timeLabel: "18:30–20:30",
 };
