@@ -176,9 +176,10 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   assert.equal(item.additionalProperties, false);
   assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
   assert.deepEqual([...item.required].sort(), [
-    'applied_at', 'detail_path', 'effective_status', 'ends_at', 'game_name', 'id',
-    'pitch_name', 'pitch_specification', 'promoted_at', 'starts_at', 'time_zone',
-    'venue_name', 'waitlist_position', 'waitlisted_at',
+    'applied_at', 'attendance_recorded_at', 'attendance_status', 'detail_path',
+    'effective_status', 'ends_at', 'game_name', 'id', 'pitch_name',
+    'pitch_specification', 'promoted_at', 'starts_at', 'time_zone', 'venue_name',
+    'waitlist_position', 'waitlisted_at',
   ]);
   assert.deepEqual(item.properties.detail_path, {
     type: 'string',
@@ -191,6 +192,12 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
     type: ['string', 'null'],
     minLength: 1,
   });
+});
+
+test('contract validator rejects attendance authority drift', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/games/{game_id}/attendance-roster'].get.security = [];
+  }, /attendance.*security/i);
 });
 
 test('C1a/C2a registration operations expose exact named success examples', async () => {

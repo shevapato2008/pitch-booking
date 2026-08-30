@@ -1423,6 +1423,284 @@ function validateMyOpenGameApplicationsContract(contract) {
   }
 }
 
+function validateOpenGameAttendanceContract(contract) {
+  const rosterPath = '/api/v1/games/{game_id}/attendance-roster';
+  const markPath = '/api/v1/games/{game_id}/registrations/{registration_id}/attendance';
+  const bearerSecurity = [{ bearerAuth: [] }];
+  const requestIdHeader = { $ref: '#/components/headers/RequestId' };
+  const uuidPathParameter = (name) => ({
+    name,
+    in: 'path',
+    required: true,
+    schema: { type: 'string', format: 'uuid' },
+  });
+
+  const rosterPathItem = contract.paths?.[rosterPath];
+  const markPathItem = contract.paths?.[markPath];
+  if (!hasExactKeys(rosterPathItem, ['get'])) {
+    fail('attendance roster path must expose GET only');
+  }
+  if (!hasExactKeys(markPathItem, ['post'])) {
+    fail('attendance mark path must expose POST only');
+  }
+
+  const roster = rosterPathItem.get;
+  const mark = markPathItem.post;
+  if (!hasExactKeys(roster, ['operationId', 'description', 'security', 'parameters', 'responses'])
+      || roster.operationId !== 'getOpenGameAttendanceRoster') {
+    fail('attendance roster operation must keep its exact operationId and fields');
+  }
+  if (!hasExactKeys(mark, ['operationId', 'description', 'security', 'parameters', 'requestBody', 'responses'])
+      || mark.operationId !== 'markOpenGameAttendance') {
+    fail('attendance mark operation must keep its exact operationId and fields');
+  }
+  if (!isDeepStrictEqual(roster.security, bearerSecurity)) {
+    fail('attendance roster security must require bearer authentication');
+  }
+  if (!isDeepStrictEqual(mark.security, bearerSecurity)) {
+    fail('attendance mark security must require bearer authentication');
+  }
+  if (!isDeepStrictEqual(roster.parameters, [uuidPathParameter('game_id')])) {
+    fail('attendance roster parameters must contain only the game UUID');
+  }
+  if (!isDeepStrictEqual(mark.parameters, [
+    uuidPathParameter('game_id'),
+    uuidPathParameter('registration_id'),
+    { $ref: '#/components/parameters/IdempotencyKey' },
+  ])) {
+    fail('attendance mark parameters must contain both UUIDs and Idempotency-Key');
+  }
+  const idempotencyKey = contract.components?.parameters?.IdempotencyKey;
+  if (idempotencyKey?.name !== 'Idempotency-Key'
+      || idempotencyKey?.in !== 'header'
+      || idempotencyKey?.required !== true
+      || !isDeepStrictEqual(idempotencyKey?.schema, {
+        type: 'string',
+        minLength: 16,
+        maxLength: 128,
+      })) {
+    fail('attendance mark Idempotency-Key must keep its required header contract');
+  }
+  if (!isDeepStrictEqual(mark.requestBody, {
+    required: true,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/OpenGameAttendanceMarkRequest' },
+      },
+    },
+  })) {
+    fail('attendance mark request body must target OpenGameAttendanceMarkRequest');
+  }
+
+  const assertResponses = (operation, statuses, successRef, label) => {
+    assertExactSet(new Set(Object.keys(operation.responses ?? {})), new Set(statuses), `${label} responses`);
+    for (const status of statuses) {
+      const response = operation.responses[status];
+      if (!hasExactKeys(response, ['description', 'headers', 'content'])
+          || !isDeepStrictEqual(response.headers, { 'X-Request-Id': requestIdHeader })
+          || !hasExactKeys(response.content, ['application/json'])) {
+        fail(`${label} ${status} must expose only JSON and X-Request-Id`);
+      }
+      const json = response.content['application/json'];
+      if (!hasExactKeys(json, ['schema', 'examples'])) {
+        fail(`${label} ${status} must expose schema and named examples`);
+      }
+      if (status === '200') {
+        if (!isDeepStrictEqual(json.schema, { $ref: successRef })) {
+          fail(`${label} 200 schema ref must target ${successRef}`);
+        }
+      } else if (json.schema?.allOf?.[0]?.$ref !== '#/components/schemas/ErrorEnvelope') {
+        fail(`${label} ${status} schema must start with ErrorEnvelope`);
+      }
+    }
+  };
+  assertResponses(
+    roster,
+    ['200', '401', '404', '422', '503'],
+    '#/components/schemas/OpenGameAttendanceRoster',
+    'attendance roster',
+  );
+  assertResponses(
+    mark,
+    ['200', '401', '404', '409', '422', '503'],
+    '#/components/schemas/OpenGameAttendanceMarkResult',
+    'attendance mark',
+  );
+
+  const schemas = contract.components?.schemas ?? {};
+  const assertClosedSchema = (name, fields, hasOneOf = false) => {
+    const schema = schemas[name];
+    const expectedKeys = ['type', 'additionalProperties', 'required', 'properties'];
+    if (hasOneOf) expectedKeys.push('oneOf');
+    if (!hasExactKeys(schema, expectedKeys)
+        || schema.type !== 'object'
+        || schema.additionalProperties !== false
+        || !Array.isArray(schema.required)) {
+      fail(`${name} must be an exact closed object schema`);
+    }
+    assertExactSet(new Set(schema.required), new Set(fields), `${name}.required`);
+    if (!hasExactKeys(schema.properties, fields)) {
+      fail(`${name}.properties must contain only its public fields`);
+    }
+    return schema;
+  };
+
+  if (!isDeepStrictEqual(schemas.OpenGameAttendanceStatus, {
+    type: 'string',
+    enum: ['UNMARKED', 'PRESENT', 'NO_SHOW'],
+  })) {
+    fail('OpenGameAttendanceStatus must freeze UNMARKED, PRESENT, and NO_SHOW');
+  }
+  const summary = assertClosedSchema('OpenGameAttendanceGameSummary', [
+    'id', 'name', 'venue_name', 'pitch_name', 'starts_at', 'ends_at', 'time_zone', 'state',
+  ]);
+  if (!isDeepStrictEqual(summary.properties.state, { type: 'string', const: 'COMPLETED' })) {
+    fail('attendance game summary state must be exactly COMPLETED');
+  }
+
+  const rosterItem = assertClosedSchema('OpenGameAttendanceRosterItem', [
+    'registration_id', 'display_name', 'position', 'attendance_status',
+    'attendance_recorded_at', 'version',
+  ], true);
+  if (!isDeepStrictEqual(rosterItem.properties.attendance_status, {
+    $ref: '#/components/schemas/OpenGameAttendanceStatus',
+  }) || !isDeepStrictEqual(rosterItem.properties.attendance_recorded_at, {
+    type: ['string', 'null'],
+    format: 'date-time',
+  })) {
+    fail('attendance roster status and recorded time schemas must remain exact');
+  }
+  const rosterPair = [
+    {
+      properties: {
+        attendance_status: { const: 'UNMARKED' },
+        attendance_recorded_at: { const: null },
+      },
+    },
+    {
+      properties: {
+        attendance_status: { enum: ['PRESENT', 'NO_SHOW'] },
+        attendance_recorded_at: { type: 'string', format: 'date-time' },
+      },
+    },
+  ];
+  if (!isDeepStrictEqual(rosterItem.oneOf, rosterPair)) {
+    fail('attendance roster status and recorded time must remain paired');
+  }
+
+  const rosterSchema = assertClosedSchema('OpenGameAttendanceRoster', [
+    'game', 'recorded_count', 'total_count', 'attendance_complete', 'registrations',
+  ]);
+  if (!isDeepStrictEqual(rosterSchema.properties.game, {
+    $ref: '#/components/schemas/OpenGameAttendanceGameSummary',
+  }) || !isDeepStrictEqual(rosterSchema.properties.registrations?.items, {
+    $ref: '#/components/schemas/OpenGameAttendanceRosterItem',
+  })) {
+    fail('attendance roster must use the minimal game and registration projectors');
+  }
+
+  const markRequest = assertClosedSchema('OpenGameAttendanceMarkRequest', [
+    'attendance_status', 'expected_version',
+  ]);
+  if (!isDeepStrictEqual(markRequest.properties.attendance_status, {
+    type: 'string',
+    enum: ['PRESENT', 'NO_SHOW'],
+  })) {
+    fail('attendance mark request must reject UNMARKED');
+  }
+  const markResult = assertClosedSchema('OpenGameAttendanceMarkResult', [
+    'registration_id', 'attendance_status', 'attendance_recorded_at', 'version',
+    'recorded_count', 'total_count', 'attendance_complete',
+  ]);
+  if (!isDeepStrictEqual(markResult.properties.attendance_status, {
+    type: 'string',
+    enum: ['PRESENT', 'NO_SHOW'],
+  }) || !isDeepStrictEqual(markResult.properties.attendance_recorded_at, {
+    type: 'string',
+    format: 'date-time',
+  })) {
+    fail('attendance mark result must pair a final status with a recorded time');
+  }
+
+  const selfPair = [
+    {
+      properties: {
+        attendance_status: { const: null },
+        attendance_recorded_at: { const: null },
+      },
+    },
+    {
+      properties: {
+        attendance_status: { const: 'UNMARKED' },
+        attendance_recorded_at: { const: null },
+      },
+    },
+    {
+      properties: {
+        attendance_status: { enum: ['PRESENT', 'NO_SHOW'] },
+        attendance_recorded_at: { type: 'string', format: 'date-time' },
+      },
+    },
+  ];
+  const selfFields = new Map([
+    ['OpenGameViewerRegistration', [
+      'id', 'display_name', 'position', 'note', 'persisted_status', 'effective_status',
+      'version', 'applied_at', 'decided_at', 'withdrawn_at', 'withdrawal_kind',
+      'late_exit_recorded', 'available_withdrawal_action', 'late_exit_will_be_recorded',
+      'waitlist_position', 'waitlisted_at', 'promoted_at', 'attendance_status',
+      'attendance_recorded_at',
+    ]],
+    ['MyOpenGameApplication', [
+      'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
+      'promoted_at', 'attendance_status', 'attendance_recorded_at', 'detail_path',
+      'game_name', 'starts_at', 'ends_at', 'time_zone', 'venue_name', 'pitch_name',
+      'pitch_specification',
+    ]],
+  ]);
+  for (const [name, fields] of selfFields) {
+    const schema = assertClosedSchema(name, fields, true);
+    if (!isDeepStrictEqual(schema.properties.attendance_status, {
+      oneOf: [
+        { $ref: '#/components/schemas/OpenGameAttendanceStatus' },
+        { type: 'null' },
+      ],
+    }) || !isDeepStrictEqual(schema.properties.attendance_recorded_at, {
+      type: ['string', 'null'],
+      format: 'date-time',
+    }) || !isDeepStrictEqual(schema.oneOf, selfPair)) {
+      fail(`${name} attendance status and recorded time must remain paired`);
+    }
+  }
+
+  const allowedActions = assertClosedSchema('OpenGameAllowedActions', [
+    'can_edit', 'can_publish', 'can_share', 'can_cancel', 'can_preview',
+    'can_manage_attendance',
+  ]);
+  if (!isDeepStrictEqual(allowedActions.properties.can_manage_attendance, { type: 'boolean' })) {
+    fail('OpenGameAllowedActions.can_manage_attendance must be required boolean authority');
+  }
+
+  const privateRosterFields = [
+    'note', 'applicant_user_id', 'user_id', 'recorded_by', 'adult_confirmed',
+    'risk_confirmed', 'consent_version', 'created_at', 'updated_at',
+  ];
+  const serializedRoster = JSON.stringify({ summary, rosterItem, rosterSchema }).toLowerCase();
+  for (const field of privateRosterFields) {
+    if (serializedRoster.includes(field)) {
+      fail(`attendance roster must not expose private field ${field}`);
+    }
+  }
+  if (JSON.stringify(schemas.OpenGamePublic ?? {}).toLowerCase().includes('attendance')) {
+    fail('public open-game DTO must not expose attendance data');
+  }
+  for (const name of selfFields.keys()) {
+    const serialized = JSON.stringify(schemas[name]).toLowerCase();
+    if (serialized.includes('recorded_by') || serialized.includes('user_id')) {
+      fail(`${name} must not expose the attendance recorder`);
+    }
+  }
+}
+
 function validateErrorCodeEnum(contract) {
   const declaredCodes = contract.components?.schemas?.Error?.properties?.code?.enum;
   if (!Array.isArray(declaredCodes)) fail('Error.code.enum must be an array');
@@ -1779,6 +2057,7 @@ export async function validateContract(contractPath = defaultContractPath) {
   validateOperationMatrix(rawContract);
   validatePublicGameDirectoryContract(rawContract);
   validateMyOpenGameApplicationsContract(rawContract);
+  validateOpenGameAttendanceContract(rawContract);
   validateErrorCodeEnum(rawContract);
   findAllAttachments(rawContract);
   await SwaggerParser.validate(contractPath);

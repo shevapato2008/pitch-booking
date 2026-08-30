@@ -3,6 +3,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+import pytest
+from fastapi.openapi.utils import get_openapi
 from jsonschema import Draft202012Validator
 
 from backend.app.config import Settings
@@ -174,7 +176,11 @@ def test_my_applications_aligner_does_not_overwrite_shared_error_schemas() -> No
     error_schema_names = _local_schema_closure(frozen_schemas, root="ErrorEnvelope")
     sentinels = {name: {"owner": "shared"} for name in error_schema_names}
     schema = {
-        "paths": {"/api/v1/open-game-applications": {"get": {}}},
+        "paths": {
+            "/api/v1/open-game-applications": {"get": {}},
+            ATTENDANCE_ROSTER_PATH: {"get": {}},
+            ATTENDANCE_MARK_PATH: {"post": {}},
+        },
         "components": {"schemas": dict(sentinels)},
     }
 
@@ -3953,6 +3959,49 @@ def test_public_game_directory_contract_is_anonymous_closed_and_exampled() -> No
             assert private not in serialized, private
 
 
+def test_open_game_attendance_routes_exist_before_runtime_openapi_alignment() -> None:
+    application = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    raw = get_openapi(
+        title=application.title,
+        version=application.version,
+        routes=application.routes,
+    )
+    expected = {
+        (ATTENDANCE_ROSTER_PATH, "get"): "getOpenGameAttendanceRoster",
+        (ATTENDANCE_MARK_PATH, "post"): "markOpenGameAttendance",
+    }
+    for (path, method), operation_id in expected.items():
+        assert set(raw["paths"][path]) == {method}
+        assert raw["paths"][path][method]["operationId"] == operation_id
+
+
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        (ATTENDANCE_ROSTER_PATH, "get"),
+        (ATTENDANCE_MARK_PATH, "post"),
+    ],
+)
+def test_attendance_runtime_aligner_rejects_a_missing_raw_route(
+    path: str,
+    method: str,
+) -> None:
+    application = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    raw = get_openapi(
+        title=application.title,
+        version=application.version,
+        routes=application.routes,
+    )
+    del raw["paths"][path][method]
+
+    with pytest.raises(RuntimeError, match="raw OpenAPI.*attendance"):
+        align_my_open_game_applications_openapi(raw)
+
+
 def test_open_game_attendance_operations_and_examples_are_frozen() -> None:
     contract = _contract()
     paths = contract["paths"]
@@ -4162,6 +4211,39 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
         "can_manage_attendance",
     }
     assert set(owner_actions["properties"]) == set(owner_actions["required"])
+    self_attendance_pair = [
+        {
+            "properties": {
+                "attendance_status": {"const": None},
+                "attendance_recorded_at": {"const": None},
+            }
+        },
+        {
+            "properties": {
+                "attendance_status": {"const": "UNMARKED"},
+                "attendance_recorded_at": {"const": None},
+            }
+        },
+        {
+            "properties": {
+                "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                "attendance_recorded_at": {
+                    "type": "string",
+                    "format": "date-time",
+                },
+            }
+        },
+    ]
+    self_examples = {
+        "OpenGameViewerRegistration": json.loads(
+            (
+                EXAMPLES_DIRECTORY / "open-game-registration-context-joined.json"
+            ).read_text()
+        )["viewer_registration"],
+        "MyOpenGameApplication": json.loads(
+            (EXAMPLES_DIRECTORY / "my-open-game-applications-ready.json").read_text()
+        )["items"][0],
+    }
     for self_schema_name in ("OpenGameViewerRegistration", "MyOpenGameApplication"):
         self_schema = schemas[self_schema_name]
         assert {"attendance_status", "attendance_recorded_at"} <= set(
@@ -4177,7 +4259,39 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
             "type": ["string", "null"],
             "format": "date-time",
         }
+        assert self_schema["oneOf"] == self_attendance_pair
         assert "attendance_recorded_by_user_id" not in self_schema["properties"]
+        validator = Draft202012Validator(
+            _dereference_local_schema(contract, self_schema)
+        )
+        base = self_examples[self_schema_name]
+        recorded_at = "2026-08-30T20:36:00+08:00"
+        for attendance_status, attendance_recorded_at in (
+            (None, None),
+            ("UNMARKED", None),
+            ("PRESENT", recorded_at),
+            ("NO_SHOW", recorded_at),
+        ):
+            assert validator.is_valid(
+                {
+                    **base,
+                    "attendance_status": attendance_status,
+                    "attendance_recorded_at": attendance_recorded_at,
+                }
+            )
+        for attendance_status, attendance_recorded_at in (
+            (None, recorded_at),
+            ("UNMARKED", recorded_at),
+            ("PRESENT", None),
+            ("NO_SHOW", None),
+        ):
+            assert not validator.is_valid(
+                {
+                    **base,
+                    "attendance_status": attendance_status,
+                    "attendance_recorded_at": attendance_recorded_at,
+                }
+            )
 
     runtime = create_app(
         settings=Settings(app_env="test", wechat_provider="development")

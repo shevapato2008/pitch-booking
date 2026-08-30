@@ -92,6 +92,20 @@ def get_open_game_registration_clock() -> Callable[[], datetime]:
 def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
     request_id_header = {"$ref": "#/components/headers/RequestId"}
 
+    def require_attendance_operation(
+        path: str,
+        method: str,
+    ) -> dict[str, Any]:
+        paths = schema.get("paths")
+        path_item = paths.get(path) if isinstance(paths, dict) else None
+        operation = path_item.get(method) if isinstance(path_item, dict) else None
+        if not isinstance(operation, dict):
+            raise RuntimeError(
+                "raw OpenAPI attendance operation is missing: "
+                f"{method.upper()} {path}"
+            )
+        return operation
+
     def error_response(
         description: str,
         *,
@@ -616,6 +630,31 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "format": "date-time",
                     },
                 },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "attendance_status": {"const": None},
+                            "attendance_recorded_at": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "attendance_status": {"const": "UNMARKED"},
+                            "attendance_recorded_at": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "attendance_status": {
+                                "enum": ["PRESENT", "NO_SHOW"]
+                            },
+                            "attendance_recorded_at": {
+                                "type": "string",
+                                "format": "date-time",
+                            },
+                        }
+                    },
+                ],
             },
             "OpenGameRegistrationContext": {
                 "type": "object",
@@ -1056,6 +1095,31 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "pitch_name": {"type": "string"},
                     "pitch_specification": {"type": "string"},
                 },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "attendance_status": {"const": None},
+                            "attendance_recorded_at": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "attendance_status": {"const": "UNMARKED"},
+                            "attendance_recorded_at": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "attendance_status": {
+                                "enum": ["PRESENT", "NO_SHOW"]
+                            },
+                            "attendance_recorded_at": {
+                                "type": "string",
+                                "format": "date-time",
+                            },
+                        }
+                    },
+                ],
             },
             "MyOpenGameApplicationsResponse": {
                 "type": "object",
@@ -1271,8 +1335,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         }
 
     roster_path = "/api/v1/games/{game_id}/attendance-roster"
-    schema["paths"][roster_path] = {
-        "get": {
+    roster_operation = require_attendance_operation(roster_path, "get")
+    roster_operation.clear()
+    roster_operation.update(
+        {
             "operationId": "getOpenGameAttendanceRoster",
             "description": (
                 "Owner-only attendance roster for an effectively completed "
@@ -1342,7 +1408,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 ),
             },
         }
-    }
+    )
 
     mark_not_found = error_response(
         (
@@ -1428,8 +1494,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "/api/v1/games/{game_id}/registrations/"
         "{registration_id}/attendance"
     )
-    schema["paths"][mark_path] = {
-        "post": {
+    mark_operation = require_attendance_operation(mark_path, "post")
+    mark_operation.clear()
+    mark_operation.update(
+        {
             "operationId": "markOpenGameAttendance",
             "description": (
                 "Irreversibly mark one joined player's attendance for a "
@@ -1520,7 +1588,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 ),
             },
         }
-    }
+    )
 
 
 def get_optional_open_game_registration_user(
