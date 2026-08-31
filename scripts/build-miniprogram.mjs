@@ -37,6 +37,9 @@ async function build(selectedMode) {
   const productionPaymentProvider = selectedMode === "production"
     ? resolveProductionPaymentProvider(process.env.MINIPROGRAM_PAYMENT_PROVIDER)
     : undefined;
+  const openGameNotificationConfig = selectedMode === "production"
+    ? resolveOpenGameNotificationConfig(process.env)
+    : undefined;
   const tencentMapKey = selectedMode === "production" || developmentConfig?.source === "http"
     ? resolveTencentMapKey(process.env.MINIPROGRAM_TENCENT_MAP_KEY)
     : undefined;
@@ -56,13 +59,14 @@ async function build(selectedMode) {
       productionApiBaseUrl,
       tencentMapKey,
       productionPaymentProvider,
+      openGameNotificationConfig,
     );
   }
   if (developmentConfig) {
     if (developmentFixtureData) await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
     await writeDevelopmentAppBootstrap(sourceRoot, outputRoot, developmentConfig);
   } else {
-    await writeProductionAppBootstrap(sourceRoot, outputRoot);
+    await writeProductionAppBootstrap(sourceRoot, outputRoot, openGameNotificationConfig);
   }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
@@ -83,6 +87,7 @@ async function writeRuntimeConfig(
   apiBaseUrl,
   tencentMapKey,
   paymentProvider,
+  openGameNotificationConfig,
 ) {
   let source;
   try {
@@ -100,6 +105,18 @@ async function writeRuntimeConfig(
       source,
       "ONLINE_BOOKING_ENABLED",
       paymentProvider === "wechat",
+    );
+  }
+  if (openGameNotificationConfig !== undefined) {
+    source = replaceRuntimeExport(
+      source,
+      "OPEN_GAME_NOTIFICATION_PROVIDER",
+      openGameNotificationConfig.provider,
+    );
+    source = replaceRuntimeExport(
+      source,
+      "WAITLIST_PROMOTED_TEMPLATE_ID",
+      openGameNotificationConfig.templateId,
     );
   }
   source = source.replace(
@@ -157,6 +174,19 @@ export function resolveProductionPaymentProvider(value) {
     throw new Error("MINIPROGRAM_PAYMENT_PROVIDER must be wechat or disabled");
   }
   return provider;
+}
+
+export function resolveOpenGameNotificationConfig(environment) {
+  const provider = environment.MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER ?? "disabled";
+  if (provider !== "disabled" && provider !== "wechat") {
+    throw new Error("MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER must be disabled or wechat");
+  }
+  if (provider === "disabled") return { provider, templateId: "" };
+  const templateId = environment.MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID;
+  if (typeof templateId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(templateId)) {
+    throw new Error("MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID must be a valid template ID");
+  }
+  return { provider, templateId };
 }
 
 async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {
@@ -233,10 +263,10 @@ export async function readDevelopmentPreviewRoutes(sourceRoot) {
   return manifest.pages;
 }
 
-async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
+async function writeProductionAppBootstrap(sourceRoot, outputRoot, notificationConfig) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
   const bootstrappedSource = [
-    'import { API_BASE_URL, MINIPROGRAM_TENCENT_MAP_KEY } from "./config/runtime";',
+    `import { API_BASE_URL, MINIPROGRAM_TENCENT_MAP_KEY${notificationConfig?.provider === "wechat" ? ", WAITLIST_PROMOTED_TEMPLATE_ID" : ""} } from "./config/runtime";`,
     'import { productionIdentity, productionLocation, productionPayment, productionPhone, productionRuntime, productionSessionStorage, productionTencentPoiRequest } from "./runtime/production";',
     'import { registerBookingDataSource, registerCreateOrderAttemptStore } from "./services/booking";',
     'import { createCreateOrderAttemptStore } from "./services/create-order-attempt-store";',
@@ -275,6 +305,10 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { registerVenueDirectoryDataSource } from "./services/venue-directory";',
     'import { registerPaymentCapability, registerPaymentDataSource } from "./services/payment";',
     'import { createSessionStore } from "./services/session-store";',
+    ...(notificationConfig?.provider === "wechat" ? [
+      'import { createWeChatWaitlistPromotionSubscriptionCapability, registerWaitlistPromotionSubscriptionCapability } from "./services/open-game-notification-subscription";',
+      "registerWaitlistPromotionSubscriptionCapability(createWeChatWaitlistPromotionSubscriptionCapability(WAITLIST_PROMOTED_TEMPLATE_ID));",
+    ] : []),
     "const runtime = productionRuntime(API_BASE_URL);",
     "registerPublicGameDirectorySource(createHttpPublicGameDirectorySource(runtime.transport));",
     "const sessionStore = createSessionStore(productionSessionStorage);",

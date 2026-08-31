@@ -11,6 +11,7 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+const TEST_NOTIFICATION_TEMPLATE_ID = "zun-LzcQyW-edafCVvzPkK4de2Rllr1fFpw2A_x0oXE";
 const EXISTING_PRODUCTION_ROUTES = [
   "pages/intent-entry/index",
   "pages/venue-access/index",
@@ -630,6 +631,33 @@ test("production build requires a format-valid Tencent client key", async (t) =>
     build(projectRoot, "production", { MINIPROGRAM_TENCENT_MAP_KEY: "TENCENT_MAP_KEY_REQUIRED" }),
     /MINIPROGRAM_TENCENT_MAP_KEY must be a valid Tencent client key/,
   );
+});
+
+test("invalid notification configuration fails before replacing existing output", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
+  const sentinel = path.join(outputRoot, "sentinel");
+  await mkdir(outputRoot, { recursive: true });
+  await writeFile(sentinel, "preserve\n");
+
+  await assert.rejects(
+    build(projectRoot, "production", {
+      MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "wechat",
+      MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: "",
+    }),
+    /MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID must be a valid template ID/,
+  );
+  assert.equal(await readFile(sentinel, "utf8"), "preserve\n");
+
+  await assert.rejects(
+    build(projectRoot, "production", {
+      MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "push",
+      MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: TEST_NOTIFICATION_TEMPLATE_ID,
+    }),
+    /MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER must be disabled or wechat/,
+  );
+  assert.equal(await readFile(sentinel, "utf8"), "preserve\n");
 });
 
 test("production build rejects a non-HTTP API URL override", async (t) => {
