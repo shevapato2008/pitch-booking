@@ -1,0 +1,38 @@
+<view class="d1a-page">
+  <view class="d1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="d1a-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="d1a-header-back" hover-class="d1a-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="d1a-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="d1a-header-title">D1a 开发预览</text>
+    <view class="d1a-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="d1a-scroll" scroll-y="true">
+    <view class="d1a-content">
+      <text class="d1a-preview-note">D1a 开发预览 · 模拟数据</text>
+      <text class="d1a-heading">定向招商邀请</text>
+      <text class="d1a-copy">选择一个可重复状态，检查邀请、绑定和申请回读。</text>
+      <view class="d1a-scenario-list">
+        <button
+          wx:for="{{scenarios}}"
+          wx:key="state"
+          class="d1a-scenario-button"
+          hover-class="d1a-pressed"
+          bindtap="onOpenScenario"
+          data-state="{{item.state}}"
+        >
+          <view class="d1a-scenario-copy">
+            <text>{{item.title}}</text>
+            <text>{{item.detail}}</text>
+          </view>
+          <view class="d1a-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+      <view class="d1a-boundary" aria-role="note">
+        <text>预览边界</text>
+        <text>本页只切换隔离 Fixture，不会接受真实邀请、提交材料或授予权限。</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>

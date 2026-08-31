@@ -1,0 +1,64 @@
+<view class="d1a-page">
+  <view class="d1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="d1a-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="d1a-header-back" hover-class="d1a-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="d1a-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="d1a-header-title">场馆招商邀请</text>
+    <view class="d1a-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="d1a-scroll" scroll-y="true">
+    <view class="d1a-content">
+      <text class="d1a-preview-note">D1a 开发预览 · 模拟数据</text>
+
+      <view class="d1a-hero d1a-hero--{{view.tone}}">
+        <view class="d1a-invite-mark" aria-hidden="true">
+          <view class="d1a-invite-line"></view>
+        </view>
+        <text class="d1a-eyebrow">平台招商邀请</text>
+        <text class="d1a-title">{{view.title}}</text>
+        <text class="d1a-description">{{view.description}}</text>
+        <view class="d1a-status d1a-status--{{view.tone}}">
+          <view class="d1a-status-dot" aria-hidden="true"></view>
+          <text>{{view.statusLabel}}</text>
+        </view>
+      </view>
+
+      <view class="d1a-card">
+        <text class="d1a-card-label">受邀场馆</text>
+        <text class="d1a-venue-name">{{fixture.venueName}}</text>
+        <text class="d1a-venue-meta">{{fixture.districtName}}</text>
+        <text class="d1a-address">{{fixture.address}}</text>
+        <view class="d1a-divider"></view>
+        <view class="d1a-fact-row">
+          <text>邀请对象</text>
+          <text>{{fixture.contactLabel}}</text>
+        </view>
+        <view class="d1a-fact-row">
+          <text>邀请有效期</text>
+          <text>{{fixture.expiresAtLabel}}</text>
+        </view>
+      </view>
+
+      <view class="d1a-notice" aria-role="note">
+        <view class="d1a-info-mark" aria-hidden="true">i</view>
+        <view>
+          <text>权限不会自动开通</text>
+          <text>提交认领申请后仍需平台人工审核；审核通过后才会获得对应场馆权限。</text>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="d1a-bottom">
+    <button
+      class="d1a-primary-button d1a-primary-button--{{view.tone}}"
+      hover-class="d1a-pressed"
+      bindtap="onPrimaryAction"
+      loading="{{busy}}"
+      disabled="{{busy}}"
+    >{{view.actionLabel}}</button>
+    <view class="d1a-safe-bottom"></view>
+  </view>
+</view>
