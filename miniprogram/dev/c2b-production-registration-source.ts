@@ -121,6 +121,7 @@ function viewerRegistration(
       attendanceStatus: null,
       attendanceRecordedAt: null,
       attendanceCorrectedAt: null,
+      removedAt: null,
     };
   }
   const persisted = registration.persistedStatus;
@@ -151,6 +152,7 @@ function viewerRegistration(
     attendanceStatus: null,
     attendanceRecordedAt: null,
     attendanceCorrectedAt: null,
+    removedAt: null,
   };
 }
 
@@ -194,6 +196,7 @@ function secondaryContext(secondaryExited: boolean): OpenGameRegistrationContext
       attendanceStatus: null,
       attendanceRecordedAt: null,
       attendanceCorrectedAt: null,
+      removedAt: null,
     },
     allowedActions: { canApply: false, applyBlockedReason: "ALREADY_APPLIED" },
   };
@@ -374,6 +377,12 @@ export function createC2bProductionPreviewSource(
     },
     async markAttendance() {
       throw new Error("C2B_PRODUCTION_PREVIEW_ATTENDANCE_NOT_AVAILABLE");
+    },
+    async getMembers() {
+      throw new Error("C2B_PRODUCTION_PREVIEW_MEMBERS_NOT_AVAILABLE");
+    },
+    async removeMember() {
+      throw new Error("C2B_PRODUCTION_PREVIEW_MEMBER_REMOVAL_NOT_AVAILABLE");
     },
   };
 

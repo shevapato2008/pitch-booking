@@ -15,16 +15,17 @@
       <view class="card"><text class="eyebrow">真实订场已确认</text><text class="heading">{{order.venueName}}</text><text>{{order.pitchName}} · {{order.pitchSpecification}}</text><text>{{orderRange}}</text></view>
       <view class="card"><text class="heading">球局概要</text><text>{{peopleSummary}}</text><text>{{intensityLabel}} · {{positionsLabel}}</text><text>预计 AA：{{aaLabel}} · {{visibilityLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>{{notes}}</text><text>到场线下结算，平台不代收或担保。</text></view>
       <view wx:if="{{errorMessage || navigationError || shareError}}" class="inline-error" role="alert">{{errorMessage || navigationError || shareError}}</view>
-      <view wx:if="{{canPublish || canShare || canPreview || canEdit || canReviewApplications || canManageAttendance || canCancel}}" class="actions">
+      <view wx:if="{{canPublish || canShare || canPreview || canEdit || canReviewApplications || canManageMembers || canManageAttendance || canCancel}}" class="actions">
         <button wx:if="{{canPublish}}" class="primary" bindtap="onOpenPublish">发布球局</button>
         <button wx:if="{{canShare && share}}" class="primary" open-type="share" binderror="onShareFailure">分享球局</button>
         <button wx:if="{{canPreview}}" class="secondary" bindtap="onPreview">{{state === 'DRAFT' ? '预览公开详情' : '查看公开页'}}</button>
         <button wx:if="{{canEdit}}" class="secondary" bindtap="onEdit">编辑球局</button>
         <button wx:if="{{canReviewApplications}}" class="secondary" bindtap="onReviewApplications">报名审核</button>
+        <button wx:if="{{canManageMembers}}" class="secondary" bindtap="onManageMembers">成员管理</button>
         <button wx:if="{{canManageAttendance}}" class="primary" bindtap="onManageAttendance">散客到场记录</button>
         <button wx:if="{{canCancel}}" class="danger" bindtap="onOpenCancel">{{state === 'DRAFT' ? '放弃草稿' : '取消球局'}}</button>
       </view>
-      <button wx:if="{{!canPublish && !canShare && !canPreview && !canEdit && !canReviewApplications && !canManageAttendance && !canCancel}}" class="secondary return" bindtap="onReturnOrder">返回订单</button>
+      <button wx:if="{{!canPublish && !canShare && !canPreview && !canEdit && !canReviewApplications && !canManageMembers && !canManageAttendance && !canCancel}}" class="secondary return" bindtap="onReturnOrder">返回订单</button>
       <view class="scroll-space"></view>
     </block>
   </scroll-view>

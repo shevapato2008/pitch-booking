@@ -1,0 +1,96 @@
+<view class="c2e-page">
+  <view class="c2e-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2e-header" style="height: {{headerRowHeightPx}}px;" aria-hidden="{{removalPanel ? true : false}}">
+    <button class="c2e-header-back" hover-class="c2e-pressed" bindtap="onHeaderBack" aria-label="返回球局管理"><view class="c2e-back-icon" aria-hidden="true"></view></button>
+    <text class="c2e-header-title">成员管理</text>
+    <view class="c2e-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2e-scroll" scroll-y="true" aria-hidden="{{removalPanel ? true : false}}">
+    <view class="c2e-content">
+      <view wx:if="{{status === 'LOADING'}}" class="c2e-state-card" aria-role="status" aria-busy="true">
+        <view class="c2e-state-mark" aria-hidden="true"></view><text class="c2e-state-title">正在读取成员名单</text><text class="c2e-state-copy">请稍候，读取名单不会发送任何移除操作。</text>
+      </view>
+      <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c2e-state-card c2e-state-card--error" aria-role="alert">
+        <text class="c2e-state-title">名单加载失败</text><text class="c2e-state-copy">{{errorMessage}}</text>
+        <button class="c2e-state-action c2e-state-action--primary" hover-class="c2e-pressed" bindtap="onRetryLoad">重新加载</button>
+        <button class="c2e-state-action c2e-state-action--neutral" hover-class="c2e-pressed" bindtap="onReturnManage">返回球局管理</button>
+      </view>
+      <view wx:elif="{{status === 'AUTH_LOSS'}}" class="c2e-state-card c2e-state-card--error" aria-role="alert">
+        <text class="c2e-state-title">登录状态需要恢复</text><text class="c2e-state-copy">{{errorMessage}}</text>
+        <button class="c2e-state-action c2e-state-action--primary" hover-class="c2e-pressed" bindtap="onLogin">重新登录并继续</button>
+        <button class="c2e-state-action c2e-state-action--neutral" hover-class="c2e-pressed" bindtap="onReturnManage">关闭并稍后确认</button>
+      </view>
+      <view wx:elif="{{status === 'NOT_FOUND'}}" class="c2e-state-card" aria-role="alert">
+        <text class="c2e-state-title">无法打开成员管理</text><text class="c2e-state-copy">{{errorMessage}}</text>
+        <button class="c2e-state-action c2e-state-action--secondary" hover-class="c2e-pressed" bindtap="onReturnManage">返回</button>
+      </view>
+      <view wx:elif="{{status === 'OTHER_PENDING'}}" class="c2e-state-card c2e-state-card--warning" aria-role="alert">
+        <text class="c2e-state-title">还有一项操作待确认</text><text class="c2e-state-copy">{{errorMessage}}</text>
+        <button class="c2e-state-action c2e-state-action--primary" hover-class="c2e-pressed" bindtap="onGoPending">前往确认</button>
+        <button class="c2e-state-action c2e-state-action--neutral" hover-class="c2e-pressed" bindtap="onReturnManage">返回球局管理</button>
+      </view>
+      <view wx:elif="{{status === 'FOREIGN_PENDING'}}" class="c2e-state-card c2e-state-card--warning" aria-role="alert">
+        <text class="c2e-state-title">另一账号有操作待确认</text><text class="c2e-state-copy">{{errorMessage}}</text>
+        <button class="c2e-state-action c2e-state-action--primary" hover-class="c2e-pressed" bindtap="onLogin">重新登录原账号</button>
+        <button class="c2e-state-action c2e-state-action--neutral" hover-class="c2e-pressed" bindtap="onReturnManage">返回球局管理</button>
+      </view>
+
+      <block wx:else>
+        <view class="c2e-game-card">
+          <view class="c2e-game-heading"><view class="c2e-game-icon" aria-hidden="true"></view><text>赛前成员管理</text></view>
+          <text class="c2e-game-name">{{game.gameName}}</text><text class="c2e-game-time">{{game.dateTimeLabel}}</text><text class="c2e-game-place">{{game.placeLabel}}</text>
+        </view>
+        <view wx:if="{{status === 'CONFLICT'}}" class="c2e-recovery-card" aria-role="status">
+          <view class="c2e-recovery-copy"><text>名单状态已变化</text><text>{{errorMessage}}</text></view>
+          <button class="c2e-state-action c2e-state-action--secondary" hover-class="c2e-pressed" bindtap="onResolveConflict">确认最新名单</button>
+        </view>
+        <view wx:elif="{{status === 'RESULT_UNKNOWN'}}" class="c2e-recovery-card" aria-role="status">
+          <view class="c2e-recovery-copy"><text>移除结果待确认</text><text>{{errorMessage}}</text></view>
+          <button class="c2e-state-action c2e-state-action--primary" hover-class="c2e-pressed" bindtap="onConfirmUnknownResult">确认原移除结果</button>
+          <button class="c2e-state-action c2e-state-action--neutral" hover-class="c2e-pressed" bindtap="onReturnManage">关闭并稍后确认</button>
+        </view>
+        <view wx:elif="{{status === 'REMOVING'}}" class="c2e-recovery-card" aria-role="status" aria-busy="true">
+          <view class="c2e-recovery-copy"><text>正在移除成员</text><text>{{errorMessage}}</text></view>
+        </view>
+        <text wx:if="{{noticeMessage}}" class="c2e-notice" aria-role="status">{{noticeMessage}}</text>
+        <view class="c2e-summary-row"><text>正式成员</text><text>{{summaryLabel}}</text></view>
+        <view wx:if="{{isEmpty}}" class="c2e-state-card" aria-role="status">
+          <text class="c2e-state-title">本场暂无正式成员</text><text class="c2e-state-copy">候补成员不会出现在这里，也不能在本页移除。</text>
+          <button class="c2e-state-action c2e-state-action--secondary" hover-class="c2e-pressed" bindtap="onReturnManage">返回球局管理</button>
+        </view>
+        <view wx:else class="c2e-roster">
+          <view wx:for="{{members}}" wx:key="registrationId" class="c2e-member-card">
+            <view class="c2e-member-top">
+              <view class="c2e-member-identity"><text class="c2e-member-name">{{item.displayName}}</text><text class="c2e-member-position">意向位置 · {{item.positionLabel}}</text></view>
+              <text class="c2e-source-badge">{{item.sourceLabel}}</text>
+            </view>
+            <text class="c2e-joined-time">{{item.joinedTimeLabel}}</text>
+            <button wx:if="{{item.canRemove}}" class="c2e-row-action" hover-class="c2e-pressed" bindtap="onOpenRemoval" data-registration-id="{{item.registrationId}}" aria-label="从球局移除{{item.displayName}}">移除成员</button>
+            <text wx:else class="c2e-blocked-label">{{item.blockedLabel}}</text>
+          </view>
+        </view>
+        <text wx:if="{{navigationError}}" class="c2e-navigation-error" aria-role="alert">{{navigationError}}</text>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{removalPanel}}" class="c2e-scrim" catchtouchmove="onBlockTouchMove" aria-role="dialog" aria-modal="true" aria-label="移除成员确认">
+    <view class="c2e-sheet">
+      <view class="c2e-sheet-title-row">
+        <view class="c2e-sheet-heading" tabindex="0"><text class="c2e-sheet-title">确认移除成员？</text><text class="c2e-sheet-member">本场称呼：{{removalMemberName}}</text></view>
+        <button class="c2e-sheet-close" hover-class="c2e-pressed" bindtap="onCloseRemoval" aria-label="关闭确认层"><view class="c2e-close-icon" aria-hidden="true"></view></button>
+      </view>
+      <text class="c2e-sheet-warning">移除后不可恢复。仅当移除前正式成员已满时，系统才会按顺序递补第一位候补。</text>
+      <view class="c2e-field">
+        <view class="c2e-field-label-row"><text class="c2e-field-label">移除原因（必填）</text><text class="c2e-field-count {{reasonCount > 120 ? 'c2e-field-count--error' : ''}}">{{reasonCount}} / 120</text></view>
+        <textarea class="c2e-reason-input" maxlength="-1" value="{{reasonInput}}" disabled="{{status === 'REMOVING'}}" bindinput="onReasonInput" placeholder="请填写简短原因，不要填写联系方式" aria-label="移除原因"></textarea>
+        <text wx:if="{{reasonError}}" class="c2e-field-error" aria-role="alert">{{reasonError}}</text>
+      </view>
+      <view class="c2e-sheet-actions">
+        <button class="c2e-sheet-action c2e-sheet-action--neutral" hover-class="c2e-pressed" bindtap="onCloseRemoval" disabled="{{status === 'REMOVING'}}">返回名单</button>
+        <button class="c2e-sheet-action c2e-sheet-action--danger" hover-class="c2e-pressed" bindtap="onConfirmRemoval" disabled="{{confirmDisabled}}">{{confirmButtonLabel}}</button>
+      </view>
+    </view>
+  </view>
+</view>

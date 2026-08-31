@@ -187,6 +187,23 @@ def test_my_applications_aligner_does_not_overwrite_shared_error_schemas() -> No
         "paths": {
             "/api/v1/open-game-applications": {"get": {}},
             ATTENDANCE_ROSTER_PATH: {"get": {}},
+            "/api/v1/games/{game_id}/members": {"get": {}},
+            "/api/v1/games/{game_id}/members/{registration_id}/remove": {
+                "post": {
+                    "parameters": [
+                        {
+                            "name": "Idempotency-Key",
+                            "in": "header",
+                            "required": True,
+                            "schema": {
+                                "type": "string",
+                                "minLength": 16,
+                                "maxLength": 128,
+                            },
+                        }
+                    ]
+                }
+            },
             ATTENDANCE_MARK_PATH: {
                 "post": {
                     "parameters": [
@@ -1801,6 +1818,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
                 "attendance_status",
                 "attendance_recorded_at",
                 "attendance_corrected_at",
+                "removed_at",
         },
         "OpenGameRegistrationContext": {
             "game",
@@ -1873,7 +1891,14 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     }
     assert schemas["OpenGameRegistrationPersistedStatus"] == {
         "type": "string",
-        "enum": ["APPLIED", "WAITLISTED", "JOINED", "REJECTED", "WITHDRAWN"],
+        "enum": [
+            "APPLIED",
+            "WAITLISTED",
+            "JOINED",
+            "REJECTED",
+            "WITHDRAWN",
+            "REMOVED",
+        ],
     }
     assert schemas["OpenGameRegistrationEffectiveStatus"] == {
         "type": "string",
@@ -1883,6 +1908,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "JOINED",
             "REJECTED",
             "WITHDRAWN",
+            "REMOVED",
             "CANCELLED",
         ],
     }
@@ -2195,6 +2221,7 @@ def test_waitlist_contract_opens_only_explicit_waitlist_writes() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
     ]
     assert schemas["OpenGameRegistrationEffectiveStatus"]["enum"] == [
         "APPLIED",
@@ -2202,6 +2229,7 @@ def test_waitlist_contract_opens_only_explicit_waitlist_writes() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
         "CANCELLED",
     ]
     assert schemas["OpenGameRegistrationWithdrawalKind"]["enum"] == [

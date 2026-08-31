@@ -150,6 +150,17 @@ const promotedJoinedContext: OpenGameRegistrationContext = {
     availableWithdrawalAction: "LEAVE_GAME",
   },
 };
+const removedContext: OpenGameRegistrationContext = {
+  ...joinedContext,
+  viewerRegistration: {
+    ...joinedContext.viewerRegistration!,
+    version: joinedContext.viewerRegistration!.version + 1,
+    persistedStatus: "REMOVED",
+    effectiveStatus: "REMOVED",
+    removedAt: "2026-09-01T11:00:00+08:00",
+    availableWithdrawalAction: null,
+  },
+};
 const rejectedContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-rejected"));
 const cancelledContext = decodeOpenGameRegistrationContext(fixture("open-game-registration-context-cancelled"));
 const lateJoinedContext: OpenGameRegistrationContext = {
@@ -344,7 +355,11 @@ test("APPLIED and JOINED expose server withdrawal actions while terminal and can
   await call(page, "loadPublic");
   expect(registration.getContext).toHaveBeenCalledTimes(2);
   expect(page.data).toMatchObject({ registrationStatus: "JOINED", statusHeading: "已加入本场球局", primaryAction: "WITHDRAW", withdrawalAction: "LEAVE_GAME" });
-  for (const [context, registrationStatus, statusHeading] of [[rejectedContext, "REJECTED", "本次申请未被接受"], [cancelledContext, "CANCELLED", "球局已取消"]] as const) {
+  for (const [context, registrationStatus, statusHeading] of [
+    [rejectedContext, "REJECTED", "本次申请未被接受"],
+    [removedContext, "REMOVED", "已被队长移出"],
+    [cancelledContext, "CANCELLED", "球局已取消"],
+  ] as const) {
     resetOpenGameRegistrationSourceForTesting(); registerOpenGameRegistrationSource(registrationSource({ getContext: jest.fn(async () => context) }));
     const resultPage = loadPage(); call(resultPage, "onLoad", { token }); await flush();
     expect(resultPage.data).toMatchObject({ registrationStatus, statusHeading, primaryAction: null });

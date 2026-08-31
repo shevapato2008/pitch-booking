@@ -216,6 +216,38 @@ test("a mixed authoritative list keeps WAITLISTED warm-position copy separate fr
   ]);
 });
 
+test("a removed member keeps the real terminal label in list and detail writeback", async () => {
+  const removed: OpenGameApplicationItem = {
+    ...READY.items[2],
+    effectiveStatus: "REMOVED",
+    waitlistPosition: null,
+    attendanceStatus: null,
+    attendanceRecordedAt: null,
+    attendanceCorrectedAt: null,
+  };
+  registerSource({ listMine: jest.fn(async () => page([removed], null)) });
+  const pageInstance = loadPage();
+  await call(pageInstance, "onShow");
+  expect(pageInstance.data.items[0]).toMatchObject({
+    effectiveStatus: "REMOVED",
+    statusLabel: "已被队长移出",
+    attendanceLabel: null,
+  });
+
+  expect(call(pageInstance, "applyRegistrationAuthority", {
+    originatingUserId: USER_A,
+    registrationId: removed.id,
+    effectiveStatus: "REMOVED",
+    waitlistPosition: null,
+    waitlistedAt: removed.waitlistedAt,
+    promotedAt: removed.promotedAt,
+    attendanceStatus: null,
+    attendanceRecordedAt: null,
+    attendanceCorrectedAt: null,
+  })).toBe(true);
+  expect(pageInstance.data.items[0].statusLabel).toBe("已被队长移出");
+});
+
 test("explicit refresh replaces a waitlist position from authority without client-side arithmetic", async () => {
   const initial = {
     ...READY.items[3],

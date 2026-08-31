@@ -223,6 +223,7 @@ describe("open-game registration response decoders", () => {
       attendanceStatus: wireRegistration?.attendance_status,
       attendanceRecordedAt: wireRegistration?.attendance_recorded_at,
       attendanceCorrectedAt: wireRegistration?.attendance_corrected_at,
+      removedAt: wireRegistration?.removed_at,
     };
 
     expect(decodeOpenGameRegistrationContext(value)).toEqual({

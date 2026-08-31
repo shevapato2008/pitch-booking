@@ -1,4 +1,7 @@
-import { validateOpenGameApplicationDraft } from "../domain/open-game-registration-decoder";
+import {
+  validateOpenGameApplicationDraft,
+  validateOpenGameMemberRemovalReason,
+} from "../domain/open-game-registration-decoder";
 import type { OpenGameApplicationSubmission } from "../domain/open-game-registration";
 import type { OpenGamePosition } from "../domain/open-game";
 import type { SessionStorage } from "./session-store";
@@ -144,6 +147,18 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
       && Number.isSafeInteger(value.expectedVersion)
       && (value.expectedVersion as number) >= 1;
   }
+  if (value.kind === "remove-member") {
+    if (!exactKeys(value, [
+      "kind", "originatingUserId", "gameId", "registrationId", "expectedVersion", "reason",
+      "idempotencyKey",
+    ])
+      || !isUuid(value.gameId)
+      || !isUuid(value.registrationId)
+      || !Number.isSafeInteger(value.expectedVersion)
+      || (value.expectedVersion as number) < 1) return false;
+    const validation = validateOpenGameMemberRemovalReason(value.reason);
+    return validation.valid && validation.reason === value.reason;
+  }
   return false;
 }
 
@@ -185,13 +200,22 @@ function cloneAttempt(attempt: OpenGameRegistrationAttempt): OpenGameRegistratio
     expectedVersion: attempt.expectedVersion,
     idempotencyKey: attempt.idempotencyKey,
   };
-  return {
+  if (attempt.kind === "attendance") return {
     kind: "attendance",
     originatingUserId: attempt.originatingUserId,
     gameId: attempt.gameId,
     registrationId: attempt.registrationId,
     attendanceStatus: attempt.attendanceStatus,
     expectedVersion: attempt.expectedVersion,
+    idempotencyKey: attempt.idempotencyKey,
+  };
+  return {
+    kind: "remove-member",
+    originatingUserId: attempt.originatingUserId,
+    gameId: attempt.gameId,
+    registrationId: attempt.registrationId,
+    expectedVersion: attempt.expectedVersion,
+    reason: attempt.reason,
     idempotencyKey: attempt.idempotencyKey,
   };
 }
@@ -229,6 +253,12 @@ function sameMutation(left: OpenGameRegistrationAttempt, right: OpenGameRegistra
       && left.registrationId === right.registrationId
       && left.attendanceStatus === right.attendanceStatus
       && left.expectedVersion === right.expectedVersion;
+  }
+  if (left.kind === "remove-member" && right.kind === "remove-member") {
+    return left.gameId === right.gameId
+      && left.registrationId === right.registrationId
+      && left.expectedVersion === right.expectedVersion
+      && left.reason === right.reason;
   }
   return false;
 }

@@ -10,6 +10,8 @@ import {
   decodeOpenGameApplicationQueue,
   decodeOpenGameAttendanceMarkResult,
   decodeOpenGameAttendanceRoster,
+  decodeOpenGameMemberRemovalResult,
+  decodeOpenGameMemberRoster,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
@@ -29,6 +31,7 @@ import type {
   OpenGameRegistrationApiErrorCode,
   OpenGameRegistrationApplyAttempt,
   OpenGameAttendanceMarkAttempt,
+  OpenGameMemberRemoveAttempt,
   OpenGameRegistrationDecisionAttempt,
   OpenGameRegistrationSource,
   OpenGameRegistrationWithdrawAttempt,
@@ -95,7 +98,9 @@ type Operation =
   | "withdraw"
   | "mine"
   | "roster"
-  | "attendance";
+  | "attendance"
+  | "members"
+  | "remove-member";
 
 const APPLY_FIELDS = [
   "display_name",
@@ -107,6 +112,7 @@ const APPLY_FIELDS = [
 const DECISION_FIELDS = ["decision", "expected_version"] as const;
 const WITHDRAW_FIELDS = ["action", "expected_version"] as const;
 const ATTENDANCE_FIELDS = ["attendance_status", "expected_version"] as const;
+const MEMBER_REMOVAL_FIELDS = ["expected_version", "reason"] as const;
 const APPLY_BLOCKED_REASONS = [
   "AUTH_REQUIRED",
   "OWNER_CANNOT_APPLY",
@@ -179,6 +185,17 @@ const DEFINITIVE_CODES: Readonly<
     401: ["AUTH_REQUIRED"],
     404: ["OPEN_GAME_NOT_FOUND", "APPLICATION_NOT_FOUND"],
     409: ["ATTENDANCE_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  members: {
+    401: ["AUTH_REQUIRED"],
+    404: ["OPEN_GAME_NOT_FOUND"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  "remove-member": {
+    401: ["AUTH_REQUIRED"],
+    404: ["OPEN_GAME_NOT_FOUND", "APPLICATION_NOT_FOUND"],
+    409: ["APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
     422: ["INVALID_ARGUMENT"],
   },
 };
@@ -278,7 +295,8 @@ function decodeInvalidArgumentDetails(
     ? APPLY_FIELDS
     : operation === "decide" ? DECISION_FIELDS
       : operation === "withdraw" ? WITHDRAW_FIELDS
-        : operation === "attendance" ? ATTENDANCE_FIELDS : [];
+        : operation === "attendance" ? ATTENDANCE_FIELDS
+          : operation === "remove-member" ? MEMBER_REMOVAL_FIELDS : [];
   const fields = Object.freeze(arrayAt(object.fields, "$.error.details.fields", 1).map(
     (item, index): OpenGameRegistrationFieldError => {
       const path = `$.error.details.fields[${index}]`;
@@ -716,6 +734,60 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
+  const getMembers = async (gameId: string) => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "GET",
+        `/api/v1/games/${encodeURIComponent(gameId)}/members`,
+        undefined,
+        authorizationContext.headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
+      }
+      const roster = decodeOpenGameMemberRoster(response.data);
+      if (roster.game.id !== gameId) throw new Error("MEMBER_ROSTER_AUTHORITY_MISMATCH");
+      return roster;
+    } catch (caught) {
+      throw classifyFailure(caught, "members", false, sessionStore, requestSession);
+    }
+  };
+
+  const removeMember = async (attempt: OpenGameMemberRemoveAttempt) => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "POST",
+        `/api/v1/games/${encodeURIComponent(attempt.gameId)}`
+          + `/members/${encodeURIComponent(attempt.registrationId)}/remove`,
+        { expected_version: attempt.expectedVersion, reason: attempt.reason },
+        {
+          ...authorizationContext.headers,
+          "Idempotency-Key": attempt.idempotencyKey,
+        },
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      }
+      const result = decodeOpenGameMemberRemovalResult(response.data);
+      const expectedVersion = attempt.expectedVersion + 1;
+      if (!Number.isSafeInteger(expectedVersion)
+        || result.removedRegistrationId !== attempt.registrationId
+        || result.status !== "REMOVED"
+        || result.version !== expectedVersion) {
+        throw new Error("MEMBER_REMOVAL_AUTHORITY_MISMATCH");
+      }
+      return result;
+    } catch (caught) {
+      throw classifyFailure(caught, "remove-member", true, sessionStore, requestSession);
+    }
+  };
+
   return {
     login,
     currentUserId: () => sessionStore.load()?.userId ?? null,
@@ -727,5 +799,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     withdraw,
     getAttendanceRoster,
     markAttendance,
+    getMembers,
+    removeMember,
   };
 }

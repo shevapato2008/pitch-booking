@@ -458,6 +458,7 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "JOINED": models.OpenGameRegistrationStatus.JOINED,
         "REJECTED": models.OpenGameRegistrationStatus.REJECTED,
         "WITHDRAWN": models.OpenGameRegistrationStatus.WITHDRAWN,
+        "REMOVED": models.OpenGameRegistrationStatus.REMOVED,
     }
     assert models.OpenGameAttendanceStatus.__members__ == {
         "UNMARKED": models.OpenGameAttendanceStatus.UNMARKED,
@@ -498,6 +499,8 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "waitlist_seq",
         "waitlisted_at",
         "promoted_at",
+        "removed_at",
+        "removed_by_user_id",
         "created_at",
         "updated_at",
     ]
@@ -512,6 +515,8 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "waitlist_seq",
         "waitlisted_at",
         "promoted_at",
+        "removed_at",
+        "removed_by_user_id",
     }
     assert table.c.display_name.type.length == 24
     assert table.c.note.type.length == 120
@@ -546,6 +551,7 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "fk_open_game_registrations_applicant_user_id_users",
         "fk_open_game_registrations_decided_by_user_id_users",
         "fk_open_game_registrations_attendance_recorded_by_user_id_users",
+        "fk_open_game_registrations_removed_by_user_id_users",
         "uq_open_game_registrations_game_applicant",
         "ck_open_game_registrations_display_name",
         "ck_open_game_registrations_note",
@@ -560,6 +566,8 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "ck_open_game_registrations_waitlist_time",
         "ck_open_game_registrations_attendance_audit",
         "ck_open_game_registrations_attendance_joined",
+        "ck_open_game_registrations_removal_pair",
+        "ck_open_game_registrations_removal_time",
         "uq_open_game_registrations_game_waitlist_seq",
         "uq_open_game_registrations_outbox_identity",
     }
@@ -690,6 +698,6 @@ def test_open_game_registration_migration_matches_model_metadata(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0022"
+        ).scalar_one() == "0023"
 
     command.check(config)
