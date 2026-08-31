@@ -300,7 +300,7 @@ test("freezes the selected member and validates a trimmed private-free reason", 
   expect(page.data.reasonError).toBe("请勿填写联系方式或证件号码");
   expect(page.data.confirmDisabled).toBe(true);
   call(page, "onReasonInput", reasonEvent("  队员临时无法到场  "));
-  expect(page.data.reasonCount).toBe(12);
+  expect(page.data.reasonCount).toBe(8);
   expect(page.data.reasonError).toBe("");
   expect(page.data.confirmDisabled).toBe(false);
 

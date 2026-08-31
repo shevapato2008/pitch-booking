@@ -229,7 +229,7 @@ export function createC2eMemberRemovalStore(
       removalPanel: removalPanel ? { ...removalPanel } : null,
       removalMemberName: selected?.displayName ?? "",
       reason,
-      reasonCount: Array.from(reason).length,
+      reasonCount: Array.from(reason.trim()).length,
       reasonError,
       canConfirm: removalPanel !== null && validation.valid,
       notice,

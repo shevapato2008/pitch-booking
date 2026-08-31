@@ -51,7 +51,7 @@ test("blank, private and overlong reasons remain local validation errors", () =>
     reasonError: "请勿填写联系方式或证件号码",
     canConfirm: false,
   });
-  expect(store.setReason("球".repeat(121))).toMatchObject({
+  expect(store.setReason(`  ${"球".repeat(121)}  `)).toMatchObject({
     reasonCount: 121,
     reasonError: "移除原因最多 120 个字符",
     canConfirm: false,

@@ -437,7 +437,7 @@ Page({
     const validation = validateOpenGameMemberRemovalReason(value);
     this.setData({
       reasonInput: value,
-      reasonCount: Array.from(value).length,
+      reasonCount: Array.from(value.trim()).length,
       reasonError: validation.valid || value.length === 0 ? "" : validation.error,
       confirmDisabled: !validation.valid,
     });
