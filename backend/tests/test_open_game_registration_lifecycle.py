@@ -655,6 +655,8 @@ def test_waitlist_read_shapes_accept_future_records_without_opening_write_comman
             "waitlist_position": 1,
             "waitlisted_at": NOW + timedelta(minutes=1),
             "promoted_at": None,
+            "attendance_status": None,
+            "attendance_recorded_at": None,
         }
     )
     assert waitlisted.persisted_status.value == "WAITLISTED"
@@ -723,6 +725,8 @@ def test_queue_and_my_application_accept_future_waitlist_read_shapes() -> None:
             "waitlist_position": 1,
             "waitlisted_at": NOW + timedelta(minutes=1),
             "promoted_at": None,
+            "attendance_status": None,
+            "attendance_recorded_at": None,
             "detail_path": (
                 "/pages/captain-game-public/index?token="
                 "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -759,6 +763,8 @@ def test_viewer_waitlist_lifecycle_rejects_inconsistent_or_inverted_history() ->
         "waitlist_position": 1,
         "waitlisted_at": NOW + timedelta(minutes=1),
         "promoted_at": None,
+        "attendance_status": None,
+        "attendance_recorded_at": None,
     }
     invalid_patches = (
         {"decided_at": None},
@@ -804,6 +810,8 @@ def test_viewer_waitlist_lifecycle_accepts_promoted_direct_and_waitlist_withdraw
         "late_exit_recorded": False,
         "available_withdrawal_action": "LEAVE_GAME",
         "late_exit_will_be_recorded": False,
+        "attendance_status": None,
+        "attendance_recorded_at": None,
     }
     promoted = ViewerRegistration.model_validate(
         base
@@ -864,6 +872,8 @@ def test_application_withdrawal_cannot_carry_a_late_game_exit_marker() -> None:
                 "waitlist_position": None,
                 "waitlisted_at": None,
                 "promoted_at": None,
+                "attendance_status": None,
+                "attendance_recorded_at": None,
             }
         )
 
@@ -947,6 +957,8 @@ def test_my_waitlisted_item_requires_position_and_waitlisted_time() -> None:
         "waitlist_position": None,
         "waitlisted_at": None,
         "promoted_at": None,
+        "attendance_status": None,
+        "attendance_recorded_at": None,
         "detail_path": (
             "/pages/captain-game-public/index?token="
             "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -1157,6 +1169,8 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
             "waitlist_position",
             "waitlisted_at",
             "promoted_at",
+            "attendance_status",
+            "attendance_recorded_at",
         }
     )
     projected = project_viewer_registration(
@@ -1178,6 +1192,8 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
     assert set(projected.model_dump()) == VIEWER_REGISTRATION_FIELDS
     assert projected.persisted_status is RegistrationPersistedStatus.JOINED
     assert projected.effective_status is EffectiveRegistrationStatus.CANCELLED
+    assert projected.attendance_status is None
+    assert projected.attendance_recorded_at is None
 
 
 def test_owner_projection_has_an_exact_whitelist() -> None:

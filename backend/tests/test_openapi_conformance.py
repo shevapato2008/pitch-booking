@@ -179,7 +179,22 @@ def test_my_applications_aligner_does_not_overwrite_shared_error_schemas() -> No
         "paths": {
             "/api/v1/open-game-applications": {"get": {}},
             ATTENDANCE_ROSTER_PATH: {"get": {}},
-            ATTENDANCE_MARK_PATH: {"post": {}},
+            ATTENDANCE_MARK_PATH: {
+                "post": {
+                    "parameters": [
+                        {
+                            "name": "Idempotency-Key",
+                            "in": "header",
+                            "required": True,
+                            "schema": {
+                                "type": "string",
+                                "minLength": 16,
+                                "maxLength": 128,
+                            },
+                        }
+                    ]
+                }
+            },
         },
         "components": {"schemas": dict(sentinels)},
     }

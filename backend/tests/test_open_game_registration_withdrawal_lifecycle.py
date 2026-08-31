@@ -75,6 +75,8 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         "waitlist_position",
         "waitlisted_at",
         "promoted_at",
+        "attendance_status",
+        "attendance_recorded_at",
     }
     assert set(ViewerRegistration.model_fields) == expected_fields
     assert VIEWER_REGISTRATION_FIELDS == expected_fields
@@ -114,6 +116,8 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         "waitlist_position": None,
         "waitlisted_at": None,
         "promoted_at": None,
+        "attendance_status": None,
+        "attendance_recorded_at": None,
     }
 
 

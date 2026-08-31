@@ -354,6 +354,7 @@ def test_cancel_real_action_is_idempotent_and_never_mutates_b1(
                 "can_share": False,
                 "can_cancel": True,
                 "can_preview": True,
+                "can_manage_attendance": False,
             }
 
         with Session(pg_engine) as session:
