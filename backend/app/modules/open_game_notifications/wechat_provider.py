@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import threading
 import time
 from collections.abc import Callable, Mapping
+from concurrent.futures import CancelledError as FutureCancelledError
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -15,6 +19,7 @@ import httpx
 from backend.app.config import Settings
 from backend.app.modules.auth.provider import configure_safe_http_logging
 from backend.app.modules.open_game_notifications.provider import (
+    PROVIDER_MAX_REQUEST_DURATION,
     NotificationAccepted,
     NotificationRejected,
     NotificationResult,
@@ -22,10 +27,10 @@ from backend.app.modules.open_game_notifications.provider import (
 )
 
 _WECHAT_BASE_URL = "https://api.weixin.qq.com"
-_MAX_IO_CALLS_PER_SEND = 4
-_SEND_IO_BUDGET_SECONDS = 24.0
-_REQUEST_IO_BUDGET_SECONDS = _SEND_IO_BUDGET_SECONDS / _MAX_IO_CALLS_PER_SEND
 _STRICT_TIMEOUT = httpx.Timeout(connect=1.0, read=2.0, write=2.0, pool=1.0)
+_SEND_TIMEOUT_SECONDS = PROVIDER_MAX_REQUEST_DURATION.total_seconds() - 2.0
+_CALLER_CANCELLATION_GRACE_SECONDS = 0.25
+_RUNTIME_SHUTDOWN_TIMEOUT_SECONDS = 1.0
 _TEMPLATE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}", re.ASCII)
 _KEYWORDS = {
     "game_name": re.compile(r"thing[1-9][0-9]*", re.ASCII),
@@ -57,13 +62,14 @@ class WeChatOpenGameNotificationProvider:
     def __init__(
         self,
         *,
-        client: httpx.Client,
+        client: httpx.AsyncClient,
         app_id: str,
         app_secret: str,
         template_id: str,
         keyword_mapping: Mapping[str, str],
         miniprogram_state: Literal["formal", "trial", "developer"],
         now: Callable[[], float] | None = None,
+        send_timeout_seconds: float = _SEND_TIMEOUT_SECONDS,
     ) -> None:
         configure_safe_http_logging()
         if not isinstance(app_id, str) or not app_id.strip():
@@ -85,6 +91,13 @@ class WeChatOpenGameNotificationProvider:
             raise ValueError("WeChat notification keyword mapping is invalid")
         if miniprogram_state not in {"formal", "trial", "developer"}:
             raise ValueError("WeChat notification Mini Program state is invalid")
+        if (
+            isinstance(send_timeout_seconds, bool)
+            or not isinstance(send_timeout_seconds, (int, float))
+            or send_timeout_seconds <= 0
+            or send_timeout_seconds > _SEND_TIMEOUT_SECONDS
+        ):
+            raise ValueError("WeChat notification send timeout is invalid")
         self._client = client
         self._app_id = app_id
         self._app_secret = app_secret
@@ -92,11 +105,23 @@ class WeChatOpenGameNotificationProvider:
         self._keyword_mapping = copied_mapping
         self._miniprogram_state = miniprogram_state
         self._now = now or time.monotonic
+        self._send_timeout_seconds = float(send_timeout_seconds)
         self._access_token: str | None = None
         self._access_token_expires_at = 0.0
-        self._access_token_lock = threading.Lock()
+        self._access_token_lock = asyncio.Lock()
         self._close_lock = threading.Lock()
         self._closed = False
+        self._inflight: set[Future[NotificationResult]] = set()
+        self._loop = asyncio.new_event_loop()
+        self._loop_started = threading.Event()
+        self._loop_thread = threading.Thread(
+            target=self._run_event_loop,
+            name="wechat-notification-provider",
+            daemon=True,
+        )
+        self._loop_thread.start()
+        if not self._loop_started.wait(timeout=_RUNTIME_SHUTDOWN_TIMEOUT_SECONDS):
+            raise RuntimeError("WeChat notification runtime did not start")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(provider_name='wechat')"
@@ -105,10 +130,36 @@ class WeChatOpenGameNotificationProvider:
         with self._close_lock:
             if self._closed:
                 return
-            self._client.close()
             self._closed = True
+            inflight = tuple(self._inflight)
+        for future in inflight:
+            future.cancel()
+        close_future = asyncio.run_coroutine_threadsafe(self._client.aclose(), self._loop)
+        try:
+            close_future.result(timeout=_RUNTIME_SHUTDOWN_TIMEOUT_SECONDS)
+        except (FutureCancelledError, FutureTimeoutError):
+            close_future.cancel()
+        finally:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop_thread.join(timeout=_RUNTIME_SHUTDOWN_TIMEOUT_SECONDS)
+
+    def _run_event_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop_started.set()
+        try:
+            self._loop.run_forever()
+        finally:
+            pending = asyncio.all_tasks(self._loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            self._loop.close()
 
     def send(self, request: WaitlistPromotionRequest) -> NotificationResult:
+        started_at = time.monotonic()
         if request.recipient.app_id != self._app_id:
             return NotificationRejected("RECIPIENT_APP_MISMATCH", retryable=False)
         if request.template_key != "waitlist-promoted":
@@ -116,20 +167,57 @@ class WeChatOpenGameNotificationProvider:
         payload = self._build_payload(request)
         if payload is None:
             return NotificationRejected("TEMPLATE_DATA_INVALID", retryable=False)
-        deadline = self._now() + _SEND_IO_BUDGET_SECONDS
+        remaining = self._send_timeout_seconds - (time.monotonic() - started_at)
+        if remaining <= 0:
+            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
+        coroutine = self._send_with_timeout(payload, timeout_seconds=remaining)
+        with self._close_lock:
+            if self._closed:
+                coroutine.close()
+                return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
+            future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+            self._inflight.add(future)
+        caller_timeout = max(
+            0.001,
+            self._send_timeout_seconds
+            + _CALLER_CANCELLATION_GRACE_SECONDS
+            - (time.monotonic() - started_at),
+        )
         try:
-            access_token = self._get_access_token(deadline)
+            return future.result(timeout=caller_timeout)
+        except (FutureCancelledError, FutureTimeoutError):
+            future.cancel()
+            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
+        finally:
+            with self._close_lock:
+                self._inflight.discard(future)
+
+    async def _send_with_timeout(
+        self,
+        payload: dict[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> NotificationResult:
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                return await self._send_payload(payload)
+        except TimeoutError:
+            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
+
+    async def _send_payload(self, payload: dict[str, object]) -> NotificationResult:
+        try:
+            access_token = await self._get_access_token()
         except _ProviderFailure as failure:
             return failure.result
         for send_number in range(2):
-            result = self._send_once(access_token, payload, deadline=deadline)
+            result = await self._send_once(access_token, payload)
             if result != "INVALID_TOKEN":
                 return result
             if send_number == 1:
                 return NotificationRejected("WECHAT_TOKEN_REJECTED", retryable=False)
-            self._invalidate_access_token(access_token)
+            await self._invalidate_access_token(access_token)
             try:
-                access_token = self._get_access_token(deadline)
+                access_token = await self._get_access_token()
             except _ProviderFailure as failure:
                 return failure.result
         return NotificationRejected("WECHAT_NOTIFICATION_REJECTED", retryable=False)
@@ -159,26 +247,19 @@ class WeChatOpenGameNotificationProvider:
             },
         }
 
-    def _send_once(
+    async def _send_once(
         self,
         access_token: str,
         payload: dict[str, object],
-        *,
-        deadline: float,
     ) -> NotificationResult | Literal["INVALID_TOKEN"]:
-        timeout = self._timeout_for_deadline(deadline)
-        if timeout is None:
-            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
         try:
-            response = self._client.post(
+            response = await self._client.post(
                 f"{_WECHAT_BASE_URL}/cgi-bin/message/subscribe/send",
                 params={"access_token": access_token},
                 json=payload,
-                timeout=timeout,
+                timeout=_STRICT_TIMEOUT,
             )
         except httpx.HTTPError:
-            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
-        if self._now() >= deadline:
             return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
         if response.status_code == 429 or response.status_code >= 500:
             return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
@@ -200,34 +281,29 @@ class WeChatOpenGameNotificationProvider:
         safe_error_code = _BUSINESS_FAILURES.get(errcode, "WECHAT_NOTIFICATION_REJECTED")
         return NotificationRejected(safe_error_code, retryable=False)
 
-    def _get_access_token(self, deadline: float) -> str:
+    async def _get_access_token(self) -> str:
         now = self._now()
         if self._access_token is not None and now < self._access_token_expires_at:
             return self._access_token
-        with self._access_token_lock:
+        async with self._access_token_lock:
             now = self._now()
             if self._access_token is not None and now < self._access_token_expires_at:
                 return self._access_token
-            return self._refresh_access_token(now, deadline)
+            return await self._refresh_access_token(now)
 
-    def _refresh_access_token(self, now: float, deadline: float) -> str:
-        timeout = self._timeout_for_deadline(deadline)
-        if timeout is None:
-            raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
+    async def _refresh_access_token(self, now: float) -> str:
         try:
-            response = self._client.get(
+            response = await self._client.get(
                 f"{_WECHAT_BASE_URL}/cgi-bin/token",
                 params={
                     "grant_type": "client_credential",
                     "appid": self._app_id,
                     "secret": self._app_secret,
                 },
-                timeout=timeout,
+                timeout=_STRICT_TIMEOUT,
             )
         except httpx.HTTPError:
             raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True) from None
-        if self._now() >= deadline:
-            raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
         if response.status_code == 429 or response.status_code >= 500:
             raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
         if response.status_code < 200 or response.status_code >= 300:
@@ -258,22 +334,8 @@ class WeChatOpenGameNotificationProvider:
         self._access_token_expires_at = now + max(1, expires_in - 300)
         return token
 
-    def _timeout_for_deadline(self, deadline: float) -> httpx.Timeout | None:
-        remaining = deadline - self._now()
-        if remaining <= 0:
-            return None
-        if remaining >= _REQUEST_IO_BUDGET_SECONDS:
-            return _STRICT_TIMEOUT
-        scale = remaining / _REQUEST_IO_BUDGET_SECONDS
-        return httpx.Timeout(
-            connect=1.0 * scale,
-            read=2.0 * scale,
-            write=2.0 * scale,
-            pool=1.0 * scale,
-        )
-
-    def _invalidate_access_token(self, rejected_token: str) -> None:
-        with self._access_token_lock:
+    async def _invalidate_access_token(self, rejected_token: str) -> None:
+        async with self._access_token_lock:
             if self._access_token != rejected_token:
                 return
             self._access_token = None
@@ -283,7 +345,7 @@ class WeChatOpenGameNotificationProvider:
 def build_open_game_notification_provider(
     settings: Settings,
     *,
-    client_factory: Callable[[], httpx.Client] | None = None,
+    client_factory: Callable[[], httpx.AsyncClient] | None = None,
 ) -> WeChatOpenGameNotificationProvider | None:
     if settings.open_game_notification_provider == "disabled":
         return None
@@ -295,7 +357,7 @@ def build_open_game_notification_provider(
         or mapping is None
     ):
         raise ValueError("WeChat notification configuration is incomplete")
-    client = (client_factory or httpx.Client)()
+    client = (client_factory or httpx.AsyncClient)()
     try:
         return WeChatOpenGameNotificationProvider(
             client=client,
@@ -306,5 +368,5 @@ def build_open_game_notification_provider(
             miniprogram_state=settings.open_game_notification_miniprogram_state,
         )
     except BaseException:
-        client.close()
+        asyncio.run(client.aclose())
         raise

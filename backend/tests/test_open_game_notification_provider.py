@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
+from threading import Event, Thread
 
 import httpx
 import pytest
@@ -57,8 +60,8 @@ def provider(
     handler: Callable[[httpx.Request], httpx.Response],
     *,
     now: Callable[[], float] = lambda: 100.0,
-) -> tuple[WeChatOpenGameNotificationProvider, httpx.Client]:
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+) -> tuple[WeChatOpenGameNotificationProvider, httpx.AsyncClient]:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return (
         WeChatOpenGameNotificationProvider(
             client=client,
@@ -107,7 +110,7 @@ def test_provider_sends_only_closed_fields_with_shanghai_time_and_strict_timeout
     try:
         assert target.send(notification_request()) == NotificationAccepted()
     finally:
-        client.close()
+        target.close()
     assert len(calls) == 2
 
 
@@ -127,7 +130,7 @@ def test_provider_truncates_thing_values_by_unicode_character() -> None:
             venue_name="津" * 21,
         ))
     finally:
-        client.close()
+        target.close()
 
     assert result == NotificationAccepted()
     data = sent["data"]
@@ -153,7 +156,7 @@ def test_provider_cache_is_private_and_refreshes_once_for_an_invalid_token() -> 
         assert target.send(notification_request()) == NotificationAccepted()
         assert target.send(notification_request()) == NotificationAccepted()
     finally:
-        client.close()
+        target.close()
 
     assert paths == [
         "/cgi-bin/token",
@@ -190,7 +193,7 @@ def test_provider_classifies_send_business_errors_safely(
     try:
         assert target.send(notification_request()) == expected
     finally:
-        client.close()
+        target.close()
 
 
 def test_second_invalid_token_is_permanent_and_never_loops() -> None:
@@ -210,74 +213,8 @@ def test_second_invalid_token_is_permanent_and_never_loops() -> None:
             retryable=False,
         )
     finally:
-        client.close()
+        target.close()
     assert calls == 4
-
-
-def test_invalid_token_retry_path_has_a_sub_30_second_aggregate_io_budget() -> None:
-    request_budgets: list[float] = []
-    token_number = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal token_number
-        request_budgets.append(sum(request.extensions["timeout"].values()))
-        if request.url.path == "/cgi-bin/token":
-            token_number += 1
-            return httpx.Response(
-                200,
-                json={"access_token": f"token-{token_number}", "expires_in": 7200},
-            )
-        return httpx.Response(200, json={"errcode": 42001, "errmsg": "expired"})
-
-    target, client = provider(handler)
-    try:
-        assert target.send(notification_request()) == NotificationRejected(
-            "WECHAT_TOKEN_REJECTED",
-            retryable=False,
-        )
-    finally:
-        client.close()
-
-    assert len(request_budgets) == 4
-    assert sum(request_budgets) == pytest.approx(24.0)
-    assert sum(request_budgets) < 30
-
-
-def test_send_deadline_stops_invalid_token_recovery_before_another_io_call() -> None:
-    elapsed = 0.0
-    paths: list[str] = []
-    token_number = 0
-
-    def now() -> float:
-        return elapsed
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal elapsed, token_number
-        paths.append(request.url.path)
-        elapsed += 8.0
-        if request.url.path == "/cgi-bin/token":
-            token_number += 1
-            return httpx.Response(
-                200,
-                json={"access_token": f"token-{token_number}", "expires_in": 7200},
-            )
-        return httpx.Response(200, json={"errcode": 42001, "errmsg": "expired"})
-
-    target, client = provider(handler, now=now)
-    try:
-        assert target.send(notification_request()) == NotificationRejected(
-            "WECHAT_TOKEN_UNAVAILABLE",
-            retryable=True,
-        )
-    finally:
-        client.close()
-
-    assert elapsed == 24.0
-    assert paths == [
-        "/cgi-bin/token",
-        "/cgi-bin/message/subscribe/send",
-        "/cgi-bin/token",
-    ]
 
 
 @pytest.mark.parametrize("failure", ["network", "http", "malformed"])
@@ -293,7 +230,7 @@ def test_token_failures_are_retryable_without_exposing_raw_data(failure: str) ->
     try:
         result = target.send(notification_request())
     finally:
-        client.close()
+        target.close()
     assert result == NotificationRejected("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
     assert "sensitive" not in repr(result)
 
@@ -309,7 +246,7 @@ def test_rejected_token_credentials_and_send_transport_failures_are_safely_class
             retryable=False,
         )
     finally:
-        client.close()
+        target.close()
 
     def failed_send(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/cgi-bin/token":
@@ -323,7 +260,7 @@ def test_rejected_token_credentials_and_send_transport_failures_are_safely_class
             retryable=True,
         )
     finally:
-        client.close()
+        target.close()
 
 
 def test_provider_rejects_internal_mismatches_before_io() -> None:
@@ -348,7 +285,7 @@ def test_provider_rejects_internal_mismatches_before_io() -> None:
             notification_request(starts_at="not-an-instant")
         ) == NotificationRejected("TEMPLATE_DATA_INVALID", retryable=False)
     finally:
-        client.close()
+        target.close()
     assert calls == 0
 
 
@@ -364,16 +301,16 @@ def test_provider_never_logs_or_renders_secrets(
             result = target.send(notification_request())
         rendered = f"{target!r}\n{result!r}\n{caplog.text}"
     finally:
-        client.close()
+        target.close()
     for secret in [APP_SECRET, "sensitive-recipient-openid", "raw-sensitive-body"]:
         assert secret not in rendered
 
 
 def test_factory_is_disabled_without_allocating_and_owns_enabled_client() -> None:
-    created: list[httpx.Client] = []
+    created: list[httpx.AsyncClient] = []
 
-    def factory() -> httpx.Client:
-        client = httpx.Client(transport=httpx.MockTransport(
+    def factory() -> httpx.AsyncClient:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(
             lambda request: httpx.Response(200, json={"errcode": 0}),
         ))
         created.append(client)
@@ -413,5 +350,113 @@ def test_provider_rejects_a_naive_start_instant_before_io() -> None:
             notification_request(starts_at=naive)
         ) == NotificationRejected("TEMPLATE_DATA_INVALID", retryable=False)
     finally:
-        client.close()
+        target.close()
     assert calls == 0
+
+
+def test_slow_stream_is_cancelled_by_the_whole_send_wall_clock_deadline() -> None:
+    class SlowBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'{"errcode":'
+            await asyncio.sleep(5)
+            yield b"0}"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/cgi-bin/token":
+            return httpx.Response(200, json={"access_token": "token", "expires_in": 7200})
+        return httpx.Response(200, stream=SlowBody())
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    target = WeChatOpenGameNotificationProvider(
+        client=client,
+        app_id=APP_ID,
+        app_secret=APP_SECRET,
+        template_id=TEMPLATE_ID,
+        keyword_mapping=MAPPING,
+        miniprogram_state="formal",
+        send_timeout_seconds=0.1,
+    )
+    started_at = time.monotonic()
+    try:
+        assert target.send(notification_request()) == NotificationRejected(
+            "WECHAT_NOTIFICATION_TEMPORARY",
+            retryable=True,
+        )
+    finally:
+        target.close()
+
+    assert time.monotonic() - started_at < 0.5
+
+
+def test_sync_send_hard_guard_returns_when_a_transport_blocks_the_event_loop() -> None:
+    request_started = Event()
+    release_request = Event()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_started.set()
+        release_request.wait(timeout=5)
+        return httpx.Response(200, json={"access_token": "too-late", "expires_in": 7200})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    target = WeChatOpenGameNotificationProvider(
+        client=client,
+        app_id=APP_ID,
+        app_secret=APP_SECRET,
+        template_id=TEMPLATE_ID,
+        keyword_mapping=MAPPING,
+        miniprogram_state="formal",
+        send_timeout_seconds=0.1,
+    )
+    started_at = time.monotonic()
+    try:
+        assert target.send(notification_request()) == NotificationRejected(
+            "WECHAT_NOTIFICATION_TEMPORARY",
+            retryable=True,
+        )
+        assert request_started.is_set()
+    finally:
+        release_request.set()
+        target.close()
+
+    assert time.monotonic() - started_at < 0.6
+
+
+def test_token_lock_wait_is_bounded_by_each_send_wall_clock_deadline() -> None:
+    first_request_started = Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        first_request_started.set()
+        await asyncio.sleep(5)
+        return httpx.Response(200, json={"access_token": "too-late", "expires_in": 7200})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    target = WeChatOpenGameNotificationProvider(
+        client=client,
+        app_id=APP_ID,
+        app_secret=APP_SECRET,
+        template_id=TEMPLATE_ID,
+        keyword_mapping=MAPPING,
+        miniprogram_state="formal",
+        send_timeout_seconds=0.15,
+    )
+    first_result: list[NotificationRejected | NotificationAccepted] = []
+    first = Thread(target=lambda: first_result.append(target.send(notification_request())))
+    first.start()
+    assert first_request_started.wait(timeout=0.5)
+
+    started_at = time.monotonic()
+    try:
+        second_result = target.send(notification_request())
+    finally:
+        first.join(timeout=0.5)
+        target.close()
+
+    assert second_result == NotificationRejected(
+        "WECHAT_NOTIFICATION_TEMPORARY",
+        retryable=True,
+    )
+    assert time.monotonic() - started_at < 0.5
+    assert first_result == [
+        NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
+    ]
+    assert not first.is_alive()
