@@ -2,9 +2,9 @@
 
 日期：2026-08-31
 
-状态：`DELEGATED_APPROVED_FOR_PREVIEW`。用户已授权其休息期间由独立 agent 代做产品与视觉决策；该授权只允许冻结本设计并实现 development-only Artifact/Fixture 预览，不批准生产契约、数据库迁移、后端或真实管理端写入，也不批准合并、部署或体验版上传。
+状态：`APPROVED_FOR_PRODUCTION_IMPLEMENTATION`。用户已于 2026-09-01 明确授权继续完成小程序剩余模块，并将视觉决策委托给未参与实现的独立 agent。本设计的产品与数据边界保持不变，从今日起允许按独立生产计划实现契约、迁移、后端、平台管理端和小程序真实回读；在用户次日集中验收前不合并入 `main`。
 
-基线：`cd8ac51bb4c19a2627d60a9417ea590331e245c1`（C2c attendance production candidate）。
+设计起点：`cd8ac51bb4c19a2627d60a9417ea590331e245c1`。实际生产实施基线已追至最新 C2c candidate `112fcbd2cd2eda6cab6997d20badfda7ccd4d828`。
 
 上游：
 
