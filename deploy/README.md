@@ -145,10 +145,13 @@ unset OPEN_GAME_NOTIFICATION_PROVIDER OPEN_GAME_NOTIFICATION_TEMPLATE_ID \
 ```
 
 The preflight fails closed when either side is partial, contains a validation placeholder, or the
-backend provider/template does not exactly match the Mini Program build input. `formal`, `trial`,
-and `developer` are the only allowed Mini Program states. Successful offline tests prove only
-configuration and code readiness; they do not prove that WeChat delivered a message. Never paste
-an access token or a raw provider response into an environment file, log, or acceptance record.
+backend provider/template does not exactly match the Mini Program build input. Enabling the
+provider requires `trial` in staging and `formal` in production; `developer` is rejected for both
+deployed environments. The checked-in `formal` default is inert while the provider remains
+`disabled`, so staging operators must set `trial` explicitly before enabling it. Successful offline
+tests prove only configuration and code readiness; they do not prove that WeChat delivered a
+message. Never paste an access token or a raw provider response into an environment file, log, or
+acceptance record.
 
 The live generator defaults to `PAYMENT_PROVIDER=disabled` until merchant credentials are available.
 In that mode it does not prompt for or write any WeChat Pay merchant values, and it writes

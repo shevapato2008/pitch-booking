@@ -54,11 +54,11 @@ worker 可以注入一个“disabled provider”，也可以完全不组合通�
 - `OPEN_GAME_NOTIFICATION_PROVIDER=disabled|wechat`，默认 `disabled`；
 - `OPEN_GAME_NOTIFICATION_TEMPLATE_ID`；
 - `OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON`，必须是且只能是 `game_name`、`starts_at`、`venue_name` 三个键；值分别匹配 `thingN`、`timeN`、`thingN`，且互不重复；
-- `OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE=formal|trial|developer`，默认 `formal`，供未来体验版验收显式选择，不随环境猜测。
+- `OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE=formal|trial|developer`，provider disabled 时默认 `formal` 仅为惰性占位；启用时 staging 必须显式选择 `trial`、production 必须选择 `formal`，两种部署环境都拒绝 `developer`。
 
 `wechat` 仅在 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`、模板 ID 和封闭关键词映射全部有效时可构建；不完整配置在启动时失败。`disabled` 即使残留完整凭据也不构建或消费 outbox。关键词映射以 `SecretStr` 读取并在设置 repr、校验异常和日志中隐藏，避免未来错误地把运营配置原文扩散到日志。
 
-`WeChatOpenGameNotificationProvider` 使用独立 `httpx.Client` 和独立内存 access-token cache。token 请求和订阅发送均使用 connect/read/write/pool 的严格 timeout；token 只进入请求内存和 HTTPS query，不持久化、不进入 DTO/repr/异常或日志。完整 `send` 最多执行 token 获取、发送、一次 token 失效刷新与一次重发，仍低于现有 30 秒 Provider 合同。
+`WeChatOpenGameNotificationProvider` 使用独立 `httpx.Client` 和独立内存 access-token cache。token 请求和订阅发送均使用 connect/read/write/pool 的严格 timeout，并共享 24 秒总 I/O deadline；四段最坏路径各自最多分配 6 秒且随剩余 deadline 收缩。token 只进入请求内存和 HTTPS query，不持久化、不进入 DTO/repr/异常或日志。完整 `send` 最多执行 token 获取、发送、一次 token 失效刷新与一次重发，低于现有 30 秒 Provider 合同。
 
 Provider 只接受既有 `template_key=waitlist-promoted`、匹配配置 AppID 的 recipient 和封闭 payload。它把 `starts_at` 解析为带时区 ISO 时间并按 `Asia/Shanghai` 格式化；球局名和场馆名按微信 `thing` 字段限制安全截断。固定 deeplink 为 `pages/my-game-registrations/index`，让收件人进入权威报名列表，不依赖 outbox 中不存在的分享 token。
 

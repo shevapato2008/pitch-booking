@@ -514,6 +514,13 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         keyword_mapping_json=inputs.open_game_notification_keyword_mapping_json,
         miniprogram_state=inputs.open_game_notification_miniprogram_state,
     )
+    if (
+        notification_config["provider"] == "wechat"
+        and notification_config["miniprogram_state"] != "trial"
+    ):
+        raise ValueError(
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be trial for staging notifications"
+        )
 
     existing: dict[str, str] = {}
     if inputs.deploy_env.exists():

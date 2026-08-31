@@ -180,6 +180,80 @@ def test_preflight_accepts_complete_matching_wechat_notification_configuration(
 
 
 @pytest.mark.parametrize(
+    ("app_env", "state", "failure"),
+    [
+        (
+            "staging",
+            "formal",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be trial when APP_ENV=staging",
+        ),
+        (
+            "staging",
+            "developer",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be trial when APP_ENV=staging",
+        ),
+        (
+            "production",
+            "trial",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be formal when APP_ENV=production",
+        ),
+        (
+            "production",
+            "developer",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be formal when APP_ENV=production",
+        ),
+    ],
+)
+def test_preflight_rejects_notification_state_for_the_wrong_deploy_environment(
+    tmp_path: Path,
+    app_env: str,
+    state: str,
+    failure: str,
+) -> None:
+    values = valid_local_environment()
+    values.update(
+        APP_ENV=app_env,
+        OPEN_GAME_NOTIFICATION_PROVIDER="wechat",
+        OPEN_GAME_NOTIFICATION_TEMPLATE_ID=WAITLIST_TEMPLATE_ID,
+        OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON=WAITLIST_KEYWORD_MAPPING,
+        OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE=state,
+    )
+    deploy_env = write_env(tmp_path, values)
+    miniprogram_env = tmp_path / "miniprogram.env"
+    miniprogram_env.write_text(
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
+        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n",
+        encoding="utf-8",
+    )
+
+    result = preflight(deploy_env, miniprogram_env_file=miniprogram_env)
+
+    assert failure in result.failures
+
+
+def test_preflight_accepts_formal_state_for_production_notifications(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values.update(
+        APP_ENV="production",
+        OPEN_GAME_NOTIFICATION_PROVIDER="wechat",
+        OPEN_GAME_NOTIFICATION_TEMPLATE_ID=WAITLIST_TEMPLATE_ID,
+        OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON=WAITLIST_KEYWORD_MAPPING,
+        OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE="formal",
+    )
+    deploy_env = write_env(tmp_path, values)
+    miniprogram_env = tmp_path / "miniprogram.env"
+    miniprogram_env.write_text(
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
+        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n",
+        encoding="utf-8",
+    )
+
+    result = preflight(deploy_env, miniprogram_env_file=miniprogram_env)
+
+    assert result.ok is True
+
+
+@pytest.mark.parametrize(
     ("mutations", "failure"),
     [
         (

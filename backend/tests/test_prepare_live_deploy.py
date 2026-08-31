@@ -191,6 +191,26 @@ def test_prepare_emits_matching_enabled_notification_config_for_backend_and_clie
     assert preflight(paths.deploy_env, miniprogram_env_file=paths.miniprogram_env).ok is True
 
 
+@pytest.mark.parametrize("state", ["formal", "developer"])
+def test_prepare_rejects_non_trial_state_for_enabled_staging_notifications(
+    tmp_path: Path,
+    state: str,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be trial for staging notifications",
+    ):
+        prepare_live_deploy(
+            inputs(
+                tmp_path,
+                open_game_notification_provider="wechat",
+                open_game_notification_template_id=WAITLIST_TEMPLATE_ID,
+                open_game_notification_keyword_mapping_json=WAITLIST_KEYWORD_MAPPING,
+                open_game_notification_miniprogram_state=state,
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("override", "message"),
     [

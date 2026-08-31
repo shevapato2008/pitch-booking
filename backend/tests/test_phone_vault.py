@@ -201,6 +201,65 @@ def test_open_game_notification_wechat_config_requires_one_closed_mapping() -> N
 
 
 @pytest.mark.parametrize(
+    ("app_env", "state", "message"),
+    [
+        ("staging", "formal", "must be trial when APP_ENV=staging"),
+        ("staging", "developer", "must be trial when APP_ENV=staging"),
+        ("production", "trial", "must be formal when APP_ENV=production"),
+        ("production", "developer", "must be formal when APP_ENV=production"),
+    ],
+)
+def test_enabled_open_game_notification_state_matches_deploy_environment(
+    app_env: str,
+    state: str,
+    message: str,
+) -> None:
+    values = deployed_settings(
+        app_env=app_env,
+        open_game_notification_provider="wechat",
+        open_game_notification_template_id="template_id-123",
+        open_game_notification_keyword_mapping_json=json.dumps(
+            {
+                "game_name": "thing1",
+                "starts_at": "time2",
+                "venue_name": "thing3",
+            }
+        ),
+        open_game_notification_miniprogram_state=state,
+    )
+
+    with pytest.raises(ValidationError, match=message):
+        Settings(**values)
+
+
+@pytest.mark.parametrize(
+    ("app_env", "state"),
+    [("staging", "trial"), ("production", "formal")],
+)
+def test_enabled_open_game_notification_accepts_environment_safe_state(
+    app_env: str,
+    state: str,
+) -> None:
+    settings = Settings(
+        **deployed_settings(
+            app_env=app_env,
+            open_game_notification_provider="wechat",
+            open_game_notification_template_id="template_id-123",
+            open_game_notification_keyword_mapping_json=json.dumps(
+                {
+                    "game_name": "thing1",
+                    "starts_at": "time2",
+                    "venue_name": "thing3",
+                }
+            ),
+            open_game_notification_miniprogram_state=state,
+        )
+    )
+
+    assert settings.open_game_notification_miniprogram_state == state
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"open_game_notification_provider": "email"},

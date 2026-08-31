@@ -770,6 +770,15 @@ class Settings(BaseSettings):
             raise ValueError("OPEN_GAME_NOTIFICATION_TEMPLATE_ID is required")
         if self.open_game_notification_keyword_mapping_json is None:
             raise ValueError("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is required")
+        required_state = {"staging": "trial", "production": "formal"}.get(self.app_env)
+        if (
+            required_state is not None
+            and self.open_game_notification_miniprogram_state != required_state
+        ):
+            raise ValueError(
+                "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be "
+                f"{required_state} when APP_ENV={self.app_env}"
+            )
         return self
 
     @model_validator(mode="after")

@@ -270,6 +270,13 @@ def _validate_open_game_notifications(
 
     if provider != "wechat":
         return
+    if miniprogram_state in {"formal", "trial", "developer"}:
+        required_state = {"staging": "trial", "production": "formal"}.get(values.get("APP_ENV", ""))
+        if required_state is not None and miniprogram_state != required_state:
+            failures.append(
+                "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be "
+                f"{required_state} when APP_ENV={values.get('APP_ENV', '')}"
+            )
     if not template_id:
         failures.append("OPEN_GAME_NOTIFICATION_TEMPLATE_ID is required")
     elif OPEN_GAME_NOTIFICATION_TEMPLATE_ID.fullmatch(template_id) is None or _is_placeholder(

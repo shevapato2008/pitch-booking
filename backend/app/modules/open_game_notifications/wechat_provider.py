@@ -22,7 +22,10 @@ from backend.app.modules.open_game_notifications.provider import (
 )
 
 _WECHAT_BASE_URL = "https://api.weixin.qq.com"
-_STRICT_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0)
+_MAX_IO_CALLS_PER_SEND = 4
+_SEND_IO_BUDGET_SECONDS = 24.0
+_REQUEST_IO_BUDGET_SECONDS = _SEND_IO_BUDGET_SECONDS / _MAX_IO_CALLS_PER_SEND
+_STRICT_TIMEOUT = httpx.Timeout(connect=1.0, read=2.0, write=2.0, pool=1.0)
 _TEMPLATE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}", re.ASCII)
 _KEYWORDS = {
     "game_name": re.compile(r"thing[1-9][0-9]*", re.ASCII),
@@ -113,19 +116,20 @@ class WeChatOpenGameNotificationProvider:
         payload = self._build_payload(request)
         if payload is None:
             return NotificationRejected("TEMPLATE_DATA_INVALID", retryable=False)
+        deadline = self._now() + _SEND_IO_BUDGET_SECONDS
         try:
-            access_token = self._get_access_token()
+            access_token = self._get_access_token(deadline)
         except _ProviderFailure as failure:
             return failure.result
         for send_number in range(2):
-            result = self._send_once(access_token, payload)
+            result = self._send_once(access_token, payload, deadline=deadline)
             if result != "INVALID_TOKEN":
                 return result
             if send_number == 1:
                 return NotificationRejected("WECHAT_TOKEN_REJECTED", retryable=False)
             self._invalidate_access_token(access_token)
             try:
-                access_token = self._get_access_token()
+                access_token = self._get_access_token(deadline)
             except _ProviderFailure as failure:
                 return failure.result
         return NotificationRejected("WECHAT_NOTIFICATION_REJECTED", retryable=False)
@@ -159,15 +163,22 @@ class WeChatOpenGameNotificationProvider:
         self,
         access_token: str,
         payload: dict[str, object],
+        *,
+        deadline: float,
     ) -> NotificationResult | Literal["INVALID_TOKEN"]:
+        timeout = self._timeout_for_deadline(deadline)
+        if timeout is None:
+            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
         try:
             response = self._client.post(
                 f"{_WECHAT_BASE_URL}/cgi-bin/message/subscribe/send",
                 params={"access_token": access_token},
                 json=payload,
-                timeout=_STRICT_TIMEOUT,
+                timeout=timeout,
             )
         except httpx.HTTPError:
+            return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
+        if self._now() >= deadline:
             return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
         if response.status_code == 429 or response.status_code >= 500:
             return NotificationRejected("WECHAT_NOTIFICATION_TEMPORARY", retryable=True)
@@ -189,7 +200,7 @@ class WeChatOpenGameNotificationProvider:
         safe_error_code = _BUSINESS_FAILURES.get(errcode, "WECHAT_NOTIFICATION_REJECTED")
         return NotificationRejected(safe_error_code, retryable=False)
 
-    def _get_access_token(self) -> str:
+    def _get_access_token(self, deadline: float) -> str:
         now = self._now()
         if self._access_token is not None and now < self._access_token_expires_at:
             return self._access_token
@@ -197,9 +208,12 @@ class WeChatOpenGameNotificationProvider:
             now = self._now()
             if self._access_token is not None and now < self._access_token_expires_at:
                 return self._access_token
-            return self._refresh_access_token(now)
+            return self._refresh_access_token(now, deadline)
 
-    def _refresh_access_token(self, now: float) -> str:
+    def _refresh_access_token(self, now: float, deadline: float) -> str:
+        timeout = self._timeout_for_deadline(deadline)
+        if timeout is None:
+            raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
         try:
             response = self._client.get(
                 f"{_WECHAT_BASE_URL}/cgi-bin/token",
@@ -208,10 +222,12 @@ class WeChatOpenGameNotificationProvider:
                     "appid": self._app_id,
                     "secret": self._app_secret,
                 },
-                timeout=_STRICT_TIMEOUT,
+                timeout=timeout,
             )
         except httpx.HTTPError:
             raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True) from None
+        if self._now() >= deadline:
+            raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
         if response.status_code == 429 or response.status_code >= 500:
             raise _ProviderFailure("WECHAT_TOKEN_UNAVAILABLE", retryable=True)
         if response.status_code < 200 or response.status_code >= 300:
@@ -241,6 +257,20 @@ class WeChatOpenGameNotificationProvider:
         self._access_token = token
         self._access_token_expires_at = now + max(1, expires_in - 300)
         return token
+
+    def _timeout_for_deadline(self, deadline: float) -> httpx.Timeout | None:
+        remaining = deadline - self._now()
+        if remaining <= 0:
+            return None
+        if remaining >= _REQUEST_IO_BUDGET_SECONDS:
+            return _STRICT_TIMEOUT
+        scale = remaining / _REQUEST_IO_BUDGET_SECONDS
+        return httpx.Timeout(
+            connect=1.0 * scale,
+            read=2.0 * scale,
+            write=2.0 * scale,
+            pool=1.0 * scale,
+        )
 
     def _invalidate_access_token(self, rejected_token: str) -> None:
         with self._access_token_lock:

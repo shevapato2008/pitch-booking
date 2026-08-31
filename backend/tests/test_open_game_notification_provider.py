@@ -79,7 +79,7 @@ def test_provider_sends_only_closed_fields_with_shanghai_time_and_strict_timeout
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         timeout = request.extensions["timeout"]
-        assert timeout == {"connect": 2.0, "read": 3.0, "write": 3.0, "pool": 2.0}
+        assert timeout == {"connect": 1.0, "read": 2.0, "write": 2.0, "pool": 1.0}
         if request.url.path == "/cgi-bin/token":
             assert dict(request.url.params) == {
                 "grant_type": "client_credential",
@@ -212,6 +212,72 @@ def test_second_invalid_token_is_permanent_and_never_loops() -> None:
     finally:
         client.close()
     assert calls == 4
+
+
+def test_invalid_token_retry_path_has_a_sub_30_second_aggregate_io_budget() -> None:
+    request_budgets: list[float] = []
+    token_number = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_number
+        request_budgets.append(sum(request.extensions["timeout"].values()))
+        if request.url.path == "/cgi-bin/token":
+            token_number += 1
+            return httpx.Response(
+                200,
+                json={"access_token": f"token-{token_number}", "expires_in": 7200},
+            )
+        return httpx.Response(200, json={"errcode": 42001, "errmsg": "expired"})
+
+    target, client = provider(handler)
+    try:
+        assert target.send(notification_request()) == NotificationRejected(
+            "WECHAT_TOKEN_REJECTED",
+            retryable=False,
+        )
+    finally:
+        client.close()
+
+    assert len(request_budgets) == 4
+    assert sum(request_budgets) == pytest.approx(24.0)
+    assert sum(request_budgets) < 30
+
+
+def test_send_deadline_stops_invalid_token_recovery_before_another_io_call() -> None:
+    elapsed = 0.0
+    paths: list[str] = []
+    token_number = 0
+
+    def now() -> float:
+        return elapsed
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal elapsed, token_number
+        paths.append(request.url.path)
+        elapsed += 8.0
+        if request.url.path == "/cgi-bin/token":
+            token_number += 1
+            return httpx.Response(
+                200,
+                json={"access_token": f"token-{token_number}", "expires_in": 7200},
+            )
+        return httpx.Response(200, json={"errcode": 42001, "errmsg": "expired"})
+
+    target, client = provider(handler, now=now)
+    try:
+        assert target.send(notification_request()) == NotificationRejected(
+            "WECHAT_TOKEN_UNAVAILABLE",
+            retryable=True,
+        )
+    finally:
+        client.close()
+
+    assert elapsed == 24.0
+    assert paths == [
+        "/cgi-bin/token",
+        "/cgi-bin/message/subscribe/send",
+        "/cgi-bin/token",
+    ]
 
 
 @pytest.mark.parametrize("failure", ["network", "http", "malformed"])

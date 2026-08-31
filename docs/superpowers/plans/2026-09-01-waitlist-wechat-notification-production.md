@@ -115,7 +115,7 @@ Commit: `build(c2b): gate waitlist subscription configuration`
 
 - [ ] **Step 1: Write failing settings/provider tests**
 
-Settings tests cover default disabled, exact provider enum, incomplete enabled config rejection, exact closed mapping/type prefixes/distinct keywords, template ID validation, residual credentials ignored while disabled, `SecretStr` redaction, and miniprogram state enum. Provider tests use `httpx.MockTransport` to cover closed request JSON, Shanghai time formatting, Unicode truncation, AppID/template-key guards, strict timeout, token cache, one invalid-token refresh, safe retryable/permanent classifications, malformed/HTTP/network responses, no secret in repr/log/error, and owned-client close.
+Settings tests cover default disabled, exact provider enum, incomplete enabled config rejection, exact closed mapping/type prefixes/distinct keywords, template ID validation, residual credentials ignored while disabled, `SecretStr` redaction, miniprogram state enum, and the staging=`trial` / production=`formal` binding. Provider tests use `httpx.MockTransport` to cover closed request JSON, Shanghai time formatting, Unicode truncation, AppID/template-key guards, the sub-30-second aggregate I/O deadline including invalid-token recovery, token cache, one invalid-token refresh, safe retryable/permanent classifications, malformed/HTTP/network responses, no secret in repr/log/error, and owned-client close.
 
 - [ ] **Step 2: Run RED**
 
