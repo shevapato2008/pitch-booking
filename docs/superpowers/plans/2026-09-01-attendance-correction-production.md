@@ -44,6 +44,7 @@
 - Create: `backend/migrations/versions/0022_open_game_attendance_corrections.py`
 - Modify: `backend/app/models.py`
 - Create: `backend/tests/test_open_game_attendance_correction_migration.py`
+- Modify: existing migration-head assertions in `backend/tests/test_open_game_registration_schema.py`, `test_booking_migration_cycle.py`, `test_venue_directory_migration.py`, `test_platform_session_migration.py`, and `test_venue_profile_postgres.py`
 
 1. 先写迁移 RED：表、FK `RESTRICT`、终态/理由/principal/version/hash check、两个 unique 约束，以及存在历史时 downgrade 明确拒绝。
 2. 用 PostgreSQL `BEFORE UPDATE OR DELETE` trigger 拒绝任何已写 event 的更新/删除，并以聚焦迁移测试证明 append-only；这只保护本表，不抽象通用审计框架。
@@ -84,6 +85,8 @@
 - Modify: `platform-admin/tsconfig.json`
 - Modify: `scripts/build-platform-admin.mjs`
 - Modify: `tests/build-platform-admin.test.mjs`
+- Modify: `backend/app/modules/platform_web.py`
+- Modify: focused platform web/static asset tests
 - Modify: `platform-admin/src/api.test.ts`
 - Modify: `platform-admin/src/auth.test.ts`
 - Modify: `platform-admin/src/main.test.ts`
@@ -92,7 +95,7 @@
 1. 先写 API/controller/role 失败测试：完整 UUID 查询、清除、理由校验、确认 dialog、幂等键复用、unknown result 先 GET 和权限隐藏。
 2. 复用现有平台壳与 API client，新建独立 `AttendanceCorrectionController`；不把功能塞入 onboarding `ReviewController`。
 3. 对 `1440×900` 只做 `ready` 与 `confirm` 两个代表状态的真实运行时视觉审核；其他状态聚焦点检。
-4. 构建器必须发布 `attendance-correction.js` 并为其浏览器 import 补 `.js`，同时保持 Fixture 排除断言。跑 `npx jest --runInBand platform-admin/src/*.test.ts`、`npm run build:platform-admin` 和 `node --test tests/build-platform-admin.test.mjs` 后提交。
+4. 构建器必须发布 `attendance-correction.js` 并为其浏览器 import 补 `.js`；`platform_web.py::PLATFORM_ADMIN_ASSETS` 也必须显式提供该文件，避免 production 静态路由 404，同时保持 Fixture 排除断言。跑 `npx jest --runInBand platform-admin/src/*.test.ts`、`npm run build:platform-admin`、`node --test tests/build-platform-admin.test.mjs` 和 platform web 聚焦 pytest 后提交。
 
 ## Task 5：接入队长与球员小程序权威回读
 
