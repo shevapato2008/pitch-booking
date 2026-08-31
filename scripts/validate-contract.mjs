@@ -456,7 +456,51 @@ const exampleMap = [
     attachments: [
       attachment('/api/v1/venue-onboarding/claims', '200', 'ClaimSubmitted', 'post'),
       attachment('/api/v1/venue-onboarding/claims', '201', 'ClaimSubmitted', 'post'),
+      attachment('/api/v1/venue-invitations/{token}/claims', '200', 'Submitted', 'post'),
+      attachment('/api/v1/venue-invitations/{token}/claims', '201', 'Submitted', 'post'),
     ],
+  },
+  {
+    filename: 'recruitment-invitation-eligible-venues.json',
+    reference: './examples/recruitment-invitation-eligible-venues.json',
+    schema: 'RecruitmentInvitationEligibleVenues',
+    attachments: [attachment('/platform-admin/api/v1/recruitment-invitations/eligible-venues', '200', 'Ready')],
+  },
+  {
+    filename: 'recruitment-invitations.json',
+    reference: './examples/recruitment-invitations.json',
+    schema: 'RecruitmentInvitations',
+    attachments: [attachment('/platform-admin/api/v1/recruitment-invitations', '200', 'Ready')],
+  },
+  {
+    filename: 'recruitment-invitation-created.json',
+    reference: './examples/recruitment-invitation-created.json',
+    schema: 'RecruitmentInvitationCreateResult',
+    attachments: [
+      attachment('/platform-admin/api/v1/recruitment-invitations', '200', 'Created', 'post'),
+      attachment('/platform-admin/api/v1/recruitment-invitations', '201', 'Created', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-invitation-available.json',
+    reference: './examples/venue-invitation-available.json',
+    schema: 'VenueRecruitmentInvitation',
+    attachments: [attachment('/api/v1/venue-invitations/{token}', '200', 'Available')],
+  },
+  {
+    filename: 'venue-invitation-claimed.json',
+    reference: './examples/venue-invitation-claimed.json',
+    schema: 'VenueRecruitmentInvitation',
+    attachments: [
+      attachment('/api/v1/venue-invitations/{token}', '200', 'Claimed'),
+      attachment('/api/v1/venue-invitations/{token}/accept', '200', 'Claimed', 'post'),
+    ],
+  },
+  {
+    filename: 'venue-invitation-submitted.json',
+    reference: './examples/venue-invitation-submitted.json',
+    schema: 'VenueRecruitmentInvitation',
+    attachments: [attachment('/api/v1/venue-invitations/{token}', '200', 'Submitted')],
   },
   {
     filename: 'venue-create-submitted.json',
@@ -1172,6 +1216,11 @@ const requiredErrorCodes = new Set([
   'APPLICATION_CAPACITY_CHANGED',
   'ATTENDANCE_STATE_CHANGED',
   'ATTENDANCE_REGISTRATION_NOT_FOUND',
+  'VENUE_NOT_ELIGIBLE',
+  'VENUE_INVITATION_EXISTS',
+  'VENUE_INVITATION_STATE_CHANGED',
+  'VENUE_INVITATION_NOT_FOUND',
+  'VENUE_INVITATION_UNAVAILABLE',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -1183,6 +1232,11 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'PLATFORM_CSRF_INVALID',
   'PLATFORM_ROLE_REQUIRED',
   'ATTENDANCE_REGISTRATION_NOT_FOUND',
+  'VENUE_NOT_ELIGIBLE',
+  'VENUE_INVITATION_EXISTS',
+  'VENUE_INVITATION_STATE_CHANGED',
+  'VENUE_INVITATION_NOT_FOUND',
+  'VENUE_INVITATION_UNAVAILABLE',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -1215,6 +1269,9 @@ const expectedOperations = new Map([
   ['/api/v1/public-games', new Set(['get'])],
   ['/api/v1/open-game-applications', new Set(['get'])],
   ['/api/v1/open-game-applications/{application_id}/withdraw', new Set(['post'])],
+  ['/api/v1/venue-invitations/{token}', new Set(['get'])],
+  ['/api/v1/venue-invitations/{token}/accept', new Set(['post'])],
+  ['/api/v1/venue-invitations/{token}/claims', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],
@@ -1234,6 +1291,9 @@ const expectedOperations = new Map([
   ['/platform-admin/api/v1/onboarding/applications/{application_id}', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/applications/{application_id}/decisions', new Set(['post'])],
+  ['/platform-admin/api/v1/recruitment-invitations/eligible-venues', new Set(['get'])],
+  ['/platform-admin/api/v1/recruitment-invitations', new Set(['get', 'post'])],
+  ['/platform-admin/api/v1/recruitment-invitations/{invitation_id}/revoke', new Set(['post'])],
   ['/api/v1/admin/venues', new Set(['get'])],
   ['/api/v1/admin/venues/{venue_id}/pitch-configuration', new Set(['get', 'put'])],
   ['/api/v1/admin/venues/{venue_id}/inventory', new Set(['get'])],

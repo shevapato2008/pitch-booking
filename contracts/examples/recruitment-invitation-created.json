@@ -1,0 +1,22 @@
+{
+  "invitation": {
+    "id": "10000000-0000-4000-8000-000000000001",
+    "venue": {
+      "venue_id": "20000000-0000-4000-8000-000000000002",
+      "name": "天津海河东体育中心足球场",
+      "district_name": "河东区",
+      "address": "天津市河东区津塘路156号院内东侧"
+    },
+    "status": "ACTIVE",
+    "contact_label": "海河东场馆负责人",
+    "expires_at": "2026-09-08T13:18:00Z",
+    "created_at": "2026-09-01T13:18:00Z",
+    "claimed_at": null,
+    "application_id": null,
+    "revoked_at": null,
+    "revocation_reason": null,
+    "version": 1
+  },
+  "token": "Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx",
+  "invitation_path": "pages/venue-invitation/index?token=Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx"
+}
