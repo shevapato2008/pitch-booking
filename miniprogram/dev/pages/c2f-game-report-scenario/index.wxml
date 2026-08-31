@@ -1,0 +1,41 @@
+<view class="c2f-page">
+  <view class="c2f-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2f-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2f-header-back" hover-class="c2f-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="c2f-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2f-header-title">C2f 开发预览</text>
+    <view class="c2f-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2f-scroll" scroll-y="true">
+    <view class="c2f-content">
+      <text class="c2f-preview-note">{{previewNotice}}</text>
+      <text class="c2f-heading">结构化举报与处置</text>
+      <text class="c2f-copy">选择一个可重复状态，检查举报填写、结果恢复和平台结论文案。</text>
+
+      <view class="c2f-scenario-list">
+        <button
+          wx:for="{{screens}}"
+          wx:key="scenario"
+          class="c2f-scenario-card"
+          hover-class="c2f-pressed"
+          bindtap="onOpenScenario"
+          data-scenario="{{item.scenario}}"
+          aria-label="打开{{item.title}}"
+        >
+          <view class="c2f-scenario-copy">
+            <text>{{item.title}}</text>
+            <text>{{item.detail}}</text>
+          </view>
+          <view class="c2f-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+
+      <view class="c2f-boundary" aria-role="note">
+        <text>预览边界</text>
+        <text>本页只读取隔离 Fixture；正式版本将接入真实报名资格与平台审计。</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>
