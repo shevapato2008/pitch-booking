@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from backend.app.models import (
     OpenGame,
     OpenGameAttendanceCorrection,
+    OpenGameMemberRemoval,
     OpenGameNotificationOutbox,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
@@ -120,6 +121,17 @@ class OpenGameRegistrationRepository:
         )
         return int(count or 0)
 
+    def count_waitlisted(self, *, game_id: uuid.UUID) -> int:
+        count = self.session.scalar(
+            select(func.count())
+            .select_from(OpenGameRegistration)
+            .where(
+                OpenGameRegistration.game_id == game_id,
+                OpenGameRegistration.status == OpenGameRegistrationStatus.WAITLISTED,
+            )
+        )
+        return int(count or 0)
+
     def has_active_waitlist(self, *, game_id: uuid.UUID) -> bool:
         return (
             self.session.scalar(
@@ -143,8 +155,7 @@ class OpenGameRegistrationRepository:
             select(OpenGameRegistration)
             .where(
                 OpenGameRegistration.game_id == game_id,
-                OpenGameRegistration.status
-                == OpenGameRegistrationStatus.WAITLISTED,
+                OpenGameRegistration.status == OpenGameRegistrationStatus.WAITLISTED,
             )
             .order_by(
                 OpenGameRegistration.waitlist_seq,
@@ -179,14 +190,36 @@ class OpenGameRegistrationRepository:
     def add_notification(self, notification: OpenGameNotificationOutbox) -> None:
         self.session.add(notification)
 
+    def add_member_removal(self, removal: OpenGameMemberRemoval) -> None:
+        self.session.add(removal)
+
+    def list_joined_members(
+        self,
+        *,
+        game_id: uuid.UUID,
+    ) -> list[OpenGameRegistration]:
+        return list(
+            self.session.scalars(
+                select(OpenGameRegistration)
+                .where(
+                    OpenGameRegistration.game_id == game_id,
+                    OpenGameRegistration.status == OpenGameRegistrationStatus.JOINED,
+                )
+                .order_by(
+                    OpenGameRegistration.applied_at,
+                    OpenGameRegistration.id,
+                )
+                .execution_options(populate_existing=True)
+            )
+        )
+
     def list_pending(self, *, game_id: uuid.UUID) -> list[OpenGameRegistration]:
         return list(
             self.session.scalars(
                 select(OpenGameRegistration)
                 .where(
                     OpenGameRegistration.game_id == game_id,
-                    OpenGameRegistration.status
-                    == OpenGameRegistrationStatus.APPLIED,
+                    OpenGameRegistration.status == OpenGameRegistrationStatus.APPLIED,
                 )
                 .order_by(
                     OpenGameRegistration.applied_at,
@@ -223,8 +256,7 @@ class OpenGameRegistrationRepository:
                 select(OpenGameRegistration)
                 .where(
                     OpenGameRegistration.game_id == game_id,
-                    OpenGameRegistration.status
-                    == OpenGameRegistrationStatus.JOINED,
+                    OpenGameRegistration.status == OpenGameRegistrationStatus.JOINED,
                 )
                 .order_by(
                     OpenGameRegistration.applied_at,
@@ -248,9 +280,7 @@ class OpenGameRegistrationRepository:
                     "corrected_at"
                 ),
             )
-            .where(
-                OpenGameAttendanceCorrection.registration_id.in_(registration_ids)
-            )
+            .where(OpenGameAttendanceCorrection.registration_id.in_(registration_ids))
             .group_by(OpenGameAttendanceCorrection.registration_id)
         )
         return {row.registration_id: row.corrected_at for row in rows}
@@ -267,8 +297,7 @@ class OpenGameRegistrationRepository:
             .select_from(OpenGameRegistration)
             .where(
                 OpenGameRegistration.game_id == game_id,
-                OpenGameRegistration.status
-                == OpenGameRegistrationStatus.WAITLISTED,
+                OpenGameRegistration.status == OpenGameRegistrationStatus.WAITLISTED,
                 or_(
                     OpenGameRegistration.waitlist_seq < waitlist_seq,
                     and_(
@@ -298,8 +327,7 @@ class OpenGameRegistrationRepository:
                 or_(
                     queued.c.waitlist_seq < OpenGameRegistration.waitlist_seq,
                     and_(
-                        queued.c.waitlist_seq
-                        == OpenGameRegistration.waitlist_seq,
+                        queued.c.waitlist_seq == OpenGameRegistration.waitlist_seq,
                         queued.c.id < OpenGameRegistration.id,
                     ),
                 ),
@@ -309,8 +337,7 @@ class OpenGameRegistrationRepository:
         )
         waitlist_position = case(
             (
-                OpenGameRegistration.status
-                == OpenGameRegistrationStatus.WAITLISTED,
+                OpenGameRegistration.status == OpenGameRegistrationStatus.WAITLISTED,
                 preceding_count + 1,
             ),
             else_=None,
