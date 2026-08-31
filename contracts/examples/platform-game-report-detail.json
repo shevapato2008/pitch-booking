@@ -1,0 +1,33 @@
+{
+  "report_id": "52000000-0000-4000-8000-000000000001",
+  "category": "FALSE_INFORMATION",
+  "status": "PENDING",
+  "facts": "公开说明称费用已经包含，但组织者随后要求额外支付未公开费用。",
+  "submitted_at": "2026-09-01T12:18:00+08:00",
+  "reporter_display_name": "林知远",
+  "reporter_registration_status": "JOINED",
+  "target": {
+    "game_id": "51000000-0000-4000-8000-000000000001",
+    "game_name": "海河周日轻松局",
+    "organizer_team_name": "津门晨风队",
+    "venue_name": "天津奥体足球场",
+    "pitch_name": "七人制 A 场",
+    "starts_at": "2026-09-06T10:00:00+08:00",
+    "ends_at": "2026-09-06T12:00:00+08:00",
+    "time_zone": "Asia/Shanghai"
+  },
+  "authority": {
+    "persisted_status": "PUBLISHED",
+    "effective_status": "PUBLISHED",
+    "cancellation_source": null,
+    "version": 7,
+    "cancellation_allowed": true,
+    "cancellation_blocker": null
+  },
+  "allowed_outcomes": [
+    "DISMISSED",
+    "CONFIRMED_RECORDED",
+    "CONFIRMED_GAME_CANCELLED"
+  ],
+  "resolution": null
+}
