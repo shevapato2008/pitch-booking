@@ -1,0 +1,51 @@
+{
+  "id": "attendance-correction-preview",
+  "production_enabled": false,
+  "viewports": {
+    "platform": {"width": 1440, "height": 900},
+    "ios": {"width": 390, "height": 844},
+    "android": {"width": 411, "height": 731}
+  },
+  "screens": [
+    {
+      "id": "platform-ready",
+      "reference": "artifacts/ui/reference/platform-attendance-correction/index.html?case=ready",
+      "capture_viewports": ["platform"],
+      "representative_capture": true
+    },
+    {
+      "id": "platform-confirm",
+      "reference": "artifacts/ui/reference/platform-attendance-correction/index.html?case=confirm",
+      "capture_viewports": ["platform"],
+      "representative_capture": true
+    },
+    {
+      "id": "captain-readback",
+      "reference": "artifacts/ui/references/attendance-correction-readback.html?screen=captain",
+      "capture_viewports": ["ios", "android"],
+      "representative_capture": true
+    },
+    {
+      "id": "player-readback",
+      "reference": "artifacts/ui/references/attendance-correction-readback.html?screen=player",
+      "capture_viewports": ["ios", "android"],
+      "representative_capture": true
+    }
+  ],
+  "interaction_targets": {
+    "ios_minimum_css_pixels": 44,
+    "android_minimum_css_pixels": 48,
+    "button_alignment": "flex-both-axes"
+  },
+  "scrolling": {
+    "direction": "vertical",
+    "fixed_bottom_bar": "none",
+    "safe_area_bottom": "required"
+  },
+  "review_slots": ["reference", "implementation", "side-by-side", "overlay-50", "difference", "observations"],
+  "fixture": {
+    "marker": "C2D_ATTENDANCE_CORRECTION_FIXTURE",
+    "deletion_condition": "Remove or keep strictly development-only after production authority integration, package audit, and physical iOS/Android acceptance."
+  },
+  "gate": "PENDING"
+}

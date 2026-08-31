@@ -1,0 +1,8 @@
+{
+  "token": "C2D_ATTENDANCE_CORRECTION_FIXTURE",
+  "pages": [
+    "dev/pages/c2d-attendance-correction-scenario/index",
+    "dev/pages/c2d-captain-roster/index",
+    "dev/pages/c2d-player-result/index"
+  ]
+}

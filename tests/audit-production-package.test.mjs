@@ -119,6 +119,17 @@ for (const token of [
   "c2c-reg-unmarked",
   "c2c-reg-present",
   "c2c-reg-no-show",
+  "ATTENDANCE_CORRECTION_FIXTURE",
+  "C2D_ATTENDANCE_CORRECTION_FIXTURE",
+  "platform-admin/dev-attendance-correction",
+  "c2d-attendance-correction-fixture",
+  "c2d-attendance-correction-pages.json",
+  "dev/pages/c2d-attendance-correction-scenario/index",
+  "dev/pages/c2d-captain-roster/index",
+  "dev/pages/c2d-player-result/index",
+  "C2d 开发预览 · 模拟数据",
+  "8ed324a4-56cb-4d73-9a77-0b4605ac3b17",
+  "C1b 预发布验收局",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
