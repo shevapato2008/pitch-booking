@@ -30,6 +30,7 @@ const EXISTING_PRODUCTION_ROUTES = [
 const CAPTAIN_OPEN_GAME_ROUTES = [
   "pages/captain-game-form/index",
   "pages/captain-game-manage/index",
+  "pages/captain-game-members/index",
   "pages/captain-game-attendance/index",
   "pages/captain-game-public/index",
 ];

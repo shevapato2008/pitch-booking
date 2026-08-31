@@ -22,6 +22,7 @@ const productionRoutes = [
   "pages/order-detail/index",
   "pages/captain-game-form/index",
   "pages/captain-game-manage/index",
+  "pages/captain-game-members/index",
   "pages/captain-game-attendance/index",
   "pages/captain-game-public/index",
   "pages/player-game-application/index",
@@ -142,6 +143,15 @@ for (const token of [
   "C2d 开发预览 · 模拟数据",
   "8ed324a4-56cb-4d73-9a77-0b4605ac3b17",
   "C1b 预发布验收局",
+  "C2E_MEMBER_REMOVAL_FIXTURE",
+  "remove C2E_MEMBER_REMOVAL_FIXTURE before production build or integration",
+  "c2e-member-removal-fixture",
+  "c2e-member-removal-pages.json",
+  "dev/pages/c2e-member-removal-scenario/index",
+  "dev/pages/c2e-member-removal/index",
+  "C2e 开发预览 · 模拟数据",
+  "c2e-reg-left-wing",
+  "c2e-remove-member-unknown-key-0001",
 ]) {
   test(`production audit rejects ${token} and names it`, async (t) => {
     const root = await createProductionPackage(t);
