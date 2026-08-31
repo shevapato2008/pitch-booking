@@ -210,15 +210,16 @@ h1, h2, h3, p { margin-top: 0; }
 
 .confirm-dialog { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; }
 .confirm-dialog__scrim { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: rgba(16, 36, 62, .54); cursor: default; }
-.confirm-dialog__panel { position: relative; z-index: 1; width: 440px; padding: 26px; border-radius: 16px; background: white; box-shadow: 0 28px 70px rgba(16, 36, 62, .24); text-align: center; }
+.confirm-dialog__panel { position: relative; z-index: 1; width: 440px; max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; background: white; box-shadow: 0 28px 70px rgba(16, 36, 62, .24); text-align: center; }
+.confirm-dialog__body { min-height: 0; padding: 26px 26px 0; overflow-y: auto; }
 .icon-button { position: absolute; top: 15px; right: 15px; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: white; font-size: 22px; line-height: 1; }
 .confirm-dialog__warning { width: 48px; height: 48px; display: grid; place-items: center; margin: 4px auto 15px; border-radius: 50%; color: var(--error); background: var(--error-soft); font-size: 22px; font-weight: 850; }
-.confirm-dialog__panel > p:not(.eyebrow) { max-width: 350px; margin: 0 auto; color: var(--muted); font-size: 13px; line-height: 1.7; }
-.confirm-dialog__panel > p strong { color: var(--text); }
+.confirm-dialog__body > p:not(.eyebrow) { max-width: 350px; margin: 0 auto; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.confirm-dialog__body > p strong { color: var(--text); }
 .confirm-summary { display: grid; gap: 6px; margin-top: 18px; padding: 14px; border-radius: 11px; background: var(--page); overflow-wrap: anywhere; }
 .confirm-summary span, .confirm-summary small { color: var(--muted); font-size: 12px; }
 .confirm-summary strong { font-size: 15px; }
-.confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.confirm-actions { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; padding: 0 26px 26px; background: white; }
 
 @media (max-width: 1200px) {
   .workspace { grid-template-columns: 320px minmax(0, 1fr); }

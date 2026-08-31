@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { describe, expect, jest, test } from "@jest/globals";
 
 import {
@@ -7,7 +9,7 @@ import {
   type AttendanceRegistrationDetail,
   type PlatformApi,
 } from "./api";
-import { AttendanceCorrectionController } from "./attendance-correction";
+import { AttendanceCorrectionController, formatAttendanceTime } from "./attendance-correction";
 
 const registrationId = "8ed324a4-56cb-4d73-9a77-0b4605ac3b17";
 const detail = (patch: Partial<AttendanceRegistrationDetail> = {}): AttendanceRegistrationDetail => ({
@@ -51,6 +53,16 @@ const harness = (api: Partial<PlatformApi>) => new AttendanceCorrectionControlle
   api as PlatformApi,
   () => "attendance-key-123456",
 );
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+};
 
 describe("AttendanceCorrectionController", () => {
   test("requires a complete UUID, normalizes it, queries exact authority, and clears all sensitive state", async () => {
@@ -240,6 +252,150 @@ describe("AttendanceCorrectionController", () => {
     expect(controller.state.pendingAttempt).toBe(frozenAttempt);
     expect(createKey).toHaveBeenCalledTimes(1);
     expect(api.getAttendanceRegistration).toHaveBeenCalledTimes(2);
+  });
+
+  test("coalesces concurrent authority refreshes for the original pending attempt", async () => {
+    const slowAuthority = deferred<AttendanceRegistrationDetail>();
+    const api = {
+      getAttendanceRegistration: jest.fn<PlatformApi["getAttendanceRegistration"]>()
+        .mockResolvedValueOnce(detail())
+        .mockRejectedValueOnce(new ApiError(503, "SERVICE_UNAVAILABLE", "刷新失败"))
+        .mockImplementationOnce(() => slowAuthority.promise)
+        .mockResolvedValue(corrected()),
+      correctAttendanceRegistration: jest.fn<PlatformApi["correctAttendanceRegistration"]>()
+        .mockRejectedValue(new TypeError("network failed")),
+    };
+    const controller = harness(api);
+    await controller.lookup(registrationId);
+    controller.setReason("现场记录核验有误");
+    controller.prepareCorrection();
+    await controller.confirmCorrection();
+
+    const first = controller.refreshAuthority();
+    const second = controller.refreshAuthority();
+    slowAuthority.resolve(corrected());
+
+    await expect(first).resolves.toEqual({ ok: true, kind: "AUTHORITY_UPDATED" });
+    await expect(second).resolves.toEqual({ ok: true, kind: "AUTHORITY_UPDATED" });
+    expect(api.getAttendanceRegistration).toHaveBeenCalledTimes(3);
+    expect(api.correctAttendanceRegistration).toHaveBeenCalledTimes(1);
+    expect(controller.state.detail).toEqual(corrected());
+    expect(controller.state.pendingAttempt).toBeNull();
+  });
+
+  test("ignores a slow refresh 401 after a new session lifecycle replaces its attempt", async () => {
+    const slowAuthority = deferred<AttendanceRegistrationDetail>();
+    const otherRegistrationId = "7c734b99-7f40-4cbe-83c2-496cc22da2e2";
+    const replacement = detail({ registration_id: otherRegistrationId, player_display_name: "新会话球员" });
+    const api = {
+      getAttendanceRegistration: jest.fn<PlatformApi["getAttendanceRegistration"]>()
+        .mockResolvedValueOnce(detail())
+        .mockRejectedValueOnce(new ApiError(503, "SERVICE_UNAVAILABLE", "刷新失败"))
+        .mockImplementationOnce(() => slowAuthority.promise)
+        .mockResolvedValueOnce(replacement),
+      correctAttendanceRegistration: jest.fn<PlatformApi["correctAttendanceRegistration"]>()
+        .mockRejectedValue(new TypeError("network failed")),
+    };
+    const controller = harness(api);
+    await controller.lookup(registrationId);
+    controller.setReason("现场记录核验有误");
+    controller.prepareCorrection();
+    await controller.confirmCorrection();
+
+    const staleRefresh = controller.refreshAuthority();
+    controller.clearForSessionEnd();
+    await controller.lookup(otherRegistrationId);
+    slowAuthority.reject(new SessionExpiredError("旧会话已失效"));
+
+    await expect(staleRefresh).resolves.toMatchObject({ ok: false, refreshRequired: true });
+    expect(controller.state.detail).toEqual(replacement);
+    expect(controller.state.pendingAttempt).toBeNull();
+  });
+
+  test("does not bubble a delayed mutation 401 from an expired lifecycle into the replacement session", async () => {
+    const slowMutation = deferred<AttendanceCorrectionEvent>();
+    const otherRegistrationId = "7c734b99-7f40-4cbe-83c2-496cc22da2e2";
+    const replacement = detail({ registration_id: otherRegistrationId, player_display_name: "新会话球员" });
+    const api = {
+      getAttendanceRegistration: jest.fn<PlatformApi["getAttendanceRegistration"]>()
+        .mockResolvedValueOnce(detail())
+        .mockResolvedValueOnce(replacement),
+      correctAttendanceRegistration: jest.fn<PlatformApi["correctAttendanceRegistration"]>()
+        .mockImplementationOnce(() => slowMutation.promise),
+    };
+    const controller = harness(api);
+    await controller.lookup(registrationId);
+    controller.setReason("现场记录核验有误");
+    controller.prepareCorrection();
+
+    const staleMutation = controller.confirmCorrection();
+    controller.clearForSessionEnd();
+    await controller.lookup(otherRegistrationId);
+    slowMutation.reject(new SessionExpiredError("旧会话已失效"));
+
+    await expect(staleMutation).resolves.toMatchObject({ ok: false, refreshRequired: true });
+    expect(controller.state.detail).toEqual(replacement);
+    expect(controller.state.pendingAttempt).toBeNull();
+  });
+
+  test("unlocks lookup after an unknown same-key replay receives a deterministic 4xx", async () => {
+    const api = {
+      getAttendanceRegistration: jest.fn<PlatformApi["getAttendanceRegistration"]>()
+        .mockResolvedValueOnce(detail())
+        .mockRejectedValueOnce(new ApiError(503, "SERVICE_UNAVAILABLE", "刷新失败"))
+        .mockResolvedValueOnce(detail()),
+      correctAttendanceRegistration: jest.fn<PlatformApi["correctAttendanceRegistration"]>()
+        .mockRejectedValueOnce(new TypeError("network failed"))
+        .mockRejectedValueOnce(new ApiError(422, "INVALID_ATTENDANCE_CORRECTION", "纠正请求无效")),
+    };
+    const controller = harness(api);
+    await controller.lookup(registrationId);
+    controller.setReason("现场记录核验有误");
+    controller.prepareCorrection();
+    await controller.confirmCorrection();
+
+    await expect(controller.refreshAuthority()).resolves.toEqual({ ok: false, error: "纠正请求无效" });
+    expect(controller.state).toMatchObject({ loading: false, submitting: false, pendingAttempt: null });
+    expect(controller.state.feedback).toEqual({
+      type: "error",
+      title: "纠正未提交",
+      message: "纠正请求无效",
+    });
+    expect(controller.setQuery(registrationId)).toBe(true);
+    expect(controller.clear()).toEqual({ ok: true });
+  });
+
+  test("keeps attendance detail while exposing a logout failure in the active module", async () => {
+    const controller = harness({
+      getAttendanceRegistration: jest.fn<PlatformApi["getAttendanceRegistration"]>().mockResolvedValue(detail()),
+    });
+    await controller.lookup(registrationId);
+
+    controller.reportOperationFailure("退出登录失败", "网络异常，请重试");
+
+    expect(controller.state.detail).toEqual(detail());
+    expect(controller.state.feedback).toEqual({
+      type: "error",
+      title: "退出登录失败",
+      message: "网络异常，请重试",
+    });
+  });
+
+  test("formats every attendance timestamp in the authority Asia/Shanghai zone regardless of host zone", () => {
+    const originalTimeZone = process.env.TZ;
+    try {
+      process.env.TZ = "UTC";
+      const fromUtcHost = formatAttendanceTime("2026-08-31T01:00:00Z", "Asia/Shanghai");
+      process.env.TZ = "America/Los_Angeles";
+      const fromPacificHost = formatAttendanceTime("2026-08-31T01:00:00Z", "Asia/Shanghai");
+
+      expect(fromUtcHost).toBe("2026/8/31 09:00");
+      expect(fromPacificHost).toBe(fromUtcHost);
+      expect(formatAttendanceTime(null, "Asia/Shanghai")).toBe("—");
+    } finally {
+      if (originalTimeZone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTimeZone;
+    }
   });
 
   test("propagates session expiry and ignores a stale lookup that resolves after clear", async () => {

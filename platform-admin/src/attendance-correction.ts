@@ -58,6 +58,18 @@ const emptyState = (): AttendanceCorrectionState => ({
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : "平台服务暂时不可用，请重试";
 
+export const formatAttendanceTime = (
+  value: string | null,
+  timeZone: AttendanceRegistrationDetail["time_zone"],
+): string => value
+  ? new Intl.DateTimeFormat("zh-CN", {
+      dateStyle: "short",
+      timeStyle: "short",
+      hour12: false,
+      timeZone,
+    }).format(new Date(value))
+  : "—";
+
 const isUnknownMutationResult = (error: unknown): boolean =>
   !(error instanceof ApiError) || error.status >= 500;
 
@@ -69,6 +81,13 @@ const defaultIdempotencyKey = (): string => {
 export class AttendanceCorrectionController {
   state: AttendanceCorrectionState = emptyState();
   private generation = 0;
+  private refreshRevision = 0;
+  private refreshInFlight: {
+    attempt: AttendancePendingAttempt;
+    generation: number;
+    revision: number;
+    promise: Promise<AttendanceActionResult>;
+  } | null = null;
 
   constructor(
     private readonly api: PlatformApi,
@@ -105,8 +124,8 @@ export class AttendanceCorrectionController {
       this.state = { ...this.state, detail, loading: false, lookupError: null };
       return { ok: true };
     } catch (error) {
-      if (error instanceof SessionExpiredError) throw error;
       if (generation !== this.generation) return { ok: false, error: "查询已取消" };
+      if (error instanceof SessionExpiredError) throw error;
       const message = errorMessage(error);
       this.state = { ...this.state, loading: false, lookupError: message };
       return { ok: false, error: message };
@@ -131,7 +150,16 @@ export class AttendanceCorrectionController {
 
   clearForSessionEnd(): void {
     this.generation += 1;
+    this.refreshRevision += 1;
+    this.refreshInFlight = null;
     this.state = emptyState();
+  }
+
+  reportOperationFailure(title: string, message: string): void {
+    this.state = {
+      ...this.state,
+      feedback: { type: "error", title, message },
+    };
   }
 
   prepareCorrection(): AttendanceActionResult {
@@ -184,6 +212,8 @@ export class AttendanceCorrectionController {
       authorityStatusBefore: detail.attendance_status,
     };
     const generation = this.generation;
+    this.refreshRevision += 1;
+    this.refreshInFlight = null;
     this.state = {
       ...this.state,
       confirmationOpen: false,
@@ -194,25 +224,49 @@ export class AttendanceCorrectionController {
     return this.submitAttempt(attempt, generation);
   }
 
-  async refreshAuthority(): Promise<AttendanceActionResult> {
+  refreshAuthority(): Promise<AttendanceActionResult> {
     const attempt = this.state.pendingAttempt;
-    if (!attempt) return { ok: false, error: "当前没有待刷新的操作结果" };
+    if (!attempt) return Promise.resolve({ ok: false, error: "当前没有待刷新的操作结果" });
     const generation = this.generation;
+    const existing = this.refreshInFlight;
+    if (existing && existing.attempt === attempt && existing.generation === generation) {
+      return existing.promise;
+    }
+    const revision = ++this.refreshRevision;
     this.state = { ...this.state, loading: true, feedback: null };
+    const promise = this.performAuthorityRefresh(attempt, generation, revision);
+    const refresh = { attempt, generation, revision, promise };
+    this.refreshInFlight = refresh;
+    void promise.then(
+      () => { if (this.refreshInFlight === refresh) this.refreshInFlight = null; },
+      () => { if (this.refreshInFlight === refresh) this.refreshInFlight = null; },
+    );
+    return promise;
+  }
+
+  private async performAuthorityRefresh(
+    attempt: AttendancePendingAttempt,
+    generation: number,
+    revision: number,
+  ): Promise<AttendanceActionResult> {
     if (attempt.phase === "UNKNOWN" && !attempt.replayed) {
-      return this.reconcileUnknown(attempt, generation);
+      return this.reconcileUnknown(attempt, generation, revision);
     }
     try {
       const authority = await this.api.getAttendanceRegistration(attempt.registrationId);
-      if (generation !== this.generation) return { ok: false, error: "刷新已取消" };
+      if (!this.isCurrentAttempt(attempt, generation, revision)) {
+        return { ok: false, error: "刷新已取消", refreshRequired: true };
+      }
       if (attempt.phase === "UNKNOWN" && !this.authorityChanged(attempt, authority)) {
         return this.markUnresolved(attempt, "权威状态仍未变化，请稍后再次刷新");
       }
       this.acceptAuthority(authority, attempt.phase === "CONFIRMED" ? "纠正已记录" : "权威状态已刷新");
       return { ok: true, kind: "AUTHORITY_UPDATED" };
     } catch (error) {
+      if (!this.isCurrentAttempt(attempt, generation, revision)) {
+        return { ok: false, error: "刷新已取消", refreshRequired: true };
+      }
       if (error instanceof SessionExpiredError) throw error;
-      if (generation !== this.generation) return { ok: false, error: "刷新已取消" };
       return this.markRefreshFailure(attempt, errorMessage(error));
     }
   }
@@ -220,6 +274,7 @@ export class AttendanceCorrectionController {
   private async submitAttempt(
     attempt: AttendancePendingAttempt,
     generation: number,
+    refreshRevision?: number,
   ): Promise<AttendanceActionResult> {
     try {
       await this.api.correctAttendanceRegistration(
@@ -227,26 +282,31 @@ export class AttendanceCorrectionController {
         attempt.body,
         attempt.idempotencyKey,
       );
-      if (generation !== this.generation) return { ok: true, kind: "CONFIRMED_REFRESH_REQUIRED" };
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: true, kind: "CONFIRMED_REFRESH_REQUIRED" };
+      }
       attempt.phase = "CONFIRMED";
       this.state = { ...this.state, pendingAttempt: attempt };
-      return this.refreshAfterConfirmed(attempt, generation);
+      return this.refreshAfterConfirmed(attempt, generation, refreshRevision);
     } catch (error) {
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: false, error: "纠正已取消", refreshRequired: true };
+      }
       if (error instanceof SessionExpiredError) throw error;
-      if (generation !== this.generation) return { ok: false, error: errorMessage(error), refreshRequired: true };
       if (error instanceof ApiError && error.status === 409) {
         attempt.phase = "CONFLICT";
         this.state = { ...this.state, pendingAttempt: attempt };
-        return this.refreshAfterConflict(attempt, generation, error.message);
+        return this.refreshAfterConflict(attempt, generation, error.message, refreshRevision);
       }
       if (isUnknownMutationResult(error)) {
         attempt.phase = "UNKNOWN";
         this.state = { ...this.state, pendingAttempt: attempt };
-        return this.reconcileUnknown(attempt, generation);
+        return this.reconcileUnknown(attempt, generation, refreshRevision);
       }
       const message = errorMessage(error);
       this.state = {
         ...this.state,
+        loading: false,
         submitting: false,
         pendingAttempt: null,
         feedback: { type: "error", title: "纠正未提交", message },
@@ -258,15 +318,20 @@ export class AttendanceCorrectionController {
   private async refreshAfterConfirmed(
     attempt: AttendancePendingAttempt,
     generation: number,
+    refreshRevision?: number,
   ): Promise<AttendanceActionResult> {
     try {
       const authority = await this.api.getAttendanceRegistration(attempt.registrationId);
-      if (generation !== this.generation) return { ok: true, kind: "CONFIRMED_REFRESH_REQUIRED" };
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: true, kind: "CONFIRMED_REFRESH_REQUIRED" };
+      }
       this.acceptAuthority(authority, "纠正已记录");
       return { ok: true, kind: "CONFIRMED" };
     } catch (error) {
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: true, kind: "CONFIRMED_REFRESH_REQUIRED" };
+      }
       if (error instanceof SessionExpiredError) throw error;
-      if (generation !== this.generation) return { ok: true, kind: "CONFIRMED_REFRESH_REQUIRED" };
       this.state = {
         ...this.state,
         loading: false,
@@ -287,10 +352,13 @@ export class AttendanceCorrectionController {
     attempt: AttendancePendingAttempt,
     generation: number,
     conflictMessage: string,
+    refreshRevision?: number,
   ): Promise<AttendanceActionResult> {
     try {
       const authority = await this.api.getAttendanceRegistration(attempt.registrationId);
-      if (generation !== this.generation) return { ok: false, error: conflictMessage, refreshRequired: true };
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: false, error: conflictMessage, refreshRequired: true };
+      }
       this.state = {
         ...this.state,
         detail: authority,
@@ -305,8 +373,10 @@ export class AttendanceCorrectionController {
       };
       return { ok: false, error: conflictMessage, refreshed: true };
     } catch (error) {
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: false, error: conflictMessage, refreshRequired: true };
+      }
       if (error instanceof SessionExpiredError) throw error;
-      if (generation !== this.generation) return { ok: false, error: conflictMessage, refreshRequired: true };
       this.state = {
         ...this.state,
         loading: false,
@@ -326,16 +396,21 @@ export class AttendanceCorrectionController {
   private async reconcileUnknown(
     attempt: AttendancePendingAttempt,
     generation: number,
+    refreshRevision?: number,
   ): Promise<AttendanceActionResult> {
     let authority: AttendanceRegistrationDetail;
     try {
       authority = await this.api.getAttendanceRegistration(attempt.registrationId);
     } catch (error) {
+      if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+        return { ok: false, error: "刷新已取消", refreshRequired: true };
+      }
       if (error instanceof SessionExpiredError) throw error;
-      if (generation !== this.generation) return { ok: false, error: "刷新已取消", refreshRequired: true };
       return this.markUnresolved(attempt, "提交结果未知，暂时无法读取权威状态");
     }
-    if (generation !== this.generation) return { ok: false, error: "刷新已取消", refreshRequired: true };
+    if (!this.isCurrentAttempt(attempt, generation, refreshRevision)) {
+      return { ok: false, error: "刷新已取消", refreshRequired: true };
+    }
     if (this.authorityChanged(attempt, authority)) {
       this.acceptAuthority(authority, "权威状态已更新");
       return { ok: true, kind: "AUTHORITY_UPDATED" };
@@ -345,7 +420,17 @@ export class AttendanceCorrectionController {
 
     attempt.replayed = true;
     this.state = { ...this.state, pendingAttempt: attempt };
-    return this.submitAttempt(attempt, generation);
+    return this.submitAttempt(attempt, generation, refreshRevision);
+  }
+
+  private isCurrentAttempt(
+    attempt: AttendancePendingAttempt,
+    generation: number,
+    refreshRevision?: number,
+  ): boolean {
+    return generation === this.generation
+      && this.state.pendingAttempt === attempt
+      && (refreshRevision === undefined || refreshRevision === this.refreshRevision);
   }
 
   private authorityChanged(
