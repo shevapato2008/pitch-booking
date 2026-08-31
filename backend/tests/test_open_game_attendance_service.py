@@ -217,32 +217,47 @@ def test_owner_roster_batches_latest_correction_without_leaking_platform_audit(
 ) -> None:
     seeded = _seed_completed_attendance_game(pg_engine, joined_count=3)
     corrected_at = ATTENDANCE_NOW + timedelta(hours=1)
+    earlier_correction_at = corrected_at - timedelta(minutes=30)
     recorded_at = ATTENDANCE_NOW - timedelta(minutes=2)
     first_id = seeded.joined_ids[0]
     second_id = seeded.joined_ids[1]
     with Session(pg_engine) as session:
         first = session.get_one(OpenGameRegistration, first_id)
-        first.attendance_status = OpenGameAttendanceStatus.NO_SHOW
+        first.attendance_status = OpenGameAttendanceStatus.PRESENT
         first.attendance_recorded_at = recorded_at
         first.attendance_recorded_by_user_id = seeded.owner_id
-        first.version = 4
+        first.version = 5
         second = session.get_one(OpenGameRegistration, second_id)
         second.attendance_status = OpenGameAttendanceStatus.PRESENT
         second.attendance_recorded_at = recorded_at
         second.attendance_recorded_by_user_id = seeded.owner_id
         second.version = 3
-        session.add(
-            OpenGameAttendanceCorrection(
-                registration_id=first.id,
-                from_status=OpenGameAttendanceStatus.PRESENT,
-                to_status=OpenGameAttendanceStatus.NO_SHOW,
-                reason="平台线下核实",
-                corrected_by_principal_id="platform-admin:captain-readback",
-                corrected_at=corrected_at,
-                registration_version_before=3,
-                registration_version_after=4,
-                idempotency_key="captain-readback-correction-0001",
-                request_sha256="a" * 64,
+        session.add_all(
+            (
+                OpenGameAttendanceCorrection(
+                    registration_id=first.id,
+                    from_status=OpenGameAttendanceStatus.PRESENT,
+                    to_status=OpenGameAttendanceStatus.NO_SHOW,
+                    reason="平台首次线下核实",
+                    corrected_by_principal_id="platform-admin:captain-readback",
+                    corrected_at=earlier_correction_at,
+                    registration_version_before=3,
+                    registration_version_after=4,
+                    idempotency_key="captain-readback-correction-0001",
+                    request_sha256="a" * 64,
+                ),
+                OpenGameAttendanceCorrection(
+                    registration_id=first.id,
+                    from_status=OpenGameAttendanceStatus.NO_SHOW,
+                    to_status=OpenGameAttendanceStatus.PRESENT,
+                    reason="平台再次线下核实",
+                    corrected_by_principal_id="platform-admin:captain-readback",
+                    corrected_at=corrected_at,
+                    registration_version_before=4,
+                    registration_version_after=5,
+                    idempotency_key="captain-readback-correction-0002",
+                    request_sha256="b" * 64,
+                ),
             )
         )
         session.commit()
@@ -274,13 +289,19 @@ def test_owner_roster_batches_latest_correction_without_leaking_platform_audit(
         event.remove(pg_engine, "before_cursor_execute", record_statement)
 
     by_id = {item.registration_id: item for item in roster.registrations}
-    assert by_id[first_id].attendance_status == OpenGameAttendanceStatus.NO_SHOW
+    assert by_id[first_id].attendance_status == OpenGameAttendanceStatus.PRESENT
     assert by_id[first_id].attendance_recorded_at == recorded_at
     assert by_id[first_id].attendance_corrected_at == corrected_at
     assert by_id[second_id].attendance_corrected_at is None
     assert len(correction_selects) == 1
     serialized = json.dumps(roster.model_dump(mode="json"), ensure_ascii=False)
-    for forbidden in ("平台线下核实", "platform-admin", "reason", "principal"):
+    for forbidden in (
+        "平台首次线下核实",
+        "平台再次线下核实",
+        "platform-admin",
+        "reason",
+        "principal",
+    ):
         assert forbidden not in serialized
 
 

@@ -156,7 +156,11 @@ class OpenGameRegistrationService:
                 else None
             )
             correction_times = self._repository.latest_attendance_correction_times(
-                registration_ids=[registration.id] if registration is not None else []
+                registration_versions=(
+                    {registration.id: registration.version}
+                    if registration is not None
+                    else {}
+                )
             )
             return _project_context(
                 game=game,
@@ -203,7 +207,9 @@ class OpenGameRegistrationService:
                 cursor_id=cursor_id,
             )
             correction_times = self._repository.latest_attendance_correction_times(
-                registration_ids=[row.registration.id for row in rows]
+                registration_versions={
+                    row.registration.id: row.registration.version for row in rows
+                }
             )
             now = self._now()
             items = tuple(
@@ -527,7 +533,10 @@ class OpenGameRegistrationService:
                 game_id=game.id
             )
             correction_times = self._repository.latest_attendance_correction_times(
-                registration_ids=[registration.id for registration in registrations]
+                registration_versions={
+                    registration.id: registration.version
+                    for registration in registrations
+                }
             )
             return _project_attendance_roster(
                 game=game,

@@ -1,10 +1,11 @@
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import timedelta
 from queue import Queue
 from threading import Barrier, Event
 from typing import Literal
 
 import pytest
-from sqlalchemy import URL, Engine, create_engine, func, select, text
+from sqlalchemy import URL, Engine, create_engine, event, func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
@@ -12,6 +13,7 @@ from backend.app.errors import AppError
 from backend.app.models import (
     IdempotencyRecord,
     OpenGame,
+    OpenGameAttendanceCorrection,
     OpenGameAttendanceStatus,
     OpenGameRegistration,
     OpenGameStatus,
@@ -230,3 +232,107 @@ def test_authority_change_serializes_before_attendance_without_deadlock(
         row = session.get_one(OpenGameRegistration, case.joined_ids[0])
         assert row.attendance_status is OpenGameAttendanceStatus.UNMARKED
         assert row.version == 2
+
+
+@pytest.mark.parametrize(
+    "read_surface",
+    ("context", "my-applications", "roster"),
+)
+def test_correction_commit_between_registration_and_audit_reads_never_mixes_versions(
+    pg_engine: Engine,
+    read_surface: str,
+) -> None:
+    case = _seed_completed_attendance_game(pg_engine)
+    registration_id = case.joined_ids[0]
+    recorded_at = ATTENDANCE_NOW - timedelta(minutes=5)
+    corrected_at = ATTENDANCE_NOW
+    with Session(pg_engine) as session:
+        registration = session.get_one(OpenGameRegistration, registration_id)
+        applicant_user_id = registration.applicant_user_id
+        registration.attendance_status = OpenGameAttendanceStatus.PRESENT
+        registration.attendance_recorded_at = recorded_at
+        registration.attendance_recorded_by_user_id = case.owner_id
+        registration.version = 3
+        session.commit()
+
+    interleaved = False
+
+    def commit_correction_before_audit_select(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        nonlocal interleaved
+        if (
+            interleaved
+            or not statement.lstrip().upper().startswith("SELECT")
+            or "open_game_attendance_corrections" not in statement
+        ):
+            return
+        interleaved = True
+        with Session(pg_engine) as writer:
+            registration = writer.get_one(OpenGameRegistration, registration_id)
+            registration.attendance_status = OpenGameAttendanceStatus.NO_SHOW
+            registration.version = 4
+            writer.add(
+                OpenGameAttendanceCorrection(
+                    registration_id=registration_id,
+                    from_status=OpenGameAttendanceStatus.PRESENT,
+                    to_status=OpenGameAttendanceStatus.NO_SHOW,
+                    reason="并发提交的线下核实",
+                    corrected_by_principal_id="platform-admin:readback-race",
+                    corrected_at=corrected_at,
+                    registration_version_before=3,
+                    registration_version_after=4,
+                    idempotency_key=f"readback-race-{read_surface}-0001",
+                    request_sha256="c" * 64,
+                )
+            )
+            writer.commit()
+
+    event.listen(
+        pg_engine,
+        "before_cursor_execute",
+        commit_correction_before_audit_select,
+    )
+    try:
+        with Session(pg_engine) as reader:
+            service = OpenGameRegistrationService(
+                repository=OpenGameRegistrationRepository(reader),
+                open_game_repository=OpenGameRepository(reader),
+                order_repository=OrderRepository(reader),
+                now=lambda: ATTENDANCE_NOW,
+            )
+            if read_surface == "context":
+                context = service.get_context(
+                    share_token=case.game.share_token,
+                    viewer_user_id=applicant_user_id,
+                )
+                assert context.viewer_registration is not None
+                item = context.viewer_registration
+            elif read_surface == "my-applications":
+                page = service.list_my_applications(
+                    applicant_user_id=applicant_user_id,
+                    limit=20,
+                    cursor=None,
+                )
+                item = page.items[0]
+            else:
+                roster = service.get_attendance_roster(
+                    game_id=case.game.game_id,
+                    owner_user_id=case.owner_id,
+                )
+                item = roster.registrations[0]
+    finally:
+        event.remove(
+            pg_engine,
+            "before_cursor_execute",
+            commit_correction_before_audit_select,
+        )
+
+    assert interleaved is True
+    assert item.attendance_status is OpenGameAttendanceStatus.PRESENT
+    assert item.attendance_corrected_at is None

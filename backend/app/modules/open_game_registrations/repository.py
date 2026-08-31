@@ -237,10 +237,23 @@ class OpenGameRegistrationRepository:
     def latest_attendance_correction_times(
         self,
         *,
-        registration_ids: list[uuid.UUID],
+        registration_versions: dict[uuid.UUID, int],
     ) -> dict[uuid.UUID, datetime]:
-        if not registration_ids:
+        if not registration_versions:
             return {}
+        visible_at_registration_version = or_(
+            *(
+                and_(
+                    OpenGameAttendanceCorrection.registration_id
+                    == registration_id,
+                    OpenGameAttendanceCorrection.registration_version_after
+                    <= registration_version,
+                )
+                for registration_id, registration_version in (
+                    registration_versions.items()
+                )
+            )
+        )
         rows = self.session.execute(
             select(
                 OpenGameAttendanceCorrection.registration_id,
@@ -248,9 +261,7 @@ class OpenGameRegistrationRepository:
                     "corrected_at"
                 ),
             )
-            .where(
-                OpenGameAttendanceCorrection.registration_id.in_(registration_ids)
-            )
+            .where(visible_at_registration_version)
             .group_by(OpenGameAttendanceCorrection.registration_id)
         )
         return {row.registration_id: row.corrected_at for row in rows}
