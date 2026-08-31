@@ -1,4 +1,4 @@
-import type { OpenGamePosition, OpenGamePublic } from "./open-game";
+import type { OpenGamePosition, OpenGamePublic, OpenGameState } from "./open-game";
 
 export const OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES = [
   "APPLIED",
@@ -6,6 +6,7 @@ export const OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES = [
   "JOINED",
   "REJECTED",
   "WITHDRAWN",
+  "REMOVED",
   "CANCELLED",
 ] as const;
 
@@ -112,7 +113,13 @@ export interface OpenGameViewerRegistration {
   readonly displayName: string;
   readonly position: OpenGamePosition;
   readonly note: string | null;
-  readonly persistedStatus: "APPLIED" | "WAITLISTED" | "JOINED" | "REJECTED" | "WITHDRAWN";
+  readonly persistedStatus:
+    | "APPLIED"
+    | "WAITLISTED"
+    | "JOINED"
+    | "REJECTED"
+    | "WITHDRAWN"
+    | "REMOVED";
   readonly effectiveStatus: OpenGameRegistrationEffectiveStatus;
   readonly appliedAt: string;
   readonly decidedAt: string | null;
@@ -127,6 +134,7 @@ export interface OpenGameViewerRegistration {
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
   readonly attendanceCorrectedAt: string | null;
+  readonly removedAt: string | null;
 }
 
 export interface OpenGameApplicationItem {
@@ -192,6 +200,72 @@ export interface OpenGameAttendanceMarkResult {
   readonly totalCount: number;
   readonly attendanceComplete: boolean;
 }
+
+export type OpenGameMemberRemovalBlockedReason =
+  | "GAME_NOT_PUBLISHED"
+  | "GAME_SUSPENDED"
+  | "GAME_CANCELLED"
+  | "GAME_COMPLETED"
+  | "GAME_STARTED"
+  | "ORDER_AUTHORITY_UNHEALTHY"
+  | "ATTENDANCE_RECORDED";
+
+export interface OpenGameMemberRemovalActions {
+  readonly canRemove: boolean;
+  readonly removeBlockedReason: OpenGameMemberRemovalBlockedReason | null;
+}
+
+export interface OpenGameMemberGameSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly venueName: string;
+  readonly pitchName: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly timeZone: string;
+  readonly state: OpenGameState;
+}
+
+export interface OpenGameMemberRosterItem {
+  readonly registrationId: string;
+  readonly displayName: string;
+  readonly position: OpenGamePosition;
+  readonly joinedAt: string;
+  readonly promotedFromWaitlist: boolean;
+  readonly version: number;
+  readonly allowedActions: OpenGameMemberRemovalActions;
+}
+
+export interface OpenGameMemberRoster {
+  readonly game: OpenGameMemberGameSummary;
+  readonly joinedCount: number;
+  readonly remainingSpots: number;
+  readonly waitlistCount: number;
+  readonly members: readonly OpenGameMemberRosterItem[];
+}
+
+export interface OpenGamePromotedMember {
+  readonly registrationId: string;
+  readonly displayName: string;
+  readonly position: OpenGamePosition;
+  readonly version: number;
+}
+
+export interface OpenGameMemberRemovalResult {
+  readonly removedRegistrationId: string;
+  readonly removedDisplayName: string;
+  readonly status: "REMOVED";
+  readonly version: number;
+  readonly removedAt: string;
+  readonly joinedCount: number;
+  readonly remainingSpots: number;
+  readonly waitlistCount: number;
+  readonly promotedMember: OpenGamePromotedMember | null;
+}
+
+export type OpenGameMemberRemovalReasonValidation =
+  | { readonly valid: true; readonly reason: string; readonly error: null }
+  | { readonly valid: false; readonly reason: null; readonly error: string };
 
 export interface OpenGameRegistrationContext {
   readonly game: OpenGamePublic;

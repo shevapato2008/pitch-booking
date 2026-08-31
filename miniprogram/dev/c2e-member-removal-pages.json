@@ -1,0 +1,7 @@
+{
+  "token": "C2E_MEMBER_REMOVAL_FIXTURE",
+  "pages": [
+    "dev/pages/c2e-member-removal-scenario/index",
+    "dev/pages/c2e-member-removal/index"
+  ]
+}

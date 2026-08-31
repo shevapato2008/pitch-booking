@@ -98,16 +98,10 @@ def _review_actions() -> ReviewActions:
 def _all_keys(value: object) -> set[str]:
     if isinstance(value, dict):
         return set(value) | {
-            nested_key
-            for nested_value in value.values()
-            for nested_key in _all_keys(nested_value)
+            nested_key for nested_value in value.values() for nested_key in _all_keys(nested_value)
         }
     if isinstance(value, list):
-        return {
-            nested_key
-            for nested_value in value
-            for nested_key in _all_keys(nested_value)
-        }
+        return {nested_key for nested_value in value for nested_key in _all_keys(nested_value)}
     return set()
 
 
@@ -143,15 +137,22 @@ def test_request_has_exact_fields_and_server_owned_consent_version() -> None:
 
 def test_withdrawal_request_is_closed_strict_and_explicit() -> None:
     assert set(WithdrawalRequest.model_fields) == {"action", "expected_version"}
-    assert WithdrawalRequest.model_validate(
-        {"action": "WITHDRAW_APPLICATION", "expected_version": 1}
-    ).action is WithdrawalAction.WITHDRAW_APPLICATION
-    assert WithdrawalRequest.model_validate(
-        {"action": "LEAVE_GAME", "expected_version": 2}
-    ).action is WithdrawalAction.LEAVE_GAME
-    assert WithdrawalRequest.model_validate(
-        {"action": "WITHDRAW_WAITLIST", "expected_version": 2}
-    ).action is WithdrawalAction.WITHDRAW_WAITLIST
+    assert (
+        WithdrawalRequest.model_validate(
+            {"action": "WITHDRAW_APPLICATION", "expected_version": 1}
+        ).action
+        is WithdrawalAction.WITHDRAW_APPLICATION
+    )
+    assert (
+        WithdrawalRequest.model_validate({"action": "LEAVE_GAME", "expected_version": 2}).action
+        is WithdrawalAction.LEAVE_GAME
+    )
+    assert (
+        WithdrawalRequest.model_validate(
+            {"action": "WITHDRAW_WAITLIST", "expected_version": 2}
+        ).action
+        is WithdrawalAction.WITHDRAW_WAITLIST
+    )
     for invalid in (
         {"action": "LEAVE_GAME"},
         {"action": "LEAVE_GAME", "expected_version": 0},
@@ -327,9 +328,7 @@ def test_position_is_the_exact_five_value_enum() -> None:
         "ANY",
     ]
     for position in OpenGameRegistrationPosition:
-        parsed = CreateApplicationRequest.model_validate(
-            _valid_request(position=position.value)
-        )
+        parsed = CreateApplicationRequest.model_validate(_valid_request(position=position.value))
         assert parsed.position is position
     with pytest.raises(ValidationError):
         CreateApplicationRequest.model_validate(_valid_request(position="WINGER"))
@@ -362,9 +361,7 @@ def test_empty_trimmed_note_projects_to_none(note: str | None) -> None:
 
 
 def test_note_has_a_trimmed_one_hundred_twenty_code_point_limit() -> None:
-    accepted = CreateApplicationRequest.model_validate(
-        _valid_request(note=f"  {'到' * 120}  ")
-    )
+    accepted = CreateApplicationRequest.model_validate(_valid_request(note=f"  {'到' * 120}  "))
     assert accepted.note == "到" * 120
     with pytest.raises(ValidationError):
         CreateApplicationRequest.model_validate(_valid_request(note="到" * 121))
@@ -409,9 +406,7 @@ def test_captain_visible_text_rejects_approved_private_patterns(
         ("Team.CN中场", "可以踢 8 号位和 10 号位"),
     ],
 )
-def test_captain_visible_text_allows_normal_football_content(
-    display_name: str, note: str
-) -> None:
+def test_captain_visible_text_allows_normal_football_content(display_name: str, note: str) -> None:
     request = CreateApplicationRequest.model_validate(
         _valid_request(display_name=display_name, note=note)
     )
@@ -528,9 +523,7 @@ def test_apply_deadline_equality_is_blocked_but_one_microsecond_before_is_open()
     assert project_apply_actions(facts, deadline).apply_blocked_reason is (
         ApplyBlockedReason.REGISTRATION_DEADLINE_PASSED
     )
-    assert project_apply_actions(
-        facts, deadline - timedelta(microseconds=1)
-    ).can_apply
+    assert project_apply_actions(facts, deadline - timedelta(microseconds=1)).can_apply
 
 
 def test_apply_start_equality_has_precedence_over_every_later_blocker() -> None:
@@ -622,9 +615,7 @@ def test_game_full_blocks_accept_but_never_reject() -> None:
 
 
 def test_pending_review_has_both_actions_when_common_guards_and_capacity_allow() -> None:
-    actions = project_review_actions(
-        _facts(), OpenGameRegistrationStatus.APPLIED, NOW
-    )
+    actions = project_review_actions(_facts(), OpenGameRegistrationStatus.APPLIED, NOW)
     assert actions.model_dump(mode="json") == {
         "can_accept": True,
         "accept_blocked_reason": None,
@@ -657,6 +648,8 @@ def test_waitlist_read_shapes_accept_future_records_without_opening_write_comman
             "promoted_at": None,
             "attendance_status": None,
             "attendance_recorded_at": None,
+            "attendance_corrected_at": None,
+            "removed_at": None,
         }
     )
     assert waitlisted.persisted_status.value == "WAITLISTED"
@@ -727,9 +720,9 @@ def test_queue_and_my_application_accept_future_waitlist_read_shapes() -> None:
             "promoted_at": None,
             "attendance_status": None,
             "attendance_recorded_at": None,
+            "attendance_corrected_at": None,
             "detail_path": (
-                "/pages/captain-game-public/index?token="
-                "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+                "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345"
             ),
             "game_name": "周五浦东七人制",
             "starts_at": NOW + timedelta(hours=2),
@@ -765,6 +758,8 @@ def test_viewer_waitlist_lifecycle_rejects_inconsistent_or_inverted_history() ->
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
+        "removed_at": None,
     }
     invalid_patches = (
         {"decided_at": None},
@@ -812,6 +807,8 @@ def test_viewer_waitlist_lifecycle_accepts_promoted_direct_and_waitlist_withdraw
         "late_exit_will_be_recorded": False,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
+        "removed_at": None,
     }
     promoted = ViewerRegistration.model_validate(
         base
@@ -959,10 +956,7 @@ def test_my_waitlisted_item_requires_position_and_waitlisted_time() -> None:
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
-        "detail_path": (
-            "/pages/captain-game-public/index?token="
-            "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
-        ),
+        "detail_path": ("/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345"),
         "game_name": "周五浦东七人制",
         "starts_at": NOW + timedelta(hours=2),
         "ends_at": NOW + timedelta(hours=4),
@@ -978,9 +972,12 @@ def test_my_waitlisted_item_requires_position_and_waitlisted_time() -> None:
 def test_review_start_equality_is_blocked_but_one_microsecond_before_is_open() -> None:
     starts_at = NOW + timedelta(minutes=15)
     facts = _facts(starts_at=starts_at)
-    assert project_review_actions(
-        facts, OpenGameRegistrationStatus.APPLIED, starts_at
-    ).accept_blocked_reason is ReviewBlockedReason.GAME_STARTED
+    assert (
+        project_review_actions(
+            facts, OpenGameRegistrationStatus.APPLIED, starts_at
+        ).accept_blocked_reason
+        is ReviewBlockedReason.GAME_STARTED
+    )
     assert project_review_actions(
         facts,
         OpenGameRegistrationStatus.APPLIED,
@@ -1025,9 +1022,7 @@ def test_review_start_equality_is_blocked_but_one_microsecond_before_is_open() -
         },
     ],
 )
-def test_review_actions_require_exact_action_blocker_pairing(
-    values: dict[str, object]
-) -> None:
+def test_review_actions_require_exact_action_blocker_pairing(values: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         ReviewActions(**values)  # type: ignore[arg-type]
 
@@ -1042,15 +1037,17 @@ def test_review_actions_are_frozen() -> None:
 def test_cancelled_game_projects_cancelled_without_mutating_persisted_status(
     persisted_status: OpenGameRegistrationStatus,
 ) -> None:
-    assert project_effective_registration_status(
-        persisted_status, EffectiveOpenGameState.CANCELLED
-    ) is EffectiveRegistrationStatus.CANCELLED
+    assert (
+        project_effective_registration_status(persisted_status, EffectiveOpenGameState.CANCELLED)
+        is EffectiveRegistrationStatus.CANCELLED
+    )
     assert persisted_status.value in {
         "APPLIED",
         "WAITLISTED",
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
     }
 
 
@@ -1064,9 +1061,10 @@ def test_non_cancelled_game_preserves_persisted_registration_status(
         EffectiveOpenGameState.SUSPENDED,
         EffectiveOpenGameState.COMPLETED,
     ):
-        assert project_effective_registration_status(
-            persisted_status, game_state
-        ).value == persisted_status.value
+        assert (
+            project_effective_registration_status(persisted_status, game_state).value
+            == persisted_status.value
+        )
 
 
 def test_all_dto_shapes_are_closed_exact_and_required_nullable_fields_stay_required() -> None:
@@ -1171,6 +1169,8 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
             "promoted_at",
             "attendance_status",
             "attendance_recorded_at",
+            "attendance_corrected_at",
+            "removed_at",
         }
     )
     projected = project_viewer_registration(
@@ -1279,6 +1279,8 @@ def test_response_models_are_closed_and_frozen() -> None:
         effective_status=EffectiveRegistrationStatus.APPLIED,
         attendance_status=None,
         attendance_recorded_at=None,
+        attendance_corrected_at=None,
+        removed_at=None,
         version=1,
         applied_at=NOW,
         decided_at=None,
@@ -1359,6 +1361,7 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
     ]
     assert [status.value for status in EffectiveRegistrationStatus] == [
         "APPLIED",
@@ -1366,6 +1369,7 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
         "CANCELLED",
     ]
     assert [reason.value for reason in ApplyBlockedReason] == [
@@ -1402,6 +1406,7 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
     ]
     assert [kind.value for kind in RegistrationWithdrawalKind] == [
         "APPLICATION_WITHDRAWAL",
@@ -1443,13 +1448,11 @@ def test_models_do_not_accidentally_serialize_any_unexpected_nested_key() -> Non
         "decided_at": None,
         "remaining_spots": 3,
         "allowed_actions": {
-                "can_accept": False,
-                "accept_blocked_reason": ReviewBlockedReason.APPLICATION_NOT_PENDING,
-                "can_waitlist": False,
-                "waitlist_blocked_reason": (
-                    WaitlistBlockedReason.APPLICATION_NOT_PENDING
-                ),
-                "can_reject": False,
+            "can_accept": False,
+            "accept_blocked_reason": ReviewBlockedReason.APPLICATION_NOT_PENDING,
+            "can_waitlist": False,
+            "waitlist_blocked_reason": (WaitlistBlockedReason.APPLICATION_NOT_PENDING),
+            "can_reject": False,
             "reject_blocked_reason": ReviewBlockedReason.APPLICATION_NOT_PENDING,
         },
     }

@@ -1,0 +1,41 @@
+{
+  "game": {
+    "id": "51000000-0000-4000-8000-000000000001",
+    "name": "海河周六轻松局",
+    "venue_name": "天津河东体育中心",
+    "pitch_name": "笼式五人制 2 号场",
+    "starts_at": "2026-09-05T09:00:00+08:00",
+    "ends_at": "2026-09-05T10:30:00+08:00",
+    "time_zone": "Asia/Shanghai",
+    "state": "PUBLISHED"
+  },
+  "joined_count": 2,
+  "remaining_spots": 0,
+  "waitlist_count": 1,
+  "members": [
+    {
+      "registration_id": "52000000-0000-4000-8000-000000000001",
+      "display_name": "小陈",
+      "position": "DEFENDER",
+      "joined_at": "2026-09-01T09:15:00+08:00",
+      "promoted_from_waitlist": false,
+      "version": 2,
+      "allowed_actions": {
+        "can_remove": true,
+        "remove_blocked_reason": null
+      }
+    },
+    {
+      "registration_id": "52000000-0000-4000-8000-000000000002",
+      "display_name": "阿杰",
+      "position": "FORWARD",
+      "joined_at": "2026-09-01T09:20:00+08:00",
+      "promoted_from_waitlist": true,
+      "version": 3,
+      "allowed_actions": {
+        "can_remove": true,
+        "remove_blocked_reason": null
+      }
+    }
+  ]
+}

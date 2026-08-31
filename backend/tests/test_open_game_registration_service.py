@@ -497,6 +497,7 @@ def test_context_reads_withdrawn_audit_fields_but_keeps_write_action_closed(
         "attendance_status": None,
         "attendance_recorded_at": None,
         "attendance_corrected_at": None,
+        "removed_at": None,
     }
 
 
@@ -617,6 +618,7 @@ def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
         c2b_viewer.pop("attendance_status")
         c2b_viewer.pop("attendance_recorded_at")
         c2b_viewer.pop("attendance_corrected_at")
+        c2b_viewer.pop("removed_at")
         upgraded = _upgrade_legacy_application_context(
             c2b,
             application_id=None,
@@ -1008,6 +1010,7 @@ def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
             "attendance_status",
             "attendance_recorded_at",
             "attendance_corrected_at",
+            "removed_at",
         ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer
@@ -2433,6 +2436,7 @@ def test_withdraw_is_terminal_idempotent_and_preserves_capacity_authority(
             "attendance_status",
             "attendance_recorded_at",
             "attendance_corrected_at",
+            "removed_at",
         ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer

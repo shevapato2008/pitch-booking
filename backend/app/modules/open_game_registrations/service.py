@@ -18,6 +18,7 @@ from backend.app.models import (
     IdempotencyState,
     OpenGame,
     OpenGameAttendanceStatus,
+    OpenGameMemberRemoval,
     OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
     OpenGameNotificationStatus,
@@ -41,17 +42,24 @@ from backend.app.modules.open_game_registrations.dto import (
     OpenGameAttendanceMarkRequest,
     OpenGameAttendanceMarkResult,
     OpenGameAttendanceRoster,
+    OpenGameMemberGameSummary,
+    OpenGameMemberRemovalRequest,
+    OpenGameMemberRemovalResult,
+    OpenGameMemberRoster,
+    OpenGamePromotedMember,
     Queue,
     RegistrationContext,
     WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
+    MemberRemovalFacts,
     RegistrationFacts,
     ReviewBlockedReason,
     WaitlistBlockedReason,
     WithdrawalAction,
     project_apply_actions,
     project_available_withdrawal,
+    project_member_removal_actions,
     project_review_actions,
     remaining_spots,
 )
@@ -59,6 +67,7 @@ from backend.app.modules.open_game_registrations.privacy import (
     project_attendance_roster_item,
     project_captain_application,
     project_captain_waitlist_application,
+    project_member_roster_item,
     project_my_open_game_application,
     project_viewer_registration,
 )
@@ -86,6 +95,7 @@ CREATE_OPEN_GAME_APPLICATION_OPERATION = "create_open_game_application"
 DECIDE_OPEN_GAME_APPLICATION_OPERATION = "decide_open_game_application"
 WITHDRAW_OPEN_GAME_APPLICATION_OPERATION = "withdraw_open_game_application"
 MARK_OPEN_GAME_ATTENDANCE_OPERATION = "MARK_OPEN_GAME_ATTENDANCE"
+REMOVE_OPEN_GAME_MEMBER_OPERATION = "REMOVE_OPEN_GAME_MEMBER"
 
 
 class OpenGameRegistrationService:
@@ -217,9 +227,7 @@ class OpenGameRegistrationService:
                     row.registration,
                     now=now,
                     waitlist_position=row.waitlist_position,
-                    attendance_corrected_at=correction_times.get(
-                        row.registration.id
-                    ),
+                    attendance_corrected_at=correction_times.get(row.registration.id),
                 )
                 for row in rows
             )
@@ -493,6 +501,290 @@ class OpenGameRegistrationService:
             self._repository.rollback()
             raise _service_unavailable() from None
 
+    def get_member_roster(
+        self,
+        *,
+        game_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+    ) -> OpenGameMemberRoster:
+        try:
+            order_id = self._open_game_repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._open_game_repository.get_owned_order(
+                order_id=order_id,
+                user_id=owner_user_id,
+            )
+            if order is None:
+                raise _game_not_found()
+            game = self._open_game_repository.get_owned_game(
+                game_id=game_id,
+                user_id=owner_user_id,
+            )
+            if game is None:
+                raise _game_not_found()
+
+            authority = self._open_game_repository.get_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            now = self._now()
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=now,
+            )
+            registrations = self._repository.list_joined_members(game_id=game.id)
+            waitlist_count = self._repository.count_waitlisted(game_id=game.id)
+            healthy = published_authority_is_healthy(projection.facts.order_facts)
+            members = tuple(
+                project_member_roster_item(
+                    registration_id=registration.id,
+                    display_name=registration.display_name,
+                    position=registration.position,
+                    decided_at=_require_decided_at(registration),
+                    waitlisted_at=registration.waitlisted_at,
+                    promoted_at=registration.promoted_at,
+                    attendance_status=registration.attendance_status,
+                    version=registration.version,
+                    game_state=projection.state,
+                    stored_game_status=game.status,
+                    order_authority_healthy=healthy,
+                    starts_at=projection.starts_at,
+                    now=now,
+                )
+                for registration in registrations
+            )
+            public = projection.public
+            return OpenGameMemberRoster(
+                game=OpenGameMemberGameSummary(
+                    id=game.id,
+                    name=public.name,
+                    venue_name=public.venue_name,
+                    pitch_name=public.pitch_name,
+                    starts_at=public.starts_at,
+                    ends_at=public.ends_at,
+                    time_zone=public.time_zone,
+                    state=projection.state,
+                ),
+                joined_count=len(members),
+                remaining_spots=remaining_spots(
+                    open_spots=game.open_spots,
+                    joined_count=len(members),
+                ),
+                waitlist_count=waitlist_count,
+                members=members,
+            )
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
+    def remove_member(
+        self,
+        *,
+        game_id: uuid.UUID,
+        registration_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+        idempotency_key: str,
+        request: OpenGameMemberRemovalRequest,
+    ) -> OpenGameMemberRemovalResult:
+        try:
+            order_id = self._open_game_repository.locate_order_id(game_id=game_id)
+            if order_id is None:
+                raise _game_not_found()
+            order = self._repository.lock_order(order_id=order_id)
+            if order is None or order.user_id != owner_user_id:
+                raise _game_not_found()
+            game = self._open_game_repository.lock_target_game(
+                game_id=game_id,
+                order_id=order.id,
+            )
+            if game is None:
+                raise _game_not_found()
+            registration = self._repository.lock_registration(
+                game_id=game.id,
+                application_id=registration_id,
+            )
+            if registration is None:
+                raise _application_not_found()
+
+            digest = _member_removal_request_digest(
+                operation=REMOVE_OPEN_GAME_MEMBER_OPERATION,
+                game_id=game.id,
+                registration_id=registration.id,
+                request=request,
+            )
+            record, claimed = self._order_repository.claim_idempotency(
+                user_id=owner_user_id,
+                operation=REMOVE_OPEN_GAME_MEMBER_OPERATION,
+                key=idempotency_key,
+                request_sha256=digest,
+            )
+            if not claimed:
+                replay = _replay_member_removal(record, digest=digest)
+                self._order_repository.commit()
+                return replay
+
+            authority = self._open_game_repository.lock_order_authority(
+                order_id=order.id
+            )
+            order_row = self._require_order_row(order.id)
+            now = self._now()
+            projection = self._project_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                now=now,
+            )
+            actions = project_member_removal_actions(
+                MemberRemovalFacts(
+                    game_state=projection.state,
+                    stored_game_status=game.status,
+                    order_authority_healthy=published_authority_is_healthy(
+                        projection.facts.order_facts
+                    ),
+                    starts_at=projection.starts_at,
+                    attendance_status=registration.attendance_status,
+                ),
+                now=now,
+            )
+            if (
+                registration.status is not OpenGameRegistrationStatus.JOINED
+                or registration.version != request.expected_version
+                or not actions.can_remove
+            ):
+                raise _application_state_changed()
+
+            joined_before = self._repository.count_joined(game_id=game.id)
+            should_promote = joined_before == game.open_spots
+            registration_version_before = registration.version
+            registration.status = OpenGameRegistrationStatus.REMOVED
+            registration.version += 1
+            registration.removed_at = now
+            registration.removed_by_user_id = owner_user_id
+
+            promoted: OpenGameRegistration | None = None
+            promoted_version_before: int | None = None
+            if should_promote:
+                promoted = self._repository.lock_fifo_waitlisted(game_id=game.id)
+                if promoted is not None:
+                    promoted_version_before = promoted.version
+                    promoted.status = OpenGameRegistrationStatus.JOINED
+                    promoted.version += 1
+                    promoted.promoted_at = now
+                    promoted.withdrawn_at = None
+                    promoted.withdrawal_kind = None
+                    promoted.late_exit_recorded = False
+                    payload: WaitlistPromotedNotificationPayload = {
+                        "game_name": game.name,
+                        "starts_at": projection.starts_at.isoformat(),
+                        "venue_name": order_row.venue_name,
+                    }
+                    self._repository.add_notification(
+                        OpenGameNotificationOutbox(
+                            dedupe_key=(
+                                f"waitlist-promoted:{promoted.id}:{promoted.version}"
+                            ),
+                            game_id=game.id,
+                            registration_id=promoted.id,
+                            recipient_user_id=promoted.applicant_user_id,
+                            event=OpenGameNotificationEvent.WAITLIST_PROMOTED,
+                            template_key="waitlist-promoted",
+                            status=OpenGameNotificationStatus.PENDING,
+                            payload=payload,
+                            attempt_count=0,
+                            available_at=now,
+                            claim_token=None,
+                            lease_until=None,
+                            completed_at=None,
+                            last_failure_code=None,
+                        )
+                    )
+
+            self._repository.add_member_removal(
+                OpenGameMemberRemoval(
+                    registration_id=registration.id,
+                    applicant_user_id=registration.applicant_user_id,
+                    game_id=game.id,
+                    order_id=order.id,
+                    removed_by_user_id=owner_user_id,
+                    reason=request.reason,
+                    removed_at=now,
+                    registration_version_before=registration_version_before,
+                    registration_version_after=registration.version,
+                    promoted_registration_id=(
+                        promoted.id if promoted is not None else None
+                    ),
+                    promoted_applicant_user_id=(
+                        promoted.applicant_user_id if promoted is not None else None
+                    ),
+                    promoted_registration_version_before=promoted_version_before,
+                    promoted_registration_version_after=(
+                        promoted.version if promoted is not None else None
+                    ),
+                    idempotency_key=idempotency_key,
+                    request_sha256=digest,
+                )
+            )
+            self._repository.flush()
+
+            joined_count = self._repository.count_joined(game_id=game.id)
+            waitlist_count = self._repository.count_waitlisted(game_id=game.id)
+            result = OpenGameMemberRemovalResult(
+                removed_registration_id=registration.id,
+                removed_display_name=registration.display_name,
+                status="REMOVED",
+                version=registration.version,
+                removed_at=now,
+                joined_count=joined_count,
+                remaining_spots=remaining_spots(
+                    open_spots=game.open_spots,
+                    joined_count=joined_count,
+                ),
+                waitlist_count=waitlist_count,
+                promoted_member=(
+                    OpenGamePromotedMember(
+                        registration_id=promoted.id,
+                        display_name=promoted.display_name,
+                        position=promoted.position,
+                        version=promoted.version,
+                    )
+                    if promoted is not None
+                    else None
+                ),
+            )
+            self._order_repository.complete_idempotency(
+                record,
+                response_status=200,
+                response_body=result.model_dump(mode="json"),
+            )
+            self._order_repository.commit()
+            return result
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            SQLAlchemyError,
+            OpenGameProjectionInvariantError,
+            ValidationError,
+            ValueError,
+            RuntimeError,
+        ):
+            self._repository.rollback()
+            raise _service_unavailable() from None
+
     def get_attendance_roster(
         self,
         *,
@@ -529,9 +821,7 @@ class OpenGameRegistrationService:
             )
             if projection.state is not EffectiveOpenGameState.COMPLETED:
                 raise _attendance_state_changed()
-            registrations = self._repository.list_attendance_roster(
-                game_id=game.id
-            )
+            registrations = self._repository.list_attendance_roster(game_id=game.id)
             correction_times = self._repository.latest_attendance_correction_times(
                 registration_versions={
                     registration.id: registration.version
@@ -641,9 +931,7 @@ class OpenGameRegistrationService:
             registration.attendance_recorded_by_user_id = owner_user_id
             registration.version += 1
             self._repository.flush()
-            registrations = self._repository.list_attendance_roster(
-                game_id=game.id
-            )
+            registrations = self._repository.list_attendance_roster(game_id=game.id)
             response = _project_attendance_mark_result(
                 registration=registration,
                 registrations=registrations,
@@ -751,9 +1039,7 @@ class OpenGameRegistrationService:
                 and joined_before == game.open_spots
                 and game.status is OpenGameStatus.PUBLISHED
                 and projection.state is EffectiveOpenGameState.PUBLISHED
-                and published_authority_is_healthy(
-                    projection.facts.order_facts
-                )
+                and published_authority_is_healthy(projection.facts.order_facts)
                 and now < projection.starts_at
             )
 
@@ -774,14 +1060,10 @@ class OpenGameRegistrationService:
                 )
             else:
                 raise RuntimeError("withdrawal request contains an unsupported action")
-            registration.late_exit_recorded = (
-                available.late_exit_will_be_recorded
-            )
+            registration.late_exit_recorded = available.late_exit_will_be_recorded
             self._repository.flush()
             if should_promote:
-                promoted = self._repository.lock_fifo_waitlisted(
-                    game_id=game.id
-                )
+                promoted = self._repository.lock_fifo_waitlisted(game_id=game.id)
                 if promoted is not None:
                     promoted.status = OpenGameRegistrationStatus.JOINED
                     promoted.version += 1
@@ -797,8 +1079,7 @@ class OpenGameRegistrationService:
                     self._repository.add_notification(
                         OpenGameNotificationOutbox(
                             dedupe_key=(
-                                f"waitlist-promoted:{promoted.id}:"
-                                f"{promoted.version}"
+                                f"waitlist-promoted:{promoted.id}:{promoted.version}"
                             ),
                             game_id=game.id,
                             registration_id=promoted.id,
@@ -908,9 +1189,7 @@ class OpenGameRegistrationService:
             if request.decision is ApplicationDecision.WAITLIST and (
                 game.status is not OpenGameStatus.PUBLISHED
                 or projection.state is not EffectiveOpenGameState.PUBLISHED
-                or not published_authority_is_healthy(
-                    projection.facts.order_facts
-                )
+                or not published_authority_is_healthy(projection.facts.order_facts)
             ):
                 raise _application_state_changed()
             joined_count = self._repository.count_joined(game_id=game.id)
@@ -932,7 +1211,10 @@ class OpenGameRegistrationService:
                 or not actions.can_reject
             ):
                 raise _application_state_changed()
-            if request.decision is ApplicationDecision.ACCEPT and not actions.can_accept:
+            if (
+                request.decision is ApplicationDecision.ACCEPT
+                and not actions.can_accept
+            ):
                 if actions.accept_blocked_reason is not ReviewBlockedReason.GAME_FULL:
                     raise RuntimeError("accept projection has an unexpected blocker")
                 raise AppError(
@@ -977,9 +1259,7 @@ class OpenGameRegistrationService:
                 registration.status = OpenGameRegistrationStatus.REJECTED
             elif request.decision is ApplicationDecision.WAITLIST:
                 accepted = False
-                next_waitlist_seq = self._repository.next_waitlist_seq(
-                    game_id=game.id
-                )
+                next_waitlist_seq = self._repository.next_waitlist_seq(game_id=game.id)
                 registration.status = OpenGameRegistrationStatus.WAITLISTED
                 registration.waitlist_seq = next_waitlist_seq
                 registration.waitlisted_at = now
@@ -1166,6 +1446,12 @@ def _project_attendance_roster(
     )
 
 
+def _require_decided_at(registration: OpenGameRegistration) -> datetime:
+    if registration.decided_at is None:
+        raise RuntimeError("JOINED registration is missing decided_at")
+    return registration.decided_at
+
+
 def _project_attendance_mark_result(
     *,
     registration: OpenGameRegistration,
@@ -1235,6 +1521,7 @@ def _project_context(
             attendance_status=registration.attendance_status,
             attendance_recorded_at=registration.attendance_recorded_at,
             attendance_corrected_at=attendance_corrected_at,
+            removed_at=registration.removed_at,
         )
         if registration is not None
         else None
@@ -1347,6 +1634,25 @@ def _attendance_request_digest(
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _member_removal_request_digest(
+    *,
+    operation: str,
+    game_id: uuid.UUID,
+    registration_id: uuid.UUID,
+    request: OpenGameMemberRemovalRequest,
+) -> str:
+    payload = {
+        "operation": operation,
+        "game_id": str(game_id),
+        "registration_id": str(registration_id),
+        "expected_version": request.expected_version,
+        "reason": request.reason,
+        "version": 1,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def _encode_my_applications_cursor(application: MyOpenGameApplication) -> str:
     serialized = application.model_dump(mode="json")
     payload = json.dumps(
@@ -1366,7 +1672,8 @@ def _decode_my_applications_cursor(
     if cursor is None:
         return None, None
     if not cursor or any(
-        character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        character
+        not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
         for character in cursor
     ):
         raise _invalid_argument()
@@ -1505,6 +1812,11 @@ def _upgrade_legacy_application_context(
         "waitlisted_at",
         "promoted_at",
     }
+    c2d_fields = c2b_fields | {
+        "attendance_status",
+        "attendance_recorded_at",
+        "attendance_corrected_at",
+    }
 
     upgraded_viewer = dict(viewer)
     if set(viewer) == c1a_fields:
@@ -1516,21 +1828,24 @@ def _upgrade_legacy_application_context(
             or viewer.get("decided_at") is not None
         ):
             raise ValueError("legacy application viewer is not an apply result")
-        upgraded_viewer.update({
-            "id": str(application_id),
-            "version": 1,
-            "withdrawn_at": None,
-            "withdrawal_kind": None,
-            "late_exit_recorded": False,
-            "available_withdrawal_action": None,
-            "late_exit_will_be_recorded": False,
-        })
+        upgraded_viewer.update(
+            {
+                "id": str(application_id),
+                "version": 1,
+                "withdrawn_at": None,
+                "withdrawal_kind": None,
+                "late_exit_recorded": False,
+                "available_withdrawal_action": None,
+                "late_exit_will_be_recorded": False,
+            }
+        )
     elif frozenset(viewer) not in {
         frozenset(c2a_fields),
         frozenset(c2b_fields),
+        frozenset(c2d_fields),
     }:
         raise ValueError("legacy application viewer is not exact")
-    if set(viewer) != c2b_fields:
+    if not c2b_fields.issubset(viewer):
         upgraded_viewer.update(
             {
                 "waitlist_position": None,
@@ -1538,13 +1853,15 @@ def _upgrade_legacy_application_context(
                 "promoted_at": None,
             }
         )
-    upgraded_viewer.update(
-        {
-            "attendance_status": None,
-            "attendance_recorded_at": None,
-            "attendance_corrected_at": None,
-        }
-    )
+    if not c2d_fields.issubset(viewer):
+        upgraded_viewer.update(
+            {
+                "attendance_status": None,
+                "attendance_recorded_at": None,
+                "attendance_corrected_at": None,
+            }
+        )
+    upgraded_viewer["removed_at"] = None
     upgraded = dict(response_body)
     upgraded["viewer_registration"] = upgraded_viewer
     return upgraded
@@ -1598,6 +1915,22 @@ def _replay_withdrawal(
         )
 
 
+def _replay_member_removal(
+    record: IdempotencyRecord,
+    *,
+    digest: str,
+) -> OpenGameMemberRemovalResult:
+    if record.request_sha256 != digest:
+        raise _idempotency_key_reused()
+    if (
+        record.state is not IdempotencyState.COMPLETED
+        or record.response_status != 200
+        or record.response_body is None
+    ):
+        raise _service_unavailable()
+    return OpenGameMemberRemovalResult.model_validate(record.response_body)
+
+
 def _upgrade_legacy_review_actions(
     actions: dict[str, object],
 ) -> dict[str, object]:
@@ -1619,8 +1952,7 @@ def _upgrade_legacy_review_actions(
     elif (
         actions.get("can_accept") is False
         and actions.get("can_reject") is False
-        and actions.get("accept_blocked_reason")
-        == actions.get("reject_blocked_reason")
+        and actions.get("accept_blocked_reason") == actions.get("reject_blocked_reason")
     ):
         waitlist_blocker = actions.get("accept_blocked_reason")
     else:

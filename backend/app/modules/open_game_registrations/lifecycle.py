@@ -7,7 +7,11 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.app.models import OpenGameRegistrationStatus, OpenGameStatus
+from backend.app.models import (
+    OpenGameAttendanceStatus,
+    OpenGameRegistrationStatus,
+    OpenGameStatus,
+)
 from backend.app.modules.open_games.lifecycle import EffectiveOpenGameState
 
 
@@ -17,6 +21,7 @@ class EffectiveRegistrationStatus(StrEnum):
     JOINED = "JOINED"
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
+    REMOVED = "REMOVED"
     CANCELLED = "CANCELLED"
 
 
@@ -69,6 +74,16 @@ class WaitlistBlockedReason(StrEnum):
     WAITLIST_NOT_ENABLED = "WAITLIST_NOT_ENABLED"
 
 
+class MemberRemovalBlockedReason(StrEnum):
+    GAME_NOT_PUBLISHED = "GAME_NOT_PUBLISHED"
+    GAME_SUSPENDED = "GAME_SUSPENDED"
+    GAME_CANCELLED = "GAME_CANCELLED"
+    GAME_COMPLETED = "GAME_COMPLETED"
+    GAME_STARTED = "GAME_STARTED"
+    ORDER_AUTHORITY_UNHEALTHY = "ORDER_AUTHORITY_UNHEALTHY"
+    ATTENDANCE_RECORDED = "ATTENDANCE_RECORDED"
+
+
 _COMMON_REVIEW_BLOCKERS = frozenset(
     {
         ReviewBlockedReason.APPLICATION_NOT_PENDING,
@@ -106,17 +121,11 @@ class ReviewActions(_FrozenClosedModel):
     @model_validator(mode="after")
     def validate_pairing(self) -> Self:
         if self.can_accept is not (self.accept_blocked_reason is None):
-            raise ValueError(
-                "can_accept must correspond exactly to accept_blocked_reason"
-            )
+            raise ValueError("can_accept must correspond exactly to accept_blocked_reason")
         if self.can_waitlist is not (self.waitlist_blocked_reason is None):
-            raise ValueError(
-                "can_waitlist must correspond exactly to waitlist_blocked_reason"
-            )
+            raise ValueError("can_waitlist must correspond exactly to waitlist_blocked_reason")
         if self.can_reject is not (self.reject_blocked_reason is None):
-            raise ValueError(
-                "can_reject must correspond exactly to reject_blocked_reason"
-            )
+            raise ValueError("can_reject must correspond exactly to reject_blocked_reason")
         if self.reject_blocked_reason is ReviewBlockedReason.GAME_FULL:
             raise ValueError("GAME_FULL must not block rejection")
         if self.can_accept and self.can_waitlist:
@@ -133,8 +142,7 @@ class ReviewActions(_FrozenClosedModel):
             and self.can_reject
             and (
                 self.can_waitlist
-                or self.waitlist_blocked_reason
-                is WaitlistBlockedReason.WAITLIST_NOT_ENABLED
+                or self.waitlist_blocked_reason is WaitlistBlockedReason.WAITLIST_NOT_ENABLED
             )
         )
         common_blocked = (
@@ -144,11 +152,21 @@ class ReviewActions(_FrozenClosedModel):
             and self.accept_blocked_reason in _COMMON_REVIEW_BLOCKERS
             and self.reject_blocked_reason is self.accept_blocked_reason
             and self.waitlist_blocked_reason is not None
-            and self.waitlist_blocked_reason.value
-            == self.accept_blocked_reason.value
+            and self.waitlist_blocked_reason.value == self.accept_blocked_reason.value
         )
         if not (capacity_available or full_capacity or common_blocked):
             raise ValueError("review actions do not match a supported authority matrix")
+        return self
+
+
+class MemberRemovalActions(_FrozenClosedModel):
+    can_remove: Annotated[bool, Field(strict=True)]
+    remove_blocked_reason: MemberRemovalBlockedReason | None
+
+    @model_validator(mode="after")
+    def validate_pairing(self) -> Self:
+        if self.can_remove is not (self.remove_blocked_reason is None):
+            raise ValueError("can_remove must correspond exactly to remove_blocked_reason")
         return self
 
 
@@ -163,6 +181,15 @@ class RegistrationFacts:
     starts_at: datetime
     open_spots: int
     joined_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class MemberRemovalFacts:
+    game_state: EffectiveOpenGameState
+    stored_game_status: OpenGameStatus
+    order_authority_healthy: bool
+    starts_at: datetime
+    attendance_status: OpenGameAttendanceStatus
 
 
 def remaining_spots(*, open_spots: int, joined_count: int) -> int:
@@ -209,9 +236,7 @@ def project_review_actions(
             can_reject=False,
             reject_blocked_reason=common_blocker,
         )
-    if remaining_spots(
-        open_spots=facts.open_spots, joined_count=facts.joined_count
-    ) == 0:
+    if remaining_spots(open_spots=facts.open_spots, joined_count=facts.joined_count) == 0:
         return ReviewActions(
             can_accept=False,
             accept_blocked_reason=ReviewBlockedReason.GAME_FULL,
@@ -227,6 +252,35 @@ def project_review_actions(
         waitlist_blocked_reason=WaitlistBlockedReason.GAME_NOT_FULL,
         can_reject=True,
         reject_blocked_reason=None,
+    )
+
+
+def project_member_removal_actions(
+    facts: MemberRemovalFacts, *, now: datetime
+) -> MemberRemovalActions:
+    blocker: MemberRemovalBlockedReason | None
+    if facts.game_state is EffectiveOpenGameState.CANCELLED:
+        blocker = MemberRemovalBlockedReason.GAME_CANCELLED
+    elif facts.game_state is EffectiveOpenGameState.COMPLETED:
+        blocker = MemberRemovalBlockedReason.GAME_COMPLETED
+    elif facts.game_state is EffectiveOpenGameState.SUSPENDED:
+        blocker = MemberRemovalBlockedReason.GAME_SUSPENDED
+    elif now >= facts.starts_at:
+        blocker = MemberRemovalBlockedReason.GAME_STARTED
+    elif (
+        facts.game_state is not EffectiveOpenGameState.PUBLISHED
+        or facts.stored_game_status is not OpenGameStatus.PUBLISHED
+    ):
+        blocker = MemberRemovalBlockedReason.GAME_NOT_PUBLISHED
+    elif not facts.order_authority_healthy:
+        blocker = MemberRemovalBlockedReason.ORDER_AUTHORITY_UNHEALTHY
+    elif facts.attendance_status is not OpenGameAttendanceStatus.UNMARKED:
+        blocker = MemberRemovalBlockedReason.ATTENDANCE_RECORDED
+    else:
+        blocker = None
+    return MemberRemovalActions(
+        can_remove=blocker is None,
+        remove_blocked_reason=blocker,
     )
 
 
@@ -247,8 +301,7 @@ def project_available_withdrawal(
     now: datetime,
 ) -> AvailableWithdrawal:
     if (
-        game_state
-        not in {EffectiveOpenGameState.PUBLISHED, EffectiveOpenGameState.SUSPENDED}
+        game_state not in {EffectiveOpenGameState.PUBLISHED, EffectiveOpenGameState.SUSPENDED}
         or now >= starts_at
     ):
         return AvailableWithdrawal(action=None, late_exit_will_be_recorded=False)

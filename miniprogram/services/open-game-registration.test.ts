@@ -7,6 +7,8 @@ import {
   decodeOpenGameApplicationQueue,
   decodeOpenGameAttendanceMarkResult,
   decodeOpenGameAttendanceRoster,
+  decodeOpenGameMemberRemovalResult,
+  decodeOpenGameMemberRoster,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
@@ -16,6 +18,8 @@ import type {
   OpenGameApplicationPage,
   OpenGameAttendanceMarkResult,
   OpenGameAttendanceRoster,
+  OpenGameMemberRemovalResult,
+  OpenGameMemberRoster,
   OpenGameRegistrationContext,
 } from "../domain/open-game-registration";
 import {
@@ -33,6 +37,7 @@ import {
   type OpenGameRegistrationAttempt,
   type OpenGameRegistrationAttemptStore,
   type OpenGameAttendanceMarkAttempt,
+  type OpenGameMemberRemoveAttempt,
   type OpenGameRegistrationDecisionAttempt,
   type OpenGameRegistrationSource,
   type OpenGameRegistrationWithdrawAttempt,
@@ -70,6 +75,10 @@ const decodedAttendanceRoster = decodeOpenGameAttendanceRoster(
 );
 const attendanceMarkResult = decodeOpenGameAttendanceMarkResult(
   fixture("open-game-attendance-mark-present"),
+);
+const memberRoster = decodeOpenGameMemberRoster(fixture("open-game-member-roster-ready"));
+const memberRemovalResult = decodeOpenGameMemberRemovalResult(
+  fixture("open-game-member-removal-promoted"),
 );
 
 const applyAttempt: OpenGameRegistrationApplyAttempt = {
@@ -111,6 +120,15 @@ const attendanceAttempt: OpenGameAttendanceMarkAttempt = {
   attendanceStatus: "PRESENT",
   expectedVersion: 2,
   idempotencyKey: "attendance-key-00000000000001",
+};
+const removeMemberAttempt: OpenGameMemberRemoveAttempt = {
+  kind: "remove-member",
+  originatingUserId: USER_ID,
+  gameId: memberRoster.game.id,
+  registrationId: memberRoster.members[0].registrationId,
+  expectedVersion: memberRoster.members[0].version,
+  reason: "临时有事，双方已沟通",
+  idempotencyKey: "remove-member-key-000000000001",
 };
 const waitlistDecisionAttempt = {
   ...decisionAttempt,
@@ -186,6 +204,16 @@ function fakeSource(): OpenGameRegistrationSource {
       expect(attempt).toBe(attendanceAttempt);
       return attendanceMarkResult;
     },
+    getMembers: async (gameId: string): Promise<OpenGameMemberRoster> => {
+      expect(gameId).toBe(memberRoster.game.id);
+      return memberRoster;
+    },
+    removeMember: async (
+      attempt: OpenGameMemberRemoveAttempt,
+    ): Promise<OpenGameMemberRemovalResult> => {
+      expect(attempt).toBe(removeMemberAttempt);
+      return memberRemovalResult;
+    },
   } satisfies OpenGameRegistrationSource;
 }
 
@@ -227,6 +255,8 @@ describe("open-game registration bindings", () => {
     await expect(source.getAttendanceRoster(ATTENDANCE_GAME_ID))
       .resolves.toBe(decodedAttendanceRoster);
     await expect(source.markAttendance(attendanceAttempt)).resolves.toBe(attendanceMarkResult);
+    await expect(source.getMembers(memberRoster.game.id)).resolves.toBe(memberRoster);
+    await expect(source.removeMember(removeMemberAttempt)).resolves.toBe(memberRemovalResult);
 
     resetOpenGameRegistrationSourceForTesting();
     resetOpenGameRegistrationAttemptStoreForTesting();

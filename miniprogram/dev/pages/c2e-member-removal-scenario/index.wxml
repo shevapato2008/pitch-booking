@@ -1,0 +1,20 @@
+<view class="c2e-page">
+  <view class="c2e-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2e-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2e-header-back" hover-class="c2e-pressed" bindtap="onHeaderBack" aria-label="返回"><view class="c2e-back-icon" aria-hidden="true"></view></button>
+    <text class="c2e-header-title">C2e 开发预览</text><view class="c2e-header-spacer" aria-hidden="true"></view>
+  </view>
+  <scroll-view class="c2e-scroll" scroll-y="true">
+    <view class="c2e-content">
+      <text class="c2e-preview-note">{{previewNotice}}</text>
+      <text class="c2e-heading">队长移除成员</text>
+      <text class="c2e-copy">选择一个隔离场景，检查名单、确认层、递补与恢复状态。</text>
+      <view class="c2e-scenario-list">
+        <button wx:for="{{scenarios}}" wx:key="scenario" class="c2e-scenario-card" hover-class="c2e-pressed" bindtap="onOpenScenario" data-scenario="{{item.scenario}}" aria-label="打开{{item.title}}场景">
+          <view class="c2e-scenario-copy"><text>{{item.title}}</text><text>{{item.detail}}</text></view><view class="c2e-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+      <view class="c2e-boundary" aria-role="note"><text>预览边界</text><text>所有按钮只修改隔离 Fixture，不会写入真实报名、订单或通知数据。</text></view>
+    </view>
+  </scroll-view>
+</view>

@@ -61,6 +61,16 @@ const attendanceAttempt = {
   idempotencyKey: "attendance-key-00000000000001",
 };
 
+const removeMemberAttempt = {
+  kind: "remove-member" as const,
+  originatingUserId: USER_ID,
+  gameId: GAME_ID,
+  registrationId: APPLICATION_ID,
+  expectedVersion: 2,
+  reason: "临时有事，双方已沟通",
+  idempotencyKey: "remove-member-key-000000000001",
+};
+
 function memoryStorage(initial: ReadonlyArray<readonly [string, unknown]> = []) {
   const values = new Map<string, unknown>(initial);
   return {
@@ -91,12 +101,13 @@ describe("OpenGameRegistrationAttemptStore", () => {
     expect(restored.body).not.toBe(body);
   });
 
-  test("restores apply, decision, withdrawal, and attendance attempts through a new factory instance", () => {
+  test("restores every canonical attempt through a new factory instance", () => {
     for (const attempt of [
       applyAttempt,
       decisionAttempt,
       withdrawAttempt,
       attendanceAttempt,
+      removeMemberAttempt,
     ] satisfies readonly OpenGameRegistrationAttempt[]) {
       const storage = memoryStorage();
       createOpenGameRegistrationAttemptStore(storage).begin(attempt);
@@ -203,6 +214,26 @@ describe("OpenGameRegistrationAttemptStore", () => {
     expect(storage.set).toHaveBeenCalledTimes(1);
   });
 
+  test("reuses only the exact normalized member removal mutation", () => {
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+    store.begin(removeMemberAttempt);
+
+    expect(store.begin({
+      ...removeMemberAttempt,
+      idempotencyKey: "replacement-remove-member-key-001",
+    })).toEqual({ kind: "READY", attempt: removeMemberAttempt });
+    for (const changed of [
+      { ...removeMemberAttempt, reason: "队员临时退出" },
+      { ...removeMemberAttempt, expectedVersion: 3 },
+      { ...removeMemberAttempt, registrationId: "88888888-8888-4888-8aaa-bbbbbbbbbbbb" },
+      { ...removeMemberAttempt, gameId: "33333333-4444-4555-8666-777777777777" },
+    ]) expect(store.begin(changed)).toEqual({
+      kind: "SAME_ACCOUNT_PENDING",
+      attempt: removeMemberAttempt,
+    });
+  });
+
   test("distinguishes same-account pending mutations from foreign-account pending attempts", () => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -245,6 +276,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["waitlist decision", { ...decisionAttempt, decision: "WAITLIST" }],
     ["mark present attendance", attendanceAttempt],
     ["mark no-show attendance", { ...attendanceAttempt, attendanceStatus: "NO_SHOW" }],
+    ["remove joined member", removeMemberAttempt],
     ["null note", { ...applyAttempt, body: { ...body, note: null } }],
     ["goalkeeper", { ...applyAttempt, body: { ...body, position: "GOALKEEPER" } }],
     ["defender", { ...applyAttempt, body: { ...body, position: "DEFENDER" } }],
@@ -290,6 +322,10 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["attendance unmarked result", { ...attendanceAttempt, attendanceStatus: "UNMARKED" }],
     ["attendance unknown result", { ...attendanceAttempt, attendanceStatus: "LATE" }],
     ["attendance zero expected version", { ...attendanceAttempt, expectedVersion: 0 }],
+    ["removal empty reason", { ...removeMemberAttempt, reason: "" }],
+    ["removal untrimmed reason", { ...removeMemberAttempt, reason: " 原因 " }],
+    ["removal private reason", { ...removeMemberAttempt, reason: "微信 wx_friend" }],
+    ["removal long reason", { ...removeMemberAttempt, reason: "球".repeat(121) }],
   ])("rejects an invalid begin with zero persistence writes: %s", (_label, invalid) => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -307,6 +343,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["invalid decision", { ...decisionAttempt, decision: "PROMOTE_FROM_WAITLIST" }],
     ["invalid withdrawal", { ...withdrawAttempt, action: "AUTO" }],
     ["invalid attendance", { ...attendanceAttempt, attendanceStatus: "UNMARKED" }],
+    ["invalid removal", { ...removeMemberAttempt, reason: "13800138000" }],
   ])("self-clears corrupt persisted state: %s", (_label, invalid) => {
     const storage = memoryStorage([[KEY, invalid]]);
     const store = createOpenGameRegistrationAttemptStore(storage);

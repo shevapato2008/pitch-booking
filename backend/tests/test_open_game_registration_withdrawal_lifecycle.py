@@ -26,6 +26,7 @@ def test_persisted_registration_status_includes_terminal_withdrawn() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
     ]
 
 
@@ -41,19 +42,26 @@ def test_withdrawal_kind_and_effective_status_are_closed_enums() -> None:
         "JOINED",
         "REJECTED",
         "WITHDRAWN",
+        "REMOVED",
         "CANCELLED",
     ]
 
 
 def test_cancelled_game_overrides_withdrawn_effective_status() -> None:
-    assert lifecycle.project_effective_registration_status(
-        OpenGameRegistrationStatus.WITHDRAWN,
-        EffectiveOpenGameState.PUBLISHED,
-    ) is lifecycle.EffectiveRegistrationStatus.WITHDRAWN
-    assert lifecycle.project_effective_registration_status(
-        OpenGameRegistrationStatus.WITHDRAWN,
-        EffectiveOpenGameState.CANCELLED,
-    ) is lifecycle.EffectiveRegistrationStatus.CANCELLED
+    assert (
+        lifecycle.project_effective_registration_status(
+            OpenGameRegistrationStatus.WITHDRAWN,
+            EffectiveOpenGameState.PUBLISHED,
+        )
+        is lifecycle.EffectiveRegistrationStatus.WITHDRAWN
+    )
+    assert (
+        lifecycle.project_effective_registration_status(
+            OpenGameRegistrationStatus.WITHDRAWN,
+            EffectiveOpenGameState.CANCELLED,
+        )
+        is lifecycle.EffectiveRegistrationStatus.CANCELLED
+    )
 
 
 def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -> None:
@@ -77,6 +85,8 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         "promoted_at",
         "attendance_status",
         "attendance_recorded_at",
+        "attendance_corrected_at",
+        "removed_at",
     }
     assert set(ViewerRegistration.model_fields) == expected_fields
     assert VIEWER_REGISTRATION_FIELDS == expected_fields
@@ -118,6 +128,8 @@ def test_compatibility_viewer_projection_exposes_closed_withdrawal_authority() -
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
+        "removed_at": None,
     }
 
 

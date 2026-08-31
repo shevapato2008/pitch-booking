@@ -14,7 +14,11 @@ import {
   OPEN_GAME_ATTENDANCE_STATUSES,
   OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES,
 } from "./open-game-registration";
-import { OPEN_GAME_POSITIONS, type OpenGamePosition } from "./open-game";
+import {
+  OPEN_GAME_POSITIONS,
+  OPEN_GAME_STATES,
+  type OpenGamePosition,
+} from "./open-game";
 import type {
   CaptainOpenGameApplication,
   CaptainOpenGameWaitlistApplication,
@@ -32,6 +36,14 @@ import type {
   OpenGameAttendanceRoster,
   OpenGameAttendanceRosterItem,
   OpenGameAttendanceStatus,
+  OpenGameMemberGameSummary,
+  OpenGameMemberRemovalActions,
+  OpenGameMemberRemovalBlockedReason,
+  OpenGameMemberRemovalReasonValidation,
+  OpenGameMemberRemovalResult,
+  OpenGameMemberRoster,
+  OpenGameMemberRosterItem,
+  OpenGamePromotedMember,
   OpenGameRegistrationContext,
   OpenGameRegistrationAvailableWithdrawalAction,
   OpenGameReviewActions,
@@ -70,7 +82,7 @@ const WAITLIST_BLOCKED_REASONS = [
   "WAITLIST_NOT_ENABLED",
 ] as const;
 const PERSISTED_STATUSES = [
-  "APPLIED", "WAITLISTED", "JOINED", "REJECTED", "WITHDRAWN",
+  "APPLIED", "WAITLISTED", "JOINED", "REJECTED", "WITHDRAWN", "REMOVED",
 ] as const;
 const EFFECTIVE_STATUSES = OPEN_GAME_REGISTRATION_EFFECTIVE_STATUSES;
 const AVAILABLE_WITHDRAWAL_ACTIONS = [
@@ -88,7 +100,7 @@ const VIEWER_REGISTRATION_KEYS = [
   "applied_at", "decided_at", "withdrawn_at", "withdrawal_kind", "late_exit_recorded",
   "available_withdrawal_action", "late_exit_will_be_recorded", "waitlist_position",
   "waitlisted_at", "promoted_at", "attendance_status", "attendance_recorded_at",
-  "attendance_corrected_at",
+  "attendance_corrected_at", "removed_at",
 ] as const;
 const QUEUE_KEYS = [
   "remaining_spots", "pending_count", "applications", "waitlist_count", "waitlist",
@@ -123,6 +135,32 @@ const ATTENDANCE_ROSTER_KEYS = [
 const ATTENDANCE_MARK_RESULT_KEYS = [
   "registration_id", "attendance_status", "attendance_recorded_at", "version",
   "recorded_count", "total_count", "attendance_complete",
+] as const;
+const MEMBER_REMOVAL_BLOCKED_REASONS = [
+  "GAME_NOT_PUBLISHED",
+  "GAME_SUSPENDED",
+  "GAME_CANCELLED",
+  "GAME_COMPLETED",
+  "GAME_STARTED",
+  "ORDER_AUTHORITY_UNHEALTHY",
+  "ATTENDANCE_RECORDED",
+] as const;
+const MEMBER_GAME_KEYS = [
+  "id", "name", "venue_name", "pitch_name", "starts_at", "ends_at", "time_zone", "state",
+] as const;
+const MEMBER_ROSTER_ITEM_KEYS = [
+  "registration_id", "display_name", "position", "joined_at", "promoted_from_waitlist",
+  "version", "allowed_actions",
+] as const;
+const MEMBER_ROSTER_KEYS = [
+  "game", "joined_count", "remaining_spots", "waitlist_count", "members",
+] as const;
+const PROMOTED_MEMBER_KEYS = [
+  "registration_id", "display_name", "position", "version",
+] as const;
+const MEMBER_REMOVAL_RESULT_KEYS = [
+  "removed_registration_id", "removed_display_name", "status", "version", "removed_at",
+  "joined_count", "remaining_spots", "waitlist_count", "promoted_member",
 ] as const;
 const TERMINAL_ATTENDANCE_STATUSES = ["PRESENT", "NO_SHOW"] as const;
 const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
@@ -362,6 +400,7 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
   );
   const waitlistedAt = nullableRfc3339At(object.waitlisted_at, `${path}.waitlisted_at`);
   const promotedAt = nullableRfc3339At(object.promoted_at, `${path}.promoted_at`);
+  const removedAt = nullableRfc3339At(object.removed_at, `${path}.removed_at`);
   const attendance = decodeSelfAttendance(
     object.attendance_status,
     object.attendance_recorded_at,
@@ -378,6 +417,7 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     ["withdrawn_at", withdrawnAt],
     ["waitlisted_at", waitlistedAt],
     ["promoted_at", promotedAt],
+    ["removed_at", removedAt],
   ] as const) {
     if (value !== null && rfc3339Before(value, appliedAt)) invalid(`${path}.${field}`);
   }
@@ -413,7 +453,17 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     if (decidedAt === null || (!noWaitlistHistory && !promotedHistory)) invalid(path);
   } else if (persistedStatus === "REJECTED") {
     if (decidedAt === null || !noWaitlistHistory) invalid(path);
+  } else if (persistedStatus === "REMOVED") {
+    if (decidedAt === null || removedAt === null
+      || (!noWaitlistHistory && !promotedHistory)) invalid(path);
+    if (effectiveStatus !== "REMOVED") invalid(`${path}.effective_status`);
+    if (rfc3339Before(removedAt, decidedAt)
+      || (promotedAt !== null && rfc3339Before(removedAt, promotedAt))) {
+      invalid(`${path}.removed_at`);
+    }
   }
+
+  if (persistedStatus !== "REMOVED" && removedAt !== null) invalid(`${path}.removed_at`);
 
   if (persistedStatus !== "WITHDRAWN") {
     if (withdrawnAt !== null || withdrawalKind !== null || lateExitRecorded) invalid(path);
@@ -458,6 +508,68 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     waitlistedAt,
     promotedAt,
     ...attendance,
+    removedAt,
+  });
+}
+
+function decodeMemberRemovalActions(
+  value: unknown,
+  path: string,
+): OpenGameMemberRemovalActions {
+  const object = exactObject(value, ["can_remove", "remove_blocked_reason"], path);
+  const canRemove = booleanAt(object.can_remove, `${path}.can_remove`);
+  const removeBlockedReason: OpenGameMemberRemovalBlockedReason | null =
+    object.remove_blocked_reason === null
+      ? null
+      : enumAt(
+        object.remove_blocked_reason,
+        MEMBER_REMOVAL_BLOCKED_REASONS,
+        `${path}.remove_blocked_reason`,
+      );
+  if (canRemove !== (removeBlockedReason === null)) invalid(path);
+  return Object.freeze({ canRemove, removeBlockedReason });
+}
+
+function decodeMemberGameSummary(value: unknown, path: string): OpenGameMemberGameSummary {
+  const object = exactObject(value, MEMBER_GAME_KEYS, path);
+  const startsAt = rfc3339At(object.starts_at, `${path}.starts_at`);
+  const endsAt = rfc3339At(object.ends_at, `${path}.ends_at`);
+  if (!rfc3339Before(startsAt, endsAt)) invalid(`${path}.ends_at`);
+  return Object.freeze({
+    id: uuidAt(object.id, `${path}.id`),
+    name: boundedStringAt(object.name, `${path}.name`, 2, 30),
+    venueName: stringAt(object.venue_name, `${path}.venue_name`),
+    pitchName: stringAt(object.pitch_name, `${path}.pitch_name`),
+    startsAt,
+    endsAt,
+    timeZone: supportedIanaTimeZoneAt(object.time_zone, `${path}.time_zone`),
+    state: enumAt(object.state, OPEN_GAME_STATES, `${path}.state`),
+  });
+}
+
+function decodeMemberRosterItem(value: unknown, path: string): OpenGameMemberRosterItem {
+  const object = exactObject(value, MEMBER_ROSTER_ITEM_KEYS, path);
+  return Object.freeze({
+    registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
+    joinedAt: rfc3339At(object.joined_at, `${path}.joined_at`),
+    promotedFromWaitlist: booleanAt(
+      object.promoted_from_waitlist,
+      `${path}.promoted_from_waitlist`,
+    ),
+    version: safeIntegerAt(object.version, `${path}.version`, 1),
+    allowedActions: decodeMemberRemovalActions(object.allowed_actions, `${path}.allowed_actions`),
+  });
+}
+
+function decodePromotedMember(value: unknown, path: string): OpenGamePromotedMember {
+  const object = exactObject(value, PROMOTED_MEMBER_KEYS, path);
+  return Object.freeze({
+    registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
+    version: safeIntegerAt(object.version, `${path}.version`, 2),
   });
 }
 
@@ -623,6 +735,57 @@ export function decodeOpenGameAttendanceMarkResult(
   });
 }
 
+export function decodeOpenGameMemberRoster(value: unknown): OpenGameMemberRoster {
+  const object = exactObject(value, MEMBER_ROSTER_KEYS, "$" );
+  const members = Object.freeze(arrayAt(object.members, "$.members").map(
+    (member, index) => decodeMemberRosterItem(member, `$.members[${index}]`),
+  ));
+  const joinedCount = safeIntegerAt(object.joined_count, "$.joined_count");
+  if (joinedCount !== members.length) invalid("$.joined_count");
+  const identities = new Set<string>();
+  members.forEach((member, index) => {
+    if (identities.has(member.registrationId)) invalid(`$.members[${index}].registration_id`);
+    identities.add(member.registrationId);
+  });
+  return Object.freeze({
+    game: decodeMemberGameSummary(object.game, "$.game"),
+    joinedCount,
+    remainingSpots: safeIntegerAt(object.remaining_spots, "$.remaining_spots"),
+    waitlistCount: safeIntegerAt(object.waitlist_count, "$.waitlist_count"),
+    members,
+  });
+}
+
+export function decodeOpenGameMemberRemovalResult(
+  value: unknown,
+): OpenGameMemberRemovalResult {
+  const object = exactObject(value, MEMBER_REMOVAL_RESULT_KEYS, "$" );
+  const remainingSpots = safeIntegerAt(object.remaining_spots, "$.remaining_spots");
+  const promotedMember = object.promoted_member === null
+    ? null
+    : decodePromotedMember(object.promoted_member, "$.promoted_member");
+  if (promotedMember !== null && remainingSpots !== 0) invalid("$.remaining_spots");
+  return Object.freeze({
+    removedRegistrationId: uuidAt(
+      object.removed_registration_id,
+      "$.removed_registration_id",
+    ),
+    removedDisplayName: boundedStringAt(
+      object.removed_display_name,
+      "$.removed_display_name",
+      2,
+      24,
+    ),
+    status: enumAt(object.status, ["REMOVED"] as const, "$.status"),
+    version: safeIntegerAt(object.version, "$.version", 2),
+    removedAt: rfc3339At(object.removed_at, "$.removed_at"),
+    joinedCount: safeIntegerAt(object.joined_count, "$.joined_count"),
+    remainingSpots,
+    waitlistCount: safeIntegerAt(object.waitlist_count, "$.waitlist_count"),
+    promotedMember,
+  });
+}
+
 export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegistrationContext {
   const object = exactObject(value, CONTEXT_KEYS, "$" );
   const game = decodeOpenGamePublic(object.game, "$.game");
@@ -728,6 +891,23 @@ function containsPrivateText(value: string): boolean {
     || WECHAT_PATTERN.test(detectionValue)
     || URL_PATTERN.test(detectionValue)
     || MAINLAND_ID_PATTERN.test(detectionValue);
+}
+
+export function validateOpenGameMemberRemovalReason(
+  value: unknown,
+): OpenGameMemberRemovalReasonValidation {
+  const reason = typeof value === "string" ? value.trim() : "";
+  const length = Array.from(reason).length;
+  const error = length < 1
+    ? "请填写移除原因"
+    : length > 120
+      ? "移除原因最多 120 个字符"
+      : containsPrivateText(reason)
+        ? "请勿填写联系方式或证件号码"
+        : null;
+  return error === null
+    ? Object.freeze({ valid: true, reason, error: null })
+    : Object.freeze({ valid: false, reason: null, error });
 }
 
 export function validateOpenGameApplicationDraft(
