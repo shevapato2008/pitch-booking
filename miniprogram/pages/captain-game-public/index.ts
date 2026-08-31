@@ -59,6 +59,7 @@ type RegistrationStatus =
   | "JOINED"
   | "REJECTED"
   | "WITHDRAWN"
+  | "REMOVED"
   | "CANCELLED";
 type StatusTone =
   | "anonymous"
@@ -365,6 +366,15 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
         : waitlistWithdrawal
           ? "你已退出本场候补队列；本场不可再次申请。"
           : "你已退出本场球局；本场不可再次申请。",
+      tone: "withdrawn",
+      action: null,
+    };
+  }
+  if (effectiveStatus === "REMOVED") {
+    return {
+      registrationStatus: "REMOVED",
+      heading: "已被队长移出",
+      description: "你已不再是本场正式成员；本状态以服务端记录为准。",
       tone: "withdrawn",
       action: null,
     };

@@ -137,6 +137,41 @@ test("only a READY PUBLISHED owner can open the real application review route", 
   }));
 });
 
+test("only a READY PUBLISHED owner can open the real member-management route", async () => {
+  const published = owner({
+    state: "PUBLISHED",
+    persistedStatus: "PUBLISHED",
+    allowedActions: {
+      canEdit: true,
+      canPublish: false,
+      canShare: true,
+      canCancel: true,
+      canPreview: true,
+      canManageAttendance: false,
+    },
+  });
+  registerOpenGameSource(source({ getOwnedGame: jest.fn(async () => published) }));
+  const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
+
+  expect(page.data).toMatchObject({ status: "READY", canManageMembers: true });
+  const template = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
+  expect(template).toContain('wx:if="{{canManageMembers}}"');
+  expect(template).toContain('bindtap="onManageMembers">成员管理');
+  expect((JSON.parse(readFileSync("miniprogram/app.json", "utf8")) as { pages: string[] }).pages)
+    .toContain("pages/captain-game-members/index");
+
+  await call(page, "onManageMembers");
+  expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+    url: `/pages/captain-game-members/index?game_id=${gameId}`,
+  }));
+
+  (wx.navigateTo as unknown as jest.Mock).mockClear();
+  page.applyOwner(owner({ state: "COMPLETED" }));
+  expect(page.data.canManageMembers).toBe(false);
+  await call(page, "onManageMembers");
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+});
+
 test("attendance entry follows only the authoritative canManageAttendance flag", async () => {
   const authoritativeSentinel = owner({
     state: "PUBLISHED",
@@ -267,7 +302,7 @@ test("malformed, not-found, load-error and auth-loss expose only real recovery",
 test("approved visible buttons are native and backed by real handlers", () => {
   const wxml = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
   expect(wxml).toContain('open-type="share"');
-  for (const handler of ["onReload", "onLogin", "onOpenPublish", "onClosePanel", "onConfirmPublish", "onOpenCancel", "onConfirmCancel", "onEdit", "onPreview", "onReviewApplications", "onManageAttendance", "onReturnOrder", "onHeaderBack", "onConfirmUnknown", "onConfirmPreviousOperation"]) expect(wxml).toContain(handler);
+  for (const handler of ["onReload", "onLogin", "onOpenPublish", "onClosePanel", "onConfirmPublish", "onOpenCancel", "onConfirmCancel", "onEdit", "onPreview", "onReviewApplications", "onManageMembers", "onManageAttendance", "onReturnOrder", "onHeaderBack", "onConfirmUnknown", "onConfirmPreviousOperation"]) expect(wxml).toContain(handler);
   expect(wxml).toContain("不会取消已预订场地，也不会改变订单、支付或退款状态");
   expect(wxml).toContain("正在提交操作");
   expect(wxml).not.toContain("status === 'READY' || status === 'MUTATING'");

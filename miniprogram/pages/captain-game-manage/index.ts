@@ -64,6 +64,7 @@ function blankData() {
     canCancel: false,
     canPreview: false,
     canReviewApplications: false,
+    canManageMembers: false,
     canManageAttendance: false,
     share: null as OpenGameOwner["share"],
     order: null as OpenGameOwner["order"] | null,
@@ -160,6 +161,7 @@ Page({
       canCancel: owner.allowedActions.canCancel,
       canPreview: owner.allowedActions.canPreview,
       canReviewApplications: owner.state === "PUBLISHED",
+      canManageMembers: owner.state === "PUBLISHED",
       canManageAttendance: owner.allowedActions.canManageAttendance,
       share: owner.allowedActions.canShare ? owner.share : null,
       order: owner.order, orderRange: formatOpenGameRange(owner.order.startsAt, owner.order.endsAt, owner.order.timeZone),
@@ -386,6 +388,17 @@ Page({
       );
     } catch {
       this.setData({ navigationError: "暂时无法打开到场记录，请重试。" });
+    }
+  },
+  async onManageMembers() {
+    if (this.data.status !== "READY" || !this.data.canManageMembers) return;
+    try {
+      await navigation(
+        "navigateTo",
+        `/pages/captain-game-members/index?game_id=${this.data.gameId}`,
+      );
+    } catch {
+      this.setData({ navigationError: "暂时无法打开成员管理，请重试。" });
     }
   },
   onReturnOrder() {
