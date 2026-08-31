@@ -95,7 +95,7 @@ def test_head_migration_and_seed_create_published_profile_authority(
         revision = session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "0022"
+        assert revision == "0026"
         venue = session.get_one(Venue, VENUE_ID)
         membership = session.scalar(
             select(VenueMembership).where(
