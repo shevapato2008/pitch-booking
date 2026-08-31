@@ -21,12 +21,16 @@ from backend.tests.test_open_game_registration_schema import (
     _seed_registration_parents,
     _valid_registration,
 )
+from backend.tests.test_open_game_schema import _insert_game, _valid_game
 
 pytestmark = pytest.mark.integration
 
 REGISTRATION_ID = UUID("52000000-0000-4000-8000-000000000001")
 PROMOTED_ID = UUID("52000000-0000-4000-8000-000000000002")
 REMOVAL_ID = UUID("53000000-0000-4000-8000-000000000001")
+OTHER_ORDER_ID = UUID("54000000-0000-4000-8000-000000000001")
+OTHER_GAME_ID = UUID("54000000-0000-4000-8000-000000000002")
+OTHER_REGISTRATION_ID = UUID("54000000-0000-4000-8000-000000000003")
 REMOVED_AT = datetime(2026, 9, 1, 10, tzinfo=UTC)
 
 
@@ -58,7 +62,9 @@ def _revision(engine: Engine) -> str:
         )
 
 
-def _seed_joined(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
+def _seed_joined(
+    engine: Engine,
+) -> tuple[UUID, UUID, UUID, tuple[UUID, UUID, UUID]]:
     captain_id, game_id, applicant_ids = _seed_registration_parents(engine)
     with engine.connect() as connection:
         order_id = cast(
@@ -93,15 +99,22 @@ def _seed_joined(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
                 ),
             },
         )
-    return captain_id, order_id, game_id, applicant_ids[0]
+    return captain_id, order_id, game_id, applicant_ids
 
 
 def _valid_removal(
-    *, captain_id: UUID, order_id: UUID, game_id: UUID, **overrides: object
+    *,
+    captain_id: UUID,
+    order_id: UUID,
+    game_id: UUID,
+    applicant_user_id: UUID,
+    promoted_applicant_user_id: UUID,
+    **overrides: object,
 ) -> dict[str, object]:
     return {
         "id": REMOVAL_ID,
         "registration_id": REGISTRATION_ID,
+        "applicant_user_id": applicant_user_id,
         "game_id": game_id,
         "order_id": order_id,
         "removed_by_user_id": captain_id,
@@ -110,6 +123,7 @@ def _valid_removal(
         "registration_version_before": 2,
         "registration_version_after": 3,
         "promoted_registration_id": PROMOTED_ID,
+        "promoted_applicant_user_id": promoted_applicant_user_id,
         "promoted_registration_version_before": 2,
         "promoted_registration_version_after": 3,
         "idempotency_key": "member-removal-key-0001",
@@ -167,6 +181,7 @@ def test_0023_round_trips_empty_storage_and_declares_exact_schema(
     assert list(columns) == [
         "id",
         "registration_id",
+        "applicant_user_id",
         "game_id",
         "order_id",
         "removed_by_user_id",
@@ -175,6 +190,7 @@ def test_0023_round_trips_empty_storage_and_declares_exact_schema(
         "registration_version_before",
         "registration_version_after",
         "promoted_registration_id",
+        "promoted_applicant_user_id",
         "promoted_registration_version_before",
         "promoted_registration_version_after",
         "idempotency_key",
@@ -186,11 +202,15 @@ def test_0023_round_trips_empty_storage_and_declares_exact_schema(
     assert {foreign_key["name"] for foreign_key in inspector.get_foreign_keys(
         "open_game_member_removals"
     )} == {
-        "fk_member_removals_registration",
-        "fk_member_removals_game",
+        "fk_member_removals_registration_identity",
+        "fk_member_removals_game_order",
         "fk_member_removals_order",
         "fk_member_removals_removed_by_user",
-        "fk_member_removals_promoted_registration",
+        "fk_member_removals_promoted_registration_identity",
+    }
+    assert "uq_open_games_id_order_id" in {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("open_games")
     }
 
     command.downgrade(config, "0022")
@@ -213,7 +233,7 @@ def test_0023_enforces_terminal_registration_and_append_only_audit(
     migration_engine: Engine,
 ) -> None:
     command.upgrade(_config(migration_engine), "0023")
-    captain_id, order_id, game_id, _ = _seed_joined(migration_engine)
+    captain_id, order_id, game_id, applicant_ids = _seed_joined(migration_engine)
     with migration_engine.begin() as connection:
         connection.execute(
             text(
@@ -229,7 +249,13 @@ def test_0023_enforces_terminal_registration_and_append_only_audit(
         )
     _insert_removal(
         migration_engine,
-        _valid_removal(captain_id=captain_id, order_id=order_id, game_id=game_id),
+        _valid_removal(
+            captain_id=captain_id,
+            order_id=order_id,
+            game_id=game_id,
+            applicant_user_id=applicant_ids[0],
+            promoted_applicant_user_id=applicant_ids[1],
+        ),
     )
 
     for statement in (
@@ -251,7 +277,7 @@ def test_0023_rejects_invalid_removal_pairs_and_audit_values(
     migration_engine: Engine,
 ) -> None:
     command.upgrade(_config(migration_engine), "0023")
-    captain_id, order_id, game_id, _ = _seed_joined(migration_engine)
+    captain_id, order_id, game_id, applicant_ids = _seed_joined(migration_engine)
 
     invalid_updates = (
         "UPDATE open_game_registrations SET status = 'REMOVED' WHERE id = :id",
@@ -275,6 +301,7 @@ def test_0023_rejects_invalid_removal_pairs_and_audit_values(
         {"reason": "x" * 121},
         {"registration_version_after": 4},
         {"promoted_registration_id": None},
+        {"promoted_applicant_user_id": None},
         {"promoted_registration_version_before": None},
         {"promoted_registration_version_after": 4},
         {"idempotency_key": "short"},
@@ -282,18 +309,101 @@ def test_0023_rejects_invalid_removal_pairs_and_audit_values(
     )
     for index, overrides in enumerate(invalid_audits, start=1):
         with pytest.raises(DBAPIError):
+            removal_arguments = {
+                "captain_id": captain_id,
+                "order_id": order_id,
+                "game_id": game_id,
+                "applicant_user_id": applicant_ids[0],
+                "promoted_applicant_user_id": applicant_ids[1],
+                "id": UUID(int=600 + index),
+                "registration_version_before": 20 + index,
+                "registration_version_after": 21 + index,
+                "idempotency_key": f"invalid-member-removal-{index:04d}",
+                **overrides,
+            }
             _insert_removal(
                 migration_engine,
-                _valid_removal(
-                    captain_id=captain_id,
-                    order_id=order_id,
-                    game_id=game_id,
-                    **{
-                        "id": UUID(int=600 + index),
-                        "registration_version_before": 20 + index,
-                        "registration_version_after": 21 + index,
-                        "idempotency_key": f"invalid-member-removal-{index:04d}",
-                        **overrides,
-                    },
-                ),
+                _valid_removal(**removal_arguments),  # type: ignore[arg-type]
+            )
+
+
+def test_0023_rejects_cross_entity_member_removal_audit_mismatches(
+    migration_engine: Engine,
+) -> None:
+    command.upgrade(_config(migration_engine), "0023")
+    captain_id, order_id, game_id, applicant_ids = _seed_joined(migration_engine)
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO orders "
+                "(id, order_number, user_id, slot_id, status, price_cents, "
+                "contact_name, contact_phone_ciphertext, contact_phone_nonce, "
+                "contact_phone_key_version, created_at, expires_at) "
+                "SELECT :other_order_id, 'PB-OTHER-MEMBER-REMOVAL', user_id, "
+                "slot_id, status, price_cents, contact_name, "
+                "contact_phone_ciphertext, contact_phone_nonce, "
+                "contact_phone_key_version, created_at, expires_at "
+                "FROM orders WHERE id = :order_id"
+            ),
+            {"other_order_id": OTHER_ORDER_ID, "order_id": order_id},
+        )
+        team_id = cast(
+            UUID,
+            connection.execute(
+                text("SELECT team_id FROM open_games WHERE id = :game_id"),
+                {"game_id": game_id},
+            ).scalar_one(),
+        )
+    _insert_game(
+        migration_engine,
+        _valid_game(
+            game_id=OTHER_GAME_ID,
+            order_id=OTHER_ORDER_ID,
+            team_id=team_id,
+            share_token="other-member-removal-game",
+        ),
+    )
+    _insert_registration(
+        migration_engine,
+        _valid_registration(
+            registration_id=OTHER_REGISTRATION_ID,
+            game_id=OTHER_GAME_ID,
+            applicant_user_id=applicant_ids[2],
+        ),
+    )
+
+    no_promotion = {
+        "promoted_registration_id": None,
+        "promoted_applicant_user_id": None,
+        "promoted_registration_version_before": None,
+        "promoted_registration_version_after": None,
+    }
+    invalid_identities = (
+        {"applicant_user_id": applicant_ids[1], **no_promotion},
+        {
+            "game_id": OTHER_GAME_ID,
+            "order_id": OTHER_ORDER_ID,
+            **no_promotion,
+        },
+        {
+            "promoted_registration_id": OTHER_REGISTRATION_ID,
+            "promoted_applicant_user_id": applicant_ids[2],
+        },
+        {"order_id": OTHER_ORDER_ID, **no_promotion},
+    )
+    for index, overrides in enumerate(invalid_identities, start=1):
+        with pytest.raises(DBAPIError):
+            removal_arguments = {
+                "captain_id": captain_id,
+                "order_id": order_id,
+                "game_id": game_id,
+                "applicant_user_id": applicant_ids[0],
+                "promoted_applicant_user_id": applicant_ids[1],
+                "id": UUID(int=800 + index),
+                "idempotency_key": f"cross-member-removal-{index:04d}",
+                **overrides,
+            }
+            _insert_removal(
+                migration_engine,
+                _valid_removal(**removal_arguments),  # type: ignore[arg-type]
             )

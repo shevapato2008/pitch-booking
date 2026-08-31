@@ -127,10 +127,16 @@ def upgrade() -> None:
     ):
         op.create_check_constraint(name, "open_game_registrations", condition)
 
+    op.create_unique_constraint(
+        "uq_open_games_id_order_id",
+        "open_games",
+        ["id", "order_id"],
+    )
     op.create_table(
         "open_game_member_removals",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("registration_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("applicant_user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("game_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("order_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("removed_by_user_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -140,6 +146,11 @@ def upgrade() -> None:
         sa.Column("registration_version_after", sa.Integer(), nullable=False),
         sa.Column(
             "promoted_registration_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=True,
+        ),
+        sa.Column(
+            "promoted_applicant_user_id",
             postgresql.UUID(as_uuid=True),
             nullable=True,
         ),
@@ -162,9 +173,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "(promoted_registration_id IS NULL "
+            "AND promoted_applicant_user_id IS NULL "
             "AND promoted_registration_version_before IS NULL "
             "AND promoted_registration_version_after IS NULL) OR "
             "(promoted_registration_id IS NOT NULL "
+            "AND promoted_applicant_user_id IS NOT NULL "
             "AND promoted_registration_id != registration_id "
             "AND promoted_registration_version_before IS NOT NULL "
             "AND promoted_registration_version_after IS NOT NULL "
@@ -182,15 +195,19 @@ def upgrade() -> None:
             name="ck_open_game_member_removals_request_sha256",
         ),
         sa.ForeignKeyConstraint(
-            ["registration_id"],
-            ["open_game_registrations.id"],
-            name="fk_member_removals_registration",
+            ["registration_id", "game_id", "applicant_user_id"],
+            [
+                "open_game_registrations.id",
+                "open_game_registrations.game_id",
+                "open_game_registrations.applicant_user_id",
+            ],
+            name="fk_member_removals_registration_identity",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["game_id"],
-            ["open_games.id"],
-            name="fk_member_removals_game",
+            ["game_id", "order_id"],
+            ["open_games.id", "open_games.order_id"],
+            name="fk_member_removals_game_order",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
@@ -206,9 +223,17 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["promoted_registration_id"],
-            ["open_game_registrations.id"],
-            name="fk_member_removals_promoted_registration",
+            [
+                "promoted_registration_id",
+                "game_id",
+                "promoted_applicant_user_id",
+            ],
+            [
+                "open_game_registrations.id",
+                "open_game_registrations.game_id",
+                "open_game_registrations.applicant_user_id",
+            ],
+            name="fk_member_removals_promoted_registration_identity",
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_open_game_member_removals"),
@@ -277,6 +302,11 @@ def downgrade() -> None:
         table_name="open_game_member_removals",
     )
     op.drop_table("open_game_member_removals")
+    op.drop_constraint(
+        "uq_open_games_id_order_id",
+        "open_games",
+        type_="unique",
+    )
 
     for name in (
         "ck_open_game_registrations_removal_time",

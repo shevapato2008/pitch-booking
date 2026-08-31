@@ -710,6 +710,7 @@ class OpenGameRegistrationService:
             self._repository.add_member_removal(
                 OpenGameMemberRemoval(
                     registration_id=registration.id,
+                    applicant_user_id=registration.applicant_user_id,
                     game_id=game.id,
                     order_id=order.id,
                     removed_by_user_id=owner_user_id,
@@ -719,6 +720,9 @@ class OpenGameRegistrationService:
                     registration_version_after=registration.version,
                     promoted_registration_id=(
                         promoted.id if promoted is not None else None
+                    ),
+                    promoted_applicant_user_id=(
+                        promoted.applicant_user_id if promoted is not None else None
                     ),
                     promoted_registration_version_before=promoted_version_before,
                     promoted_registration_version_after=(

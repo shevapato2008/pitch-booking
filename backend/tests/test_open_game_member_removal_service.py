@@ -220,6 +220,7 @@ def test_nonfull_member_removal_is_terminal_audited_idempotent_and_does_not_prom
         audit = session.scalar(select(OpenGameMemberRemoval))
         assert audit is not None
         assert audit.registration_id == target.id
+        assert audit.applicant_user_id == target_user.id
         assert audit.game_id == case.game_id
         assert audit.order_id == case.booking.order_id
         assert audit.removed_by_user_id == case.booking.owner_id
@@ -323,6 +324,7 @@ def test_full_member_removal_promotes_only_fifo_head_and_notifies_only_promoted_
         audit = session.scalar(select(OpenGameMemberRemoval))
         assert audit is not None
         assert audit.promoted_registration_id == promoted.id
+        assert audit.promoted_applicant_user_id == candidate_users[1].id
         assert (
             audit.promoted_registration_version_before,
             audit.promoted_registration_version_after,
