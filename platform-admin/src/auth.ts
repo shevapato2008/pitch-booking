@@ -17,6 +17,10 @@ export function consumeAccessToken(input: Pick<HTMLInputElement, "value">): stri
   return token;
 }
 
+export function attendanceCorrectionVisible(session: PlatformSession): boolean {
+  return session.roles.includes("PLATFORM_ADMIN");
+}
+
 export class AuthController {
   state: AuthState = { status: "checking", session: null, error: null };
   private expiryHandler: () => void = () => undefined;

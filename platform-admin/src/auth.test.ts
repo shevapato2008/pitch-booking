@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 import { ApiError, SessionExpiredError, type PlatformApi, type PlatformSession } from "./api";
-import { AuthController, consumeAccessToken } from "./auth";
+import { AuthController, attendanceCorrectionVisible, consumeAccessToken } from "./auth";
 
 const session: PlatformSession = {
   principal_id: "reviewer-1",
@@ -106,5 +106,13 @@ describe("AuthController", () => {
 
     expect(consumeAccessToken(input)).toBe("staff-secret");
     expect(input.value).toBe("");
+  });
+
+  test("shows attendance correction only to PLATFORM_ADMIN while preserving reviewer access", () => {
+    expect(attendanceCorrectionVisible(session)).toBe(false);
+    expect(attendanceCorrectionVisible({
+      ...session,
+      roles: ["ONBOARDING_REVIEWER", "PLATFORM_ADMIN"],
+    })).toBe(true);
   });
 });

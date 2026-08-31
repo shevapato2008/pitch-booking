@@ -92,6 +92,55 @@ export interface EvidenceDownload {
   expires_at: string;
 }
 
+export type AttendanceStatus = "UNMARKED" | "PRESENT" | "NO_SHOW";
+export type TerminalAttendanceStatus = "PRESENT" | "NO_SHOW";
+export type AttendanceCorrectionBlockedReason =
+  | "GAME_NOT_COMPLETED"
+  | "REGISTRATION_NOT_JOINED"
+  | "ATTENDANCE_UNMARKED"
+  | "ATTENDANCE_AUDIT_INCOMPLETE";
+
+export interface AttendanceCorrectionEvent {
+  id: string;
+  registration_id: string;
+  from_status: TerminalAttendanceStatus;
+  to_status: TerminalAttendanceStatus;
+  reason: string;
+  corrected_by_principal_id: string;
+  corrected_at: string;
+  registration_version_before: number;
+  registration_version_after: number;
+}
+
+export interface AttendanceRegistrationDetail {
+  registration_id: string;
+  registration_status: "APPLIED" | "WAITLISTED" | "JOINED" | "REJECTED" | "WITHDRAWN";
+  player_display_name: string;
+  intended_position: "GOALKEEPER" | "DEFENDER" | "MIDFIELDER" | "FORWARD" | "ANY";
+  game_name: string;
+  game_status: "DRAFT" | "PUBLISHED" | "SUSPENDED" | "CANCELLED" | "COMPLETED";
+  venue_name: string;
+  pitch_name: string;
+  starts_at: string;
+  ends_at: string;
+  time_zone: "Asia/Shanghai";
+  original_attendance_status: TerminalAttendanceStatus | null;
+  attendance_recorded_at: string | null;
+  attendance_status: AttendanceStatus;
+  version: number;
+  corrections: AttendanceCorrectionEvent[];
+  allowed_correction: {
+    target_status: TerminalAttendanceStatus | null;
+    blocked_reason: AttendanceCorrectionBlockedReason | null;
+  };
+}
+
+export interface AttendanceCorrectionRequest {
+  attendance_status: TerminalAttendanceStatus;
+  expected_version: number;
+  reason: string;
+}
+
 interface ErrorEnvelope {
   error?: { code?: string; message?: string };
 }
@@ -184,6 +233,31 @@ export class PlatformApi {
         method: "POST",
         headers: this.mutationHeaders(),
         body: JSON.stringify({ outcome, reason }),
+      },
+    );
+  }
+
+  getAttendanceRegistration(registrationId: string): Promise<AttendanceRegistrationDetail> {
+    return this.request(
+      `/platform-admin/api/v1/attendance/registrations/${encodeURIComponent(registrationId)}`,
+      { method: "GET" },
+    );
+  }
+
+  correctAttendanceRegistration(
+    registrationId: string,
+    body: AttendanceCorrectionRequest,
+    idempotencyKey: string,
+  ): Promise<AttendanceCorrectionEvent> {
+    return this.request(
+      `/platform-admin/api/v1/attendance/registrations/${encodeURIComponent(registrationId)}/corrections`,
+      {
+        method: "POST",
+        headers: {
+          ...this.mutationHeaders(),
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(body),
       },
     );
   }
