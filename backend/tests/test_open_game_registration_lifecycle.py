@@ -657,6 +657,7 @@ def test_waitlist_read_shapes_accept_future_records_without_opening_write_comman
             "promoted_at": None,
             "attendance_status": None,
             "attendance_recorded_at": None,
+            "attendance_corrected_at": None,
         }
     )
     assert waitlisted.persisted_status.value == "WAITLISTED"
@@ -727,6 +728,7 @@ def test_queue_and_my_application_accept_future_waitlist_read_shapes() -> None:
             "promoted_at": None,
             "attendance_status": None,
             "attendance_recorded_at": None,
+            "attendance_corrected_at": None,
             "detail_path": (
                 "/pages/captain-game-public/index?token="
                 "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -765,6 +767,7 @@ def test_viewer_waitlist_lifecycle_rejects_inconsistent_or_inverted_history() ->
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
     }
     invalid_patches = (
         {"decided_at": None},
@@ -812,6 +815,7 @@ def test_viewer_waitlist_lifecycle_accepts_promoted_direct_and_waitlist_withdraw
         "late_exit_will_be_recorded": False,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
     }
     promoted = ViewerRegistration.model_validate(
         base
@@ -874,6 +878,7 @@ def test_application_withdrawal_cannot_carry_a_late_game_exit_marker() -> None:
                 "promoted_at": None,
                 "attendance_status": None,
                 "attendance_recorded_at": None,
+                "attendance_corrected_at": None,
             }
         )
 
@@ -959,6 +964,7 @@ def test_my_waitlisted_item_requires_position_and_waitlisted_time() -> None:
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
         "detail_path": (
             "/pages/captain-game-public/index?token="
             "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -1171,6 +1177,7 @@ def test_applicant_projection_has_an_exact_whitelist_and_effective_cancelled_sta
             "promoted_at",
             "attendance_status",
             "attendance_recorded_at",
+            "attendance_corrected_at",
         }
     )
     projected = project_viewer_registration(
@@ -1279,6 +1286,7 @@ def test_response_models_are_closed_and_frozen() -> None:
         effective_status=EffectiveRegistrationStatus.APPLIED,
         attendance_status=None,
         attendance_recorded_at=None,
+        attendance_corrected_at=None,
         version=1,
         applied_at=NOW,
         decided_at=None,
