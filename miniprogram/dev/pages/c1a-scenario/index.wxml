@@ -1,0 +1,28 @@
+<view class="c1a-page">
+  <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <view class="c1a-nav-spacer"></view>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">申请审核场景</text><text class="c1a-nav-subtitle">开发预览</text></view>
+    <view class="c1a-nav-spacer"></view>
+  </view>
+  <scroll-view scroll-y="true" class="c1a-scroll">
+    <view class="c1a-notice"><text>C1a 隔离 Fixture，仅用于开发预览，不写入生产报名。</text></view>
+    <view class="c1a-card c1a-summary">
+      <text class="c1a-eyebrow">当前权威状态</text>
+      <text class="c1a-heading">{{branchLabel}}</text>
+      <view class="c1a-status-row"><text>{{roleLabel}}</text><text>{{loginLabel}}</text><text>{{registrationStatus}}</text></view>
+    </view>
+    <view class="c1a-card">
+      <text class="c1a-heading">从申请人开始</text>
+      <text class="c1a-help">重置会清除这份合成申请，并打开同一个分享详情。</text>
+      <button class="c1a-button c1a-button--primary" bindtap="onResetAccept">重置并进入接受分支</button>
+      <button class="c1a-button c1a-button--secondary" bindtap="onResetReject">重置并进入婉拒分支</button>
+    </view>
+    <view class="c1a-card">
+      <text class="c1a-heading">切换验证视角</text>
+      <text class="c1a-help">仅开发预览可切换角色；两侧始终读取同一份 Fixture 状态。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onOpenApplicant">进入申请人视角</button>
+      <button class="c1a-button c1a-button--secondary" bindtap="onOpenCaptain">进入队长视角</button>
+    </view>
+  </scroll-view>
+</view>

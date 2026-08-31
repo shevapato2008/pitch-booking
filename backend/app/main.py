@@ -14,6 +14,7 @@ from backend.app.config import Settings
 from backend.app.database import get_database, get_engine
 from backend.app.errors import (
     AppError,
+    align_error_schemas_openapi,
     app_error_handler,
     request_validation_error_handler,
     unexpected_error_handler,
@@ -23,6 +24,14 @@ from backend.app.modules.auth.router import router as auth_router
 from backend.app.modules.availability.router import router as availability_router
 from backend.app.modules.checkout.router import router as checkout_router
 from backend.app.modules.inventory.router import router as inventory_router
+from backend.app.modules.open_game_registrations.router import (
+    align_my_open_game_applications_openapi,
+    is_open_game_registration_mutation_request,
+    open_game_registration_request_validation_handler,
+)
+from backend.app.modules.open_game_registrations.router import (
+    router as open_game_registrations_router,
+)
 from backend.app.modules.open_games.router import (
     is_open_game_mutation_request,
     open_game_request_validation_handler,
@@ -36,6 +45,12 @@ from backend.app.modules.payments.development_router import router as developmen
 from backend.app.modules.payments.repository import PaymentRepository
 from backend.app.modules.payments.router import router as payments_router
 from backend.app.modules.pitch_configuration.router import router as pitch_configuration_router
+from backend.app.modules.platform_attendance_corrections.router import (
+    align_platform_attendance_corrections_openapi,
+)
+from backend.app.modules.platform_attendance_corrections.router import (
+    router as platform_attendance_corrections_router,
+)
 from backend.app.modules.platform_auth.router import router as platform_auth_router
 from backend.app.modules.platform_onboarding.router import router as platform_onboarding_router
 from backend.app.modules.platform_web import (
@@ -43,6 +58,8 @@ from backend.app.modules.platform_web import (
     create_platform_web_router,
     default_platform_admin_root,
 )
+from backend.app.modules.public_games.router import align_public_game_directory_openapi
+from backend.app.modules.public_games.router import router as public_games_router
 from backend.app.modules.refunds.convergence import RefundConvergenceService
 from backend.app.modules.refunds.repository import RefundRepository
 from backend.app.modules.venue_access.router import router as venue_access_router
@@ -205,6 +222,11 @@ def create_app(
         application.add_exception_handler(AppError, app_error_handler)
 
         async def validation_handler(request: Request, error: Exception) -> JSONResponse:
+            if is_open_game_registration_mutation_request(request):
+                assert isinstance(error, RequestValidationError)
+                return await open_game_registration_request_validation_handler(
+                    request, error
+                )
             if is_open_game_mutation_request(request):
                 assert isinstance(error, RequestValidationError)
                 return await open_game_request_validation_handler(request, error)
@@ -234,10 +256,13 @@ def create_app(
         application.include_router(checkout_router)
         application.include_router(inventory_router)
         application.include_router(orders_router)
+        application.include_router(open_game_registrations_router)
         application.include_router(open_games_router)
+        application.include_router(public_games_router)
         application.include_router(payments_router)
         application.include_router(wechat_pay_router)
         application.include_router(platform_auth_router)
+        application.include_router(platform_attendance_corrections_router)
         application.include_router(platform_onboarding_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
@@ -317,13 +342,26 @@ def create_app(
             ):
                 operation = schema.get("paths", {}).get(path, {}).get("post", {})
                 operation.get("responses", {}).pop("422", None)
+            align_error_schemas_openapi(schema)
             align_order_list_openapi(schema)
+            align_public_game_directory_openapi(schema)
+            align_my_open_game_applications_openapi(schema)
+            align_platform_attendance_corrections_openapi(schema)
             shared_game_get = (
                 schema.get("paths", {})
                 .get("/api/v1/shared-games/{share_token}", {})
                 .get("get", {})
             )
             shared_game_get.get("responses", {}).pop("422", None)
+            registration_context_get = (
+                schema.get("paths", {})
+                .get(
+                    "/api/v1/shared-games/{share_token}/registration-context",
+                    {},
+                )
+                .get("get", {})
+            )
+            registration_context_get.get("responses", {}).pop("422", None)
             profile_get = (
                 schema.get("paths", {})
                 .get("/api/v1/admin/venues/{venue_id}/profile", {})

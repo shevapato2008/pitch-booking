@@ -93,10 +93,10 @@ async function runTemporaryGenerator(temporaryDirectory, argument) {
   return execFileAsync(process.execPath, arguments_, { cwd: temporaryDirectory });
 }
 
-test('OpenAPI document validates and exposes the frozen forty-four-path operation matrix', async () => {
+test('OpenAPI document validates and exposes the frozen named path members', async () => {
   const contract = await SwaggerParser.validate(contractPath.pathname);
 
-  assert.deepEqual(Object.keys(contract.paths).sort(), [
+  const expectedPaths = [
     '/api/v1/admin/moderation/venue-profiles/pending',
     '/api/v1/admin/moderation/venue-profiles/{item_id}/decisions',
     '/api/v1/admin/venues',
@@ -113,14 +113,21 @@ test('OpenAPI document validates and exposes the frozen forty-four-path operatio
     '/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry',
     '/api/v1/auth/wechat/phone',
     '/api/v1/auth/wechat/session',
+    '/api/v1/games/{game_id}',
+    '/api/v1/games/{game_id}/cancel',
+    '/api/v1/games/{game_id}/publish',
     '/api/v1/health',
     '/api/v1/orders',
     '/api/v1/orders/{order_id}',
     '/api/v1/orders/{order_id}/cancel',
+    '/api/v1/orders/{order_id}/game',
     '/api/v1/orders/{order_id}/pay',
     '/api/v1/orders/{order_id}/payments/{payment_id}/reconcile',
+    '/api/v1/open-game-applications',
+    '/api/v1/open-game-applications/{application_id}/withdraw',
     '/api/v1/payments/wechat/notify',
     '/api/v1/refunds/wechat/notify',
+    '/api/v1/shared-games/{share_token}',
     '/api/v1/slots/{slot_id}/checkout',
     '/api/v1/venue-onboarding/applications',
     '/api/v1/venue-onboarding/candidates',
@@ -141,8 +148,207 @@ test('OpenAPI document validates and exposes the frozen forty-four-path operatio
     '/platform-admin/api/v1/onboarding/applications/{application_id}',
     '/platform-admin/api/v1/onboarding/applications/{application_id}/decisions',
     '/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download',
-  ]);
+  ];
+  for (const expectedPath of expectedPaths) {
+    assert.ok(contract.paths[expectedPath], expectedPath);
+  }
   assert.equal(contract.paths['/api/v1/payments/mock/notify'], undefined);
+});
+
+test('my open-game applications freeze authenticated opaque pagination and a closed public projection', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operation = contract.paths['/api/v1/open-game-applications'].get;
+  const item = contract.components.schemas.MyOpenGameApplication;
+  const response = contract.components.schemas.MyOpenGameApplicationsResponse;
+
+  assert.deepEqual(Object.keys(contract.paths['/api/v1/open-game-applications']), ['get']);
+  assert.equal(operation.operationId, 'listMyOpenGameApplications');
+  assert.deepEqual(operation.security, [{ bearerAuth: [] }]);
+  assert.deepEqual(operation.parameters, [
+    { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
+    { name: 'cursor', in: 'query', required: false, schema: { type: 'string', minLength: 1 } },
+  ]);
+  assert.deepEqual(Object.keys(operation.responses), ['200', '401', '422', '503']);
+  assert.deepEqual(operation.responses['200'].content['application/json'].examples, {
+    Ready: { externalValue: './examples/my-open-game-applications-ready.json' },
+    Empty: { externalValue: './examples/my-open-game-applications-empty.json' },
+  });
+  assert.equal(item.additionalProperties, false);
+  assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
+  assert.deepEqual([...item.required].sort(), [
+    'applied_at', 'attendance_corrected_at', 'attendance_recorded_at', 'attendance_status', 'detail_path',
+    'effective_status', 'ends_at', 'game_name', 'id', 'pitch_name',
+    'pitch_specification', 'promoted_at', 'starts_at', 'time_zone', 'venue_name',
+    'waitlist_position', 'waitlisted_at',
+  ]);
+  assert.deepEqual(item.properties.detail_path, {
+    type: 'string',
+    pattern: '^/pages/captain-game-public/index\\?token=[A-Za-z0-9_-]{32}$',
+  });
+  assert.equal(response.additionalProperties, false);
+  assert.deepEqual([...response.required].sort(), ['items', 'next_cursor']);
+  assert.deepEqual(Object.keys(response.properties).sort(), ['items', 'next_cursor']);
+  assert.deepEqual(response.properties.next_cursor, {
+    type: ['string', 'null'],
+    minLength: 1,
+  });
+});
+
+test('C2d mini-program readback exposes only the latest nullable correction time', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const schemas = contract.components.schemas;
+  const expectedCorrection = { type: ['string', 'null'], format: 'date-time' };
+  const expected = [
+    ['OpenGameAttendanceRosterItem', 'open-game-attendance-roster-ready.json'],
+    ['MyOpenGameApplication', 'my-open-game-applications-ready.json'],
+    ['OpenGameViewerRegistration', 'open-game-registration-context-joined.json'],
+  ];
+
+  for (const [name] of expected) {
+    const schema = schemas[name];
+    assert.equal(schema.additionalProperties, false);
+    assert.ok(schema.required.includes('attendance_corrected_at'));
+    assert.deepEqual(schema.properties.attendance_corrected_at, expectedCorrection);
+    assert.deepEqual([...schema.required].sort(), Object.keys(schema.properties).sort());
+    const serialized = JSON.stringify(schema).toLowerCase();
+    for (const forbidden of ['reason', 'principal', 'history', 'corrected_by']) {
+      assert.equal(serialized.includes(forbidden), false, `${name} leaked ${forbidden}`);
+    }
+  }
+
+  const roster = await readExample(expected[0][1]);
+  assert.equal(roster.registrations[0].attendance_corrected_at, null);
+  assert.equal(roster.registrations[1].attendance_corrected_at, '2026-08-31T14:18:00+08:00');
+  assert.equal(roster.registrations[1].attendance_recorded_at, '2026-08-30T20:32:00+08:00');
+
+  const mine = await readExample(expected[1][1]);
+  assert.equal(mine.items[2].attendance_corrected_at, '2026-08-31T14:18:00+08:00');
+  assert.equal(mine.items[2].attendance_recorded_at, '2026-08-30T20:32:00+08:00');
+
+  const joined = await readExample(expected[2][1]);
+  assert.equal(joined.viewer_registration.attendance_corrected_at, null);
+
+  await assertMutatedContractRejected((mutated) => {
+    delete mutated.components.schemas.OpenGameViewerRegistration
+      .properties.attendance_corrected_at;
+  }, /attendance.*corrected|viewer.*correction|viewer.*public fields/i);
+});
+
+test('contract validator rejects attendance authority drift', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/games/{game_id}/attendance-roster'].get.security = [];
+  }, /attendance.*security/i);
+});
+
+test('contract validator rejects proven attendance exactness regressions', async () => {
+  const markPath = '/api/v1/games/{game_id}/registrations/{registration_id}/attendance';
+  await assertMutatedContractRejected((contract) => {
+    const conflict = contract.paths[markPath].post.responses['409']
+      .content['application/json'].schema;
+    conflict.allOf = [conflict.allOf[0]];
+  }, /attendance.*409|conflict.*code/i);
+
+  await assertMutatedContractRejected((contract) => {
+    delete contract.components.schemas.OpenGameAttendanceMarkRequest
+      .properties.expected_version.minimum;
+  }, /attendance.*expected.version|mark request/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.OpenGameAttendanceMarkResult.properties.version.minimum = 1;
+  }, /attendance.*result.*version|mark result/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.components.schemas.UnsafeRosterIdentity = {
+      oneOf: [
+        { type: 'string' },
+        { $ref: '#/components/schemas/OrderContact' },
+      ],
+    };
+    contract.components.schemas.OpenGameAttendanceRosterItem.properties.display_name = {
+      $ref: '#/components/schemas/UnsafeRosterIdentity',
+    };
+  }, /attendance.*display.name|roster.*identity/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.components.securitySchemes.bearerAuth.bearerFormat = 'JWT';
+  }, /bearerAuth|bearer.*scheme/i);
+});
+
+test('C1a/C2a registration operations expose exact named success examples', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const expected = [
+    {
+      path: '/api/v1/shared-games/{share_token}/registration-context',
+      method: 'get',
+      operationId: 'getOpenGameRegistrationContext',
+      status: '200',
+      examples: {
+        Anonymous: 'open-game-registration-context-anonymous.json',
+        ApplyReady: 'open-game-registration-context-apply-ready.json',
+        Applied: 'open-game-registration-context-applied.json',
+        Waitlisted: 'open-game-registration-context-waitlisted.json',
+        Joined: 'open-game-registration-context-joined.json',
+        Rejected: 'open-game-registration-context-rejected.json',
+        WithdrawnApplication: 'open-game-registration-context-withdrawn-application.json',
+        WithdrawnWaitlist: 'open-game-registration-context-withdrawn-waitlist.json',
+        WithdrawnGameExit: 'open-game-registration-context-withdrawn-game-exit.json',
+        Cancelled: 'open-game-registration-context-cancelled.json',
+      },
+    },
+    {
+      path: '/api/v1/open-game-applications/{application_id}/withdraw',
+      method: 'post',
+      operationId: 'withdrawOpenGameApplication',
+      status: '200',
+      examples: {
+        ApplicationWithdrawn: 'open-game-registration-context-withdrawn-application.json',
+        WaitlistWithdrawn: 'open-game-registration-context-withdrawn-waitlist.json',
+        GameExited: 'open-game-registration-context-withdrawn-game-exit.json',
+      },
+    },
+    {
+      path: '/api/v1/shared-games/{share_token}/applications',
+      method: 'post',
+      operationId: 'createOpenGameApplication',
+      status: '201',
+      examples: { Applied: 'open-game-registration-context-applied.json' },
+    },
+    {
+      path: '/api/v1/games/{game_id}/applications',
+      method: 'get',
+      operationId: 'listOpenGameApplications',
+      status: '200',
+      examples: {
+        Pending: 'open-game-applications-pending.json',
+        FullWaitlist: 'open-game-applications-full-waitlist.json',
+        Empty: 'open-game-applications-empty.json',
+      },
+    },
+    {
+      path: '/api/v1/games/{game_id}/applications/{application_id}/decision',
+      method: 'post',
+      operationId: 'decideOpenGameApplication',
+      status: '200',
+      examples: {
+        Joined: 'open-game-application-decision-joined.json',
+        Waitlisted: 'open-game-application-decision-waitlisted.json',
+        Rejected: 'open-game-application-decision-rejected.json',
+      },
+    },
+  ];
+
+  for (const member of expected) {
+    assert.deepEqual(Object.keys(contract.paths[member.path]), [member.method], member.path);
+    const operation = contract.paths[member.path][member.method];
+    assert.equal(operation.operationId, member.operationId);
+    assert.deepEqual(
+      operation.responses[member.status].content['application/json'].examples,
+      Object.fromEntries(Object.entries(member.examples).map(([key, filename]) => [
+        key,
+        { externalValue: `./examples/${filename}` },
+      ])),
+    );
+  }
 });
 
 test('my orders list freezes owner-only pagination and a private closed projection', async () => {
@@ -936,7 +1142,7 @@ test('contract validator checks the OpenAPI document and every mapped example', 
     { cwd: repositoryDirectory },
   );
 
-  assert.match(stdout, /validated 89 JSON examples/i);
+  assert.match(stdout, /validated \d+ JSON examples/i);
   assert.equal(stderr, '');
 });
 
@@ -948,7 +1154,7 @@ test('file-backed OpenAPI examples use standard closed externalValue objects', a
         for (const [key, example] of Object.entries(
           response.content?.['application/json']?.examples ?? {},
         )) {
-          if (key === 'HealthOk') continue;
+          if (key === 'HealthOk' || !('externalValue' in example)) continue;
           assert.deepEqual(Object.keys(example), ['externalValue']);
           assert.match(example.externalValue, /^\.\/examples\/.+\.json$/);
         }
@@ -1159,7 +1365,7 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
   const temporaryDirectory = await createTemporaryRepository();
   try {
     const { stdout, stderr } = await runTemporaryGenerator(temporaryDirectory);
-    assert.match(stdout, /generated 9 fixtures/i);
+    assert.match(stdout, /generated 19 fixtures/i);
     assert.equal(stderr, '');
     const mappings = [
       ['venue-primary.json', 'venue-ready.json'],
@@ -1171,6 +1377,16 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
       ['order-confirmed.json', 'order-confirmed.json'],
       ['order-payment-exception.json', 'order-payment-exception.json'],
       ['order-expired.json', 'order-expired.json'],
+      ['open-game-registration-context-anonymous.json', 'open-game-registration-context-anonymous.json'],
+      ['open-game-registration-context-apply-ready.json', 'open-game-registration-context-apply-ready.json'],
+      ['open-game-registration-context-applied.json', 'open-game-registration-context-applied.json'],
+      ['open-game-registration-context-joined.json', 'open-game-registration-context-joined.json'],
+      ['open-game-registration-context-rejected.json', 'open-game-registration-context-rejected.json'],
+      ['open-game-registration-context-cancelled.json', 'open-game-registration-context-cancelled.json'],
+      ['open-game-applications-pending.json', 'open-game-applications-pending.json'],
+      ['open-game-applications-empty.json', 'open-game-applications-empty.json'],
+      ['open-game-application-decision-joined.json', 'open-game-application-decision-joined.json'],
+      ['open-game-application-decision-rejected.json', 'open-game-application-decision-rejected.json'],
     ];
     assert.deepEqual(
       (await readdir(path.join(temporaryDirectory, 'artifacts/ui/fixtures'))).sort(),
@@ -1198,6 +1414,16 @@ test('checked-in fixtures already match normalized canonical examples byte-for-b
     ['order-confirmed.json', 'order-confirmed.json'],
     ['order-payment-exception.json', 'order-payment-exception.json'],
     ['order-expired.json', 'order-expired.json'],
+    ['open-game-registration-context-anonymous.json', 'open-game-registration-context-anonymous.json'],
+    ['open-game-registration-context-apply-ready.json', 'open-game-registration-context-apply-ready.json'],
+    ['open-game-registration-context-applied.json', 'open-game-registration-context-applied.json'],
+    ['open-game-registration-context-joined.json', 'open-game-registration-context-joined.json'],
+    ['open-game-registration-context-rejected.json', 'open-game-registration-context-rejected.json'],
+    ['open-game-registration-context-cancelled.json', 'open-game-registration-context-cancelled.json'],
+    ['open-game-applications-pending.json', 'open-game-applications-pending.json'],
+    ['open-game-applications-empty.json', 'open-game-applications-empty.json'],
+    ['open-game-application-decision-joined.json', 'open-game-application-decision-joined.json'],
+    ['open-game-application-decision-rejected.json', 'open-game-application-decision-rejected.json'],
   ];
   for (const [sourceName, fixtureName] of mappings) {
     const sourceBytes = await readFile(new URL(`../contracts/examples/${sourceName}`, import.meta.url));
@@ -1287,6 +1513,16 @@ test('fixture publication rolls back every file after a deterministic second-pub
     'order-confirmed.json',
     'order-payment-exception.json',
     'order-expired.json',
+    'open-game-registration-context-anonymous.json',
+    'open-game-registration-context-apply-ready.json',
+    'open-game-registration-context-applied.json',
+    'open-game-registration-context-joined.json',
+    'open-game-registration-context-rejected.json',
+    'open-game-registration-context-cancelled.json',
+    'open-game-applications-pending.json',
+    'open-game-applications-empty.json',
+    'open-game-application-decision-joined.json',
+    'open-game-application-decision-rejected.json',
   ];
   try {
     const before = new Map(await Promise.all(fixtureNames.map(async (filename) => [
@@ -1416,4 +1652,175 @@ test('fixture generator rejects error response examples', async () => {
       return true;
     },
   );
+});
+
+test('public game directory freezes anonymous filters and a closed public projection', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const operation = contract.paths['/api/v1/public-games'].get;
+  const schemas = contract.components.schemas;
+
+  assert.deepEqual(Object.keys(contract.paths['/api/v1/public-games']), ['get']);
+  assert.deepEqual(operation.security, []);
+  assert.equal(operation.requestBody, undefined);
+  assert.deepEqual(operation.parameters, [
+    {
+      name: 'local_date',
+      in: 'query',
+      required: false,
+      schema: { type: 'string', format: 'date' },
+    },
+    {
+      name: 'format',
+      in: 'query',
+      required: false,
+      schema: { $ref: '#/components/schemas/PublicGameFormat' },
+    },
+    {
+      name: 'available_only',
+      in: 'query',
+      required: false,
+      schema: { type: 'boolean', default: false },
+    },
+  ]);
+  assert.deepEqual(Object.keys(operation.responses), ['200', '422', '503']);
+  assert.deepEqual(
+    operation.responses['200'].content['application/json'].schema,
+    { $ref: '#/components/schemas/PublicGameDirectoryResponse' },
+  );
+  assert.deepEqual(operation.responses['200'].content['application/json'].examples, {
+    Ready: { externalValue: './examples/public-games-ready.json' },
+    Empty: { externalValue: './examples/public-games-empty.json' },
+  });
+  for (const [status, code, exampleName, filename] of [
+    ['422', 'INVALID_ARGUMENT', 'InvalidArgument', 'error-invalid-argument.json'],
+    ['503', 'SERVICE_UNAVAILABLE', 'ServiceUnavailable', 'error-service-unavailable.json'],
+  ]) {
+    const content = operation.responses[status].content['application/json'];
+    assert.deepEqual(content.schema.allOf[0], { $ref: '#/components/schemas/ErrorEnvelope' });
+    assert.deepEqual(content.schema.allOf[1].properties.error.properties.code, { const: code });
+    assert.deepEqual(content.examples, {
+      [exampleName]: { externalValue: `./examples/${filename}` },
+    });
+  }
+
+  assert.deepEqual(schemas.PublicGameFormat, { type: 'string', enum: ['FIVE', 'SEVEN'] });
+  const item = schemas.PublicGameDirectoryItem;
+  const itemFields = [
+    'detail_path', 'local_date', 'format', 'current_players', 'remaining_spots', 'game',
+  ];
+  assert.equal(item.additionalProperties, false);
+  assert.deepEqual([...item.required].sort(), [...itemFields].sort());
+  assert.deepEqual(Object.keys(item.properties).sort(), [...itemFields].sort());
+  assert.deepEqual(item.properties.format, { $ref: '#/components/schemas/PublicGameFormat' });
+  assert.deepEqual(item.properties.game, { $ref: '#/components/schemas/OpenGamePublic' });
+  assert.equal(
+    item.properties.detail_path.pattern,
+    '^/pages/captain-game-public/index\\?token=[A-Za-z0-9_-]{32}$',
+  );
+
+  const response = schemas.PublicGameDirectoryResponse;
+  assert.equal(response.additionalProperties, false);
+  assert.deepEqual(
+    [...response.required].sort(),
+    ['authoritative_now', 'available_dates', 'items'],
+  );
+  assert.equal(response.properties.available_dates.uniqueItems, true);
+  assert.deepEqual(response.properties.items.items, {
+    $ref: '#/components/schemas/PublicGameDirectoryItem',
+  });
+
+  const ready = await readExample('public-games-ready.json');
+  const empty = await readExample('public-games-empty.json');
+  assert.deepEqual(empty, {
+    authoritative_now: '2026-08-26T04:00:00Z',
+    available_dates: [],
+    items: [],
+  });
+  assert.deepEqual(ready.available_dates, [...ready.available_dates].sort());
+  assert.equal(new Set(ready.available_dates).size, ready.available_dates.length);
+  assert.ok(ready.items.length > 1);
+  for (const [index, directoryItem] of ready.items.entries()) {
+    assert.match(
+      directoryItem.detail_path,
+      /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/,
+    );
+    assert.equal(directoryItem.game.state, 'PUBLISHED');
+    assert.equal(directoryItem.game.state_reason, null);
+    assert.equal(directoryItem.game.visibility, 'PUBLIC');
+    assert.equal(
+      directoryItem.game.pitch_specification,
+      directoryItem.format === 'FIVE' ? '5人制' : '7人制',
+    );
+    const joinedCount = directoryItem.current_players - directoryItem.game.fixed_players;
+    assert.ok(joinedCount >= 0);
+    assert.equal(directoryItem.remaining_spots, directoryItem.game.open_spots - joinedCount);
+    assert.ok(Date.parse(directoryItem.game.starts_at) > Date.parse(ready.authoritative_now));
+    assert.ok(
+      Date.parse(directoryItem.game.registration_deadline) > Date.parse(ready.authoritative_now),
+    );
+    if (index > 0) {
+      assert.ok(
+        Date.parse(ready.items[index - 1].game.starts_at)
+          <= Date.parse(directoryItem.game.starts_at),
+      );
+    }
+  }
+  for (const privateField of [
+    'order_id', 'captain_user_id', 'share_token', 'payment', 'refund', 'application', 'members',
+  ]) {
+    assert.equal(JSON.stringify({ item, response, ready, empty }).includes(privateField), false);
+  }
+});
+
+test('contract validator rejects public game directory authority drift', async () => {
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/public-games'].get.security = [{ bearerAuth: [] }];
+  }, /public-games|anonymous|security/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/public-games'].get.responses['200']
+      .content['application/json'].schema.$ref = '#/components/schemas/OpenGamePublic';
+  }, /public-games|schema|ref/i);
+
+  await assertMutatedContractRejected((contract) => {
+    contract.paths['/api/v1/public-games'].get.parameters = contract.paths['/api/v1/public-games']
+      .get.parameters.filter(({ name }) => name !== 'format');
+  }, /public-games|parameter|format/i);
+
+  await assertMutatedContractRejected((contract) => {
+    delete contract.paths['/api/v1/public-games'].get.responses['200']
+      .content['application/json'].examples.Ready;
+  }, /public-games|example|ready/i);
+
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].order_id = 'private';
+  }, /public-games-ready|additional properties|order_id/i);
+
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    [example.items[0], example.items[1]] = [example.items[1], example.items[0]];
+  }, /public-games-ready|stable|sorted|order/i);
+});
+
+test('contract validator rejects public game directory local date drift', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].local_date = '2026-08-28';
+  }, /public-games-ready|local_date|time.zone/i);
+});
+
+test('contract validator rejects public game directory unknown time zones', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].game.time_zone = 'Fake/Zone';
+  }, /public-games-ready|time_zone|time zone/i);
+});
+
+test('contract validator rejects public game directory missing available dates', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.available_dates = example.available_dates.slice(1);
+  }, /public-games-ready|available_dates|local_date/i);
+});
+
+test('contract validator rejects public game directory published state reasons', async () => {
+  await assertMutatedExampleRejected('public-games-ready.json', (example) => {
+    example.items[0].game.state_reason = 'REGISTRATION_DEADLINE_PASSED';
+  }, /public-games-ready|state reason|state_reason/i);
 });

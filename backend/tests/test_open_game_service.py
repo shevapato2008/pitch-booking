@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import Engine, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -14,6 +15,9 @@ from backend.app.models import (
     IdempotencyRecord,
     OpenGame,
     OpenGameIntensity,
+    OpenGameRegistration,
+    OpenGameRegistrationPosition,
+    OpenGameRegistrationStatus,
     OpenGameStatus,
     OpenGameVisibility,
     Order,
@@ -39,6 +43,7 @@ from backend.app.modules.open_games.repository import OpenGameRepository
 from backend.app.modules.open_games.service import (
     CREATE_OPEN_GAME_OPERATION,
     OpenGameService,
+    project_authoritative_public_game,
 )
 from backend.app.modules.orders.repository import OrderRepository
 from backend.tests.test_schema_constraints import add_pitch, add_slot, venue
@@ -250,6 +255,126 @@ def add_stored_game(
     session.add(game)
     session.flush()
     return game
+
+
+def add_joined_registration(
+    session: Session,
+    *,
+    game_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    label: str,
+) -> OpenGameRegistration:
+    applicant = User(
+        wechat_app_id="wx-open-game-joined-test",
+        wechat_openid=f"open-game-joined-{label}-{uuid.uuid4()}",
+    )
+    session.add(applicant)
+    session.flush()
+    registration = OpenGameRegistration(
+        game_id=game_id,
+        applicant_user_id=applicant.id,
+        display_name=f"加入球员{label}",
+        position=OpenGameRegistrationPosition.ANY,
+        note=None,
+        status=OpenGameRegistrationStatus.JOINED,
+        version=2,
+        consent_version="c1a-2026-08-24",
+        adult_confirmed_at=NOW,
+        risk_confirmed_at=NOW,
+        applied_at=NOW,
+        decided_at=NOW,
+        decided_by_user_id=owner_id,
+    )
+    session.add(registration)
+    session.flush()
+    return registration
+
+
+def add_waitlisted_registration(
+    session: Session,
+    *,
+    game_id: uuid.UUID,
+    owner_id: uuid.UUID,
+) -> OpenGameRegistration:
+    applicant = User(
+        wechat_app_id="wx-open-game-waitlist-test",
+        wechat_openid=f"open-game-waitlist-{uuid.uuid4()}",
+    )
+    session.add(applicant)
+    session.flush()
+    registration = OpenGameRegistration(
+        game_id=game_id,
+        applicant_user_id=applicant.id,
+        display_name="候补球员",
+        position=OpenGameRegistrationPosition.ANY,
+        note=None,
+        status=OpenGameRegistrationStatus.WAITLISTED,
+        version=2,
+        consent_version="c1a-2026-08-24",
+        adult_confirmed_at=NOW,
+        risk_confirmed_at=NOW,
+        applied_at=NOW,
+        decided_at=NOW,
+        decided_by_user_id=owner_id,
+        waitlist_seq=1,
+        waitlisted_at=NOW,
+    )
+    session.add(registration)
+    session.flush()
+    return registration
+
+
+def test_shared_authority_projection_preserves_public_response(pg_engine: Engine) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        game = add_stored_game(
+            session,
+            seeded=seeded,
+            status=OpenGameStatus.PUBLISHED,
+            share_token="P" * 32,
+        )
+        session.commit()
+        repository = OpenGameRepository(session)
+        authority = repository.get_order_authority(order_id=seeded.order_id)
+        order_row = repository.get_order_row(order_id=seeded.order_id)
+        team = repository.get_team(team_id=game.team_id)
+        assert order_row is not None
+        assert team is not None
+        projection = project_authoritative_public_game(
+            game=game,
+            order=game.order,
+            authority=authority,
+            order_row=order_row,
+            team=team,
+            now=NOW,
+        )
+        public = service(session).get_public(share_token=game.share_token)
+
+    assert projection.public == public
+    assert projection.starts_at == seeded.starts_at
+    assert projection.owner_user_id == seeded.owner_id
+    assert projection.public.model_dump() == {
+        "name": "历史球局",
+        "team_name": "历史联队",
+        "state": OpenGameStatus.PUBLISHED,
+        "state_reason": None,
+        "venue_name": "浦东星跃足球公园",
+        "pitch_name": "五人制 A 场",
+        "pitch_specification": "5人制",
+        "starts_at": seeded.starts_at,
+        "ends_at": seeded.ends_at,
+        "time_zone": "Asia/Shanghai",
+        "total_players": 10,
+        "fixed_players": 6,
+        "open_spots": 4,
+        "intensity": OpenGameIntensity.CASUAL,
+        "minimum_experience": None,
+        "positions": [OpenGamePosition.ANY],
+        "aa_cents": 3600,
+        "registration_deadline": seeded.starts_at - timedelta(hours=3),
+        "equipment_and_arrival_notes": None,
+        "visibility": OpenGameVisibility.LINK_ONLY,
+    }
 
 
 def test_entry_precedence_is_active_then_eligible_then_none(pg_engine: Engine) -> None:
@@ -507,6 +632,63 @@ def test_create_replay_wins_before_current_authority_and_body_reuse_conflicts(
     )
 
 
+def test_owner_replay_upgrades_only_the_exact_previous_action_shape(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    request = draft_request(seeded)
+    with Session(pg_engine) as session:
+        first = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=request,
+        )
+        assert first.allowed_actions.can_manage_attendance is False
+        record = session.scalar(select(IdempotencyRecord))
+        assert record is not None
+        assert record.response_body is not None
+        current_body = json.loads(json.dumps(record.response_body))
+        legacy_body = json.loads(json.dumps(current_body))
+        legacy_body["allowed_actions"].pop("can_manage_attendance")
+        record.response_body = legacy_body
+        session.commit()
+
+        replay = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=request,
+        )
+        assert replay.allowed_actions.can_manage_attendance is False
+
+        invalid_bodies = []
+        with_extra_action = json.loads(json.dumps(legacy_body))
+        with_extra_action["allowed_actions"]["future_action"] = False
+        invalid_bodies.append(with_extra_action)
+        with_missing_old_action = json.loads(json.dumps(legacy_body))
+        with_missing_old_action["allowed_actions"].pop("can_preview")
+        invalid_bodies.append(with_missing_old_action)
+        with_extra_top_level = json.loads(json.dumps(legacy_body))
+        with_extra_top_level["future_field"] = None
+        invalid_bodies.append(with_extra_top_level)
+
+        for invalid_body in invalid_bodies:
+            record.response_body = invalid_body
+            session.commit()
+            with pytest.raises(AppError) as unavailable:
+                service(session).create_draft(
+                    user_id=seeded.owner_id,
+                    order_id=seeded.order_id,
+                    idempotency_key=CREATE_KEY,
+                    request=request,
+                )
+            assert (unavailable.value.status_code, unavailable.value.code) == (
+                503,
+                "SERVICE_UNAVAILABLE",
+            )
+
+
 @pytest.mark.parametrize(
     ("starts_at", "cancel_requested", "refund_purpose"),
     [
@@ -744,6 +926,249 @@ def test_healthy_published_update_may_keep_elapsed_deadline(pg_engine: Engine) -
     assert updated.persisted_status is OpenGameStatus.PUBLISHED
     assert updated.registration_deadline == deadline
     assert updated.version == 2
+
+
+def test_update_with_joined_members_reports_all_joined_invariant_fields_once(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        created = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=draft_request(seeded),
+        )
+        for index in range(3):
+            add_joined_registration(
+                session,
+                game_id=created.id,
+                owner_id=seeded.owner_id,
+                label=str(index),
+            )
+        session.commit()
+        request = UpdateOpenGameRequest(
+            **(
+                draft_request(seeded).model_dump()
+                | {"total_players": 8, "open_spots": 2, "aa_cents": 3601}
+            ),
+            expected_version=1,
+        )
+
+        with pytest.raises(AppError) as invalid:
+            service(session).update(
+                user_id=seeded.owner_id,
+                game_id=created.id,
+                idempotency_key="joined-invariants-key-000001",
+                request=request,
+            )
+
+        assert (invalid.value.status_code, invalid.value.code) == (
+            422,
+            "INVALID_ARGUMENT",
+        )
+        assert invalid.value.message == "球局已有加入成员，开放容量或预计 AA 不符合要求。"
+        assert invalid.value.details == {
+            "fields": [
+                {"field": "open_spots", "message": "不能小于已加入人数。"},
+                {
+                    "field": "total_players",
+                    "message": "不能小于固定人数与已加入人数之和。",
+                },
+                {
+                    "field": "aa_cents",
+                    "message": "已有加入成员后预计 AA 只能保持或降低。",
+                },
+            ]
+        }
+
+
+def test_update_rejects_open_spots_change_while_active_waitlist_exists(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        game = add_stored_game(
+            session,
+            seeded=seeded,
+            status=OpenGameStatus.PUBLISHED,
+        )
+        add_waitlisted_registration(
+            session,
+            game_id=game.id,
+            owner_id=seeded.owner_id,
+        )
+        session.commit()
+        request = UpdateOpenGameRequest(
+            **(
+                draft_request(seeded).model_dump()
+                | {"total_players": 11, "open_spots": 5}
+            ),
+            expected_version=1,
+        )
+
+        with pytest.raises(AppError) as invalid:
+            service(session).update(
+                user_id=seeded.owner_id,
+                game_id=game.id,
+                idempotency_key="waitlist-capacity-edit-key-000001",
+                request=request,
+            )
+
+        assert (invalid.value.status_code, invalid.value.code) == (
+            422,
+            "INVALID_ARGUMENT",
+        )
+        assert invalid.value.details == {
+            "fields": [
+                {
+                    "field": "open_spots",
+                    "message": "存在候补成员时不能修改开放名额。",
+                }
+            ]
+        }
+        session.refresh(game)
+        assert game.open_spots == 4
+        assert game.version == 1
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0
+
+
+def test_update_allows_other_fields_when_open_spots_matches_active_waitlist_game(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        game = add_stored_game(
+            session,
+            seeded=seeded,
+            status=OpenGameStatus.PUBLISHED,
+        )
+        add_waitlisted_registration(
+            session,
+            game_id=game.id,
+            owner_id=seeded.owner_id,
+        )
+        session.commit()
+        request = UpdateOpenGameRequest(
+            **(
+                draft_request(
+                    seeded,
+                    name="候补存在时只改名称",
+                ).model_dump()
+                | {"open_spots": 4}
+            ),
+            expected_version=1,
+        )
+
+        updated = service(session).update(
+            user_id=seeded.owner_id,
+            game_id=game.id,
+            idempotency_key="waitlist-same-capacity-edit-key-001",
+            request=request,
+        )
+
+        assert updated.name == "候补存在时只改名称"
+        assert updated.open_spots == 4
+        assert updated.version == 2
+
+
+def test_update_total_floor_is_reachable_when_open_spots_equals_joined(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        created = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=draft_request(seeded),
+        )
+        for index in range(3):
+            add_joined_registration(
+                session,
+                game_id=created.id,
+                owner_id=seeded.owner_id,
+                label=f"total-{index}",
+            )
+        session.commit()
+        request = UpdateOpenGameRequest(
+            **(
+                draft_request(seeded).model_dump()
+                | {"total_players": 8, "open_spots": 3}
+            ),
+            expected_version=1,
+        )
+
+        with pytest.raises(AppError) as invalid:
+            service(session).update(
+                user_id=seeded.owner_id,
+                game_id=created.id,
+                idempotency_key="joined-total-floor-key-000001",
+                request=request,
+            )
+
+    assert invalid.value.details == {
+        "fields": [
+            {
+                "field": "total_players",
+                "message": "不能小于固定人数与已加入人数之和。",
+            }
+        ]
+    }
+
+
+def test_update_without_joined_members_still_checks_roster_in_locked_service(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    with Session(pg_engine) as session:
+        created = service(session).create_draft(
+            user_id=seeded.owner_id,
+            order_id=seeded.order_id,
+            idempotency_key=CREATE_KEY,
+            request=draft_request(seeded),
+        )
+        request = UpdateOpenGameRequest(
+            **(draft_request(seeded).model_dump() | {"open_spots": 5}),
+            expected_version=1,
+        )
+
+        with pytest.raises(AppError) as invalid:
+            service(session).update(
+                user_id=seeded.owner_id,
+                game_id=created.id,
+                idempotency_key="empty-roster-floor-key-000001",
+                request=request,
+            )
+
+    assert (invalid.value.status_code, invalid.value.code) == (
+        422,
+        "INVALID_ARGUMENT",
+    )
+    assert invalid.value.details == {
+        "fields": [
+            {
+                "field": "total_players",
+                "message": "不能小于固定人数与已加入人数之和。",
+            }
+        ]
+    }
+
+
+def test_create_request_keeps_roster_capacity_validation() -> None:
+    seeded = SeededOpenGameCase(
+        owner_id=uuid.uuid4(),
+        stranger_id=uuid.uuid4(),
+        order_id=uuid.uuid4(),
+        slot_id=uuid.uuid4(),
+        payment_id=uuid.uuid4(),
+        starts_at=NOW + timedelta(days=3),
+        ends_at=NOW + timedelta(days=3, hours=2),
+    )
+    with pytest.raises(ValidationError):
+        CreateOpenGameRequest(
+            **(draft_request(seeded).model_dump() | {"open_spots": 5})
+        )
 
 
 class FailingCompletionOrderRepository(OrderRepository):

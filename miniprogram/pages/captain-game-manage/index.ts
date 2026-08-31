@@ -63,6 +63,8 @@ function blankData() {
     canShare: false,
     canCancel: false,
     canPreview: false,
+    canReviewApplications: false,
+    canManageAttendance: false,
     share: null as OpenGameOwner["share"],
     order: null as OpenGameOwner["order"] | null,
     orderRange: "",
@@ -143,7 +145,7 @@ Page({
   applyOwner(owner: OpenGameOwner, message = "") {
     this.owner = owner;
     const stateDescription = owner.state === "DRAFT" ? "仅你可见，尚未公开或分享。"
-      : owner.state === "PUBLISHED" ? "公开详情已可查看；申请加入功能尚未开放。"
+      : owner.state === "PUBLISHED" ? "公开详情已可查看；可分享球局并审核报名。"
         : owner.state === "SUSPENDED" ? "订单状态变化，球局已暂停招募。"
           : owner.state === "CANCELLED" ? "本次开放球局已取消；真实订场及订单状态未改变。"
             : "本场球局已结束，可查看公开详情。";
@@ -157,6 +159,8 @@ Page({
       canShare: owner.allowedActions.canShare && owner.share !== null,
       canCancel: owner.allowedActions.canCancel,
       canPreview: owner.allowedActions.canPreview,
+      canReviewApplications: owner.state === "PUBLISHED",
+      canManageAttendance: owner.allowedActions.canManageAttendance,
       share: owner.allowedActions.canShare ? owner.share : null,
       order: owner.order, orderRange: formatOpenGameRange(owner.order.startsAt, owner.order.endsAt, owner.order.timeZone),
       name: owner.name, teamName: owner.team.name,
@@ -361,6 +365,28 @@ Page({
     if (this.data.status !== "READY" || !this.data.canPreview) return;
     try { await navigation("navigateTo", `/pages/captain-game-public/index?game_id=${this.data.gameId}&preview=1`); }
     catch { this.setData({ navigationError: "暂时无法打开预览，请重试。" }); }
+  },
+  async onReviewApplications() {
+    if (this.data.status !== "READY" || !this.data.canReviewApplications) return;
+    try {
+      await navigation(
+        "navigateTo",
+        `/pages/captain-game-applications/index?game_id=${this.data.gameId}`,
+      );
+    } catch {
+      this.setData({ navigationError: "暂时无法打开报名审核，请重试。" });
+    }
+  },
+  async onManageAttendance() {
+    if (this.data.status !== "READY" || !this.data.canManageAttendance) return;
+    try {
+      await navigation(
+        "navigateTo",
+        `/pages/captain-game-attendance/index?game_id=${this.data.gameId}`,
+      );
+    } catch {
+      this.setData({ navigationError: "暂时无法打开到场记录，请重试。" });
+    }
   },
   onReturnOrder() {
     if (currentPages().length > 1) wx.navigateBack({ delta: 1 });

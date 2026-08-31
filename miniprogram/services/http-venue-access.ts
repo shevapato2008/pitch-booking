@@ -29,7 +29,7 @@ export function createHttpVenueAccessDataSource({ transport, identity, sessionSt
         const session = decodeWeChatSession(
           await transport.post("/api/v1/auth/wechat/session", { code }),
         );
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId });
       } catch {
         throw new VenueAccessApiError("LOGIN_FAILED");
       }

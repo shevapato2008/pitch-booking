@@ -31,7 +31,12 @@ const rawEntryCreate = fixture("open-game-entry-create");
 const rawEntryManage = fixture("open-game-entry-manage");
 const rawEntryNone = fixture("open-game-entry-none");
 const rawPublic = fixture("open-game-public-published");
-const rawSession = fixture("wechat-session");
+const SESSION_USER_ID = "33333333-3333-4333-8333-333333333333";
+const rawSessionExample = fixture("wechat-session");
+const rawSession: Record<string, unknown> = {
+  ...rawSessionExample,
+  user: { ...(rawSessionExample.user as Record<string, unknown>), id: SESSION_USER_ID },
+};
 
 const ownerDraft = decodeOpenGameOwner(rawDraft);
 const ownerPublished = decodeOpenGameOwner(rawPublished);
@@ -112,7 +117,7 @@ const httpError = (statusCode: number, code: string, details: unknown = {}) => (
 function harness(responses: unknown[], sessionPresent = true) {
   const calls: Call[] = [];
   let storedSession: StoredSession | null = sessionPresent
-    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z" }
+    ? { token: "old-token", expiresAt: "2099-01-01T00:00:00Z", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
     : null;
   const next = async (): Promise<unknown> => {
     const value = responses.shift();
@@ -168,6 +173,11 @@ describe("HTTP open-game reads and authentication", () => {
     await expect(h.source.getEntry("order/id +?=")).resolves.toEqual(entryCreate);
 
     expect(h.identity.login).toHaveBeenCalledTimes(1);
+    expect(h.sessionStore.save).toHaveBeenCalledWith({
+      token: String(rawSession.session_token),
+      expiresAt: String(rawSession.expires_at),
+      userId: SESSION_USER_ID,
+    });
     expect(h.calls).toEqual([
       { method: "POST", path: "/api/v1/auth/wechat/session", body: { code: "wechat-code" }, headers: undefined },
       {

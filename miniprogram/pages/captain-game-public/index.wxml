@@ -1,19 +1,144 @@
 <view class="page">
-  <view class="header" style="height: {{headerHeightPx}}px; padding-top: {{headerTopPx}}px; padding-left: {{headerLeftInsetPx}}px; padding-right: {{headerRightInsetPx}}px;"><button class="header__back" style="height: {{headerRowHeightPx}}px; min-height: {{headerRowHeightPx}}px;" bindtap="onHeaderBack" aria-label="返回">‹</button><text class="header__title">公开球局</text><view class="header__spacer" style="height: {{headerRowHeightPx}}px; min-height: {{headerRowHeightPx}}px;"></view></view>
-  <scroll-view scroll-y="true" class="content">
-    <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="heading">正在加载球局</text><text>正在读取最新公开信息…</text></view>
-    <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="heading">加载失败</text><text>{{errorMessage}}</text><button class="secondary" bindtap="onRetry">重新加载</button></view>
-    <view wx:elif="{{status === 'AUTH_LOSS' && showLogin}}" class="state-card state-card--error" role="alert"><text class="heading">需要重新登录</text><text>{{errorMessage}}</text><button class="primary" bindtap="onLogin">重新登录并查看预览</button></view>
-    <view wx:elif="{{status === 'NOT_FOUND'}}" class="state-card" role="status"><text class="heading">球局不可用</text><text>{{errorMessage}}</text></view>
+  <block wx:if="{{mode === 'shared'}}">
+    <view class="c1a-shell">
+      <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+      <view class="c1a-nav" style="height: {{headerRowHeightPx}}px;">
+        <button class="c1a-icon-button" hover-class="button-hover" bindtap="onHeaderBack" aria-label="返回"><view class="c1a-back-glyph"></view></button>
+        <view class="c1a-nav-copy"><text class="c1a-nav-title">球局详情</text></view>
+        <view class="c1a-nav-spacer"></view>
+      </view>
 
-    <block wx:if="{{status === 'READY'}}">
-      <view class="card hero"><view class="hero__top"><text class="eyebrow">真实订场已确认</text><text class="badge badge--{{state}}">{{stateLabel}}</text></view><text class="hero__title">{{name}}</text><text>{{teamName}} · {{visibilityLabel}}</text><text wx:if="{{stateReasonText}}" class="reason">{{stateReasonText}}</text></view>
-      <view class="card"><text class="heading">{{venueName}}</text><text>{{pitchSummary}}</text><text>{{orderRange}}</text></view>
-      <view class="card"><text class="heading">球局安排</text><text>{{peopleSummary}}</text><text>对抗强度：{{intensityLabel}}</text><text>最低经验：{{experienceLabel}}</text><text>位置需求：{{positionsLabel}}</text></view>
-      <view class="card"><text class="heading">费用与说明</text><text>预计人均 AA：{{aaLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>装备与到场：{{notes}}</text><text class="rule">成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。</text></view>
-      <view class="readonly-note">当前仅供查看，申请加入即将开放</view>
-      <view wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</view>
-      <button wx:if="{{showReturnManage}}" class="secondary" bindtap="onReturnManage">返回管理页</button>
-    </block>
-  </scroll-view>
+      <scroll-view scroll-y="true" class="c1a-scroll {{primaryAction ? 'c1a-scroll--footer' : ''}}">
+        <view wx:if="{{status === 'LOADING'}}" class="c1a-card c1a-state-card" role="status" aria-busy="true">
+          <text class="c1a-heading">正在加载球局</text>
+          <text class="c1a-help">正在读取最新报名信息…</text>
+        </view>
+        <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card c1a-state-card--error" role="alert">
+          <text class="c1a-heading">球局暂时没有加载出来</text>
+          <text class="c1a-help">{{errorMessage}}</text>
+          <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRetry">重新加载</button>
+        </view>
+        <view wx:elif="{{status === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
+          <text class="c1a-heading">登录状态需要恢复</text>
+          <text class="c1a-help">{{errorMessage}}</text>
+        </view>
+        <view wx:elif="{{status === 'NOT_FOUND'}}" class="c1a-card c1a-state-card" role="status">
+          <text class="c1a-heading">没有找到这场球局</text>
+          <text class="c1a-help">{{errorMessage}}</text>
+        </view>
+        <view wx:elif="{{status === 'OTHER_PENDING'}}" class="c1a-card c1a-state-card" role="alert">
+          <text class="c1a-heading">还有一项操作待确认</text>
+          <text class="c1a-help">{{errorMessage}}</text>
+        </view>
+        <view wx:elif="{{status === 'FOREIGN_PENDING'}}" class="c1a-card c1a-state-card" role="alert">
+          <text class="c1a-heading">另一账号有操作待确认</text>
+          <text class="c1a-help">{{errorMessage}}</text>
+        </view>
+        <view wx:elif="{{status === 'RESULT_UNKNOWN'}}" class="c1a-card c1a-state-card" role="status">
+          <text class="c1a-heading">申请结果暂时未知</text>
+          <text class="c1a-help">{{errorMessage}}</text>
+        </view>
+
+        <block wx:elif="{{status === 'READY'}}">
+          <view class="c1a-card c1a-section c1a-confirmed-row">
+            <view class="c1a-confirmed-mark"></view>
+            <view class="c1a-confirmed-copy">
+              <text class="c1a-confirmed-title">真实订场已确认</text>
+              <text class="c1a-help">{{venueName}} · {{pitchSummary}}</text>
+              <text class="c1a-help">{{orderRange}}</text>
+            </view>
+          </view>
+
+          <view class="c1a-card c1a-section c1a-game-hero">
+            <text class="c1a-eyebrow">{{teamName}} 组织</text>
+            <text class="c1a-game-title">{{name}}</text>
+            <text class="c1a-game-subtitle">{{publicGame.pitchSpecification}} · {{intensityLabel}} · 需要 {{positionsLabel}}</text>
+          </view>
+
+          <view class="c1a-metrics c1a-section" aria-label="球局摘要">
+            <view class="c1a-metric"><text class="c1a-metric-value">剩余 {{remainingSpots}} 个名额</text><text>{{capacityLabel}}</text></view>
+            <view class="c1a-metric"><text class="c1a-metric-value">{{aaSummaryLabel}}</text><text>到场线下结算</text></view>
+            <view class="c1a-metric c1a-metric--deadline"><text class="c1a-metric-value">{{deadlineLabel}}</text><text>报名截止</text></view>
+          </view>
+
+          <view class="c1a-status-card c1a-status-card--{{statusTone}} c1a-section" role="status">
+            <view class="c1a-status-heading"><view class="c1a-status-dot"></view><text>{{statusHeading}}</text></view>
+            <text class="c1a-status-description">{{statusDescription}}</text>
+          </view>
+
+          <view wx:if="{{viewerRegistrationId}}" class="c1a-card c1a-section c2d-registration-authority">
+            <text class="c2d-registration-title">报名记录</text>
+            <text wx:if="{{attendanceRecordedAtLabel}}" class="c2d-attendance-time">{{attendanceRecordedAtLabel}}</text>
+            <text wx:if="{{attendanceCorrectedAtLabel}}" class="c2d-attendance-time c2d-attendance-time--corrected">{{attendanceCorrectedAtLabel}}</text>
+            <text class="c2d-registration-label">报名编号</text>
+            <text class="c2d-registration-id">{{viewerRegistrationId}}</text>
+            <button class="c2d-copy-action" hover-class="button-hover" bindtap="onCopyRegistrationId">复制报名编号</button>
+            <text wx:if="{{copyFeedbackMessage}}" class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}" role="status">{{copyFeedbackMessage}}</text>
+          </view>
+
+          <view class="c1a-card c1a-section">
+            <view class="c1a-detail-grid">
+              <view><text class="c1a-detail-label">组织者球队</text><text class="c1a-detail-value">{{teamName}}</text></view>
+              <view><text class="c1a-detail-label">对抗强度</text><text class="c1a-detail-value">{{intensityLabel}}</text></view>
+              <view class="c1a-detail-wide"><text class="c1a-detail-label">最低经验</text><text class="c1a-detail-value">{{experienceLabel}}</text></view>
+              <view class="c1a-detail-wide"><text class="c1a-detail-label">装备与到场</text><text class="c1a-detail-value">{{notes}}</text></view>
+            </view>
+            <text class="c1a-settlement">成人参与，请自行评估运动风险；平台不代收或担保线下结算。</text>
+          </view>
+        </block>
+
+        <text wx:if="{{navigationError}}" class="c1a-navigation-error" role="alert">{{navigationError}}</text>
+      </scroll-view>
+
+      <view wx:if="{{primaryAction}}" class="c1a-footer">
+        <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onLogin">登录并继续</button>
+        <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onApply">申请加入</button>
+        <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRefresh">刷新结果</button>
+        <button wx:elif="{{primaryAction === 'WITHDRAW'}}" class="c1a-button c1a-button--danger" hover-class="button-hover" bindtap="onOpenWithdrawalConfirm">{{withdrawalActionLabel}}</button>
+        <button wx:elif="{{primaryAction === 'CONFIRM_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmResult">确认申请结果</button>
+        <button wx:elif="{{primaryAction === 'CONFIRM_WITHDRAW_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmWithdrawalResult">确认退出结果</button>
+        <button wx:elif="{{primaryAction === 'GO_PENDING'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onGoPending">前往确认</button>
+        <button wx:elif="{{primaryAction === 'CLEAR_PENDING'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onClearPending">清除本机待确认记录</button>
+      </view>
+
+      <view wx:if="{{withdrawalOperationState === 'CONFIRMING' || withdrawalOperationState === 'SUBMITTING'}}" class="c2a-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-label="{{withdrawalConfirmationTitle}}">
+        <view class="c2a-sheet">
+          <view class="c2a-sheet-handle" aria-hidden="true"></view>
+          <text class="c2a-sheet-title">{{withdrawalConfirmationTitle}}</text>
+          <text class="c2a-sheet-copy">{{withdrawalConfirmationCopy}}</text>
+          <view wx:if="{{lateExitWillBeRecorded}}" class="c2a-late-warning">
+            <text>距离开场不足 6 小时</text>
+            <text>会记录临时退出；首期不自动封禁或扣款。</text>
+          </view>
+          <view class="c2a-sheet-actions">
+            <button class="c2a-neutral-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelWithdrawal">{{withdrawalCancelLabel}}</button>
+            <button class="c2a-danger-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onConfirmWithdrawal">{{withdrawalOperationState === 'SUBMITTING' ? '提交中…' : withdrawalConfirmationActionLabel}}</button>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <block wx:elif="{{mode === 'owner'}}">
+    <view class="owner-shell">
+      <view class="header__system" style="height: {{headerTopPx}}px;"></view>
+      <view class="header" style="height: {{headerRowHeightPx}}px;"><button class="header__back" hover-class="button-hover" bindtap="onHeaderBack" aria-label="返回"><view class="header__back-glyph"></view></button><text class="header__title">公开球局</text><view class="header__spacer"></view></view>
+      <scroll-view scroll-y="true" class="content">
+        <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="heading">正在加载球局</text><text>正在读取最新公开信息…</text></view>
+        <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="heading">加载失败</text><text>{{errorMessage}}</text><button class="secondary" hover-class="button-hover" bindtap="onRetry">重新加载</button></view>
+        <view wx:elif="{{status === 'AUTH_LOSS' && showLogin}}" class="state-card state-card--error" role="alert"><text class="heading">需要重新登录</text><text>{{errorMessage}}</text><button class="primary" hover-class="button-hover" bindtap="onLogin">重新登录并查看预览</button></view>
+        <view wx:elif="{{status === 'NOT_FOUND'}}" class="state-card" role="status"><text class="heading">球局不可用</text><text>{{errorMessage}}</text></view>
+
+        <block wx:if="{{status === 'READY'}}">
+          <view class="card hero"><view class="hero__top"><text class="eyebrow">真实订场已确认</text><text class="badge badge--{{state}}">{{stateLabel}}</text></view><text class="hero__title">{{name}}</text><text>{{teamName}} · {{visibilityLabel}}</text><text wx:if="{{stateReasonText}}" class="reason">{{stateReasonText}}</text></view>
+          <view class="card"><text class="heading">{{venueName}}</text><text>{{pitchSummary}}</text><text>{{orderRange}}</text></view>
+          <view class="card"><text class="heading">球局安排</text><text>{{peopleSummary}}</text><text>对抗强度：{{intensityLabel}}</text><text>最低经验：{{experienceLabel}}</text><text>位置需求：{{positionsLabel}}</text></view>
+          <view class="card"><text class="heading">费用与说明</text><text>预计人均 AA：{{aaLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>装备与到场：{{notes}}</text><text class="rule">成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。</text></view>
+          <view class="readonly-note">当前仅供查看，申请加入即将开放</view>
+          <view wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</view>
+          <button wx:if="{{showReturnManage}}" class="secondary" hover-class="button-hover" bindtap="onReturnManage">返回管理页</button>
+        </block>
+      </scroll-view>
+    </view>
+  </block>
 </view>

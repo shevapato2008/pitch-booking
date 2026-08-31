@@ -50,7 +50,7 @@ export interface OwnerOrderLifecyclePresentation {
 
 export function presentOwnerOrderLifecycle(order: Pick<
   OrderView,
-  "status" | "cancelRequestedAt" | "allowedActions"
+  "status" | "cancelRequestedAt" | "allowedActions" | "paymentState"
 >): OwnerOrderLifecyclePresentation {
   const cancelling = order.status === "PENDING_PAYMENT" && order.cancelRequestedAt != null;
   let heroTitle = order.status === "PENDING_PAYMENT" ? "待支付" : "预订成功";
@@ -71,7 +71,7 @@ export function presentOwnerOrderLifecycle(order: Pick<
       title: "确认取消订单？",
       content: "若尚未付款，取消成功后将释放当前场次。",
     };
-  } else if (serverCanCancel && order.status === "CONFIRMED") {
+  } else if (serverCanCancel && order.status === "CONFIRMED" && order.paymentState === "SUCCESS") {
     cancelAction = {
       label: "取消并发起全额退款",
       title: "确认取消并发起退款？",

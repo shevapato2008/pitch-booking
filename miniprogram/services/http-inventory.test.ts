@@ -7,7 +7,7 @@ import { createHttpInventoryDataSource } from "./http-inventory";
 const tokenResponse = {
   session_token: "wxsess_7jX9Qp2Lm8Vn4Rt6Yw3Kc5Hd1Bs0Fa9Eu7Gi2No6Zx4",
   expires_at: "2099-01-01T00:00:00Z",
-  user: { id: "00000000-0000-4000-8000-000000000001", masked_phone: null, last_contact_name: null },
+  user: { id: "22222222-2222-4222-8222-222222222222", masked_phone: null, last_contact_name: null },
 };
 const slot = {
   id: "00000000-0000-4000-8000-000000000030", pitch_id: "00000000-0000-4000-8000-000000000020",
@@ -28,6 +28,11 @@ test("reads a day and writes create/update with bearer and stable idempotency he
   harness.get.mockResolvedValueOnce(inventory);
   harness.put.mockResolvedValueOnce({ ...slot, price_cents: 28000, status: "CLOSED", checkout_version: 2 });
   await harness.source.login();
+  expect(harness.storage.set).toHaveBeenCalledWith("modelstella.pitch-booking.session.v2", {
+    token: tokenResponse.session_token,
+    expiresAt: tokenResponse.expires_at,
+    userId: tokenResponse.user.id,
+  });
   await expect(harness.source.getDay(inventory.venue.id, slot.pitch_id, "2026-08-11")).resolves.toMatchObject({ localDate: "2026-08-11" });
   await harness.source.createSlot({
     venueId: inventory.venue.id, body: { pitchId: slot.pitch_id, localDate: "2026-08-11", startTime: "09:30", endTime: "11:00", priceCents: 20000 },
@@ -81,8 +86,8 @@ test.each(["NETWORK_ERROR", "REQUEST_TIMEOUT"] as const)("maps write %s to unkno
 });
 
 function createHarness() {
-  let persisted: unknown;
-  const storage = { get: jest.fn(() => persisted), set: jest.fn((_k: string, value: unknown) => { persisted = value; }), remove: jest.fn(() => { persisted = undefined; }) };
+  const persisted = new Map<string, unknown>();
+  const storage = { get: jest.fn((key: string) => persisted.get(key)), set: jest.fn((key: string, value: unknown) => { persisted.set(key, value); }), remove: jest.fn((key: string) => { persisted.delete(key); }) };
   const get = jest.fn(async (path: string, headers?: Readonly<Record<string, string>>) => { void path; void headers; return undefined as unknown; });
   const post = jest.fn(async (path: string, body: unknown, headers?: Readonly<Record<string, string>>) => { void path; void body; void headers; return undefined as unknown; });
   const put = jest.fn(async (path: string, body: unknown, headers?: Readonly<Record<string, string>>) => { void path; void body; void headers; return undefined as unknown; });
@@ -93,5 +98,5 @@ function createHarness() {
   };
   const identity: WeChatIdentityCapability = { login: jest.fn(async () => ({ code: "wx-login-code" })) };
   const source = createHttpInventoryDataSource({ transport, identity, sessionStore: createSessionStore(storage, () => Date.parse("2026-08-11T00:00:00Z")) });
-  return { source, get, post, put, identity };
+  return { source, get, post, put, identity, storage };
 }

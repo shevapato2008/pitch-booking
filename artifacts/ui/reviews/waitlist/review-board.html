@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>C2b Waitlist Review Board</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #f8fafc; color: #10243e; font: 15px/1.6 system-ui, sans-serif; }
+      main { max-width: 1120px; margin: 0 auto; }
+      h1, h2 { margin: 0 0 12px; }
+      section { margin: 24px 0; padding: 20px; border: 1px solid #dbe5ec; border-radius: 16px; background: #fff; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+      figure { margin: 0; }
+      img { display: block; width: 100%; height: auto; border: 1px solid #dbe5ec; border-radius: 12px; }
+      figcaption { margin-top: 8px; color: #526479; }
+      .wide { grid-column: 1 / -1; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>C2b 候补视觉核对 · 375 × 812</h1>
+      <p>开发预览已在官方微信开发者工具的 iPhone 12/13 Pro 与 Nexus 5X 完成人工审核；真实通知与物理多账号验收仍为待办。</p>
+
+      <section>
+        <h2>同视口代表状态：full-review</h2>
+        <div class="grid">
+          <figure><img src="full-review-reference-375x812.png" alt="Full review Artifact reference" /><figcaption>Reference · 375×812</figcaption></figure>
+          <figure><img src="full-review-implementation-ios-375x812.png" alt="Full review native implementation" /><figcaption>Native implementation · 375×812</figcaption></figure>
+          <figure class="wide"><img src="full-review-ios-375x812-side-by-side.png" alt="Full review side-by-side comparison" /><figcaption>Side-by-side</figcaption></figure>
+          <figure><img src="full-review-ios-375x812-overlay-50.png" alt="Full review 50 percent overlay" /><figcaption>50% overlay</figcaption></figure>
+          <figure><img src="full-review-ios-375x812-difference.png" alt="Full review difference image" /><figcaption>Difference</figcaption></figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>同视口代表状态：waitlist-withdraw-confirm</h2>
+        <div class="grid">
+          <figure><img src="waitlist-withdraw-confirm-reference-375x812.png" alt="Artifact reference" /><figcaption>Reference · 375×812</figcaption></figure>
+          <figure><img src="waitlist-withdraw-confirm-implementation-ios-375x812.png" alt="Native implementation" /><figcaption>Native implementation · 375×812</figcaption></figure>
+          <figure class="wide"><img src="waitlist-withdraw-confirm-ios-375x812-side-by-side.png" alt="Side-by-side comparison" /><figcaption>Side-by-side</figcaption></figure>
+          <figure><img src="waitlist-withdraw-confirm-ios-375x812-overlay-50.png" alt="50 percent overlay" /><figcaption>50% overlay</figcaption></figure>
+          <figure><img src="waitlist-withdraw-confirm-ios-375x812-difference.png" alt="Difference image" /><figcaption>Difference</figcaption></figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>iOS 原生关键状态</h2>
+        <div class="grid">
+          <figure><img src="ios-full-review.png" alt="iOS full review" /><figcaption>full-review</figcaption></figure>
+          <figure><img src="ios-waitlist-confirm.png" alt="iOS waitlist confirmation" /><figcaption>waitlist confirmation</figcaption></figure>
+          <figure><img src="ios-waitlisted-detail.png" alt="iOS waitlisted detail" /><figcaption>waitlisted-detail</figcaption></figure>
+          <figure><img src="ios-withdraw-confirm.png" alt="iOS withdrawal confirmation" /><figcaption>waitlist-withdraw-confirm</figcaption></figure>
+          <figure><img src="ios-promoted-detail.png" alt="iOS promoted detail" /><figcaption>promoted-detail</figcaption></figure>
+          <figure><img src="ios-suspended-detail.png" alt="iOS suspended waitlist" /><figcaption>suspended-waitlisted</figcaption></figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Android 原生关键状态</h2>
+        <div class="grid">
+          <figure><img src="android-full-review.png" alt="Android full review" /><figcaption>full-review</figcaption></figure>
+          <figure><img src="android-waitlist-confirm.png" alt="Android waitlist confirmation" /><figcaption>waitlist confirmation</figcaption></figure>
+          <figure><img src="android-waitlisted-detail-recheck.png" alt="Android waitlisted detail" /><figcaption>waitlisted-detail</figcaption></figure>
+          <figure><img src="android-withdraw-confirm.png" alt="Android withdrawal confirmation" /><figcaption>waitlist-withdraw-confirm</figcaption></figure>
+          <figure><img src="android-promoted-detail.png" alt="Android promoted detail" /><figcaption>promoted-detail</figcaption></figure>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

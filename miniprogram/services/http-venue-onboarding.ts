@@ -56,7 +56,7 @@ export function createHttpVenueOnboardingDataSource({ transport, identity, phone
         const session = decodeOnboardingSession(
           await transport.post("/api/v1/auth/wechat/session", { code: result.code }),
         );
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.identity.userId });
         return session.identity;
       } catch (caught) {
         if (caught instanceof VenueOnboardingApiError) throw caught;

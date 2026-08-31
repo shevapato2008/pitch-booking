@@ -55,7 +55,6 @@
         <view class="intent-entry__copy">
           <view class="intent-entry__card-heading">
             <text class="intent-entry__card-title">{{item.title}}</text>
-            <text wx:if="{{item.disabled}}" class="intent-entry__card-status">即将开放</text>
           </view>
           <text class="intent-entry__card-subtitle">{{item.subtitle}}</text>
         </view>

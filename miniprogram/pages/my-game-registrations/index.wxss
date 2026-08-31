@@ -1,0 +1,54 @@
+.c1c-page { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #F8FAFC; color: #10243E; font-size: 28rpx; }
+.c1c-system { flex: 0 0 auto; background: #FFFFFF; }
+.c1c-header { display: grid; grid-template-columns: 88rpx minmax(0, 1fr) 88rpx; align-items: center; flex: 0 0 auto; box-sizing: border-box; border-bottom: 1rpx solid #DBE5EC; background: #FFFFFF; }
+.c1c-header-back, .c1c-header-spacer { box-sizing: border-box; width: 88rpx; min-width: 88rpx; min-height: 88rpx; }
+.c1c-header-back { display: flex; align-items: center; justify-content: center; margin: 0; padding: 0; border: 0; background: transparent; }
+.c1c-header-back::after, .c1c-refresh-action::after, .c1c-secondary-action::after, .c1c-registration-card::after, .c1c-inline-error button::after { border: 0; }
+.c1c-header-title { overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 34rpx; font-weight: 700; line-height: 48rpx; }
+.c1c-back-icon { position: relative; width: 40rpx; height: 40rpx; }
+.c1c-back-icon::before { position: absolute; top: 9rpx; left: 7rpx; box-sizing: border-box; width: 22rpx; height: 22rpx; border-left: 4rpx solid #10243E; border-bottom: 4rpx solid #10243E; transform: rotate(45deg); content: ""; }
+.c1c-back-icon::after { position: absolute; top: 18rpx; left: 8rpx; width: 27rpx; height: 4rpx; border-radius: 2rpx; background: #10243E; content: ""; }
+.c1c-scroll { box-sizing: border-box; flex: 1 1 auto; height: 0; min-height: 0; }
+.c1c-content { box-sizing: border-box; min-height: 100%; padding: 24rpx 24rpx calc(64rpx + env(safe-area-inset-bottom, 0px)); }
+.c1c-list-intro { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; min-height: 108rpx; }
+.c1c-list-intro > view { display: flex; min-width: 0; flex-direction: column; }
+.c1c-list-heading { font-size: 36rpx; font-weight: 700; line-height: 52rpx; }
+.c1c-list-copy { color: #526479; font-size: 24rpx; line-height: 36rpx; }
+.c1c-refresh-action, .c1c-secondary-action, .c1c-inline-error button { display: flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: 88rpx; margin: 0; border: 1rpx solid #7DD3FC; background: #F0F9FF; color: #0369A1; font-size: 26rpx; font-weight: 700; line-height: 38rpx; }
+.c1c-refresh-action { flex: 0 0 136rpx; padding: 0 24rpx; border-radius: 44rpx; }
+.c1c-refresh-action[disabled], .c1c-secondary-action[disabled] { opacity: .48; }
+.c1c-result-line { display: flex; align-items: center; justify-content: space-between; min-height: 70rpx; color: #64748B; font-size: 24rpx; line-height: 36rpx; }
+.c1c-result-line text:last-child { color: #10243E; font-weight: 700; }
+.c1c-registration-list { display: grid; gap: 20rpx; }
+.c1c-registration-card { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; min-height: 308rpx; margin: 0; padding: 26rpx 66rpx 26rpx 26rpx; overflow: hidden; border: 1rpx solid #DBE5EC; border-radius: 28rpx; background: #FFFFFF; color: #10243E; text-align: left; }
+.c1c-registration-card--waitlisted { border-color: #FED7AA; }
+.c1c-card-body { display: block; width: 100%; min-width: 0; }
+.c1c-card-top { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.c1c-status-badge, .c1c-format-badge { display: inline-flex; align-items: center; justify-content: center; min-height: 48rpx; padding: 4rpx 16rpx; border-radius: 24rpx; font-size: 22rpx; font-weight: 700; line-height: 32rpx; }
+.c1c-status--applied { background: #F0F9FF; color: #0369A1; }
+.c1c-status--waitlisted { background: #FFF7ED; color: #9A3412; }
+.c1c-status--joined { background: #ECFDF5; color: #047857; }
+.c1c-status--neutral, .c1c-format-badge { background: #F1F5F9; color: #526479; }
+.c1c-game-name, .c1c-game-time, .c1c-game-place { display: block; }
+.c1c-game-name { margin-top: 10rpx; font-size: 34rpx; font-weight: 700; line-height: 48rpx; }
+.c1c-game-time { margin-top: 6rpx; font-size: 28rpx; font-weight: 700; line-height: 42rpx; }
+.c1c-game-place { margin-top: 3rpx; overflow: hidden; color: #526479; font-size: 24rpx; line-height: 36rpx; text-overflow: ellipsis; white-space: nowrap; }
+.c2d-correction-note { display: block; margin-top: 4rpx; color: #047857; font-size: 22rpx; font-weight: 700; line-height: 34rpx; }
+.c1c-chevron { position: absolute; top: 50%; right: 28rpx; box-sizing: border-box; width: 18rpx; height: 18rpx; border-top: 4rpx solid #64748B; border-right: 4rpx solid #64748B; transform: translateY(-50%) rotate(45deg); }
+.c1c-inline-error { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; margin-bottom: 16rpx; padding: 16rpx 18rpx; border: 1rpx solid #FECACA; border-radius: 20rpx; background: #FEF2F2; }
+.c1c-inline-error--footer { margin: 20rpx 0 0; }
+.c1c-inline-error > view { display: flex; min-width: 0; flex-direction: column; }
+.c1c-inline-error > view text:first-child { color: #B42318; font-size: 24rpx; font-weight: 700; line-height: 36rpx; }
+.c1c-inline-error > view text:last-child { color: #526479; font-size: 22rpx; line-height: 34rpx; }
+.c1c-inline-error button { flex: 0 0 176rpx; padding: 0 16rpx; border-radius: 18rpx; }
+.c1c-state-card { padding: 44rpx 32rpx; border: 1rpx solid #DBE5EC; border-radius: 28rpx; background: #FFFFFF; text-align: center; }
+.c1c-state-card--error { border-color: #FECACA; background: #FEF2F2; }
+.c1c-state-title, .c1c-state-copy { display: block; }
+.c1c-state-title { font-size: 36rpx; font-weight: 700; line-height: 52rpx; }
+.c1c-state-card--error .c1c-state-title { color: #B42318; }
+.c1c-state-copy { margin-top: 12rpx; color: #526479; font-size: 26rpx; line-height: 40rpx; }
+.c1c-secondary-action { width: 100%; margin-top: 30rpx; padding: 0 24rpx; border-radius: 22rpx; }
+.c1c-load-more { background: #FFFFFF; }
+.c1c-skeleton { min-height: 308rpx; border: 1rpx solid #DBE5EC; border-radius: 28rpx; background: #FFFFFF; }
+.c1c-skeleton::before { display: block; width: 68%; height: 28rpx; margin: 44rpx 28rpx 0; border-radius: 14rpx; background: #E8EEF3; box-shadow: 0 62rpx 0 #EEF3F7, 0 124rpx 0 #E8EEF3, 0 186rpx 0 #EEF3F7; content: ""; }
+.c1c-pressed { opacity: .68; }

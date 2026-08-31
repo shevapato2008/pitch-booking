@@ -1,0 +1,9 @@
+{
+  "token": "C2B_WAITLIST_FIXTURE",
+  "pages": [
+    "dev/pages/c2b-waitlist-scenario/index",
+    "dev/pages/c2b-captain-applications/index",
+    "dev/pages/c2b-my-registrations/index",
+    "dev/pages/c2b-registration-detail/index"
+  ]
+}

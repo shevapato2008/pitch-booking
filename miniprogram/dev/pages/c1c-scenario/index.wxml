@@ -1,0 +1,32 @@
+<view class="c1c-page">
+  <view class="c1c-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1c-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1c-header-back" hover-class="c1c-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="c1c-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c1c-header-title">C1c 开发预览</text>
+    <view class="c1c-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c1c-scroll" scroll-y="true">
+    <view class="c1c-content">
+      <text class="c1c-preview-note">{{previewNotice}}</text>
+      <text class="c1c-heading">我的报名</text>
+      <text class="c1c-copy">选择可重复场景，检查入口、列表、恢复与精确详情。</text>
+      <view class="c1c-scenario-list">
+        <button
+          wx:for="{{scenarios}}"
+          wx:key="scenario"
+          class="c1c-scenario-card"
+          hover-class="c1c-pressed"
+          bindtap="onOpenScenario"
+          data-scenario="{{item.scenario}}"
+          aria-label="打开{{item.title}}"
+        >
+          <view class="c1c-scenario-copy"><text>{{item.title}}</text><text>{{item.detail}}</text></view>
+          <view class="c1c-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+    </view>
+  </scroll-view>
+</view>

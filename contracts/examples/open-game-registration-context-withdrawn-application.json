@@ -1,0 +1,52 @@
+{
+  "game": {
+    "name": "周五浦东七人制",
+    "team_name": "海风联队",
+    "state": "PUBLISHED",
+    "state_reason": null,
+    "venue_name": "浦东星火足球公园",
+    "pitch_name": "A1 场",
+    "pitch_specification": "7人制",
+    "starts_at": "2026-08-28T20:00:00+08:00",
+    "ends_at": "2026-08-28T22:00:00+08:00",
+    "time_zone": "Asia/Shanghai",
+    "total_players": 14,
+    "fixed_players": 9,
+    "open_spots": 4,
+    "intensity": "CASUAL",
+    "minimum_experience": "有基础传接球经验",
+    "positions": ["GOALKEEPER", "DEFENDER", "FORWARD"],
+    "aa_cents": 12000,
+    "registration_deadline": "2026-08-28T18:00:00+08:00",
+    "equipment_and_arrival_notes": "请提前 20 分钟到场，深浅色球衣各带一件。",
+    "visibility": "LINK_ONLY"
+  },
+  "remaining_spots": 4,
+  "viewer_authenticated": true,
+  "viewer_registration": {
+    "id": "40000000-0000-4000-8000-000000000105",
+    "display_name": "周末小翼",
+    "position": "FORWARD",
+    "note": "可以补边路，按时到场。",
+    "persisted_status": "WITHDRAWN",
+    "effective_status": "WITHDRAWN",
+    "version": 2,
+    "applied_at": "2026-08-24T00:18:00+08:00",
+    "decided_at": null,
+    "withdrawn_at": "2026-08-24T00:30:00+08:00",
+    "withdrawal_kind": "APPLICATION_WITHDRAWAL",
+    "late_exit_recorded": false,
+    "available_withdrawal_action": null,
+    "late_exit_will_be_recorded": false,
+    "waitlist_position": null,
+    "waitlisted_at": null,
+    "promoted_at": null,
+    "attendance_status": null,
+    "attendance_recorded_at": null,
+    "attendance_corrected_at": null
+  },
+  "allowed_actions": {
+    "can_apply": false,
+    "apply_blocked_reason": "ALREADY_APPLIED"
+  }
+}

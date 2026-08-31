@@ -5,7 +5,7 @@ type IntentId = "HOST" | "BOOK" | "PLAY";
 const INTENTS = Object.freeze([
   Object.freeze({ id: "HOST" as const, title: "我要出租场地", subtitle: "申请合作，或进入已授权的场馆工作台", icon: "venue", disabled: false, status: "" }),
   Object.freeze({ id: "BOOK" as const, title: "我要租赁场地", subtitle: "查找时间、价格和可订整场", icon: "calendar", disabled: false, status: "" }),
-  Object.freeze({ id: "PLAY" as const, title: "我要找球踢", subtitle: "加入开放球局", icon: "football", disabled: true, status: "即将开放" }),
+  Object.freeze({ id: "PLAY" as const, title: "我要找球踢", subtitle: "加入开放球局", icon: "football", disabled: false, status: "" }),
 ]);
 
 function intentIdFrom(event: { currentTarget?: { dataset?: { intentId?: unknown } } }): IntentId | undefined {
@@ -47,13 +47,15 @@ Page({
 
   onChooseIntent(event: { currentTarget?: { dataset?: { intentId?: unknown } } }) {
     const intentId = intentIdFrom(event);
-    if (!intentId || intentId === "PLAY" || this.navigationInFlight) return;
+    if (!intentId || this.navigationInFlight) return;
     this.navigationInFlight = true;
     const fail = () => { this.navigationInFlight = false; };
     if (intentId === "BOOK") {
       wx.reLaunch({ url: "/pages/venue-map/index", fail });
-    } else {
+    } else if (intentId === "HOST") {
       wx.navigateTo({ url: "/pages/venue-access/index", fail });
+    } else {
+      wx.navigateTo({ url: "/pages/game-discovery/index", fail });
     }
   },
 });

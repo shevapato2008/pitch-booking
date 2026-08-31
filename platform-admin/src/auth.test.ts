@@ -1,7 +1,7 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 import { ApiError, SessionExpiredError, type PlatformApi, type PlatformSession } from "./api";
-import { AuthController, consumeAccessToken } from "./auth";
+import { AuthController, attendanceCorrectionVisible, consumeAccessToken, primaryPlatformRole } from "./auth";
 
 const session: PlatformSession = {
   principal_id: "reviewer-1",
@@ -12,6 +12,16 @@ const session: PlatformSession = {
 };
 
 describe("AuthController", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-08-17T10:00:00Z"));
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
   test("restores an existing cookie session without exposing a token", async () => {
     const api = { restoreSession: jest.fn<() => Promise<PlatformSession>>().mockResolvedValue(session) } as unknown as PlatformApi;
     const controller = new AuthController(api);
@@ -41,7 +51,6 @@ describe("AuthController", () => {
   });
 
   test("expires the session at expires_at and invokes the sensitive-state cleanup", async () => {
-    jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-08-17T10:00:00Z"));
     const expiring = { ...session, expires_at: "2026-08-17T10:00:01Z" };
     const api = { restoreSession: jest.fn<() => Promise<PlatformSession>>().mockResolvedValue(expiring) } as unknown as PlatformApi;
@@ -54,7 +63,6 @@ describe("AuthController", () => {
 
     expect(controller.state.status).toBe("anonymous");
     expect(cleanup).toHaveBeenCalledTimes(1);
-    jest.useRealTimers();
   });
 
   test("rechecks expires_at when focus or visibility returns", async () => {
@@ -98,5 +106,16 @@ describe("AuthController", () => {
 
     expect(consumeAccessToken(input)).toBe("staff-secret");
     expect(input.value).toBe("");
+  });
+
+  test("shows attendance correction only to PLATFORM_ADMIN while preserving reviewer access", () => {
+    expect(attendanceCorrectionVisible(session)).toBe(false);
+    const dualRoleSession: PlatformSession = {
+      ...session,
+      roles: ["ONBOARDING_REVIEWER", "PLATFORM_ADMIN"],
+    };
+    expect(attendanceCorrectionVisible(dualRoleSession)).toBe(true);
+    expect(primaryPlatformRole(session)).toBe("ONBOARDING_REVIEWER");
+    expect(primaryPlatformRole(dualRoleSession)).toBe("PLATFORM_ADMIN");
   });
 });

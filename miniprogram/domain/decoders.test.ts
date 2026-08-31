@@ -550,6 +550,69 @@ test("accepts the frozen exceptional-success and closed-expired combinations", (
   })).toMatchObject({ status: "PAYMENT_EXCEPTION", paymentState: null });
 });
 
+test("limits marked non-funding confirmation to owner detail reads", () => {
+  const stagingReservation = {
+    ...confirmedOrder,
+    order_number: "PB-STG-C1A-7182b05283de-03",
+    payment_state: null,
+    paid_at: null,
+  };
+
+  expect(() => decodeOrder(stagingReservation)).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodePaymentReconciliation(stagingReservation)).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodeOwnerOrder({
+    ...stagingReservation,
+    order_number: confirmedOrder.order_number,
+  })).toThrow("INVALID_API_RESPONSE");
+  expect(() => decodeOrder({
+    ...stagingReservation,
+    status: "COMPLETED",
+    completed_at: "2026-08-31T10:00:00+08:00",
+  })).toThrow("INVALID_API_RESPONSE");
+  expect(decodeOwnerOrder(stagingReservation)).toMatchObject({
+    status: "CONFIRMED",
+    paymentState: null,
+    paymentConfirming: false,
+    paidAt: null,
+  });
+
+  expect(decodeOwnerOrder({
+    ...stagingReservation,
+    status: "COMPLETED",
+    checked_in_at: "2026-08-31T09:01:00+08:00",
+    completed_at: "2026-08-31T10:01:00+08:00",
+    allowed_actions: {
+      can_pay: false,
+      can_cancel: false,
+      can_check_in: false,
+      can_complete: false,
+      can_refund: false,
+      blocked_reason: "ORDER_TERMINAL",
+    },
+  })).toMatchObject({
+    status: "COMPLETED",
+    paymentState: null,
+    paymentConfirming: false,
+    paidAt: null,
+  });
+
+  expect(() => decodeOwnerOrder({
+    ...stagingReservation,
+    order_number: confirmedOrder.order_number,
+    status: "COMPLETED",
+    checked_in_at: "2026-08-31T09:01:00+08:00",
+    completed_at: "2026-08-31T10:01:00+08:00",
+    allowed_actions: {
+      can_pay: false,
+      can_cancel: false,
+      can_check_in: false,
+      can_complete: false,
+      can_refund: false,
+      blocked_reason: "ORDER_TERMINAL",
+    },
+  })).toThrow("INVALID_API_RESPONSE");
+});
+
 test.each([
   [null, false, false],
   ["CREATING", false, false],

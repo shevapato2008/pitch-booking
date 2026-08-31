@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="attendance-correction-readback.css" />
+    <title>到场纠正回读 · Development-only Artifact</title>
+  </head>
+  <body>
+    <main
+      class="artifact"
+      id="attendance-correction-readback-app"
+      data-production-enabled="false"
+      data-captain-route="?screen=captain"
+      data-player-route="?screen=player"
+    >
+      <section class="artifact-screen" data-screen="captain" aria-labelledby="captain-title">
+        <div class="system-bar" aria-hidden="true">
+          <span class="system-time">10:58</span>
+          <span class="system-indicators"><i class="signal"></i><i class="wifi"></i><i class="battery"></i></span>
+        </div>
+        <header class="navigation-bar">
+          <button class="touch-target back-button" type="button" data-action="back" aria-label="返回上一页">
+            <span class="back-icon" aria-hidden="true"></span>
+          </button>
+          <h1 id="captain-title">到场记录</h1>
+          <span class="native-capsule" aria-hidden="true"></span>
+        </header>
+
+        <div class="scroll-region">
+          <p class="fixture-banner"><strong>Development-only Fixture</strong> · 模拟数据，不会修改生产数据</p>
+
+          <article class="card game-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">已结束球局</p>
+                <h2>C1b 预发布验收局</h2>
+              </div>
+              <span class="status-badge status-badge--complete">记录完成</span>
+            </div>
+            <p class="game-meta">测试环境·渤海元丰足球场 · 七人制 A 场</p>
+            <p class="game-time">8月31日 周一 · 09:00–10:00</p>
+            <div class="progress-row" aria-label="到场结果已记录三人，共三人">
+              <span>到场结果</span><strong>3 / 3 人</strong>
+            </div>
+          </article>
+
+          <section class="section-block" aria-labelledby="guest-heading">
+            <header class="section-heading">
+              <div><p class="eyebrow">散客名单</p><h2 id="guest-heading">已记录 1 人</h2></div>
+              <span class="correction-badge">平台已纠正</span>
+            </header>
+
+            <article class="card participant-card">
+              <div class="participant-main">
+                <div class="identity">
+                  <span class="avatar" aria-hidden="true">林</span>
+                  <div>
+                    <h3>林知远（右边锋，也可以客串中场）</h3>
+                    <p>意向位置：前锋</p>
+                  </div>
+                </div>
+                <div class="current-result">
+                  <span>当前到场结果</span>
+                  <strong class="result-no-show"><i aria-hidden="true"></i>未到场</strong>
+                </div>
+              </div>
+
+              <dl class="readback-timeline">
+                <div><dt>原记录</dt><dd>已到场 · 8月31日 10:06</dd></div>
+                <div><dt>当前结果</dt><dd>平台已纠正 · 8月31日 14:18</dd></div>
+              </dl>
+
+              <div class="registration-block">
+                <div>
+                  <span>报名编号</span>
+                  <code>8ed324a4-56cb-4d73-9a77-0b4605ac3b17</code>
+                </div>
+                <button
+                  class="touch-target copy-button"
+                  type="button"
+                  data-action="copy-registration-id"
+                  data-registration-id="8ed324a4-56cb-4d73-9a77-0b4605ac3b17"
+                ><span class="copy-icon" aria-hidden="true"></span>复制报名编号</button>
+              </div>
+              <p class="copy-feedback" data-copy-feedback role="status" aria-live="polite">可复制编号用于线下核对</p>
+            </article>
+          </section>
+
+          <p class="privacy-note">这里只展示当前结果、原记录时间和最新平台纠正时间。</p>
+        </div>
+      </section>
+
+      <section class="artifact-screen" data-screen="player" aria-labelledby="player-title" hidden>
+        <div class="system-bar" aria-hidden="true">
+          <span class="system-time">10:58</span>
+          <span class="system-indicators"><i class="signal"></i><i class="wifi"></i><i class="battery"></i></span>
+        </div>
+        <header class="navigation-bar">
+          <button class="touch-target back-button" type="button" data-action="back" aria-label="返回上一页">
+            <span class="back-icon" aria-hidden="true"></span>
+          </button>
+          <h1 id="player-title">报名详情</h1>
+          <span class="native-capsule" aria-hidden="true"></span>
+        </header>
+
+        <div class="scroll-region">
+          <p class="fixture-banner"><strong>Development-only Fixture</strong> · 模拟数据，不会修改生产数据</p>
+
+          <article class="card game-card game-card--compact">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">已加入 · 球局已结束</p>
+                <h2>C1b 预发布验收局</h2>
+              </div>
+              <span class="status-badge">七人制</span>
+            </div>
+            <p class="game-meta">测试环境·渤海元丰足球场 · 七人制 A 场</p>
+            <p class="game-time">8月31日 周一 · 09:00–10:00</p>
+          </article>
+
+          <article class="card self-result-card">
+            <div class="result-mark result-mark--no-show" aria-hidden="true"><span></span></div>
+            <p class="eyebrow">当前到场结果</p>
+            <h2>未到场</h2>
+            <p class="corrected-line"><span aria-hidden="true"></span>平台已纠正于 8月31日 14:18</p>
+
+            <dl class="self-details">
+              <div><dt>原记录</dt><dd>已到场</dd></div>
+              <div><dt>原始记录时间</dt><dd>8月31日 10:06</dd></div>
+            </dl>
+
+            <div class="registration-block registration-block--stacked">
+              <div>
+                <span>报名编号</span>
+                <code>8ed324a4-56cb-4d73-9a77-0b4605ac3b17</code>
+              </div>
+              <button
+                class="touch-target copy-button"
+                type="button"
+                data-action="copy-registration-id"
+                data-registration-id="8ed324a4-56cb-4d73-9a77-0b4605ac3b17"
+              ><span class="copy-icon" aria-hidden="true"></span>复制报名编号</button>
+            </div>
+            <p class="copy-feedback" data-copy-feedback role="status" aria-live="polite">如需核对，请向客服提供报名编号</p>
+          </article>
+
+          <p class="privacy-note">你的页面只回读本人的当前结果和相关时间。</p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="attendance-correction-readback.data.js"></script>
+  </body>
+</html>

@@ -27,7 +27,7 @@
   "state": "PUBLISHED",
   "state_reason": null,
   "version": 3,
-  "allowed_actions": {"can_edit": true, "can_publish": false, "can_share": true, "can_cancel": true, "can_preview": true},
+  "allowed_actions": {"can_edit": true, "can_publish": false, "can_share": true, "can_cancel": true, "can_preview": true, "can_manage_attendance": false},
   "share": {
     "title": "周五浦东七人制 · 8月28日 20:00",
     "path": "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345",

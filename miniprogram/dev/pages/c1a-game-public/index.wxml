@@ -1,0 +1,67 @@
+<view class="c1a-page">
+  <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1a-icon-button" bindtap="onHeaderBack" aria-label="返回"><view class="c1a-back-glyph"></view></button>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">球局详情</text><text class="c1a-nav-subtitle">C1a 开发预览</text></view>
+    <view class="c1a-nav-spacer"></view>
+  </view>
+  <scroll-view scroll-y="true" class="c1a-scroll">
+    <view wx:if="{{operationState === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">球局暂时没有加载出来</text><text class="c1a-help">重新读取同一份预览数据，不会创建申请。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReload">重新加载</button>
+    </view>
+    <view wx:elif="{{operationState === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">登录状态需要恢复</text><text class="c1a-help">恢复后继续读取原申请结果。</text>
+      <button class="c1a-button c1a-button--primary" bindtap="onRecoverAuthentication">重新登录并继续</button>
+    </view>
+    <view wx:elif="{{operationState === 'NOT_FOUND'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">没有找到这场球局</text><text class="c1a-help">返回预览入口重新选择场景。</text>
+      <button class="c1a-button c1a-button--secondary" bindtap="onReturnPreview">返回预览入口</button>
+    </view>
+
+    <block wx:else>
+      <view class="c1a-card c1a-section c1a-confirmed-row">
+        <view class="c1a-confirmed-mark"></view>
+        <view class="c1a-confirmed-copy">
+          <text class="c1a-confirmed-title">真实订场已确认</text>
+          <text class="c1a-help">{{game.venueName}} · {{game.pitchName}}</text>
+          <text class="c1a-help">{{dateLabel}} · {{timeLabel}}</text>
+        </view>
+      </view>
+
+      <view class="c1a-card c1a-section c1a-game-hero">
+        <text class="c1a-eyebrow">{{game.teamName}} 组织</text>
+        <text class="c1a-game-title">{{game.name}}</text>
+        <text class="c1a-game-subtitle">{{game.pitchSpecification}} · {{intensityLabel}} · 需要 {{positionLabel}}</text>
+      </view>
+
+      <view class="c1a-metrics c1a-section" aria-label="球局摘要">
+        <view class="c1a-metric"><text class="c1a-metric-value">剩余 {{remainingSpots}} 个名额</text><text>{{capacityLabel}}</text></view>
+        <view class="c1a-metric"><text class="c1a-metric-value">{{aaLabel}}</text><text>到场线下结算</text></view>
+        <view class="c1a-metric"><text class="c1a-metric-value">{{deadlineLabel}}</text><text>报名截止</text></view>
+      </view>
+
+      <view class="c1a-status-card c1a-status-card--{{statusTone}} c1a-section" role="status">
+        <view class="c1a-status-heading"><view class="c1a-status-dot"></view><text>{{statusHeading}}</text></view>
+        <text class="c1a-status-description">{{statusDescription}}</text>
+      </view>
+
+      <view class="c1a-card c1a-section">
+        <view class="c1a-detail-grid">
+          <view><text class="c1a-detail-label">组织者球队</text><text class="c1a-detail-value">{{game.teamName}}</text></view>
+          <view><text class="c1a-detail-label">对抗强度</text><text class="c1a-detail-value">{{intensityLabel}}</text></view>
+          <view class="c1a-detail-wide"><text class="c1a-detail-label">装备与到场</text><text class="c1a-detail-value">{{game.equipmentAndArrivalNotes}}</text></view>
+        </view>
+        <text class="c1a-settlement">成人参与，请自行评估运动风险；平台不代收或担保线下结算。</text>
+      </view>
+    </block>
+  </scroll-view>
+
+  <view wx:if="{{primaryAction}}" class="c1a-footer">
+    <text wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-footer-note">登录只建立本次开发预览身份</text>
+    <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary" bindtap="onLogin">登录并继续</button>
+    <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" bindtap="onApply">申请加入</button>
+    <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary" bindtap="onRefresh">刷新结果</button>
+    <button wx:elif="{{primaryAction === 'CONFIRM_SUBMIT'}}" class="c1a-button c1a-button--primary" bindtap="onConfirmSubmitResult">确认申请结果</button>
+  </view>
+</view>

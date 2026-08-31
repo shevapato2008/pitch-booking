@@ -35,7 +35,8 @@
     "can_publish": true,
     "can_share": false,
     "can_cancel": true,
-    "can_preview": true
+    "can_preview": true,
+    "can_manage_attendance": false
   },
   "share": null,
   "public_view": {

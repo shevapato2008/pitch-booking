@@ -33,12 +33,51 @@ uv run python -m scripts.verify_staging \
   --output /tmp/pitch-booking-staging-report.json
 ```
 
-Build the production Mini Program against this real API without changing checked-in configuration:
+Build a development Mini Program against this loopback API without changing checked-in
+configuration:
 
 ```bash
-MINIPROGRAM_API_BASE_URL=http://127.0.0.1:8080 npm run build:miniprogram:production
-npm run audit:miniprogram-package
+MINIPROGRAM_DEV_BOOKING_SOURCE=http \
+  MINIPROGRAM_API_BASE_URL=http://127.0.0.1:8080 \
+  npm run build:miniprogram:development
 ```
+
+Production builds remain fail-closed: source the ignored live build inputs so
+`MINIPROGRAM_API_BASE_URL` is a public HTTPS origin, then run
+`npm run build:miniprogram:production && npm run audit:miniprogram-package`. A production build must
+never target loopback staging.
+
+## C2c attendance staging gate
+
+Run this irreversible gate only against a real, ended booking whose open game has the named JOINED
+player registration. Use three pairwise-distinct business sessions: the venue manager who can
+fulfill the order, the captain who owns the game, and the player who owns the registration. Keep
+bearer values in the shell environment rather than command arguments. The verifier first
+cross-checks the game's order ID, then calls the real venue check-in and completion endpoints before
+recording attendance; it never writes the database directly.
+
+```bash
+export C2C_STAGING_VENUE_BEARER='...'
+export C2C_STAGING_CAPTAIN_BEARER='...'
+export C2C_STAGING_PLAYER_BEARER='...'
+uv run python -m scripts.verify_open_game_attendance_staging \
+  --base-url https://pitch-api-staging.modelstella.com \
+  --venue-id 00000000-0000-4000-8000-000000000001 \
+  --order-id 00000000-0000-4000-8000-000000000002 \
+  --game-id 00000000-0000-4000-8000-000000000003 \
+  --registration-id 00000000-0000-4000-8000-000000000004 \
+  --attendance-status PRESENT \
+  --confirm-registration-id 00000000-0000-4000-8000-000000000004 \
+  --expected-revision "$(git rev-parse HEAD)" \
+  --output /tmp/pitch-booking-c2c-attendance-report.json
+unset C2C_STAGING_VENUE_BEARER C2C_STAGING_CAPTAIN_BEARER \
+  C2C_STAGING_PLAYER_BEARER
+```
+
+`PRESENT` and `NO_SHOW` cannot be changed by the captain. The repeated registration ID is therefore
+a required safety acknowledgement. Stable idempotency keys make an exact rerun safe: an existing
+matching result is verified through the captain roster and the player's own applications instead
+of being rewritten. The JSON report contains identifiers and results, never bearer credentials.
 
 Stop containers without deleting the persistent database:
 
@@ -63,6 +102,60 @@ generated file. `PLATFORM_CSRF_SECRET` is generated from 32 random bytes automat
 
 The ordinary WeChat values are still read from the shell or prompted without echo:
 `WECHAT_APP_SECRET` and `MINIPROGRAM_TENCENT_MAP_KEY`.
+
+### C2b waitlist-promotion notification gate
+
+The live generator deliberately writes `OPEN_GAME_NOTIFICATION_PROVIDER=disabled` to the backend
+environment and `MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=disabled` to the Mini Program build
+inputs. It also clears both template-ID values and the backend keyword mapping. In this state the
+notification worker is not composed, pending outbox rows are not marked sent, and the application
+flow does not request a subscription. This is the required setting for the current staging
+candidate.
+
+Do not leave the provider enabled in shared staging or call the feature complete until all three
+external prerequisites are complete:
+
+1. The Mini Program administration console contains the approved one-time subscription-message
+   template, and its real template ID plus the exact keyword names have been reviewed.
+2. The Mini Program account has subscription-message capability enabled for that template.
+3. A real iPhone and a real Android phone have both received a promotion message and opened its
+   `pages/my-game-registrations/index` deep link during an authorized staging acceptance run.
+
+After prerequisites 1–2, an operator may explicitly open a bounded staging acceptance window to
+satisfy prerequisite 3, then return the provider to `disabled` if either device gate fails.
+
+After those prerequisites are available, provide one matching configuration to the generator via
+the operator environment. The keyword mapping is a closed JSON object: `game_name` and
+`venue_name` must map to distinct `thingN` keywords, and `starts_at` must map to a distinct `timeN`
+keyword. Replace the example indices with the reviewed template fields; do not guess them.
+
+```bash
+export OPEN_GAME_NOTIFICATION_PROVIDER=wechat
+export OPEN_GAME_NOTIFICATION_TEMPLATE_ID='<real-template-id>'
+export OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON='{"game_name":"thing1","starts_at":"time2","venue_name":"thing3"}'
+export OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE=trial
+uv run python -m scripts.prepare_live_deploy \
+  --oss-env backend/.env.local \
+  --project-config project.private.config.json
+uv run python -m scripts.preflight_deploy \
+  --env-file deploy/.env.live.local \
+  --miniprogram-env-file deploy/miniprogram.live.local
+unset OPEN_GAME_NOTIFICATION_PROVIDER OPEN_GAME_NOTIFICATION_TEMPLATE_ID \
+  OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE
+```
+
+The preflight fails closed when either side is partial, contains a validation placeholder, or the
+backend provider/template does not exactly match the Mini Program build input. Enabling the
+provider requires `trial` in staging and `formal` in production; `developer` is rejected for both
+deployed environments. The checked-in `formal` default is inert while the provider remains
+`disabled`, so staging operators must set `trial` explicitly before enabling it. Successful offline
+tests prove only configuration and code readiness; they do not prove that WeChat delivered a
+message. Never paste an access token or a raw provider response into an environment file, log, or
+acceptance record.
+
+The production worker always constructs the notification client with HTTPX's default cancellable
+`AsyncHTTPTransport`; deployment configuration has no client or transport injection hook. Custom
+transports are test-only and are outside the production timeout and cleanup support contract.
 
 The live generator defaults to `PAYMENT_PROVIDER=disabled` until merchant credentials are available.
 In that mode it does not prompt for or write any WeChat Pay merchant values, and it writes
@@ -98,7 +191,9 @@ checked without DNS lookups, rejects `.invalid`, `.localhost`, `.test`, `.exampl
 uv run python -m scripts.prepare_live_deploy \
   --oss-env backend/.env.local \
   --project-config project.private.config.json
-uv run python -m scripts.preflight_deploy --env-file deploy/.env.live.local
+uv run python -m scripts.preflight_deploy \
+  --env-file deploy/.env.live.local \
+  --miniprogram-env-file deploy/miniprogram.live.local
 docker compose --env-file deploy/.env.live.local config --quiet
 bash -c 'set -a; source deploy/miniprogram.live.local; set +a; npm run build:miniprogram:production'
 npm run audit:miniprogram-package
@@ -124,6 +219,7 @@ device gate before generating any QR code:
 ```bash
 uv run python -m scripts.preflight_deploy \
   --env-file deploy/.env.live.local \
+  --miniprogram-env-file deploy/miniprogram.live.local \
   --require-miniprogram-acceptance
 ```
 

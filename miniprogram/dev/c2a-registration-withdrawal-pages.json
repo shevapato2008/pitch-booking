@@ -1,0 +1,8 @@
+{
+  "token": "C2A_REGISTRATION_WITHDRAWAL_FIXTURE",
+  "pages": [
+    "dev/pages/c2a-withdrawal-scenario/index",
+    "dev/pages/c2a-my-registrations/index",
+    "dev/pages/c2a-registration-detail/index"
+  ]
+}

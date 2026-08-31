@@ -27,7 +27,7 @@ export function createHttpVenueProfileDataSource({ transport, identity, sessionS
   let loginInFlight: Promise<void> | undefined;
   const login = (): Promise<void> => {
     if (loginInFlight) return loginInFlight;
-    const request = (async () => { try { const { code } = await identity.login(); const session = decodeWeChatSession(await transport.post("/api/v1/auth/wechat/session", { code })); sessionStore.save({ token: session.token, expiresAt: session.expiresAt }); } catch (caught) { if (caught instanceof ApiResponseError || caught instanceof VenueProfileApiError) throw caught; throw new VenueProfileApiError("LOGIN_FAILED"); } })();
+    const request = (async () => { try { const { code } = await identity.login(); const session = decodeWeChatSession(await transport.post("/api/v1/auth/wechat/session", { code })); sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId }); } catch (caught) { if (caught instanceof ApiResponseError || caught instanceof VenueProfileApiError) throw caught; throw new VenueProfileApiError("LOGIN_FAILED"); } })();
     loginInFlight = request; void request.finally(() => { if (loginInFlight === request) loginInFlight = undefined; }).catch(() => undefined); return request;
   };
   const bearer = () => { const session = sessionStore.load(); if (!session) throw new VenueProfileApiError("AUTH_REQUIRED"); return { Authorization: `Bearer ${session.token}` }; };

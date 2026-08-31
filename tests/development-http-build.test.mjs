@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const auditScript = path.resolve("scripts/audit-production-package.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+const ATTENDANCE_ROUTE = "pages/captain-game-attendance/index";
 
 async function createBuildProject(t) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-development-http-build-"));
@@ -53,6 +54,35 @@ test("development booking source defaults to the existing Fixture composition", 
   assert.match(bootstrap, /createOpenGameMutationAttemptStore/);
   assert.match(bootstrap, /registerOpenGameMutationAttemptStore/);
   assert.match(bootstrap, /PAYMENT_PREVIEW_NOW/);
+  assert.doesNotMatch(bootstrap, /c1a_player_application_fixture|C1A_PLAYER_APPLICATION_FIXTURE/);
+  const httpBranchStart = bootstrap.indexOf('if (options.source === "http")');
+  const httpBranchEnd = bootstrap.indexOf("return;");
+  assert.notEqual(httpBranchStart, -1);
+  assert.notEqual(httpBranchEnd, -1);
+  assert.equal(httpBranchStart < httpBranchEnd, true);
+  for (const registration of [
+    "registerOpenGameRegistrationAttemptStore",
+    "registerOpenGameRegistrationSource",
+  ]) {
+    const calls = [...bootstrap.matchAll(new RegExp(`${registration}\\)\\(`, "g"))];
+    assert.equal(calls.length, 1, `${registration} must be called exactly once`);
+    assert.equal(calls[0].index > httpBranchStart && calls[0].index < httpBranchEnd, true);
+  }
+  assert.doesNotMatch(
+    bootstrap.slice(httpBranchEnd + "return;".length),
+    /registerOpenGameRegistration(?:Source|AttemptStore)\)\(/,
+  );
+  assert.match(
+    bootstrap,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(transport\)\);/,
+  );
+  assert.match(
+    bootstrap,
+    /registerPublicGameDirectorySource\)\(\(0, public_game_directory_source_1\.createDevelopmentPublicGameDirectorySource\)\(\)\);/,
+  );
+  assert.equal((bootstrap.match(/registerPublicGameDirectorySource\)\(/g) ?? []).length, 2);
+  assert.equal(bootstrap.indexOf("createHttpPublicGameDirectorySource)(transport)") < httpBranchEnd, true);
+  assert.equal(bootstrap.indexOf("createDevelopmentPublicGameDirectorySource)()") > httpBranchEnd, true);
   assert.equal(existsSync(path.join(developmentOutput, "dev/open-game-source.js")), true);
   assert.match(cashier, /模拟支付，不会扣款/);
   assert.doesNotMatch(
@@ -79,7 +109,8 @@ test("development native order detail keeps payment states and the real B2 owner
     "预订成功",
     "已支付",
   ]) assert.match(wxml, new RegExp(copy));
-  assert.match(wxml, /aria-label="支付成功"/);
+  assert.match(wxml, /aria-label="\{\{paidLabel \? '支付成功' : '预订成功'\}\}"/);
+  assert.match(wxml, /订单已确认，当前未记录线上支付，页面不提供退款操作。/);
   assert.match(wxml, /bindtap="onOpenGameEntry"/);
   assert.match(wxml, /创建球局/);
   assert.match(wxml, /管理球局/);
@@ -117,8 +148,21 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.match(bootstrap, /createOpenGameMutationAttemptStore\)\(production_1\.productionSessionStorage\)/);
   assert.match(
     bootstrap,
-    /registerOpenGameSource\)\(\(0, http_open_game_1\.createHttpOpenGameSource\)\([\s\S]*transport[\s\S]*developmentIdentity[\s\S]*sessionStore[\s\S]*return;/,
+    /registerOpenGameSource\)\(\(0, http_open_game_1\.createHttpOpenGameSource\)\(\{\s*transport,\s*identity:\s*http_booking_source_1\.developmentIdentity,\s*sessionStore,?\s*\}\)\);/,
   );
+  assert.match(bootstrap, /createHttpOpenGameRegistrationSource/);
+  assert.match(bootstrap, /registerOpenGameRegistrationSource/);
+  assert.match(bootstrap, /createOpenGameRegistrationAttemptStore/);
+  assert.match(bootstrap, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(
+    bootstrap,
+    /createOpenGameRegistrationAttemptStore\)\(production_1\.productionSessionStorage\)/,
+  );
+  assert.match(
+    bootstrap,
+    /registerOpenGameRegistrationSource\)\(\(0, http_open_game_registration_1\.createHttpOpenGameRegistrationSource\)\(\{\s*transport,\s*identity:\s*http_booking_source_1\.developmentIdentity,\s*sessionStore,?\s*\}\)\);/,
+  );
+  assert.equal((bootstrap.match(/createSessionStore\)\(production_1\.productionSessionStorage\)/g) ?? []).length, 1);
   assert.match(bootstrap, /registerVenueDirectoryDataSource/);
   assert.match(bootstrap, /registerLocationCapability/);
   assert.match(bootstrap, /productionLocation/);
@@ -136,11 +180,25 @@ test("development HTTP build injects an explicit localhost API URL into the type
   );
   assert.doesNotMatch(bootstrap, /poi_search_preview|previewPoiSearchCapability|DEV_ONLY_POI_SEARCH_PREVIEW/);
   assert.equal(bootstrap.indexOf("registerOpenGameSource") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("registerOpenGameRegistrationAttemptStore") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("registerOpenGameRegistrationSource") < bootstrap.indexOf("return;"), true);
   assert.equal(bootstrap.lastIndexOf("createDevelopmentOpenGameSource") > bootstrap.indexOf("return;"), true);
+  assert.match(
+    bootstrap,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(transport\)\);/,
+  );
+  assert.equal(bootstrap.indexOf("createHttpPublicGameDirectorySource)(transport)") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("createDevelopmentPublicGameDirectorySource)()") > bootstrap.indexOf("return;"), true);
   assert.match(
     await readFile(path.join(developmentOutput, "config/runtime.js"), "utf8"),
     new RegExp(TEST_TENCENT_MAP_KEY),
   );
+  const developmentManifest = JSON.parse(await readFile(path.join(developmentOutput, "app.json"), "utf8"));
+  assert.equal(developmentManifest.pages.includes(ATTENDANCE_ROUTE), true);
+  const attendance = await readFile(path.join(developmentOutput, `${ATTENDANCE_ROUTE}.js`), "utf8");
+  assert.match(attendance, /getOpenGameRegistrationSource/);
+  assert.match(attendance, /getOpenGameRegistrationAttemptStore/);
+  assert.doesNotMatch(attendance, /C2C_ATTENDANCE_FIXTURE|c2c-attendance-fixture/);
 });
 
 test("development HTTP mode requires its explicit API base URL", async (t) => {
@@ -213,11 +271,28 @@ test("production ignores the development selector and excludes all development c
 
   assert.equal(existsSync(path.join(productionOutput, "dev")), false);
   const app = await readFile(path.join(productionOutput, "app.js"), "utf8");
+  const productionManifest = JSON.parse(await readFile(path.join(productionOutput, "app.json"), "utf8"));
+  assert.equal(productionManifest.pages.includes(ATTENDANCE_ROUTE), true);
+  const attendance = await readFile(path.join(productionOutput, `${ATTENDANCE_ROUTE}.js`), "utf8");
+  assert.match(attendance, /getOpenGameRegistrationSource/);
+  assert.match(attendance, /getOpenGameRegistrationAttemptStore/);
+  assert.doesNotMatch(attendance, /C2C_ATTENDANCE_FIXTURE|c2c-attendance-fixture|dev\//);
   assert.doesNotMatch(app, /dev-login-code|dev-phone-code|http-booking-source|payment-scenarios|payment-capability|payment-source|bootstrapDevelopment/);
   assert.match(app, /createHttpOpenGameSource/);
   assert.match(app, /registerOpenGameSource/);
   assert.match(app, /createOpenGameMutationAttemptStore/);
   assert.match(app, /registerOpenGameMutationAttemptStore/);
+  assert.match(app, /createHttpOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationSource/);
+  assert.match(app, /createOpenGameRegistrationAttemptStore/);
+  assert.match(app, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(app, /createHttpPublicGameDirectorySource/);
+  assert.match(app, /registerPublicGameDirectorySource/);
+  assert.match(
+    app,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(runtime\.transport\)\);/,
+  );
+  assert.doesNotMatch(app, /createDevelopmentPublicGameDirectorySource/);
   await execFileAsync(process.execPath, [
     auditScript,
     productionOutput,

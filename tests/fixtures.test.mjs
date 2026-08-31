@@ -19,6 +19,16 @@ const fixtureMappings = [
   ["order-confirmed.json", "order-confirmed.json"],
   ["order-payment-exception.json", "order-payment-exception.json"],
   ["order-expired.json", "order-expired.json"],
+  ["open-game-registration-context-anonymous.json", "open-game-registration-context-anonymous.json"],
+  ["open-game-registration-context-apply-ready.json", "open-game-registration-context-apply-ready.json"],
+  ["open-game-registration-context-applied.json", "open-game-registration-context-applied.json"],
+  ["open-game-registration-context-joined.json", "open-game-registration-context-joined.json"],
+  ["open-game-registration-context-rejected.json", "open-game-registration-context-rejected.json"],
+  ["open-game-registration-context-cancelled.json", "open-game-registration-context-cancelled.json"],
+  ["open-game-applications-pending.json", "open-game-applications-pending.json"],
+  ["open-game-applications-empty.json", "open-game-applications-empty.json"],
+  ["open-game-application-decision-joined.json", "open-game-application-decision-joined.json"],
+  ["open-game-application-decision-rejected.json", "open-game-application-decision-rejected.json"],
 ];
 const packagedVenueDirectoryFixtures = [
   "venue-map",

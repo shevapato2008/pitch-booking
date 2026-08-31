@@ -1,11 +1,13 @@
 import { ApiResponseError } from "../domain/contracts";
-import { rfc3339At } from "../domain/decoder-primitives";
+import { exactObject, rfc3339At, stringAt, uuidAt } from "../domain/decoder-primitives";
 
-const SESSION_KEY = "modelstella.pitch-booking.session.v1";
+const V1_SESSION_KEY = "modelstella.pitch-booking.session.v1";
+const V2_SESSION_KEY = "modelstella.pitch-booking.session.v2";
 
 export interface StoredSession {
   readonly token: string;
   readonly expiresAt: string;
+  readonly userId: string;
 }
 
 export interface SessionStore {
@@ -24,29 +26,38 @@ export function createSessionStore(
   storage: SessionStorage,
   now: () => number = () => Date.now(),
 ): SessionStore {
-  const clear = () => storage.remove(SESSION_KEY);
+  const clear = () => {
+    storage.remove(V1_SESSION_KEY);
+    storage.remove(V2_SESSION_KEY);
+  };
   return {
     load() {
-      const value = storage.get(SESSION_KEY);
+      storage.remove(V1_SESSION_KEY);
+      const value = storage.get(V2_SESSION_KEY);
       if (value === undefined || value === null) return null;
       try {
-        if (typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_SESSION");
-        const object = value as Record<string, unknown>;
-        if (Object.keys(object).length !== 2 || !("token" in object) || !("expiresAt" in object)
-          || typeof object.token !== "string" || object.token.length === 0) {
-          throw new Error("INVALID_SESSION");
-        }
+        const object = exactObject(value, ["token", "expiresAt", "userId"], "$");
+        const token = stringAt(object.token, "$.token");
+        if (token.length === 0) throw new Error("INVALID_SESSION");
         const expiresAt = rfc3339At(object.expiresAt, "$.expiresAt");
+        const userId = uuidAt(object.userId, "$.userId");
         const expiry = Date.parse(expiresAt);
         if (!Number.isFinite(expiry) || expiry <= now()) throw new Error("EXPIRED_SESSION");
-        return { token: object.token, expiresAt };
+        return { token, expiresAt, userId };
       } catch (error) {
         if (!(error instanceof ApiResponseError) && !(error instanceof Error)) throw error;
-        clear();
+        storage.remove(V2_SESSION_KEY);
         return null;
       }
     },
-    save(session) { storage.set(SESSION_KEY, { token: session.token, expiresAt: session.expiresAt }); },
+    save(session) {
+      storage.remove(V1_SESSION_KEY);
+      storage.set(V2_SESSION_KEY, {
+        token: session.token,
+        expiresAt: session.expiresAt,
+        userId: session.userId,
+      });
+    },
     clear,
   };
 }

@@ -58,7 +58,7 @@ const owner = (overrides: Partial<OpenGameOwner> = {}): OpenGameOwner => ({
   positions: ["GOALKEEPER", "DEFENDER"], aaCents: 3000,
   registrationDeadline: publicView.registrationDeadline, equipmentAndArrivalNotes: "提前到场", visibility: "PUBLIC",
   persistedStatus: "DRAFT", state: "DRAFT", stateReason: null, version: 1,
-  allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true },
+  allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
   share: null, publicView, ...overrides,
 });
 
@@ -120,9 +120,9 @@ test("create authority loads immutable order facts and every planned native cont
     expect(wxml).toContain(control);
   }
   expect(wxml).toContain("不可修改");
-  expect(wxml).toContain("padding-top: {{headerTopPx}}px");
-  expect(wxml).toContain("height: {{headerHeightPx}}px");
-  expect(wxml).toContain("padding-left: {{headerLeftInsetPx}}px");
+  expect(wxml).toContain('class="header__system" style="height: {{headerTopPx}}px;"');
+  expect(wxml).toContain('class="header" style="height: {{headerRowHeightPx}}px;"');
+  expect(wxml).not.toContain("padding-left: {{headerLeftInsetPx}}px");
   expect(wxml).toContain("到场线下结算，平台不代收或担保");
   expect(wxml).not.toContain(".indexOf(");
   expect(page.data.positions.find((position: { value: string }) => position.value === "ANY").checked).toBe(true);
@@ -137,7 +137,7 @@ test("a new form restores a persisted foreign terminal attempt before exposing s
       state: "CANCELLED",
       persistedStatus: "CANCELLED",
       version: 5,
-      allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false },
+      allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false },
     })),
   });
   registerOpenGameSource(api);
@@ -285,7 +285,7 @@ test("foreign pending replaces save and navigation failure retains authoritative
     kind: "cancel", gameId: "00000000-0000-4000-8000-000000000299", expectedVersion: 4,
     idempotencyKey: "open-game-existing-0001",
   };
-  const api = source({ getOwnedGame: jest.fn(async () => owner({ id: storedAttempt && "gameId" in storedAttempt ? storedAttempt.gameId : gameId, state: "CANCELLED", persistedStatus: "CANCELLED", version: 5, allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false } })) });
+  const api = source({ getOwnedGame: jest.fn(async () => owner({ id: storedAttempt && "gameId" in storedAttempt ? storedAttempt.gameId : gameId, state: "CANCELLED", persistedStatus: "CANCELLED", version: 5, allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false } })) });
   registerOpenGameSource(api);
   const page = loadPage(); call(page, "onLoad", { order_id: orderId }); await flush();
   page.data.form = { ...page.data.form, name: "周末轻松局", teamName: "津门蓝队", aaYuan: "30" };
@@ -314,14 +314,14 @@ test("foreign replay resolves its own write and returns to the current form", as
     getOwnedGame: jest.fn(async () => owner({
       id: foreignGameId,
       version: 4,
-      allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true },
+      allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
     })),
     cancel: jest.fn(async () => owner({
       id: foreignGameId,
       state: "CANCELLED",
       persistedStatus: "CANCELLED",
       version: 5,
-      allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false },
+      allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false },
     })),
   });
   registerOpenGameSource(api);
@@ -348,14 +348,14 @@ test("foreign replay definitive recovery clears its attempt and reloads the curr
         ? owner({
           id: foreignGameId,
           version: 4,
-          allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true },
+          allowedActions: { canEdit: true, canPublish: true, canShare: false, canCancel: true, canPreview: true, canManageAttendance: false },
         })
         : owner({
           id: foreignGameId,
           state: "CANCELLED",
           persistedStatus: "CANCELLED",
           version: 5,
-          allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false },
+          allowedActions: { canEdit: false, canPublish: false, canShare: false, canCancel: false, canPreview: false, canManageAttendance: false },
         });
     }),
     cancel: jest.fn(async () => { throw new OpenGameApiError("OPEN_GAME_STATE_CHANGED"); }),

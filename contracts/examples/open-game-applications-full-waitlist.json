@@ -1,0 +1,34 @@
+{
+  "remaining_spots": 0,
+  "pending_count": 1,
+  "applications": [
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "display_name": "周末小翼",
+      "position": "FORWARD",
+      "note": "可以补边路，按时到场。",
+      "applied_at": "2026-08-24T00:18:00+08:00",
+      "version": 1,
+      "allowed_actions": {
+        "can_accept": false,
+        "accept_blocked_reason": "GAME_FULL",
+        "can_waitlist": true,
+        "waitlist_blocked_reason": null,
+        "can_reject": true,
+        "reject_blocked_reason": null
+      }
+    }
+  ],
+  "waitlist_count": 1,
+  "waitlist": [
+    {
+      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "display_name": "门前老陈",
+      "position": "GOALKEEPER",
+      "note": null,
+      "applied_at": "2026-08-24T00:10:00+08:00",
+      "waitlisted_at": "2026-08-24T00:15:00+08:00",
+      "waitlist_position": 1
+    }
+  ]
+}

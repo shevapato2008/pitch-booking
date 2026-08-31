@@ -1,0 +1,129 @@
+<view class="c1a-page">
+  <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c1a-nav" style="height: {{headerRowHeightPx}}px;">
+    <button class="c1a-icon-button" hover-class="button-hover" bindtap="onHeaderBack" aria-label="返回"><view class="c1a-back-glyph"></view></button>
+    <view class="c1a-nav-copy"><text class="c1a-nav-title">报名审核</text></view>
+    <view class="c1a-nav-spacer"></view>
+  </view>
+
+  <scroll-view scroll-y="true" class="c1a-scroll">
+    <view wx:if="{{status === 'LOADING'}}" class="c1a-card c1a-state-card" role="status" aria-busy="true">
+      <text class="c1a-heading">正在读取待审核申请</text>
+      <text class="c1a-help">请稍候，读取列表不会处理任何申请。</text>
+    </view>
+
+    <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">报名列表暂时没有加载出来</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onReload">重新加载</button>
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnManage">返回球局管理</button>
+    </view>
+
+    <view wx:elif="{{status === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">登录状态需要恢复</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onLogin">重新登录并继续</button>
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnManage">关闭并稍后处理</button>
+    </view>
+
+    <view wx:elif="{{status === 'NOT_FOUND'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">没有找到这场球局</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onReturnNotFound">返回</button>
+    </view>
+
+    <view wx:elif="{{status === 'RESULT_UNKNOWN'}}" class="c1a-card c1a-state-card" role="status">
+      <text class="c1a-eyebrow">正在确认原审核</text>
+      <text class="c1a-heading">处理结果暂时未知</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmDecisionResult">确认审核结果</button>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onCloseUnknown">关闭并稍后确认</button>
+    </view>
+
+    <view wx:elif="{{status === 'CAPACITY_CHANGED'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">名额状态已变化</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRefreshApplications">刷新报名列表</button>
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnManage">返回球局管理</button>
+    </view>
+
+    <view wx:elif="{{status === 'CONFLICT'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">这次审核无法继续</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onReload">读取最新列表</button>
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnManage">返回球局管理</button>
+    </view>
+
+    <view wx:elif="{{status === 'OTHER_PENDING'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">还有一项操作待确认</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onGoPending">前往确认</button>
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnManage">返回球局管理</button>
+    </view>
+
+    <view wx:elif="{{status === 'FOREIGN_PENDING'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">另一账号有操作待确认</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onClearPending">清除本机待确认记录</button>
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnManage">返回球局管理</button>
+    </view>
+
+    <view wx:elif="{{status === 'DECIDING'}}" class="c1a-card c1a-state-card" role="status" aria-busy="true">
+      <text class="c1a-heading">正在提交审核</text>
+      <text class="c1a-help">审核记录已经安全保存，请勿重复操作。</text>
+    </view>
+
+    <block wx:elif="{{status === 'READY'}}">
+      <text wx:if="{{noticeMessage}}" class="c1a-notice" role="status">{{noticeMessage}}</text>
+      <text wx:if="{{hasPending}}" class="c1a-review-context">{{pendingCount}} 条待审核申请</text>
+      <view wx:if="{{hasPending}}" class="c1a-applicant-card">
+        <view class="c1a-applicant-top">
+          <text class="c1a-applicant-name">{{application.displayName}}</text>
+          <text class="c1a-pending-pill">等待审核</text>
+        </view>
+        <view class="c1a-applicant-meta">
+          <view><text>意向位置</text><text class="c1a-meta-value">{{positionLabel}}</text></view>
+          <view><text>申请时间</text><text class="c1a-meta-value">{{appliedAtLabel}}</text></view>
+        </view>
+        <text class="c1a-applicant-note">{{application.note || '未填写备注'}}</text>
+        <text class="c1a-privacy-note">仅展示申请人主动填写的本场信息。</text>
+        <text wx:if="{{blockerMessage}}" class="c1a-help c1a-blocker" role="status">{{blockerMessage}}</text>
+      </view>
+      <view wx:if="{{hasPending && fullWaitlist}}" class="c1a-full-note" role="note">
+        <view class="c1a-full-dot" aria-hidden="true"></view>
+        <view><text>当前球局已满员</text><text>可以按申请审核顺序加入候补，或婉拒本场申请。</text></view>
+      </view>
+      <view wx:elif="{{empty}}" class="c1a-card c1a-empty" role="status">
+        <view class="c1a-empty-mark"><view></view><view></view><view></view></view>
+        <text class="c1a-heading">当前没有待审核申请</text>
+        <text class="c1a-help">新申请会按服务端队列顺序显示在这里。</text>
+        <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onReturnManage">返回球局管理</button>
+      </view>
+    </block>
+    <text wx:if="{{navigationError}}" class="c1a-error c1a-navigation-error" role="alert">{{navigationError}}</text>
+  </scroll-view>
+
+  <view wx:if="{{status === 'READY' && hasPending && (canReject || canAccept || canWaitlist)}}" class="c1a-footer">
+    <view class="c1a-footer-actions">
+      <button class="c1a-button c1a-button--neutral" hover-class="button-hover" disabled="{{!canReject}}" bindtap="onReject">婉拒</button>
+      <button wx:if="{{canWaitlist}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onWaitlist">加入候补</button>
+      <button wx:elif="{{canAccept}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onAccept">接受加入</button>
+    </view>
+  </view>
+
+  <view wx:if="{{panel}}" class="c1a-scrim">
+    <view class="c1a-sheet" role="dialog" aria-modal="true">
+      <view class="c1a-sheet-title-row">
+        <view>
+          <text class="c1a-sheet-title">{{decisionTitle}}</text>
+          <text class="c1a-sheet-copy">{{decisionCopy}}</text>
+        </view>
+        <button class="c1a-sheet-close" hover-class="button-hover" bindtap="onClosePanel" aria-label="关闭确认层"><view class="c1a-close-glyph"></view></button>
+      </view>
+      <view class="c1a-sheet-actions">
+        <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onClosePanel">返回审核</button>
+        <button class="c1a-button {{panel === 'REJECT' ? 'c1a-button--danger' : 'c1a-button--primary'}}" hover-class="button-hover" bindtap="onConfirmDecision">{{decisionButton}}</button>
+      </view>
+    </view>
+  </view>
+</view>

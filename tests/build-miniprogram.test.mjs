@@ -11,6 +11,7 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+const TEST_NOTIFICATION_TEMPLATE_ID = "zun-LzcQyW-edafCVvzPkK4de2Rllr1fFpw2A_x0oXE";
 const EXISTING_PRODUCTION_ROUTES = [
   "pages/intent-entry/index",
   "pages/venue-access/index",
@@ -30,12 +31,35 @@ const EXISTING_PRODUCTION_ROUTES = [
 const CAPTAIN_OPEN_GAME_ROUTES = [
   "pages/captain-game-form/index",
   "pages/captain-game-manage/index",
+  "pages/captain-game-attendance/index",
   "pages/captain-game-public/index",
 ];
+const OPEN_GAME_REGISTRATION_ROUTES = [
+  "pages/player-game-application/index",
+  "pages/captain-game-applications/index",
+];
+const GAME_DISCOVERY_ROUTE = "pages/game-discovery/index";
+const MY_GAME_REGISTRATIONS_ROUTE = "pages/my-game-registrations/index";
 const PRODUCTION_ROUTES = [
-  ...EXISTING_PRODUCTION_ROUTES.slice(0, 9),
+  EXISTING_PRODUCTION_ROUTES[0],
+  GAME_DISCOVERY_ROUTE,
+  MY_GAME_REGISTRATIONS_ROUTE,
+  ...EXISTING_PRODUCTION_ROUTES.slice(1, 9),
   ...CAPTAIN_OPEN_GAME_ROUTES,
+  ...OPEN_GAME_REGISTRATION_ROUTES,
   ...EXISTING_PRODUCTION_ROUTES.slice(9),
+];
+const OPEN_GAME_REGISTRATION_FIXTURES = [
+  "open-game-registration-context-anonymous",
+  "open-game-registration-context-apply-ready",
+  "open-game-registration-context-applied",
+  "open-game-registration-context-joined",
+  "open-game-registration-context-rejected",
+  "open-game-registration-context-cancelled",
+  "open-game-applications-pending",
+  "open-game-applications-empty",
+  "open-game-application-decision-joined",
+  "open-game-application-decision-rejected",
 ];
 
 function build(projectRoot, mode, environment = {}) {
@@ -183,6 +207,8 @@ test("development app invokes its single composition root before source app code
 });
 
 test("retired owner cancellation preview stays absent while production order routes remain", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const retiredSourcePaths = [
     "miniprogram/dev/order-cancellation-fixture.ts",
     "miniprogram/dev/order-cancellation-fixture.test.ts",
@@ -194,14 +220,14 @@ test("retired owner cancellation preview stays absent while production order rou
   }
 
   await assert.rejects(
-    build(process.cwd(), "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation" }),
+    build(projectRoot, "development", { MINIPROGRAM_DEV_BOOKING_SOURCE: "order-cancellation" }),
     /MINIPROGRAM_DEV_BOOKING_SOURCE must be fixture or http/,
   );
 
-  await build(process.cwd(), "development");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  await build(process.cwd(), "production");
-  const productionRoot = path.resolve("dist/miniprogram-production");
+  await build(projectRoot, "development");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  await build(projectRoot, "production");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
   const developmentText = (await Promise.all((await collectFiles(developmentRoot))
     .filter((file) => !file.endsWith(".png"))
@@ -214,11 +240,9 @@ test("retired owner cancellation preview stays absent while production order rou
   assert.equal(productionManifest.pages.includes("pages/my-orders/index"), true);
   assert.doesNotMatch(developmentText, /order-cancellation|createOrderCancellationFixture/);
   assert.doesNotMatch(productionText, /order-cancellation|createOrderCancellationFixture/);
-
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
 });
 
-test("production app registers HTTP data, open games, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
+test("production app registers HTTP data, public discovery, open games, registrations, venue fulfillment, Tencent POI, and native payment before source app code", async (t) => {
   const projectRoot = await createBuildProject('const venueFallbackUrl = "https://example.test/cover.png";\nApp({});\n');
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
@@ -253,6 +277,23 @@ test("production app registers HTTP data, open games, venue fulfillment, Tencent
   assert.match(app, /createOpenGameMutationAttemptStore/);
   assert.match(app, /registerOpenGameMutationAttemptStore/);
   assert.match(app, /createOpenGameMutationAttemptStore\)\(production_1\.productionSessionStorage\)/);
+  assert.match(app, /createHttpOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationSource/);
+  assert.match(app, /createOpenGameRegistrationAttemptStore/);
+  assert.match(app, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(app, /createOpenGameRegistrationAttemptStore\)\(production_1\.productionSessionStorage\)/);
+  assert.match(
+    app,
+    /registerOpenGameRegistrationSource\)\(\(0, http_open_game_registration_1\.createHttpOpenGameRegistrationSource\)\(\{\s*transport:\s*runtime\.transport,\s*identity:\s*production_1\.productionIdentity,\s*sessionStore,?\s*\}\)\);/,
+  );
+  assert.equal((app.match(/createSessionStore\)\(production_1\.productionSessionStorage\)/g) ?? []).length, 1);
+  assert.match(app, /createHttpPublicGameDirectorySource/);
+  assert.match(app, /registerPublicGameDirectorySource/);
+  assert.match(
+    app,
+    /registerPublicGameDirectorySource\)\(\(0, http_public_game_directory_1\.createHttpPublicGameDirectorySource\)\(runtime\.transport\)\);/,
+  );
+  assert.equal((app.match(/registerPublicGameDirectorySource\)\(/g) ?? []).length, 1);
   assert.match(app, /createHttpVenueFulfillmentDataSource/);
   assert.match(app, /registerVenueFulfillmentDataSource/);
   assert.match(app, /createVenueFulfillmentAttemptStore/);
@@ -274,18 +315,23 @@ test("production app registers HTTP data, open games, venue fulfillment, Tencent
   assert.equal(app.indexOf("registerPaymentCapability") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerOpenGameMutationAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerOpenGameSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameRegistrationAttemptStore") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameRegistrationSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerPublicGameDirectorySource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentDataSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPoiSearchCapability") < app.indexOf("venueFallbackUrl"), true);
+  assert.doesNotMatch(app, /createDevelopmentPublicGameDirectorySource/);
   assert.doesNotMatch(app, /dev\/|fixture/i);
 });
 
 test("temporary map previews are absent while the approved center asset remains", async (t) => {
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
 
   for (const relativePath of [
     "services/venue-map-preview.js",
@@ -316,6 +362,8 @@ test("temporary map previews are absent while the approved center asset remains"
 });
 
 test("retired my orders previews stay absent while the production route remains", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const previewRoutes = ["dev/pages/my-orders-map/index", "dev/pages/my-orders/index"];
   const retiredSourcePaths = [
     "miniprogram/dev/my-orders-fixture.ts",
@@ -330,11 +378,10 @@ test("retired my orders previews stay absent while the production route remains"
     assert.equal(developmentSourceManifest.pages.includes(route), false, `${route} remains in the development manifest`);
   }
 
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
 
@@ -354,6 +401,8 @@ test("retired my orders previews stay absent while the production route remains"
 });
 
 test("captain open game production routes ship in both builds while temporary preview routes and Fixture stay development-only", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const previewRoutes = [
     "dev/pages/captain-game-form/index",
     "dev/pages/captain-game-manage/index",
@@ -372,11 +421,10 @@ test("captain open game production routes ship in both builds while temporary pr
   }
   assert.doesNotMatch(JSON.stringify(productionSourceManifest), isolationPattern);
 
-  await build(process.cwd(), "development");
-  await build(process.cwd(), "production");
-  const developmentRoot = path.resolve("dist/miniprogram-development");
-  const productionRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(path.resolve("dist"), { recursive: true, force: true }));
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
   const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
   const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
 
@@ -408,15 +456,106 @@ test("captain open game production routes ship in both builds while temporary pr
   assert.doesNotMatch(productionText, isolationPattern);
 });
 
-test("real production build preserves all fourteen existing routes and adds only the three B2 owner routes", async (t) => {
-  await build(process.cwd(), "production");
-  const outputRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+test("production captain game scroll views keep a bounded flex viewport on WeChat iOS", async () => {
+  const layouts = [
+    ["captain-game-form", ".page", ".header__system", ".header", ".content"],
+    ["captain-game-manage", ".page", ".header__system", ".header", ".content"],
+    ["captain-game-public", ".owner-shell", ".header__system", ".header", ".content"],
+  ];
+  const ruleBody = (styles, selector, page) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = styles.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `${page} is missing ${selector}`);
+    return match[1];
+  };
+
+  for (const [page, shellSelector, systemSelector, headerSelector, scrollSelector] of layouts) {
+    const styles = await readFile(`miniprogram/pages/${page}/index.wxss`, "utf8");
+    const shell = ruleBody(styles, shellSelector, page);
+    const system = ruleBody(styles, systemSelector, page);
+    const header = ruleBody(styles, headerSelector, page);
+    const scroll = ruleBody(styles, scrollSelector, page);
+    assert.match(shell, /(?:^|;)\s*display:\s*flex\s*;/);
+    assert.match(shell, /(?:^|;)\s*height:\s*100vh\s*;/, `${page} shell must have a definite viewport height`);
+    assert.match(shell, /(?:^|;)\s*overflow:\s*hidden\s*;/);
+    assert.match(system, /(?:^|;)\s*flex:\s*0\s+0\s+auto\s*;/, `${page} system spacer must not shrink`);
+    assert.match(header, /(?:^|;)\s*flex:\s*0\s+0\s+auto\s*;/, `${page} header must not shrink into the first card`);
+    assert.match(scroll, /(?:^|;)\s*flex:\s*1\s+1\s+auto\s*;/);
+    assert.match(scroll, /(?:^|;)\s*min-height:\s*0\s*;/, `${page} scroll view must shrink to the remaining viewport`);
+    assert.match(scroll, /(?:^|;)\s*height:\s*0\s*;/, `${page} scroll view must have a definite flex basis on WeChat iOS`);
+  }
+});
+
+test("production captain game form uses the shared mobile header and fixed stepper columns", async () => {
+  for (const page of ["captain-game-form", "captain-game-manage", "captain-game-public"]) {
+    const wxml = await readFile(`miniprogram/pages/${page}/index.wxml`, "utf8");
+    const styles = await readFile(`miniprogram/pages/${page}/index.wxss`, "utf8");
+    assert.match(wxml, /class="header__system"[^>]*height: \{\{headerTopPx\}\}px/);
+    assert.match(wxml, /class="header__back"[^>]*hover-class="button-hover"[^>]*>[\s\S]*?class="header__back-glyph"/);
+    assert.doesNotMatch(wxml, /‹/);
+    assert.doesNotMatch(wxml, /headerLeftInsetPx/);
+    const back = [...styles.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .find((match) => match[1].split(",").some((selector) => selector.trim() === ".header__back"))?.[2] ?? "";
+    assert.match(back, /min-width:\s*88rpx\s*;/);
+    assert.match(back, /min-height:\s*88rpx\s*;/);
+    assert.match(styles, /\.header__back-glyph\s*\{[^}]*border-bottom:\s*4rpx solid currentColor[^}]*border-left:\s*4rpx solid currentColor[^}]*transform:\s*rotate\(45deg\)/s);
+  }
+
+  const form = await readFile("miniprogram/pages/captain-game-form/index.wxml", "utf8");
+  const styles = await readFile("miniprogram/pages/captain-game-form/index.wxss", "utf8");
+  assert.equal((form.match(/class="stepper__value"/g) ?? []).length, 3);
+  assert.match(styles, /\.stepper\s*\{[^}]*display:\s*grid\s*;[^}]*grid-template-columns:\s*88rpx\s+56rpx\s+88rpx\s*;/s);
+  assert.match(styles, /\.stepper__value\s*\{[^}]*display:\s*flex\s*;[^}]*align-items:\s*center\s*;[^}]*justify-content:\s*center\s*;/s);
+  assert.match(styles, /\.scroll-space\s*\{[^}]*height:\s*calc\(136rpx \+ env\(safe-area-inset-bottom, 0px\)\)\s*;/s);
+});
+
+test("public discovery, open game registration, and attendance production routes ship in both manifests with compiled native artifacts", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
+  assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
+  assert.equal(sourceManifest.pages.length, 22);
+
+  await build(projectRoot, "development");
+  await build(projectRoot, "production");
+  const developmentRoot = path.join(projectRoot, "dist/miniprogram-development");
+  const productionRoot = path.join(projectRoot, "dist/miniprogram-production");
+  const developmentManifest = JSON.parse(await readFile(path.join(developmentRoot, "app.json"), "utf8"));
+  const productionManifest = JSON.parse(await readFile(path.join(productionRoot, "app.json"), "utf8"));
+
+  assert.deepEqual(developmentManifest.pages.slice(0, PRODUCTION_ROUTES.length), PRODUCTION_ROUTES);
+  assert.deepEqual(productionManifest.pages, PRODUCTION_ROUTES);
+  for (const route of [
+    GAME_DISCOVERY_ROUTE,
+    MY_GAME_REGISTRATIONS_ROUTE,
+    ...OPEN_GAME_REGISTRATION_ROUTES,
+  ]) {
+    for (const root of [developmentRoot, productionRoot]) {
+      for (const extension of ["js", "json", "wxml", "wxss"]) {
+        assert.equal(existsSync(path.join(root, `${route}.${extension}`)), true, `${route}.${extension}`);
+      }
+      assert.equal(existsSync(path.join(root, `${route}.ts`)), false, `${route}.ts`);
+    }
+  }
+});
+
+test("real production build preserves all fourteen existing routes and adds only the eight open-game journey routes", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "production");
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   assert.deepEqual(manifest.pages, PRODUCTION_ROUTES);
-  assert.deepEqual(manifest.pages.filter((route) => !CAPTAIN_OPEN_GAME_ROUTES.includes(route)), EXISTING_PRODUCTION_ROUTES);
-  assert.equal(manifest.pages.length, 17);
-  assert.equal(manifest.pages.some((route) => /(?:list|apply|application)/i.test(route)), false);
+  assert.deepEqual(
+    manifest.pages.filter((route) => ![
+      GAME_DISCOVERY_ROUTE,
+      MY_GAME_REGISTRATIONS_ROUTE,
+      ...CAPTAIN_OPEN_GAME_ROUTES,
+      ...OPEN_GAME_REGISTRATION_ROUTES,
+    ].includes(route)),
+    EXISTING_PRODUCTION_ROUTES,
+  );
+  assert.equal(manifest.pages.length, 22);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
@@ -430,9 +569,10 @@ test("real production build preserves all fourteen existing routes and adds only
 });
 
 test("disabled-payment production keeps B2 owner management composed and routed", async (t) => {
-  await build(process.cwd(), "production", { MINIPROGRAM_PAYMENT_PROVIDER: "disabled" });
-  const outputRoot = path.resolve("dist/miniprogram-production");
-  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "production", { MINIPROGRAM_PAYMENT_PROVIDER: "disabled" });
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
 
   const runtime = await readFile(path.join(outputRoot, "config/runtime.js"), "utf8");
   const app = await readFile(path.join(outputRoot, "app.js"), "utf8");
@@ -442,6 +582,11 @@ test("disabled-payment production keeps B2 owner management composed and routed"
   assert.match(app, /registerOpenGameSource/);
   assert.match(app, /createHttpOpenGameSource/);
   assert.match(app, /registerOpenGameMutationAttemptStore/);
+  assert.match(app, /createHttpOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationSource/);
+  assert.match(app, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(app, /createHttpPublicGameDirectorySource/);
+  assert.match(app, /registerPublicGameDirectorySource/);
 });
 
 test("production API URL override changes generated production config only", async (t) => {
@@ -486,6 +631,33 @@ test("production build requires a format-valid Tencent client key", async (t) =>
     build(projectRoot, "production", { MINIPROGRAM_TENCENT_MAP_KEY: "TENCENT_MAP_KEY_REQUIRED" }),
     /MINIPROGRAM_TENCENT_MAP_KEY must be a valid Tencent client key/,
   );
+});
+
+test("invalid notification configuration fails before replacing existing output", async (t) => {
+  const projectRoot = await createBuildProject("");
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  const outputRoot = path.join(projectRoot, "dist/miniprogram-production");
+  const sentinel = path.join(outputRoot, "sentinel");
+  await mkdir(outputRoot, { recursive: true });
+  await writeFile(sentinel, "preserve\n");
+
+  await assert.rejects(
+    build(projectRoot, "production", {
+      MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "wechat",
+      MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: "",
+    }),
+    /MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID must be a valid template ID/,
+  );
+  assert.equal(await readFile(sentinel, "utf8"), "preserve\n");
+
+  await assert.rejects(
+    build(projectRoot, "production", {
+      MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "push",
+      MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: TEST_NOTIFICATION_TEMPLATE_ID,
+    }),
+    /MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER must be disabled or wechat/,
+  );
+  assert.equal(await readFile(sentinel, "utf8"), "preserve\n");
 });
 
 test("production build rejects a non-HTTP API URL override", async (t) => {
@@ -541,11 +713,15 @@ test("built development Scenario runtime is self-contained without URL", async (
       const assert = require("node:assert/strict");
       const { scenarioRuntime } = require("./runtime/scenario.js");
       const { FIXTURE_DATA } = require("./dev/fixture-data.js");
-      const names = [
+      const scenarioNames = [
         "venue-ready", "slots-ready", "slots-empty",
         "booking-checkout-ready", "order-pending", "order-expired",
         "order-confirmed", "order-payment-confirming", "order-payment-exception",
         "venue-map", "venue-online-detail", "venue-directory-detail",
+      ];
+      const names = [
+        ...scenarioNames,
+        ${OPEN_GAME_REGISTRATION_FIXTURES.map((name) => JSON.stringify(name)).join(", ")},
       ];
       assert.deepEqual(Object.keys(FIXTURE_DATA).sort(), [...names].sort());
       assert.equal(Object.isFrozen(FIXTURE_DATA), true);
@@ -555,7 +731,7 @@ test("built development Scenario runtime is self-contained without URL", async (
       const originalCover = FIXTURE_DATA["venue-ready"].profile.images[0].url;
       FIXTURE_DATA["venue-ready"].profile.images[0].url = "https://mutated.invalid/cover.jpg";
       assert.equal(FIXTURE_DATA["venue-ready"].profile.images[0].url, originalCover);
-      for (const name of names) {
+      for (const name of scenarioNames) {
         const runtime = scenarioRuntime({
           id: name,
           clock: "2026-07-22T10:30:00+08:00",
@@ -642,6 +818,14 @@ async function createBuildProject(source) {
 
 async function createRealDevelopmentBuildProject() {
   return createBuildProject("");
+}
+
+async function createIsolatedRealBuildProject() {
+  const projectRoot = await mkdtemp(path.join(tmpdir(), "pitch-booking-real-build-"));
+  for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) {
+    await cp(entry, path.join(projectRoot, entry), { recursive: true });
+  }
+  return projectRoot;
 }
 
 async function createBuildProjectIn(projectRoot, source) {

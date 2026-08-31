@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TypedDict
 
 from sqlalchemy import (
     BigInteger,
@@ -10,9 +11,11 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
+    PrimaryKeyConstraint,
     SmallInteger,
     String,
     Text,
@@ -109,6 +112,52 @@ class OpenGameIntensity(StrEnum):
     BEGINNER_FRIENDLY = "BEGINNER_FRIENDLY"
     CASUAL = "CASUAL"
     COMPETITIVE = "COMPETITIVE"
+
+
+class OpenGameRegistrationPosition(StrEnum):
+    GOALKEEPER = "GOALKEEPER"
+    DEFENDER = "DEFENDER"
+    MIDFIELDER = "MIDFIELDER"
+    FORWARD = "FORWARD"
+    ANY = "ANY"
+
+
+class OpenGameRegistrationStatus(StrEnum):
+    APPLIED = "APPLIED"
+    WAITLISTED = "WAITLISTED"
+    JOINED = "JOINED"
+    REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
+
+
+class OpenGameAttendanceStatus(StrEnum):
+    UNMARKED = "UNMARKED"
+    PRESENT = "PRESENT"
+    NO_SHOW = "NO_SHOW"
+
+
+class OpenGameRegistrationWithdrawalKind(StrEnum):
+    APPLICATION_WITHDRAWAL = "APPLICATION_WITHDRAWAL"
+    WAITLIST_WITHDRAWAL = "WAITLIST_WITHDRAWAL"
+    GAME_EXIT = "GAME_EXIT"
+
+
+class OpenGameNotificationEvent(StrEnum):
+    WAITLIST_PROMOTED = "WAITLIST_PROMOTED"
+
+
+class OpenGameNotificationStatus(StrEnum):
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    SENT = "SENT"
+    FAILED = "FAILED"
+    SUPERSEDED = "SUPERSEDED"
+
+
+class WaitlistPromotedNotificationPayload(TypedDict):
+    game_name: str
+    starts_at: str
+    venue_name: str
 
 
 class PaymentState(StrEnum):
@@ -949,6 +998,16 @@ class User(Base):
     teams: Mapped[list["Team"]] = relationship(
         foreign_keys="Team.captain_user_id"
     )
+    open_game_registrations: Mapped[list["OpenGameRegistration"]] = relationship(
+        back_populates="applicant",
+        foreign_keys="OpenGameRegistration.applicant_user_id",
+    )
+    decided_open_game_registrations: Mapped[
+        list["OpenGameRegistration"]
+    ] = relationship(
+        back_populates="decided_by",
+        foreign_keys="OpenGameRegistration.decided_by_user_id",
+    )
 
 
 class Team(Base):
@@ -1516,6 +1575,481 @@ class OpenGame(Base):
 
     order: Mapped[Order] = relationship(back_populates="open_games")
     team: Mapped[Team] = relationship(back_populates="open_games")
+    registrations: Mapped[list["OpenGameRegistration"]] = relationship(
+        back_populates="game",
+        foreign_keys="OpenGameRegistration.game_id",
+    )
+
+
+class OpenGameRegistration(Base):
+    __tablename__ = "open_game_registrations"
+    __table_args__ = (
+        CheckConstraint(
+            "length(display_name) BETWEEN 2 AND 24 "
+            "AND display_name = trim(display_name)",
+            name="ck_open_game_registrations_display_name",
+        ),
+        CheckConstraint(
+            "note IS NULL OR (length(note) BETWEEN 1 AND 120 "
+            "AND note = trim(note))",
+            name="ck_open_game_registrations_note",
+        ),
+        CheckConstraint(
+            "version >= 1",
+            name="ck_open_game_registrations_version",
+        ),
+        CheckConstraint(
+            "length(consent_version) BETWEEN 1 AND 32 "
+            "AND consent_version = trim(consent_version)",
+            name="ck_open_game_registrations_consent_version",
+        ),
+        CheckConstraint(
+            "(status = 'APPLIED' AND decided_at IS NULL "
+            "AND decided_by_user_id IS NULL) OR "
+            "(status IN ('WAITLISTED', 'JOINED', 'REJECTED') "
+            "AND decided_at IS NOT NULL "
+            "AND decided_by_user_id IS NOT NULL) OR "
+            "(status = 'WITHDRAWN' AND withdrawal_kind = 'APPLICATION_WITHDRAWAL' "
+            "AND decided_at IS NULL AND decided_by_user_id IS NULL) OR "
+            "(status = 'WITHDRAWN' "
+            "AND withdrawal_kind IN ('WAITLIST_WITHDRAWAL', 'GAME_EXIT') "
+            "AND decided_at IS NOT NULL AND decided_by_user_id IS NOT NULL)",
+            name="ck_open_game_registrations_decision_pair",
+        ),
+        CheckConstraint(
+            "(status IN ('APPLIED', 'WAITLISTED', 'JOINED', 'REJECTED') "
+            "AND withdrawn_at IS NULL AND withdrawal_kind IS NULL "
+            "AND late_exit_recorded = false) OR "
+            "(status = 'WITHDRAWN' AND withdrawn_at IS NOT NULL "
+            "AND withdrawal_kind IS NOT NULL "
+            "AND (withdrawal_kind = 'GAME_EXIT' OR late_exit_recorded = false))",
+            name="ck_open_game_registrations_withdrawal_pair",
+        ),
+        CheckConstraint(
+            "decided_at IS NULL OR decided_at >= applied_at",
+            name="ck_open_game_registrations_decision_time",
+        ),
+        CheckConstraint(
+            "waitlist_seq IS NULL OR waitlist_seq > 0",
+            name="ck_open_game_registrations_waitlist_seq",
+        ),
+        CheckConstraint(
+            "(status IN ('APPLIED', 'REJECTED') "
+            "AND waitlist_seq IS NULL AND waitlisted_at IS NULL "
+            "AND promoted_at IS NULL) OR "
+            "(status = 'WAITLISTED' AND waitlist_seq IS NOT NULL "
+            "AND waitlisted_at IS NOT NULL AND promoted_at IS NULL) OR "
+            "(status = 'JOINED' AND ((waitlist_seq IS NULL "
+            "AND waitlisted_at IS NULL AND promoted_at IS NULL) OR "
+            "(waitlist_seq IS NOT NULL AND waitlisted_at IS NOT NULL "
+            "AND promoted_at IS NOT NULL))) OR "
+            "(status = 'WITHDRAWN' "
+            "AND withdrawal_kind = 'APPLICATION_WITHDRAWAL' "
+            "AND waitlist_seq IS NULL AND waitlisted_at IS NULL "
+            "AND promoted_at IS NULL) OR "
+            "(status = 'WITHDRAWN' "
+            "AND withdrawal_kind = 'WAITLIST_WITHDRAWAL' "
+            "AND waitlist_seq IS NOT NULL AND waitlisted_at IS NOT NULL "
+            "AND promoted_at IS NULL) OR "
+            "(status = 'WITHDRAWN' AND withdrawal_kind = 'GAME_EXIT' AND "
+            "((waitlist_seq IS NULL AND waitlisted_at IS NULL "
+            "AND promoted_at IS NULL) OR "
+            "(waitlist_seq IS NOT NULL AND waitlisted_at IS NOT NULL "
+            "AND promoted_at IS NOT NULL)))",
+            name="ck_open_game_registrations_waitlist_history",
+        ),
+        CheckConstraint(
+            "(waitlisted_at IS NULL OR "
+            "(waitlisted_at = decided_at AND waitlisted_at >= applied_at)) AND "
+            "(promoted_at IS NULL OR promoted_at >= waitlisted_at)",
+            name="ck_open_game_registrations_waitlist_time",
+        ),
+        CheckConstraint(
+            "withdrawn_at IS NULL OR "
+            "(withdrawal_kind = 'APPLICATION_WITHDRAWAL' "
+            "AND withdrawn_at >= applied_at) OR "
+            "(withdrawal_kind = 'WAITLIST_WITHDRAWAL' "
+            "AND withdrawn_at >= waitlisted_at) OR "
+            "(withdrawal_kind = 'GAME_EXIT' AND withdrawn_at >= decided_at "
+            "AND (promoted_at IS NULL OR withdrawn_at >= promoted_at))",
+            name="ck_open_game_registrations_withdrawal_time",
+        ),
+        CheckConstraint(
+            "(attendance_status = 'UNMARKED' "
+            "AND attendance_recorded_at IS NULL "
+            "AND attendance_recorded_by_user_id IS NULL) OR "
+            "(attendance_status IN ('PRESENT', 'NO_SHOW') "
+            "AND attendance_recorded_at IS NOT NULL "
+            "AND attendance_recorded_by_user_id IS NOT NULL)",
+            name="ck_open_game_registrations_attendance_audit",
+        ),
+        CheckConstraint(
+            "attendance_status = 'UNMARKED' OR status = 'JOINED'",
+            name="ck_open_game_registrations_attendance_joined",
+        ),
+        UniqueConstraint(
+            "game_id",
+            "applicant_user_id",
+            name="uq_open_game_registrations_game_applicant",
+        ),
+        UniqueConstraint(
+            "game_id",
+            "waitlist_seq",
+            name="uq_open_game_registrations_game_waitlist_seq",
+        ),
+        UniqueConstraint(
+            "id",
+            "game_id",
+            "applicant_user_id",
+            name="uq_open_game_registrations_outbox_identity",
+        ),
+        Index(
+            "ix_open_game_registrations_pending",
+            "game_id",
+            "status",
+            "applied_at",
+            "id",
+            postgresql_where=text("status = 'APPLIED'"),
+        ),
+        Index(
+            "ix_open_game_registrations_applicant_applied",
+            "applicant_user_id",
+            "applied_at",
+            "id",
+        ),
+        Index(
+            "ix_open_game_registrations_active_waitlist",
+            "game_id",
+            "status",
+            "waitlist_seq",
+            postgresql_where=text("status = 'WAITLISTED'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_games.id",
+            name="fk_open_game_registrations_game_id_open_games",
+            ondelete="RESTRICT",
+        ),
+    )
+    applicant_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_registrations_applicant_user_id_users",
+            ondelete="RESTRICT",
+        ),
+    )
+    display_name: Mapped[str] = mapped_column(String(24))
+    position: Mapped[OpenGameRegistrationPosition] = mapped_column(
+        Enum(
+            OpenGameRegistrationPosition,
+            name="open_game_registration_position",
+        )
+    )
+    note: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[OpenGameRegistrationStatus] = mapped_column(
+        Enum(OpenGameRegistrationStatus, name="open_game_registration_status")
+    )
+    attendance_status: Mapped[OpenGameAttendanceStatus] = mapped_column(
+        Enum(OpenGameAttendanceStatus, name="open_game_attendance_status"),
+        nullable=False,
+        default=OpenGameAttendanceStatus.UNMARKED,
+        server_default=text("'UNMARKED'"),
+    )
+    attendance_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    attendance_recorded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name=(
+                "fk_open_game_registrations_"
+                "attendance_recorded_by_user_id_users"
+            ),
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    consent_version: Mapped[str] = mapped_column(String(32))
+    adult_confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )
+    risk_confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_registrations_decided_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    withdrawn_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    withdrawal_kind: Mapped[OpenGameRegistrationWithdrawalKind | None] = mapped_column(
+        Enum(
+            OpenGameRegistrationWithdrawalKind,
+            name="open_game_registration_withdrawal_kind",
+        ),
+        nullable=True,
+    )
+    late_exit_recorded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    waitlist_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    waitlisted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    promoted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    game: Mapped[OpenGame] = relationship(
+        back_populates="registrations", foreign_keys=[game_id]
+    )
+    applicant: Mapped[User] = relationship(
+        back_populates="open_game_registrations",
+        foreign_keys=[applicant_user_id],
+    )
+    decided_by: Mapped[User | None] = relationship(
+        back_populates="decided_open_game_registrations",
+        foreign_keys=[decided_by_user_id],
+    )
+
+
+class OpenGameAttendanceCorrection(Base):
+    __tablename__ = "open_game_attendance_corrections"
+    __table_args__ = (
+        CheckConstraint(
+            "from_status IN ('PRESENT', 'NO_SHOW') "
+            "AND to_status IN ('PRESENT', 'NO_SHOW') "
+            "AND from_status <> to_status",
+            name="ck_open_game_attendance_corrections_status_transition",
+        ),
+        CheckConstraint(
+            "length(reason) BETWEEN 1 AND 1000 AND reason = trim(reason)",
+            name="ck_open_game_attendance_corrections_reason",
+        ),
+        CheckConstraint(
+            "length(corrected_by_principal_id) BETWEEN 1 AND 128 "
+            "AND corrected_by_principal_id = trim(corrected_by_principal_id)",
+            name="ck_open_game_attendance_corrections_principal",
+        ),
+        CheckConstraint(
+            "registration_version_before >= 1 "
+            "AND registration_version_after = registration_version_before + 1",
+            name="ck_open_game_attendance_corrections_version",
+        ),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_open_game_attendance_corrections_request_sha256",
+        ),
+        PrimaryKeyConstraint(
+            "id",
+            name="pk_open_game_attendance_corrections",
+        ),
+        UniqueConstraint(
+            "registration_id",
+            "registration_version_after",
+            name=(
+                "uq_open_game_attendance_corrections_"
+                "registration_version_after"
+            ),
+        ),
+        UniqueConstraint(
+            "corrected_by_principal_id",
+            "idempotency_key",
+            name=(
+                "uq_open_game_attendance_corrections_"
+                "principal_idempotency_key"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid.uuid4
+    )
+    registration_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_game_registrations.id",
+            name="fk_attendance_corrections_registration",
+            ondelete="RESTRICT",
+        ),
+    )
+    from_status: Mapped[OpenGameAttendanceStatus] = mapped_column(
+        Enum(OpenGameAttendanceStatus, name="open_game_attendance_status")
+    )
+    to_status: Mapped[OpenGameAttendanceStatus] = mapped_column(
+        Enum(OpenGameAttendanceStatus, name="open_game_attendance_status")
+    )
+    reason: Mapped[str] = mapped_column(String(1000))
+    corrected_by_principal_id: Mapped[str] = mapped_column(String(128))
+    corrected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    registration_version_before: Mapped[int] = mapped_column(Integer)
+    registration_version_after: Mapped[int] = mapped_column(Integer)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+
+
+class OpenGameNotificationOutbox(Base):
+    __tablename__ = "open_game_notification_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(dedupe_key)) > 0",
+            name="ck_open_game_notification_outbox_dedupe_key",
+        ),
+        CheckConstraint(
+            "length(trim(template_key)) > 0",
+            name="ck_open_game_notification_outbox_template_key",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object'",
+            name="ck_open_game_notification_outbox_payload_object",
+        ),
+        CheckConstraint(
+            "event = 'WAITLIST_PROMOTED' AND "
+            "payload ?& ARRAY['game_name', 'starts_at', 'venue_name'] AND "
+            "payload - ARRAY['game_name', 'starts_at', 'venue_name'] "
+            "= '{}'::jsonb AND "
+            "jsonb_typeof(payload -> 'game_name') = 'string' AND "
+            "length(trim(payload ->> 'game_name')) > 0 AND "
+            "jsonb_typeof(payload -> 'starts_at') = 'string' AND "
+            "length(trim(payload ->> 'starts_at')) > 0 AND "
+            "jsonb_typeof(payload -> 'venue_name') = 'string' AND "
+            "length(trim(payload ->> 'venue_name')) > 0",
+            name="ck_open_game_notification_outbox_payload_waitlist_promoted",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_open_game_notification_outbox_attempt_count",
+        ),
+        CheckConstraint(
+            "((status = 'CLAIMED' AND claim_token IS NOT NULL "
+            "AND lease_until IS NOT NULL) OR "
+            "(status != 'CLAIMED' AND claim_token IS NULL "
+            "AND lease_until IS NULL))",
+            name="ck_open_game_notification_outbox_claim_lease",
+        ),
+        CheckConstraint(
+            "((status IN ('SENT', 'FAILED', 'SUPERSEDED') "
+            "AND completed_at IS NOT NULL) OR "
+            "(status IN ('PENDING', 'CLAIMED') AND completed_at IS NULL))",
+            name="ck_open_game_notification_outbox_completion",
+        ),
+        CheckConstraint(
+            "(last_failure_code IS NULL OR "
+            "length(trim(last_failure_code)) > 0) AND "
+            "(status != 'FAILED' OR last_failure_code IS NOT NULL)",
+            name="ck_open_game_notification_outbox_failure_code",
+        ),
+        CheckConstraint(
+            "(status != 'PENDING' OR delivery_started_at IS NULL) AND "
+            "(status != 'SENT' OR delivery_started_at IS NOT NULL)",
+            name="ck_open_game_notification_outbox_delivery_start",
+        ),
+        ForeignKeyConstraint(
+            ["registration_id", "game_id", "recipient_user_id"],
+            [
+                "open_game_registrations.id",
+                "open_game_registrations.game_id",
+                "open_game_registrations.applicant_user_id",
+            ],
+            name="fk_open_game_notification_outbox_registration_identity",
+            ondelete="RESTRICT",
+        ),
+        PrimaryKeyConstraint("id", name="pk_open_game_notification_outbox"),
+        UniqueConstraint(
+            "dedupe_key",
+            name="uq_open_game_notification_outbox_dedupe_key",
+        ),
+        Index(
+            "ix_open_game_notification_outbox_due",
+            "available_at",
+            "id",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid.uuid4
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(200))
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_games.id",
+            name="fk_open_game_notification_outbox_game_id_open_games",
+            ondelete="RESTRICT",
+        ),
+    )
+    registration_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_game_registrations.id",
+            name="fk_open_game_notification_outbox_registration",
+            ondelete="RESTRICT",
+        ),
+    )
+    recipient_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_notification_outbox_recipient_user_id_users",
+            ondelete="RESTRICT",
+        ),
+    )
+    event: Mapped[OpenGameNotificationEvent] = mapped_column(
+        Enum(OpenGameNotificationEvent, name="open_game_notification_event")
+    )
+    template_key: Mapped[str] = mapped_column(String(64))
+    status: Mapped[OpenGameNotificationStatus] = mapped_column(
+        Enum(OpenGameNotificationStatus, name="open_game_notification_status")
+    )
+    payload: Mapped[WaitlistPromotedNotificationPayload] = mapped_column(JSONB)
+    attempt_count: Mapped[int] = mapped_column(Integer)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    delivery_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_failure_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
 
 
 class Payment(Base):

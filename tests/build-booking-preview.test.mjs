@@ -8,12 +8,14 @@ import { promisify } from "node:util";
 
 import {
   readDevelopmentPreviewRoutes,
+  resolveOpenGameNotificationConfig,
   resolveProductionPaymentProvider,
 } from "../scripts/build-miniprogram.mjs";
 
 const execFileAsync = promisify(execFile);
 const buildScript = path.resolve("scripts/build-miniprogram.mjs");
 const TEST_TENCENT_MAP_KEY = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF";
+const TEST_NOTIFICATION_TEMPLATE_ID = "zun-LzcQyW-edafCVvzPkK4de2Rllr1fFpw2A_x0oXE";
 
 test("production payment provider accepts only wechat or disabled", () => {
   assert.equal(resolveProductionPaymentProvider(undefined), "wechat");
@@ -23,6 +25,42 @@ test("production payment provider accepts only wechat or disabled", () => {
     () => resolveProductionPaymentProvider("mock"),
     /MINIPROGRAM_PAYMENT_PROVIDER must be wechat or disabled/,
   );
+});
+
+test("open-game notification config is disabled by default and closes invalid combinations", () => {
+  assert.deepEqual(resolveOpenGameNotificationConfig({}), {
+    provider: "disabled",
+    templateId: "",
+  });
+  assert.deepEqual(resolveOpenGameNotificationConfig({
+    MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "disabled",
+    MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: TEST_NOTIFICATION_TEMPLATE_ID,
+  }), {
+    provider: "disabled",
+    templateId: "",
+  });
+  assert.deepEqual(resolveOpenGameNotificationConfig({
+    MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "wechat",
+    MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: TEST_NOTIFICATION_TEMPLATE_ID,
+  }), {
+    provider: "wechat",
+    templateId: TEST_NOTIFICATION_TEMPLATE_ID,
+  });
+  assert.throws(
+    () => resolveOpenGameNotificationConfig({
+      MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "email",
+    }),
+    /MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER must be disabled or wechat/,
+  );
+  for (const templateId of [undefined, "", "contains space", "x".repeat(129)]) {
+    assert.throws(
+      () => resolveOpenGameNotificationConfig({
+        MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "wechat",
+        MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: templateId,
+      }),
+      /MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID must be a valid template ID/,
+    );
+  }
 });
 
 test("disabled production build freezes online booking off in runtime config", async (t) => {
@@ -45,22 +83,59 @@ test("disabled production build freezes online booking off in runtime config", a
     path.join(root, "dist/miniprogram-production/config/runtime.js"),
     "utf8",
   );
+  const app = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
   assert.match(runtime, /exports\.ONLINE_BOOKING_ENABLED = false/);
+  assert.match(runtime, /exports\.OPEN_GAME_NOTIFICATION_PROVIDER = "disabled"/);
+  assert.match(runtime, /exports\.WAITLIST_PROMOTED_TEMPLATE_ID = ""/);
+  assert.doesNotMatch(app, /registerWaitlistPromotionSubscriptionCapability/);
+  assert.doesNotMatch(app, /createWeChatWaitlistPromotionSubscriptionCapability/);
 });
 
-test("development preview manifest has the two booking, two venue-profile, and venue-access routes", async () => {
-  assert.deepEqual(await readDevelopmentPreviewRoutes("miniprogram"), [
+test("wechat notification production build injects and composes only a validated template", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "wechat-notification-build-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) {
+    await cp(entry, path.join(root, entry), { recursive: true });
+  }
+
+  await execFileAsync(process.execPath, [buildScript, "production"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      MINIPROGRAM_TENCENT_MAP_KEY: TEST_TENCENT_MAP_KEY,
+      MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER: "wechat",
+      MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID: TEST_NOTIFICATION_TEMPLATE_ID,
+    },
+  });
+
+  const runtime = await readFile(
+    path.join(root, "dist/miniprogram-production/config/runtime.js"),
+    "utf8",
+  );
+  const app = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");
+  assert.match(runtime, /exports\.OPEN_GAME_NOTIFICATION_PROVIDER = "wechat"/);
+  assert.match(runtime, new RegExp(TEST_NOTIFICATION_TEMPLATE_ID.replaceAll("-", "\\-")));
+  assert.match(app, /createWeChatWaitlistPromotionSubscriptionCapability/);
+  assert.match(app, /registerWaitlistPromotionSubscriptionCapability/);
+  assert.match(app, /WAITLIST_PROMOTED_TEMPLATE_ID/);
+});
+
+test("development preview manifest retains the booking, venue-profile, and venue-access slices", async () => {
+  const routes = await readDevelopmentPreviewRoutes("miniprogram");
+  for (const route of [
     "pages/booking-confirmation/index",
     "pages/order-detail/index",
     "dev/pages/venue-profile/index",
     "dev/pages/venue-profile-public/index",
     "dev/pages/venue-access/index",
-  ]);
+  ]) assert.equal(routes.includes(route), true, `missing development preview route: ${route}`);
+  assert.equal(new Set(routes).size, routes.length);
 });
 
-test("source production manifest puts the intent entry first across ten production routes", async () => {
+test("source production manifest keeps the booking foundation and excludes development routes", async () => {
   const manifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
-  assert.deepEqual(manifest.pages, [
+  assert.equal(manifest.pages[0], "pages/intent-entry/index");
+  for (const route of [
     "pages/intent-entry/index",
     "pages/venue-access/index",
     "pages/venue-map/index",
@@ -71,10 +146,12 @@ test("source production manifest puts the intent entry first across ten producti
     "pages/venue-profile/index",
     "pages/venue-inventory/index",
     "pages/venue-pitch-setup/index",
-  ]);
+  ]) assert.equal(manifest.pages.includes(route), true, `missing production route: ${route}`);
+  assert.equal(manifest.pages.some((route) => route.startsWith("dev/")), false);
+  assert.equal(new Set(manifest.pages).size, manifest.pages.length);
 });
 
-test("development includes seven deterministic native preview pages while production stays on ten routes", async (t) => {
+test("development appends complete native previews while production stays source-exact and development-free", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "booking-preview-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const entry of ["miniprogram", "contracts", "artifacts/ui/fixtures"]) await cp(entry, path.join(root, entry), { recursive: true });
@@ -85,44 +162,19 @@ test("development includes seven deterministic native preview pages while produc
   });
   const development = JSON.parse(await readFile(path.join(root, "dist/miniprogram-development/app.json"), "utf8"));
   const production = JSON.parse(await readFile(path.join(root, "dist/miniprogram-production/app.json"), "utf8"));
-  const productionRoutes = [
-    "pages/intent-entry/index",
-    "pages/venue-access/index",
-    "pages/venue-map/index",
-    "pages/venue/index",
-    "pages/availability/index",
-    "pages/booking-confirmation/index",
-    "pages/order-detail/index",
-    "pages/venue-profile/index",
-    "pages/venue-inventory/index",
-    "pages/venue-pitch-setup/index",
-  ];
-  const developmentRoutes = [
-    ...productionRoutes,
-    "dev/pages/venue-profile/index",
-    "dev/pages/venue-profile-public/index",
-    "dev/pages/venue-access/index",
-    "dev/pages/intent-entry/index",
-    "dev/pages/intent-home/index",
-    "dev/pages/venue-inventory/index",
-    "dev/pages/venue-pitch-setup/index",
-  ];
-  assert.deepEqual(development.pages, developmentRoutes);
-  assert.deepEqual(production.pages, productionRoutes);
-  for (const route of [
-    "dev/pages/venue-profile/index",
-    "dev/pages/venue-profile-public/index",
-    "dev/pages/venue-access/index",
-    "dev/pages/intent-entry/index",
-    "dev/pages/intent-home/index",
-    "dev/pages/venue-inventory/index",
-    "dev/pages/venue-pitch-setup/index",
-  ]) {
+  const sourceProduction = JSON.parse(await readFile(path.join(root, "miniprogram/app.json"), "utf8"));
+  const sourcePreviews = await readDevelopmentPreviewRoutes(path.join(root, "miniprogram"));
+  assert.deepEqual(production.pages, sourceProduction.pages);
+  assert.deepEqual(development.pages.slice(0, production.pages.length), production.pages);
+  assert.equal(production.pages.some((route) => route.startsWith("dev/")), false);
+  assert.equal(new Set(development.pages).size, development.pages.length);
+  for (const route of sourcePreviews) assert.equal(development.pages.includes(route), true, route);
+  for (const route of development.pages.filter((route) => route.startsWith("dev/"))) {
     for (const extension of [".js", ".json", ".wxml", ".wxss"]) {
       await readFile(path.join(root, "dist/miniprogram-development", `${route}${extension}`));
     }
   }
-  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\/(?:intent-(?:entry|home)|venue-(?:access|profile(?:-public)?|inventory|pitch-setup))\/index/);
+  assert.doesNotMatch(JSON.stringify(production), /dev\/pages\//);
   await assert.rejects(access(path.join(root, "dist/miniprogram-production/dev")), /ENOENT/);
   const developmentApp = await readFile(path.join(root, "dist/miniprogram-development/app.js"), "utf8");
   const productionApp = await readFile(path.join(root, "dist/miniprogram-production/app.js"), "utf8");

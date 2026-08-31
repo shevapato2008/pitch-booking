@@ -1,0 +1,72 @@
+<view class="c2d-page">
+  <view class="c2d-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2d-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2d-header-back" hover-class="c2d-pressed" bindtap="onHeaderBack" aria-label="返回 C2d 场景入口">
+      <view class="c2d-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2d-header-title">到场记录</text>
+    <view class="c2d-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2d-scroll" scroll-y="true">
+    <view class="c2d-content">
+      <text class="c2d-preview-note">{{fixtureNotice}}</text>
+
+      <view class="c2d-game-card">
+        <view class="c2d-game-heading">
+          <view>
+            <text class="c2d-eyebrow">已结束球局</text>
+            <text class="c2d-game-name">{{game.gameName}}</text>
+          </view>
+          <text class="c2d-complete-badge">记录完成</text>
+        </view>
+        <text class="c2d-game-meta">{{game.venueName}} · {{game.pitchName}}</text>
+        <text class="c2d-game-time">{{game.startsAtLabel}}</text>
+        <view class="c2d-progress"><text>到场结果</text><text>3 / 3 人</text></view>
+      </view>
+
+      <view class="c2d-section-heading">
+        <view><text>散客名单</text><text>已记录 1 人</text></view>
+        <text class="c2d-correction-badge">平台已纠正</text>
+      </view>
+
+      <view class="c2d-roster">
+        <view wx:for="{{roster}}" wx:key="registrationId" class="c2d-player-card">
+          <view class="c2d-player-main">
+            <view class="c2d-player-identity">
+              <text class="c2d-player-name">{{item.perGameName}}</text>
+              <text class="c2d-player-position">意向位置：{{item.positionLabel}}</text>
+            </view>
+            <view class="c2d-status-column">
+              <text class="c2d-status-label">当前结果</text>
+              <text class="c2d-status-badge c2d-status-badge--{{item.currentAttendanceStatus === 'PRESENT' ? 'present' : 'no-show'}}">{{item.currentAttendanceLabel}}</text>
+            </view>
+          </view>
+
+          <view class="c2d-timeline">
+            <text>原记录：{{item.originalAttendanceLabel}} · {{item.originalRecordedAtLabel}}</text>
+            <text>平台已纠正 · {{item.correctedAtLabel}}</text>
+          </view>
+
+          <view class="c2d-registration">
+            <text class="c2d-registration-label">报名编号</text>
+            <text class="c2d-registration-id" user-select="true">{{item.registrationId}}</text>
+            <button
+              class="c2d-copy-button"
+              hover-class="c2d-pressed"
+              bindtap="onCopyRegistrationId"
+              data-registration-id="{{item.registrationId}}"
+            >复制报名编号</button>
+            <text
+              wx:if="{{copyFeedbackRegistrationId === item.registrationId}}"
+              class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}"
+              aria-role="status"
+            >{{copyFeedback}}</text>
+          </view>
+        </view>
+      </view>
+
+      <text class="c2d-privacy-note">这里只展示当前结果、原记录时间、最新平台纠正时间与报名编号。</text>
+    </view>
+  </scroll-view>
+</view>

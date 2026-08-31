@@ -11,6 +11,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.config import Settings
 from backend.app.database import get_engine
+from backend.app.modules.open_game_notifications.wechat_provider import (
+    WeChatOpenGameNotificationProvider,
+    build_open_game_notification_provider,
+)
+from backend.app.modules.open_game_notifications.worker import (
+    OpenGameNotificationWorker,
+)
 from backend.app.modules.orders.expiry import PendingOrderExpiryService
 from backend.app.modules.orders.repository import OrderRepository
 from backend.app.modules.payments import build_payment_provider
@@ -53,6 +60,10 @@ class ProfileModerationScan(Protocol):
     def run_once(self) -> int: ...
 
 
+class OpenGameNotificationScan(Protocol):
+    def run_once(self) -> int: ...
+
+
 class RefundRecovery(Protocol):
     @property
     def provider_name(self) -> str: ...
@@ -74,6 +85,7 @@ class ExpiryWorker:
         payment_reconciliation: PaymentRecovery | None = None,
         refund_reconciliation: RefundRecovery | None = None,
         profile_moderation: ProfileModerationScan | None = None,
+        open_game_notifications: OpenGameNotificationScan | None = None,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], None] | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -88,6 +100,7 @@ class ExpiryWorker:
         self._payment_reconciliation = payment_reconciliation
         self._refund_reconciliation = refund_reconciliation
         self._profile_moderation = profile_moderation
+        self._open_game_notifications = open_game_notifications
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper or time.sleep
         self._batch_size = batch_size
@@ -177,7 +190,19 @@ class ExpiryWorker:
                 moderation_count = self._profile_moderation.run_once()
             except Exception:
                 logger.exception("Failed to scan venue profile moderation jobs")
-        return payment_count + refund_count + len(candidate_ids) + moderation_count
+        notification_count = 0
+        if self._open_game_notifications is not None:
+            try:
+                notification_count = self._open_game_notifications.run_once()
+            except Exception:
+                logger.exception("Failed to scan open game notification outbox")
+        return (
+            payment_count
+            + refund_count
+            + len(candidate_ids)
+            + moderation_count
+            + notification_count
+        )
 
     def run(self, *, once: bool = False) -> int:
         processed = 0
@@ -211,6 +236,7 @@ def main(
     payment_reconciliation: PaymentRecovery | None = None,
     refund_reconciliation: RefundRecovery | None = None,
     profile_moderation: ProfileModerationScan | None = None,
+    open_game_notifications: OpenGameNotificationScan | None = None,
     settings: Settings | None = None,
     venue_media_store: VenueMediaStore | None = None,
     moderation_provider: ContentModerationProvider | None = None,
@@ -226,6 +252,8 @@ def main(
     arguments = parser.parse_args(argv)
     resolved_factory = session_factory or (lambda: Session(get_engine()))
     resolved_settings = settings or Settings()
+    owned_notification_provider: WeChatOpenGameNotificationProvider | None = None
+    resolved_open_game_notifications = open_game_notifications
     owned_payment_provider = None
     resolved_payment_reconciliation = payment_reconciliation
     resolved_refund_reconciliation = refund_reconciliation
@@ -294,6 +322,20 @@ def main(
                 batch_size=min(arguments.batch_size, 100),
             )
     try:
+        if (
+            resolved_open_game_notifications is None
+            and resolved_settings.open_game_notification_provider == "wechat"
+        ):
+            owned_notification_provider = build_open_game_notification_provider(
+                resolved_settings
+            )
+            if owned_notification_provider is not None:
+                resolved_open_game_notifications = OpenGameNotificationWorker(
+                    session_factory=resolved_factory,
+                    provider=owned_notification_provider,
+                    clock=clock,
+                    batch_size=min(arguments.batch_size, 100),
+                )
         ExpiryWorker(
             session_factory=resolved_factory,
             clock=clock,
@@ -301,12 +343,15 @@ def main(
             payment_reconciliation=resolved_payment_reconciliation,
             refund_reconciliation=resolved_refund_reconciliation,
             profile_moderation=resolved_profile_moderation,
+            open_game_notifications=resolved_open_game_notifications,
             batch_size=arguments.batch_size,
             interval_seconds=arguments.interval_seconds,
         ).run(once=arguments.once)
     finally:
         if owned_provider is not None:
             owned_provider.close()
+        if owned_notification_provider is not None:
+            owned_notification_provider.close()
         close_store = getattr(owned_store, "close", None)
         if close_store is not None:
             close_store()

@@ -37,6 +37,9 @@ async function build(selectedMode) {
   const productionPaymentProvider = selectedMode === "production"
     ? resolveProductionPaymentProvider(process.env.MINIPROGRAM_PAYMENT_PROVIDER)
     : undefined;
+  const openGameNotificationConfig = selectedMode === "production"
+    ? resolveOpenGameNotificationConfig(process.env)
+    : undefined;
   const tencentMapKey = selectedMode === "production" || developmentConfig?.source === "http"
     ? resolveTencentMapKey(process.env.MINIPROGRAM_TENCENT_MAP_KEY)
     : undefined;
@@ -56,13 +59,14 @@ async function build(selectedMode) {
       productionApiBaseUrl,
       tencentMapKey,
       productionPaymentProvider,
+      openGameNotificationConfig,
     );
   }
   if (developmentConfig) {
     if (developmentFixtureData) await writeDevelopmentFixtureData(developmentFixtureData, outputRoot);
     await writeDevelopmentAppBootstrap(sourceRoot, outputRoot, developmentConfig);
   } else {
-    await writeProductionAppBootstrap(sourceRoot, outputRoot);
+    await writeProductionAppBootstrap(sourceRoot, outputRoot, openGameNotificationConfig);
   }
 
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "app.json"), "utf8"));
@@ -83,6 +87,7 @@ async function writeRuntimeConfig(
   apiBaseUrl,
   tencentMapKey,
   paymentProvider,
+  openGameNotificationConfig,
 ) {
   let source;
   try {
@@ -100,6 +105,18 @@ async function writeRuntimeConfig(
       source,
       "ONLINE_BOOKING_ENABLED",
       paymentProvider === "wechat",
+    );
+  }
+  if (openGameNotificationConfig !== undefined) {
+    source = replaceRuntimeExport(
+      source,
+      "OPEN_GAME_NOTIFICATION_PROVIDER",
+      openGameNotificationConfig.provider,
+    );
+    source = replaceRuntimeExport(
+      source,
+      "WAITLIST_PROMOTED_TEMPLATE_ID",
+      openGameNotificationConfig.templateId,
     );
   }
   source = source.replace(
@@ -157,6 +174,19 @@ export function resolveProductionPaymentProvider(value) {
     throw new Error("MINIPROGRAM_PAYMENT_PROVIDER must be wechat or disabled");
   }
   return provider;
+}
+
+export function resolveOpenGameNotificationConfig(environment) {
+  const provider = environment.MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER ?? "disabled";
+  if (provider !== "disabled" && provider !== "wechat") {
+    throw new Error("MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER must be disabled or wechat");
+  }
+  if (provider === "disabled") return { provider, templateId: "" };
+  const templateId = environment.MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID;
+  if (typeof templateId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(templateId)) {
+    throw new Error("MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID must be a valid template ID");
+  }
+  return { provider, templateId };
 }
 
 async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {
@@ -233,10 +263,10 @@ export async function readDevelopmentPreviewRoutes(sourceRoot) {
   return manifest.pages;
 }
 
-async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
+async function writeProductionAppBootstrap(sourceRoot, outputRoot, notificationConfig) {
   const appSource = await readFile(path.join(sourceRoot, "app.ts"), "utf8");
   const bootstrappedSource = [
-    'import { API_BASE_URL, MINIPROGRAM_TENCENT_MAP_KEY } from "./config/runtime";',
+    `import { API_BASE_URL, MINIPROGRAM_TENCENT_MAP_KEY${notificationConfig?.provider === "wechat" ? ", WAITLIST_PROMOTED_TEMPLATE_ID" : ""} } from "./config/runtime";`,
     'import { productionIdentity, productionLocation, productionPayment, productionPhone, productionRuntime, productionSessionStorage, productionTencentPoiRequest } from "./runtime/production";',
     'import { registerBookingDataSource, registerCreateOrderAttemptStore } from "./services/booking";',
     'import { createCreateOrderAttemptStore } from "./services/create-order-attempt-store";',
@@ -251,6 +281,8 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { createHttpVenueOnboardingDataSource } from "./services/http-venue-onboarding";',
     'import { createHttpVenueFulfillmentDataSource } from "./services/http-venue-fulfillment";',
     'import { createHttpOpenGameSource } from "./services/http-open-game";',
+    'import { createHttpOpenGameRegistrationSource } from "./services/http-open-game-registration";',
+    'import { createHttpPublicGameDirectorySource } from "./services/http-public-game-directory";',
     'import { registerInventoryDataSource } from "./services/inventory";',
     'import { registerPitchConfigurationDataSource } from "./services/pitch-configuration";',
     'import { createInventoryMutationAttemptStore, registerInventoryMutationAttemptStore } from "./services/inventory-attempt-store";',
@@ -261,16 +293,24 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     'import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "./services/venue-fulfillment-attempt-store";',
     'import { createOpenGameMutationAttemptStore } from "./services/open-game-attempt-store";',
     'import { registerOpenGameMutationAttemptStore, registerOpenGameSource } from "./services/open-game";',
+    'import { createOpenGameRegistrationAttemptStore } from "./services/open-game-registration-attempt-store";',
+    'import { registerOpenGameRegistrationAttemptStore, registerOpenGameRegistrationSource } from "./services/open-game-registration";',
     'import { registerVenueFulfillmentDataSource } from "./services/venue-fulfillment";',
     'import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingDataSource, registerVenueOnboardingEvidenceCapability } from "./services/venue-onboarding";',
     'import { registerPageDataSource } from "./services/page-data";',
     'import { registerLocationCapability } from "./services/location";',
     'import { registerPoiSearchCapability } from "./services/poi-search";',
+    'import { registerPublicGameDirectorySource } from "./services/public-game-directory";',
     'import { TencentPoiSearchCapability } from "./services/tencent-poi-search";',
     'import { registerVenueDirectoryDataSource } from "./services/venue-directory";',
     'import { registerPaymentCapability, registerPaymentDataSource } from "./services/payment";',
     'import { createSessionStore } from "./services/session-store";',
+    ...(notificationConfig?.provider === "wechat" ? [
+      'import { createWeChatWaitlistPromotionSubscriptionCapability, registerWaitlistPromotionSubscriptionCapability } from "./services/open-game-notification-subscription";',
+      "registerWaitlistPromotionSubscriptionCapability(createWeChatWaitlistPromotionSubscriptionCapability(WAITLIST_PROMOTED_TEMPLATE_ID));",
+    ] : []),
     "const runtime = productionRuntime(API_BASE_URL);",
+    "registerPublicGameDirectorySource(createHttpPublicGameDirectorySource(runtime.transport));",
     "const sessionStore = createSessionStore(productionSessionStorage);",
     "registerCreateOrderAttemptStore(createCreateOrderAttemptStore(productionSessionStorage));",
     "registerInventoryMutationAttemptStore(createInventoryMutationAttemptStore(productionSessionStorage));",
@@ -278,9 +318,11 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     "const venueProfileAttemptStore = createVenueProfileAttemptStore(productionSessionStorage);",
     "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
     "const openGameMutationAttemptStore = createOpenGameMutationAttemptStore(productionSessionStorage);",
+    "const openGameRegistrationAttemptStore = createOpenGameRegistrationAttemptStore(productionSessionStorage);",
     "registerVenueProfileAttemptStore(venueProfileAttemptStore);",
     "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
     "registerOpenGameMutationAttemptStore(openGameMutationAttemptStore);",
+    "registerOpenGameRegistrationAttemptStore(openGameRegistrationAttemptStore);",
     "registerVenueProfileMediaCapability(runtime.venueProfileMedia);",
     "registerPageDataSource(createHttpPageDataSource(runtime.transport, runtime.media));",
     "registerVenueDirectoryDataSource(createHttpVenueDirectoryDataSource(runtime.transport));",
@@ -297,6 +339,11 @@ async function writeProductionAppBootstrap(sourceRoot, outputRoot) {
     "  attemptStore: venueFulfillmentAttemptStore,",
     "}));",
     "registerOpenGameSource(createHttpOpenGameSource({",
+    "  transport: runtime.transport,",
+    "  identity: productionIdentity,",
+    "  sessionStore,",
+    "}));",
+    "registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({",
     "  transport: runtime.transport,",
     "  identity: productionIdentity,",
     "  sessionStore,",
@@ -441,6 +488,16 @@ async function prepareDevelopmentFixtureData(projectRoot) {
 
   const expectedNames = [
     "booking-checkout-ready",
+    "open-game-application-decision-joined",
+    "open-game-application-decision-rejected",
+    "open-game-applications-empty",
+    "open-game-applications-pending",
+    "open-game-registration-context-anonymous",
+    "open-game-registration-context-applied",
+    "open-game-registration-context-apply-ready",
+    "open-game-registration-context-cancelled",
+    "open-game-registration-context-joined",
+    "open-game-registration-context-rejected",
     "order-confirmed",
     "order-expired",
     "order-payment-confirming",
@@ -460,6 +517,16 @@ async function prepareDevelopmentFixtureData(projectRoot) {
 
   const canonicalNames = {
     "booking-checkout-ready": "checkout-ready.json",
+    "open-game-application-decision-joined": "open-game-application-decision-joined.json",
+    "open-game-application-decision-rejected": "open-game-application-decision-rejected.json",
+    "open-game-applications-empty": "open-game-applications-empty.json",
+    "open-game-applications-pending": "open-game-applications-pending.json",
+    "open-game-registration-context-anonymous": "open-game-registration-context-anonymous.json",
+    "open-game-registration-context-applied": "open-game-registration-context-applied.json",
+    "open-game-registration-context-apply-ready": "open-game-registration-context-apply-ready.json",
+    "open-game-registration-context-cancelled": "open-game-registration-context-cancelled.json",
+    "open-game-registration-context-joined": "open-game-registration-context-joined.json",
+    "open-game-registration-context-rejected": "open-game-registration-context-rejected.json",
     "order-confirmed": "order-confirmed.json",
     "order-expired": "order-expired.json",
     "order-payment-confirming": "payment-confirming.json",

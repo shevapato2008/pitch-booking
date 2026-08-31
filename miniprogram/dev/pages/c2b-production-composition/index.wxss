@@ -1,0 +1,12 @@
+page {
+  min-height: 100%;
+  background: #f7fafc;
+}
+.c2b-composition-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 28rpx;
+}

@@ -6,6 +6,7 @@ import re
 import secrets
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -21,10 +22,18 @@ from backend.app.models import (
     Order,
     PaymentState,
     RefundCasePurpose,
+    Team,
+)
+from backend.app.modules.open_game_notifications.repository import (
+    OpenGameNotificationRepository,
+)
+from backend.app.modules.open_game_registrations.repository import (
+    OpenGameRegistrationRepository,
 )
 from backend.app.modules.open_games.dto import (
     CreateOpenGameRequest,
     OpenGameEntry,
+    OpenGameFieldError,
     OpenGameOrderSummary,
     OpenGameOwner,
     OpenGamePublic,
@@ -83,19 +92,45 @@ _CONTROLLING_REFUND_PURPOSES = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class AuthoritativePublicGameProjection:
+    public: OpenGamePublic
+    facts: OpenGameFacts
+    state: EffectiveOpenGameState
+    starts_at: datetime
+    owner_user_id: uuid.UUID
+
+
 class OpenGameService:
     def __init__(
         self,
         *,
         repository: OpenGameRepository,
         order_repository: OrderRepository,
+        registration_repository: OpenGameRegistrationRepository | None = None,
+        notification_repository: OpenGameNotificationRepository | None = None,
         now: Callable[[], datetime] | None = None,
         token_factory: Callable[[], str] | None = None,
     ) -> None:
-        if repository.session is not order_repository.session:
-            raise ValueError("open-game and order repositories must share one Session")
+        registration_repository = registration_repository or (
+            OpenGameRegistrationRepository(repository.session)
+        )
+        notification_repository = notification_repository or (
+            OpenGameNotificationRepository(repository.session)
+        )
+        if (
+            repository.session is not order_repository.session
+            or registration_repository.session is not repository.session
+            or notification_repository.session is not repository.session
+        ):
+            raise ValueError(
+                "open-game, registration, notification and order repositories "
+                "must share one Session"
+            )
         self._repository = repository
         self._order_repository = order_repository
+        self._registration_repository = registration_repository
+        self._notification_repository = notification_repository
         self._now = now or (lambda: datetime.now(UTC))
         self._token_factory = token_factory or (lambda: secrets.token_urlsafe(24))
 
@@ -320,6 +355,22 @@ class OpenGameService:
             else:
                 raise _state_changed()
 
+            joined_count = self._registration_repository.count_joined(
+                game_id=game.id
+            )
+            has_active_waitlist = (
+                request.open_spots != game.open_spots
+                and self._registration_repository.has_active_waitlist(
+                    game_id=game.id
+                )
+            )
+            _validate_update_roster(
+                game=game,
+                request=request,
+                joined_count=joined_count,
+                has_active_waitlist=has_active_waitlist,
+            )
+
             team = self._repository.upsert_team(
                 captain_user_id=user_id,
                 name=request.team_name,
@@ -490,6 +541,10 @@ class OpenGameService:
             game.cancelled_at = now
             game.version += 1
             self._repository.flush()
+            self._notification_repository.supersede_unsent_for_game(
+                game_id=game.id,
+                completed_at=now,
+            )
             response = self._project_owner(game, order, authority, now=now)
             self._order_repository.complete_idempotency(
                 record,
@@ -521,39 +576,17 @@ class OpenGameService:
             order = game.order
             authority = self._repository.get_order_authority(order_id=order.id)
             order_row = self._require_order_row(order.id)
-            order_facts = _order_facts(order, order_row, authority)
-            facts = OpenGameFacts(
-                stored_status=game.status,
-                order_facts=order_facts,
-                registration_deadline=game.registration_deadline,
-            )
-            state = project_open_game_state(facts)
-            reason = project_open_game_reason(facts, now=self._now())
             team = self._repository.get_team(team_id=game.team_id)
             if team is None:
                 raise RuntimeError("open game team is missing")
-            return project_open_game_public(
-                name=game.name,
-                team_name=team.name,
-                state=state,
-                state_reason=reason,
-                venue_name=order_row.venue_name,
-                pitch_name=order_row.pitch_name,
-                players_per_side=order_row.players_per_side,
-                starts_at=order_row.starts_at,
-                ends_at=order_row.ends_at,
-                time_zone=_require_time_zone(order_row),
-                total_players=game.total_players,
-                fixed_players=game.fixed_players,
-                open_spots=game.open_spots,
-                intensity=game.intensity,
-                minimum_experience=game.minimum_experience,
-                positions=mask_to_positions(game.position_mask),
-                aa_cents=game.aa_cents,
-                registration_deadline=game.registration_deadline,
-                equipment_and_arrival_notes=game.equipment_and_arrival_notes,
-                visibility=game.visibility,
-            )
+            return project_authoritative_public_game(
+                game=game,
+                order=order,
+                authority=authority,
+                order_row=order_row,
+                team=team,
+                now=self._now(),
+            ).public
         except AppError:
             self._repository.rollback()
             raise
@@ -613,41 +646,20 @@ class OpenGameService:
         now: datetime,
     ) -> OpenGameOwner:
         order_row = self._require_order_row(order.id)
-        order_facts = _order_facts(order, order_row, authority)
-        facts = OpenGameFacts(
-            stored_status=game.status,
-            order_facts=order_facts,
-            registration_deadline=game.registration_deadline,
-        )
-        state = project_open_game_state(facts)
-        reason = project_open_game_reason(facts, now=now)
-        actions = project_open_game_actions(facts, now=now)
         team = self._repository.get_team(team_id=game.team_id)
         if team is None:
             raise RuntimeError("open game team is missing")
-        positions = mask_to_positions(game.position_mask)
-        public = project_open_game_public(
-            name=game.name,
-            team_name=team.name,
-            state=state,
-            state_reason=reason,
-            venue_name=order_row.venue_name,
-            pitch_name=order_row.pitch_name,
-            players_per_side=order_row.players_per_side,
-            starts_at=order_row.starts_at,
-            ends_at=order_row.ends_at,
-            time_zone=_require_time_zone(order_row),
-            total_players=game.total_players,
-            fixed_players=game.fixed_players,
-            open_spots=game.open_spots,
-            intensity=game.intensity,
-            minimum_experience=game.minimum_experience,
-            positions=positions,
-            aa_cents=game.aa_cents,
-            registration_deadline=game.registration_deadline,
-            equipment_and_arrival_notes=game.equipment_and_arrival_notes,
-            visibility=game.visibility,
+        projection = project_authoritative_public_game(
+            game=game,
+            order=order,
+            authority=authority,
+            order_row=order_row,
+            team=team,
+            now=now,
         )
+        reason = project_open_game_reason(projection.facts, now=now)
+        actions = project_open_game_actions(projection.facts, now=now)
+        positions = mask_to_positions(game.position_mask)
         return OpenGameOwner(
             id=game.id,
             order_id=order.id,
@@ -665,12 +677,12 @@ class OpenGameService:
             equipment_and_arrival_notes=game.equipment_and_arrival_notes,
             visibility=game.visibility,
             persisted_status=game.status,
-            state=state,
+            state=projection.state,
             state_reason=reason,
             version=game.version,
             allowed_actions=actions,
-            share=self._share(game, order_row, state=state),
-            public_view=public,
+            share=self._share(game, order_row, state=projection.state),
+            public_view=projection.public,
         )
 
     def _share(
@@ -721,6 +733,98 @@ def _apply_update(
     game.equipment_and_arrival_notes = request.equipment_and_arrival_notes
     game.visibility = request.visibility
     game.version += 1
+
+
+def _validate_update_roster(
+    *,
+    game: OpenGame,
+    request: UpdateOpenGameRequest,
+    joined_count: int,
+    has_active_waitlist: bool = False,
+) -> None:
+    errors: list[OpenGameFieldError] = []
+    if has_active_waitlist:
+        errors.append(
+            OpenGameFieldError(
+                "open_spots",
+                "存在候补成员时不能修改开放名额。",
+            )
+        )
+    elif request.open_spots < joined_count:
+        errors.append(
+            OpenGameFieldError("open_spots", "不能小于已加入人数。")
+        )
+    if (
+        request.fixed_players + request.open_spots > request.total_players
+        or request.total_players < request.fixed_players + joined_count
+    ):
+        errors.append(
+            OpenGameFieldError(
+                "total_players",
+                "不能小于固定人数与已加入人数之和。",
+            )
+        )
+    if joined_count > 0 and request.aa_cents > game.aa_cents:
+        errors.append(
+            OpenGameFieldError(
+                "aa_cents",
+                "已有加入成员后预计 AA 只能保持或降低。",
+            )
+        )
+    if errors:
+        raise OpenGameValidationError(
+            "joined open-game invariants would be violated",
+            *errors,
+        )
+
+
+def project_authoritative_public_game(
+    *,
+    game: OpenGame,
+    order: Order,
+    authority: OrderAuthorityRows,
+    order_row: OpenGameOrderRow,
+    team: Team,
+    now: datetime,
+) -> AuthoritativePublicGameProjection:
+    """Project B2 public data from already-loaded B1 authority without I/O."""
+    order_facts = _order_facts(order, order_row, authority)
+    facts = OpenGameFacts(
+        stored_status=game.status,
+        order_facts=order_facts,
+        registration_deadline=game.registration_deadline,
+    )
+    state = project_open_game_state(facts)
+    reason = project_open_game_reason(facts, now=now)
+    public = project_open_game_public(
+        name=game.name,
+        team_name=team.name,
+        state=state,
+        state_reason=reason,
+        venue_name=order_row.venue_name,
+        pitch_name=order_row.pitch_name,
+        players_per_side=order_row.players_per_side,
+        starts_at=order_row.starts_at,
+        ends_at=order_row.ends_at,
+        time_zone=_require_time_zone(order_row),
+        total_players=game.total_players,
+        fixed_players=game.fixed_players,
+        open_spots=game.open_spots,
+        intensity=game.intensity,
+        minimum_experience=game.minimum_experience,
+        positions=mask_to_positions(game.position_mask),
+        aa_cents=game.aa_cents,
+        registration_deadline=game.registration_deadline,
+        equipment_and_arrival_notes=game.equipment_and_arrival_notes,
+        visibility=game.visibility,
+    )
+    return AuthoritativePublicGameProjection(
+        public=public,
+        facts=facts,
+        state=state,
+        starts_at=order_row.starts_at,
+        owner_user_id=order.user_id,
+    )
 
 
 def _order_facts(
@@ -808,15 +912,48 @@ def _replay_owner(
         or record.response_body is None
     ):
         raise _service_unavailable()
-    return OpenGameOwner.model_validate(record.response_body)
+    try:
+        return OpenGameOwner.model_validate(record.response_body)
+    except ValidationError:
+        return OpenGameOwner.model_validate(
+            _upgrade_legacy_owner(record.response_body)
+        )
+
+
+def _upgrade_legacy_owner(response_body: dict[str, object]) -> dict[str, object]:
+    """Upgrade only the exact owner response preceding attendance actions."""
+    if set(response_body) != set(OpenGameOwner.model_fields):
+        raise ValueError("legacy owner response is not exact")
+    actions = response_body.get("allowed_actions")
+    if not isinstance(actions, dict) or set(actions) != {
+        "can_edit",
+        "can_publish",
+        "can_share",
+        "can_cancel",
+        "can_preview",
+    }:
+        raise ValueError("legacy owner actions are not exact")
+    upgraded = dict(response_body)
+    upgraded["allowed_actions"] = {
+        **actions,
+        "can_manage_attendance": response_body.get("state") == "COMPLETED",
+    }
+    return upgraded
 
 
 def _validation_error(error: OpenGameValidationError) -> AppError:
     if error.fields:
+        deadline_only = all(
+            item.field == "registration_deadline" for item in error.fields
+        )
         return AppError(
             422,
             "INVALID_ARGUMENT",
-            "报名截止时间不符合要求，请修改后重试。",
+            (
+                "报名截止时间不符合要求，请修改后重试。"
+                if deadline_only
+                else "球局已有加入成员，开放容量或预计 AA 不符合要求。"
+            ),
             details={
                 "fields": [
                     {

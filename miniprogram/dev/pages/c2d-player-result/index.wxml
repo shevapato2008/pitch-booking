@@ -1,0 +1,54 @@
+<view class="c2d-page">
+  <view class="c2d-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2d-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2d-header-back" hover-class="c2d-pressed" bindtap="onHeaderBack" aria-label="返回 C2d 场景入口">
+      <view class="c2d-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2d-header-title">报名详情</text>
+    <view class="c2d-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2d-scroll" scroll-y="true">
+    <view class="c2d-content">
+      <text class="c2d-preview-note">{{fixtureNotice}}</text>
+
+      <view class="c2d-game-card">
+        <view class="c2d-game-heading">
+          <view>
+            <text class="c2d-eyebrow">已加入 · 球局已结束</text>
+            <text class="c2d-game-name">{{registration.game.gameName}}</text>
+          </view>
+          <text class="c2d-format-badge">七人制</text>
+        </view>
+        <text class="c2d-game-meta">{{registration.game.venueName}} · {{registration.game.pitchName}}</text>
+        <text class="c2d-game-time">{{registration.game.startsAtLabel}}</text>
+      </view>
+
+      <view class="c2d-result-card">
+        <view class="c2d-result-mark c2d-result-mark--no-show" aria-hidden="true"><view></view></view>
+        <text class="c2d-result-label">当前到场结果</text>
+        <text class="c2d-result-title">{{registration.currentAttendanceLabel}}</text>
+        <text class="c2d-corrected-label">平台已纠正于 {{registration.correctedAtLabel}}</text>
+
+        <view class="c2d-self-details">
+          <view><text>原记录</text><text>{{registration.originalAttendanceLabel}}</text></view>
+          <view><text>原始记录时间</text><text>{{registration.originalRecordedAtLabel}}</text></view>
+        </view>
+
+        <view class="c2d-registration">
+          <text class="c2d-registration-label">报名编号</text>
+          <text class="c2d-registration-id" user-select="true">{{registration.registrationId}}</text>
+          <button class="c2d-copy-button" hover-class="c2d-pressed" bindtap="onCopyRegistrationId">复制报名编号</button>
+          <text
+            wx:if="{{copyFeedback}}"
+            class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}"
+            aria-role="status"
+          >{{copyFeedback}}</text>
+          <text wx:else class="c2d-copy-hint">如需线下核对，请向客服提供报名编号。</text>
+        </view>
+      </view>
+
+      <text class="c2d-privacy-note">你的页面只回读本人的当前结果、原记录时间、最新平台纠正时间与报名编号。</text>
+    </view>
+  </scroll-view>
+</view>

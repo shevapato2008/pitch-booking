@@ -5,15 +5,19 @@ import test from "node:test";
 const fixturePath = "miniprogram/dev/captain-open-game-fixture.ts";
 const pages = ["captain-game-form", "captain-game-manage", "captain-game-public"];
 
-test("captain open game preview is entirely isolated under development with a slice-local route fragment", () => {
+test("captain open game keeps its Fixture preview isolated while real routes are production", () => {
   for (const page of pages) for (const extension of ["ts", "wxml", "wxss", "json"]) {
     assert.equal(existsSync(`miniprogram/dev/pages/${page}/index.${extension}`), true, `missing ${page}/index.${extension}`);
   }
   const routes = JSON.parse(readFileSync("miniprogram/dev/captain-open-game-pages.json", "utf8"));
   assert.deepEqual(routes, { token: "CAPTAIN_OPEN_GAME_FIXTURE", pages: pages.map((page) => `dev/pages/${page}/index`) });
   assert.match(readFileSync(fixturePath, "utf8"), /CAPTAIN_OPEN_GAME_FIXTURE/);
-  const production = readFileSync("miniprogram/app.json", "utf8");
-  assert.doesNotMatch(production, /CAPTAIN_OPEN_GAME_FIXTURE|captain-game-|captain-open-game/i);
+  const production = JSON.parse(readFileSync("miniprogram/app.json", "utf8"));
+  for (const page of pages) {
+    assert.equal(production.pages.includes(`pages/${page}/index`), true, `${page} must be production-routed`);
+    assert.equal(production.pages.includes(`dev/pages/${page}/index`), false, `${page} preview must stay development-only`);
+  }
+  assert.doesNotMatch(JSON.stringify(production), /CAPTAIN_OPEN_GAME_FIXTURE|dev\/pages\/captain-game/i);
   for (const page of pages) assert.deepEqual(JSON.parse(readFileSync(`miniprogram/dev/pages/${page}/index.json`, "utf8")), { navigationStyle: "custom" });
 });
 

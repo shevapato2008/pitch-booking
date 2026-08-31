@@ -1,0 +1,44 @@
+{
+  "game": {
+    "id": "30000000-0000-4000-8000-000000000201",
+    "name": "奥体周日傍晚局",
+    "venue_name": "天津奥体足球场",
+    "pitch_name": "七人制 A 场",
+    "starts_at": "2026-08-30T18:30:00+08:00",
+    "ends_at": "2026-08-30T20:30:00+08:00",
+    "time_zone": "Asia/Shanghai",
+    "state": "COMPLETED"
+  },
+  "recorded_count": 2,
+  "total_count": 3,
+  "attendance_complete": false,
+  "registrations": [
+    {
+      "registration_id": "40000000-0000-4000-8000-000000000201",
+      "display_name": "天津周末左边锋小王",
+      "position": "FORWARD",
+      "attendance_status": "UNMARKED",
+      "attendance_recorded_at": null,
+      "attendance_corrected_at": null,
+      "version": 2
+    },
+    {
+      "registration_id": "40000000-0000-4000-8000-000000000202",
+      "display_name": "阿哲",
+      "position": "GOALKEEPER",
+      "attendance_status": "PRESENT",
+      "attendance_recorded_at": "2026-08-30T20:32:00+08:00",
+      "attendance_corrected_at": "2026-08-31T14:18:00+08:00",
+      "version": 3
+    },
+    {
+      "registration_id": "40000000-0000-4000-8000-000000000203",
+      "display_name": "十一",
+      "position": "MIDFIELDER",
+      "attendance_status": "NO_SHOW",
+      "attendance_recorded_at": "2026-08-30T20:34:00+08:00",
+      "attendance_corrected_at": null,
+      "version": 3
+    }
+  ]
+}

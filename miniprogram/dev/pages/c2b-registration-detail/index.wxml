@@ -1,0 +1,69 @@
+<view class="c2b-page">
+  <view class="c2b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2b-header-back" hover-class="c2b-pressed" bindtap="onHeaderBack" aria-label="返回我的报名">
+      <view class="c2b-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2b-header-title">报名详情</text>
+    <view class="c2b-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2b-scroll" scroll-y="true">
+    <view class="c2b-content {{showWithdrawalAction ? 'c2b-content--with-footer' : ''}}">
+      <text class="c2b-preview-note">{{previewNotice}}</text>
+
+      <view wx:if="{{notFound}}" class="c2b-state-card">
+        <text class="c2b-state-title">报名不存在或已失效</text>
+        <text class="c2b-state-copy">返回我的报名，查看当前权威记录。</text>
+        <button class="c2b-secondary-action" hover-class="c2b-pressed" bindtap="onReturnList">返回我的报名</button>
+      </view>
+
+      <block wx:else>
+        <view class="c2b-card c2b-game-card">
+          <view class="c2b-confirmed"><view class="c2b-confirmed-icon" aria-hidden="true"></view><text>真实订场已确认</text></view>
+          <text class="c2b-game-name">{{game.gameName}}</text>
+          <text class="c2b-game-time">{{game.dateLabel}} · {{game.timeLabel}}</text>
+          <text class="c2b-game-place">{{game.venue}} · {{game.pitch}}</text>
+          <view class="c2b-tag-row"><text>{{game.formatLabel}}</text><text>{{game.organizerName}}组织</text></view>
+        </view>
+
+        <view class="c2b-status-card c2b-status-card--{{statusTone}}" role="status">
+          <view class="c2b-status-heading"><view class="c2b-status-dot"></view><text>{{statusHeading}}</text></view>
+          <text class="c2b-status-copy">{{statusCopy}}</text>
+        </view>
+
+        <view class="c2b-metrics" aria-label="报名摘要">
+          <view><text>{{game.currentPlayers}} / {{game.plannedPlayers}} 人</text><text>当前 / 计划</text></view>
+          <view><text>{{activeWaitlistCount}} 人</text><text>正在候补</text></view>
+          <view><text>{{game.estimatedAaLabel}}</text><text>到场线下结算</text></view>
+        </view>
+
+        <view class="c2b-card c2b-detail-card">
+          <view class="c2b-detail-grid">
+            <view><text>组织者球队</text><text>{{game.organizerName}}</text></view>
+            <view><text>对抗强度</text><text>{{game.intensityLabel}}</text></view>
+            <view><text>需要位置</text><text>{{game.positionLabel}}</text></view>
+            <view><text>报名截止</text><text>{{game.deadlineLabel}}</text></view>
+          </view>
+          <text class="c2b-risk-note">成人参与，请自行评估运动风险；平台不代收或担保线下结算。</text>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{showWithdrawalAction}}" class="c2b-footer">
+    <button class="c2b-danger-action" hover-class="c2b-pressed" bindtap="onOpenWithdrawalConfirm">{{primaryActionLabel}}</button>
+  </view>
+
+  <view wx:if="{{showConfirmation}}" class="c2b-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-label="确认退出候补">
+    <view class="c2b-sheet">
+      <view class="c2b-sheet-handle" aria-hidden="true"></view>
+      <text class="c2b-sheet-title">确认退出候补？</text>
+      <text class="c2b-sheet-copy">退出后将从当前候补队列移除；正式成员人数和公开名额不变。本场不可再次申请。</text>
+      <view class="c2b-sheet-actions">
+        <button class="c2b-neutral-action" hover-class="c2b-pressed" bindtap="onCancelWithdrawal">继续候补</button>
+        <button class="c2b-danger-action" hover-class="c2b-pressed" bindtap="onConfirmWithdrawal">确认退出</button>
+      </view>
+    </view>
+  </view>
+</view>

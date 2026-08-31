@@ -13,6 +13,7 @@ from backend.app.models import (
     RefundCasePurpose,
     VenueImage,
 )
+from backend.app.modules.open_games import lifecycle as open_game_lifecycle
 from backend.app.modules.open_games.dto import (
     OpenGameDraftInput,
     OpenGamePosition,
@@ -191,6 +192,7 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
         "can_share": False,
         "can_cancel": True,
         "can_preview": True,
+        "can_manage_attendance": False,
     }
 
     deadline_elapsed = project_open_game_actions(
@@ -202,6 +204,7 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
         "can_share": False,
         "can_cancel": True,
         "can_preview": True,
+        "can_manage_attendance": False,
     }
 
     window_closed = project_open_game_actions(
@@ -217,6 +220,7 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
         "can_share": False,
         "can_cancel": True,
         "can_preview": True,
+        "can_manage_attendance": False,
     }
 
 
@@ -228,24 +232,25 @@ def test_draft_actions_follow_eligibility_and_selected_deadline() -> None:
                 stored_status=OpenGameStatus.PUBLISHED,
                 registration_deadline=NOW - timedelta(days=1),
             ),
-            (True, False, True, True, True),
+            (True, False, True, True, True, False),
         ),
         (
             _game_facts(order_facts=_order_facts(status=OrderStatus.REFUND_PENDING)),
-            (False, False, False, True, True),
+            (False, False, False, True, True, False),
         ),
         (
             _game_facts(stored_status=OpenGameStatus.CANCELLED),
-            (False, False, False, False, False),
+            (False, False, False, False, False, False),
         ),
         (
             _game_facts(order_facts=_order_facts(status=OrderStatus.COMPLETED)),
-            (False, False, False, False, True),
+            (False, False, False, False, True, True),
         ),
     ],
 )
 def test_non_draft_action_matrix(
-    facts: OpenGameFacts, expected: tuple[bool, bool, bool, bool, bool]
+    facts: OpenGameFacts,
+    expected: tuple[bool, bool, bool, bool, bool, bool],
 ) -> None:
     actions = project_open_game_actions(facts, now=NOW)
     assert (
@@ -254,6 +259,7 @@ def test_non_draft_action_matrix(
         actions.can_share,
         actions.can_cancel,
         actions.can_preview,
+        actions.can_manage_attendance,
     ) == expected
 
 
@@ -277,6 +283,66 @@ def test_theoretically_inconsistent_published_authority_fails_closed(
             ),
             now=NOW,
         )
+
+
+def test_published_authority_health_is_one_exported_closed_policy() -> None:
+    predicate = getattr(
+        open_game_lifecycle, "published_authority_is_healthy", None
+    )
+    assert callable(predicate)
+
+    for purpose in (None, RefundCasePurpose.DUPLICATE_CHARGE):
+        assert predicate(_order_facts(controlling_refund_purpose=purpose)) is True
+
+    rejected = [
+        _order_facts(cancel_requested_at=NOW),
+        _order_facts(
+            controlling_refund_purpose=RefundCasePurpose.ORDER_CANCELLATION
+        ),
+        _order_facts(
+            controlling_refund_purpose=RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT
+        ),
+        *(
+            _order_facts(status=status)
+            for status in OrderStatus
+            if status is not OrderStatus.CONFIRMED
+        ),
+    ]
+    assert all(predicate(facts) is False for facts in rejected)
+
+
+def test_published_actions_and_updates_share_the_exported_authority_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    facts = _order_facts(status=OrderStatus.PENDING_PAYMENT)
+    calls: list[OrderLifecycleFacts] = []
+
+    def accept_for_shared_policy(candidate: OrderLifecycleFacts) -> bool:
+        calls.append(candidate)
+        return True
+
+    monkeypatch.setattr(
+        open_game_lifecycle,
+        "published_authority_is_healthy",
+        accept_for_shared_policy,
+        raising=False,
+    )
+
+    project_open_game_actions(
+        _game_facts(
+            stored_status=OpenGameStatus.PUBLISHED,
+            order_facts=facts,
+        ),
+        now=NOW,
+    )
+    validate_published_update(
+        facts,
+        previous_registration_deadline=STARTS_AT - timedelta(hours=3),
+        registration_deadline=STARTS_AT - timedelta(hours=3),
+        now=NOW,
+    )
+
+    assert calls == [facts, facts]
 
 
 def test_draft_write_delegates_order_eligibility_to_b1_policy(

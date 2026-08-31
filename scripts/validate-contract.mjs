@@ -76,6 +76,13 @@ const exampleMap = [
       attachment('/api/v1/venue-onboarding/claims', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/venues', '422', 'InvalidArgument', 'post'),
       attachment('/api/v1/venue-onboarding/applications', '422', 'InvalidArgument'),
+      attachment('/api/v1/shared-games/{share_token}/applications', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}/applications', '422', 'InvalidArgument'),
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '422', 'InvalidArgument'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '422', 'InvalidArgument', 'post'),
+      attachment('/api/v1/public-games', '422', 'InvalidArgument'),
     ],
   },
   {
@@ -139,6 +146,15 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/publish', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/games/{game_id}/cancel', '503', 'ServiceUnavailable', 'post'),
       attachment('/api/v1/shared-games/{share_token}', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/shared-games/{share_token}/applications', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/games/{game_id}/applications', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/public-games', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/open-game-applications', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '503', 'ServiceUnavailable', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '503', 'ServiceUnavailable'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '503', 'ServiceUnavailable', 'post'),
     ],
   },
   {
@@ -196,6 +212,26 @@ const exampleMap = [
     reference: './examples/my-orders-empty.json',
     schema: 'OrderListResponse',
     attachments: [attachment('/api/v1/orders', '200', 'Empty')],
+  },
+  {
+    filename: 'my-open-game-applications-ready.json',
+    reference: './examples/my-open-game-applications-ready.json',
+    schema: 'MyOpenGameApplicationsResponse',
+    attachments: [attachment('/api/v1/open-game-applications', '200', 'Ready')],
+  },
+  {
+    filename: 'my-open-game-applications-empty.json',
+    reference: './examples/my-open-game-applications-empty.json',
+    schema: 'MyOpenGameApplicationsResponse',
+    attachments: [attachment('/api/v1/open-game-applications', '200', 'Empty')],
+  },
+  {
+    filename: 'error-my-open-game-applications-invalid-argument.json',
+    reference: './examples/error-my-open-game-applications-invalid-argument.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/open-game-applications', '422', 'InvalidArgument'),
+    ],
   },
   {
     filename: 'order-expired.json',
@@ -314,6 +350,14 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}', '401', 'AuthRequired', 'put'),
       attachment('/api/v1/games/{game_id}/publish', '401', 'AuthRequired', 'post'),
       attachment('/api/v1/games/{game_id}/cancel', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '401', 'AuthRequired'),
+      attachment('/api/v1/shared-games/{share_token}/applications', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/games/{game_id}/applications', '401', 'AuthRequired'),
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/open-game-applications', '401', 'AuthRequired'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '401', 'AuthRequired', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '401', 'AuthRequired'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '401', 'AuthRequired', 'post'),
     ],
   },
   {
@@ -384,6 +428,10 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}', '409', 'IdempotencyKeyReused', 'put'),
       attachment('/api/v1/games/{game_id}/publish', '409', 'IdempotencyKeyReused', 'post'),
       attachment('/api/v1/games/{game_id}/cancel', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/shared-games/{share_token}/applications', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '409', 'IdempotencyKeyReused', 'post'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '409', 'IdempotencyKeyReused', 'post'),
     ],
   },
   {
@@ -432,6 +480,22 @@ const exampleMap = [
     attachments: [
       attachment('/platform-admin/api/v1/auth/session', '200', 'PlatformSession', 'post'),
       attachment('/platform-admin/api/v1/auth/session', '200', 'PlatformSession'),
+    ],
+  },
+  {
+    filename: 'platform-attendance-registration-detail.json',
+    reference: './examples/platform-attendance-registration-detail.json',
+    schema: 'PlatformAttendanceRegistrationDetail',
+    attachments: [
+      attachment('/platform-admin/api/v1/attendance/registrations/{registration_id}', '200', 'Detail'),
+    ],
+  },
+  {
+    filename: 'platform-attendance-correction-event.json',
+    reference: './examples/platform-attendance-correction-event.json',
+    schema: 'PlatformAttendanceCorrectionEvent',
+    attachments: [
+      attachment('/platform-admin/api/v1/attendance/registrations/{registration_id}/corrections', '200', 'Correction', 'post'),
     ],
   },
   {
@@ -682,6 +746,38 @@ const exampleMap = [
     attachments: [attachment('/api/v1/orders/{order_id}/game', '200', 'None')],
   },
   {
+    filename: 'open-game-attendance-roster-ready.json',
+    reference: './examples/open-game-attendance-roster-ready.json',
+    schema: 'OpenGameAttendanceRoster',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/attendance-roster', '200', 'Ready'),
+    ],
+  },
+  {
+    filename: 'open-game-attendance-roster-empty.json',
+    reference: './examples/open-game-attendance-roster-empty.json',
+    schema: 'OpenGameAttendanceRoster',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/attendance-roster', '200', 'Empty'),
+    ],
+  },
+  {
+    filename: 'open-game-attendance-mark-present.json',
+    reference: './examples/open-game-attendance-mark-present.json',
+    schema: 'OpenGameAttendanceMarkResult',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '200', 'MarkedPresent', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-attendance-mark-no-show.json',
+    reference: './examples/open-game-attendance-mark-no-show.json',
+    schema: 'OpenGameAttendanceMarkResult',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '200', 'MarkedNoShow', 'post'),
+    ],
+  },
+  {
     filename: 'open-game-owner-draft.json',
     reference: './examples/open-game-owner-draft.json',
     schema: 'OpenGameOwner',
@@ -723,6 +819,126 @@ const exampleMap = [
     attachments: [attachment('/api/v1/shared-games/{share_token}', '200', 'Published')],
   },
   {
+    filename: 'public-games-ready.json',
+    reference: './examples/public-games-ready.json',
+    schema: 'PublicGameDirectoryResponse',
+    attachments: [attachment('/api/v1/public-games', '200', 'Ready')],
+  },
+  {
+    filename: 'public-games-empty.json',
+    reference: './examples/public-games-empty.json',
+    schema: 'PublicGameDirectoryResponse',
+    attachments: [attachment('/api/v1/public-games', '200', 'Empty')],
+  },
+  {
+    filename: 'open-game-registration-context-anonymous.json',
+    reference: './examples/open-game-registration-context-anonymous.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Anonymous')],
+  },
+  {
+    filename: 'open-game-registration-context-apply-ready.json',
+    reference: './examples/open-game-registration-context-apply-ready.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'ApplyReady')],
+  },
+  {
+    filename: 'open-game-registration-context-applied.json',
+    reference: './examples/open-game-registration-context-applied.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Applied'),
+      attachment('/api/v1/shared-games/{share_token}/applications', '201', 'Applied', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-registration-context-waitlisted.json',
+    reference: './examples/open-game-registration-context-waitlisted.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Waitlisted')],
+  },
+  {
+    filename: 'open-game-registration-context-joined.json',
+    reference: './examples/open-game-registration-context-joined.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Joined')],
+  },
+  {
+    filename: 'open-game-registration-context-rejected.json',
+    reference: './examples/open-game-registration-context-rejected.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Rejected')],
+  },
+  {
+    filename: 'open-game-registration-context-withdrawn-application.json',
+    reference: './examples/open-game-registration-context-withdrawn-application.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnApplication'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'ApplicationWithdrawn', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-registration-context-withdrawn-waitlist.json',
+    reference: './examples/open-game-registration-context-withdrawn-waitlist.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnWaitlist'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'WaitlistWithdrawn', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-registration-context-withdrawn-game-exit.json',
+    reference: './examples/open-game-registration-context-withdrawn-game-exit.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'WithdrawnGameExit'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '200', 'GameExited', 'post'),
+    ],
+  },
+  {
+    filename: 'open-game-registration-context-cancelled.json',
+    reference: './examples/open-game-registration-context-cancelled.json',
+    schema: 'OpenGameRegistrationContext',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/registration-context', '200', 'Cancelled')],
+  },
+  {
+    filename: 'open-game-applications-pending.json',
+    reference: './examples/open-game-applications-pending.json',
+    schema: 'OpenGameApplicationQueue',
+    attachments: [attachment('/api/v1/games/{game_id}/applications', '200', 'Pending')],
+  },
+  {
+    filename: 'open-game-applications-full-waitlist.json',
+    reference: './examples/open-game-applications-full-waitlist.json',
+    schema: 'OpenGameApplicationQueue',
+    attachments: [attachment('/api/v1/games/{game_id}/applications', '200', 'FullWaitlist')],
+  },
+  {
+    filename: 'open-game-applications-empty.json',
+    reference: './examples/open-game-applications-empty.json',
+    schema: 'OpenGameApplicationQueue',
+    attachments: [attachment('/api/v1/games/{game_id}/applications', '200', 'Empty')],
+  },
+  {
+    filename: 'open-game-application-decision-joined.json',
+    reference: './examples/open-game-application-decision-joined.json',
+    schema: 'OpenGameApplicationDecisionResult',
+    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '200', 'Joined', 'post')],
+  },
+  {
+    filename: 'open-game-application-decision-waitlisted.json',
+    reference: './examples/open-game-application-decision-waitlisted.json',
+    schema: 'OpenGameApplicationDecisionResult',
+    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '200', 'Waitlisted', 'post')],
+  },
+  {
+    filename: 'open-game-application-decision-rejected.json',
+    reference: './examples/open-game-application-decision-rejected.json',
+    schema: 'OpenGameApplicationDecisionResult',
+    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '200', 'Rejected', 'post')],
+  },
+  {
     filename: 'error-order-not-eligible.json',
     reference: './examples/error-order-not-eligible.json',
     schema: 'ErrorEnvelope',
@@ -742,6 +958,12 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/publish', '404', 'OpenGameNotFound', 'post'),
       attachment('/api/v1/games/{game_id}/cancel', '404', 'OpenGameNotFound', 'post'),
       attachment('/api/v1/shared-games/{share_token}', '404', 'OpenGameNotFound'),
+      attachment('/api/v1/shared-games/{share_token}/registration-context', '404', 'OpenGameNotFound'),
+      attachment('/api/v1/shared-games/{share_token}/applications', '404', 'OpenGameNotFound', 'post'),
+      attachment('/api/v1/games/{game_id}/applications', '404', 'OpenGameNotFound'),
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '404', 'OpenGameNotFound', 'post'),
+      attachment('/api/v1/games/{game_id}/attendance-roster', '404', 'OpenGameNotFound'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '404', 'OpenGameNotFound', 'post'),
     ],
   },
   {
@@ -759,6 +981,57 @@ const exampleMap = [
       attachment('/api/v1/games/{game_id}/publish', '409', 'OpenGameStateChanged', 'post'),
       attachment('/api/v1/games/{game_id}/cancel', '409', 'OpenGameStateChanged', 'post'),
     ],
+  },
+  {
+    filename: 'error-application-not-found.json',
+    reference: './examples/error-application-not-found.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '404', 'ApplicationNotFound', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '404', 'ApplicationNotFound', 'post'),
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '404', 'ApplicationNotFound', 'post'),
+    ],
+  },
+  {
+    filename: 'error-application-already-exists.json',
+    reference: './examples/error-application-already-exists.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/applications', '409', 'ApplicationAlreadyExists', 'post')],
+  },
+  {
+    filename: 'error-application-not-allowed.json',
+    reference: './examples/error-application-not-allowed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/shared-games/{share_token}/applications', '409', 'ApplicationNotAllowed', 'post')],
+  },
+  {
+    filename: 'error-application-state-changed.json',
+    reference: './examples/error-application-state-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'ApplicationStateChanged', 'post'),
+      attachment('/api/v1/open-game-applications/{application_id}/withdraw', '409', 'ApplicationStateChanged', 'post'),
+    ],
+  },
+  {
+    filename: 'error-application-capacity-changed.json',
+    reference: './examples/error-application-capacity-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [attachment('/api/v1/games/{game_id}/applications/{application_id}/decision', '409', 'ApplicationCapacityChanged', 'post')],
+  },
+  {
+    filename: 'error-attendance-state-changed.json',
+    reference: './examples/error-attendance-state-changed.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/registrations/{registration_id}/attendance', '409', 'AttendanceStateChanged', 'post'),
+    ],
+  },
+  {
+    filename: 'error-open-game-joined-update-invalid.json',
+    reference: './examples/error-open-game-joined-update-invalid.json',
+    schema: 'OpenGameInvalidArgumentError',
+    attachments: [attachment('/api/v1/games/{game_id}', '422', 'JoinedUpdateInvalid', 'put')],
   },
 ];
 
@@ -892,6 +1165,13 @@ const requiredErrorCodes = new Set([
   'OPEN_GAME_NOT_FOUND',
   'OPEN_GAME_ALREADY_EXISTS',
   'OPEN_GAME_STATE_CHANGED',
+  'APPLICATION_NOT_FOUND',
+  'APPLICATION_ALREADY_EXISTS',
+  'APPLICATION_NOT_ALLOWED',
+  'APPLICATION_STATE_CHANGED',
+  'APPLICATION_CAPACITY_CHANGED',
+  'ATTENDANCE_STATE_CHANGED',
+  'ATTENDANCE_REGISTRATION_NOT_FOUND',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -902,6 +1182,7 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'PLATFORM_AUTH_INVALID',
   'PLATFORM_CSRF_INVALID',
   'PLATFORM_ROLE_REQUIRED',
+  'ATTENDANCE_REGISTRATION_NOT_FOUND',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -924,7 +1205,16 @@ const expectedOperations = new Map([
   ['/api/v1/games/{game_id}', new Set(['get', 'put'])],
   ['/api/v1/games/{game_id}/publish', new Set(['post'])],
   ['/api/v1/games/{game_id}/cancel', new Set(['post'])],
+  ['/api/v1/games/{game_id}/applications', new Set(['get'])],
+  ['/api/v1/games/{game_id}/applications/{application_id}/decision', new Set(['post'])],
+  ['/api/v1/games/{game_id}/attendance-roster', new Set(['get'])],
+  ['/api/v1/games/{game_id}/registrations/{registration_id}/attendance', new Set(['post'])],
+  ['/api/v1/shared-games/{share_token}/registration-context', new Set(['get'])],
+  ['/api/v1/shared-games/{share_token}/applications', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}', new Set(['get'])],
+  ['/api/v1/public-games', new Set(['get'])],
+  ['/api/v1/open-game-applications', new Set(['get'])],
+  ['/api/v1/open-game-applications/{application_id}/withdraw', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders', new Set(['get'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/check-in', new Set(['post'])],
   ['/api/v1/venues/{venue_id}/fulfillment/orders/{order_id}/complete', new Set(['post'])],
@@ -938,6 +1228,8 @@ const expectedOperations = new Map([
   ['/api/v1/venue-onboarding/venues', new Set(['post'])],
   ['/api/v1/venue-onboarding/applications', new Set(['get'])],
   ['/platform-admin/api/v1/auth/session', new Set(['post', 'get', 'delete'])],
+  ['/platform-admin/api/v1/attendance/registrations/{registration_id}', new Set(['get'])],
+  ['/platform-admin/api/v1/attendance/registrations/{registration_id}/corrections', new Set(['post'])],
   ['/platform-admin/api/v1/onboarding/applications', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/applications/{application_id}', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download', new Set(['get'])],
@@ -1011,6 +1303,486 @@ function validateOperationMatrix(contract) {
     if (!isDeepStrictEqual(methods.sort(), expectedMethods)) {
       const expectedLabel = expectedMethods.map((method) => method.toUpperCase()).join(', ');
       fail(`operation method matrix differs at ${pathName}: expected ${expectedLabel} only; found ${methods.join(', ')}`);
+    }
+  }
+}
+
+function validatePublicGameDirectoryContract(contract) {
+  const operation = contract.paths?.['/api/v1/public-games']?.get;
+  if (!operation) fail('public-games GET operation is required');
+  if (!isDeepStrictEqual(operation.security, [])) {
+    fail('public-games must declare anonymous security: []');
+  }
+
+  const expectedParameters = [
+    {
+      name: 'local_date',
+      in: 'query',
+      required: false,
+      schema: { type: 'string', format: 'date' },
+    },
+    {
+      name: 'format',
+      in: 'query',
+      required: false,
+      schema: { $ref: '#/components/schemas/PublicGameFormat' },
+    },
+    {
+      name: 'available_only',
+      in: 'query',
+      required: false,
+      schema: { type: 'boolean', default: false },
+    },
+  ];
+  if (!isDeepStrictEqual(operation.parameters, expectedParameters)) {
+    fail('public-games parameters must be exactly local_date, format, and available_only');
+  }
+  if (!isDeepStrictEqual(Object.keys(operation.responses ?? {}), ['200', '422', '503'])) {
+    fail('public-games responses must be exactly 200, 422, and 503');
+  }
+
+  const success = operation.responses['200']?.content?.['application/json'];
+  if (!isDeepStrictEqual(success?.schema, {
+    $ref: '#/components/schemas/PublicGameDirectoryResponse',
+  })) {
+    fail('public-games 200 schema ref must target PublicGameDirectoryResponse');
+  }
+  if (!isDeepStrictEqual(success?.examples, {
+    Ready: { externalValue: './examples/public-games-ready.json' },
+    Empty: { externalValue: './examples/public-games-empty.json' },
+  })) {
+    fail('public-games 200 examples must be exactly Ready and Empty');
+  }
+
+  for (const [status, code] of [['422', 'INVALID_ARGUMENT'], ['503', 'SERVICE_UNAVAILABLE']]) {
+    const content = operation.responses[status]?.content?.['application/json'];
+    if (content?.schema?.allOf?.[0]?.$ref !== '#/components/schemas/ErrorEnvelope') {
+      fail(`public-games ${status} schema must reference ErrorEnvelope`);
+    }
+    const actualCode = content?.schema?.allOf?.[1]?.properties?.error?.properties?.code?.const;
+    if (actualCode !== code) {
+      fail(`public-games ${status} must freeze ${code}`);
+    }
+  }
+
+  const schemas = contract.components?.schemas ?? {};
+  if (!isDeepStrictEqual(schemas.PublicGameDirectoryItem?.properties?.format, {
+    $ref: '#/components/schemas/PublicGameFormat',
+  })) {
+    fail('public-games item format schema ref must target PublicGameFormat');
+  }
+  if (!isDeepStrictEqual(schemas.PublicGameDirectoryItem?.properties?.game, {
+    $ref: '#/components/schemas/OpenGamePublic',
+  })) {
+    fail('public-games item game schema ref must target OpenGamePublic');
+  }
+  if (!isDeepStrictEqual(schemas.PublicGameDirectoryResponse?.properties?.items?.items, {
+    $ref: '#/components/schemas/PublicGameDirectoryItem',
+  })) {
+    fail('public-games response item schema ref must target PublicGameDirectoryItem');
+  }
+}
+
+function validateMyOpenGameApplicationsContract(contract) {
+  const operation = contract.paths?.['/api/v1/open-game-applications']?.get;
+  if (!operation) fail('open-game-applications GET operation is required');
+  if (!isDeepStrictEqual(operation.security, [{ bearerAuth: [] }])) {
+    fail('open-game-applications must require bearer authentication');
+  }
+  const expectedParameters = [
+    {
+      name: 'limit',
+      in: 'query',
+      required: false,
+      schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+    },
+    {
+      name: 'cursor',
+      in: 'query',
+      required: false,
+      schema: { type: 'string', minLength: 1 },
+    },
+  ];
+  if (!isDeepStrictEqual(operation.parameters, expectedParameters)) {
+    fail('open-game-applications parameters must freeze limit and opaque cursor');
+  }
+  if (!isDeepStrictEqual(Object.keys(operation.responses ?? {}), ['200', '401', '422', '503'])) {
+    fail('open-game-applications responses must be exactly 200, 401, 422, and 503');
+  }
+  const success = operation.responses['200']?.content?.['application/json'];
+  if (!isDeepStrictEqual(success?.schema, {
+    $ref: '#/components/schemas/MyOpenGameApplicationsResponse',
+  })) {
+    fail('open-game-applications 200 schema must target MyOpenGameApplicationsResponse');
+  }
+
+  const schemas = contract.components?.schemas ?? {};
+  const item = schemas.MyOpenGameApplication;
+  const itemFields = [
+    'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
+    'promoted_at', 'attendance_status', 'attendance_recorded_at',
+    'attendance_corrected_at', 'detail_path',
+    'game_name', 'starts_at', 'ends_at', 'time_zone',
+    'venue_name', 'pitch_name', 'pitch_specification',
+  ];
+  if (item?.additionalProperties !== false
+      || !isDeepStrictEqual(new Set(item.required), new Set(itemFields))
+      || !hasExactKeys(item.properties, itemFields)) {
+    fail('MyOpenGameApplication must be a closed exact public projection');
+  }
+  const response = schemas.MyOpenGameApplicationsResponse;
+  if (response?.additionalProperties !== false
+      || !isDeepStrictEqual(new Set(response.required), new Set(['items', 'next_cursor']))
+      || !hasExactKeys(response.properties, ['items', 'next_cursor'])) {
+    fail('MyOpenGameApplicationsResponse must be closed with items and next_cursor');
+  }
+  if (!isDeepStrictEqual(response.properties.next_cursor, {
+    type: ['string', 'null'],
+    minLength: 1,
+  })) {
+    fail('MyOpenGameApplicationsResponse next_cursor must be null or a non-empty string');
+  }
+}
+
+function validateOpenGameAttendanceContract(contract) {
+  const rosterPath = '/api/v1/games/{game_id}/attendance-roster';
+  const markPath = '/api/v1/games/{game_id}/registrations/{registration_id}/attendance';
+  const bearerSecurity = [{ bearerAuth: [] }];
+  const requestIdHeader = { $ref: '#/components/headers/RequestId' };
+  const uuidPathParameter = (name) => ({
+    name,
+    in: 'path',
+    required: true,
+    schema: { type: 'string', format: 'uuid' },
+  });
+
+  if (!isDeepStrictEqual(contract.components?.securitySchemes?.bearerAuth, {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'opaque',
+  })) {
+    fail('bearerAuth security scheme must remain exact for attendance authority');
+  }
+
+  const rosterPathItem = contract.paths?.[rosterPath];
+  const markPathItem = contract.paths?.[markPath];
+  if (!hasExactKeys(rosterPathItem, ['get'])) {
+    fail('attendance roster path must expose GET only');
+  }
+  if (!hasExactKeys(markPathItem, ['post'])) {
+    fail('attendance mark path must expose POST only');
+  }
+
+  const roster = rosterPathItem.get;
+  const mark = markPathItem.post;
+  if (!hasExactKeys(roster, ['operationId', 'description', 'security', 'parameters', 'responses'])
+      || roster.operationId !== 'getOpenGameAttendanceRoster') {
+    fail('attendance roster operation must keep its exact operationId and fields');
+  }
+  if (!hasExactKeys(mark, ['operationId', 'description', 'security', 'parameters', 'requestBody', 'responses'])
+      || mark.operationId !== 'markOpenGameAttendance') {
+    fail('attendance mark operation must keep its exact operationId and fields');
+  }
+  if (!isDeepStrictEqual(roster.security, bearerSecurity)) {
+    fail('attendance roster security must require bearer authentication');
+  }
+  if (!isDeepStrictEqual(mark.security, bearerSecurity)) {
+    fail('attendance mark security must require bearer authentication');
+  }
+  if (!isDeepStrictEqual(roster.parameters, [uuidPathParameter('game_id')])) {
+    fail('attendance roster parameters must contain only the game UUID');
+  }
+  if (!isDeepStrictEqual(mark.parameters, [
+    uuidPathParameter('game_id'),
+    uuidPathParameter('registration_id'),
+    { $ref: '#/components/parameters/IdempotencyKey' },
+  ])) {
+    fail('attendance mark parameters must contain both UUIDs and Idempotency-Key');
+  }
+  const idempotencyKey = contract.components?.parameters?.IdempotencyKey;
+  if (idempotencyKey?.name !== 'Idempotency-Key'
+      || idempotencyKey?.in !== 'header'
+      || idempotencyKey?.required !== true
+      || !isDeepStrictEqual(idempotencyKey?.schema, {
+        type: 'string',
+        minLength: 16,
+        maxLength: 128,
+      })) {
+    fail('attendance mark Idempotency-Key must keep its required header contract');
+  }
+  if (!isDeepStrictEqual(mark.requestBody, {
+    required: true,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/OpenGameAttendanceMarkRequest' },
+      },
+    },
+  })) {
+    fail('attendance mark request body must target OpenGameAttendanceMarkRequest');
+  }
+
+  const assertResponses = (operation, statuses, successRef, label) => {
+    assertExactSet(new Set(Object.keys(operation.responses ?? {})), new Set(statuses), `${label} responses`);
+    for (const status of statuses) {
+      const response = operation.responses[status];
+      if (!hasExactKeys(response, ['description', 'headers', 'content'])
+          || !isDeepStrictEqual(response.headers, { 'X-Request-Id': requestIdHeader })
+          || !hasExactKeys(response.content, ['application/json'])) {
+        fail(`${label} ${status} must expose only JSON and X-Request-Id`);
+      }
+      const json = response.content['application/json'];
+      if (!hasExactKeys(json, ['schema', 'examples'])) {
+        fail(`${label} ${status} must expose schema and named examples`);
+      }
+      if (status === '200') {
+        if (!isDeepStrictEqual(json.schema, { $ref: successRef })) {
+          fail(`${label} 200 schema ref must target ${successRef}`);
+        }
+      } else if (json.schema?.allOf?.[0]?.$ref !== '#/components/schemas/ErrorEnvelope') {
+        fail(`${label} ${status} schema must start with ErrorEnvelope`);
+      }
+    }
+  };
+  assertResponses(
+    roster,
+    ['200', '401', '404', '422', '503'],
+    '#/components/schemas/OpenGameAttendanceRoster',
+    'attendance roster',
+  );
+  assertResponses(
+    mark,
+    ['200', '401', '404', '409', '422', '503'],
+    '#/components/schemas/OpenGameAttendanceMarkResult',
+    'attendance mark',
+  );
+  const expectedConflictSchema = {
+    allOf: [
+      { $ref: '#/components/schemas/ErrorEnvelope' },
+      {
+        type: 'object',
+        properties: {
+          error: {
+            oneOf: [
+              {
+                type: 'object',
+                properties: {
+                  code: { const: 'ATTENDANCE_STATE_CHANGED' },
+                },
+              },
+              {
+                type: 'object',
+                properties: {
+                  code: { const: 'IDEMPOTENCY_KEY_REUSED' },
+                },
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  if (!isDeepStrictEqual(
+    mark.responses['409'].content['application/json'].schema,
+    expectedConflictSchema,
+  )) {
+    fail('attendance mark 409 conflict code overlay must remain exact');
+  }
+
+  const schemas = contract.components?.schemas ?? {};
+  const assertClosedSchema = (name, fields, hasOneOf = false) => {
+    const schema = schemas[name];
+    const expectedKeys = ['type', 'additionalProperties', 'required', 'properties'];
+    if (hasOneOf) expectedKeys.push('oneOf');
+    if (!hasExactKeys(schema, expectedKeys)
+        || schema.type !== 'object'
+        || schema.additionalProperties !== false
+        || !Array.isArray(schema.required)) {
+      fail(`${name} must be an exact closed object schema`);
+    }
+    assertExactSet(new Set(schema.required), new Set(fields), `${name}.required`);
+    if (!hasExactKeys(schema.properties, fields)) {
+      fail(`${name}.properties must contain only its public fields`);
+    }
+    return schema;
+  };
+
+  if (!isDeepStrictEqual(schemas.OpenGameAttendanceStatus, {
+    type: 'string',
+    enum: ['UNMARKED', 'PRESENT', 'NO_SHOW'],
+  })) {
+    fail('OpenGameAttendanceStatus must freeze UNMARKED, PRESENT, and NO_SHOW');
+  }
+  const summary = assertClosedSchema('OpenGameAttendanceGameSummary', [
+    'id', 'name', 'venue_name', 'pitch_name', 'starts_at', 'ends_at', 'time_zone', 'state',
+  ]);
+  if (!isDeepStrictEqual(summary.properties.state, { type: 'string', const: 'COMPLETED' })) {
+    fail('attendance game summary state must be exactly COMPLETED');
+  }
+
+  const rosterItem = assertClosedSchema('OpenGameAttendanceRosterItem', [
+    'registration_id', 'display_name', 'position', 'attendance_status',
+    'attendance_recorded_at', 'attendance_corrected_at', 'version',
+  ], true);
+  if (!isDeepStrictEqual(rosterItem.properties.display_name, {
+    type: 'string',
+    minLength: 2,
+    maxLength: 24,
+  })) {
+    fail('attendance roster display_name must remain a bounded public string');
+  }
+  if (!isDeepStrictEqual(rosterItem.properties.attendance_status, {
+    $ref: '#/components/schemas/OpenGameAttendanceStatus',
+  }) || !isDeepStrictEqual(rosterItem.properties.attendance_recorded_at, {
+    type: ['string', 'null'],
+    format: 'date-time',
+  }) || !isDeepStrictEqual(rosterItem.properties.attendance_corrected_at, {
+    type: ['string', 'null'],
+    format: 'date-time',
+  })) {
+    fail('attendance roster status and recorded time schemas must remain exact');
+  }
+  const rosterPair = [
+    {
+      properties: {
+        attendance_status: { const: 'UNMARKED' },
+        attendance_recorded_at: { const: null },
+        attendance_corrected_at: { const: null },
+      },
+    },
+    {
+      properties: {
+        attendance_status: { enum: ['PRESENT', 'NO_SHOW'] },
+        attendance_recorded_at: { type: 'string', format: 'date-time' },
+        attendance_corrected_at: { type: ['string', 'null'], format: 'date-time' },
+      },
+    },
+  ];
+  if (!isDeepStrictEqual(rosterItem.oneOf, rosterPair)) {
+    fail('attendance roster status and recorded time must remain paired');
+  }
+
+  const rosterSchema = assertClosedSchema('OpenGameAttendanceRoster', [
+    'game', 'recorded_count', 'total_count', 'attendance_complete', 'registrations',
+  ]);
+  if (!isDeepStrictEqual(rosterSchema.properties.game, {
+    $ref: '#/components/schemas/OpenGameAttendanceGameSummary',
+  }) || !isDeepStrictEqual(rosterSchema.properties.registrations?.items, {
+    $ref: '#/components/schemas/OpenGameAttendanceRosterItem',
+  })) {
+    fail('attendance roster must use the minimal game and registration projectors');
+  }
+
+  const markRequest = assertClosedSchema('OpenGameAttendanceMarkRequest', [
+    'attendance_status', 'expected_version',
+  ]);
+  if (!isDeepStrictEqual(markRequest.properties.attendance_status, {
+    type: 'string',
+    enum: ['PRESENT', 'NO_SHOW'],
+  }) || !isDeepStrictEqual(markRequest.properties.expected_version, {
+    type: 'integer',
+    minimum: 1,
+  })) {
+    fail('attendance mark request must reject UNMARKED and require a positive expected version');
+  }
+  const markResult = assertClosedSchema('OpenGameAttendanceMarkResult', [
+    'registration_id', 'attendance_status', 'attendance_recorded_at', 'version',
+    'recorded_count', 'total_count', 'attendance_complete',
+  ]);
+  if (!isDeepStrictEqual(markResult.properties.attendance_status, {
+    type: 'string',
+    enum: ['PRESENT', 'NO_SHOW'],
+  }) || !isDeepStrictEqual(markResult.properties.attendance_recorded_at, {
+    type: 'string',
+    format: 'date-time',
+  }) || !isDeepStrictEqual(markResult.properties.version, {
+    type: 'integer',
+    minimum: 2,
+  })) {
+    fail('attendance mark result must pair a final status with a recorded time and incremented version');
+  }
+
+  const selfPair = [
+    {
+      properties: {
+        attendance_status: { const: null },
+        attendance_recorded_at: { const: null },
+        attendance_corrected_at: { const: null },
+      },
+    },
+    {
+      properties: {
+        attendance_status: { const: 'UNMARKED' },
+        attendance_recorded_at: { const: null },
+        attendance_corrected_at: { const: null },
+      },
+    },
+    {
+      properties: {
+        attendance_status: { enum: ['PRESENT', 'NO_SHOW'] },
+        attendance_recorded_at: { type: 'string', format: 'date-time' },
+        attendance_corrected_at: { type: ['string', 'null'], format: 'date-time' },
+      },
+    },
+  ];
+  const selfFields = new Map([
+    ['OpenGameViewerRegistration', [
+      'id', 'display_name', 'position', 'note', 'persisted_status', 'effective_status',
+      'version', 'applied_at', 'decided_at', 'withdrawn_at', 'withdrawal_kind',
+      'late_exit_recorded', 'available_withdrawal_action', 'late_exit_will_be_recorded',
+      'waitlist_position', 'waitlisted_at', 'promoted_at', 'attendance_status',
+      'attendance_recorded_at', 'attendance_corrected_at',
+    ]],
+    ['MyOpenGameApplication', [
+      'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
+      'promoted_at', 'attendance_status', 'attendance_recorded_at',
+      'attendance_corrected_at', 'detail_path',
+      'game_name', 'starts_at', 'ends_at', 'time_zone', 'venue_name', 'pitch_name',
+      'pitch_specification',
+    ]],
+  ]);
+  for (const [name, fields] of selfFields) {
+    const schema = assertClosedSchema(name, fields, true);
+    if (!isDeepStrictEqual(schema.properties.attendance_status, {
+      oneOf: [
+        { $ref: '#/components/schemas/OpenGameAttendanceStatus' },
+        { type: 'null' },
+      ],
+    }) || !isDeepStrictEqual(schema.properties.attendance_recorded_at, {
+      type: ['string', 'null'],
+      format: 'date-time',
+    }) || !isDeepStrictEqual(schema.properties.attendance_corrected_at, {
+      type: ['string', 'null'],
+      format: 'date-time',
+    }) || !isDeepStrictEqual(schema.oneOf, selfPair)) {
+      fail(`${name} attendance status and recorded time must remain paired`);
+    }
+  }
+
+  const allowedActions = assertClosedSchema('OpenGameAllowedActions', [
+    'can_edit', 'can_publish', 'can_share', 'can_cancel', 'can_preview',
+    'can_manage_attendance',
+  ]);
+  if (!isDeepStrictEqual(allowedActions.properties.can_manage_attendance, { type: 'boolean' })) {
+    fail('OpenGameAllowedActions.can_manage_attendance must be required boolean authority');
+  }
+
+  const privateRosterFields = [
+    'note', 'applicant_user_id', 'user_id', 'recorded_by', 'adult_confirmed',
+    'risk_confirmed', 'consent_version', 'created_at', 'updated_at',
+  ];
+  const serializedRoster = JSON.stringify({ summary, rosterItem, rosterSchema }).toLowerCase();
+  for (const field of privateRosterFields) {
+    if (serializedRoster.includes(field)) {
+      fail(`attendance roster must not expose private field ${field}`);
+    }
+  }
+  if (JSON.stringify(schemas.OpenGamePublic ?? {}).toLowerCase().includes('attendance')) {
+    fail('public open-game DTO must not expose attendance data');
+  }
+  for (const name of selfFields.keys()) {
+    const serialized = JSON.stringify(schemas[name]).toLowerCase();
+    if (serialized.includes('recorded_by') || serialized.includes('user_id')) {
+      fail(`${name} must not expose the attendance recorder`);
     }
   }
 }
@@ -1246,6 +2018,125 @@ function validateOrderListBusinessRules(response, filename) {
   }
 }
 
+function localDateInTimeZone(timestamp, timeZone, filename) {
+  try {
+    const dateParts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-CA', {
+        calendar: 'iso8601',
+        numberingSystem: 'latn',
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+        .formatToParts(new Date(timestamp))
+        .map(({ type, value }) => [type, value]),
+    );
+    return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+  } catch {
+    fail(`${filename}: time_zone must identify a recognized IANA time zone`);
+  }
+}
+
+function validatePublicGameDirectoryBusinessRules(response, filename) {
+  const authoritativeNow = Date.parse(response.authoritative_now);
+  if (!Number.isFinite(authoritativeNow)) {
+    fail(`${filename}: authoritative_now must be an aware date-time`);
+  }
+  assertSorted(response.available_dates, (value) => value, `${filename}: available_dates`);
+  assertSorted(
+    response.items,
+    ({ game }) => Date.parse(game.starts_at),
+    `${filename}: items must preserve stable start order`,
+  );
+
+  if (filename === 'public-games-empty.json') {
+    if (response.available_dates.length !== 0 || response.items.length !== 0) {
+      fail(`${filename}: empty response must have no dates or items`);
+    }
+    return;
+  }
+  if (response.items.length === 0) {
+    fail(`${filename}: ready response must contain public games`);
+  }
+
+  const pitchSpecificationByFormat = { FIVE: '5人制', SEVEN: '7人制' };
+  const availableDates = new Set(response.available_dates);
+  for (const item of response.items) {
+    if (!availableDates.has(item.local_date)) {
+      fail(`${filename}: item local_date must belong to available_dates`);
+    }
+    const expectedLocalDate = localDateInTimeZone(
+      item.game.starts_at,
+      item.game.time_zone,
+      filename,
+    );
+    if (item.local_date !== expectedLocalDate) {
+      fail(`${filename}: local_date must match starts_at in time_zone`);
+    }
+    if (item.game.pitch_specification !== pitchSpecificationByFormat[item.format]) {
+      fail(`${filename}: format must match pitch specification`);
+    }
+    if (item.game.state !== 'PUBLISHED' || item.game.visibility !== 'PUBLIC') {
+      fail(`${filename}: every directory game must be public and published`);
+    }
+    if (item.game.state_reason !== null) {
+      fail(`${filename}: a future published directory game cannot have a state reason`);
+    }
+    if (Date.parse(item.game.starts_at) <= authoritativeNow) {
+      fail(`${filename}: game starts_at must be in the authoritative future`);
+    }
+    if (Date.parse(item.game.registration_deadline) <= authoritativeNow) {
+      fail(`${filename}: registration_deadline must be in the authoritative future`);
+    }
+
+    const joinedCount = item.current_players - item.game.fixed_players;
+    const expectedRemaining = Math.max(item.game.open_spots - joinedCount, 0);
+    if (
+      joinedCount < 0
+      || item.current_players > item.game.total_players
+      || item.remaining_spots !== expectedRemaining
+    ) {
+      fail(`${filename}: current_players and remaining_spots must match game capacity`);
+    }
+  }
+}
+
+function validateMyOpenGameApplicationsBusinessRules(response, filename) {
+  if (filename === 'my-open-game-applications-empty.json') {
+    if (response.items.length !== 0 || response.next_cursor !== null) {
+      fail(`${filename}: empty response must have no items and a null next_cursor`);
+    }
+    return;
+  }
+  if (response.items.length === 0) {
+    fail(`${filename}: ready response must contain applications`);
+  }
+  for (const item of response.items) {
+    for (const field of ['applied_at', 'starts_at', 'ends_at']) {
+      if (!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(item[field]) || !Number.isFinite(Date.parse(item[field]))) {
+        fail(`${filename}: ${field} must be an aware date-time`);
+      }
+    }
+    for (const field of ['waitlisted_at', 'promoted_at', 'attendance_recorded_at', 'attendance_corrected_at']) {
+      if (item[field] !== null
+          && (!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(item[field])
+            || !Number.isFinite(Date.parse(item[field])))) {
+        fail(`${filename}: ${field} must be null or an aware date-time`);
+      }
+    }
+    if (item.attendance_corrected_at !== null
+        && (item.attendance_status !== 'PRESENT' && item.attendance_status !== 'NO_SHOW')) {
+      fail(`${filename}: corrected attendance requires a terminal current status`);
+    }
+    if (item.attendance_corrected_at !== null
+        && Date.parse(item.attendance_corrected_at) < Date.parse(item.attendance_recorded_at)) {
+      fail(`${filename}: attendance_corrected_at must not precede attendance_recorded_at`);
+    }
+    localDateInTimeZone(item.starts_at, item.time_zone, filename);
+  }
+}
+
 async function readJsonWithContext(filename) {
   try {
     return JSON.parse(await readFile(filename, 'utf8'));
@@ -1258,6 +2149,9 @@ export async function validateContract(contractPath = defaultContractPath) {
   contractPath = path.resolve(contractPath);
   const rawContract = await SwaggerParser.parse(contractPath);
   validateOperationMatrix(rawContract);
+  validatePublicGameDirectoryContract(rawContract);
+  validateMyOpenGameApplicationsContract(rawContract);
+  validateOpenGameAttendanceContract(rawContract);
   validateErrorCodeEnum(rawContract);
   findAllAttachments(rawContract);
   await SwaggerParser.validate(contractPath);
@@ -1312,11 +2206,22 @@ export async function validateContract(contractPath = defaultContractPath) {
     if (mapping.schema === 'VenueMapResponse') validateVenueMapBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'Availability') validateAvailabilityBusinessRules(mapping.value, mapping.filename);
     if (mapping.schema === 'OrderListResponse') validateOrderListBusinessRules(mapping.value, mapping.filename);
+    if (mapping.schema === 'PublicGameDirectoryResponse') {
+      validatePublicGameDirectoryBusinessRules(mapping.value, mapping.filename);
+    }
+    if (mapping.schema === 'MyOpenGameApplicationsResponse') {
+      validateMyOpenGameApplicationsBusinessRules(mapping.value, mapping.filename);
+    }
     if (mapping.schema === 'ErrorEnvelope') coveredErrorCodes.add(mapping.value.error.code);
     if (mapping.filename === 'error-date-out-of-range.json') {
       const keys = Object.keys(mapping.value.error.details).sort();
       if (keys.join(',') !== 'end_date,start_date') {
         fail(`${mapping.filename}: details must contain exactly start_date and end_date`);
+      }
+    }
+    if (mapping.filename === 'error-my-open-game-applications-invalid-argument.json') {
+      if (Object.keys(mapping.value.error.details).length !== 0) {
+        fail(`${mapping.filename}: details must be an empty object`);
       }
     }
   }

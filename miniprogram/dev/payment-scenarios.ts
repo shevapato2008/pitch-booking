@@ -84,6 +84,7 @@ const confirmed: ConfirmedOrderView = deepFreezeOrder({
   status: "CONFIRMED",
   paymentState: "SUCCESS",
   paymentConfirming: false,
+  closingPayment: false,
   paidAt: "2026-07-27T12:04:00+08:00",
 });
 

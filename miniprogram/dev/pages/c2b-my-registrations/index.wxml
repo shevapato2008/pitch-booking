@@ -1,0 +1,47 @@
+<view class="c2b-page">
+  <view class="c2b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2b-header-back" hover-class="c2b-pressed" bindtap="onHeaderBack" aria-label="返回候补场景">
+      <view class="c2b-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2b-header-title">我的报名</text>
+    <view class="c2b-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2b-scroll" scroll-y="true" scroll-top="{{listScrollTop}}" bindscroll="onScroll">
+    <view class="c2b-content">
+      <text class="c2b-preview-note">{{previewNotice}}</text>
+      <view class="c2b-list-intro">
+        <view>
+          <text class="c2b-list-heading">最近报名</text>
+          <text class="c2b-list-copy">候补位置以当前队列为准</text>
+        </view>
+        <text class="c2b-result-count">{{resultCount}} 条</text>
+      </view>
+
+      <view class="c2b-registration-list">
+        <button
+          wx:for="{{items}}"
+          wx:key="registrationId"
+          class="c2b-registration-card {{item.effectiveStatus === 'WAITLISTED' ? 'c2b-registration-card--waitlisted' : ''}}"
+          hover-class="c2b-pressed"
+          bindtap="onOpenRegistration"
+          data-registration-id="{{item.registrationId}}"
+          aria-label="查看{{item.gameName}}报名详情"
+        >
+          <view class="c2b-card-body">
+            <view class="c2b-card-top">
+              <text class="c2b-status-badge {{item.effectiveStatus === 'WAITLISTED' ? 'c2b-status--waitlisted' : item.effectiveStatus === 'JOINED' ? 'c2b-status--joined' : 'c2b-status--neutral'}}">{{item.statusLabel}}</text>
+              <text class="c2b-format-badge">{{item.formatLabel}}</text>
+            </view>
+            <text class="c2b-game-name">{{item.gameName}}</text>
+            <text class="c2b-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
+            <text class="c2b-game-place">{{item.venue}}</text>
+            <text class="c2b-game-place">{{item.pitch}}</text>
+          </view>
+          <view class="c2b-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+    </view>
+  </scroll-view>
+</view>

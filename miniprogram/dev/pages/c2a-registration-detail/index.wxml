@@ -1,0 +1,92 @@
+<view class="c2a-page">
+  <view class="c2a-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2a-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2a-header-back" hover-class="c2a-pressed" bindtap="onHeaderBack" aria-label="返回我的报名">
+      <view class="c2a-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2a-header-title">报名详情</text>
+    <view class="c2a-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2a-scroll" scroll-y="true">
+    <view class="c2a-content {{showPrimaryAction || showResultAction ? 'c2a-content--with-footer' : ''}}">
+      <text class="c2a-preview-note">{{previewNotice}}</text>
+
+      <view wx:if="{{notFound}}" class="c2a-state-card">
+        <text class="c2a-state-title">报名不存在或已失效</text>
+        <text class="c2a-state-copy">返回我的报名，查看当前权威记录。</text>
+        <button class="c2a-secondary-action" hover-class="c2a-pressed" bindtap="onReturnList">返回我的报名</button>
+      </view>
+
+      <block wx:else>
+        <view class="c2a-card c2a-game-card">
+          <view class="c2a-confirmed"><view class="c2a-confirmed-icon" aria-hidden="true"></view><text>真实订场已确认</text></view>
+          <text class="c2a-game-name">{{game.gameName}}</text>
+          <text class="c2a-game-time">{{game.dateLabel}} · {{game.timeLabel}}</text>
+          <text class="c2a-game-place">{{game.venue}} · {{game.pitch}}</text>
+          <view class="c2a-tag-row"><text>{{game.formatLabel}}</text><text>{{game.organizerName}}组织</text></view>
+        </view>
+
+        <view wx:if="{{showResultAction}}" class="c2a-status-card c2a-status-card--unknown" role="status">
+          <view class="c2a-status-heading"><view class="c2a-status-dot"></view><text>退出结果待确认</text></view>
+          <text class="c2a-status-copy">上次操作没有返回结果。请读取权威状态，切勿再次提交退出。</text>
+        </view>
+        <view wx:elif="{{operationState === 'ERROR'}}" class="c2a-status-card c2a-status-card--error" role="alert">
+          <view class="c2a-status-heading"><view class="c2a-status-dot"></view><text>退出未完成</text></view>
+          <text class="c2a-status-copy">{{errorMessage}}</text>
+          <button class="c2a-inline-action" hover-class="c2a-pressed" bindtap="onDismissError">知道了</button>
+        </view>
+        <view wx:elif="{{registration.effectiveStatus === 'WITHDRAWN'}}" class="c2a-status-card c2a-status-card--neutral">
+          <view class="c2a-status-heading"><view class="c2a-status-dot"></view><text>{{registration.withdrawalKind === 'APPLICATION_WITHDRAWAL' ? '申请已撤回' : '已退出球局'}}</text></view>
+          <text class="c2a-status-copy">{{terminalCopy}}</text>
+          <text class="c2a-terminal-note">本场不可再次申请</text>
+        </view>
+        <view wx:elif="{{registration.effectiveStatus === 'APPLIED'}}" class="c2a-status-card">
+          <view class="c2a-status-heading"><view class="c2a-status-dot"></view><text>待队长审核</text></view>
+          <text class="c2a-status-copy">{{statusCopy}}</text>
+        </view>
+        <view wx:else class="c2a-status-card c2a-status-card--joined">
+          <view class="c2a-status-heading"><view class="c2a-status-dot"></view><text>已加入</text></view>
+          <text class="c2a-status-copy">{{statusCopy}}</text>
+        </view>
+
+        <view class="c2a-metrics" aria-label="报名摘要">
+          <view><text>{{game.remainingSpots}} 个</text><text>剩余名额</text></view>
+          <view><text>{{game.estimatedAaLabel}}</text><text>到场线下结算</text></view>
+          <view><text>{{game.currentPlayers}} / {{game.plannedPlayers}} 人</text><text>当前 / 计划</text></view>
+        </view>
+
+        <view class="c2a-card c2a-detail-card">
+          <view class="c2a-detail-grid">
+            <view><text>组织者球队</text><text>{{game.organizerName}}</text></view>
+            <view><text>对抗强度</text><text>{{game.intensityLabel}}</text></view>
+            <view><text>需要位置</text><text>{{game.positionLabel}}</text></view>
+            <view><text>报名截止</text><text>{{game.deadlineLabel}}</text></view>
+          </view>
+          <text class="c2a-risk-note">成人参与，请自行评估运动风险；平台不代收或担保线下结算。</text>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{showPrimaryAction || showResultAction}}" class="c2a-footer">
+    <button wx:if="{{showPrimaryAction}}" class="c2a-danger-action" hover-class="c2a-pressed" bindtap="onOpenWithdrawalConfirm">{{registration.primaryActionLabel}}</button>
+    <button wx:elif="{{showResultAction}}" class="c2a-primary-action" hover-class="c2a-pressed" bindtap="onConfirmWithdrawalResult">确认退出结果</button>
+  </view>
+
+  <view wx:if="{{showConfirmation}}" class="c2a-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-label="{{confirmationTitle}}">
+    <view class="c2a-sheet">
+      <view class="c2a-sheet-handle" aria-hidden="true"></view>
+      <text class="c2a-sheet-title">{{confirmationTitle}}</text>
+      <text class="c2a-sheet-copy">{{confirmationCopy}}</text>
+      <view wx:if="{{isLateExit}}" class="c2a-late-warning">
+        <text>距离开场不足 6 小时</text>
+        <text>会记录临时退出；首期不自动封禁或扣款。</text>
+      </view>
+      <view class="c2a-sheet-actions">
+        <button class="c2a-neutral-action" disabled="{{isSubmitting}}" hover-class="c2a-pressed" bindtap="onCancelWithdrawal">保留报名</button>
+        <button class="c2a-danger-action" disabled="{{isSubmitting}}" hover-class="c2a-pressed" bindtap="onConfirmWithdrawal">{{isSubmitting ? '提交中…' : confirmationActionLabel}}</button>
+      </view>
+    </view>
+  </view>
+</view>

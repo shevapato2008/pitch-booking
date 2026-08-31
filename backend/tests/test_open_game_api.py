@@ -33,6 +33,8 @@ from backend.app.modules.orders.repository import OrderRepository
 from backend.tests.test_open_game_service import (
     NOW,
     SeededOpenGameCase,
+    add_joined_registration,
+    add_waitlisted_registration,
     draft_request,
     seed_confirmed_order,
 )
@@ -47,7 +49,7 @@ PUBLISH_KEY = "api-publish-open-game-key-00001"
 CANCEL_KEY = "api-cancel-open-game-key-000001"
 
 
-def _client(engine: Engine, *, now: datetime | None = None) -> TestClient:
+def _client(engine: Engine, *, now: datetime = NOW) -> TestClient:
     app = create_app(settings=Settings(app_env="test", wechat_provider="development"))
 
     def database_override() -> Iterator[Session]:
@@ -55,8 +57,7 @@ def _client(engine: Engine, *, now: datetime | None = None) -> TestClient:
             yield session
 
     app.dependency_overrides[get_database] = database_override
-    if now is not None:
-        app.dependency_overrides[get_open_game_clock] = lambda: now
+    app.dependency_overrides[get_open_game_clock] = lambda: now
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -353,6 +354,7 @@ def test_cancel_real_action_is_idempotent_and_never_mutates_b1(
                 "can_share": False,
                 "can_cancel": True,
                 "can_preview": True,
+                "can_manage_attendance": False,
             }
 
         with Session(pg_engine) as session:
@@ -457,6 +459,25 @@ def test_mutation_validation_maps_only_known_first_level_body_fields(
             "name"
         ]
 
+        ordinary_capacity = client.post(
+            f"/api/v1/orders/{seeded.order_id}/game",
+            headers=_idempotent("api-ordinary-capacity-key-0001"),
+            json={**body, "open_spots": 0},
+        )
+        assert ordinary_capacity.status_code == 422
+        assert ordinary_capacity.json()["error"] | {
+            "request_id": "ignored"
+        } == {
+            "code": "INVALID_ARGUMENT",
+            "message": "请求参数格式不正确，请检查后重试。",
+            "details": {
+                "fields": [
+                    {"field": "open_spots", "message": "字段值不符合要求。"}
+                ]
+            },
+            "request_id": "ignored",
+        }
+
         extra = client.post(
             f"/api/v1/orders/{seeded.order_id}/game",
             headers=_idempotent(CREATE_KEY),
@@ -529,3 +550,104 @@ def test_mutation_validation_maps_only_known_first_level_body_fields(
 def test_no_collection_or_list_endpoint_is_published(pg_engine: Engine) -> None:
     with _client(pg_engine) as client:
         assert client.get("/api/v1/games").status_code == 404
+
+
+def test_joined_update_http_error_is_frozen_and_minimal(pg_engine: Engine) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    _attach_sessions(pg_engine, seeded)
+    game_id = _create_draft(pg_engine, seeded)
+    with Session(pg_engine) as session:
+        for index in range(3):
+            add_joined_registration(
+                session,
+                game_id=game_id,
+                owner_id=seeded.owner_id,
+                label=f"api-{index}",
+            )
+        session.commit()
+
+    body = _body(seeded) | {
+        "total_players": 8,
+        "open_spots": 2,
+        "aa_cents": 3601,
+        "expected_version": 1,
+    }
+    with _client(pg_engine) as client:
+        response = client.put(
+            f"/api/v1/games/{game_id}",
+            headers=_idempotent(UPDATE_KEY),
+            json=body,
+        )
+
+    assert response.status_code == 422
+    payload = response.json()
+    request_id = payload["error"].pop("request_id")
+    assert isinstance(request_id, str) and request_id
+    assert payload == {
+        "error": {
+            "code": "INVALID_ARGUMENT",
+            "message": "球局已有加入成员，开放容量或预计 AA 不符合要求。",
+            "details": {
+                "fields": [
+                    {"field": "open_spots", "message": "不能小于已加入人数。"},
+                    {
+                        "field": "total_players",
+                        "message": "不能小于固定人数与已加入人数之和。",
+                    },
+                    {
+                        "field": "aa_cents",
+                        "message": "已有加入成员后预计 AA 只能保持或降低。",
+                    },
+                ]
+            },
+        }
+    }
+
+
+def test_waitlist_capacity_edit_http_error_is_frozen_and_minimal(
+    pg_engine: Engine,
+) -> None:
+    seeded = seed_confirmed_order(pg_engine)
+    _attach_sessions(pg_engine, seeded)
+    game_id = _create_draft(pg_engine, seeded)
+    with Session(pg_engine) as session:
+        game = session.get_one(OpenGame, game_id)
+        game.status = OpenGameStatus.PUBLISHED
+        game.published_at = NOW
+        add_waitlisted_registration(
+            session,
+            game_id=game_id,
+            owner_id=seeded.owner_id,
+        )
+        session.commit()
+
+    body = _body(seeded) | {
+        "total_players": 11,
+        "open_spots": 5,
+        "expected_version": 1,
+    }
+    with _client(pg_engine) as client:
+        response = client.put(
+            f"/api/v1/games/{game_id}",
+            headers=_idempotent(UPDATE_KEY),
+            json=body,
+        )
+
+    assert response.status_code == 422
+    payload = response.json()
+    request_id = payload["error"].pop("request_id")
+    assert isinstance(request_id, str) and request_id
+    assert payload == {
+        "error": {
+            "code": "INVALID_ARGUMENT",
+            "message": "球局已有加入成员，开放容量或预计 AA 不符合要求。",
+            "details": {
+                "fields": [
+                    {
+                        "field": "open_spots",
+                        "message": "存在候补成员时不能修改开放名额。",
+                    }
+                ]
+            },
+        }
+    }

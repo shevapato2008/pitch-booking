@@ -15,6 +15,10 @@ def _write_console(root: Path) -> None:
     )
     (root / "styles.css").write_text("body { color: #10243e; }", encoding="utf-8")
     (root / "main.js").write_text("export {};", encoding="utf-8")
+    (root / "attendance-correction.js").write_text(
+        "export class AttendanceCorrectionController {};",
+        encoding="utf-8",
+    )
 
 
 def test_platform_console_serves_only_known_assets_with_security_headers(tmp_path: Path) -> None:
@@ -27,6 +31,7 @@ def test_platform_console_serves_only_known_assets_with_security_headers(tmp_pat
         ("/platform-admin/", "text/html"),
         ("/platform-admin/styles.css", "text/css"),
         ("/platform-admin/main.js", "text/javascript"),
+        ("/platform-admin/attendance-correction.js", "text/javascript"),
     ):
         response = client.get(path)
         assert response.status_code == 200

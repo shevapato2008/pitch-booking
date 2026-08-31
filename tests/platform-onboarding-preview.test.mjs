@@ -35,13 +35,21 @@ const loadPreviewModel = () => {
   };
 };
 
-test("platform onboarding preview is isolated development-only static source", () => {
+test("platform onboarding Fixture stays isolated from the real production console", () => {
   for (const file of ["index.html", "styles.css", "app.js", "fixture.js"]) {
     assert.equal(existsSync(`${previewRoot}/${file}`), true, `missing ${previewRoot}/${file}`);
   }
   const packageSource = read("package.json");
   assert.doesNotMatch(packageSource, /platform-admin\/dev/);
-  assert.equal(existsSync("platform-admin/index.html"), false, "must not create a production console in this slice");
+  for (const file of ["platform-admin/index.html", "platform-admin/styles.css", "platform-admin/src/main.ts"]) {
+    assert.equal(existsSync(file), true, `missing production console source: ${file}`);
+  }
+  const productionSource = [
+    read("platform-admin/index.html"),
+    read("platform-admin/styles.css"),
+    read("platform-admin/src/main.ts"),
+  ].join("\n");
+  assert.doesNotMatch(productionSource, /Development-only Fixture|PLATFORM_ONBOARDING_FIXTURE|platform-admin\/dev/);
 });
 
 test("reference freezes login and every review presentation at 1440 by 900", () => {

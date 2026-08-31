@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from yaml import safe_load
 
 from scripts.preflight_deploy import preflight
 
@@ -29,6 +30,8 @@ def _payment_pem_values(*, key_size: int = 2048) -> tuple[str, str]:
 
 
 WECHAT_PAY_PRIVATE_KEY_BASE64, WECHAT_PAY_PUBLIC_KEY_BASE64 = _payment_pem_values()
+WAITLIST_TEMPLATE_ID = "zun-LzcQyW-edafCVvzPkK4de2Rllr1fFpw2A_x0oXE"
+WAITLIST_KEYWORD_MAPPING = '{"game_name":"thing1","starts_at":"time2","venue_name":"thing3"}'
 
 
 def write_env(path: Path, values: dict[str, str]) -> Path:
@@ -61,6 +64,10 @@ def valid_local_environment() -> dict[str, str]:
         "MODERATION_REVIEWER_USER_IDS": "01a329c4-36b0-401a-a577-48ee1c475a37",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        "OPEN_GAME_NOTIFICATION_PROVIDER": "disabled",
+        "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": "",
+        "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": "",
+        "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE": "formal",
         "WECHAT_PAY_MERCHANT_ID": "1900000109",
         "WECHAT_PAY_MERCHANT_CERT_SERIAL": "0123456789ABCDEF",
         "WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64": WECHAT_PAY_PRIVATE_KEY_BASE64,
@@ -88,6 +95,15 @@ def valid_local_environment() -> dict[str, str]:
             separators=(",", ":"),
         ),
         "PLATFORM_CSRF_SECRET": base64.b64encode(bytes(range(32))).decode("ascii"),
+        "WECHAT_APP_ID": "wx-app-id-secret",
+        "WECHAT_APP_SECRET": "wechat-app-secret",
+    }
+
+
+def valid_miniprogram_environment(*, enabled: bool = False) -> dict[str, str]:
+    return {
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER": "wechat" if enabled else "disabled",
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID": WAITLIST_TEMPLATE_ID if enabled else "",
     }
 
 
@@ -137,6 +153,208 @@ def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> No
 
     assert result.ok is True
     assert result.failures == ()
+
+
+def test_preflight_accepts_complete_matching_wechat_notification_configuration(
+    tmp_path: Path,
+) -> None:
+    values = valid_local_environment()
+    values.update(
+        OPEN_GAME_NOTIFICATION_PROVIDER="wechat",
+        OPEN_GAME_NOTIFICATION_TEMPLATE_ID=WAITLIST_TEMPLATE_ID,
+        OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON=WAITLIST_KEYWORD_MAPPING,
+        OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE="trial",
+    )
+    deploy_env = write_env(tmp_path, values)
+    miniprogram_env = tmp_path / "miniprogram.env"
+    miniprogram_env.write_text(
+        "".join(
+            f"{key}={value}\n" for key, value in valid_miniprogram_environment(enabled=True).items()
+        ),
+        encoding="utf-8",
+    )
+
+    result = preflight(deploy_env, miniprogram_env_file=miniprogram_env)
+
+    assert result.ok is True
+
+
+@pytest.mark.parametrize(
+    ("app_env", "state", "failure"),
+    [
+        (
+            "staging",
+            "formal",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be trial when APP_ENV=staging",
+        ),
+        (
+            "staging",
+            "developer",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be trial when APP_ENV=staging",
+        ),
+        (
+            "production",
+            "trial",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be formal when APP_ENV=production",
+        ),
+        (
+            "production",
+            "developer",
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be formal when APP_ENV=production",
+        ),
+    ],
+)
+def test_preflight_rejects_notification_state_for_the_wrong_deploy_environment(
+    tmp_path: Path,
+    app_env: str,
+    state: str,
+    failure: str,
+) -> None:
+    values = valid_local_environment()
+    values.update(
+        APP_ENV=app_env,
+        OPEN_GAME_NOTIFICATION_PROVIDER="wechat",
+        OPEN_GAME_NOTIFICATION_TEMPLATE_ID=WAITLIST_TEMPLATE_ID,
+        OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON=WAITLIST_KEYWORD_MAPPING,
+        OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE=state,
+    )
+    deploy_env = write_env(tmp_path, values)
+    miniprogram_env = tmp_path / "miniprogram.env"
+    miniprogram_env.write_text(
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
+        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n",
+        encoding="utf-8",
+    )
+
+    result = preflight(deploy_env, miniprogram_env_file=miniprogram_env)
+
+    assert failure in result.failures
+
+
+def test_preflight_accepts_formal_state_for_production_notifications(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values.update(
+        APP_ENV="production",
+        OPEN_GAME_NOTIFICATION_PROVIDER="wechat",
+        OPEN_GAME_NOTIFICATION_TEMPLATE_ID=WAITLIST_TEMPLATE_ID,
+        OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON=WAITLIST_KEYWORD_MAPPING,
+        OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE="formal",
+    )
+    deploy_env = write_env(tmp_path, values)
+    miniprogram_env = tmp_path / "miniprogram.env"
+    miniprogram_env.write_text(
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
+        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n",
+        encoding="utf-8",
+    )
+
+    result = preflight(deploy_env, miniprogram_env_file=miniprogram_env)
+
+    assert result.ok is True
+
+
+@pytest.mark.parametrize(
+    ("mutations", "failure"),
+    [
+        (
+            {
+                "OPEN_GAME_NOTIFICATION_PROVIDER": "wechat",
+                "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": "",
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": WAITLIST_KEYWORD_MAPPING,
+            },
+            "OPEN_GAME_NOTIFICATION_TEMPLATE_ID is required",
+        ),
+        (
+            {
+                "OPEN_GAME_NOTIFICATION_PROVIDER": "wechat",
+                "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": "replace-with-template-id",
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": WAITLIST_KEYWORD_MAPPING,
+            },
+            "OPEN_GAME_NOTIFICATION_TEMPLATE_ID is invalid",
+        ),
+        (
+            {
+                "OPEN_GAME_NOTIFICATION_PROVIDER": "wechat",
+                "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": WAITLIST_TEMPLATE_ID,
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": "{}",
+            },
+            "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid",
+        ),
+        (
+            {"OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE": "preview"},
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be formal, trial, or developer",
+        ),
+        (
+            {
+                "OPEN_GAME_NOTIFICATION_PROVIDER": "wechat",
+                "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": WAITLIST_TEMPLATE_ID,
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": WAITLIST_KEYWORD_MAPPING,
+                "WECHAT_APP_SECRET": "generate-and-inject-through-your-secret-manager",
+            },
+            "WECHAT_APP_SECRET is invalid for WeChat notifications",
+        ),
+    ],
+)
+def test_preflight_rejects_partial_or_placeholder_notification_configuration(
+    tmp_path: Path,
+    mutations: dict[str, str],
+    failure: str,
+) -> None:
+    values = valid_local_environment()
+    values.update(mutations)
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert failure in result.failures
+    assert all(value not in repr(result) for value in mutations.values() if value)
+
+
+def test_preflight_rejects_enabled_notification_without_matching_client_build_input(
+    tmp_path: Path,
+) -> None:
+    values = valid_local_environment()
+    values.update(
+        OPEN_GAME_NOTIFICATION_PROVIDER="wechat",
+        OPEN_GAME_NOTIFICATION_TEMPLATE_ID=WAITLIST_TEMPLATE_ID,
+        OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON=WAITLIST_KEYWORD_MAPPING,
+    )
+    deploy_env = write_env(tmp_path, values)
+
+    missing_client = preflight(deploy_env)
+    client_env = tmp_path / "miniprogram.env"
+    client_env.write_text(
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=disabled\n"
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID=\n",
+        encoding="utf-8",
+    )
+    mismatched_client = preflight(deploy_env, miniprogram_env_file=client_env)
+    client_env.write_text(
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID=another-valid-template-id\n",
+        encoding="utf-8",
+    )
+    mismatched_template = preflight(deploy_env, miniprogram_env_file=client_env)
+
+    assert "Mini Program environment file is required for WeChat notifications" in (
+        missing_client.failures
+    )
+    assert "notification provider does not match the Mini Program build input" in (
+        mismatched_client.failures
+    )
+    assert "notification template does not match the Mini Program build input" in (
+        mismatched_template.failures
+    )
+
+
+def test_preflight_rejects_residual_notification_fields_while_disabled(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values["OPEN_GAME_NOTIFICATION_TEMPLATE_ID"] = WAITLIST_TEMPLATE_ID
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "OPEN_GAME_NOTIFICATION_TEMPLATE_ID must be empty while notifications are disabled",
+    )
 
 
 def test_preflight_accepts_disabled_payment_without_merchant_credentials(
@@ -501,6 +719,76 @@ def test_compose_defines_the_local_staging_services(tmp_path: Path) -> None:
     assert "postgres_data" in config["volumes"]
 
 
+def test_rollback_retain_schema_override_only_replaces_the_api_command(
+    tmp_path: Path,
+) -> None:
+    override_path = Path("deploy/compose.rollback-retain-schema.yaml")
+    expected_command = [
+        "uv",
+        "run",
+        "uvicorn",
+        "backend.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+    ]
+    assert safe_load(override_path.read_text(encoding="utf-8")) == {
+        "services": {"api": {"command": expected_command}}
+    }
+    env_file = write_env(tmp_path, valid_local_environment())
+
+    normal_completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            "compose.yaml",
+            "config",
+            "--format",
+            "json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rollback_completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            "compose.yaml",
+            "-f",
+            str(override_path),
+            "config",
+            "--format",
+            "json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    normal = json.loads(normal_completed.stdout)
+    rollback = json.loads(rollback_completed.stdout)
+
+    assert "alembic upgrade head" in " ".join(normal["services"]["api"]["command"])
+    assert rollback["services"]["api"]["command"] == expected_command
+    assert "alembic" not in " ".join(rollback["services"]["api"]["command"])
+    for service in ("worker", "caddy", "postgres"):
+        assert rollback["services"][service] == normal["services"][service]
+    normal_api = {
+        key: value for key, value in normal["services"]["api"].items() if key != "command"
+    }
+    rollback_api = {
+        key: value for key, value in rollback["services"]["api"].items() if key != "command"
+    }
+    assert rollback_api == normal_api
+
+
 def test_compose_preserves_the_exact_safe_api_v3_key(tmp_path: Path) -> None:
     values = valid_local_environment()
     expected = "A_b-" * 8
@@ -575,6 +863,23 @@ def test_deploy_configuration_declares_wechat_payment_inputs() -> None:
     ):
         assert f"{key}:" in compose
         assert f"{key}=" in template
+
+
+def test_deploy_configuration_declares_fail_closed_open_game_notification_inputs() -> None:
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+    for key in (
+        "OPEN_GAME_NOTIFICATION_PROVIDER",
+        "OPEN_GAME_NOTIFICATION_TEMPLATE_ID",
+        "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON",
+        "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE",
+    ):
+        assert f"{key}:" in compose
+        assert f"{key}=" in template
+    assert "OPEN_GAME_NOTIFICATION_PROVIDER: ${OPEN_GAME_NOTIFICATION_PROVIDER:-disabled}" in (
+        compose
+    )
+    assert "OPEN_GAME_NOTIFICATION_PROVIDER=disabled" in template
 
 
 def test_runtime_image_never_syncs_development_dependencies() -> None:

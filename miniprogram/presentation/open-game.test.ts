@@ -160,7 +160,7 @@ describe("open game presentation", () => {
       state: "PUBLISHED",
       stateReason: null,
       version: 3,
-      allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true },
+      allowedActions: { canEdit: true, canPublish: false, canShare: true, canCancel: true, canPreview: true, canManageAttendance: false },
       share: { title: "safe", path: "/pages/captain-game-public/index?token=abcdefghijklmnopqrstuvwxyzABCDEF", imageUrl: null },
       publicView: publicGame,
     } satisfies OpenGameOwner;

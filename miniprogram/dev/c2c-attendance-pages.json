@@ -1,0 +1,7 @@
+{
+  "token": "C2C_ATTENDANCE_FIXTURE",
+  "pages": [
+    "dev/pages/c2c-attendance-scenario/index",
+    "dev/pages/c2c-attendance/index"
+  ]
+}

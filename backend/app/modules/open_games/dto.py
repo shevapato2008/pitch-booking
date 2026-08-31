@@ -20,9 +20,8 @@ from backend.app.models import (
     OpenGameIntensity,
     OpenGameStatus,
     OpenGameVisibility,
-    OrderStatus,
-    RefundCasePurpose,
 )
+from backend.app.modules.open_games import lifecycle as open_game_lifecycle
 from backend.app.modules.open_games.lifecycle import (
     EffectiveOpenGameState,
     OpenGameAllowedActions,
@@ -150,6 +149,10 @@ class CreateOpenGameRequest(OpenGameDraftInput):
 
 class UpdateOpenGameRequest(OpenGameDraftInput):
     expected_version: Annotated[int, Field(strict=True, ge=1)]
+
+    @model_validator(mode="after")
+    def validate_roster_capacity(self) -> Self:
+        return self
 
 
 class OpenGameVersionRequest(ClosedModel):
@@ -354,24 +357,12 @@ def validate_published_update(
         registration_deadline,
     ):
         _require_aware(value, field="registration_deadline")
-    if not _published_order_is_healthy(order_facts):
+    if not open_game_lifecycle.published_authority_is_healthy(order_facts):
         raise OpenGameValidationError("order is not healthy enough to edit")
     if registration_deadline == previous_registration_deadline:
         return
     _validate_registration_deadline(
         registration_deadline, starts_at=order_facts.starts_at, now=now
-    )
-
-
-def _published_order_is_healthy(facts: OrderLifecycleFacts) -> bool:
-    return (
-        facts.status is OrderStatus.CONFIRMED
-        and facts.cancel_requested_at is None
-        and facts.controlling_refund_purpose
-        not in {
-            RefundCasePurpose.ORDER_CANCELLATION,
-            RefundCasePurpose.PAYMENT_INVENTORY_CONFLICT,
-        }
     )
 
 

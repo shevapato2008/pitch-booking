@@ -1,0 +1,9 @@
+{
+  "token": "C1A_PLAYER_APPLICATION_FIXTURE",
+  "pages": [
+    "dev/pages/c1a-scenario/index",
+    "dev/pages/c1a-game-public/index",
+    "dev/pages/c1a-game-application/index",
+    "dev/pages/c1a-captain-applications/index"
+  ]
+}

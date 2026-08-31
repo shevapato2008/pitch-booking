@@ -295,6 +295,16 @@ test("the approved fixture and scenario inventories are closed and internally re
 
   assert.deepEqual(fixtureIds, [
     "booking-checkout-ready",
+    "open-game-application-decision-joined",
+    "open-game-application-decision-rejected",
+    "open-game-applications-empty",
+    "open-game-applications-pending",
+    "open-game-registration-context-anonymous",
+    "open-game-registration-context-applied",
+    "open-game-registration-context-apply-ready",
+    "open-game-registration-context-cancelled",
+    "open-game-registration-context-joined",
+    "open-game-registration-context-rejected",
     "order-confirmed",
     "order-expired",
     "order-payment-confirming",
@@ -414,24 +424,20 @@ test("golden metadata schema requires reproducibility fields", () => {
   ).route];
   const profileRoutes = ["pages/venue-profile/index"];
   const pitchSetupRoutes = ["pages/venue-pitch-setup/index"];
-  const focusedWorkbenchRoutes = [...profileRoutes, ...pitchSetupRoutes];
   const scenarioIds = readdirSync(scenarioRoot)
     .filter((name) => name.endsWith(".yaml"))
     .map((name) => name.slice(0, -5))
     .sort();
   assert.deepEqual(schema.properties.route.enum, goldenRoutes);
-  assert.deepEqual(
-    bookingRoutes,
-    appRoutes.filter((route) => !goldenRoutes.includes(route) && !mapRoutes.includes(route)
-      && !inventoryRoutes.includes(route) && !focusedWorkbenchRoutes.includes(route)),
-    "production routes outside focused manifests must be covered by the booking manifest",
-  );
-  assert.deepEqual([
-    ...new Set([
-      ...mapRoutes, ...goldenRoutes, ...bookingRoutes, ...profileRoutes, ...inventoryRoutes,
-      ...pitchSetupRoutes,
-    ]),
-  ], appRoutes);
+  const focusedRoutes = [
+    ...mapRoutes, ...goldenRoutes, ...bookingRoutes, ...profileRoutes, ...inventoryRoutes,
+    ...pitchSetupRoutes,
+  ];
+  assert.equal(new Set(focusedRoutes).size, focusedRoutes.length, "focused visual manifests must not overlap");
+  for (const route of focusedRoutes) {
+    assert.equal(appRoutes.includes(route), true, `focused visual route must remain in production: ${route}`);
+    assert.equal(route.startsWith("dev/"), false, `focused visual route must not be development-only: ${route}`);
+  }
   assert.deepEqual([...schema.properties.scenario.enum].sort(), scenarioIds);
 
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);

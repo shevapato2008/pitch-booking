@@ -1,0 +1,11 @@
+{
+  "id": "a52df333-a813-4a99-97d6-780db998ce3a",
+  "registration_id": "8ed324a4-56cb-4d73-9a77-0b4605ac3b17",
+  "from_status": "NO_SHOW",
+  "to_status": "PRESENT",
+  "reason": "已核对现场签到记录，上一笔平台纠正结果有误。",
+  "corrected_by_principal_id": "platform-admin-yangfan",
+  "corrected_at": "2026-08-31T14:18:00+08:00",
+  "registration_version_before": 3,
+  "registration_version_after": 4
+}

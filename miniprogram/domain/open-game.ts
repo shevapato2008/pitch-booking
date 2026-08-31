@@ -78,6 +78,7 @@ export interface OpenGameAllowedActions {
   readonly canShare: boolean;
   readonly canCancel: boolean;
   readonly canPreview: boolean;
+  readonly canManageAttendance: boolean;
 }
 
 export interface OpenGameShare {

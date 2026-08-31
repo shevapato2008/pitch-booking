@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "ATTENDANCE_STATE_CHANGED",
+    "message": "到场记录已变化，请刷新名单后重试。",
+    "request_id": "req_attendance_state_changed_001",
+    "details": {}
+  }
+}

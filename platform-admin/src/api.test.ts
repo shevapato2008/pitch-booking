@@ -97,4 +97,81 @@ describe("PlatformApi", () => {
     await expect(api.listApplications({})).rejects.toBeInstanceOf(SessionExpiredError);
     expect(ApiError).toBeDefined();
   });
+
+  test("loads an exact attendance registration and posts a typed correction with CSRF and one idempotency key", async () => {
+    const detail = {
+      registration_id: "8ed324a4-56cb-4d73-9a77-0b4605ac3b17",
+      registration_status: "JOINED",
+      player_display_name: "林知远（右边锋）",
+      intended_position: "FORWARD",
+      game_name: "周末轻松局",
+      game_status: "COMPLETED",
+      venue_name: "渤海元丰足球场",
+      pitch_name: "七人制 A 场",
+      starts_at: "2026-08-31T09:00:00+08:00",
+      ends_at: "2026-08-31T10:00:00+08:00",
+      time_zone: "Asia/Shanghai",
+      original_attendance_status: "PRESENT",
+      attendance_recorded_at: "2026-08-31T10:06:00+08:00",
+      attendance_status: "PRESENT",
+      version: 3,
+      corrections: [],
+      allowed_correction: { target_status: "NO_SHOW", blocked_reason: null },
+    };
+    const event = {
+      id: "a52df333-a813-4a99-97d6-780db998ce3a",
+      registration_id: detail.registration_id,
+      from_status: "PRESENT",
+      to_status: "NO_SHOW",
+      reason: "现场记录核验有误",
+      corrected_by_principal_id: "platform-admin-1",
+      corrected_at: "2026-08-31T14:18:00+08:00",
+      registration_version_before: 3,
+      registration_version_after: 4,
+    };
+    const fetcher = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        principal_id: "platform-admin-1",
+        display_name: "平台管理员",
+        roles: ["PLATFORM_ADMIN"],
+        csrf_token: "a".repeat(64),
+        expires_at: "2026-09-02T02:00:00Z",
+      }))
+      .mockResolvedValueOnce(jsonResponse(detail))
+      .mockResolvedValueOnce(jsonResponse(event));
+    const api = new PlatformApi(fetcher);
+
+    await api.restoreSession();
+    await expect(api.getAttendanceRegistration(detail.registration_id)).resolves.toEqual(detail);
+    await expect(api.correctAttendanceRegistration(
+      detail.registration_id,
+      { attendance_status: "NO_SHOW", expected_version: 3, reason: "现场记录核验有误" },
+      "attendance-key-123456",
+    )).resolves.toEqual(event);
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      `/platform-admin/api/v1/attendance/registrations/${detail.registration_id}`,
+      expect.objectContaining({ method: "GET", credentials: "same-origin" }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      `/platform-admin/api/v1/attendance/registrations/${detail.registration_id}/corrections`,
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          "X-CSRF-Token": "a".repeat(64),
+          "Idempotency-Key": "attendance-key-123456",
+        }),
+        body: JSON.stringify({
+          attendance_status: "NO_SHOW",
+          expected_version: 3,
+          reason: "现场记录核验有误",
+        }),
+      }),
+    );
+    expect((fetcher.mock.calls[2]?.[1]?.headers as Record<string, string>).Origin).toBeUndefined();
+  });
 });

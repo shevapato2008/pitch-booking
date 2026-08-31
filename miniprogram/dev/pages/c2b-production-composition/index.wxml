@@ -1,0 +1,3 @@
+<view class="c2b-composition-loading" role="status">
+  <text>正在打开生产页面组合…</text>
+</view>

@@ -27,7 +27,7 @@
   "state": "SUSPENDED",
   "state_reason": "ORDER_REFUND_PENDING",
   "version": 4,
-  "allowed_actions": {"can_edit": false, "can_publish": false, "can_share": false, "can_cancel": true, "can_preview": true},
+  "allowed_actions": {"can_edit": false, "can_publish": false, "can_share": false, "can_cancel": true, "can_preview": true, "can_manage_attendance": false},
   "share": null,
   "public_view": {
     "name": "周五浦东七人制",

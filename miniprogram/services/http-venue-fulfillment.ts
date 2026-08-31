@@ -42,7 +42,7 @@ export function createHttpVenueFulfillmentDataSource({ transport, identity, sess
         const response = await transport.requestWithStatus<unknown>("POST", "/api/v1/auth/wechat/session", { code });
         if (response.statusCode !== 200) throw new Error("LOGIN_STATUS");
         const session = decodeWeChatSession(response.data);
-        sessionStore.save({ token: session.token, expiresAt: session.expiresAt });
+        sessionStore.save({ token: session.token, expiresAt: session.expiresAt, userId: session.user.userId });
       } catch (caught) {
         if (caught instanceof VenueFulfillmentApiError) throw caught;
         throw new VenueFulfillmentApiError("LOGIN_FAILED");

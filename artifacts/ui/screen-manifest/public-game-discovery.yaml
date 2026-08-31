@@ -1,0 +1,25 @@
+id: public-game-discovery
+target_viewport: {width: 375, height: 812}
+production_enabled: false
+references:
+  source: artifacts/ui/references/public-game-discovery.html
+  data: artifacts/ui/references/public-game-discovery-data.js
+  styles: artifacts/ui/references/public-game-discovery.css
+states:
+  - {id: ready-list, reference: artifacts/ui/references/public-game-discovery.html?state=ready-list, representative_capture: true}
+  - {id: filtered-nonempty, reference: artifacts/ui/references/public-game-discovery.html?state=filtered-nonempty, representative_capture: true}
+  - {id: filter-no-match, reference: artifacts/ui/references/public-game-discovery.html?state=filter-no-match, representative_capture: true}
+  - {id: load-error, reference: artifacts/ui/references/public-game-discovery.html?state=load-error, representative_capture: true}
+internal_states: [loading, source-empty, selected-detail, unknown-detail]
+interaction_targets:
+  minimum_css_pixels: 44
+  button_alignment: flex-both-axes
+scrolling:
+  direction: vertical
+  fixed_bottom_bar: none
+  safe_area_bottom: required
+review_slots: [reference, implementation, side-by-side, overlay-50, difference, observations]
+fixture:
+  planned_path: miniprogram/dev/c1b-game-discovery-fixture.ts
+  deletion_condition: delete after approved production catalog, shared public detail, filters, recovery paths, focused automation, and real-device acceptance pass
+gate: user-visual-approved

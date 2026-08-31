@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "请求参数格式不正确，请检查后重试。",
+    "request_id": "req_my_open_game_applications_invalid_001",
+    "details": {}
+  }
+}
