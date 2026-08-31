@@ -41,7 +41,9 @@ worker 可以注入一个“disabled provider”，也可以完全不组合通�
 
 只有两者共同有效时，production composition 才注册 `WaitlistPromotionSubscriptionCapability`。申请页在 `READY` 状态显示一行辅助说明：“若进入候补，转正时可收到微信提醒；拒绝授权不影响申请。”原“提交申请”按钮仍是唯一主 CTA，尺寸、底栏与 safe area 不变。
 
-`onSubmit` 先完成既有本地校验和账号/服务端权限校验，再在该原始用户手势中调用一次 `wx.requestSubscribeMessage({ tmplIds: [templateId] })`。能力把 `accept`、`acceptWithAlert`、`acceptWithAudio`、`acceptWithForcePush` 归为接受；其余成功结果归为拒绝；fail、同步异常和 8 秒无回调归为不可用。页面忽略三类结果并继续创建原有 durable attempt 与真实 HTTP 申请。请求期间立即进入不可重复点击的提交态。
+`onSubmit` 先同步完成既有本地校验和账号/服务端权限校验，然后必须在原始 tap 调用栈内、任何 `await` 之前直接调用一次 `wx.requestSubscribeMessage({ tmplIds: [templateId] })`。能力把 `accept`、`acceptWithAlert`、`acceptWithAudio`、`acceptWithForcePush` 归为接受；其余成功结果归为拒绝；fail 与同步异常归为不可用。页面忽略这三类结果并继续创建原有 durable attempt 与真实 HTTP 申请。请求期间立即进入不可重复点击的提交态。
+
+无 callback 与明确 fail 不同：8 秒 timeout 后不能假设原生授权层已经关闭，更不能在用户仍可能操作弹窗时悄悄后台提交。能力返回独立 `TIMED_OUT`，页面进入“提醒授权结果未返回，本次申请尚未提交”的锁定态，不创建 attempt、不调用申请 API；晚到 success/fail 由 single-settlement 与页面 generation guard 忽略。用户可返回并重新进入申请页，随后由一个新的真实 tap 重试。
 
 订阅请求只存在于 fresh `onSubmit` 路径。`RESULT_UNKNOWN`、`onConfirmResult`、登录恢复与已有 attempt 的精确重放直接沿用原 attempt，绝不再次调用订阅 API。未配置 capability 时保持原申请行为和原视觉，不显示可能误导的提醒承诺。
 
@@ -101,7 +103,7 @@ send-start marker 仍先提交、后释放全部数据库锁、再进行外部 I
 
 采用逐项 RED→GREEN：
 
-- Jest 覆盖未配置时原行为、原始点击一次授权、接受/拒绝/fail/同步异常/timeout 均继续申请、重复点击不重复授权、unknown recovery 不授权；
+- Jest 覆盖未配置时原行为、原始点击在首个 `await` 前一次授权、接受/拒绝/fail/同步异常均继续申请、timeout 不提交且 late callback 无副作用、重复点击不重复授权、unknown recovery 不授权；
 - Node 构建测试覆盖 provider/template 组合、非法 ID、production bootstrap 注册与 disabled 包；
 - pytest 覆盖 settings 严格闭合与 secret redaction、HTTP 请求闭合/timeout/token cache/单次刷新、错误分类、close 生命周期；
 - Postgres worker 测试覆盖 `now == starts_at` 和已开场事件 supersede 且零 Provider I/O；

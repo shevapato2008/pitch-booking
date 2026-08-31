@@ -20,7 +20,7 @@
 
 - [ ] **Step 1: Write failing capability tests**
 
-Cover one valid template ID passed to `wx.requestSubscribeMessage`, accepted variants, reject/ban/filter, fail, synchronous throw, timeout, single settlement, registration lookup and reset. Returned values are only `ACCEPTED | DECLINED | UNAVAILABLE`; raw provider data never leaves the adapter.
+Cover one valid template ID passed to `wx.requestSubscribeMessage`, accepted variants, reject/ban/filter, fail, synchronous throw, timeout, single settlement, registration lookup and reset. Returned values are only `ACCEPTED | DECLINED | UNAVAILABLE | TIMED_OUT`; raw provider data never leaves the adapter.
 
 - [ ] **Step 2: Run RED**
 
@@ -30,7 +30,7 @@ Expected: FAIL because the module does not exist.
 
 - [ ] **Step 3: Implement the minimal capability**
 
-Use a callback wrapper with an injected/default 8-second timer. Validate the template ID before construction; accept `accept`, `acceptWithAlert`, `acceptWithAudio`, and `acceptWithForcePush`; settle all other results without throwing.
+Use a callback wrapper with an injected/default 8-second timer. Validate the template ID before construction; accept `accept`, `acceptWithAlert`, `acceptWithAudio`, and `acceptWithForcePush`; settle all other callback results without throwing. Timeout is distinct so the page cannot submit behind a native dialog that may still be active; late callbacks are ignored.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -50,7 +50,7 @@ Commit: `feat(c2b): add waitlist subscription capability`
 
 - [ ] **Step 1: Write failing page tests**
 
-Test that fresh valid `onSubmit` requests once before `apply`; accepted, declined and unavailable outcomes all submit the exact durable attempt; duplicate taps share one operation; invalid drafts do not prompt; `RESULT_UNKNOWN` confirmation/replay does not prompt. Assert the conditional helper copy and existing centered/safe-area CTA rules.
+Test that fresh valid `onSubmit` invokes the native capability synchronously before the first await and before `apply`; accepted, declined and unavailable outcomes all submit the exact durable attempt; timeout creates no attempt/write and late callbacks stay stale; duplicate taps share one operation; invalid drafts do not prompt; `RESULT_UNKNOWN` confirmation/replay does not prompt. Assert the conditional helper copy and existing centered/safe-area CTA rules.
 
 - [ ] **Step 2: Run RED**
 
@@ -60,7 +60,7 @@ Expected: FAIL because no subscription capability is called or helper is rendere
 
 - [ ] **Step 3: Implement minimal page orchestration**
 
-After local/authority validation, start one in-flight promise, enter `SUBMITTING`, await the optional capability, then begin the existing attempt and execute the existing HTTP write. Do not call the capability from `executeApply`, `onConfirmResult`, login recovery, or attempt restoration.
+After synchronous local/authority validation, call the optional capability directly in the original handler before any await, start one in-flight promise, and enter `SUBMITTING`. Accepted/declined/native-failed results then begin the existing attempt and HTTP write. Timeout enters an explicit locked `SUBSCRIPTION_PENDING` state with no attempt/write; late callbacks and stale generations do nothing. Do not call the capability from `executeApply`, `onConfirmResult`, login recovery, or attempt restoration.
 
 - [ ] **Step 4: Run GREEN**
 
