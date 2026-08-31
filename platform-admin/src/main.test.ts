@@ -17,6 +17,7 @@ test("production login disables credential persistence and wires foreground expi
   expect(source).toMatch(/AttendanceCorrectionController/);
   expect(source).toMatch(/activeModule = "review"/);
   expect(source).toMatch(/attendanceCorrectionVisible/);
+  expect(source).toMatch(/primaryPlatformRole/);
   expect(source).toMatch(/data-action="open-attendance-correction"/);
   expect(source).toMatch(/data-form="attendance-lookup"/);
   expect(source).toMatch(/data-action="clear-attendance-query"/);
@@ -24,6 +25,7 @@ test("production login disables credential persistence and wires foreground expi
   expect(source).toMatch(/data-action="cancel-attendance-correction"/);
   expect(source).toMatch(/data-action="confirm-attendance-correction"/);
   expect(source).toMatch(/data-action="refresh-attendance-authority"/);
+  expect(source).toMatch(/lookupLocked = state\.loading \|\| state\.submitting \|\| state\.pendingAttempt !== null/);
   expect(source).toMatch(/aria-modal="true"/);
   expect(source).toMatch(/\? " inert"/);
   expect(source).toMatch(/event\.key === "Escape"/);

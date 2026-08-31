@@ -207,6 +207,41 @@ describe("AttendanceCorrectionController", () => {
     expect(api.correctAttendanceRegistration).toHaveBeenCalledTimes(2);
   });
 
+  test("preserves the frozen recovery attempt when lookup input, lookup, or clear is requested", async () => {
+    const otherRegistrationId = "7c734b99-7f40-4cbe-83c2-496cc22da2e2";
+    const createKey = jest.fn(() => "attendance-key-123456");
+    const api = {
+      getAttendanceRegistration: jest.fn<PlatformApi["getAttendanceRegistration"]>()
+        .mockResolvedValueOnce(detail())
+        .mockRejectedValueOnce(new ApiError(503, "SERVICE_UNAVAILABLE", "刷新失败")),
+      correctAttendanceRegistration: jest.fn<PlatformApi["correctAttendanceRegistration"]>()
+        .mockRejectedValue(new TypeError("network failed")),
+    };
+    const controller = new AttendanceCorrectionController(api as unknown as PlatformApi, createKey);
+    await controller.lookup(registrationId);
+    controller.setReason("现场记录核验有误");
+    controller.prepareCorrection();
+    await expect(controller.confirmCorrection()).resolves.toMatchObject({ ok: false, refreshRequired: true });
+    const frozenAttempt = controller.state.pendingAttempt;
+
+    expect(controller.setQuery(otherRegistrationId)).toBe(false);
+    await expect(controller.lookup(otherRegistrationId)).resolves.toEqual({
+      ok: false,
+      error: "请先刷新权威状态，确认上一操作结果",
+      refreshRequired: true,
+    });
+    expect(controller.clear()).toEqual({
+      ok: false,
+      error: "请先刷新权威状态，确认上一操作结果",
+      refreshRequired: true,
+    });
+
+    expect(controller.state.query).toBe(registrationId);
+    expect(controller.state.pendingAttempt).toBe(frozenAttempt);
+    expect(createKey).toHaveBeenCalledTimes(1);
+    expect(api.getAttendanceRegistration).toHaveBeenCalledTimes(2);
+  });
+
   test("propagates session expiry and ignores a stale lookup that resolves after clear", async () => {
     let resolve!: (value: AttendanceRegistrationDetail) => void;
     const api = {

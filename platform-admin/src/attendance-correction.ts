@@ -76,6 +76,7 @@ export class AttendanceCorrectionController {
   ) {}
 
   async lookup(input: string): Promise<AttendanceActionResult> {
+    if (this.state.pendingAttempt) return this.recoveryBlocked();
     const normalized = input.trim().toLowerCase();
     const generation = ++this.generation;
     this.state = {
@@ -112,15 +113,23 @@ export class AttendanceCorrectionController {
     }
   }
 
-  setQuery(value: string): void {
+  setQuery(value: string): boolean {
+    if (this.state.pendingAttempt) return false;
     this.state = { ...this.state, query: value, lookupError: null };
+    return true;
   }
 
   setReason(value: string): void {
     this.state = { ...this.state, reason: value, reasonError: null };
   }
 
-  clear(): void {
+  clear(): AttendanceActionResult {
+    if (this.state.pendingAttempt) return this.recoveryBlocked();
+    this.clearForSessionEnd();
+    return { ok: true };
+  }
+
+  clearForSessionEnd(): void {
     this.generation += 1;
     this.state = emptyState();
   }
@@ -395,6 +404,14 @@ export class AttendanceCorrectionController {
   private failReason(error: string): AttendanceActionResult {
     this.state = { ...this.state, reasonError: error, confirmationOpen: false };
     return { ok: false, error };
+  }
+
+  private recoveryBlocked(): AttendanceActionResult {
+    return {
+      ok: false,
+      error: "请先刷新权威状态，确认上一操作结果",
+      refreshRequired: true,
+    };
   }
 }
 

@@ -21,6 +21,12 @@ export function attendanceCorrectionVisible(session: PlatformSession): boolean {
   return session.roles.includes("PLATFORM_ADMIN");
 }
 
+export function primaryPlatformRole(session: PlatformSession): PlatformSession["roles"][number] {
+  return session.roles.includes("PLATFORM_ADMIN")
+    ? "PLATFORM_ADMIN"
+    : session.roles[0] ?? "ONBOARDING_REVIEWER";
+}
+
 export class AuthController {
   state: AuthState = { status: "checking", session: null, error: null };
   private expiryHandler: () => void = () => undefined;

@@ -8,7 +8,7 @@ import {
   type ReviewEvidence,
 } from "./api";
 import { AttendanceCorrectionController } from "./attendance-correction";
-import { AuthController, attendanceCorrectionVisible, consumeAccessToken } from "./auth";
+import { AuthController, attendanceCorrectionVisible, consumeAccessToken, primaryPlatformRole } from "./auth";
 import { ReviewController } from "./review";
 
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -119,7 +119,7 @@ const renderDetail = (): string => {
 const renderTopbar = (backgroundInert = ""): string => {
   const session = auth.state.status === "authenticated" ? auth.state.session : null;
   const canCorrectAttendance = session ? attendanceCorrectionVisible(session) : false;
-  return `<header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台运营台</strong><small>生产运营控制台</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="open-review" type="button"${activeModule === "review" ? ' aria-current="page"' : ""}>入驻审核</button>${canCorrectAttendance ? `<button class="product-nav__item" data-action="open-attendance-correction" type="button"${activeModule === "attendance" ? ' aria-current="page"' : ""}>到场纠错</button>` : ""}</nav><div class="reviewer">${badge(session?.roles[0] ?? "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>`;
+  return `<header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台运营台</strong><small>生产运营控制台</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="open-review" type="button"${activeModule === "review" ? ' aria-current="page"' : ""}>入驻审核</button>${canCorrectAttendance ? `<button class="product-nav__item" data-action="open-attendance-correction" type="button"${activeModule === "attendance" ? ' aria-current="page"' : ""}>到场纠错</button>` : ""}</nav><div class="reviewer">${badge(session ? primaryPlatformRole(session) : "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>`;
 };
 
 const renderReview = (): string => {
@@ -153,10 +153,11 @@ const renderAttendanceModal = (detail: AttendanceRegistrationDetail | null): str
 const renderAttendance = (): string => {
   const state = attendance.state;
   const backgroundInert = state.confirmationOpen ? " inert" : "";
+  const lookupLocked = state.loading || state.submitting || state.pendingAttempt !== null;
   const detailContent = state.detail
     ? renderAttendanceRecord(state.detail)
     : `${renderAttendanceFeedback()}<section class="empty-panel"><span class="empty-panel__mark" aria-hidden="true"></span><h2>${state.loading ? "正在查询报名" : state.lookupError ? "没有可显示的报名" : "先查询一笔报名"}</h2><p>${state.lookupError ? "核对完整 UUID 后重新查询。" : "平台只支持精确 UUID 查询，不提供姓名或手机号搜索。"}</p></section>`;
-  return `<div class="console-shell">${renderTopbar(backgroundInert)}<main class="workspace attendance-workspace" id="main-content"${backgroundInert}><aside class="lookup-pane"><div><p class="eyebrow">Exact lookup</p><h1>精确查询报名</h1><p class="lookup-pane__intro">输入完整报名 UUID，核对球局、球员和原始到场记录后再操作。</p></div><form class="lookup-form" data-form="attendance-lookup" novalidate><label class="field-label" for="registration-id">报名 UUID</label><input class="text-input${state.lookupError ? " has-error" : ""}" id="registration-id" data-action="attendance-query-input" value="${escapeHtml(state.query)}" autocomplete="off" spellcheck="false" aria-describedby="lookup-help lookup-error" ${state.loading || state.submitting ? "disabled" : ""}/><p class="field-help" id="lookup-help">不支持姓名、手机号或模糊搜索，避免扩大个人信息暴露。</p><p class="field-error${state.lookupError ? " is-visible" : ""}" id="lookup-error" role="alert">${escapeHtml(state.lookupError ?? "")}</p><div class="lookup-form__actions"><button class="button button--primary lookup-form__submit" data-action="lookup-attendance" type="submit" ${state.loading || state.submitting ? "disabled" : ""}>${state.loading ? "正在查询…" : "查询报名"}</button><button class="button button--quiet lookup-form__clear" data-action="clear-attendance-query" type="button" ${state.submitting ? "disabled" : ""}>清除</button></div></form><div class="scope-note"><span aria-hidden="true">i</span><p><strong>权限边界</strong>仅 PLATFORM_ADMIN 可以提交纠正；入驻审核员不会看到或进入本功能。</p></div></aside><section class="detail-pane">${detailContent}</section></main></div>${renderAttendanceModal(state.detail)}`;
+  return `<div class="console-shell">${renderTopbar(backgroundInert)}<main class="workspace attendance-workspace" id="main-content"${backgroundInert}><aside class="lookup-pane"><div><p class="eyebrow">Exact lookup</p><h1>精确查询报名</h1><p class="lookup-pane__intro">输入完整报名 UUID，核对球局、球员和原始到场记录后再操作。</p></div><form class="lookup-form" data-form="attendance-lookup" novalidate><label class="field-label" for="registration-id">报名 UUID</label><input class="text-input${state.lookupError ? " has-error" : ""}" id="registration-id" data-action="attendance-query-input" value="${escapeHtml(state.query)}" autocomplete="off" spellcheck="false" aria-describedby="lookup-help lookup-error" ${lookupLocked ? "disabled" : ""}/><p class="field-help" id="lookup-help">${state.pendingAttempt ? "上一操作结果待确认；请先刷新权威状态。" : "不支持姓名、手机号或模糊搜索，避免扩大个人信息暴露。"}</p><p class="field-error${state.lookupError ? " is-visible" : ""}" id="lookup-error" role="alert">${escapeHtml(state.lookupError ?? "")}</p><div class="lookup-form__actions"><button class="button button--primary lookup-form__submit" data-action="lookup-attendance" type="submit" ${lookupLocked ? "disabled" : ""}>${state.loading ? "正在查询…" : "查询报名"}</button><button class="button button--quiet lookup-form__clear" data-action="clear-attendance-query" type="button" ${lookupLocked ? "disabled" : ""}>清除</button></div></form><div class="scope-note"><span aria-hidden="true">i</span><p><strong>权限边界</strong>仅 PLATFORM_ADMIN 可以提交纠正；入驻审核员不会看到或进入本功能。</p></div></aside><section class="detail-pane">${detailContent}</section></main></div>${renderAttendanceModal(state.detail)}`;
 };
 
 const render = (): void => {
@@ -241,7 +242,7 @@ root.addEventListener("click", async (event) => {
       const loggedOut = await auth.logout();
       if (loggedOut) {
         review.clear();
-        attendance.clear();
+        attendance.clearForSessionEnd();
         activeModule = "review";
         feedback = null;
       } else {
@@ -334,7 +335,7 @@ root.addEventListener("click", async (event) => {
 
 auth.setExpiryHandler(() => {
   review.clear();
-  attendance.clear();
+  attendance.clearForSessionEnd();
   activeModule = "review";
   feedback = null;
   render();

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 import { ApiError, SessionExpiredError, type PlatformApi, type PlatformSession } from "./api";
-import { AuthController, attendanceCorrectionVisible, consumeAccessToken } from "./auth";
+import { AuthController, attendanceCorrectionVisible, consumeAccessToken, primaryPlatformRole } from "./auth";
 
 const session: PlatformSession = {
   principal_id: "reviewer-1",
@@ -110,9 +110,12 @@ describe("AuthController", () => {
 
   test("shows attendance correction only to PLATFORM_ADMIN while preserving reviewer access", () => {
     expect(attendanceCorrectionVisible(session)).toBe(false);
-    expect(attendanceCorrectionVisible({
+    const dualRoleSession: PlatformSession = {
       ...session,
       roles: ["ONBOARDING_REVIEWER", "PLATFORM_ADMIN"],
-    })).toBe(true);
+    };
+    expect(attendanceCorrectionVisible(dualRoleSession)).toBe(true);
+    expect(primaryPlatformRole(session)).toBe("ONBOARDING_REVIEWER");
+    expect(primaryPlatformRole(dualRoleSession)).toBe("PLATFORM_ADMIN");
   });
 });
