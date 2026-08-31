@@ -92,6 +92,12 @@ from backend.app.modules.venue_profiles.router import (
     router as venue_profiles_router,
 )
 from backend.app.modules.venue_profiles.storage import VenueMediaStore
+from backend.app.modules.venue_recruitment_invitations.router import (
+    platform_router as platform_recruitment_invitations_router,
+)
+from backend.app.modules.venue_recruitment_invitations.router import (
+    viewer_router as venue_recruitment_invitations_router,
+)
 from backend.app.modules.venues.router import router as venues_router
 from backend.app.modules.wechat_pay.notifications import (
     WeChatPayPaymentNotificationService,
@@ -264,6 +270,7 @@ def create_app(
         application.include_router(platform_auth_router)
         application.include_router(platform_attendance_corrections_router)
         application.include_router(platform_onboarding_router)
+        application.include_router(platform_recruitment_invitations_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_fulfillment_router)
@@ -287,6 +294,7 @@ def create_app(
             )
             application.include_router(venue_fulfillment_refund_router)
         application.include_router(venue_onboarding_router)
+        application.include_router(venue_recruitment_invitations_router)
         application.include_router(venue_profiles_router)
         application.include_router(venue_profile_manual_router)
         if resolved_settings.mock_payment_provider_enabled:

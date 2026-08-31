@@ -274,6 +274,14 @@ class VenueOnboardingEvidenceState(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class VenueRecruitmentInvitationStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    CLAIMED = "CLAIMED"
+    SUBMITTED = "SUBMITTED"
+    REVOKED = "REVOKED"
+    EXPIRED = "EXPIRED"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -1212,6 +1220,189 @@ class VenueOnboardingApplication(Base):
     )
 
     evidence: Mapped[list["VenueOnboardingEvidence"]] = relationship(back_populates="application")
+
+
+class VenueRecruitmentInvitation(Base):
+    __tablename__ = "venue_recruitment_invitations"
+    __table_args__ = (
+        CheckConstraint(
+            "token_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_recruitment_invitations_token_sha256",
+        ),
+        CheckConstraint(
+            "length(contact_label) BETWEEN 1 AND 40 "
+            "AND contact_label = trim(contact_label)",
+            name="ck_recruitment_invitations_contact_label",
+        ),
+        CheckConstraint(
+            "length(created_by_principal_id) BETWEEN 1 AND 128 "
+            "AND created_by_principal_id = trim(created_by_principal_id)",
+            name="ck_recruitment_invitations_creator",
+        ),
+        CheckConstraint(
+            "length(create_idempotency_key) BETWEEN 16 AND 128",
+            name="ck_recruitment_invitations_create_key",
+        ),
+        CheckConstraint(
+            "create_request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_recruitment_invitations_create_request_sha256",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_recruitment_invitations_expiry",
+        ),
+        CheckConstraint(
+            "version >= 1",
+            name="ck_recruitment_invitations_version",
+        ),
+        CheckConstraint(
+            "(claimed_by_user_id IS NULL) = (claimed_at IS NULL)",
+            name="ck_recruitment_invitations_claim_pair",
+        ),
+        CheckConstraint(
+            "(status = 'ACTIVE' AND claimed_by_user_id IS NULL "
+            "AND application_id IS NULL AND revoked_at IS NULL "
+            "AND revoked_by_principal_id IS NULL AND revocation_reason IS NULL "
+            "AND revoke_idempotency_key IS NULL AND revoke_request_sha256 IS NULL) OR "
+            "(status = 'CLAIMED' AND claimed_by_user_id IS NOT NULL "
+            "AND application_id IS NULL AND revoked_at IS NULL "
+            "AND revoked_by_principal_id IS NULL AND revocation_reason IS NULL "
+            "AND revoke_idempotency_key IS NULL AND revoke_request_sha256 IS NULL) OR "
+            "(status = 'SUBMITTED' AND claimed_by_user_id IS NOT NULL "
+            "AND application_id IS NOT NULL AND revoked_at IS NULL "
+            "AND revoked_by_principal_id IS NULL AND revocation_reason IS NULL "
+            "AND revoke_idempotency_key IS NULL AND revoke_request_sha256 IS NULL) OR "
+            "(status = 'REVOKED' AND application_id IS NULL "
+            "AND revoked_at IS NOT NULL AND revoked_by_principal_id IS NOT NULL "
+            "AND revocation_reason IS NOT NULL AND revoke_idempotency_key IS NOT NULL "
+            "AND revoke_request_sha256 IS NOT NULL) OR "
+            "(status = 'EXPIRED' AND application_id IS NULL "
+            "AND revoked_at IS NULL AND revoked_by_principal_id IS NULL "
+            "AND revocation_reason IS NULL AND revoke_idempotency_key IS NULL "
+            "AND revoke_request_sha256 IS NULL)",
+            name="ck_recruitment_invitations_state_fields",
+        ),
+        CheckConstraint(
+            "revoked_by_principal_id IS NULL OR "
+            "(length(revoked_by_principal_id) BETWEEN 1 AND 128 "
+            "AND revoked_by_principal_id = trim(revoked_by_principal_id))",
+            name="ck_recruitment_invitations_revoker",
+        ),
+        CheckConstraint(
+            "revocation_reason IS NULL OR "
+            "(length(revocation_reason) BETWEEN 1 AND 120 "
+            "AND revocation_reason = trim(revocation_reason))",
+            name="ck_recruitment_invitations_revocation_reason",
+        ),
+        CheckConstraint(
+            "revoke_idempotency_key IS NULL OR "
+            "length(revoke_idempotency_key) BETWEEN 16 AND 128",
+            name="ck_recruitment_invitations_revoke_key",
+        ),
+        CheckConstraint(
+            "revoke_request_sha256 IS NULL OR "
+            "revoke_request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_recruitment_invitations_revoke_request_sha256",
+        ),
+        UniqueConstraint(
+            "created_by_principal_id",
+            "create_idempotency_key",
+            name="uq_recruitment_invitations_creator_create_key",
+        ),
+        UniqueConstraint(
+            "revoked_by_principal_id",
+            "revoke_idempotency_key",
+            name="uq_recruitment_invitations_revoker_revoke_key",
+        ),
+        Index(
+            "uq_recruitment_invitations_live_venue",
+            "venue_id",
+            unique=True,
+            postgresql_where=text("status IN ('ACTIVE', 'CLAIMED')"),
+        ),
+        Index(
+            "ix_recruitment_invitations_created_page",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_recruitment_invitations_status_created_page",
+            "status",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venues.id",
+            name="fk_recruitment_invitations_venue",
+            ondelete="RESTRICT",
+        ),
+    )
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    status: Mapped[VenueRecruitmentInvitationStatus] = mapped_column(
+        Enum(
+            VenueRecruitmentInvitationStatus,
+            name="venue_recruitment_invitation_status",
+        )
+    )
+    contact_label: Mapped[str] = mapped_column(String(40))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by_principal_id: Mapped[str] = mapped_column(String(128))
+    create_idempotency_key: Mapped[str] = mapped_column(String(128))
+    create_request_sha256: Mapped[str] = mapped_column(String(64))
+    claimed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_recruitment_invitations_claimed_user",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "venue_onboarding_applications.id",
+            name="fk_recruitment_invitations_application",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_by_principal_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    revocation_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    revoke_idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    revoke_request_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1")
+    )
+
+    venue: Mapped[Venue] = relationship()
+    claimed_by: Mapped["User | None"] = relationship(
+        foreign_keys=[claimed_by_user_id]
+    )
+    application: Mapped[VenueOnboardingApplication | None] = relationship()
 
 
 class VenueOnboardingEvidence(Base):
