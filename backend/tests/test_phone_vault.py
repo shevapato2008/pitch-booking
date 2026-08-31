@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -166,6 +167,95 @@ def test_phone_vault_rejects_missing_or_non_positive_key_version(
 
 def test_settings_session_ttl_defaults_to_30_days() -> None:
     assert Settings().session_ttl_days == 30
+
+
+def test_open_game_notifications_default_disabled_and_ignore_residual_config() -> None:
+    settings = Settings(
+        open_game_notification_provider="disabled",
+        open_game_notification_template_id="not a valid template",
+        open_game_notification_keyword_mapping_json="not-json",
+    )
+
+    assert settings.open_game_notification_provider == "disabled"
+    assert settings.open_game_notification_template_id is None
+    assert settings.open_game_notification_keyword_mapping is None
+
+
+def test_open_game_notification_wechat_config_requires_one_closed_mapping() -> None:
+    mapping = {
+        "game_name": "thing1",
+        "starts_at": "time2",
+        "venue_name": "thing3",
+    }
+    settings = Settings(
+        wechat_app_id="wx-app-id",
+        wechat_app_secret="notification-secret",
+        open_game_notification_provider="wechat",
+        open_game_notification_template_id="template_id-123",
+        open_game_notification_keyword_mapping_json=json.dumps(mapping),
+        open_game_notification_miniprogram_state="trial",
+    )
+
+    assert settings.open_game_notification_keyword_mapping == mapping
+    assert settings.open_game_notification_miniprogram_state == "trial"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"open_game_notification_provider": "email"},
+        {"open_game_notification_miniprogram_state": "preview"},
+    ],
+)
+def test_open_game_notification_config_rejects_unknown_enums(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(**overrides)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"wechat_app_id": None}, "WECHAT_APP_ID"),
+        ({"wechat_app_secret": None}, "WECHAT_APP_SECRET"),
+        ({"open_game_notification_template_id": None}, "OPEN_GAME_NOTIFICATION_TEMPLATE_ID"),
+        (
+            {"open_game_notification_keyword_mapping_json": None},
+            "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON",
+        ),
+        ({"open_game_notification_template_id": "bad id"}, "OPEN_GAME_NOTIFICATION_TEMPLATE_ID"),
+        (
+            {"open_game_notification_keyword_mapping_json": "{}"},
+            "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON",
+        ),
+        ({"open_game_notification_keyword_mapping_json": json.dumps({
+            "game_name": "thing1", "starts_at": "thing2", "venue_name": "thing3",
+        })}, "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON"),
+        ({"open_game_notification_keyword_mapping_json": json.dumps({
+            "game_name": "thing1", "starts_at": "time1", "venue_name": "thing1",
+        })}, "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON"),
+    ],
+)
+def test_open_game_notification_wechat_config_fails_closed(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    values: dict[str, object] = {
+        "wechat_app_id": "wx-app-id",
+        "wechat_app_secret": "notification-secret",
+        "open_game_notification_provider": "wechat",
+        "open_game_notification_template_id": "template_id-123",
+        "open_game_notification_keyword_mapping_json": json.dumps({
+            "game_name": "thing1",
+            "starts_at": "time2",
+            "venue_name": "thing3",
+        }),
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValidationError, match=message):
+        Settings(**values)
 
 
 def test_development_settings_allow_explicit_deterministic_phone_key() -> None:

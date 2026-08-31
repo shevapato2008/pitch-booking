@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     enable_mock_payment_provider: bool = False
     wechat_app_id: str | None = None
     wechat_app_secret: SecretStr | None = Field(default=None, repr=False)
+    open_game_notification_provider: Literal["disabled", "wechat"] = "disabled"
+    open_game_notification_template_id: str | None = None
+    open_game_notification_keyword_mapping_json: str | None = Field(
+        default=None, repr=False
+    )
+    open_game_notification_miniprogram_state: Literal[
+        "formal", "trial", "developer"
+    ] = "formal"
     wechat_pay_merchant_id: str | None = None
     wechat_pay_merchant_cert_serial: str | None = None
     wechat_pay_merchant_private_key_pem_base64: SecretStr | None = Field(
@@ -530,6 +538,66 @@ class Settings(BaseSettings):
             raise ValueError("WECHAT_APP_ID is required for staging and production")
         return value
 
+    @field_validator("open_game_notification_template_id", mode="before")
+    @classmethod
+    def validate_open_game_notification_template_id(
+        cls, value: object, info: ValidationInfo
+    ) -> str | None:
+        if info.data.get("open_game_notification_provider") == "disabled":
+            return None
+        if value is None:
+            return None
+        if type(value) is not str or re.fullmatch(
+            r"[A-Za-z0-9_-]{1,128}", value, re.ASCII
+        ) is None:
+            raise cls._safe_value_error(
+                "open_game_notification_template_id",
+                "OPEN_GAME_NOTIFICATION_TEMPLATE_ID is invalid",
+            )
+        return value
+
+    @field_validator("open_game_notification_keyword_mapping_json", mode="before")
+    @classmethod
+    def validate_open_game_notification_keyword_mapping(
+        cls, value: object, info: ValidationInfo
+    ) -> str | None:
+        if info.data.get("open_game_notification_provider") == "disabled":
+            return None
+        if value is None:
+            return None
+        if type(value) is not str:
+            raise cls._safe_value_error(
+                "open_game_notification_keyword_mapping_json",
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid",
+            )
+        try:
+            decoded = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            raise cls._safe_value_error(
+                "open_game_notification_keyword_mapping_json",
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid",
+            ) from None
+        expected = {"game_name", "starts_at", "venue_name"}
+        if (
+            not isinstance(decoded, dict)
+            or set(decoded) != expected
+            or type(decoded.get("game_name")) is not str
+            or re.fullmatch(r"thing[1-9][0-9]*", decoded["game_name"], re.ASCII)
+            is None
+            or type(decoded.get("starts_at")) is not str
+            or re.fullmatch(r"time[1-9][0-9]*", decoded["starts_at"], re.ASCII)
+            is None
+            or type(decoded.get("venue_name")) is not str
+            or re.fullmatch(r"thing[1-9][0-9]*", decoded["venue_name"], re.ASCII)
+            is None
+            or len(set(decoded.values())) != 3
+        ):
+            raise cls._safe_value_error(
+                "open_game_notification_keyword_mapping_json",
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid",
+            )
+        return json.dumps(decoded, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
     @field_validator("wechat_pay_merchant_id", mode="before")
     @classmethod
     def validate_wechat_pay_merchant_id(
@@ -691,6 +759,20 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_open_game_notification_configuration(self) -> "Settings":
+        if self.open_game_notification_provider == "disabled":
+            return self
+        if self.wechat_app_id is None or not self.wechat_app_id.strip():
+            raise ValueError("WECHAT_APP_ID is required for WeChat notifications")
+        if self.wechat_app_secret is None:
+            raise ValueError("WECHAT_APP_SECRET is required for WeChat notifications")
+        if self.open_game_notification_template_id is None:
+            raise ValueError("OPEN_GAME_NOTIFICATION_TEMPLATE_ID is required")
+        if self.open_game_notification_keyword_mapping_json is None:
+            raise ValueError("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is required")
+        return self
+
+    @model_validator(mode="after")
     def validate_private_onboarding_bucket(self) -> "Settings":
         if (
             self.oss_bucket is not None
@@ -724,6 +806,13 @@ class Settings(BaseSettings):
                 self.wechat_pay_refund_notification_url,
             )
         )
+
+    @property
+    def open_game_notification_keyword_mapping(self) -> dict[str, str] | None:
+        if self.open_game_notification_keyword_mapping_json is None:
+            return None
+        decoded = json.loads(self.open_game_notification_keyword_mapping_json)
+        return cast(dict[str, str], decoded)
 
     @staticmethod
     def _is_deployed(info: ValidationInfo) -> bool:
