@@ -44,6 +44,11 @@ test("C2f freezes exactly two player and three platform operations", async () =>
       Submitted: { externalValue: "./examples/open-game-report-submitted.json" },
     });
   }
+  assert.deepEqual(
+    submit.responses["409"].content["application/json"].schema
+      .allOf[1].properties.error.properties.code.enum,
+    ["REPORTING_WINDOW_CLOSED", "REPORT_ALREADY_EXISTS", "IDEMPOTENCY_KEY_REUSED"],
+  );
 
   const queueParameters = contract.paths[PLATFORM_QUEUE_PATH].get.parameters;
   assert.deepEqual(queueParameters.map(({ name }) => name), ["state", "limit", "cursor"]);

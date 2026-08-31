@@ -3992,14 +3992,14 @@ paths:
                   - type: object
                     properties: {error: {type: object, properties: {code: {const: REPORT_CONTEXT_NOT_FOUND}}}}
         '409':
-          description: A different report already exists or the idempotency key was reused.
+          description: The reporting window closed, a different report already exists, or the idempotency key was reused.
           content:
             application/json:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/ErrorEnvelope'
                   - type: object
-                    properties: {error: {type: object, properties: {code: {enum: [REPORT_ALREADY_EXISTS, IDEMPOTENCY_KEY_REUSED]}}}}
+                    properties: {error: {type: object, properties: {code: {enum: [REPORTING_WINDOW_CLOSED, REPORT_ALREADY_EXISTS, IDEMPOTENCY_KEY_REUSED]}}}}
         '422':
           description: Category, facts, or headers are invalid or contain prohibited sensitive content.
           content:
@@ -8186,6 +8186,7 @@ components:
             - ATTENDANCE_STATE_CHANGED
             - ATTENDANCE_REGISTRATION_NOT_FOUND
             - REPORT_CONTEXT_NOT_FOUND
+            - REPORTING_WINDOW_CLOSED
             - REPORT_ALREADY_EXISTS
             - SENSITIVE_CONTENT_NOT_ALLOWED
             - REPORT_NOT_FOUND

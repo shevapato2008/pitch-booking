@@ -32,6 +32,12 @@ from backend.app.modules.open_game_registrations.router import (
 from backend.app.modules.open_game_registrations.router import (
     router as open_game_registrations_router,
 )
+from backend.app.modules.open_game_reports.router import (
+    align_open_game_reports_openapi,
+    is_open_game_report_mutation_request,
+    open_game_report_request_validation_handler,
+)
+from backend.app.modules.open_game_reports.router import router as open_game_reports_router
 from backend.app.modules.open_games.router import (
     is_open_game_mutation_request,
     open_game_request_validation_handler,
@@ -222,6 +228,9 @@ def create_app(
         application.add_exception_handler(AppError, app_error_handler)
 
         async def validation_handler(request: Request, error: Exception) -> JSONResponse:
+            if is_open_game_report_mutation_request(request):
+                assert isinstance(error, RequestValidationError)
+                return await open_game_report_request_validation_handler(request, error)
             if is_open_game_registration_mutation_request(request):
                 assert isinstance(error, RequestValidationError)
                 return await open_game_registration_request_validation_handler(
@@ -257,6 +266,7 @@ def create_app(
         application.include_router(inventory_router)
         application.include_router(orders_router)
         application.include_router(open_game_registrations_router)
+        application.include_router(open_game_reports_router)
         application.include_router(open_games_router)
         application.include_router(public_games_router)
         application.include_router(payments_router)
@@ -346,6 +356,7 @@ def create_app(
             align_order_list_openapi(schema)
             align_public_game_directory_openapi(schema)
             align_my_open_game_applications_openapi(schema)
+            align_open_game_reports_openapi(schema)
             align_platform_attendance_corrections_openapi(schema)
             shared_game_get = (
                 schema.get("paths", {})
