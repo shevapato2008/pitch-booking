@@ -1838,6 +1838,83 @@ class OpenGameRegistration(Base):
     )
 
 
+class OpenGameAttendanceCorrection(Base):
+    __tablename__ = "open_game_attendance_corrections"
+    __table_args__ = (
+        CheckConstraint(
+            "from_status IN ('PRESENT', 'NO_SHOW') "
+            "AND to_status IN ('PRESENT', 'NO_SHOW') "
+            "AND from_status <> to_status",
+            name="ck_open_game_attendance_corrections_status_transition",
+        ),
+        CheckConstraint(
+            "length(reason) BETWEEN 1 AND 1000 AND reason = trim(reason)",
+            name="ck_open_game_attendance_corrections_reason",
+        ),
+        CheckConstraint(
+            "length(corrected_by_principal_id) BETWEEN 1 AND 128 "
+            "AND corrected_by_principal_id = trim(corrected_by_principal_id)",
+            name="ck_open_game_attendance_corrections_principal",
+        ),
+        CheckConstraint(
+            "registration_version_before >= 1 "
+            "AND registration_version_after = registration_version_before + 1",
+            name="ck_open_game_attendance_corrections_version",
+        ),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_open_game_attendance_corrections_request_sha256",
+        ),
+        PrimaryKeyConstraint(
+            "id",
+            name="pk_open_game_attendance_corrections",
+        ),
+        UniqueConstraint(
+            "registration_id",
+            "registration_version_after",
+            name=(
+                "uq_open_game_attendance_corrections_"
+                "registration_version_after"
+            ),
+        ),
+        UniqueConstraint(
+            "corrected_by_principal_id",
+            "idempotency_key",
+            name=(
+                "uq_open_game_attendance_corrections_"
+                "principal_idempotency_key"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid.uuid4
+    )
+    registration_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_game_registrations.id",
+            name="fk_attendance_corrections_registration",
+            ondelete="RESTRICT",
+        ),
+    )
+    from_status: Mapped[OpenGameAttendanceStatus] = mapped_column(
+        Enum(OpenGameAttendanceStatus, name="open_game_attendance_status")
+    )
+    to_status: Mapped[OpenGameAttendanceStatus] = mapped_column(
+        Enum(OpenGameAttendanceStatus, name="open_game_attendance_status")
+    )
+    reason: Mapped[str] = mapped_column(String(1000))
+    corrected_by_principal_id: Mapped[str] = mapped_column(String(128))
+    corrected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    registration_version_before: Mapped[int] = mapped_column(Integer)
+    registration_version_after: Mapped[int] = mapped_column(Integer)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+
+
 class OpenGameNotificationOutbox(Base):
     __tablename__ = "open_game_notification_outbox"
     __table_args__ = (
