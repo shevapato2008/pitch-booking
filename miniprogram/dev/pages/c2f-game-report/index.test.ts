@@ -183,6 +183,7 @@ test("markup supports scrolling, safe fixed footer, aligned controls and intact 
   expect(template).toContain("举报对象 · {{targetLabel}}");
   expect(template).toContain("举报对象为本场球局及组织者，不是单个成员");
   expect(template).toContain("{{factsCount}}/500");
+  expect(template).toContain('maxlength="-1"');
   expect(template).toContain("不要填写手机号、微信号、邮箱、链接或其他可识别个人的信息");
   expect(template).toContain('wx:if="{{confirmationOpen}}"');
   expect(template).toContain('aria-role="dialog"');

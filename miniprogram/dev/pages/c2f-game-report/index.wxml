@@ -54,7 +54,7 @@
         <textarea
           class="c2f-facts-input {{factsError ? 'has-error' : ''}}"
           value="{{facts}}"
-          maxlength="500"
+          maxlength="-1"
           auto-height="false"
           placeholder="请描述你亲历的时间、地点与情况"
           bindinput="onFactsInput"
