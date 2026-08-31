@@ -25,10 +25,12 @@ from backend.app.modules.open_game_registrations.lifecycle import (
     ApplyActions,
     AvailableWithdrawalAction,
     EffectiveRegistrationStatus,
+    MemberRemovalActions,
     ReviewActions,
     WithdrawalAction,
 )
 from backend.app.modules.open_games.dto import OpenGamePublic
+from backend.app.modules.open_games.lifecycle import EffectiveOpenGameState
 
 OPEN_GAME_REGISTRATION_CONSENT_VERSION = "c1a-2026-08-24"
 
@@ -44,9 +46,7 @@ _URL_RE = re.compile(
     r"https?://|www\.|(?:^|\s)[a-z0-9-]+\.(?:com|cn|net|org)(?:/|\s|$)",
     re.IGNORECASE,
 )
-_MAINLAND_ID_RE = re.compile(
-    r"(?:^|[^0-9])(?:[0-9]{17}[0-9Xx]|[0-9]{15})(?:$|[^0-9])"
-)
+_MAINLAND_ID_RE = re.compile(r"(?:^|[^0-9])(?:[0-9]{17}[0-9Xx]|[0-9]{15})(?:$|[^0-9])")
 
 
 class _ClosedModel(BaseModel):
@@ -75,6 +75,7 @@ class RegistrationPersistedStatus(StrEnum):
     JOINED = "JOINED"
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
+    REMOVED = "REMOVED"
 
 
 class RegistrationWithdrawalKind(StrEnum):
@@ -142,6 +143,7 @@ class ViewerRegistration(_FrozenClosedModel):
     attendance_status: OpenGameAttendanceStatus | None
     attendance_recorded_at: AwareDatetime | None
     attendance_corrected_at: AwareDatetime | None
+    removed_at: AwareDatetime | None
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> Self:
@@ -156,6 +158,7 @@ class ViewerRegistration(_FrozenClosedModel):
             "withdrawn_at",
             "waitlisted_at",
             "promoted_at",
+            "removed_at",
         ):
             value = getattr(self, field_name)
             if value is not None and value < self.applied_at:
@@ -166,12 +169,8 @@ class ViewerRegistration(_FrozenClosedModel):
             and self.waitlisted_at < self.decided_at
         ):
             raise ValueError("waitlisted_at must not precede decided_at")
-        if (
-            self.promoted_at is not None
-            and (
-                self.waitlisted_at is None
-                or self.promoted_at < self.waitlisted_at
-            )
+        if self.promoted_at is not None and (
+            self.waitlisted_at is None or self.promoted_at < self.waitlisted_at
         ):
             raise ValueError("promoted_at must follow waitlisted_at")
         if self.withdrawn_at is not None:
@@ -203,10 +202,11 @@ class ViewerRegistration(_FrozenClosedModel):
             ):
                 raise ValueError("WAITLISTED lifecycle is inconsistent")
         elif status is RegistrationPersistedStatus.JOINED:
-            if self.decided_at is None or not (
-                no_waitlist_history or promoted_history
-            ):
+            if self.decided_at is None or not (no_waitlist_history or promoted_history):
                 raise ValueError("JOINED lifecycle is inconsistent")
+        elif status is RegistrationPersistedStatus.REMOVED:
+            if self.decided_at is None or not (no_waitlist_history or promoted_history):
+                raise ValueError("REMOVED lifecycle is inconsistent")
         elif status is RegistrationPersistedStatus.REJECTED:
             if self.decided_at is None or not no_waitlist_history:
                 raise ValueError("REJECTED lifecycle is inconsistent")
@@ -237,22 +237,16 @@ class ViewerRegistration(_FrozenClosedModel):
                     or self.late_exit_recorded
                 ):
                     raise ValueError("waitlist withdrawal lifecycle is inconsistent")
-            elif (
-                self.decided_at is None
-                or not (no_waitlist_history or promoted_history)
-            ):
+            elif self.decided_at is None or not (no_waitlist_history or promoted_history):
                 raise ValueError("game exit lifecycle is inconsistent")
 
         expected_action = {
-            RegistrationPersistedStatus.APPLIED: (
-                AvailableWithdrawalAction.WITHDRAW_APPLICATION
-            ),
-            RegistrationPersistedStatus.WAITLISTED: (
-                AvailableWithdrawalAction.WITHDRAW_WAITLIST
-            ),
+            RegistrationPersistedStatus.APPLIED: (AvailableWithdrawalAction.WITHDRAW_APPLICATION),
+            RegistrationPersistedStatus.WAITLISTED: (AvailableWithdrawalAction.WITHDRAW_WAITLIST),
             RegistrationPersistedStatus.JOINED: AvailableWithdrawalAction.LEAVE_GAME,
             RegistrationPersistedStatus.REJECTED: None,
             RegistrationPersistedStatus.WITHDRAWN: None,
+            RegistrationPersistedStatus.REMOVED: None,
         }[status]
         if self.available_withdrawal_action not in {None, expected_action}:
             raise ValueError("available withdrawal action does not match lifecycle")
@@ -262,15 +256,20 @@ class ViewerRegistration(_FrozenClosedModel):
         ):
             raise ValueError("cancelled registration cannot expose a withdrawal action")
         if self.late_exit_will_be_recorded and (
-            self.available_withdrawal_action
-            is not AvailableWithdrawalAction.LEAVE_GAME
+            self.available_withdrawal_action is not AvailableWithdrawalAction.LEAVE_GAME
         ):
             raise ValueError("late exit warning requires LEAVE_GAME")
         if status is RegistrationPersistedStatus.WITHDRAWN and (
-            self.available_withdrawal_action is not None
-            or self.late_exit_will_be_recorded
+            self.available_withdrawal_action is not None or self.late_exit_will_be_recorded
         ):
             raise ValueError("withdrawn registration cannot expose another withdrawal")
+        if status is RegistrationPersistedStatus.REMOVED:
+            if self.removed_at is None:
+                raise ValueError("REMOVED lifecycle requires removed_at")
+            if self.removed_at < self.decided_at:
+                raise ValueError("removed_at must not precede decided_at")
+        elif self.removed_at is not None:
+            raise ValueError("non-removed lifecycle cannot contain removed_at")
         _validate_self_attendance(
             status=self.attendance_status,
             recorded_at=self.attendance_recorded_at,
@@ -327,8 +326,7 @@ class Queue(_FrozenClosedModel):
         if self.waitlist_count != len(self.waitlist):
             raise ValueError("waitlist_count must equal waitlist length")
         if any(
-            item.waitlist_position != index
-            for index, item in enumerate(self.waitlist, start=1)
+            item.waitlist_position != index for index, item in enumerate(self.waitlist, start=1)
         ):
             raise ValueError("waitlist must be in contiguous one-based server order")
         return self
@@ -443,6 +441,98 @@ class DecisionResult(_FrozenClosedModel):
     allowed_actions: ReviewActions
 
 
+class OpenGameMemberRemovalRequest(_ClosedModel):
+    expected_version: Annotated[int, Field(strict=True, ge=1)]
+    reason: Annotated[str, Field(strict=True, min_length=1, max_length=120)]
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_reason(cls, value: object) -> object:
+        if not isinstance(value, str):
+            raise ValueError("reason must be a string")
+        return value.strip()
+
+    @field_validator("reason")
+    @classmethod
+    def reject_private_text(cls, value: str) -> str:
+        return validate_registration_visible_text(value)
+
+
+class OpenGameMemberGameSummary(_FrozenClosedModel):
+    id: uuid.UUID
+    name: Annotated[str, Field(strict=True, min_length=2, max_length=30)]
+    venue_name: Annotated[str, Field(strict=True, min_length=1)]
+    pitch_name: Annotated[str, Field(strict=True, min_length=1)]
+    starts_at: AwareDatetime
+    ends_at: AwareDatetime
+    time_zone: Annotated[str, Field(strict=True)]
+    state: EffectiveOpenGameState
+
+    @field_validator("time_zone")
+    @classmethod
+    def require_iana_time_zone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError("time_zone must identify an IANA time zone") from error
+        return value
+
+    @model_validator(mode="after")
+    def validate_times(self) -> Self:
+        if self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be after starts_at")
+        return self
+
+
+class OpenGameMemberRosterItem(_FrozenClosedModel):
+    registration_id: uuid.UUID
+    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    position: OpenGameRegistrationPosition
+    joined_at: AwareDatetime
+    promoted_from_waitlist: Annotated[bool, Field(strict=True)]
+    version: Annotated[int, Field(strict=True, ge=1)]
+    allowed_actions: MemberRemovalActions
+
+
+class OpenGameMemberRoster(_FrozenClosedModel):
+    game: OpenGameMemberGameSummary
+    joined_count: Annotated[int, Field(strict=True, ge=0)]
+    remaining_spots: Annotated[int, Field(strict=True, ge=0)]
+    waitlist_count: Annotated[int, Field(strict=True, ge=0)]
+    members: tuple[OpenGameMemberRosterItem, ...]
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        if self.joined_count != len(self.members):
+            raise ValueError("joined_count must equal members length")
+        return self
+
+
+class OpenGamePromotedMember(_FrozenClosedModel):
+    registration_id: uuid.UUID
+    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    position: OpenGameRegistrationPosition
+    version: Annotated[int, Field(strict=True, ge=2)]
+
+
+class OpenGameMemberRemovalResult(_FrozenClosedModel):
+    removed_registration_id: uuid.UUID
+    removed_display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    status: Literal["REMOVED"]
+    version: Annotated[int, Field(strict=True, ge=2)]
+    removed_at: AwareDatetime
+    joined_count: Annotated[int, Field(strict=True, ge=0)]
+    remaining_spots: Annotated[int, Field(strict=True, ge=0)]
+    waitlist_count: Annotated[int, Field(strict=True, ge=0)]
+    promoted_member: OpenGamePromotedMember | None
+
+    @model_validator(mode="after")
+    def validate_capacity(self) -> Self:
+        if self.promoted_member is not None and self.remaining_spots != 0:
+            raise ValueError("promotion must refill the opened spot")
+        return self
+
+
 class OpenGameAttendanceGameSummary(_FrozenClosedModel):
     id: uuid.UUID
     name: Annotated[str, Field(strict=True, min_length=2, max_length=30)]
@@ -534,9 +624,7 @@ class OpenGameAttendanceMarkResult(_FrozenClosedModel):
     def validate_counts(self) -> Self:
         if self.recorded_count > self.total_count:
             raise ValueError("recorded_count must not exceed total_count")
-        if self.attendance_complete is not (
-            self.recorded_count == self.total_count
-        ):
+        if self.attendance_complete is not (self.recorded_count == self.total_count):
             raise ValueError("attendance_complete must match the counts")
         return self
 

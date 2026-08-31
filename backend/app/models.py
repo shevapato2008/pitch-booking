@@ -128,6 +128,7 @@ class OpenGameRegistrationStatus(StrEnum):
     JOINED = "JOINED"
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
+    REMOVED = "REMOVED"
 
 
 class OpenGameAttendanceStatus(StrEnum):
