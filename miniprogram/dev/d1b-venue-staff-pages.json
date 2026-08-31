@@ -1,0 +1,8 @@
+{
+  "token": "D1B_VENUE_STAFF_AUTHORIZATION_FIXTURE",
+  "pages": [
+    "dev/pages/d1b-staff-scenario/index",
+    "dev/pages/d1b-venue-staff/index",
+    "dev/pages/d1b-staff-invitation/index"
+  ]
+}

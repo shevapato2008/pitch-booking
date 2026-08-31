@@ -1,0 +1,17 @@
+<view class="d1b-scenario-page">
+  <view class="d1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="d1b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="d1b-header-back" hover-class="d1b-pressed" bindtap="onHeaderBack" aria-label="返回"><view class="d1b-back-icon"></view></button>
+    <text class="d1b-header-title">D1b 开发预览</text><view class="d1b-header-spacer"></view>
+  </view>
+  <scroll-view class="d1b-scenario-scroll" scroll-y="true">
+    <view class="d1b-scenario-content">
+      <text class="d1b-kicker">D1b 开发预览 · 模拟数据</text>
+      <text class="d1b-scenario-title">场馆员工与权限</text>
+      <text class="d1b-scenario-copy">选择一个可重复状态，检查负责人和员工看到的真实权限边界。</text>
+      <button wx:for="{{scenarios}}" wx:key="key" class="d1b-scenario-button" data-url="{{item.url}}" bindtap="onOpenScenario" hover-class="d1b-pressed">
+        <view><text>{{item.title}}</text><text>{{item.description}}</text></view><view class="d1b-chevron"></view>
+      </button>
+    </view>
+  </scroll-view>
+</view>

@@ -130,6 +130,15 @@ for (const token of [
   "C2d 开发预览 · 模拟数据",
   "8ed324a4-56cb-4d73-9a77-0b4605ac3b17",
   "C1b 预发布验收局",
+  "D1B_VENUE_STAFF_AUTHORIZATION_FIXTURE",
+  "remove D1B_VENUE_STAFF_AUTHORIZATION_FIXTURE before production build or integration",
+  "d1b-venue-staff-fixture",
+  "d1b-venue-staff-pages.json",
+  "dev/pages/d1b-staff-scenario/index",
+  "dev/pages/d1b-venue-staff/index",
+  "dev/pages/d1b-staff-invitation/index",
+  "D1b 开发预览 · 模拟数据",
+  "Qw7Er9Ty2Ui4Op6As8Df0Gh1Jk3Lz5Xc7Vb9Nm2Qw4E",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
