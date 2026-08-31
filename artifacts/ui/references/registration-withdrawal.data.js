@@ -185,7 +185,7 @@ const confirmationSheet = (fixture) => {
   </section>`;
 };
 
-const resultUnknownScreen = (fixture) => `${systemHeader()}
+const resultUnknownScreen = () => `${systemHeader()}
   <section class="screen screen--unknown">
     <p class="preview-note">C2a 开发预览 · 模拟数据</p>
     ${gameCard()}

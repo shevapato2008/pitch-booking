@@ -1,7 +1,6 @@
 import type { OpenGameEntry, OpenGameOwner } from "../../domain/open-game";
 import {
   applyOpenGameStepper,
-  centsToYuan,
   createOpenGameForm,
   formatOpenGameRange,
   mapOpenGameFieldErrors,

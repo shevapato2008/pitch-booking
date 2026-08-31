@@ -91,7 +91,7 @@ export function createOnboardingIdempotencyKey(scope: string): string {
 export function createWeChatVenueOnboardingEvidenceCapability(): VenueOnboardingEvidenceCapability {
   const activeUploads = new Set<{ abort(code?: string): void }>();
   return {
-    choose(_kind) {
+    choose() {
       return choosePhoto();
     },
     upload(file, intent) {

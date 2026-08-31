@@ -46,7 +46,7 @@ const firstOrder: OrderSummaryView = {
 const secondOrder = { ...firstOrder, orderId: "00000000-0000-4000-8000-000000000057", orderNumber: "PB202608180002" };
 
 const list = (orders: readonly OrderSummaryView[], nextCursor: string | null): OrderListView => ({ orders, nextCursor });
-const call = (target: RuntimePage, method: string, ...args: unknown[]) => target[method].apply(target, args);
+const call = (target: RuntimePage, method: string, ...args: unknown[]) => target[method](...args);
 
 function registerListSource(listOrders: (cursor?: string, limit?: number) => Promise<OrderListView>) {
   registerBookingDataSource({ listOrders } as any);

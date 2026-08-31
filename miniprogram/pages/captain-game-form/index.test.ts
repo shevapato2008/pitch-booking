@@ -18,7 +18,7 @@ import {
 
 type PageDefinition = Record<string, any> & { data: Record<string, any> };
 type RuntimePage = PageDefinition & { setData(patch: Record<string, unknown>): void };
-const call = (page: RuntimePage, method: string, ...args: unknown[]) => page[method].apply(page, args);
+const call = (page: RuntimePage, method: string, ...args: unknown[]) => page[method](...args);
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 let captured: PageDefinition | undefined;
 function loadPage(): RuntimePage {
