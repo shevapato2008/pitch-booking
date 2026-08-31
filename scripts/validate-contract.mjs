@@ -483,9 +483,33 @@ const exampleMap = [
     filename: 'recruitment-invitation-created.json',
     reference: './examples/recruitment-invitation-created.json',
     schema: 'RecruitmentInvitationCreateResult',
+    attachments: [attachment('/platform-admin/api/v1/recruitment-invitations', '201', 'Created', 'post')],
+  },
+  {
+    filename: 'recruitment-invitation-readback.json',
+    reference: './examples/recruitment-invitation-readback.json',
+    schema: 'RecruitmentInvitation',
+    attachments: [attachment('/platform-admin/api/v1/recruitment-invitations', '200', 'Replayed', 'post')],
+  },
+  {
+    filename: 'error-venue-invitation-not-found.json',
+    reference: './examples/error-venue-invitation-not-found.json',
+    schema: 'ErrorEnvelope',
     attachments: [
-      attachment('/platform-admin/api/v1/recruitment-invitations', '200', 'Created', 'post'),
-      attachment('/platform-admin/api/v1/recruitment-invitations', '201', 'Created', 'post'),
+      attachment('/platform-admin/api/v1/recruitment-invitations/{invitation_id}/revoke', '404', 'NotFound', 'post'),
+      attachment('/api/v1/venue-invitations/{token}', '404', 'NotFound'),
+      attachment('/api/v1/venue-invitations/{token}/accept', '404', 'NotFound', 'post'),
+      attachment('/api/v1/venue-invitations/{token}/claims', '404', 'NotFound', 'post'),
+    ],
+  },
+  {
+    filename: 'error-venue-invitation-unavailable.json',
+    reference: './examples/error-venue-invitation-unavailable.json',
+    schema: 'ErrorEnvelope',
+    attachments: [
+      attachment('/api/v1/venue-invitations/{token}', '410', 'Unavailable'),
+      attachment('/api/v1/venue-invitations/{token}/accept', '410', 'Unavailable', 'post'),
+      attachment('/api/v1/venue-invitations/{token}/claims', '410', 'Unavailable', 'post'),
     ],
   },
   {
@@ -1337,8 +1361,6 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'VENUE_NOT_ELIGIBLE',
   'VENUE_INVITATION_EXISTS',
   'VENUE_INVITATION_STATE_CHANGED',
-  'VENUE_INVITATION_NOT_FOUND',
-  'VENUE_INVITATION_UNAVAILABLE',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),

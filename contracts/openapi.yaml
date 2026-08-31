@@ -4671,7 +4671,7 @@ paths:
         '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
     post:
       operationId: createRecruitmentInvitation
-      description: Creates a seven-day invitation and returns the raw token and path only in this response.
+      description: Creates a seven-day invitation. Only a first-time 201 response reveals the raw token and path; an idempotent 200 replay returns safe invitation metadata.
       security:
         - platformSession: []
       parameters:
@@ -4691,13 +4691,13 @@ paths:
             schema: {$ref: '#/components/schemas/RecruitmentInvitationCreateRequest'}
       responses:
         '200':
-          description: Idempotent replay of the authoritative create result.
+          description: Idempotent replay of authoritative invitation metadata without the one-time raw token or path.
           headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/RecruitmentInvitationCreateResult'}
+              schema: {$ref: '#/components/schemas/RecruitmentInvitation'}
               examples:
-                Created: {externalValue: './examples/recruitment-invitation-created.json'}
+                Replayed: {externalValue: './examples/recruitment-invitation-readback.json'}
         '201':
           description: Invitation created; this is the only response that reveals the raw token.
           headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
@@ -5044,7 +5044,16 @@ components:
             allOf:
               - $ref: '#/components/schemas/ErrorEnvelope'
               - type: object
-                properties: {error: {type: object, properties: {code: {const: VENUE_INVITATION_NOT_FOUND}}}}
+                properties:
+                  error:
+                    type: object
+                    required: [code, message, details]
+                    properties:
+                      code: {const: VENUE_INVITATION_NOT_FOUND}
+                      message: {const: 邀请不存在或链接格式有误。}
+                      details: {type: object, additionalProperties: false, maxProperties: 0}
+          examples:
+            NotFound: {externalValue: './examples/error-venue-invitation-not-found.json'}
     VenueInvitationUnavailable:
       description: Invitation is expired, revoked, or bound to another user; the reason is intentionally opaque.
       headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
@@ -5054,7 +5063,16 @@ components:
             allOf:
               - $ref: '#/components/schemas/ErrorEnvelope'
               - type: object
-                properties: {error: {type: object, properties: {code: {const: VENUE_INVITATION_UNAVAILABLE}}}}
+                properties:
+                  error:
+                    type: object
+                    required: [code, message, details]
+                    properties:
+                      code: {const: VENUE_INVITATION_UNAVAILABLE}
+                      message: {const: 邀请已失效，请联系邀请人获取新链接。}
+                      details: {type: object, additionalProperties: false, maxProperties: 0}
+          examples:
+            Unavailable: {externalValue: './examples/error-venue-invitation-unavailable.json'}
     RecruitmentInvitationConflict:
       description: Invitation eligibility, lifecycle, application, or idempotency authority changed.
       headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
@@ -6826,6 +6844,35 @@ components:
         revoked_at: {type: [string, 'null'], format: date-time}
         revocation_reason: {type: [string, 'null'], minLength: 1, maxLength: 120}
         version: {type: integer, minimum: 1}
+      oneOf:
+        - properties:
+            status: {const: ACTIVE}
+            claimed_at: {type: 'null'}
+            application_id: {type: 'null'}
+            revoked_at: {type: 'null'}
+            revocation_reason: {type: 'null'}
+        - properties:
+            status: {const: CLAIMED}
+            claimed_at: {type: string, format: date-time}
+            application_id: {type: 'null'}
+            revoked_at: {type: 'null'}
+            revocation_reason: {type: 'null'}
+        - properties:
+            status: {const: SUBMITTED}
+            claimed_at: {type: string, format: date-time}
+            application_id: {type: string, format: uuid}
+            revoked_at: {type: 'null'}
+            revocation_reason: {type: 'null'}
+        - properties:
+            status: {const: REVOKED}
+            application_id: {type: 'null'}
+            revoked_at: {type: string, format: date-time}
+            revocation_reason: {type: string, minLength: 1, maxLength: 120}
+        - properties:
+            status: {const: EXPIRED}
+            application_id: {type: 'null'}
+            revoked_at: {type: 'null'}
+            revocation_reason: {type: 'null'}
     RecruitmentInvitations:
       type: object
       additionalProperties: false
@@ -6868,6 +6915,16 @@ components:
         expires_at: {type: string, format: date-time}
         application_id: {type: [string, 'null'], format: uuid}
         version: {type: integer, minimum: 1}
+      oneOf:
+        - properties:
+            viewer_state: {const: AVAILABLE}
+            application_id: {type: 'null'}
+        - properties:
+            viewer_state: {const: CLAIMED_BY_VIEWER}
+            application_id: {type: 'null'}
+        - properties:
+            viewer_state: {const: SUBMITTED_BY_VIEWER}
+            application_id: {type: string, format: uuid}
     InvitedVenueClaimRequest:
       description: Venue and verified phone are derived from invitation and authenticated user authority.
       type: object

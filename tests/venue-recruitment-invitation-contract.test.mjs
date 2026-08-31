@@ -71,6 +71,11 @@ test("D1a schemas are closed and invitation claim cannot choose venue or phone",
   assert.equal(schemas.InvitedVenueClaimRequest.properties.phone, undefined);
   assert.deepEqual(schemas.RecruitmentInvitationStatus.enum, ["ACTIVE", "CLAIMED", "SUBMITTED", "REVOKED", "EXPIRED"]);
   assert.deepEqual(schemas.VenueRecruitmentInvitation.properties.viewer_state.enum, ["AVAILABLE", "CLAIMED_BY_VIEWER", "SUBMITTED_BY_VIEWER"]);
+  assert.equal(schemas.RecruitmentInvitation.oneOf.length, 5);
+  assert.equal(schemas.VenueRecruitmentInvitation.oneOf.length, 3);
+  const create = contract.paths["/platform-admin/api/v1/recruitment-invitations"].post;
+  assert.deepEqual(create.responses["200"].content["application/json"].schema, { $ref: "#/components/schemas/RecruitmentInvitation" });
+  assert.deepEqual(create.responses["201"].content["application/json"].schema, { $ref: "#/components/schemas/RecruitmentInvitationCreateResult" });
 });
 
 test("D1a examples expose the raw path once and never disclose bound identity", async () => {
@@ -93,4 +98,24 @@ test("D1a examples expose the raw path once and never disclose bound identity", 
   assert.equal(claimed.viewer_state, "CLAIMED_BY_VIEWER");
   assert.equal(submitted.viewer_state, "SUBMITTED_BY_VIEWER");
   assert.equal(submitted.application_id, "30000000-0000-4000-8000-000000000003");
+});
+
+test("D1a opaque 404 and 410 examples freeze empty details and generic messages", async () => {
+  const [notFound, unavailable] = await Promise.all([
+    readExample("error-venue-invitation-not-found.json"),
+    readExample("error-venue-invitation-unavailable.json"),
+  ]);
+  assert.deepEqual(notFound.error.details, {});
+  assert.deepEqual(unavailable.error.details, {});
+  assert.equal(notFound.error.message, "邀请不存在或链接格式有误。");
+  assert.equal(unavailable.error.message, "邀请已失效，请联系邀请人获取新链接。");
+  for (const [path, status] of [
+    ["/api/v1/venue-invitations/{token}", "404"],
+    ["/api/v1/venue-invitations/{token}", "410"],
+    ["/api/v1/venue-invitations/{token}/accept", "410"],
+    ["/api/v1/venue-invitations/{token}/claims", "410"],
+  ]) {
+    const response = contract.paths[path][path.endsWith("{token}") ? "get" : "post"].responses[status];
+    assert.ok(response.$ref);
+  }
 });
