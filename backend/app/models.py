@@ -2050,7 +2050,7 @@ class OpenGameRegistration(Base):
         CheckConstraint(
             "(status = 'APPLIED' AND decided_at IS NULL "
             "AND decided_by_user_id IS NULL) OR "
-            "(status IN ('WAITLISTED', 'JOINED', 'REJECTED') "
+            "(status IN ('WAITLISTED', 'JOINED', 'REJECTED', 'REMOVED') "
             "AND decided_at IS NOT NULL "
             "AND decided_by_user_id IS NOT NULL) OR "
             "(status = 'WITHDRAWN' AND withdrawal_kind = 'APPLICATION_WITHDRAWAL' "
@@ -2061,7 +2061,7 @@ class OpenGameRegistration(Base):
             name="ck_open_game_registrations_decision_pair",
         ),
         CheckConstraint(
-            "(status IN ('APPLIED', 'WAITLISTED', 'JOINED', 'REJECTED') "
+            "(status IN ('APPLIED', 'WAITLISTED', 'JOINED', 'REJECTED', 'REMOVED') "
             "AND withdrawn_at IS NULL AND withdrawal_kind IS NULL "
             "AND late_exit_recorded = false) OR "
             "(status = 'WITHDRAWN' AND withdrawn_at IS NOT NULL "
@@ -2083,7 +2083,7 @@ class OpenGameRegistration(Base):
             "AND promoted_at IS NULL) OR "
             "(status = 'WAITLISTED' AND waitlist_seq IS NOT NULL "
             "AND waitlisted_at IS NOT NULL AND promoted_at IS NULL) OR "
-            "(status = 'JOINED' AND ((waitlist_seq IS NULL "
+            "(status IN ('JOINED', 'REMOVED') AND ((waitlist_seq IS NULL "
             "AND waitlisted_at IS NULL AND promoted_at IS NULL) OR "
             "(waitlist_seq IS NOT NULL AND waitlisted_at IS NOT NULL "
             "AND promoted_at IS NOT NULL))) OR "
@@ -2130,6 +2130,18 @@ class OpenGameRegistration(Base):
         CheckConstraint(
             "attendance_status = 'UNMARKED' OR status = 'JOINED'",
             name="ck_open_game_registrations_attendance_joined",
+        ),
+        CheckConstraint(
+            "(status = 'REMOVED' AND removed_at IS NOT NULL "
+            "AND removed_by_user_id IS NOT NULL) OR "
+            "(status != 'REMOVED' AND removed_at IS NULL "
+            "AND removed_by_user_id IS NULL)",
+            name="ck_open_game_registrations_removal_pair",
+        ),
+        CheckConstraint(
+            "removed_at IS NULL OR (removed_at >= decided_at "
+            "AND (promoted_at IS NULL OR removed_at >= promoted_at))",
+            name="ck_open_game_registrations_removal_time",
         ),
         UniqueConstraint(
             "game_id",
@@ -2262,6 +2274,18 @@ class OpenGameRegistration(Base):
     promoted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    removed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    removed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_registrations_removed_by_user_id_users",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -2280,6 +2304,112 @@ class OpenGameRegistration(Base):
         back_populates="decided_open_game_registrations",
         foreign_keys=[decided_by_user_id],
     )
+
+
+class OpenGameMemberRemoval(Base):
+    __tablename__ = "open_game_member_removals"
+    __table_args__ = (
+        CheckConstraint(
+            "length(reason) BETWEEN 1 AND 120 AND reason = trim(reason)",
+            name="ck_open_game_member_removals_reason",
+        ),
+        CheckConstraint(
+            "registration_version_before >= 1 AND "
+            "registration_version_after = registration_version_before + 1",
+            name="ck_open_game_member_removals_registration_version",
+        ),
+        CheckConstraint(
+            "(promoted_registration_id IS NULL "
+            "AND promoted_registration_version_before IS NULL "
+            "AND promoted_registration_version_after IS NULL) OR "
+            "(promoted_registration_id IS NOT NULL "
+            "AND promoted_registration_id != registration_id "
+            "AND promoted_registration_version_before IS NOT NULL "
+            "AND promoted_registration_version_after IS NOT NULL "
+            "AND promoted_registration_version_before >= 1 "
+            "AND promoted_registration_version_after = "
+            "promoted_registration_version_before + 1)",
+            name="ck_open_game_member_removals_promotion_pair",
+        ),
+        CheckConstraint(
+            "length(idempotency_key) BETWEEN 16 AND 128",
+            name="ck_open_game_member_removals_idempotency_key",
+        ),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_open_game_member_removals_request_sha256",
+        ),
+        PrimaryKeyConstraint("id", name="pk_open_game_member_removals"),
+        UniqueConstraint(
+            "registration_id", name="uq_open_game_member_removals_registration"
+        ),
+        UniqueConstraint(
+            "removed_by_user_id",
+            "idempotency_key",
+            name="uq_open_game_member_removals_actor_idempotency_key",
+        ),
+        Index(
+            "ix_open_game_member_removals_game_removed",
+            "game_id",
+            "removed_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
+    registration_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_game_registrations.id",
+            name="fk_member_removals_registration",
+            ondelete="RESTRICT",
+        ),
+    )
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_games.id",
+            name="fk_member_removals_game",
+            ondelete="RESTRICT",
+        ),
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "orders.id",
+            name="fk_member_removals_order",
+            ondelete="RESTRICT",
+        ),
+    )
+    removed_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_member_removals_removed_by_user",
+            ondelete="RESTRICT",
+        ),
+    )
+    reason: Mapped[str] = mapped_column(String(120))
+    removed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    registration_version_before: Mapped[int] = mapped_column(Integer)
+    registration_version_after: Mapped[int] = mapped_column(Integer)
+    promoted_registration_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_game_registrations.id",
+            name="fk_member_removals_promoted_registration",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    promoted_registration_version_before: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    promoted_registration_version_after: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_sha256: Mapped[str] = mapped_column(String(64))
 
 
 class OpenGameAttendanceCorrection(Base):
