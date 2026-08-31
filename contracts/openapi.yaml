@@ -5099,6 +5099,14 @@ components:
               properties:
                 target_status: {const: null}
                 blocked_reason: {$ref: '#/components/schemas/PlatformAttendanceCorrectionBlockedReason'}
+          not:
+            required: [game_status, registration_status, attendance_status, original_attendance_status, attendance_recorded_at]
+            properties:
+              game_status: {const: COMPLETED}
+              registration_status: {const: JOINED}
+              attendance_status: {enum: [PRESENT, NO_SHOW]}
+              original_attendance_status: {enum: [PRESENT, NO_SHOW]}
+              attendance_recorded_at: {type: string, format: date-time}
     PlatformOnboardingVenueSummary:
       type: object
       additionalProperties: false

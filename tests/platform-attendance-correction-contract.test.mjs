@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import SwaggerParser from "@apidevtools/swagger-parser";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import YAML from "yaml";
 
 const contractUrl = new URL("../contracts/openapi.yaml", import.meta.url);
@@ -181,6 +183,42 @@ test("eligible terminal projections have only the opposite target status", async
           },
         },
       },
+      not: {
+        required: ["game_status", "registration_status", "attendance_status", "original_attendance_status", "attendance_recorded_at"],
+        properties: {
+          game_status: { const: "COMPLETED" },
+          registration_status: { const: "JOINED" },
+          attendance_status: { enum: ["PRESENT", "NO_SHOW"] },
+          original_attendance_status: { enum: ["PRESENT", "NO_SHOW"] },
+          attendance_recorded_at: { type: "string", format: "date-time" },
+        },
+      },
     },
   ]);
+});
+
+test("Ajv rejects an eligible terminal detail falsely projected as blocked", async () => {
+  const contract = YAML.parse(await readFile(contractUrl, "utf8"));
+  const detailExample = await readExample("platform-attendance-registration-detail.json");
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  const validate = ajv.compile({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    components: contract.components,
+    $ref: "#/components/schemas/PlatformAttendanceRegistrationDetail",
+  });
+
+  for (const [attendanceStatus, oppositeStatus] of [["PRESENT", "NO_SHOW"], ["NO_SHOW", "PRESENT"]]) {
+    const eligible = structuredClone(detailExample);
+    eligible.attendance_status = attendanceStatus;
+    eligible.allowed_correction = { target_status: oppositeStatus, blocked_reason: null };
+    assert.equal(validate(eligible), true, JSON.stringify(validate.errors));
+
+    const falselyBlocked = structuredClone(eligible);
+    falselyBlocked.allowed_correction = {
+      target_status: null,
+      blocked_reason: "GAME_NOT_COMPLETED",
+    };
+    assert.equal(validate(falselyBlocked), false, `${attendanceStatus} must not be falsely blocked`);
+  }
 });
