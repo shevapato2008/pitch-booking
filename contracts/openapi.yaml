@@ -4605,6 +4605,235 @@ paths:
         '409': {$ref: '#/components/responses/VenueStaffConflict'}
         '422': {$ref: '#/components/responses/VenueStaffInvalid'}
         '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /platform-admin/api/v1/recruitment-invitations/eligible-venues:
+    get:
+      operationId: searchRecruitmentInvitationEligibleVenues
+      description: Searches active, listed DIRECTORY_ONLY venues with no active venue membership.
+      security:
+        - platformSession: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: {type: string, minLength: 2, maxLength: 80}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: Eligible venue page.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecruitmentInvitationEligibleVenues'}
+              examples:
+                Ready: {externalValue: './examples/recruitment-invitation-eligible-venues.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformRecruitmentForbidden'}
+        '422': {$ref: '#/components/responses/RecruitmentInvitationInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/recruitment-invitations:
+    get:
+      operationId: listRecruitmentInvitations
+      description: Lists invitation metadata without the one-time raw token or bound user identity.
+      security:
+        - platformSession: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/RecruitmentInvitationStatus'}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: Newest-first invitation page.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecruitmentInvitations'}
+              examples:
+                Ready: {externalValue: './examples/recruitment-invitations.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformRecruitmentForbidden'}
+        '422': {$ref: '#/components/responses/RecruitmentInvitationInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+    post:
+      operationId: createRecruitmentInvitation
+      description: Creates a seven-day invitation and returns the raw token and path only in this response.
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecruitmentInvitationCreateRequest'}
+      responses:
+        '200':
+          description: Idempotent replay of the authoritative create result.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecruitmentInvitationCreateResult'}
+              examples:
+                Created: {externalValue: './examples/recruitment-invitation-created.json'}
+        '201':
+          description: Invitation created; this is the only response that reveals the raw token.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecruitmentInvitationCreateResult'}
+              examples:
+                Created: {externalValue: './examples/recruitment-invitation-created.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformRecruitmentMutationForbidden'}
+        '409': {$ref: '#/components/responses/RecruitmentInvitationConflict'}
+        '422': {$ref: '#/components/responses/RecruitmentInvitationInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /platform-admin/api/v1/recruitment-invitations/{invitation_id}/revoke:
+    post:
+      operationId: revokeRecruitmentInvitation
+      description: Revokes an ACTIVE or CLAIMED invitation before claim submission and preserves its audit record.
+      security:
+        - platformSession: []
+      parameters:
+        - name: invitation_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecruitmentInvitationRevokeRequest'}
+      responses:
+        '200':
+          description: Invitation revoked or equivalent authoritative result replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecruitmentInvitation'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformRecruitmentMutationForbidden'}
+        '404': {$ref: '#/components/responses/RecruitmentInvitationNotFound'}
+        '409': {$ref: '#/components/responses/RecruitmentInvitationConflict'}
+        '422': {$ref: '#/components/responses/RecruitmentInvitationInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /api/v1/venue-invitations/{token}:
+    get:
+      operationId: getVenueRecruitmentInvitation
+      description: Reads an invitation for the authenticated viewer without binding it or disclosing another user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueInvitationToken'
+      responses:
+        '200':
+          description: Available, viewer-bound, or viewer-submitted invitation.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueRecruitmentInvitation'}
+              examples:
+                Available: {externalValue: './examples/venue-invitation-available.json'}
+                Claimed: {externalValue: './examples/venue-invitation-claimed.json'}
+                Submitted: {externalValue: './examples/venue-invitation-submitted.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/RecruitmentInvitationNotFound'}
+        '410': {$ref: '#/components/responses/VenueInvitationUnavailable'}
+        '422': {$ref: '#/components/responses/RecruitmentInvitationInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /api/v1/venue-invitations/{token}/accept:
+    post:
+      operationId: acceptVenueRecruitmentInvitation
+      description: Explicitly binds an ACTIVE invitation to the current user without creating authority or an application.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueInvitationToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Invitation bound to this viewer or authoritative result replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueRecruitmentInvitation'}
+              examples:
+                Claimed: {externalValue: './examples/venue-invitation-claimed.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/RecruitmentInvitationNotFound'}
+        '409': {$ref: '#/components/responses/RecruitmentInvitationConflict'}
+        '410': {$ref: '#/components/responses/VenueInvitationUnavailable'}
+        '422': {$ref: '#/components/responses/RecruitmentInvitationInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /api/v1/venue-invitations/{token}/claims:
+    post:
+      operationId: submitInvitedVenueClaim
+      description: Submits the existing A3 CLAIM flow for the invitation-locked venue; venue and phone are server authoritative.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VenueInvitationToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvitedVenueClaimRequest'}
+      responses:
+        '200':
+          description: Authoritative invited claim submission replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                Submitted: {externalValue: './examples/venue-claim-submitted.json'}
+        '201':
+          description: Invited claim application submitted.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOnboardingApplication'}
+              examples:
+                Submitted: {externalValue: './examples/venue-claim-submitted.json'}
+        '401': {$ref: '#/components/responses/AuthRequired'}
+        '404': {$ref: '#/components/responses/RecruitmentInvitationNotFound'}
+        '409': {$ref: '#/components/responses/RecruitmentInvitationConflict'}
+        '410': {$ref: '#/components/responses/VenueInvitationUnavailable'}
+        '422': {$ref: '#/components/responses/InvitedVenueClaimInvalid'}
+        '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
 components:
   securitySchemes:
     bearerAuth:
@@ -4680,6 +4909,11 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    VenueInvitationToken:
+      name: token
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
   responses:
     PlatformAuthRequired:
       description: Active platform staff session required.
@@ -4781,6 +5015,84 @@ components:
               - $ref: '#/components/schemas/ErrorEnvelope'
               - type: object
                 properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+    PlatformRecruitmentForbidden:
+      description: PLATFORM_ADMIN or ONBOARDING_REVIEWER role required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: PLATFORM_ROLE_REQUIRED}}}}
+    PlatformRecruitmentMutationForbidden:
+      description: Recruitment role and valid same-origin mutation protection required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {enum: [PLATFORM_ROLE_REQUIRED, PLATFORM_CSRF_INVALID]}}}}
+    RecruitmentInvitationNotFound:
+      description: Invitation was not found; no target or user identity is disclosed.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: VENUE_INVITATION_NOT_FOUND}}}}
+    VenueInvitationUnavailable:
+      description: Invitation is expired, revoked, or bound to another user; the reason is intentionally opaque.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: VENUE_INVITATION_UNAVAILABLE}}}}
+    RecruitmentInvitationConflict:
+      description: Invitation eligibility, lifecycle, application, or idempotency authority changed.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: {enum: [VENUE_NOT_ELIGIBLE, VENUE_INVITATION_EXISTS, VENUE_INVITATION_STATE_CHANGED, ONBOARDING_APPLICATION_EXISTS, IDEMPOTENCY_KEY_REUSED]}
+    RecruitmentInvitationInvalid:
+      description: Invitation path, query, cursor, body, or idempotency input is invalid.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+    InvitedVenueClaimInvalid:
+      description: Verified phone or exactly one completed item for every CLAIM evidence kind is missing or invalid.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: {enum: [INVALID_ARGUMENT, PHONE_AUTH_REQUIRED, ONBOARDING_EVIDENCE_REQUIRED, ONBOARDING_EVIDENCE_INVALID]}
     AuthRequired:
       description: Authentication required.
       content:
@@ -6476,6 +6788,94 @@ components:
             enum: [PLATFORM_ADMIN, ONBOARDING_REVIEWER]
         csrf_token: {type: string, pattern: '^[0-9a-f]{64}$'}
         expires_at: {type: string, format: date-time}
+    RecruitmentInvitationStatus:
+      type: string
+      enum: [ACTIVE, CLAIMED, SUBMITTED, REVOKED, EXPIRED]
+    RecruitmentInvitationEligibleVenue:
+      type: object
+      additionalProperties: false
+      required: [venue_id, name, district_name, address]
+      properties:
+        venue_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 120}
+        district_name: {type: string, minLength: 1, maxLength: 120}
+        address: {type: string, minLength: 1, maxLength: 300}
+    RecruitmentInvitationEligibleVenues:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RecruitmentInvitationEligibleVenue'}
+        next_cursor: {type: [string, 'null'], minLength: 1}
+    RecruitmentInvitation:
+      description: Platform projection that never returns a raw token or bound user identity.
+      type: object
+      additionalProperties: false
+      required: [id, venue, status, contact_label, expires_at, created_at, claimed_at, application_id, revoked_at, revocation_reason, version]
+      properties:
+        id: {type: string, format: uuid}
+        venue: {$ref: '#/components/schemas/RecruitmentInvitationEligibleVenue'}
+        status: {$ref: '#/components/schemas/RecruitmentInvitationStatus'}
+        contact_label: {type: string, minLength: 1, maxLength: 40}
+        expires_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        claimed_at: {type: [string, 'null'], format: date-time}
+        application_id: {type: [string, 'null'], format: uuid}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        revocation_reason: {type: [string, 'null'], minLength: 1, maxLength: 120}
+        version: {type: integer, minimum: 1}
+    RecruitmentInvitations:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RecruitmentInvitation'}
+        next_cursor: {type: [string, 'null'], minLength: 1}
+    RecruitmentInvitationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [venue_id, contact_label]
+      properties:
+        venue_id: {type: string, format: uuid}
+        contact_label: {type: string, minLength: 1, maxLength: 40, pattern: '.*\S.*'}
+    RecruitmentInvitationCreateResult:
+      description: One-time create result; token and path are never returned by list or read operations.
+      type: object
+      additionalProperties: false
+      required: [invitation, token, invitation_path]
+      properties:
+        invitation: {$ref: '#/components/schemas/RecruitmentInvitation'}
+        token: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+        invitation_path: {type: string, pattern: '^pages/venue-invitation/index\?token=[A-Za-z0-9_-]{43}$'}
+    RecruitmentInvitationRevokeRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 120, pattern: '.*\S.*'}
+    VenueRecruitmentInvitation:
+      description: Viewer-safe invitation projection; another bound user's identity is never disclosed.
+      type: object
+      additionalProperties: false
+      required: [viewer_state, venue, expires_at, application_id, version]
+      properties:
+        viewer_state: {type: string, enum: [AVAILABLE, CLAIMED_BY_VIEWER, SUBMITTED_BY_VIEWER]}
+        venue: {$ref: '#/components/schemas/RecruitmentInvitationEligibleVenue'}
+        expires_at: {type: string, format: date-time}
+        application_id: {type: [string, 'null'], format: uuid}
+        version: {type: integer, minimum: 1}
+    InvitedVenueClaimRequest:
+      description: Venue and verified phone are derived from invitation and authenticated user authority.
+      type: object
+      additionalProperties: false
+      required: [contact_name, evidence]
+      properties:
+        contact_name: {type: string, minLength: 1, maxLength: 40, pattern: '.*\S.*'}
+        evidence: {$ref: '#/components/schemas/VenueClaimEvidence'}
     VenueOnboardingCandidate:
       description: Safe claim candidate drawn only from listed and active public venues.
       type: object
@@ -8651,6 +9051,11 @@ components:
             - VENUE_STAFF_INVITATION_UNAVAILABLE
             - VENUE_STAFF_AUTHORIZATION_DISABLED
             - OWNER_TRANSFER_REQUIRED
+            - VENUE_NOT_ELIGIBLE
+            - VENUE_INVITATION_EXISTS
+            - VENUE_INVITATION_STATE_CHANGED
+            - VENUE_INVITATION_NOT_FOUND
+            - VENUE_INVITATION_UNAVAILABLE
         message:
           type: string
           minLength: 1
