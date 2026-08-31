@@ -1,0 +1,7 @@
+{
+  "token": "D1A_VENUE_INVITATION_FIXTURE",
+  "pages": [
+    "dev/pages/d1a-invitation-scenario/index",
+    "dev/pages/d1a-venue-invitation/index"
+  ]
+}
