@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 import uuid
 from datetime import UTC, datetime
 from functools import partial
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -41,6 +45,43 @@ pytestmark = pytest.mark.integration
 
 CORRECTION_NOW = datetime(2026, 9, 1, 8, 30, tzinfo=UTC)
 CORRECTION_KEY = "platform-attendance-correction-key-0001"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _assert_static_contract_accepts_detail(payload: dict[str, object]) -> None:
+    script = """
+import { readFileSync } from "node:fs";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
+import YAML from "yaml";
+
+const contract = YAML.parse(readFileSync(process.env.CONTRACT_PATH, "utf8"));
+const payload = JSON.parse(readFileSync(0, "utf8"));
+const ajv = new Ajv2020({ allErrors: true, strict: false });
+addFormats(ajv);
+const validate = ajv.compile({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  components: contract.components,
+  $ref: "#/components/schemas/PlatformAttendanceRegistrationDetail",
+});
+if (!validate(payload)) {
+  console.error(ajv.errorsText(validate.errors, { separator: "; " }));
+  process.exit(1);
+}
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "CONTRACT_PATH": str(REPOSITORY_ROOT / "contracts" / "openapi.yaml"),
+        },
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def _seed_correctable_registration(
@@ -413,6 +454,7 @@ def test_lookup_blocks_correction_when_history_is_not_a_complete_chain(
         "target_status": None,
         "blocked_reason": "ATTENDANCE_AUDIT_INCOMPLETE",
     }
+    _assert_static_contract_accepts_detail(detail.model_dump(mode="json"))
 
 
 def test_correction_digest_covers_normalized_command_and_locked_game() -> None:

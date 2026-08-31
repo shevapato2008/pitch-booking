@@ -33,6 +33,25 @@ from backend.tests.test_platform_attendance_correction_service import (
 pytestmark = pytest.mark.integration
 
 
+class _BarrierAfterMissingIdempotencyRepository(PlatformAttendanceCorrectionRepository):
+    def __init__(self, session: Session, barrier: Barrier) -> None:
+        super().__init__(session)
+        self.barrier = barrier
+        self.waited = False
+
+    def get_idempotency_correction(
+        self, *, principal_id: str, idempotency_key: str
+    ) -> OpenGameAttendanceCorrection | None:
+        correction = super().get_idempotency_correction(
+            principal_id=principal_id,
+            idempotency_key=idempotency_key,
+        )
+        if correction is None and not self.waited:
+            self.waited = True
+            self.barrier.wait(timeout=5)
+        return correction
+
+
 def _worker(
     *,
     database_url: str | URL,
@@ -40,6 +59,7 @@ def _worker(
     key: str,
     barrier: Barrier,
     pids: Queue[int],
+    idempotency_barrier: Barrier | None = None,
 ) -> tuple[str, object]:
     engine = create_engine(database_url, poolclass=NullPool)
     session = Session(engine)
@@ -48,8 +68,13 @@ def _worker(
         assert isinstance(backend_pid, int)
         pids.put(backend_pid)
         barrier.wait(timeout=5)
+        repository = (
+            _BarrierAfterMissingIdempotencyRepository(session, idempotency_barrier)
+            if idempotency_barrier is not None
+            else PlatformAttendanceCorrectionRepository(session)
+        )
         service = PlatformAttendanceCorrectionService(
-            repository=PlatformAttendanceCorrectionRepository(session),
+            repository=repository,
             now=lambda: CORRECTION_NOW,
         )
         try:
@@ -127,4 +152,37 @@ def test_same_key_concurrency_returns_the_single_first_event(
     assert [result[0] for result in results] == ["PRESENT", "PRESENT"]
     assert results[0][1] == results[1][1]
     with Session(pg_engine) as session:
+        assert session.scalar(select(func.count()).select_from(OpenGameAttendanceCorrection)) == 1
+
+
+def test_same_principal_and_key_on_different_registrations_maps_unique_race_to_409(
+    pg_engine: Engine,
+) -> None:
+    cases = [_seed_correctable_registration(pg_engine) for _index in range(2)]
+    start_barrier = Barrier(2)
+    idempotency_barrier = Barrier(2)
+    pids: Queue[int] = Queue()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                _worker,
+                database_url=pg_engine.url,
+                case=case,
+                key="concurrent-cross-registration-same-key-001",
+                barrier=start_barrier,
+                pids=pids,
+                idempotency_barrier=idempotency_barrier,
+            )
+            for case in cases
+        ]
+        assert pids.get(timeout=5) > 0
+        assert pids.get(timeout=5) > 0
+        results = [future.result(timeout=10)[0] for future in futures]
+
+    assert sorted(results) == ["IDEMPOTENCY_KEY_REUSED", "PRESENT"]
+    with Session(pg_engine) as session:
+        registrations = [
+            session.get_one(OpenGameRegistration, case.joined_ids[0]) for case in cases
+        ]
+        assert sorted(registration.version for registration in registrations) == [3, 4]
         assert session.scalar(select(func.count()).select_from(OpenGameAttendanceCorrection)) == 1

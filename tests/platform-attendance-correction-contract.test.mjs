@@ -175,6 +175,18 @@ test("eligible terminal projections have only the opposite target status", async
     },
     {
       properties: {
+        game_status: { const: "COMPLETED" },
+        registration_status: { const: "JOINED" },
+        attendance_status: { enum: ["PRESENT", "NO_SHOW"] },
+        original_attendance_status: { enum: ["PRESENT", "NO_SHOW"] },
+        attendance_recorded_at: { type: "string", format: "date-time" },
+        allowed_correction: {
+          const: { target_status: null, blocked_reason: "ATTENDANCE_AUDIT_INCOMPLETE" },
+        },
+      },
+    },
+    {
+      properties: {
         allowed_correction: {
           type: "object",
           properties: {
@@ -220,5 +232,16 @@ test("Ajv rejects an eligible terminal detail falsely projected as blocked", asy
       blocked_reason: "GAME_NOT_COMPLETED",
     };
     assert.equal(validate(falselyBlocked), false, `${attendanceStatus} must not be falsely blocked`);
+
+    const auditIncomplete = structuredClone(eligible);
+    auditIncomplete.allowed_correction = {
+      target_status: null,
+      blocked_reason: "ATTENDANCE_AUDIT_INCOMPLETE",
+    };
+    assert.equal(
+      validate(auditIncomplete),
+      true,
+      `audit-incomplete ${attendanceStatus} service projection must remain representable: ${JSON.stringify(validate.errors)}`,
+    );
   }
 });

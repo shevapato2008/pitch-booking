@@ -158,6 +158,7 @@ def align_platform_attendance_corrections_openapi(
     if not isinstance(schemas, dict):
         raise RuntimeError("raw OpenAPI platform attendance schemas are missing")
     _align_platform_attendance_schemas(schemas)
+    _align_platform_attendance_reusable_components(components)
 
     request_id = {"$ref": "#/components/headers/RequestId"}
 
@@ -165,29 +166,27 @@ def align_platform_attendance_corrections_openapi(
         description: str,
         *,
         schema_value: dict[str, Any],
+        examples: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        json_content: dict[str, Any] = {"schema": schema_value}
+        if examples is not None:
+            json_content["examples"] = examples
         return {
             "description": description,
             "headers": {"X-Request-Id": request_id},
-            "content": {"application/json": {"schema": schema_value}},
+            "content": {"application/json": json_content},
         }
 
-    def error(description: str) -> dict[str, Any]:
-        return response(
-            description,
-            schema_value={"$ref": "#/components/schemas/ErrorEnvelope"},
-        )
-
-    registration_parameter = {
-        "name": "registration_id",
-        "in": "path",
-        "required": True,
-        "schema": {"type": "string", "format": "uuid"},
-    }
+    registration_parameter = {"$ref": "#/components/parameters/AttendanceRegistrationId"}
     get_operation = operations[(_DETAIL_PATH, "get")]
+    get_operation.clear()
     get_operation.update(
         {
             "operationId": "getPlatformAttendanceRegistration",
+            "description": (
+                "Exact registration UUID lookup for platform attendance correction. "
+                "No fuzzy or personal-identifier search."
+            ),
             "security": [{"platformSession": []}],
             "parameters": [registration_parameter],
             "responses": {
@@ -196,12 +195,19 @@ def align_platform_attendance_corrections_openapi(
                     schema_value={
                         "$ref": ("#/components/schemas/PlatformAttendanceRegistrationDetail")
                     },
+                    examples={
+                        "Detail": {
+                            "externalValue": (
+                                "./examples/platform-attendance-registration-detail.json"
+                            )
+                        }
+                    },
                 ),
-                "401": error("Active platform staff session required."),
-                "403": error("PLATFORM_ADMIN role required."),
-                "404": error("Registration does not exist."),
-                "422": error("Registration identifier is invalid."),
-                "503": error("Platform attendance correction service is unavailable."),
+                "401": {"$ref": "#/components/responses/PlatformAuthRequired"},
+                "403": {"$ref": "#/components/responses/PlatformAttendanceForbidden"},
+                "404": {"$ref": "#/components/responses/PlatformAttendanceNotFound"},
+                "422": {"$ref": "#/components/responses/PlatformAttendanceInvalid"},
+                "503": {"$ref": "#/components/responses/PlatformAttendanceUnavailable"},
             },
         }
     )
@@ -215,9 +221,14 @@ def align_platform_attendance_corrections_openapi(
     }
     if "Idempotency-Key" not in names:
         raise RuntimeError("raw OpenAPI platform attendance Idempotency-Key header is missing")
+    post_operation.clear()
     post_operation.update(
         {
             "operationId": "correctPlatformAttendanceRegistration",
+            "description": (
+                "Atomically append an immutable platform correction and update the "
+                "current effective terminal attendance status."
+            ),
             "security": [{"platformSession": []}],
             "parameters": [
                 registration_parameter,
@@ -233,33 +244,144 @@ def align_platform_attendance_corrections_openapi(
                     "required": True,
                     "schema": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 },
-                {
-                    "name": "Idempotency-Key",
-                    "in": "header",
-                    "required": True,
-                    "schema": {
-                        "type": "string",
-                        "minLength": 16,
-                        "maxLength": 128,
-                    },
-                },
+                {"$ref": "#/components/parameters/IdempotencyKey"},
             ],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": ("#/components/schemas/PlatformAttendanceCorrectionRequest")
+                        }
+                    }
+                },
+            },
             "responses": {
                 "200": response(
                     "Attendance correction applied or idempotently replayed.",
                     schema_value={
                         "$ref": ("#/components/schemas/PlatformAttendanceCorrectionEvent")
                     },
+                    examples={
+                        "Correction": {
+                            "externalValue": (
+                                "./examples/platform-attendance-correction-event.json"
+                            )
+                        }
+                    },
                 ),
-                "401": error("Active platform staff session required."),
-                "403": error("PLATFORM_ADMIN role and valid mutation protection required."),
-                "404": error("Registration does not exist."),
-                "409": error(
-                    "Attendance authority, expected version, or idempotency authority changed."
+                "401": {"$ref": "#/components/responses/PlatformAuthRequired"},
+                "403": {"$ref": ("#/components/responses/PlatformAttendanceMutationForbidden")},
+                "404": {"$ref": "#/components/responses/PlatformAttendanceNotFound"},
+                "409": response(
+                    "Attendance authority, expected version, or idempotency authority changed.",
+                    schema_value={
+                        "allOf": [
+                            {"$ref": "#/components/schemas/ErrorEnvelope"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "error": {
+                                        "type": "object",
+                                        "properties": {
+                                            "code": {
+                                                "enum": [
+                                                    "ATTENDANCE_STATE_CHANGED",
+                                                    "IDEMPOTENCY_KEY_REUSED",
+                                                ]
+                                            }
+                                        },
+                                    }
+                                },
+                            },
+                        ]
+                    },
                 ),
-                "422": error("Attendance correction request is invalid."),
-                "503": error("Platform attendance correction service is unavailable."),
+                "422": {"$ref": "#/components/responses/PlatformAttendanceInvalid"},
+                "503": {"$ref": "#/components/responses/PlatformAttendanceUnavailable"},
             },
+        }
+    )
+
+
+def _align_platform_attendance_reusable_components(
+    components: dict[str, Any],
+) -> None:
+    parameters = components.setdefault("parameters", {})
+    responses = components.setdefault("responses", {})
+    if not isinstance(parameters, dict) or not isinstance(responses, dict):
+        raise RuntimeError("raw OpenAPI platform attendance components are malformed")
+    parameters["IdempotencyKey"] = {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": True,
+        "description": (
+            "Reuse the same key to recover the authoritative result after an unknown outcome."
+        ),
+        "schema": {"type": "string", "minLength": 16, "maxLength": 128},
+    }
+    parameters["AttendanceRegistrationId"] = {
+        "name": "registration_id",
+        "in": "path",
+        "required": True,
+        "schema": {"type": "string", "format": "uuid"},
+    }
+
+    def error_response(
+        description: str,
+        *,
+        code_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "description": description,
+            "headers": {"X-Request-Id": {"$ref": "#/components/headers/RequestId"}},
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/ErrorEnvelope"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "error": {
+                                        "type": "object",
+                                        "properties": {"code": code_schema},
+                                    }
+                                },
+                            },
+                        ]
+                    }
+                }
+            },
+        }
+
+    responses.update(
+        {
+            "PlatformAuthRequired": error_response(
+                "Active platform staff session required.",
+                code_schema={"const": "PLATFORM_AUTH_REQUIRED"},
+            ),
+            "PlatformAttendanceForbidden": error_response(
+                "PLATFORM_ADMIN role required.",
+                code_schema={"const": "PLATFORM_ROLE_REQUIRED"},
+            ),
+            "PlatformAttendanceMutationForbidden": error_response(
+                "PLATFORM_ADMIN role and valid same-origin mutation protection required.",
+                code_schema={"enum": ["PLATFORM_ROLE_REQUIRED", "PLATFORM_CSRF_INVALID"]},
+            ),
+            "PlatformAttendanceNotFound": error_response(
+                "Registration does not exist.",
+                code_schema={"const": "ATTENDANCE_REGISTRATION_NOT_FOUND"},
+            ),
+            "PlatformAttendanceInvalid": error_response(
+                "Registration identifier, headers, target attendance status, expected "
+                "version, or reason is invalid.",
+                code_schema={"const": "INVALID_ARGUMENT"},
+            ),
+            "PlatformAttendanceUnavailable": error_response(
+                "Platform attendance correction service is unavailable.",
+                code_schema={"const": "SERVICE_UNAVAILABLE"},
+            ),
         }
     )
 
@@ -284,6 +406,7 @@ def _align_platform_attendance_schemas(schemas: dict[str, Any]) -> None:
         ],
     }
 
+    schemas["PlatformAttendanceCorrectionRequest"].clear()
     schemas["PlatformAttendanceCorrectionRequest"].update(
         {
             "type": "object",
@@ -304,6 +427,7 @@ def _align_platform_attendance_schemas(schemas: dict[str, Any]) -> None:
             },
         }
     )
+    schemas["PlatformAttendanceAllowedCorrection"].clear()
     schemas["PlatformAttendanceAllowedCorrection"].update(
         {
             "type": "object",
@@ -348,6 +472,7 @@ def _align_platform_attendance_schemas(schemas: dict[str, Any]) -> None:
             ],
         }
     )
+    schemas["PlatformAttendanceCorrectionEvent"].clear()
     schemas["PlatformAttendanceCorrectionEvent"].update(
         {
             "type": "object",
@@ -409,21 +534,159 @@ def _align_platform_attendance_schemas(schemas: dict[str, Any]) -> None:
             ],
         }
     )
-    detail = schemas["PlatformAttendanceRegistrationDetail"]
-    detail["additionalProperties"] = False
-    detail_properties = detail.get("properties")
-    if not isinstance(detail_properties, dict):
-        raise RuntimeError("raw OpenAPI platform attendance detail schema is malformed")
-    detail_properties.update(
+    detail_one_of = [
         {
-            "player_display_name": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 24,
+            "properties": {
+                "game_status": {"const": "COMPLETED"},
+                "registration_status": {"const": "JOINED"},
+                "attendance_status": {"const": "PRESENT"},
+                "original_attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                "attendance_recorded_at": {
+                    "type": "string",
+                    "format": "date-time",
+                },
+                "allowed_correction": {
+                    "const": {"target_status": "NO_SHOW", "blocked_reason": None}
+                },
+            }
+        },
+        {
+            "properties": {
+                "game_status": {"const": "COMPLETED"},
+                "registration_status": {"const": "JOINED"},
+                "attendance_status": {"const": "NO_SHOW"},
+                "original_attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                "attendance_recorded_at": {
+                    "type": "string",
+                    "format": "date-time",
+                },
+                "allowed_correction": {
+                    "const": {"target_status": "PRESENT", "blocked_reason": None}
+                },
+            }
+        },
+        {
+            "properties": {
+                "game_status": {"const": "COMPLETED"},
+                "registration_status": {"const": "JOINED"},
+                "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                "original_attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                "attendance_recorded_at": {
+                    "type": "string",
+                    "format": "date-time",
+                },
+                "allowed_correction": {
+                    "const": {
+                        "target_status": None,
+                        "blocked_reason": "ATTENDANCE_AUDIT_INCOMPLETE",
+                    }
+                },
+            }
+        },
+        {
+            "properties": {
+                "allowed_correction": {
+                    "type": "object",
+                    "properties": {
+                        "target_status": {"const": None},
+                        "blocked_reason": {
+                            "$ref": (
+                                "#/components/schemas/PlatformAttendanceCorrectionBlockedReason"
+                            )
+                        },
+                    },
+                }
             },
-            "game_name": {"type": "string", "minLength": 1, "maxLength": 30},
-            "venue_name": {"type": "string", "minLength": 1},
-            "pitch_name": {"type": "string", "minLength": 1},
-            "time_zone": {"type": "string", "const": "Asia/Shanghai"},
+            "not": {
+                "required": [
+                    "game_status",
+                    "registration_status",
+                    "attendance_status",
+                    "original_attendance_status",
+                    "attendance_recorded_at",
+                ],
+                "properties": {
+                    "game_status": {"const": "COMPLETED"},
+                    "registration_status": {"const": "JOINED"},
+                    "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                    "original_attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
+                    "attendance_recorded_at": {
+                        "type": "string",
+                        "format": "date-time",
+                    },
+                },
+            },
+        },
+    ]
+    detail = schemas["PlatformAttendanceRegistrationDetail"]
+    detail.clear()
+    detail.update(
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "registration_id",
+                "registration_status",
+                "player_display_name",
+                "intended_position",
+                "game_name",
+                "game_status",
+                "venue_name",
+                "pitch_name",
+                "starts_at",
+                "ends_at",
+                "time_zone",
+                "original_attendance_status",
+                "attendance_recorded_at",
+                "attendance_status",
+                "version",
+                "corrections",
+                "allowed_correction",
+            ],
+            "properties": {
+                "registration_id": {"type": "string", "format": "uuid"},
+                "registration_status": {
+                    "$ref": ("#/components/schemas/OpenGameRegistrationPersistedStatus")
+                },
+                "player_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24,
+                },
+                "intended_position": {"$ref": "#/components/schemas/OpenGameRegistrationPosition"},
+                "game_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30,
+                },
+                "game_status": {"$ref": "#/components/schemas/OpenGameState"},
+                "venue_name": {"type": "string", "minLength": 1},
+                "pitch_name": {"type": "string", "minLength": 1},
+                "starts_at": {"type": "string", "format": "date-time"},
+                "ends_at": {"type": "string", "format": "date-time"},
+                "time_zone": {"type": "string", "const": "Asia/Shanghai"},
+                "original_attendance_status": {
+                    "type": ["string", "null"],
+                    "enum": ["PRESENT", "NO_SHOW", None],
+                },
+                "attendance_recorded_at": {
+                    "type": ["string", "null"],
+                    "format": "date-time",
+                },
+                "attendance_status": {"$ref": "#/components/schemas/OpenGameAttendanceStatus"},
+                "version": {"type": "integer", "minimum": 1},
+                "corrections": {
+                    "type": "array",
+                    "items": {"$ref": ("#/components/schemas/PlatformAttendanceCorrectionEvent")},
+                },
+                "allowed_correction": {
+                    "$ref": ("#/components/schemas/PlatformAttendanceAllowedCorrection")
+                },
+            },
+            "oneOf": detail_one_of,
         }
     )
+    schemas["OpenGameState"] = {
+        "type": "string",
+        "enum": ["DRAFT", "PUBLISHED", "SUSPENDED", "CANCELLED", "COMPLETED"],
+    }

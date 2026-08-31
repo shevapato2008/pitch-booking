@@ -4095,43 +4095,28 @@ def test_platform_attendance_runtime_contract_matches_frozen_operations() -> Non
     )
     runtime = application.openapi()
     static = _contract()
-    expected = {
-        (PLATFORM_ATTENDANCE_PATH, "get"): (
-            "getPlatformAttendanceRegistration",
-            {"200", "401", "403", "404", "422", "503"},
-            "PlatformAttendanceRegistrationDetail",
-        ),
-        (PLATFORM_ATTENDANCE_CORRECTION_PATH, "post"): (
-            "correctPlatformAttendanceRegistration",
-            {"200", "401", "403", "404", "409", "422", "503"},
-            "PlatformAttendanceCorrectionEvent",
-        ),
-    }
-    for (path, method), (operation_id, statuses, response_schema) in expected.items():
-        operation = runtime["paths"][path][method]
-        frozen = static["paths"][path][method]
-        assert operation["operationId"] == operation_id == frozen["operationId"]
-        assert operation["security"] == [{"platformSession": []}]
-        assert set(operation["responses"]) == statuses
-        assert _response_schema(operation, "200") == {
-            "$ref": f"#/components/schemas/{response_schema}"
-        }
+    for path, method in (
+        (PLATFORM_ATTENDANCE_PATH, "get"),
+        (PLATFORM_ATTENDANCE_CORRECTION_PATH, "post"),
+    ):
+        assert runtime["paths"][path][method] == static["paths"][path][method]
 
-    correction_parameters = runtime["paths"][PLATFORM_ATTENDANCE_CORRECTION_PATH][
-        "post"
-    ]["parameters"]
-    assert [parameter.get("name") for parameter in correction_parameters] == [
-        "registration_id",
-        "Origin",
-        "X-CSRF-Token",
-        "Idempotency-Key",
-    ]
-    assert all(parameter["required"] for parameter in correction_parameters)
-    assert correction_parameters[-1]["schema"] == {
-        "type": "string",
-        "minLength": 16,
-        "maxLength": 128,
-    }
+    for section, names in {
+        "parameters": ("AttendanceRegistrationId", "IdempotencyKey"),
+        "responses": (
+            "PlatformAuthRequired",
+            "PlatformAttendanceForbidden",
+            "PlatformAttendanceMutationForbidden",
+            "PlatformAttendanceNotFound",
+            "PlatformAttendanceInvalid",
+            "PlatformAttendanceUnavailable",
+        ),
+    }.items():
+        for name in names:
+            assert runtime["components"][section][name] == static["components"][section][
+                name
+            ]
+
     schemas = runtime["components"]["schemas"]
     frozen_schemas = static["components"]["schemas"]
     for schema_name in (
@@ -4140,56 +4125,8 @@ def test_platform_attendance_runtime_contract_matches_frozen_operations() -> Non
         "PlatformAttendanceCorrectionEvent",
         "PlatformAttendanceRegistrationDetail",
     ):
-        assert schemas[schema_name]["additionalProperties"] is False
-        assert schemas[schema_name]["required"] == frozen_schemas[schema_name]["required"]
-    request_schema = schemas["PlatformAttendanceCorrectionRequest"]
-    assert request_schema["properties"] == frozen_schemas[
-        "PlatformAttendanceCorrectionRequest"
-    ]["properties"]
-    allowed_schema = schemas["PlatformAttendanceAllowedCorrection"]
-    assert allowed_schema["properties"] == frozen_schemas[
-        "PlatformAttendanceAllowedCorrection"
-    ]["properties"]
-    assert allowed_schema["oneOf"] == frozen_schemas[
-        "PlatformAttendanceAllowedCorrection"
-    ]["oneOf"]
-    event_schema = schemas["PlatformAttendanceCorrectionEvent"]
-    assert event_schema["properties"] == frozen_schemas[
-        "PlatformAttendanceCorrectionEvent"
-    ]["properties"]
-    assert event_schema["oneOf"] == frozen_schemas["PlatformAttendanceCorrectionEvent"][
-        "oneOf"
-    ]
-    detail_properties = schemas["PlatformAttendanceRegistrationDetail"]["properties"]
-    for property_name in (
-        "player_display_name",
-        "game_name",
-        "venue_name",
-        "pitch_name",
-        "time_zone",
-    ):
-        assert detail_properties[property_name] == frozen_schemas[
-            "PlatformAttendanceRegistrationDetail"
-        ]["properties"][property_name]
-    assert set(schemas["PlatformAttendanceRegistrationDetail"]["properties"]) == {
-        "registration_id",
-        "registration_status",
-        "player_display_name",
-        "intended_position",
-        "game_name",
-        "game_status",
-        "venue_name",
-        "pitch_name",
-        "starts_at",
-        "ends_at",
-        "time_zone",
-        "original_attendance_status",
-        "attendance_recorded_at",
-        "attendance_status",
-        "version",
-        "corrections",
-        "allowed_correction",
-    }
+        assert schemas[schema_name] == frozen_schemas[schema_name]
+
     serialized = json.dumps(
         {
             "detail": schemas["PlatformAttendanceRegistrationDetail"],

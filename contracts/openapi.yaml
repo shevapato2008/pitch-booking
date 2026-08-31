@@ -5094,6 +5094,13 @@ components:
             attendance_recorded_at: {type: string, format: date-time}
             allowed_correction: {const: {target_status: PRESENT, blocked_reason: null}}
         - properties:
+            game_status: {const: COMPLETED}
+            registration_status: {const: JOINED}
+            attendance_status: {enum: [PRESENT, NO_SHOW]}
+            original_attendance_status: {enum: [PRESENT, NO_SHOW]}
+            attendance_recorded_at: {type: string, format: date-time}
+            allowed_correction: {const: {target_status: null, blocked_reason: ATTENDANCE_AUDIT_INCOMPLETE}}
+        - properties:
             allowed_correction:
               type: object
               properties:
