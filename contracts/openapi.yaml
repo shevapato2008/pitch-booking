@@ -3991,6 +3991,185 @@ paths:
                           code: {enum: [ONBOARDING_APPLICATION_STATE_CHANGED, POSSIBLE_DUPLICATE_VENUE]}
         '422': {$ref: '#/components/responses/PlatformOnboardingInvalid'}
         '503': {$ref: '#/components/responses/PlatformOnboardingUnavailable'}
+  /api/v1/admin/venues/{venue_id}/staff:
+    get:
+      operationId: getVenueStaffOverview
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+      responses:
+        '200':
+          description: Active staff, active invitations, and recent immutable audit summaries.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffOverview'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /api/v1/admin/venues/{venue_id}/staff-invitations:
+    post:
+      operationId: createVenueStaffInvitation
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateVenueStaffInvitationRequest'}
+      responses:
+        '200':
+          description: Safe replay metadata; the one-time invitation secret is not recoverable.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffInvitation'}
+        '201':
+          description: Invitation created; invitation_path is returned exactly once.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffInvitationCreated'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '409': {$ref: '#/components/responses/VenueStaffConflict'}
+        '422': {$ref: '#/components/responses/VenueStaffInvalid'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /api/v1/admin/venues/{venue_id}/staff-invitations/{invitation_id}/revoke:
+    post:
+      operationId: revokeVenueStaffInvitation
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/VenueStaffInvitationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Revoked invitation metadata without secret or accepted identity.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffInvitation'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '409': {$ref: '#/components/responses/VenueStaffConflict'}
+        '422': {$ref: '#/components/responses/VenueStaffInvalid'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /api/v1/admin/venues/{venue_id}/staff/{membership_id}:
+    put:
+      operationId: updateVenueStaffPermissions
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/VenueStaffMembershipId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateVenueStaffPermissionsRequest'}
+      responses:
+        '200':
+          description: Updated active staff membership.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffMember'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '409': {$ref: '#/components/responses/VenueStaffConflict'}
+        '422': {$ref: '#/components/responses/VenueStaffInvalid'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /api/v1/admin/venues/{venue_id}/staff/{membership_id}/remove:
+    post:
+      operationId: removeVenueStaffMember
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/VenueStaffMembershipId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoveVenueStaffMemberRequest'}
+      responses:
+        '200':
+          description: The deactivated staff membership retained for audit.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffMember'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '409': {$ref: '#/components/responses/VenueStaffConflict'}
+        '422': {$ref: '#/components/responses/VenueStaffInvalid'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /api/v1/venue-staff-invitations/current:
+    get:
+      operationId: getCurrentVenueStaffInvitation
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueStaffInvitationToken'
+      responses:
+        '200':
+          description: Active invitation visible only to the authenticated token holder.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurrentVenueStaffInvitation'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '410': {$ref: '#/components/responses/VenueStaffInvitationUnavailable'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /api/v1/venue-staff-invitations/current/accept:
+    post:
+      operationId: acceptCurrentVenueStaffInvitation
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueStaffInvitationToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Accepted membership and authoritative venue workspace destination.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueStaffMembershipAccepted'}
+        '401': {$ref: '#/components/responses/VenueStaffAuthRequired'}
+        '409': {$ref: '#/components/responses/VenueStaffConflict'}
+        '410': {$ref: '#/components/responses/VenueStaffInvitationUnavailable'}
+        '422': {$ref: '#/components/responses/VenueStaffInvalid'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
+  /platform-admin/api/v1/venues/{venue_id}/owner-transfers:
+    post:
+      operationId: transferVenueOwner
+      security: [{platformSession: []}]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/PlatformOrigin'
+        - $ref: '#/components/parameters/PlatformCsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TransferVenueOwnerRequest'}
+      responses:
+        '200':
+          description: Atomic owner transfer result.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VenueOwnerTransferResult'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/VenueStaffPlatformForbidden'}
+        '404': {$ref: '#/components/responses/VenueStaffNotFound'}
+        '409': {$ref: '#/components/responses/VenueStaffConflict'}
+        '422': {$ref: '#/components/responses/VenueStaffInvalid'}
+        '503': {$ref: '#/components/responses/VenueStaffUnavailable'}
 components:
   securitySchemes:
     bearerAuth:
@@ -4030,6 +4209,32 @@ components:
       required: true
       description: Reuse the same key to recover the authoritative result after an unknown outcome.
       schema: {type: string, minLength: 16, maxLength: 128}
+    VenueStaffInvitationToken:
+      name: X-Venue-Staff-Invitation-Token
+      in: header
+      required: true
+      description: One-time invitation secret. This header is redacted from logs.
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+    VenueStaffInvitationId:
+      name: invitation_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    VenueStaffMembershipId:
+      name: membership_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    PlatformOrigin:
+      name: Origin
+      in: header
+      required: true
+      schema: {type: string, format: uri}
+    PlatformCsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: {type: string, pattern: '^[0-9a-f]{64}$'}
     AttendanceRegistrationId:
       name: registration_id
       in: path
@@ -4214,7 +4419,255 @@ components:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
           examples:
             VenueProfileValidationFailed: {externalValue: './examples/error-venue-profile-validation.json'}
+    VenueStaffAuthRequired:
+      description: Active WeChat bearer session required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+    VenueStaffNotFound:
+      description: Venue, membership, or invitation was not found in the caller's authority scope.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: VENUE_STAFF_NOT_FOUND}}}}
+    VenueStaffConflict:
+      description: Idempotency, membership version, owner, or invitation state changed.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        enum: [IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, VENUE_STAFF_STATE_CHANGED, OWNER_TRANSFER_REQUIRED]
+    VenueStaffInvalid:
+      description: Invalid request body, path, header, or permission set.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+    VenueStaffInvitationUnavailable:
+      description: Invitation is unknown, expired, revoked, or already accepted; identity is not disclosed.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: VENUE_STAFF_INVITATION_UNAVAILABLE}}}}
+    VenueStaffPlatformForbidden:
+      description: PLATFORM_ADMIN role required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: PLATFORM_ROLE_REQUIRED}}}}
+    VenueStaffUnavailable:
+      description: Venue staff authorization is disabled or temporarily unavailable.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: {enum: [SERVICE_UNAVAILABLE, VENUE_STAFF_AUTHORIZATION_DISABLED]}
   schemas:
+    VenueMembershipRole:
+      type: string
+      enum: [OWNER, STAFF]
+    VenueStaffPermission:
+      type: string
+      enum: [MANAGE_PROFILE, MANAGE_PITCHES, MANAGE_INVENTORY, FULFILL_ORDERS]
+    VenueStaffMember:
+      type: object
+      additionalProperties: false
+      required: [id, display_name, avatar_url, role, permissions, is_self, is_active, version]
+      properties:
+        id: {type: string, format: uuid}
+        display_name: {type: string, minLength: 1, maxLength: 40}
+        avatar_url: {type: [string, 'null'], format: uri}
+        role: {$ref: '#/components/schemas/VenueMembershipRole'}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+        is_self: {type: boolean}
+        is_active: {type: boolean}
+        version: {type: integer, minimum: 1}
+    VenueStaffInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, contact_label, status, permissions, expires_at, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        contact_label: {type: string, minLength: 1, maxLength: 40}
+        status: {type: string, enum: [ACTIVE, ACCEPTED, REVOKED, EXPIRED]}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+        expires_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+    VenueStaffInvitationCreated:
+      type: object
+      additionalProperties: false
+      required: [id, contact_label, status, permissions, expires_at, created_at, invitation_path]
+      properties:
+        id: {type: string, format: uuid}
+        contact_label: {type: string, minLength: 1, maxLength: 40}
+        status: {type: string, const: ACTIVE}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+        expires_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        invitation_path:
+          type: string
+          pattern: '^/pages/venue-staff-invitation/index\?token=[A-Za-z0-9_-]{43}$'
+    CurrentVenueStaffInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, venue_id, venue_name, status, permissions, expires_at]
+      properties:
+        id: {type: string, format: uuid}
+        venue_id: {type: string, format: uuid}
+        venue_name: {type: string, minLength: 1, maxLength: 200}
+        status: {type: string, const: ACTIVE}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+        expires_at: {type: string, format: date-time}
+    VenueStaffAuditSummary:
+      type: object
+      additionalProperties: false
+      required: [id, action, target_display_name, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        action:
+          type: string
+          enum: [INVITATION_CREATED, INVITATION_ACCEPTED, INVITATION_REVOKED, PERMISSIONS_UPDATED, MEMBER_REMOVED, OWNER_TRANSFERRED]
+        target_display_name: {type: string, minLength: 1, maxLength: 40}
+        created_at: {type: string, format: date-time}
+    VenueStaffOverview:
+      type: object
+      additionalProperties: false
+      required: [venue_id, venue_name, viewer_role, viewer_permissions, can_manage, members, active_invitations, recent_audits]
+      properties:
+        venue_id: {type: string, format: uuid}
+        venue_name: {type: string, minLength: 1, maxLength: 200}
+        viewer_role: {$ref: '#/components/schemas/VenueMembershipRole'}
+        viewer_permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+        can_manage: {type: boolean}
+        members:
+          type: array
+          items: {$ref: '#/components/schemas/VenueStaffMember'}
+        active_invitations:
+          type: array
+          items: {$ref: '#/components/schemas/VenueStaffInvitation'}
+        recent_audits:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/VenueStaffAuditSummary'}
+    CreateVenueStaffInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [contact_label, permissions]
+      properties:
+        contact_label: {type: string, minLength: 1, maxLength: 40}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+    UpdateVenueStaffPermissionsRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, permissions]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
+    RemoveVenueStaffMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 200}
+    TransferVenueOwnerRequest:
+      type: object
+      additionalProperties: false
+      required: [target_membership_id, expected_source_version, expected_target_version, reason]
+      properties:
+        target_membership_id: {type: string, format: uuid}
+        expected_source_version: {type: integer, minimum: 1}
+        expected_target_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 200}
+    VenueStaffMembershipAccepted:
+      type: object
+      additionalProperties: false
+      required: [venue_id, venue_name, membership, workspace_path]
+      properties:
+        venue_id: {type: string, format: uuid}
+        venue_name: {type: string, minLength: 1, maxLength: 200}
+        membership: {$ref: '#/components/schemas/VenueStaffMember'}
+        workspace_path: {type: string, const: /pages/venue-workspace/index}
+    VenueOwnerTransferResult:
+      type: object
+      additionalProperties: false
+      required: [venue_id, previous_owner, current_owner, transferred_at]
+      properties:
+        venue_id: {type: string, format: uuid}
+        previous_owner: {$ref: '#/components/schemas/VenueStaffMember'}
+        current_owner: {$ref: '#/components/schemas/VenueStaffMember'}
+        transferred_at: {type: string, format: date-time}
     PublicGameFormat:
       type: string
       enum: [FIVE, SEVEN]
@@ -7449,6 +7902,11 @@ components:
             - APPLICATION_CAPACITY_CHANGED
             - ATTENDANCE_STATE_CHANGED
             - ATTENDANCE_REGISTRATION_NOT_FOUND
+            - VENUE_STAFF_NOT_FOUND
+            - VENUE_STAFF_STATE_CHANGED
+            - VENUE_STAFF_INVITATION_UNAVAILABLE
+            - VENUE_STAFF_AUTHORIZATION_DISABLED
+            - OWNER_TRANSFER_REQUIRED
         message:
           type: string
           minLength: 1

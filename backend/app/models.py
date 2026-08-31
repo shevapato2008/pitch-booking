@@ -274,6 +274,27 @@ class VenueOnboardingEvidenceState(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class VenueMembershipRole(StrEnum):
+    OWNER = "OWNER"
+    STAFF = "STAFF"
+
+
+class VenueStaffInvitationStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    ACCEPTED = "ACCEPTED"
+    REVOKED = "REVOKED"
+    EXPIRED = "EXPIRED"
+
+
+class VenueMembershipAuditAction(StrEnum):
+    INVITATION_CREATED = "INVITATION_CREATED"
+    INVITATION_ACCEPTED = "INVITATION_ACCEPTED"
+    INVITATION_REVOKED = "INVITATION_REVOKED"
+    PERMISSIONS_UPDATED = "PERMISSIONS_UPDATED"
+    MEMBER_REMOVED = "MEMBER_REMOVED"
+    OWNER_TRANSFERRED = "OWNER_TRANSFERRED"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -387,6 +408,24 @@ class VenueMembership(Base):
     __table_args__ = (
         UniqueConstraint("venue_id", "user_id", name="uq_venue_memberships_venue_user"),
         Index("ix_venue_memberships_user_id", "user_id"),
+        Index(
+            "uq_venue_memberships_active_owner",
+            "venue_id",
+            unique=True,
+            postgresql_where=text("role = 'OWNER' AND is_active"),
+        ),
+        CheckConstraint("version > 0", name="ck_venue_memberships_version"),
+        CheckConstraint(
+            "(is_active AND revoked_at IS NULL) OR (NOT is_active AND revoked_at IS NOT NULL)",
+            name="ck_venue_memberships_active_revoked",
+        ),
+        CheckConstraint(
+            "(role = 'OWNER' AND can_manage_profile AND can_manage_pitches "
+            "AND can_manage_inventory AND can_fulfill_orders) OR "
+            "(role = 'STAFF' AND (NOT is_active OR can_manage_profile OR can_manage_pitches "
+            "OR can_manage_inventory OR can_fulfill_orders))",
+            name="ck_venue_memberships_role_permissions",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -399,8 +438,26 @@ class VenueMembership(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    role: Mapped[VenueMembershipRole] = mapped_column(
+        Enum(VenueMembershipRole, name="venue_membership_role"),
+        default=VenueMembershipRole.STAFF,
+        server_default=text("'STAFF'"),
+    )
+    can_manage_profile: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    can_manage_pitches: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     can_manage_inventory: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
+    )
+    can_fulfill_orders: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    version: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     venue: Mapped[Venue] = relationship(back_populates="memberships")
