@@ -9,6 +9,10 @@ import type {
 import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { OpenGameRegistrationApiError } from "../../services/http-open-game-registration";
 import {
+  getWaitlistPromotionSubscriptionCapabilityOrUndefined,
+  type WaitlistPromotionSubscriptionOutcome,
+} from "../../services/open-game-notification-subscription";
+import {
   classifyOpenGameRegistrationMutationResult,
   classifyOpenGameRegistrationPendingAttempt,
   classifyOpenGameRegistrationUnknownResult,
@@ -26,7 +30,9 @@ interface CheckboxEvent { detail?: { value?: unknown }; }
 type ApplicationStatus =
   | "LOADING"
   | "READY"
+  | "SUBSCRIPTION_REQUESTING"
   | "SUBMITTING"
+  | "SUBSCRIPTION_PENDING"
   | "AUTH_LOSS"
   | "RESULT_UNKNOWN"
   | "LOAD_ERROR"
@@ -157,6 +163,8 @@ function blankData() {
     errorMessage: "",
     navigationError: "",
     pendingRoute: "",
+    notificationPromptEnabled:
+      getWaitlistPromotionSubscriptionCapabilityOrUndefined() !== undefined,
     headerTopPx: 0,
     headerRowHeightPx: 44,
   };
@@ -206,6 +214,7 @@ Page({
   mutationInFlight: null as Promise<void> | null,
   pendingRoute: "",
   serverErrors: {} as ServerErrors,
+  subscriptionBlocked: false,
 
   onLoad(options: PageOptions = {}) {
     this.visible = true;
@@ -215,6 +224,7 @@ Page({
     this.mutationInFlight = null;
     this.pendingRoute = "";
     this.serverErrors = {};
+    this.subscriptionBlocked = false;
     const header = readHeaderData();
     if (Object.keys(options).length !== 1
       || typeof options.token !== "string"
@@ -239,6 +249,14 @@ Page({
       return;
     }
     this.visible = true;
+    if (this.subscriptionBlocked) {
+      this.setData({
+        status: "SUBSCRIPTION_PENDING",
+        errorMessage: "提醒授权流程已中断，本次申请尚未提交。请返回后重新进入再试。",
+        canSubmit: false,
+      });
+      return;
+    }
     if (this.routeToken) void this.loadAuthority();
   },
 
@@ -503,6 +521,55 @@ Page({
       body: local.submission,
       idempotencyKey: `application-${Date.now()}-${++attemptSerial}`,
     };
+    const subscription = getWaitlistPromotionSubscriptionCapabilityOrUndefined();
+    if (subscription !== undefined) {
+      const generation = this.loadGeneration;
+      this.subscriptionBlocked = true;
+      this.setData({
+        status: "SUBSCRIPTION_REQUESTING",
+        errorMessage: "请先完成微信提醒选择，之后将继续提交申请。",
+        canSubmit: false,
+      });
+      let result: Promise<WaitlistPromotionSubscriptionOutcome>;
+      try {
+        // This invocation must stay in the original submit tap stack. Do not add an await before it.
+        result = subscription.request();
+      } catch {
+        result = Promise.resolve("UNAVAILABLE");
+      }
+      const promise = this.continueAfterSubscription(requested, result, generation).finally(() => {
+        this.mutationInFlight = null;
+      });
+      this.mutationInFlight = promise;
+      return promise;
+    }
+    const promise = this.beginApplicationSubmission(requested).finally(() => {
+      this.mutationInFlight = null;
+    });
+    this.mutationInFlight = promise;
+    return promise;
+  },
+
+  async continueAfterSubscription(
+    requested: OpenGameRegistrationApplyAttempt,
+    result: Promise<WaitlistPromotionSubscriptionOutcome>,
+    generation: number,
+  ) {
+    const outcome = await result;
+    if (!this.active(generation)) return;
+    if (outcome === "TIMED_OUT") {
+      this.setData({
+        status: "SUBSCRIPTION_PENDING",
+        errorMessage: "提醒授权结果未返回，本次申请尚未提交。请返回后重新进入再试。",
+        canSubmit: false,
+      });
+      return;
+    }
+    this.subscriptionBlocked = false;
+    await this.beginApplicationSubmission(requested);
+  },
+
+  beginApplicationSubmission(requested: OpenGameRegistrationApplyAttempt): Promise<void> {
     let availability;
     try {
       availability = getOpenGameRegistrationAttemptStore().begin(requested);
@@ -515,15 +582,11 @@ Page({
       return Promise.resolve();
     }
     if (availability.kind !== "READY") {
-      this.presentPendingAttempt(availability.attempt, userId);
+      this.presentPendingAttempt(availability.attempt, requested.originatingUserId);
       return Promise.resolve();
     }
     if (availability.attempt.kind !== "apply") return Promise.resolve();
-    const promise = this.executeApply(availability.attempt).finally(() => {
-      this.mutationInFlight = null;
-    });
-    this.mutationInFlight = promise;
-    return promise;
+    return this.executeApply(availability.attempt);
   },
 
   presentPendingAttempt(attempt: OpenGameRegistrationAttempt, userId: string | null) {

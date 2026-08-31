@@ -58,9 +58,20 @@
       <button class="c1a-button c1a-button--neutral" hover-class="button-hover" bindtap="onReturnGame">返回球局详情</button>
     </view>
 
+    <view wx:elif="{{status === 'SUBSCRIPTION_REQUESTING'}}" class="c1a-card c1a-state-card" role="status" aria-busy="true">
+      <text class="c1a-heading">正在确认微信提醒</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+    </view>
+
     <view wx:elif="{{status === 'SUBMITTING'}}" class="c1a-card c1a-state-card" role="status" aria-busy="true">
       <text class="c1a-heading">正在提交申请</text>
-      <text class="c1a-help">已保存本次提交记录，请勿重复操作。</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+    </view>
+
+    <view wx:elif="{{status === 'SUBSCRIPTION_PENDING'}}" class="c1a-card c1a-state-card" role="alert">
+      <text class="c1a-heading">提醒授权仍未返回</text>
+      <text class="c1a-help">{{errorMessage}}</text>
+      <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onReturnGame">返回球局详情</button>
     </view>
 
     <view wx:elif="{{status === 'SUBMITTED_NAV_ERROR'}}" class="c1a-card c1a-state-card" role="alert">
@@ -78,6 +89,10 @@
 
     <block wx:elif="{{status === 'READY'}}">
       <text class="c1a-form-intro">信息仅用于本场审核，提交后不能重复申请。</text>
+      <view wx:if="{{notificationPromptEnabled}}" class="c1a-notification-note">
+        <view class="c1a-notification-dot"></view>
+        <text>若进入候补，转正时可收到微信提醒；拒绝授权不影响申请。</text>
+      </view>
 
       <label class="c1a-field" for="c1a-display-name">
         <text class="c1a-label">本场称呼</text>

@@ -14,6 +14,12 @@ import type {
 import { OpenGameRegistrationApiError } from "../../services/http-open-game-registration";
 import { createOpenGameRegistrationAttemptStore } from "../../services/open-game-registration-attempt-store";
 import {
+  registerWaitlistPromotionSubscriptionCapability,
+  resetWaitlistPromotionSubscriptionCapabilityForTesting,
+  type WaitlistPromotionSubscriptionCapability,
+  type WaitlistPromotionSubscriptionOutcome,
+} from "../../services/open-game-notification-subscription";
+import {
   registerOpenGameRegistrationAttemptStore,
   registerOpenGameRegistrationSource,
   resetOpenGameRegistrationAttemptStoreForTesting,
@@ -139,9 +145,20 @@ function completeNavigation(options: unknown): void {
   (options as { success?: () => void }).success?.();
 }
 
+function registerSubscription(
+  outcome: WaitlistPromotionSubscriptionOutcome,
+): WaitlistPromotionSubscriptionCapability & { readonly request: jest.Mock } {
+  const capability = {
+    request: jest.fn(async () => outcome),
+  };
+  registerWaitlistPromotionSubscriptionCapability(capability);
+  return capability;
+}
+
 beforeEach(() => {
   resetOpenGameRegistrationSourceForTesting();
   resetOpenGameRegistrationAttemptStoreForTesting();
+  resetWaitlistPromotionSubscriptionCapabilityForTesting();
   currentUserId = USER_ID;
   const values = new Map<string, unknown>();
   attemptStore = createOpenGameRegistrationAttemptStore({
@@ -196,6 +213,9 @@ test("uses the approved native form and backs every button with a real handler",
   expect(template).toContain('hover-class="c1a-consent--pressed"');
   expect(styles).toMatch(/\.c1a-consent--pressed\s*\{/);
   expect(template).toMatch(/class="[^"]*\bc1a-navigation-error\b[^"]*"/);
+  expect(template).toContain("若进入候补，转正时可收到微信提醒；拒绝授权不影响申请。");
+  expect(template).toContain("notificationPromptEnabled");
+  expect(styles).toMatch(/\.c1a-notification-note\s*\{/);
 });
 
 test("accepts exactly one legal 32-character token and otherwise performs no read", async () => {
@@ -246,6 +266,7 @@ test("loads server authority and edits all five positions plus both confirmation
 
 test("shows adjacent client errors and cannot persist or send an invalid draft", async () => {
   const api = registerSource();
+  const capability = registerSubscription("ACCEPTED");
   const page = loadPage();
   await openReady(page);
   call(page, "onDisplayNameInput", { detail: { value: "微信 pitch_friend" } });
@@ -260,6 +281,114 @@ test("shows adjacent client errors and cannot persist or send an invalid draft",
   expect(page.data.validation.errors.riskConfirmed).toContain("风险");
   expect(attemptStore.load()).toBeNull();
   expect(api.apply).not.toHaveBeenCalled();
+  expect(capability.request).not.toHaveBeenCalled();
+});
+
+test.each(["ACCEPTED", "DECLINED", "UNAVAILABLE"] as const)(
+  "requests subscription synchronously on the fresh tap and %s still submits",
+  async (outcome) => {
+    const order: string[] = [];
+    let resolveSubscription!: (value: WaitlistPromotionSubscriptionOutcome) => void;
+    const subscription = new Promise<WaitlistPromotionSubscriptionOutcome>((resolve) => {
+      resolveSubscription = resolve;
+    });
+    const capability: WaitlistPromotionSubscriptionCapability = {
+      request: jest.fn(() => {
+        order.push("subscription");
+        return subscription;
+      }),
+    };
+    registerWaitlistPromotionSubscriptionCapability(capability);
+    const api = registerSource({
+      apply: jest.fn(async () => {
+        order.push("apply");
+        return appliedContext;
+      }),
+    });
+    const page = loadPage();
+    await openReady(page);
+    fillValid(page);
+
+    const first = call(page, "onSubmit");
+    const duplicate = call(page, "onSubmit");
+
+    expect(order).toEqual(["subscription"]);
+    expect(page.data.status).toBe("SUBSCRIPTION_REQUESTING");
+    expect(capability.request).toHaveBeenCalledTimes(1);
+    expect(api.apply).not.toHaveBeenCalled();
+    expect(attemptStore.load()).toBeNull();
+
+    resolveSubscription(outcome);
+    await first;
+    await duplicate;
+
+    expect(order).toEqual(["subscription", "apply"]);
+    expect(api.apply).toHaveBeenCalledTimes(1);
+    expect(attemptStore.load()).toBeNull();
+  },
+);
+
+test("subscription timeout locks the page without creating an attempt or submitting", async () => {
+  const capability = registerSubscription("TIMED_OUT");
+  const api = registerSource();
+  const page = loadPage();
+  await openReady(page);
+  fillValid(page);
+
+  await call(page, "onSubmit");
+
+  expect(capability.request).toHaveBeenCalledTimes(1);
+  expect(page.data).toMatchObject({
+    status: "SUBSCRIPTION_PENDING",
+    canSubmit: false,
+    errorMessage: "提醒授权结果未返回，本次申请尚未提交。请返回后重新进入再试。",
+  });
+  expect(attemptStore.load()).toBeNull();
+  expect(api.apply).not.toHaveBeenCalled();
+});
+
+test("a subscription result that arrives after the page hides cannot create an attempt", async () => {
+  let resolveSubscription!: (value: WaitlistPromotionSubscriptionOutcome) => void;
+  const capability: WaitlistPromotionSubscriptionCapability = {
+    request: jest.fn(() => new Promise<WaitlistPromotionSubscriptionOutcome>((resolve) => {
+      resolveSubscription = resolve;
+    })),
+  };
+  registerWaitlistPromotionSubscriptionCapability(capability);
+  const api = registerSource();
+  const page = loadPage();
+  await openReady(page);
+  call(page, "onShow");
+  fillValid(page);
+
+  const submit = call(page, "onSubmit");
+  call(page, "onHide");
+  resolveSubscription("ACCEPTED");
+  await submit;
+  call(page, "onShow");
+
+  expect(attemptStore.load()).toBeNull();
+  expect(api.apply).not.toHaveBeenCalled();
+  expect(api.getContext).toHaveBeenCalledTimes(1);
+  expect(page.data).toMatchObject({
+    status: "SUBSCRIPTION_PENDING",
+    canSubmit: false,
+  });
+});
+
+test("unknown-result confirmation never requests subscription again", async () => {
+  const capability = registerSubscription("ACCEPTED");
+  seedAttempt();
+  const api = registerSource();
+  const page = loadPage();
+  call(page, "onLoad", { token: TOKEN });
+  await flush();
+
+  expect(page.data.status).toBe("RESULT_UNKNOWN");
+  await call(page, "onConfirmResult");
+
+  expect(capability.request).not.toHaveBeenCalled();
+  expect(api.apply).toHaveBeenCalledTimes(1);
 });
 
 test("cancel and header back discard only local edits, perform zero writes, and return honestly", async () => {

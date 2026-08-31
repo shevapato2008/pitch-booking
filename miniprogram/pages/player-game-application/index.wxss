@@ -6,6 +6,8 @@
 .c1a-nav-spacer { width: 88rpx; height: 88rpx; }
 .c1a-scroll { box-sizing: border-box; flex: 1 1 auto; height: 0; padding: 24rpx 24rpx calc(260rpx + env(safe-area-inset-bottom, 0px)); }
 .c1a-form-intro { display: block; margin-bottom: 20rpx; color: #526479; font-size: 24rpx; line-height: 36rpx; }
+.c1a-notification-note { display: grid; grid-template-columns: 16rpx minmax(0, 1fr); align-items: start; gap: 12rpx; margin-bottom: 20rpx; padding: 18rpx 20rpx; border: 1rpx solid #BAE6FD; border-radius: 20rpx; background: #F0F9FF; color: #075985; font-size: 22rpx; line-height: 34rpx; }
+.c1a-notification-dot { width: 12rpx; height: 12rpx; margin-top: 11rpx; border-radius: 50%; background: #0284C7; }
 .c1a-card { display: flex; flex-direction: column; gap: 20rpx; box-sizing: border-box; padding: 24rpx; border: 1rpx solid #DBE5EC; border-radius: 28rpx; background: #FFFFFF; }
 .c1a-state-card { margin-top: 20rpx; }
 .c1a-heading { font-size: 30rpx; font-weight: 700; line-height: 42rpx; }
