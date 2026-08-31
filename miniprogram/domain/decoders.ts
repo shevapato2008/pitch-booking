@@ -320,7 +320,7 @@ export function decodeCheckout(value: unknown): CheckoutView {
 
 const STAGING_NON_FUNDING_ORDER_NUMBER = /^PB-STG-C1A-[0-9a-f]{12}-0[1-3]$/;
 
-function decodeOrderProjection(value: unknown, allowMarkedNonFundingConfirmed: boolean): OrderView {
+function decodeOrderProjection(value: unknown, allowMarkedNonFundingOwnerOrder: boolean): OrderView {
   const baseKeys = [
     "id", "order_number", "status", "slot_id", "venue", "pitch", "starts_at", "ends_at",
     "duration_minutes", "price_cents", "currency", "contact", "created_at", "expires_at",
@@ -391,7 +391,7 @@ function decodeOrderProjection(value: unknown, allowMarkedNonFundingConfirmed: b
   }
   if (status === "CONFIRMED") {
     const appliedPayment = paymentState === "SUCCESS" && paidAt !== null;
-    const inventoryReservation = allowMarkedNonFundingConfirmed
+    const inventoryReservation = allowMarkedNonFundingOwnerOrder
       && STAGING_NON_FUNDING_ORDER_NUMBER.test(common.orderNumber)
       && paymentState === null
       && paidAt === null;
@@ -411,10 +411,24 @@ function decodeOrderProjection(value: unknown, allowMarkedNonFundingConfirmed: b
     return { ...common, status, expiredAt: null, paymentState, paymentConfirming: false, closingPayment: false, paidAt: null };
   }
   if (status === "COMPLETED") {
-    if (expiredAt !== null || paymentState !== "SUCCESS" || paymentConfirming || closingPayment || paidAt === null) {
+    const appliedPayment = paymentState === "SUCCESS" && paidAt !== null;
+    const inventoryReservation = allowMarkedNonFundingOwnerOrder
+      && STAGING_NON_FUNDING_ORDER_NUMBER.test(common.orderNumber)
+      && paymentState === null
+      && paidAt === null;
+    if (expiredAt !== null || paymentConfirming || closingPayment
+      || (!appliedPayment && !inventoryReservation)) {
       invalid("$.status");
     }
-    return { ...common, status, expiredAt: null, paymentState: "SUCCESS", paymentConfirming: false, closingPayment: false, paidAt };
+    return {
+      ...common,
+      status,
+      expiredAt: null,
+      paymentState,
+      paymentConfirming: false,
+      closingPayment: false,
+      paidAt,
+    } as Extract<OrderView, { status: "COMPLETED" }>;
   }
   if (status === "REFUND_PENDING" || status === "REFUND_FAILED" || status === "REFUNDED") {
     const appliedPayment = paymentState === "SUCCESS" && paidAt !== null;

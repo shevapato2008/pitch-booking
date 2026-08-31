@@ -575,6 +575,42 @@ test("limits marked non-funding confirmation to owner detail reads", () => {
     paymentConfirming: false,
     paidAt: null,
   });
+
+  expect(decodeOwnerOrder({
+    ...stagingReservation,
+    status: "COMPLETED",
+    checked_in_at: "2026-08-31T09:01:00+08:00",
+    completed_at: "2026-08-31T10:01:00+08:00",
+    allowed_actions: {
+      can_pay: false,
+      can_cancel: false,
+      can_check_in: false,
+      can_complete: false,
+      can_refund: false,
+      blocked_reason: "ORDER_TERMINAL",
+    },
+  })).toMatchObject({
+    status: "COMPLETED",
+    paymentState: null,
+    paymentConfirming: false,
+    paidAt: null,
+  });
+
+  expect(() => decodeOwnerOrder({
+    ...stagingReservation,
+    order_number: confirmedOrder.order_number,
+    status: "COMPLETED",
+    checked_in_at: "2026-08-31T09:01:00+08:00",
+    completed_at: "2026-08-31T10:01:00+08:00",
+    allowed_actions: {
+      can_pay: false,
+      can_cancel: false,
+      can_check_in: false,
+      can_complete: false,
+      can_refund: false,
+      blocked_reason: "ORDER_TERMINAL",
+    },
+  })).toThrow("INVALID_API_RESPONSE");
 });
 
 test.each([
