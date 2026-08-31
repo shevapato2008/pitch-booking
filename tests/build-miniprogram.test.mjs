@@ -514,7 +514,7 @@ test("public discovery, open game registration, and attendance production routes
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
-  assert.equal(sourceManifest.pages.length, 22);
+  assert.equal(sourceManifest.pages.length, 23);
 
   await build(projectRoot, "development");
   await build(projectRoot, "production");
@@ -539,7 +539,7 @@ test("public discovery, open game registration, and attendance production routes
   }
 });
 
-test("real production build preserves all fourteen existing routes and adds only the eight open-game journey routes", async (t) => {
+test("real production build preserves all fourteen existing routes and adds only the nine open-game journey routes", async (t) => {
   const projectRoot = await createIsolatedRealBuildProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await build(projectRoot, "production");
@@ -555,7 +555,7 @@ test("real production build preserves all fourteen existing routes and adds only
     ].includes(route)),
     EXISTING_PRODUCTION_ROUTES,
   );
-  assert.equal(manifest.pages.length, 22);
+  assert.equal(manifest.pages.length, 23);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
