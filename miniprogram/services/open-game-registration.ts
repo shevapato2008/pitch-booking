@@ -6,6 +6,8 @@ import type {
   OpenGameAttendanceMarkResult,
   OpenGameAttendanceMarkStatus,
   OpenGameAttendanceRoster,
+  OpenGameMemberRemovalResult,
+  OpenGameMemberRoster,
   OpenGameRegistrationContext,
   OpenGameRegistrationWithdrawalAction,
 } from "../domain/open-game-registration";
@@ -44,6 +46,15 @@ export type OpenGameRegistrationAttempt =
     readonly attendanceStatus: OpenGameAttendanceMarkStatus;
     readonly expectedVersion: number;
     readonly idempotencyKey: string;
+  }
+  | {
+    readonly kind: "remove-member";
+    readonly originatingUserId: string;
+    readonly gameId: string;
+    readonly registrationId: string;
+    readonly expectedVersion: number;
+    readonly reason: string;
+    readonly idempotencyKey: string;
   };
 
 export type OpenGameRegistrationApplyAttempt = Extract<
@@ -61,6 +72,10 @@ export type OpenGameRegistrationWithdrawAttempt = Extract<
 export type OpenGameAttendanceMarkAttempt = Extract<
   OpenGameRegistrationAttempt,
   { readonly kind: "attendance" }
+>;
+export type OpenGameMemberRemoveAttempt = Extract<
+  OpenGameRegistrationAttempt,
+  { readonly kind: "remove-member" }
 >;
 
 export type OpenGameRegistrationAttemptAvailability =
@@ -90,6 +105,8 @@ export interface OpenGameRegistrationSource {
   withdraw(attempt: OpenGameRegistrationWithdrawAttempt): Promise<OpenGameRegistrationContext>;
   getAttendanceRoster(gameId: string): Promise<OpenGameAttendanceRoster>;
   markAttendance(attempt: OpenGameAttendanceMarkAttempt): Promise<OpenGameAttendanceMarkResult>;
+  getMembers(gameId: string): Promise<OpenGameMemberRoster>;
+  removeMember(attempt: OpenGameMemberRemoveAttempt): Promise<OpenGameMemberRemovalResult>;
 }
 
 export type OpenGameRegistrationApiErrorCode =
@@ -177,6 +194,32 @@ export type OpenGameAttendanceUnknownRecoveryDecision =
     readonly attempt: OpenGameAttendanceMarkAttempt;
     readonly clearAttempt: false;
   };
+
+export type OpenGameMemberRemovalUnknownRecoveryDecision =
+  | {
+    readonly kind: "ACCEPT_AUTHORITY_AND_CLEAR";
+    readonly authority: OpenGameMemberRoster;
+    readonly clearAttempt: true;
+  }
+  | {
+    readonly kind: "REPLAY_SAME_ATTEMPT";
+    readonly attempt: OpenGameMemberRemoveAttempt;
+    readonly clearAttempt: false;
+  };
+
+export function classifyOpenGameMemberRemovalUnknownResult(
+  attempt: OpenGameMemberRemoveAttempt,
+  authority: OpenGameMemberRoster,
+): OpenGameMemberRemovalUnknownRecoveryDecision {
+  const member = authority.game.id === attempt.gameId
+    ? authority.members.find((item) => item.registrationId === attempt.registrationId)
+    : undefined;
+  const unchanged = member?.version === attempt.expectedVersion
+    && member.allowedActions.canRemove
+    && member.allowedActions.removeBlockedReason === null;
+  if (unchanged) return { kind: "REPLAY_SAME_ATTEMPT", attempt, clearAttempt: false };
+  return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority, clearAttempt: true };
+}
 
 export function classifyOpenGameAttendanceUnknownResult(
   attempt: OpenGameAttendanceMarkAttempt,
@@ -266,7 +309,8 @@ export type OpenGameRegistrationAttemptTarget =
   | { readonly kind: "apply"; readonly shareToken: string }
   | { readonly kind: "decision"; readonly gameId: string }
   | { readonly kind: "withdraw"; readonly shareToken: string }
-  | { readonly kind: "attendance"; readonly gameId: string };
+  | { readonly kind: "attendance"; readonly gameId: string }
+  | { readonly kind: "remove-member"; readonly gameId: string };
 
 export type OpenGameRegistrationPendingAttemptDecision =
   | {
@@ -295,13 +339,17 @@ export function classifyOpenGameRegistrationPendingAttempt(
       ? target.kind === "decision" && target.gameId === attempt.gameId
       : attempt.kind === "withdraw"
         ? target.kind === "withdraw" && target.shareToken === attempt.shareToken
-        : target.kind === "attendance" && target.gameId === attempt.gameId;
+        : attempt.kind === "attendance"
+          ? target.kind === "attendance" && target.gameId === attempt.gameId
+          : target.kind === "remove-member" && target.gameId === attempt.gameId;
   if (sameResource) return { kind: "READY", attempt, clearAttempt: false };
   const route = attempt.kind === "decision"
     ? `/pages/captain-game-applications/index?game_id=${attempt.gameId}`
     : attempt.kind === "attendance"
       ? `/pages/captain-game-attendance/index?game_id=${attempt.gameId}`
-      : `/pages/captain-game-public/index?token=${attempt.shareToken}`;
+      : attempt.kind === "remove-member"
+        ? `/pages/captain-game-members/index?game_id=${attempt.gameId}`
+        : `/pages/captain-game-public/index?token=${attempt.shareToken}`;
   return { kind: "PRESERVE_AND_NAVIGATE", route, clearAttempt: false };
 }
 

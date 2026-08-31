@@ -48,6 +48,7 @@ const STATUS_LABELS: Readonly<Record<OpenGameRegistrationEffectiveStatus, string
   JOINED: "已加入",
   REJECTED: "未通过",
   WITHDRAWN: "已退出",
+  REMOVED: "已被队长移出",
   CANCELLED: "球局已取消",
 };
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
