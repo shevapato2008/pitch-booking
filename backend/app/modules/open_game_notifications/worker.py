@@ -94,7 +94,7 @@ class OpenGameNotificationWorker:
             with self._session_factory() as session:
                 OpenGameNotificationRepository(session).supersede_claim(
                     claim,
-                    completed_at=self._clock(),
+                    completed_at=prepared.completed_at,
                 )
                 session.commit()
             return

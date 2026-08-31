@@ -21,6 +21,7 @@ from backend.app.models import (
     OrderStatus,
     RefundCase,
     RefundCasePurpose,
+    Slot,
     User,
 )
 
@@ -45,7 +46,7 @@ class PreparedOpenGameNotification:
 
 @dataclass(frozen=True, slots=True)
 class SupersededOpenGameNotification:
-    pass
+    completed_at: datetime
 
 
 NotificationPreparation = (
@@ -147,6 +148,11 @@ class OpenGameNotificationRepository:
         )
         if order is None:
             return None
+        starts_at = self.session.scalar(
+            select(Slot.starts_at).where(Slot.id == order.slot_id)
+        )
+        if starts_at is None:
+            return None
         game = self.session.scalar(
             select(OpenGame)
             .where(OpenGame.id == game_id, OpenGame.order_id == order.id)
@@ -200,14 +206,16 @@ class OpenGameNotificationRepository:
             )
             .limit(1)
         )
+        authorization_time = clock()
         if (
             registration.status is not OpenGameRegistrationStatus.JOINED
             or game.status is not OpenGameStatus.PUBLISHED
             or order.status is not OrderStatus.CONFIRMED
             or order.cancel_requested_at is not None
             or controlling_refund_exists is not None
+            or authorization_time >= starts_at
         ):
-            return SupersededOpenGameNotification()
+            return SupersededOpenGameNotification(authorization_time)
         request = WaitlistPromotionRequest(
             dedupe_key=event.dedupe_key,
             recipient=WaitlistPromotionRecipient(
@@ -217,7 +225,6 @@ class OpenGameNotificationRepository:
             template_key=event.template_key,
             data=event.payload,
         )
-        authorization_time = clock()
         if (
             event.lease_until is None
             or event.lease_until <= authorization_time

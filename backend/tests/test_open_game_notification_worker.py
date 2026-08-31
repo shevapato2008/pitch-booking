@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -13,6 +14,7 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from backend.app import worker as worker_module
 from backend.app.config import Settings
 from backend.app.errors import AppError
 from backend.app.models import (
@@ -282,6 +284,33 @@ def test_worker_sends_due_notification_and_does_not_mutate_registration(
         assert event.last_failure_code is None
         assert registration.status is OpenGameRegistrationStatus.JOINED
         assert registration.version == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("offset", [timedelta(0), timedelta(seconds=1)])
+def test_worker_supersedes_at_or_after_start_without_provider_io(
+    pg_engine: Engine,
+    offset: timedelta,
+) -> None:
+    seeded = _seed_notification(pg_engine)
+    provider = RecordingNotificationProvider()
+    authorization_time = seeded.booking.starts_at + offset
+
+    processed = OpenGameNotificationWorker(
+        session_factory=_factory(pg_engine),
+        provider=provider,
+        clock=lambda: authorization_time,
+    ).run_once()
+
+    assert processed == 1
+    assert provider.calls == []
+    with Session(pg_engine) as session:
+        event = session.get_one(OpenGameNotificationOutbox, seeded.outbox_id)
+        assert event.status is OpenGameNotificationStatus.SUPERSEDED
+        assert event.delivery_started_at is None
+        assert event.completed_at == authorization_time
+        assert event.claim_token is None
+        assert event.lease_until is None
 
 
 @pytest.mark.integration
@@ -1050,3 +1079,110 @@ def test_default_worker_composition_leaves_outbox_pending_without_real_provider(
         assert event.status is OpenGameNotificationStatus.PENDING
         assert event.attempt_count == 0
         assert event.claim_token is None
+
+
+@pytest.mark.integration
+def test_root_worker_composes_enabled_notifications_and_closes_owned_provider(
+    pg_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = _seed_notification(pg_engine)
+
+    class OwnedProvider(RecordingNotificationProvider):
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    provider = OwnedProvider()
+    monkeypatch.setattr(
+        worker_module,
+        "build_open_game_notification_provider",
+        lambda settings: provider,
+    )
+
+    assert main(
+        ["--once", "--batch-size", "1"],
+        session_factory=_factory(pg_engine),
+        clock=lambda: NOW,
+        settings=Settings(
+            app_env="test",
+            payment_provider="disabled",
+            wechat_app_id="wx-notification-test",
+            wechat_app_secret="notification-secret",
+            open_game_notification_provider="wechat",
+            open_game_notification_template_id="template_id-123",
+            open_game_notification_keyword_mapping_json=json.dumps({
+                "game_name": "thing1",
+                "starts_at": "time2",
+                "venue_name": "thing3",
+            }),
+        ),
+    ) == 0
+
+    assert len(provider.calls) == 1
+    assert provider.closed is True
+    with Session(pg_engine) as session:
+        event = session.get_one(OpenGameNotificationOutbox, seeded.outbox_id)
+        assert event.status is OpenGameNotificationStatus.SENT
+
+
+def test_root_worker_closes_owned_notification_provider_when_run_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OwnedProvider(RecordingNotificationProvider):
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    provider = OwnedProvider()
+    monkeypatch.setattr(
+        worker_module,
+        "build_open_game_notification_provider",
+        lambda settings: provider,
+    )
+    monkeypatch.setattr(
+        worker_module.ExpiryWorker,
+        "run",
+        lambda worker, **kwargs: (_ for _ in ()).throw(RuntimeError("injected")),
+    )
+    settings = Settings(
+        app_env="test",
+        payment_provider="disabled",
+        wechat_app_id="wx-notification-test",
+        wechat_app_secret="notification-secret",
+        open_game_notification_provider="wechat",
+        open_game_notification_template_id="template_id-123",
+        open_game_notification_keyword_mapping_json=json.dumps({
+            "game_name": "thing1",
+            "starts_at": "time2",
+            "venue_name": "thing3",
+        }),
+    )
+
+    with pytest.raises(RuntimeError, match="injected"):
+        main(["--once"], settings=settings)
+    assert provider.closed is True
+
+
+def test_root_worker_disabled_notification_config_never_builds_a_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        worker_module,
+        "build_open_game_notification_provider",
+        lambda settings: pytest.fail("disabled notifications must not build a provider"),
+    )
+    monkeypatch.setattr(worker_module.ExpiryWorker, "run", lambda worker, **kwargs: 0)
+
+    assert main(
+        ["--once"],
+        settings=Settings(
+            app_env="test",
+            payment_provider="disabled",
+            open_game_notification_provider="disabled",
+            open_game_notification_template_id="residual invalid value",
+            open_game_notification_keyword_mapping_json="residual invalid json",
+        ),
+    ) == 0
