@@ -19,6 +19,7 @@
       "position": "FORWARD",
       "attendance_status": "UNMARKED",
       "attendance_recorded_at": null,
+      "attendance_corrected_at": null,
       "version": 2
     },
     {
@@ -27,6 +28,7 @@
       "position": "GOALKEEPER",
       "attendance_status": "PRESENT",
       "attendance_recorded_at": "2026-08-30T20:32:00+08:00",
+      "attendance_corrected_at": "2026-08-31T14:18:00+08:00",
       "version": 3
     },
     {
@@ -35,6 +37,7 @@
       "position": "MIDFIELDER",
       "attendance_status": "NO_SHOW",
       "attendance_recorded_at": "2026-08-30T20:34:00+08:00",
+      "attendance_corrected_at": null,
       "version": 3
     }
   ]

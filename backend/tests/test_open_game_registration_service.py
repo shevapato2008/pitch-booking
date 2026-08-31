@@ -16,6 +16,7 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameAttendanceCorrection,
     OpenGameAttendanceStatus,
     OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
@@ -495,6 +496,7 @@ def test_context_reads_withdrawn_audit_fields_but_keeps_write_action_closed(
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
     }
 
 
@@ -523,6 +525,7 @@ def test_self_attendance_projection_is_required_nullable_and_completed_only(
         assert before_completion.viewer_registration is not None
         assert before_completion.viewer_registration.attendance_status is None
         assert before_completion.viewer_registration.attendance_recorded_at is None
+        assert before_completion.viewer_registration.attendance_corrected_at is None
         before_list_item = _service(session)._project_my_application(
             registration,
             now=NOW,
@@ -540,6 +543,7 @@ def test_self_attendance_projection_is_required_nullable_and_completed_only(
         assert completed.viewer_registration is not None
         assert completed.viewer_registration.attendance_status == "PRESENT"
         assert completed.viewer_registration.attendance_recorded_at == recorded_at
+        assert completed.viewer_registration.attendance_corrected_at is None
         completed_list_item = _service(session)._project_my_application(
             registration,
             now=recorded_at,
@@ -547,13 +551,51 @@ def test_self_attendance_projection_is_required_nullable_and_completed_only(
         )
         assert completed_list_item.attendance_status == "PRESENT"
         assert completed_list_item.attendance_recorded_at == recorded_at
+        assert completed_list_item.attendance_corrected_at is None
+
+        corrected_at = recorded_at + timedelta(minutes=2)
+        registration.attendance_status = OpenGameAttendanceStatus.NO_SHOW
+        registration.version = 4
+        session.add(
+            OpenGameAttendanceCorrection(
+                registration_id=registration.id,
+                from_status=OpenGameAttendanceStatus.PRESENT,
+                to_status=OpenGameAttendanceStatus.NO_SHOW,
+                reason="球员与队长共同核实",
+                corrected_by_principal_id="platform-admin:self-readback",
+                corrected_at=corrected_at,
+                registration_version_before=3,
+                registration_version_after=4,
+                idempotency_key="self-readback-correction-0001",
+                request_sha256="b" * 64,
+            )
+        )
+        session.commit()
+        corrected_context = _service(session, now=corrected_at).get_context(
+            share_token=case.share_token,
+            viewer_user_id=case.booking.stranger_id,
+        )
+        corrected_list = _service(session, now=corrected_at).list_my_applications(
+            applicant_user_id=case.booking.stranger_id,
+            limit=20,
+            cursor=None,
+        )
+        assert corrected_context.viewer_registration is not None
+        assert corrected_context.viewer_registration.attendance_status == "NO_SHOW"
+        assert corrected_context.viewer_registration.attendance_recorded_at == recorded_at
+        assert corrected_context.viewer_registration.attendance_corrected_at == corrected_at
+        assert corrected_list.items[0].attendance_status == "NO_SHOW"
+        assert corrected_list.items[0].attendance_recorded_at == recorded_at
+        assert corrected_list.items[0].attendance_corrected_at == corrected_at
         serialized = json.dumps(
             {
-                "context": completed.model_dump(mode="json"),
-                "list_item": completed_list_item.model_dump(mode="json"),
+                "context": corrected_context.model_dump(mode="json"),
+                "list_item": corrected_list.items[0].model_dump(mode="json"),
             }
         )
         assert "attendance_recorded_by_user_id" not in serialized
+        assert "球员与队长共同核实" not in serialized
+        assert "platform-admin" not in serialized
 
 
 def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
@@ -574,6 +616,7 @@ def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
         c2b_viewer = c2b["viewer_registration"]
         c2b_viewer.pop("attendance_status")
         c2b_viewer.pop("attendance_recorded_at")
+        c2b_viewer.pop("attendance_corrected_at")
         upgraded = _upgrade_legacy_application_context(
             c2b,
             application_id=None,
@@ -582,6 +625,7 @@ def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
         assert replay.viewer_registration is not None
         assert replay.viewer_registration.attendance_status is None
         assert replay.viewer_registration.attendance_recorded_at is None
+        assert replay.viewer_registration.attendance_corrected_at is None
 
         for invalid in (
             {**c2b_viewer, "attendance_status": None},
@@ -626,6 +670,7 @@ def test_attendance_runtime_dtos_and_roster_projector_are_closed_and_private() -
         position=OpenGameRegistrationPosition.FORWARD,
         attendance_status=OpenGameAttendanceStatus.PRESENT,
         attendance_recorded_at=NOW,
+        attendance_corrected_at=None,
         version=3,
     )
     assert set(item.model_dump()) == item_fields == {
@@ -634,6 +679,7 @@ def test_attendance_runtime_dtos_and_roster_projector_are_closed_and_private() -
         "position",
         "attendance_status",
         "attendance_recorded_at",
+        "attendance_corrected_at",
         "version",
     }
     serialized = json.dumps(item.model_dump(mode="json"))
@@ -961,6 +1007,7 @@ def test_apply_replays_a_legacy_c1a_context_after_the_viewer_contract_expands(
             "promoted_at",
             "attendance_status",
             "attendance_recorded_at",
+            "attendance_corrected_at",
         ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer
@@ -2385,6 +2432,7 @@ def test_withdraw_is_terminal_idempotent_and_preserves_capacity_authority(
             "promoted_at",
             "attendance_status",
             "attendance_recorded_at",
+            "attendance_corrected_at",
         ):
             legacy_viewer.pop(field)
         legacy_body["viewer_registration"] = legacy_viewer

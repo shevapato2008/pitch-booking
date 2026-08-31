@@ -8,7 +8,7 @@ from functools import partial
 from typing import Literal
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, event, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from backend.app.errors import AppError
 from backend.app.models import (
     IdempotencyRecord,
     OpenGame,
+    OpenGameAttendanceCorrection,
     OpenGameAttendanceStatus,
     OpenGameRegistration,
     OpenGameRegistrationPosition,
@@ -209,6 +210,78 @@ def test_owner_roster_is_joined_only_stably_sorted_minimal_and_empty_complete(
         assert empty_roster.registrations == ()
         assert empty_roster.total_count == empty_roster.recorded_count == 0
         assert empty_roster.attendance_complete is True
+
+
+def test_owner_roster_batches_latest_correction_without_leaking_platform_audit(
+    pg_engine: Engine,
+) -> None:
+    seeded = _seed_completed_attendance_game(pg_engine, joined_count=3)
+    corrected_at = ATTENDANCE_NOW + timedelta(hours=1)
+    recorded_at = ATTENDANCE_NOW - timedelta(minutes=2)
+    first_id = seeded.joined_ids[0]
+    second_id = seeded.joined_ids[1]
+    with Session(pg_engine) as session:
+        first = session.get_one(OpenGameRegistration, first_id)
+        first.attendance_status = OpenGameAttendanceStatus.NO_SHOW
+        first.attendance_recorded_at = recorded_at
+        first.attendance_recorded_by_user_id = seeded.owner_id
+        first.version = 4
+        second = session.get_one(OpenGameRegistration, second_id)
+        second.attendance_status = OpenGameAttendanceStatus.PRESENT
+        second.attendance_recorded_at = recorded_at
+        second.attendance_recorded_by_user_id = seeded.owner_id
+        second.version = 3
+        session.add(
+            OpenGameAttendanceCorrection(
+                registration_id=first.id,
+                from_status=OpenGameAttendanceStatus.PRESENT,
+                to_status=OpenGameAttendanceStatus.NO_SHOW,
+                reason="平台线下核实",
+                corrected_by_principal_id="platform-admin:captain-readback",
+                corrected_at=corrected_at,
+                registration_version_before=3,
+                registration_version_after=4,
+                idempotency_key="captain-readback-correction-0001",
+                request_sha256="a" * 64,
+            )
+        )
+        session.commit()
+
+    correction_selects: list[str] = []
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        if (
+            statement.lstrip().upper().startswith("SELECT")
+            and "open_game_attendance_corrections" in statement
+        ):
+            correction_selects.append(statement)
+
+    event.listen(pg_engine, "before_cursor_execute", record_statement)
+    try:
+        with Session(pg_engine) as session:
+            roster = _service(session, now=corrected_at).get_attendance_roster(
+                game_id=seeded.game.game_id,
+                owner_user_id=seeded.owner_id,
+            )
+    finally:
+        event.remove(pg_engine, "before_cursor_execute", record_statement)
+
+    by_id = {item.registration_id: item for item in roster.registrations}
+    assert by_id[first_id].attendance_status == OpenGameAttendanceStatus.NO_SHOW
+    assert by_id[first_id].attendance_recorded_at == recorded_at
+    assert by_id[first_id].attendance_corrected_at == corrected_at
+    assert by_id[second_id].attendance_corrected_at is None
+    assert len(correction_selects) == 1
+    serialized = json.dumps(roster.model_dump(mode="json"), ensure_ascii=False)
+    for forbidden in ("平台线下核实", "platform-admin", "reason", "principal"):
+        assert forbidden not in serialized
 
 
 def test_roster_hides_missing_and_non_owned_games_and_requires_completed_state(

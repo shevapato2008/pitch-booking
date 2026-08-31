@@ -45,6 +45,7 @@ MY_OPEN_GAME_APPLICATION_FIELDS = {
     "promoted_at",
     "attendance_status",
     "attendance_recorded_at",
+    "attendance_corrected_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -1797,8 +1798,9 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "waitlist_position",
             "waitlisted_at",
             "promoted_at",
-            "attendance_status",
-            "attendance_recorded_at",
+                "attendance_status",
+                "attendance_recorded_at",
+                "attendance_corrected_at",
         },
         "OpenGameRegistrationContext": {
             "game",
@@ -4278,6 +4280,7 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
             "position",
             "attendance_status",
             "attendance_recorded_at",
+            "attendance_corrected_at",
             "version",
         },
         "OpenGameAttendanceRoster": {
@@ -4360,12 +4363,14 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
             "properties": {
                 "attendance_status": {"const": None},
                 "attendance_recorded_at": {"const": None},
+                "attendance_corrected_at": {"const": None},
             }
         },
         {
             "properties": {
                 "attendance_status": {"const": "UNMARKED"},
                 "attendance_recorded_at": {"const": None},
+                "attendance_corrected_at": {"const": None},
             }
         },
         {
@@ -4373,6 +4378,10 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
                 "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
                 "attendance_recorded_at": {
                     "type": "string",
+                    "format": "date-time",
+                },
+                "attendance_corrected_at": {
+                    "type": ["string", "null"],
                     "format": "date-time",
                 },
             }
@@ -4390,9 +4399,11 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
     }
     for self_schema_name in ("OpenGameViewerRegistration", "MyOpenGameApplication"):
         self_schema = schemas[self_schema_name]
-        assert {"attendance_status", "attendance_recorded_at"} <= set(
-            self_schema["required"]
-        )
+        assert {
+            "attendance_status",
+            "attendance_recorded_at",
+            "attendance_corrected_at",
+        } <= set(self_schema["required"])
         assert self_schema["properties"]["attendance_status"] == {
             "oneOf": [
                 {"$ref": "#/components/schemas/OpenGameAttendanceStatus"},
@@ -4400,6 +4411,10 @@ def test_open_game_attendance_schemas_are_closed_private_and_runtime_aligned() -
             ]
         }
         assert self_schema["properties"]["attendance_recorded_at"] == {
+            "type": ["string", "null"],
+            "format": "date-time",
+        }
+        assert self_schema["properties"]["attendance_corrected_at"] == {
             "type": ["string", "null"],
             "format": "date-time",
         }

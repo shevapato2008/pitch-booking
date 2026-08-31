@@ -1420,7 +1420,8 @@ function validateMyOpenGameApplicationsContract(contract) {
   const item = schemas.MyOpenGameApplication;
   const itemFields = [
     'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
-    'promoted_at', 'attendance_status', 'attendance_recorded_at', 'detail_path',
+    'promoted_at', 'attendance_status', 'attendance_recorded_at',
+    'attendance_corrected_at', 'detail_path',
     'game_name', 'starts_at', 'ends_at', 'time_zone',
     'venue_name', 'pitch_name', 'pitch_specification',
   ];
@@ -1620,7 +1621,7 @@ function validateOpenGameAttendanceContract(contract) {
 
   const rosterItem = assertClosedSchema('OpenGameAttendanceRosterItem', [
     'registration_id', 'display_name', 'position', 'attendance_status',
-    'attendance_recorded_at', 'version',
+    'attendance_recorded_at', 'attendance_corrected_at', 'version',
   ], true);
   if (!isDeepStrictEqual(rosterItem.properties.display_name, {
     type: 'string',
@@ -1634,6 +1635,9 @@ function validateOpenGameAttendanceContract(contract) {
   }) || !isDeepStrictEqual(rosterItem.properties.attendance_recorded_at, {
     type: ['string', 'null'],
     format: 'date-time',
+  }) || !isDeepStrictEqual(rosterItem.properties.attendance_corrected_at, {
+    type: ['string', 'null'],
+    format: 'date-time',
   })) {
     fail('attendance roster status and recorded time schemas must remain exact');
   }
@@ -1642,12 +1646,14 @@ function validateOpenGameAttendanceContract(contract) {
       properties: {
         attendance_status: { const: 'UNMARKED' },
         attendance_recorded_at: { const: null },
+        attendance_corrected_at: { const: null },
       },
     },
     {
       properties: {
         attendance_status: { enum: ['PRESENT', 'NO_SHOW'] },
         attendance_recorded_at: { type: 'string', format: 'date-time' },
+        attendance_corrected_at: { type: ['string', 'null'], format: 'date-time' },
       },
     },
   ];
@@ -1700,18 +1706,21 @@ function validateOpenGameAttendanceContract(contract) {
       properties: {
         attendance_status: { const: null },
         attendance_recorded_at: { const: null },
+        attendance_corrected_at: { const: null },
       },
     },
     {
       properties: {
         attendance_status: { const: 'UNMARKED' },
         attendance_recorded_at: { const: null },
+        attendance_corrected_at: { const: null },
       },
     },
     {
       properties: {
         attendance_status: { enum: ['PRESENT', 'NO_SHOW'] },
         attendance_recorded_at: { type: 'string', format: 'date-time' },
+        attendance_corrected_at: { type: ['string', 'null'], format: 'date-time' },
       },
     },
   ];
@@ -1721,11 +1730,12 @@ function validateOpenGameAttendanceContract(contract) {
       'version', 'applied_at', 'decided_at', 'withdrawn_at', 'withdrawal_kind',
       'late_exit_recorded', 'available_withdrawal_action', 'late_exit_will_be_recorded',
       'waitlist_position', 'waitlisted_at', 'promoted_at', 'attendance_status',
-      'attendance_recorded_at',
+      'attendance_recorded_at', 'attendance_corrected_at',
     ]],
     ['MyOpenGameApplication', [
       'id', 'effective_status', 'applied_at', 'waitlist_position', 'waitlisted_at',
-      'promoted_at', 'attendance_status', 'attendance_recorded_at', 'detail_path',
+      'promoted_at', 'attendance_status', 'attendance_recorded_at',
+      'attendance_corrected_at', 'detail_path',
       'game_name', 'starts_at', 'ends_at', 'time_zone', 'venue_name', 'pitch_name',
       'pitch_specification',
     ]],
@@ -1738,6 +1748,9 @@ function validateOpenGameAttendanceContract(contract) {
         { type: 'null' },
       ],
     }) || !isDeepStrictEqual(schema.properties.attendance_recorded_at, {
+      type: ['string', 'null'],
+      format: 'date-time',
+    }) || !isDeepStrictEqual(schema.properties.attendance_corrected_at, {
       type: ['string', 'null'],
       format: 'date-time',
     }) || !isDeepStrictEqual(schema.oneOf, selfPair)) {
@@ -2105,12 +2118,20 @@ function validateMyOpenGameApplicationsBusinessRules(response, filename) {
         fail(`${filename}: ${field} must be an aware date-time`);
       }
     }
-    for (const field of ['waitlisted_at', 'promoted_at']) {
+    for (const field of ['waitlisted_at', 'promoted_at', 'attendance_recorded_at', 'attendance_corrected_at']) {
       if (item[field] !== null
           && (!/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(item[field])
             || !Number.isFinite(Date.parse(item[field])))) {
         fail(`${filename}: ${field} must be null or an aware date-time`);
       }
+    }
+    if (item.attendance_corrected_at !== null
+        && (item.attendance_status !== 'PRESENT' && item.attendance_status !== 'NO_SHOW')) {
+      fail(`${filename}: corrected attendance requires a terminal current status`);
+    }
+    if (item.attendance_corrected_at !== null
+        && Date.parse(item.attendance_corrected_at) < Date.parse(item.attendance_recorded_at)) {
+      fail(`${filename}: attendance_corrected_at must not precede attendance_recorded_at`);
     }
     localDateInTimeZone(item.starts_at, item.time_zone, filename);
   }

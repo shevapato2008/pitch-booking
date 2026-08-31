@@ -66,6 +66,16 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c1a-status-card--withdrawn .c1a-status-dot { background: #64748B; }
 .c1a-status-description { display: block; margin: 6rpx 0 0 32rpx; color: #526479; font-size: 22rpx; line-height: 34rpx; }
 .c1a-status-card--joined .c1a-status-description { color: #047857; }
+.c2d-registration-authority { display: flex; flex-direction: column; }
+.c2d-registration-title { font-size: 28rpx; font-weight: 700; line-height: 40rpx; }
+.c2d-attendance-time { margin-top: 8rpx; color: #526479; font-size: 23rpx; line-height: 36rpx; }
+.c2d-attendance-time--corrected { color: #047857; font-weight: 700; }
+.c2d-registration-label { margin-top: 18rpx; color: #64748B; font-size: 20rpx; line-height: 30rpx; }
+.c2d-registration-id { overflow: hidden; margin-top: 2rpx; color: #334155; font-size: 21rpx; line-height: 34rpx; text-overflow: ellipsis; white-space: nowrap; }
+.c2d-copy-action { min-height: 88rpx; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; margin: 18rpx 0 0; padding: 0 20rpx; border: 1rpx solid #7DD3FC; border-radius: 20rpx; background: #F0F9FF; color: #0369A1; font-size: 26rpx; font-weight: 700; line-height: 38rpx; }
+.c2d-copy-feedback { display: block; margin-top: 8rpx; color: #526479; font-size: 21rpx; line-height: 32rpx; }
+.c2d-copy-feedback--success { color: #047857; }
+.c2d-copy-feedback--error { color: #B42318; }
 .c1a-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx 24rpx; }
 .c1a-detail-grid view { display: flex; min-width: 0; flex-direction: column; }
 .c1a-detail-label { color: #526479; font-size: 20rpx; line-height: 30rpx; }

@@ -53,7 +53,6 @@ const fixture = (name: string): Record<string, unknown> => {
   const persisted = registration.persisted_status;
   const effective = registration.effective_status;
   raw.viewer_registration = {
-    id: applicationId,
     version: persisted === "APPLIED" ? 1 : 2,
     withdrawn_at: null,
     withdrawal_kind: null,
@@ -64,6 +63,7 @@ const fixture = (name: string): Record<string, unknown> => {
         : persisted === "JOINED" ? "LEAVE_GAME" : null,
     late_exit_will_be_recorded: false,
     ...registration,
+    id: applicationId,
   };
   return raw;
 };
@@ -121,6 +121,7 @@ const joinedContext: OpenGameRegistrationContext = {
 const completedJoinedContext = (
   attendanceStatus: "UNMARKED" | "PRESENT" | "NO_SHOW",
   attendanceRecordedAt: string | null,
+  attendanceCorrectedAt: string | null = null,
 ): OpenGameRegistrationContext => ({
   ...joinedContext,
   game: {
@@ -134,6 +135,7 @@ const completedJoinedContext = (
     lateExitWillBeRecorded: false,
     attendanceStatus,
     attendanceRecordedAt,
+    attendanceCorrectedAt,
   },
 });
 const promotedJoinedContext: OpenGameRegistrationContext = {
@@ -255,6 +257,7 @@ beforeEach(() => {
     getMenuButtonBoundingClientRect: jest.fn(() => ({ top: 48, left: 278, width: 87, height: 32 })),
     hideShareMenu: jest.fn(async () => undefined), navigateBack: jest.fn(completeNavigation), navigateTo: jest.fn(completeNavigation),
     redirectTo: jest.fn(completeNavigation), reLaunch: jest.fn(completeNavigation),
+    setClipboardData: jest.fn(),
   };
   (globalThis as any).getCurrentPages = jest.fn(() => [{ route: "pages/intent-entry/index" }, { route: "pages/captain-game-public/index" }]);
 });
@@ -383,9 +386,58 @@ test.each([
       promotedAt: null,
       attendanceStatus,
       attendanceRecordedAt,
+      attendanceCorrectedAt: null,
     });
   },
 );
+
+test("corrected self result shows original and correction times and copies its registration id", async () => {
+  const callbacks: Array<{ data: string; success: () => void; fail: () => void }> = [];
+  (wx.setClipboardData as jest.Mock).mockImplementation((options) => {
+    callbacks.push(options as typeof callbacks[number]);
+  });
+  const context = completedJoinedContext(
+    "NO_SHOW",
+    "2026-08-30T20:32:00+08:00",
+    "2026-08-31T14:18:00+08:00",
+  );
+  registerSources({ getContext: jest.fn(async () => context) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data).toMatchObject({
+    viewerRegistrationId: applicationId,
+    attendanceRecordedAtLabel: "原记录 · 8月30日 周日 20:32",
+    attendanceCorrectedAtLabel: "平台已纠正于 8月31日 周一 14:18",
+    copyFeedbackMessage: "",
+  });
+
+  call(page, "onCopyRegistrationId");
+  call(page, "onCopyRegistrationId");
+  expect(callbacks.map(({ data }) => data)).toEqual([applicationId, applicationId]);
+  callbacks[0].success();
+  expect(page.data.copyFeedbackMessage).toBe("正在复制…");
+  callbacks[1].fail();
+  expect(page.data).toMatchObject({
+    copyFeedbackKind: "error",
+    copyFeedbackMessage: "复制失败，请重试",
+  });
+  call(page, "onCopyRegistrationId");
+  callbacks[2].success();
+  expect(page.data).toMatchObject({
+    copyFeedbackKind: "success",
+    copyFeedbackMessage: "报名编号已复制",
+  });
+
+  const template = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
+  expect(template).toContain("{{viewerRegistrationId}}");
+  expect(template).toContain("{{attendanceRecordedAtLabel}}");
+  expect(template).toContain("{{attendanceCorrectedAtLabel}}");
+  expect(template).toContain('bindtap="onCopyRegistrationId"');
+  expect(styles).toMatch(/\.c2d-copy-action\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
+});
 
 test("WAITLISTED projects position, warm tone and a real withdrawal sheet without writing on open/cancel", async () => {
   const listPatch = jest.fn();
@@ -432,6 +484,7 @@ test("WAITLISTED projects position, warm tone and a real withdrawal sheet withou
     promotedAt: null,
     attendanceStatus: null,
     attendanceRecordedAt: null,
+    attendanceCorrectedAt: null,
   });
 });
 
@@ -896,6 +949,7 @@ test("APPLIED and JOINED use server withdrawal actions, confirmation is write-fr
     promotedAt: null,
     attendanceStatus: null,
     attendanceRecordedAt: null,
+    attendanceCorrectedAt: null,
   });
 
   resetOpenGameRegistrationSourceForTesting();

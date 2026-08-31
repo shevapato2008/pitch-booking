@@ -120,6 +120,7 @@ function viewerRegistration(
       promotedAt: primaryTerminal === "GAME_EXIT" ? registration.promotedAt : null,
       attendanceStatus: null,
       attendanceRecordedAt: null,
+      attendanceCorrectedAt: null,
     };
   }
   const persisted = registration.persistedStatus;
@@ -149,6 +150,7 @@ function viewerRegistration(
     promotedAt: registration.promotedAt,
     attendanceStatus: null,
     attendanceRecordedAt: null,
+    attendanceCorrectedAt: null,
   };
 }
 
@@ -191,6 +193,7 @@ function secondaryContext(secondaryExited: boolean): OpenGameRegistrationContext
       promotedAt: null,
       attendanceStatus: null,
       attendanceRecordedAt: null,
+      attendanceCorrectedAt: null,
     },
     allowedActions: { canApply: false, applyBlockedReason: "ALREADY_APPLIED" },
   };
@@ -211,6 +214,7 @@ function applicationItem(
     promotedAt: registration.promotedAt,
     attendanceStatus: registration.attendanceStatus,
     attendanceRecordedAt: registration.attendanceRecordedAt,
+    attendanceCorrectedAt: registration.attendanceCorrectedAt,
     detailPath,
     gameName: context.game.name,
     startsAt: context.game.startsAt,

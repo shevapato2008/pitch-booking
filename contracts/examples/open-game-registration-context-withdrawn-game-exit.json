@@ -42,7 +42,8 @@
     "waitlisted_at": null,
     "promoted_at": null,
     "attendance_status": null,
-    "attendance_recorded_at": null
+    "attendance_recorded_at": null,
+    "attendance_corrected_at": null
   },
   "allowed_actions": {
     "can_apply": false,

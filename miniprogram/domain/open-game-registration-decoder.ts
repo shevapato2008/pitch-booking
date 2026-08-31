@@ -88,6 +88,7 @@ const VIEWER_REGISTRATION_KEYS = [
   "applied_at", "decided_at", "withdrawn_at", "withdrawal_kind", "late_exit_recorded",
   "available_withdrawal_action", "late_exit_will_be_recorded", "waitlist_position",
   "waitlisted_at", "promoted_at", "attendance_status", "attendance_recorded_at",
+  "attendance_corrected_at",
 ] as const;
 const QUEUE_KEYS = [
   "remaining_spots", "pending_count", "applications", "waitlist_count", "waitlist",
@@ -105,7 +106,8 @@ const DECISION_RESULT_KEYS = [
 const MY_APPLICATION_PAGE_KEYS = ["items", "next_cursor"] as const;
 const MY_APPLICATION_ITEM_KEYS = [
   "id", "effective_status", "applied_at", "waitlist_position", "waitlisted_at", "promoted_at",
-  "attendance_status", "attendance_recorded_at", "detail_path", "game_name", "starts_at",
+  "attendance_status", "attendance_recorded_at", "attendance_corrected_at", "detail_path",
+  "game_name", "starts_at",
   "ends_at", "time_zone", "venue_name", "pitch_name", "pitch_specification",
 ] as const;
 const ATTENDANCE_GAME_KEYS = [
@@ -113,7 +115,7 @@ const ATTENDANCE_GAME_KEYS = [
 ] as const;
 const ATTENDANCE_ROSTER_ITEM_KEYS = [
   "registration_id", "display_name", "position", "attendance_status",
-  "attendance_recorded_at", "version",
+  "attendance_recorded_at", "attendance_corrected_at", "version",
 ] as const;
 const ATTENDANCE_ROSTER_KEYS = [
   "game", "recorded_count", "total_count", "attendance_complete", "registrations",
@@ -166,11 +168,13 @@ function nullablePositiveIntegerAt(value: unknown, path: string): number | null 
 interface DecodedSelfAttendance {
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
 }
 
 function decodeSelfAttendance(
   statusValue: unknown,
   recordedAtValue: unknown,
+  correctedAtValue: unknown,
   path: string,
 ): DecodedSelfAttendance {
   const attendanceStatus = statusValue === null
@@ -184,7 +188,18 @@ function decodeSelfAttendance(
   if (hasTerminalStatus !== (attendanceRecordedAt !== null)) {
     invalid(`${path}.attendance_recorded_at`);
   }
-  return { attendanceStatus, attendanceRecordedAt };
+  const attendanceCorrectedAt = nullableRfc3339At(
+    correctedAtValue,
+    `${path}.attendance_corrected_at`,
+  );
+  if (!hasTerminalStatus && attendanceCorrectedAt !== null) {
+    invalid(`${path}.attendance_corrected_at`);
+  }
+  if (attendanceCorrectedAt !== null && attendanceRecordedAt !== null
+    && rfc3339Before(attendanceCorrectedAt, attendanceRecordedAt)) {
+    invalid(`${path}.attendance_corrected_at`);
+  }
+  return { attendanceStatus, attendanceRecordedAt, attendanceCorrectedAt };
 }
 
 function decodeAttendanceGameSummary(
@@ -223,12 +238,22 @@ function decodeAttendanceRosterItem(
   );
   const terminal = attendanceStatus === "PRESENT" || attendanceStatus === "NO_SHOW";
   if (terminal !== (attendanceRecordedAt !== null)) invalid(`${path}.attendance_recorded_at`);
+  const attendanceCorrectedAt = nullableRfc3339At(
+    object.attendance_corrected_at,
+    `${path}.attendance_corrected_at`,
+  );
+  if (!terminal && attendanceCorrectedAt !== null) invalid(`${path}.attendance_corrected_at`);
+  if (attendanceCorrectedAt !== null && attendanceRecordedAt !== null
+    && rfc3339Before(attendanceCorrectedAt, attendanceRecordedAt)) {
+    invalid(`${path}.attendance_corrected_at`);
+  }
   return Object.freeze({
     registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
     displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     attendanceStatus,
     attendanceRecordedAt,
+    attendanceCorrectedAt,
     version: safeIntegerAt(object.version, `${path}.version`, 1),
   });
 }
@@ -340,6 +365,7 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
   const attendance = decodeSelfAttendance(
     object.attendance_status,
     object.attendance_recorded_at,
+    object.attendance_corrected_at,
     path,
   );
   if (effectiveStatus !== "JOINED" && attendance.attendanceStatus !== null) {
@@ -491,6 +517,7 @@ function decodeMyApplicationItem(value: unknown, path: string): OpenGameApplicat
   const attendance = decodeSelfAttendance(
     object.attendance_status,
     object.attendance_recorded_at,
+    object.attendance_corrected_at,
     path,
   );
   if (effectiveStatus !== "JOINED" && attendance.attendanceStatus !== null) {

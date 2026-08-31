@@ -18,8 +18,10 @@ export interface MyGameRegistrationCard {
   readonly promotedAt: string | null;
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
   readonly attendanceLabel: string | null;
   readonly attendanceRecordedAtLabel: string | null;
+  readonly attendanceCorrectedAtLabel: string | null;
   readonly gameName: string;
   readonly dateLabel: string;
   readonly timeLabel: string;
@@ -37,6 +39,7 @@ export interface MyGameRegistrationAuthority {
   readonly promotedAt: string | null;
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
 }
 
 const STATUS_LABELS: Readonly<Record<OpenGameRegistrationEffectiveStatus, string>> = {
@@ -68,18 +71,27 @@ function attendancePresentation(
   attendanceStatus: OpenGameAttendanceStatus | null,
   attendanceRecordedAt: string | null,
   timeZone: string,
+  attendanceCorrectedAt: string | null = null,
 ): Pick<
   MyGameRegistrationCard,
-  "attendanceLabel" | "attendanceRecordedAtLabel"
+  "attendanceLabel" | "attendanceRecordedAtLabel" | "attendanceCorrectedAtLabel"
 > {
   if (attendanceStatus === null) {
-    return { attendanceLabel: null, attendanceRecordedAtLabel: null };
+    return {
+      attendanceLabel: null,
+      attendanceRecordedAtLabel: null,
+      attendanceCorrectedAtLabel: null,
+    };
   }
   const attendanceLabel = attendanceStatus === "UNMARKED"
     ? "待队长记录"
     : attendanceStatus === "PRESENT" ? "已到场" : "未到场";
   if (attendanceRecordedAt === null) {
-    return { attendanceLabel, attendanceRecordedAtLabel: null };
+    return {
+      attendanceLabel,
+      attendanceRecordedAtLabel: null,
+      attendanceCorrectedAtLabel: null,
+    };
   }
   const parts = rfc3339ZonedMinutePartsAt(
     attendanceRecordedAt,
@@ -87,10 +99,22 @@ function attendancePresentation(
     timeZone,
     "$.time_zone",
   );
+  const correctedParts = attendanceCorrectedAt === null
+    ? null
+    : rfc3339ZonedMinutePartsAt(
+      attendanceCorrectedAt,
+      "$.attendance_corrected_at",
+      timeZone,
+      "$.time_zone",
+    );
   return {
     attendanceLabel,
     attendanceRecordedAtLabel:
       `${parts.month}月${parts.day}日 ${weekdayAt(parts)} ${two(parts.hour)}:${two(parts.minute)} 记录`,
+    attendanceCorrectedAtLabel: correctedParts === null
+      ? null
+      : `平台已纠正 · ${correctedParts.month}月${correctedParts.day}日 `
+        + `${weekdayAt(correctedParts)} ${two(correctedParts.hour)}:${two(correctedParts.minute)}`,
   };
 }
 
@@ -98,8 +122,14 @@ export function presentMyGameSelfAttendance(
   attendanceStatus: OpenGameAttendanceStatus | null,
   attendanceRecordedAt: string | null,
   timeZone: string,
+  attendanceCorrectedAt: string | null = null,
 ) {
-  return attendancePresentation(attendanceStatus, attendanceRecordedAt, timeZone);
+  return attendancePresentation(
+    attendanceStatus,
+    attendanceRecordedAt,
+    timeZone,
+    attendanceCorrectedAt,
+  );
 }
 
 function statusLabel(
@@ -119,6 +149,7 @@ export function presentMyGameRegistration(item: OpenGameApplicationItem): MyGame
     item.attendanceStatus,
     item.attendanceRecordedAt,
     item.timeZone,
+    item.attendanceCorrectedAt,
   );
   return {
     registrationId: item.id,
@@ -130,6 +161,7 @@ export function presentMyGameRegistration(item: OpenGameApplicationItem): MyGame
     promotedAt: item.promotedAt,
     attendanceStatus: item.attendanceStatus,
     attendanceRecordedAt: item.attendanceRecordedAt,
+    attendanceCorrectedAt: item.attendanceCorrectedAt,
     ...attendance,
     gameName: item.gameName,
     dateLabel: `${start.month}月${start.day}日 ${weekdayAt(start)}`,
@@ -150,6 +182,7 @@ export function patchMyGameRegistrationStatus(
     authority.attendanceStatus,
     authority.attendanceRecordedAt,
     card.timeZone,
+    authority.attendanceCorrectedAt,
   );
   return {
     ...card,

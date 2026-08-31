@@ -538,6 +538,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "promoted_at",
                     "attendance_status",
                     "attendance_recorded_at",
+                    "attendance_corrected_at",
                 ],
                 "properties": {
                     "id": {"type": "string", "format": "uuid"},
@@ -629,18 +630,24 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "type": ["string", "null"],
                         "format": "date-time",
                     },
+                    "attendance_corrected_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
                 },
                 "oneOf": [
                     {
                         "properties": {
                             "attendance_status": {"const": None},
                             "attendance_recorded_at": {"const": None},
+                            "attendance_corrected_at": {"const": None},
                         }
                     },
                     {
                         "properties": {
                             "attendance_status": {"const": "UNMARKED"},
                             "attendance_recorded_at": {"const": None},
+                            "attendance_corrected_at": {"const": None},
                         }
                     },
                     {
@@ -650,6 +657,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             },
                             "attendance_recorded_at": {
                                 "type": "string",
+                                "format": "date-time",
+                            },
+                            "attendance_corrected_at": {
+                                "type": ["string", "null"],
                                 "format": "date-time",
                             },
                         }
@@ -908,6 +919,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "position",
                     "attendance_status",
                     "attendance_recorded_at",
+                    "attendance_corrected_at",
                     "version",
                 ],
                 "properties": {
@@ -930,6 +942,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "type": ["string", "null"],
                         "format": "date-time",
                     },
+                    "attendance_corrected_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
                     "version": {"type": "integer", "minimum": 1},
                 },
                 "oneOf": [
@@ -937,6 +953,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "properties": {
                             "attendance_status": {"const": "UNMARKED"},
                             "attendance_recorded_at": {"const": None},
+                            "attendance_corrected_at": {"const": None},
                         }
                     },
                     {
@@ -946,6 +963,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             },
                             "attendance_recorded_at": {
                                 "type": "string",
+                                "format": "date-time",
+                            },
+                            "attendance_corrected_at": {
+                                "type": ["string", "null"],
                                 "format": "date-time",
                             },
                         }
@@ -1035,6 +1056,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "promoted_at",
                     "attendance_status",
                     "attendance_recorded_at",
+                    "attendance_corrected_at",
                     "detail_path",
                     "game_name",
                     "starts_at",
@@ -1080,6 +1102,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "type": ["string", "null"],
                         "format": "date-time",
                     },
+                    "attendance_corrected_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
                     "detail_path": {
                         "type": "string",
                         "pattern": (
@@ -1100,12 +1126,14 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "properties": {
                             "attendance_status": {"const": None},
                             "attendance_recorded_at": {"const": None},
+                            "attendance_corrected_at": {"const": None},
                         }
                     },
                     {
                         "properties": {
                             "attendance_status": {"const": "UNMARKED"},
                             "attendance_recorded_at": {"const": None},
+                            "attendance_corrected_at": {"const": None},
                         }
                     },
                     {
@@ -1115,6 +1143,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             },
                             "attendance_recorded_at": {
                                 "type": "string",
+                                "format": "date-time",
+                            },
+                            "attendance_corrected_at": {
+                                "type": ["string", "null"],
                                 "format": "date-time",
                             },
                         }

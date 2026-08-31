@@ -12,12 +12,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.errors import AppError
 from backend.app.models import (
+    OpenGameAttendanceCorrection,
+    OpenGameAttendanceStatus,
     OpenGameRegistration,
     OpenGameRegistrationPosition,
     OpenGameRegistrationStatus,
     OpenGameRegistrationWithdrawalKind,
     OpenGameStatus,
     OpenGameVisibility,
+    OrderStatus,
     Pitch,
     Slot,
     User,
@@ -45,6 +48,7 @@ ITEM_FIELDS = {
     "promoted_at",
     "attendance_status",
     "attendance_recorded_at",
+    "attendance_corrected_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -74,6 +78,9 @@ PRIVATE_FIELDS = {
     "price_cents",
     "aa_cents",
     "attendance_recorded_by_user_id",
+    "reason",
+    "corrected_by_principal_id",
+    "corrections",
 }
 
 
@@ -561,3 +568,95 @@ def test_authority_preload_query_count_is_bounded_by_page_not_item_count(
     assert len(page.items) == 4
     assert page.items[0].waitlist_position == 1
     assert len(statements) <= 4
+
+
+def test_corrected_attendance_readback_is_one_grouped_query_and_stays_private(
+    pg_engine: Engine,
+) -> None:
+    applicant_id = _new_user(pg_engine, "corrected-readback")
+    registration_ids = [
+        _seed_application(
+            pg_engine,
+            applicant_user_id=applicant_id,
+            label=f"纠正回读{index}",
+            applied_at=NOW - timedelta(minutes=index),
+            registration_status=OpenGameRegistrationStatus.JOINED,
+            starts_at=NOW - timedelta(days=2),
+        )
+        for index in range(3)
+    ]
+    corrected_times = [NOW - timedelta(hours=3), NOW - timedelta(hours=2)]
+    with Session(pg_engine) as session:
+        for index, registration_id in enumerate(registration_ids):
+            registration = session.get_one(OpenGameRegistration, registration_id)
+            order = registration.game.order
+            starts_at = order.slot.starts_at
+            ends_at = order.slot.ends_at
+            owner_id = order.user_id
+            order.checked_in_at = starts_at
+            order.checked_in_by_user_id = order.user_id
+            order.completed_at = ends_at
+            order.completed_by_user_id = owner_id
+            order.status = OrderStatus.COMPLETED
+            registration.attendance_status = (
+                OpenGameAttendanceStatus.NO_SHOW
+                if index < 2
+                else OpenGameAttendanceStatus.PRESENT
+            )
+            registration.attendance_recorded_at = ends_at
+            registration.attendance_recorded_by_user_id = owner_id
+            registration.version = 4 if index < 2 else 3
+            if index < 2:
+                session.add(
+                    OpenGameAttendanceCorrection(
+                        registration_id=registration.id,
+                        from_status=OpenGameAttendanceStatus.PRESENT,
+                        to_status=OpenGameAttendanceStatus.NO_SHOW,
+                        reason="线下核实后纠正",
+                        corrected_by_principal_id="platform-admin:readback-test",
+                        corrected_at=corrected_times[index],
+                        registration_version_before=3,
+                        registration_version_after=4,
+                        idempotency_key=f"readback-correction-key-{index:02d}",
+                        request_sha256=f"{index + 1:064x}",
+                    )
+                )
+        session.commit()
+
+    correction_selects: list[str] = []
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        if (
+            statement.lstrip().upper().startswith("SELECT")
+            and "open_game_attendance_corrections" in statement
+        ):
+            correction_selects.append(statement)
+
+    event.listen(pg_engine, "before_cursor_execute", record_statement)
+    try:
+        with Session(pg_engine) as session:
+            page = _service(session).list_my_applications(
+                applicant_user_id=applicant_id,
+                limit=20,
+                cursor=None,
+            )
+    finally:
+        event.remove(pg_engine, "before_cursor_execute", record_statement)
+
+    by_id = {item.id: item for item in page.items}
+    assert by_id[registration_ids[0]].attendance_corrected_at == corrected_times[0]
+    assert by_id[registration_ids[1]].attendance_corrected_at == corrected_times[1]
+    assert by_id[registration_ids[2]].attendance_corrected_at is None
+    assert len(correction_selects) == 1
+    dumped = page.model_dump(mode="json")
+    assert all(set(item) == ITEM_FIELDS for item in dumped["items"])
+    serialized = json.dumps(dumped, ensure_ascii=False)
+    for forbidden in ("线下核实后纠正", "platform-admin", "corrections"):
+        assert forbidden not in serialized

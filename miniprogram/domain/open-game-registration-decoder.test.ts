@@ -222,6 +222,7 @@ describe("open-game registration response decoders", () => {
       promotedAt: wireRegistration?.promoted_at,
       attendanceStatus: wireRegistration?.attendance_status,
       attendanceRecordedAt: wireRegistration?.attendance_recorded_at,
+      attendanceCorrectedAt: wireRegistration?.attendance_corrected_at,
     };
 
     expect(decodeOpenGameRegistrationContext(value)).toEqual({
@@ -476,6 +477,38 @@ describe("open-game registration response decoders", () => {
     }
   });
 
+  test("decodes only the latest corrected time for the authenticated completed viewer", () => {
+    const corrected = clone(fixture("open-game-registration-context-joined"));
+    Object.assign(corrected.game as Record<string, unknown>, {
+      state: "COMPLETED",
+      state_reason: "BOOKING_COMPLETED",
+    });
+    Object.assign(corrected.viewer_registration as Record<string, unknown>, {
+      available_withdrawal_action: null,
+      attendance_status: "NO_SHOW",
+      attendance_recorded_at: "2026-08-30T20:32:00+08:00",
+      attendance_corrected_at: "2026-08-31T14:18:00+08:00",
+    });
+    expect(decodeOpenGameRegistrationContext(corrected).viewerRegistration).toMatchObject({
+      attendanceStatus: "NO_SHOW",
+      attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+      attendanceCorrectedAt: "2026-08-31T14:18:00+08:00",
+    });
+
+    for (const patch of [
+      { attendance_status: "UNMARKED", attendance_recorded_at: null,
+        attendance_corrected_at: "2026-08-31T14:18:00+08:00" },
+      { attendance_status: "PRESENT", attendance_recorded_at: "2026-08-30T20:32:00+08:00",
+        attendance_corrected_at: "2026-08-30T19:00:00+08:00" },
+      { attendance_status: "PRESENT", attendance_recorded_at: "2026-08-30T20:32:00+08:00",
+        attendance_corrected_at: "not-a-time" },
+    ]) {
+      const invalidValue = clone(corrected);
+      Object.assign(invalidValue.viewer_registration as Record<string, unknown>, patch);
+      rejected(() => decodeOpenGameRegistrationContext(invalidValue));
+    }
+  });
+
   test("rejects wrong nullability, bounds, enum, UUID and RFC3339 values", () => {
     for (const [base, patch] of [
       [contextReady, { remaining_spots: -1 }],
@@ -631,6 +664,7 @@ describe("open-game attendance response decoders", () => {
           position: "FORWARD",
           attendanceStatus: "UNMARKED",
           attendanceRecordedAt: null,
+          attendanceCorrectedAt: null,
           version: 2,
         },
         {
@@ -639,6 +673,7 @@ describe("open-game attendance response decoders", () => {
           position: "GOALKEEPER",
           attendanceStatus: "PRESENT",
           attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+          attendanceCorrectedAt: "2026-08-31T14:18:00+08:00",
           version: 3,
         },
         {
@@ -647,6 +682,7 @@ describe("open-game attendance response decoders", () => {
           position: "MIDFIELDER",
           attendanceStatus: "NO_SHOW",
           attendanceRecordedAt: "2026-08-30T20:34:00+08:00",
+          attendanceCorrectedAt: null,
           version: 3,
         },
       ],
@@ -663,6 +699,23 @@ describe("open-game attendance response decoders", () => {
     expect(decoded.registrations.every(Object.isFrozen)).toBe(true);
     ((input.registrations as Array<Record<string, unknown>>)[0]).display_name = "被修改";
     expect(decoded.registrations[0].displayName).toBe("天津周末左边锋小王");
+  });
+
+  test("decodes a batched roster correction timestamp without private audit fields", () => {
+    const corrected = clone(attendanceRosterReady);
+    const rows = corrected.registrations as Array<Record<string, unknown>>;
+    rows.forEach((row) => { row.attendance_corrected_at = null; });
+    rows[1].attendance_corrected_at = "2026-08-31T14:18:00+08:00";
+    expect(decodeAttendanceRoster(corrected).registrations[1]).toMatchObject({
+      attendanceStatus: "PRESENT",
+      attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+      attendanceCorrectedAt: "2026-08-31T14:18:00+08:00",
+    });
+    for (const forbidden of ["reason", "principal", "history", "corrected_by"]) {
+      const leaked = clone(corrected);
+      (leaked.registrations as Array<Record<string, unknown>>)[1][forbidden] = "private";
+      rejected(() => decodeAttendanceRoster(leaked));
+    }
   });
 
   test.each([
@@ -836,6 +889,7 @@ describe("my open-game applications response decoder", () => {
           promotedAt: null,
           attendanceStatus: null,
           attendanceRecordedAt: null,
+          attendanceCorrectedAt: null,
           detailPath: "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345",
           gameName: "周日八人制友谊赛",
           startsAt: "2026-09-06T18:00:00+08:00",
@@ -854,6 +908,7 @@ describe("my open-game applications response decoder", () => {
           promotedAt: null,
           attendanceStatus: null,
           attendanceRecordedAt: null,
+          attendanceCorrectedAt: null,
           detailPath: "/pages/captain-game-public/index?token=0123456789abcdefghijklmnopqrstuv",
           gameName: "周六七人制训练赛",
           startsAt: "2026-09-05T19:00:00+08:00",
@@ -870,12 +925,13 @@ describe("my open-game applications response decoder", () => {
           waitlistPosition: null,
           waitlistedAt: null,
           promotedAt: null,
-          attendanceStatus: null,
-          attendanceRecordedAt: null,
+          attendanceStatus: "NO_SHOW",
+          attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+          attendanceCorrectedAt: "2026-08-31T14:18:00+08:00",
           detailPath: "/pages/captain-game-public/index?token=zyxwvutsrqponmlkjihgfedcba543210",
           gameName: "周三五人制夜场",
-          startsAt: "2026-09-02T20:00:00+08:00",
-          endsAt: "2026-09-02T22:00:00+08:00",
+          startsAt: "2026-08-30T18:30:00+08:00",
+          endsAt: "2026-08-30T20:30:00+08:00",
           timeZone: "Asia/Shanghai",
           venueName: "逐光足球公园",
           pitchName: "3号场",
@@ -890,6 +946,7 @@ describe("my open-game applications response decoder", () => {
           promotedAt: null,
           attendanceStatus: null,
           attendanceRecordedAt: null,
+          attendanceCorrectedAt: null,
           detailPath: "/pages/captain-game-public/index?token=A1_b2-C3_d4-E5_f6-G7_h8-I9_j0-KL",
           gameName: "周二六人制约球",
           startsAt: "2026-09-01T19:00:00+08:00",
@@ -980,6 +1037,7 @@ describe("my open-game applications response decoder", () => {
     Object.assign((value.items as Array<Record<string, unknown>>)[2], {
       attendance_status: "NO_SHOW",
       attendance_recorded_at: "2026-09-02T22:10:00+08:00",
+      attendance_corrected_at: null,
     });
     expect(decodeMyOpenGameApplications(value).items[2]).toMatchObject({
       attendanceStatus: "NO_SHOW",
@@ -990,6 +1048,7 @@ describe("my open-game applications response decoder", () => {
     Object.assign((joinedUnmarked.items as Array<Record<string, unknown>>)[2], {
       attendance_status: "UNMARKED",
       attendance_recorded_at: null,
+      attendance_corrected_at: null,
     });
     expect(decodeMyOpenGameApplications(joinedUnmarked).items[2]).toMatchObject({
       effectiveStatus: "JOINED",
@@ -1018,6 +1077,33 @@ describe("my open-game applications response decoder", () => {
     ]) {
       const invalidValue = clone(myApplicationsReady);
       Object.assign((invalidValue.items as Array<Record<string, unknown>>)[2], patch);
+      rejected(() => decodeMyOpenGameApplications(invalidValue));
+    }
+  });
+
+  test("decodes corrected-at on the joined self item and rejects impossible pairs", () => {
+    const corrected = clone(myApplicationsReady);
+    const items = corrected.items as Array<Record<string, unknown>>;
+    items.forEach((item) => { item.attendance_corrected_at = null; });
+    Object.assign(items[2], {
+      attendance_status: "NO_SHOW",
+      attendance_recorded_at: "2026-09-02T22:10:00+08:00",
+      attendance_corrected_at: "2026-09-03T08:15:00+08:00",
+    });
+    expect(decodeMyOpenGameApplications(corrected).items[2]).toMatchObject({
+      attendanceStatus: "NO_SHOW",
+      attendanceRecordedAt: "2026-09-02T22:10:00+08:00",
+      attendanceCorrectedAt: "2026-09-03T08:15:00+08:00",
+    });
+
+    for (const [index, patch] of [
+      [0, { attendance_corrected_at: "2026-09-03T08:15:00+08:00" }],
+      [2, { attendance_status: "UNMARKED", attendance_recorded_at: null,
+        attendance_corrected_at: "2026-09-03T08:15:00+08:00" }],
+      [2, { attendance_corrected_at: "2026-09-02T21:10:00+08:00" }],
+    ] as const) {
+      const invalidValue = clone(corrected);
+      Object.assign((invalidValue.items as Array<Record<string, unknown>>)[index], patch);
       rejected(() => decodeMyOpenGameApplications(invalidValue));
     }
   });

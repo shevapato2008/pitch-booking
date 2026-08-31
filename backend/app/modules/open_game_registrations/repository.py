@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.app.models import (
     OpenGame,
+    OpenGameAttendanceCorrection,
     OpenGameNotificationOutbox,
     OpenGameRegistration,
     OpenGameRegistrationStatus,
@@ -232,6 +233,27 @@ class OpenGameRegistrationRepository:
                 .execution_options(populate_existing=True)
             )
         )
+
+    def latest_attendance_correction_times(
+        self,
+        *,
+        registration_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, datetime]:
+        if not registration_ids:
+            return {}
+        rows = self.session.execute(
+            select(
+                OpenGameAttendanceCorrection.registration_id,
+                func.max(OpenGameAttendanceCorrection.corrected_at).label(
+                    "corrected_at"
+                ),
+            )
+            .where(
+                OpenGameAttendanceCorrection.registration_id.in_(registration_ids)
+            )
+            .group_by(OpenGameAttendanceCorrection.registration_id)
+        )
+        return {row.registration_id: row.corrected_at for row in rows}
 
     def get_waitlist_position(
         self,

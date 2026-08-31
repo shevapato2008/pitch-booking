@@ -113,8 +113,22 @@
               <view wx:else class="c2c-status-column">
                 <text class="c2c-status-badge {{item.attendanceStatus === 'PRESENT' ? 'c2c-status-badge--present' : 'c2c-status-badge--no-show'}}">{{item.resultLabel}}</text>
                 <text class="c2c-recorded-time">{{item.recordedTimeLabel}}</text>
+                <text wx:if="{{item.correctedTimeLabel}}" class="c2d-corrected-time" aria-label="平台已纠正">{{item.correctedTimeLabel}}</text>
               </view>
             </view>
+
+            <view class="c2d-registration-meta">
+              <view class="c2d-registration-id">
+                <text>报名编号</text>
+                <text>{{item.registrationId}}</text>
+              </view>
+              <button class="c2d-copy-action" hover-class="c2c-pressed" bindtap="onCopyRegistrationId" data-registration-id="{{item.registrationId}}" aria-label="复制{{item.displayName}}的报名编号">复制编号</button>
+            </view>
+            <text
+              wx:if="{{copyFeedbackRegistrationId === item.registrationId}}"
+              class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}"
+              aria-role="status"
+            >{{copyFeedbackMessage}}</text>
 
             <view wx:if="{{item.canMark}}" class="c2c-row-actions">
               <button class="c2c-row-action c2c-row-action--present" hover-class="c2c-pressed" bindtap="onMarkPresent" data-registration-id="{{item.registrationId}}" aria-label="记录{{item.displayName}}到场">到场</button>

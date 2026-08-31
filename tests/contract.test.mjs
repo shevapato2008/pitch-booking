@@ -176,7 +176,7 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   assert.equal(item.additionalProperties, false);
   assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
   assert.deepEqual([...item.required].sort(), [
-    'applied_at', 'attendance_recorded_at', 'attendance_status', 'detail_path',
+    'applied_at', 'attendance_corrected_at', 'attendance_recorded_at', 'attendance_status', 'detail_path',
     'effective_status', 'ends_at', 'game_name', 'id', 'pitch_name',
     'pitch_specification', 'promoted_at', 'starts_at', 'time_zone', 'venue_name',
     'waitlist_position', 'waitlisted_at',
@@ -192,6 +192,46 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
     type: ['string', 'null'],
     minLength: 1,
   });
+});
+
+test('C2d mini-program readback exposes only the latest nullable correction time', async () => {
+  const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+  const schemas = contract.components.schemas;
+  const expectedCorrection = { type: ['string', 'null'], format: 'date-time' };
+  const expected = [
+    ['OpenGameAttendanceRosterItem', 'open-game-attendance-roster-ready.json'],
+    ['MyOpenGameApplication', 'my-open-game-applications-ready.json'],
+    ['OpenGameViewerRegistration', 'open-game-registration-context-joined.json'],
+  ];
+
+  for (const [name] of expected) {
+    const schema = schemas[name];
+    assert.equal(schema.additionalProperties, false);
+    assert.ok(schema.required.includes('attendance_corrected_at'));
+    assert.deepEqual(schema.properties.attendance_corrected_at, expectedCorrection);
+    assert.deepEqual([...schema.required].sort(), Object.keys(schema.properties).sort());
+    const serialized = JSON.stringify(schema).toLowerCase();
+    for (const forbidden of ['reason', 'principal', 'history', 'corrected_by']) {
+      assert.equal(serialized.includes(forbidden), false, `${name} leaked ${forbidden}`);
+    }
+  }
+
+  const roster = await readExample(expected[0][1]);
+  assert.equal(roster.registrations[0].attendance_corrected_at, null);
+  assert.equal(roster.registrations[1].attendance_corrected_at, '2026-08-31T14:18:00+08:00');
+  assert.equal(roster.registrations[1].attendance_recorded_at, '2026-08-30T20:32:00+08:00');
+
+  const mine = await readExample(expected[1][1]);
+  assert.equal(mine.items[2].attendance_corrected_at, '2026-08-31T14:18:00+08:00');
+  assert.equal(mine.items[2].attendance_recorded_at, '2026-08-30T20:32:00+08:00');
+
+  const joined = await readExample(expected[2][1]);
+  assert.equal(joined.viewer_registration.attendance_corrected_at, null);
+
+  await assertMutatedContractRejected((mutated) => {
+    delete mutated.components.schemas.OpenGameViewerRegistration
+      .properties.attendance_corrected_at;
+  }, /attendance.*corrected|viewer.*correction|viewer.*public fields/i);
 });
 
 test('contract validator rejects attendance authority drift', async () => {

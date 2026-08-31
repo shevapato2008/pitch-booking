@@ -15,6 +15,7 @@ const base: OpenGameApplicationItem = {
   promotedAt: null,
   attendanceStatus: null,
   attendanceRecordedAt: null,
+  attendanceCorrectedAt: null,
   detailPath: "/pages/captain-game-public/index?token=0123456789abcdef0123456789abcdef",
   gameName: "海河周六轻松局",
   startsAt: "2026-09-04T17:00:00Z",
@@ -49,6 +50,7 @@ describe("my game registration presentation", () => {
       promotedAt: null,
       attendanceStatus: null,
       attendanceRecordedAt: null,
+      attendanceCorrectedAt: null,
     })).toEqual({
       ...card,
       effectiveStatus: "WITHDRAWN",
@@ -85,6 +87,7 @@ describe("my game registration presentation", () => {
       promotedAt: "2026-08-29T02:00:00Z",
       attendanceStatus: null,
       attendanceRecordedAt: null,
+      attendanceCorrectedAt: null,
     })).toMatchObject({
       effectiveStatus: "JOINED",
       statusLabel: "已加入",
@@ -105,8 +108,10 @@ describe("my game registration presentation", () => {
       promotedAt: null,
       attendanceStatus: null,
       attendanceRecordedAt: null,
+      attendanceCorrectedAt: null,
       attendanceLabel: null,
       attendanceRecordedAtLabel: null,
+      attendanceCorrectedAtLabel: null,
       gameName: "海河周六轻松局",
       dateLabel: "9月5日 周六",
       timeLabel: "01:00–02:30",
@@ -149,11 +154,13 @@ describe("my game registration presentation", () => {
         timeZone: "America/Los_Angeles",
         attendanceStatus,
         attendanceRecordedAt,
+        attendanceCorrectedAt: null,
       })).toMatchObject({
         attendanceStatus,
         attendanceRecordedAt,
         attendanceLabel,
         attendanceRecordedAtLabel,
+        attendanceCorrectedAtLabel: null,
       });
     },
   );
@@ -172,12 +179,15 @@ describe("my game registration presentation", () => {
       promotedAt: null,
       attendanceStatus: "PRESENT",
       attendanceRecordedAt: "2026-09-05T02:20:00Z",
+      attendanceCorrectedAt: "2026-09-05T03:20:00Z",
     })).toEqual({
       ...card,
       attendanceStatus: "PRESENT",
       attendanceRecordedAt: "2026-09-05T02:20:00Z",
+      attendanceCorrectedAt: "2026-09-05T03:20:00Z",
       attendanceLabel: "已到场",
       attendanceRecordedAtLabel: "9月5日 周六 10:20 记录",
+      attendanceCorrectedAtLabel: "平台已纠正 · 9月5日 周六 11:20",
     });
   });
 });

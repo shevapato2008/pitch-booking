@@ -82,6 +82,7 @@ function roster(overrides: Partial<OpenGameAttendanceRoster> = {}): OpenGameAtte
       position: "FORWARD" as const,
       attendanceStatus: "UNMARKED" as const,
       attendanceRecordedAt: null,
+      attendanceCorrectedAt: null,
       version: 2,
     },
     {
@@ -90,6 +91,7 @@ function roster(overrides: Partial<OpenGameAttendanceRoster> = {}): OpenGameAtte
       position: "MIDFIELDER" as const,
       attendanceStatus: "PRESENT" as const,
       attendanceRecordedAt: "2026-08-30T20:32:00+08:00",
+      attendanceCorrectedAt: "2026-08-31T14:18:00+08:00",
       version: 3,
     },
     {
@@ -98,6 +100,7 @@ function roster(overrides: Partial<OpenGameAttendanceRoster> = {}): OpenGameAtte
       position: "DEFENDER" as const,
       attendanceStatus: "NO_SHOW" as const,
       attendanceRecordedAt: "2026-08-30T20:34:00+08:00",
+      attendanceCorrectedAt: null,
       version: 4,
     },
   ];
@@ -217,6 +220,7 @@ beforeEach(() => {
       top: 48, bottom: 80, left: 278, right: 365, width: 87, height: 32,
     })),
     hideShareMenu: jest.fn(),
+    setClipboardData: jest.fn(),
     navigateBack: jest.fn((options?: { success?: () => void }) => options?.success?.()),
     redirectTo: jest.fn((options?: { success?: () => void }) => options?.success?.()),
     reLaunch: jest.fn((options?: { success?: () => void }) => options?.success?.()),
@@ -256,6 +260,54 @@ test("loads the authoritative roster and projects stable display-only fields", a
     { id: REG_NO_SHOW, position: "后卫", result: "未到场", canMark: false },
   ]);
   expect(page.data.roster[1].recordedTimeLabel).toContain("8月30日");
+  expect(page.data.roster[1]).toMatchObject({
+    correctedTimeLabel: "平台已纠正 · 8月31日 周一 14:18",
+  });
+});
+
+test("captain copies the registration id with visible retryable feedback and stale guards", async () => {
+  const clipboardCalls: Array<{
+    data: string;
+    success: () => void;
+    fail: () => void;
+  }> = [];
+  (wx.setClipboardData as jest.Mock).mockImplementation((options) => {
+    clipboardCalls.push(options as typeof clipboardCalls[number]);
+  });
+  const { page } = await loadReady();
+
+  call(page, "onCopyRegistrationId", registrationEvent(REG_PRESENT));
+  expect(clipboardCalls[0].data).toBe(REG_PRESENT);
+  expect(page.data).toMatchObject({
+    copyFeedbackRegistrationId: REG_PRESENT,
+    copyFeedbackMessage: "正在复制…",
+    copyFeedbackKind: "pending",
+  });
+
+  call(page, "onCopyRegistrationId", registrationEvent(REG_PRESENT));
+  clipboardCalls[0].success();
+  expect(page.data.copyFeedbackMessage).toBe("正在复制…");
+  clipboardCalls[1].fail();
+  expect(page.data).toMatchObject({
+    copyFeedbackRegistrationId: REG_PRESENT,
+    copyFeedbackMessage: "复制失败，请重试",
+    copyFeedbackKind: "error",
+  });
+
+  call(page, "onCopyRegistrationId", registrationEvent(REG_PRESENT));
+  clipboardCalls[2].success();
+  expect(page.data).toMatchObject({
+    copyFeedbackRegistrationId: REG_PRESENT,
+    copyFeedbackMessage: "报名编号已复制",
+    copyFeedbackKind: "success",
+  });
+
+  const template = readFileSync(templatePath, "utf8");
+  const styles = readFileSync(stylesPath, "utf8");
+  expect(template).toContain('bindtap="onCopyRegistrationId"');
+  expect(template).toContain("平台已纠正");
+  expect(template).toContain("{{item.registrationId}}");
+  expect(styles).toMatch(/\.c2d-copy-action\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
 });
 
 test("invalid routes, 404, authentication loss, and load failure expose real recovery", async () => {

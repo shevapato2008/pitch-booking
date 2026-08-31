@@ -126,6 +126,7 @@ export interface OpenGameViewerRegistration {
   readonly promotedAt: string | null;
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
 }
 
 export interface OpenGameApplicationItem {
@@ -137,6 +138,7 @@ export interface OpenGameApplicationItem {
   readonly promotedAt: string | null;
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
   readonly detailPath: string;
   readonly gameName: string;
   readonly startsAt: string;
@@ -169,6 +171,7 @@ export interface OpenGameAttendanceRosterItem {
   readonly position: OpenGamePosition;
   readonly attendanceStatus: OpenGameAttendanceStatus;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
   readonly version: number;
 }
 

@@ -37,6 +37,7 @@ interface RegistrationAuthorityPatch {
   readonly promotedAt: string | null;
   readonly attendanceStatus: OpenGameAttendanceStatus | null;
   readonly attendanceRecordedAt: string | null;
+  readonly attendanceCorrectedAt: string | null;
 }
 
 const PAGE_LIMIT = 20;
@@ -382,6 +383,9 @@ Page({
     const attendanceRecordedAt = patch.attendanceRecordedAt === undefined
       ? items[index].attendanceRecordedAt
       : patch.attendanceRecordedAt;
+    const attendanceCorrectedAt = patch.attendanceCorrectedAt === undefined
+      ? items[index].attendanceCorrectedAt
+      : patch.attendanceCorrectedAt;
     items[index] = patchMyGameRegistrationStatus(items[index], {
       effectiveStatus: patch.effectiveStatus,
       waitlistPosition: patch.waitlistPosition,
@@ -389,6 +393,7 @@ Page({
       promotedAt: patch.promotedAt,
       attendanceStatus,
       attendanceRecordedAt,
+      attendanceCorrectedAt,
     });
     this.setData({ items });
     return true;

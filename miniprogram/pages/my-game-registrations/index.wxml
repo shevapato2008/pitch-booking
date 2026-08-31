@@ -75,6 +75,7 @@
                   <text>到场：{{item.attendanceLabel}}</text>
                   <text wx:if="{{item.attendanceRecordedAtLabel}}"> · {{item.attendanceRecordedAtLabel}}</text>
                 </view>
+                <text wx:if="{{item.attendanceCorrectedAtLabel}}" class="c2d-correction-note" aria-label="平台已纠正">{{item.attendanceCorrectedAtLabel}}</text>
               </view>
               <view class="c1c-chevron" aria-hidden="true"></view>
             </button>

@@ -85,6 +85,7 @@ interface RegistrationListPage {
     readonly promotedAt: string | null;
     readonly attendanceStatus: "UNMARKED" | "PRESENT" | "NO_SHOW" | null;
     readonly attendanceRecordedAt: string | null;
+    readonly attendanceCorrectedAt: string | null;
   }): boolean;
 }
 
@@ -124,6 +125,14 @@ function readHeaderData() {
     headerLeftInsetPx: header.rightInsetPx,
     headerRightInsetPx: header.rightInsetPx,
   };
+}
+
+function attendanceAuthorityTimeLabel(
+  prefix: string,
+  value: string | null | undefined,
+  timeZone: string,
+): string {
+  return value == null ? "" : `${prefix} ${formatOpenGameDateTime(value, timeZone)}`;
 }
 
 function sameApplyAttempt(
@@ -433,6 +442,11 @@ function blankData() {
     headerHeightPx: 44,
     headerLeftInsetPx: 0,
     headerRightInsetPx: 0,
+    viewerRegistrationId: "",
+    attendanceRecordedAtLabel: "",
+    attendanceCorrectedAtLabel: "",
+    copyFeedbackMessage: "",
+    copyFeedbackKind: "" as "" | "pending" | "success" | "error",
   };
 }
 
@@ -446,6 +460,7 @@ Page({
   skipNextShow: false,
   pendingRoute: "",
   mutationInFlight: null as Promise<void> | null,
+  copyGeneration: 0,
 
   onLoad(options: PageOptions = {}) {
     this.visible = true;
@@ -453,6 +468,7 @@ Page({
     this.pendingRoute = "";
     this.boundRegistrationUserId = null;
     this.mutationInFlight = null;
+    this.copyGeneration += 1;
     hideShare();
     const header = readHeaderData();
     const optionKeys = Object.keys(options);
@@ -503,11 +519,13 @@ Page({
   onHide() {
     this.visible = false;
     this.loadGeneration += 1;
+    this.copyGeneration += 1;
   },
 
   onUnload() {
     this.visible = false;
     this.loadGeneration += 1;
+    this.copyGeneration += 1;
   },
 
   active(generation: number): boolean {
@@ -620,6 +638,7 @@ Page({
   },
 
   applySharedPresentation(context: OpenGameRegistrationContext) {
+    this.copyGeneration += 1;
     this.applyPublic(context.game);
     const presentation = registrationPresentation(context);
     const registration = context.viewerRegistration;
@@ -656,6 +675,19 @@ Page({
       withdrawalExpectedVersion: registration?.version ?? 0,
       withdrawalKind: registration?.withdrawalKind ?? null,
       lateExitWillBeRecorded: registration?.lateExitWillBeRecorded ?? false,
+      viewerRegistrationId: registration?.id ?? "",
+      attendanceRecordedAtLabel: attendanceAuthorityTimeLabel(
+        "原记录 ·",
+        registration?.attendanceRecordedAt,
+        context.game.timeZone,
+      ),
+      attendanceCorrectedAtLabel: attendanceAuthorityTimeLabel(
+        "平台已纠正于",
+        registration?.attendanceCorrectedAt,
+        context.game.timeZone,
+      ),
+      copyFeedbackMessage: "",
+      copyFeedbackKind: "",
       withdrawalConfirmationTitle: applicationWithdrawal
         ? "确认撤回申请？"
         : waitlistWithdrawal ? "确认退出候补？" : "确认退出球局？",
@@ -702,7 +734,32 @@ Page({
       promotedAt: registration.promotedAt,
       attendanceStatus: registration.attendanceStatus,
       attendanceRecordedAt: registration.attendanceRecordedAt,
+      attendanceCorrectedAt: registration.attendanceCorrectedAt,
     });
+  },
+
+  onCopyRegistrationId() {
+    const registrationId = this.data.viewerRegistrationId;
+    if (this.data.mode !== "shared"
+      || typeof registrationId !== "string"
+      || !UUID_PATTERN.test(registrationId)) return;
+    const generation = ++this.copyGeneration;
+    this.setData({ copyFeedbackMessage: "正在复制…", copyFeedbackKind: "pending" });
+    const settle = (message: string, kind: "success" | "error") => {
+      if (!this.visible
+        || generation !== this.copyGeneration
+        || this.data.viewerRegistrationId !== registrationId) return;
+      this.setData({ copyFeedbackMessage: message, copyFeedbackKind: kind });
+    };
+    try {
+      wx.setClipboardData({
+        data: registrationId,
+        success: () => settle("报名编号已复制", "success"),
+        fail: () => settle("复制失败，请重试", "error"),
+      });
+    } catch {
+      settle("复制失败，请重试", "error");
+    }
   },
 
   applyPublic(game: OpenGamePublic) {

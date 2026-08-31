@@ -141,6 +141,7 @@ class ViewerRegistration(_FrozenClosedModel):
     promoted_at: AwareDatetime | None
     attendance_status: OpenGameAttendanceStatus | None
     attendance_recorded_at: AwareDatetime | None
+    attendance_corrected_at: AwareDatetime | None
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> Self:
@@ -273,6 +274,7 @@ class ViewerRegistration(_FrozenClosedModel):
         _validate_self_attendance(
             status=self.attendance_status,
             recorded_at=self.attendance_recorded_at,
+            corrected_at=self.attendance_corrected_at,
         )
         return self
 
@@ -341,6 +343,7 @@ class MyOpenGameApplication(_FrozenClosedModel):
     promoted_at: AwareDatetime | None
     attendance_status: OpenGameAttendanceStatus | None
     attendance_recorded_at: AwareDatetime | None
+    attendance_corrected_at: AwareDatetime | None
     detail_path: Annotated[
         str,
         Field(
@@ -411,6 +414,7 @@ class MyOpenGameApplication(_FrozenClosedModel):
         _validate_self_attendance(
             status=self.attendance_status,
             recorded_at=self.attendance_recorded_at,
+            corrected_at=self.attendance_corrected_at,
         )
         return self
 
@@ -471,6 +475,7 @@ class OpenGameAttendanceRosterItem(_FrozenClosedModel):
     position: OpenGameRegistrationPosition
     attendance_status: OpenGameAttendanceStatus
     attendance_recorded_at: AwareDatetime | None
+    attendance_corrected_at: AwareDatetime | None
     version: Annotated[int, Field(strict=True, ge=1)]
 
     @model_validator(mode="after")
@@ -478,6 +483,7 @@ class OpenGameAttendanceRosterItem(_FrozenClosedModel):
         _validate_attendance_pair(
             status=self.attendance_status,
             recorded_at=self.attendance_recorded_at,
+            corrected_at=self.attendance_corrected_at,
         )
         return self
 
@@ -539,26 +545,32 @@ def _validate_self_attendance(
     *,
     status: OpenGameAttendanceStatus | None,
     recorded_at: datetime | None,
+    corrected_at: datetime | None,
 ) -> None:
     if status in {None, OpenGameAttendanceStatus.UNMARKED}:
-        if recorded_at is not None:
-            raise ValueError("unavailable or unmarked attendance has no recorded time")
+        if recorded_at is not None or corrected_at is not None:
+            raise ValueError("unavailable or unmarked attendance has no audit time")
         return
     if recorded_at is None:
         raise ValueError("recorded attendance requires a recorded time")
+    if corrected_at is not None and corrected_at < recorded_at:
+        raise ValueError("corrected attendance cannot precede its original record")
 
 
 def _validate_attendance_pair(
     *,
     status: OpenGameAttendanceStatus,
     recorded_at: datetime | None,
+    corrected_at: datetime | None,
 ) -> None:
     if status is OpenGameAttendanceStatus.UNMARKED:
-        if recorded_at is not None:
-            raise ValueError("unmarked attendance has no recorded time")
+        if recorded_at is not None or corrected_at is not None:
+            raise ValueError("unmarked attendance has no audit time")
         return
     if recorded_at is None:
         raise ValueError("terminal attendance requires a recorded time")
+    if corrected_at is not None and corrected_at < recorded_at:
+        raise ValueError("corrected attendance cannot precede its original record")
 
 
 def validate_registration_visible_text(value: str) -> str:

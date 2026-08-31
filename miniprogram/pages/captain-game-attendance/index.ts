@@ -101,6 +101,10 @@ function recordedTimeLabel(value: string | null, timeZone: string): string {
   return value === null ? "" : `${formatOpenGameDateTime(value, timeZone)} 记录`;
 }
 
+function correctedTimeLabel(value: string | null, timeZone: string): string {
+  return value === null ? "" : `平台已纠正 · ${formatOpenGameDateTime(value, timeZone)}`;
+}
+
 function projectRegistrations(roster: OpenGameAttendanceRoster, canManage: boolean) {
   return roster.registrations.map((registration) => ({
     registrationId: registration.registrationId,
@@ -108,12 +112,17 @@ function projectRegistrations(roster: OpenGameAttendanceRoster, canManage: boole
     positionLabel: openGamePositionLabel(registration.position),
     attendanceStatus: registration.attendanceStatus,
     attendanceRecordedAt: registration.attendanceRecordedAt,
+    attendanceCorrectedAt: registration.attendanceCorrectedAt,
     version: registration.version,
     isUnmarked: registration.attendanceStatus === "UNMARKED",
     canMark: canManage && registration.attendanceStatus === "UNMARKED",
     resultLabel: attendanceLabel(registration.attendanceStatus),
     recordedTimeLabel: recordedTimeLabel(
       registration.attendanceRecordedAt,
+      roster.game.timeZone,
+    ),
+    correctedTimeLabel: correctedTimeLabel(
+      registration.attendanceCorrectedAt,
       roster.game.timeZone,
     ),
   }));
@@ -145,6 +154,9 @@ function blankData() {
     errorMessage: "",
     noticeMessage: "",
     navigationError: "",
+    copyFeedbackRegistrationId: "",
+    copyFeedbackMessage: "",
+    copyFeedbackKind: "" as "" | "pending" | "success" | "error",
     pendingRoute: "",
     decisionPanel: null as {
       readonly registrationId: string;
@@ -196,6 +208,7 @@ Page({
   readInFlight: null as Promise<void> | null,
   mutationInFlight: null as Promise<void> | null,
   navigationInFlight: null as Promise<void> | null,
+  copyGeneration: 0,
 
   onLoad(options: PageOptions = {}) {
     this.visible = true;
@@ -208,6 +221,7 @@ Page({
     this.readInFlight = null;
     this.mutationInFlight = null;
     this.navigationInFlight = null;
+    this.copyGeneration += 1;
     hideShare();
     const header = headerData();
     if (Object.keys(options).length !== 1 || !validUuid(options.game_id)) {
@@ -237,6 +251,7 @@ Page({
   onHide() {
     this.visible = false;
     this.loadGeneration += 1;
+    this.copyGeneration += 1;
     this.readInFlight = null;
     this.decisionSelection = null;
     this.setData({ decisionPanel: null });
@@ -245,6 +260,7 @@ Page({
   onUnload() {
     this.visible = false;
     this.loadGeneration += 1;
+    this.copyGeneration += 1;
     this.readInFlight = null;
     this.decisionSelection = null;
   },
@@ -268,6 +284,7 @@ Page({
     errorMessage = "",
     noticeMessage = "",
   ) {
+    this.copyGeneration += 1;
     this.currentRoster = roster;
     this.decisionSelection = null;
     this.setData({
@@ -451,6 +468,35 @@ Page({
 
   onMarkNoShow(event: AttendanceEvent) {
     this.openDecision(event.currentTarget?.dataset?.registrationId, "NO_SHOW");
+  },
+
+  onCopyRegistrationId(event: AttendanceEvent) {
+    const registrationId = event.currentTarget?.dataset?.registrationId;
+    if (!validUuid(registrationId)
+      || !this.data.roster.some((item) => item.registrationId === registrationId)) return;
+    const generation = ++this.copyGeneration;
+    this.setData({
+      copyFeedbackRegistrationId: registrationId,
+      copyFeedbackMessage: "正在复制…",
+      copyFeedbackKind: "pending",
+    });
+    const settle = (message: string, kind: "success" | "error") => {
+      if (!this.visible || generation !== this.copyGeneration) return;
+      this.setData({
+        copyFeedbackRegistrationId: registrationId,
+        copyFeedbackMessage: message,
+        copyFeedbackKind: kind,
+      });
+    };
+    try {
+      wx.setClipboardData({
+        data: registrationId,
+        success: () => settle("报名编号已复制", "success"),
+        fail: () => settle("复制失败，请重试", "error"),
+      });
+    } catch {
+      settle("复制失败，请重试", "error");
+    }
   },
 
   onCloseDecision() {

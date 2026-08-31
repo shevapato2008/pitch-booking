@@ -4,7 +4,7 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c2c-header { display: grid; grid-template-columns: 88rpx minmax(0, 1fr) 88rpx; align-items: center; box-sizing: border-box; flex: 0 0 auto; border-bottom: 1rpx solid #DBE5EC; background: #FFFFFF; }
 .c2c-header-back, .c2c-header-spacer { box-sizing: border-box; width: 88rpx; min-width: 88rpx; min-height: 88rpx; }
 .c2c-header-back { display: flex; align-items: center; justify-content: center; margin: 0; padding: 0; border: 0; background: transparent; }
-.c2c-header-back::after, .c2c-state-action::after, .c2c-row-action::after, .c2c-sheet-close::after, .c2c-sheet-action::after { border: 0; }
+.c2c-header-back::after, .c2c-state-action::after, .c2c-row-action::after, .c2c-sheet-close::after, .c2c-sheet-action::after, .c2d-copy-action::after { border: 0; }
 .c2c-header-title { overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 34rpx; font-weight: 700; line-height: 48rpx; }
 .c2c-back-icon { position: relative; width: 40rpx; height: 40rpx; }
 .c2c-back-icon::before { position: absolute; top: 9rpx; left: 7rpx; box-sizing: border-box; width: 22rpx; height: 22rpx; border-left: 4rpx solid #10243E; border-bottom: 4rpx solid #10243E; transform: rotate(45deg); content: ""; }
@@ -40,6 +40,15 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c2c-status-badge--present { border: 1rpx solid #A7F3D0; background: #ECFDF5; color: #047857; }
 .c2c-status-badge--no-show { border: 1rpx solid #FECACA; background: #FEF2F2; color: #B42318; }
 .c2c-recorded-time { margin-top: 7rpx; overflow: hidden; color: #526479; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 20rpx; line-height: 30rpx; }
+.c2d-corrected-time { display: block; margin-top: 4rpx; color: #047857; text-align: center; font-size: 20rpx; font-weight: 700; line-height: 30rpx; }
+.c2d-registration-meta { display: grid; grid-template-columns: minmax(0, 1fr) 184rpx; align-items: center; gap: 16rpx; margin-top: 20rpx; padding-top: 18rpx; border-top: 1rpx solid #E2E8F0; }
+.c2d-registration-id { display: flex; min-width: 0; flex-direction: column; }
+.c2d-registration-id text:first-child { color: #64748B; font-size: 20rpx; line-height: 30rpx; }
+.c2d-registration-id text:last-child { overflow: hidden; color: #334155; font-size: 20rpx; line-height: 32rpx; text-overflow: ellipsis; white-space: nowrap; }
+.c2d-copy-action { min-height: 88rpx; display: flex; align-items: center; justify-content: center; box-sizing: border-box; margin: 0; padding: 0 16rpx; border: 1rpx solid #7DD3FC; border-radius: 18rpx; background: #F0F9FF; color: #0369A1; font-size: 24rpx; font-weight: 700; line-height: 36rpx; }
+.c2d-copy-feedback { display: block; margin-top: 8rpx; color: #526479; font-size: 21rpx; line-height: 32rpx; }
+.c2d-copy-feedback--success { color: #047857; }
+.c2d-copy-feedback--error { color: #B42318; }
 .c2c-complete-note { display: flex; align-items: center; gap: 14rpx; margin-top: 20rpx; padding: 22rpx 24rpx; border: 1rpx solid #A7F3D0; border-radius: 20rpx; background: #ECFDF5; color: #047857; font-size: 24rpx; font-weight: 700; line-height: 36rpx; }
 .c2c-complete-dot { box-sizing: border-box; width: 20rpx; height: 20rpx; flex: 0 0 auto; border: 5rpx solid #059669; border-radius: 50%; }
 

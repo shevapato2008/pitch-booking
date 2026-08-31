@@ -66,6 +66,16 @@
             <text class="c1a-status-description">{{statusDescription}}</text>
           </view>
 
+          <view wx:if="{{viewerRegistrationId}}" class="c1a-card c1a-section c2d-registration-authority">
+            <text class="c2d-registration-title">报名记录</text>
+            <text wx:if="{{attendanceRecordedAtLabel}}" class="c2d-attendance-time">{{attendanceRecordedAtLabel}}</text>
+            <text wx:if="{{attendanceCorrectedAtLabel}}" class="c2d-attendance-time c2d-attendance-time--corrected">{{attendanceCorrectedAtLabel}}</text>
+            <text class="c2d-registration-label">报名编号</text>
+            <text class="c2d-registration-id">{{viewerRegistrationId}}</text>
+            <button class="c2d-copy-action" hover-class="button-hover" bindtap="onCopyRegistrationId">复制报名编号</button>
+            <text wx:if="{{copyFeedbackMessage}}" class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}" role="status">{{copyFeedbackMessage}}</text>
+          </view>
+
           <view class="c1a-card c1a-section">
             <view class="c1a-detail-grid">
               <view><text class="c1a-detail-label">组织者球队</text><text class="c1a-detail-value">{{teamName}}</text></view>

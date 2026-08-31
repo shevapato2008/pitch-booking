@@ -149,6 +149,8 @@ test("production page and route use the approved native layout without preview c
   expect(wxml).toContain('wx:if="{{item.attendanceLabel}}"');
   expect(wxml).toContain("到场：{{item.attendanceLabel}}");
   expect(wxml).toContain("{{item.attendanceRecordedAtLabel}}");
+  expect(wxml).toContain("{{item.attendanceCorrectedAtLabel}}");
+  expect(wxml).toContain("平台已纠正");
   expect(styles).toMatch(/\.c1c-registration-card--waitlisted\s*\{[^}]*#FED7AA/s);
   expect(styles).toMatch(/\.c1c-status--waitlisted\s*\{[^}]*#FFF7ED[^}]*#9A3412/s);
 });
@@ -605,6 +607,7 @@ test("detail attendance authority patches only its registration and preserves li
     promotedAt: null,
     attendanceStatus: "PRESENT",
     attendanceRecordedAt: "2026-09-05T02:20:00Z",
+    attendanceCorrectedAt: "2026-09-05T03:20:00Z",
   })).toBe(true);
 
   expect(pageInstance.data.items.map(
@@ -618,8 +621,10 @@ test("detail attendance authority patches only its registration and preserves li
     statusLabel: "已加入",
     attendanceStatus: "PRESENT",
     attendanceRecordedAt: "2026-09-05T02:20:00Z",
+    attendanceCorrectedAt: "2026-09-05T03:20:00Z",
     attendanceLabel: "已到场",
     attendanceRecordedAtLabel: "9月5日 周六 10:20 记录",
+    attendanceCorrectedAtLabel: "平台已纠正 · 9月5日 周六 11:20",
   });
   expect(pageInstance.data).toMatchObject({
     nextCursor: "page-4",

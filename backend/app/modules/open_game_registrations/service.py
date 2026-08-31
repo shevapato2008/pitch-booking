@@ -155,6 +155,9 @@ class OpenGameRegistrationService:
                 and registration.waitlist_seq is not None
                 else None
             )
+            correction_times = self._repository.latest_attendance_correction_times(
+                registration_ids=[registration.id] if registration is not None else []
+            )
             return _project_context(
                 game=game,
                 projection=projection,
@@ -163,6 +166,11 @@ class OpenGameRegistrationService:
                 joined_count=joined_count,
                 now=now,
                 waitlist_position=waitlist_position,
+                attendance_corrected_at=(
+                    correction_times.get(registration.id)
+                    if registration is not None
+                    else None
+                ),
             )
         except AppError:
             self._repository.rollback()
@@ -194,12 +202,18 @@ class OpenGameRegistrationService:
                 cursor_applied_at=cursor_applied_at,
                 cursor_id=cursor_id,
             )
+            correction_times = self._repository.latest_attendance_correction_times(
+                registration_ids=[row.registration.id for row in rows]
+            )
             now = self._now()
             items = tuple(
                 self._project_my_application(
                     row.registration,
                     now=now,
                     waitlist_position=row.waitlist_position,
+                    attendance_corrected_at=correction_times.get(
+                        row.registration.id
+                    ),
                 )
                 for row in rows
             )
@@ -512,10 +526,14 @@ class OpenGameRegistrationService:
             registrations = self._repository.list_attendance_roster(
                 game_id=game.id
             )
+            correction_times = self._repository.latest_attendance_correction_times(
+                registration_ids=[registration.id for registration in registrations]
+            )
             return _project_attendance_roster(
                 game=game,
                 projection=projection,
                 registrations=registrations,
+                correction_times=correction_times,
             )
         except AppError:
             self._repository.rollback()
@@ -1040,6 +1058,7 @@ class OpenGameRegistrationService:
         *,
         now: datetime,
         waitlist_position: int | None,
+        attendance_corrected_at: datetime | None = None,
     ) -> MyOpenGameApplication:
         game = registration.game
         if game.published_at is None:
@@ -1092,6 +1111,7 @@ class OpenGameRegistrationService:
             promoted_at=registration.promoted_at,
             attendance_status=registration.attendance_status,
             attendance_recorded_at=registration.attendance_recorded_at,
+            attendance_corrected_at=attendance_corrected_at,
         )
 
 
@@ -1100,6 +1120,7 @@ def _project_attendance_roster(
     game: OpenGame,
     projection: AuthoritativePublicGameProjection,
     registrations: list[OpenGameRegistration],
+    correction_times: dict[uuid.UUID, datetime],
 ) -> OpenGameAttendanceRoster:
     items = tuple(
         project_attendance_roster_item(
@@ -1108,6 +1129,7 @@ def _project_attendance_roster(
             position=registration.position,
             attendance_status=registration.attendance_status,
             attendance_recorded_at=registration.attendance_recorded_at,
+            attendance_corrected_at=correction_times.get(registration.id),
             version=registration.version,
         )
         for registration in registrations
@@ -1173,6 +1195,7 @@ def _project_context(
     joined_count: int,
     now: datetime,
     waitlist_position: int | None = None,
+    attendance_corrected_at: datetime | None = None,
 ) -> RegistrationContext:
     facts = _registration_facts(
         game=game,
@@ -1202,6 +1225,7 @@ def _project_context(
             promoted_at=registration.promoted_at,
             attendance_status=registration.attendance_status,
             attendance_recorded_at=registration.attendance_recorded_at,
+            attendance_corrected_at=attendance_corrected_at,
         )
         if registration is not None
         else None
@@ -1509,6 +1533,7 @@ def _upgrade_legacy_application_context(
         {
             "attendance_status": None,
             "attendance_recorded_at": None,
+            "attendance_corrected_at": None,
         }
     )
     upgraded = dict(response_body)

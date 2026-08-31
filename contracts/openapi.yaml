@@ -4332,7 +4332,7 @@ components:
     MyOpenGameApplication:
       type: object
       additionalProperties: false
-      required: [id, effective_status, applied_at, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
+      required: [id, effective_status, applied_at, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, attendance_corrected_at, detail_path, game_name, starts_at, ends_at, time_zone, venue_name, pitch_name, pitch_specification]
       properties:
         id: {type: string, format: uuid}
         effective_status: {$ref: '#/components/schemas/OpenGameRegistrationEffectiveStatus'}
@@ -4345,6 +4345,7 @@ components:
             - $ref: '#/components/schemas/OpenGameAttendanceStatus'
             - type: 'null'
         attendance_recorded_at: {type: [string, 'null'], format: date-time}
+        attendance_corrected_at: {type: [string, 'null'], format: date-time}
         detail_path:
           type: string
           pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
@@ -4359,12 +4360,15 @@ components:
         - properties:
             attendance_status: {const: null}
             attendance_recorded_at: {const: null}
+            attendance_corrected_at: {const: null}
         - properties:
             attendance_status: {const: UNMARKED}
             attendance_recorded_at: {const: null}
+            attendance_corrected_at: {const: null}
         - properties:
             attendance_status: {enum: [PRESENT, NO_SHOW]}
             attendance_recorded_at: {type: string, format: date-time}
+            attendance_corrected_at: {type: [string, 'null'], format: date-time}
     MyOpenGameApplicationsResponse:
       type: object
       additionalProperties: false
@@ -4390,21 +4394,24 @@ components:
     OpenGameAttendanceRosterItem:
       type: object
       additionalProperties: false
-      required: [registration_id, display_name, position, attendance_status, attendance_recorded_at, version]
+      required: [registration_id, display_name, position, attendance_status, attendance_recorded_at, attendance_corrected_at, version]
       properties:
         registration_id: {type: string, format: uuid}
         display_name: {type: string, minLength: 2, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         attendance_status: {$ref: '#/components/schemas/OpenGameAttendanceStatus'}
         attendance_recorded_at: {type: [string, 'null'], format: date-time}
+        attendance_corrected_at: {type: [string, 'null'], format: date-time}
         version: {type: integer, minimum: 1}
       oneOf:
         - properties:
             attendance_status: {const: UNMARKED}
             attendance_recorded_at: {const: null}
+            attendance_corrected_at: {const: null}
         - properties:
             attendance_status: {enum: [PRESENT, NO_SHOW]}
             attendance_recorded_at: {type: string, format: date-time}
+            attendance_corrected_at: {type: [string, 'null'], format: date-time}
     OpenGameAttendanceRoster:
       type: object
       additionalProperties: false
@@ -4570,7 +4577,7 @@ components:
     OpenGameViewerRegistration:
       type: object
       additionalProperties: false
-      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at]
+      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, attendance_corrected_at]
       properties:
         id: {type: string, format: uuid}
         display_name: {type: string, minLength: 2, maxLength: 24}
@@ -4600,16 +4607,20 @@ components:
             - $ref: '#/components/schemas/OpenGameAttendanceStatus'
             - type: 'null'
         attendance_recorded_at: {type: [string, 'null'], format: date-time}
+        attendance_corrected_at: {type: [string, 'null'], format: date-time}
       oneOf:
         - properties:
             attendance_status: {const: null}
             attendance_recorded_at: {const: null}
+            attendance_corrected_at: {const: null}
         - properties:
             attendance_status: {const: UNMARKED}
             attendance_recorded_at: {const: null}
+            attendance_corrected_at: {const: null}
         - properties:
             attendance_status: {enum: [PRESENT, NO_SHOW]}
             attendance_recorded_at: {type: string, format: date-time}
+            attendance_corrected_at: {type: [string, 'null'], format: date-time}
     OpenGameRegistrationContext:
       type: object
       additionalProperties: false
