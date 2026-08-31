@@ -63,6 +63,11 @@ test("D1a platform preview is local-only and every visible action is wired", () 
 
   assert.match(html + source, /GAME_RECRUITMENT_INVITATION_FIXTURE/);
   assert.match(html + source, /D1a 开发预览 · 模拟数据/);
+  assert.match(source, /tokenInvitationId/);
+  assert.match(source, /eligibleVenues/);
+  assert.match(source, /天津南开云际足球公园[\s\S]*南开区[\s\S]*红旗南路/);
+  const tokenPath = source.match(/tokenPath:\s*"pages\/venue-invitation\/index\?token=([A-Za-z0-9_-]+)"/)?.[1];
+  assert.equal(tokenPath?.length, 43);
   for (const action of ["create", "copy", "prepare-revoke", "cancel-revoke", "confirm-revoke", "select-row", "open-application", "nav-invitations"]) {
     assert.match(html + source, new RegExp(`data-action=["']${action}["']`));
   }

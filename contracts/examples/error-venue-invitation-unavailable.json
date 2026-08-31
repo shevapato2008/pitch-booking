@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VENUE_INVITATION_UNAVAILABLE",
+    "message": "邀请已失效，请联系邀请人获取新链接。",
+    "request_id": "req_venue_invitation_unavailable_001",
+    "details": {}
+  }
+}

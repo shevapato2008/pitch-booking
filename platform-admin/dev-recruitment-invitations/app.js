@@ -1,5 +1,6 @@
 const GAME_RECRUITMENT_INVITATION_FIXTURE = "GAME_RECRUITMENT_INVITATION_FIXTURE";
 const root = document.querySelector("#app");
+const previewState = new URLSearchParams(location.search).get("state") ?? "plain";
 
 const initialInvitations = [
   {
@@ -34,13 +35,32 @@ const initialInvitations = [
   },
 ];
 
+const eligibleVenues = [
+  {
+    id: "venue-nankai",
+    venue: "天津南开云际足球公园",
+    district: "南开区",
+    address: "天津市南开区红旗南路 512 号",
+    contact: "南开场馆负责人",
+  },
+  {
+    id: "venue-jinnan",
+    venue: "天津津南绿岛足球公园",
+    district: "津南区",
+    address: "天津市津南区咸水沽镇海河教育园同砚路 28 号",
+    contact: "津南合作联系人",
+  },
+];
+
 const state = {
   marker: GAME_RECRUITMENT_INVITATION_FIXTURE,
   invitations: initialInvitations.map((item) => ({ ...item })),
-  selectedId: "invite-active",
-  tokenPath: "pages/venue-invitation/index?token=Wm8Lk3R6uQ2pV9sH7xTa4bNc",
-  tokenVisible: new URLSearchParams(location.search).get("state") !== "plain",
-  revokeOpen: new URLSearchParams(location.search).get("state") === "revoke",
+  eligibleVenues: eligibleVenues.map((item) => ({ ...item })),
+  selectedId: previewState === "submitted" ? "invite-submitted" : previewState === "claimed" ? "invite-claimed" : "invite-active",
+  tokenPath: "pages/venue-invitation/index?token=Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx",
+  tokenVisible: previewState === "created",
+  tokenInvitationId: previewState === "created" ? "invite-active" : null,
+  revokeOpen: previewState === "revoke",
   feedback: "",
   actionFeedback: "",
   revokeError: "",
@@ -67,8 +87,8 @@ function row(item) {
   return `<button class="invite-row${item.id === state.selectedId ? " is-selected" : ""}" data-action="select-row" data-id="${escapeHtml(item.id)}" type="button"><span class="invite-row__top"><span class="badge badge--${tone}">${label}</span><small>${escapeHtml(item.district)}</small></span><strong>${escapeHtml(item.venue)}</strong><span>${escapeHtml(item.contact)}</span><small>有效至 ${escapeHtml(item.expires)}</small></button>`;
 }
 
-function tokenPanel() {
-  if (!state.tokenVisible) return "";
+function tokenPanel(invitation) {
+  if (!state.tokenVisible || state.tokenInvitationId !== invitation.id) return "";
   return `<section class="token-panel" role="status"><div class="token-panel__head"><div><p class="eyebrow">One-time token</p><h2>邀请已创建</h2></div><button class="icon-button" data-action="dismiss-token" type="button" aria-label="关闭一次性邀请提示">×</button></div><p>原始邀请路径只在本次创建结果中展示。请立即复制并通过可信渠道发送给目标联系人。</p><code>${escapeHtml(state.tokenPath)}</code><div class="token-panel__actions"><button class="button button--quiet" data-action="copy" type="button">复制邀请路径</button><span class="copy-feedback" aria-live="polite">${escapeHtml(state.feedback)}</span></div></section>`;
 }
 
@@ -76,7 +96,7 @@ function detail(invitation) {
   const [label, tone] = statusMeta(invitation.status);
   const canRevoke = invitation.status === "ACTIVE" || invitation.status === "CLAIMED";
   const submitted = invitation.status === "SUBMITTED";
-  return `<main class="detail" id="main-content" tabindex="-1"><header class="detail-heading"><div><p class="eyebrow">Invitation detail</p><h1>${escapeHtml(invitation.venue)}</h1><p>创建于 ${escapeHtml(invitation.created)} · 邀请编号 ${escapeHtml(invitation.id)}</p></div><span class="badge badge--${tone}">${label}</span></header>${state.actionFeedback ? `<p class="action-feedback" role="status">${escapeHtml(state.actionFeedback)}</p>` : ""}${tokenPanel()}<div class="detail-grid"><div class="content-stack"><section class="panel"><p class="eyebrow">Venue</p><h2>目标场馆</h2><dl class="facts"><div><dt>场馆名称</dt><dd>${escapeHtml(invitation.venue)}</dd></div><div><dt>行政区</dt><dd>${escapeHtml(invitation.district)}</dd></div><div class="facts__wide"><dt>详细地址</dt><dd>${escapeHtml(invitation.address)}</dd></div><div><dt>内部称呼</dt><dd>${escapeHtml(invitation.contact)}</dd></div><div><dt>有效期</dt><dd>${escapeHtml(invitation.expires)}</dd></div></dl></section><section class="boundary"><span class="boundary__mark">i</span><div><strong>邀请不会直接授予权限</strong><p>联系人接受邀请后仍需提交 A3 认领材料，并经平台人工审核。邀请只锁定目标场馆与唯一微信用户。</p></div></section></div><aside class="panel action-panel"><p class="eyebrow">Actions</p><h2>邀请操作</h2>${canRevoke ? `<p>申请提交前可以撤销。已绑定邀请撤销后，同一用户也不能继续提交材料。</p><button class="button button--danger button--full" data-action="prepare-revoke" type="button">撤销邀请</button>` : submitted ? `<p>联系人已提交认领材料。请在入驻审核中处理申请，邀请本身不再可撤销。</p><button class="button button--primary button--full" data-action="open-application" type="button">查看关联申请</button>` : `<p>这份邀请已终结，仅保留审计记录。</p>`}</aside></div></main>`;
+  return `<main class="detail" id="main-content" tabindex="-1"><header class="detail-heading"><div><p class="eyebrow">Invitation detail</p><h1>${escapeHtml(invitation.venue)}</h1><p>创建于 ${escapeHtml(invitation.created)} · 邀请编号 ${escapeHtml(invitation.id)}</p></div><span class="badge badge--${tone}">${label}</span></header>${state.actionFeedback ? `<p class="action-feedback" role="status">${escapeHtml(state.actionFeedback)}</p>` : ""}${tokenPanel(invitation)}<div class="detail-grid"><div class="content-stack"><section class="panel"><p class="eyebrow">Venue</p><h2>目标场馆</h2><dl class="facts"><div><dt>场馆名称</dt><dd>${escapeHtml(invitation.venue)}</dd></div><div><dt>行政区</dt><dd>${escapeHtml(invitation.district)}</dd></div><div class="facts__wide"><dt>详细地址</dt><dd>${escapeHtml(invitation.address)}</dd></div><div><dt>内部称呼</dt><dd>${escapeHtml(invitation.contact)}</dd></div><div><dt>有效期</dt><dd>${escapeHtml(invitation.expires)}</dd></div></dl></section><section class="boundary"><span class="boundary__mark">i</span><div><strong>邀请不会直接授予权限</strong><p>联系人接受邀请后仍需提交 A3 认领材料，并经平台人工审核。邀请只锁定目标场馆与唯一微信用户。</p></div></section></div><aside class="panel action-panel"><p class="eyebrow">Actions</p><h2>邀请操作</h2>${canRevoke ? `<p>申请提交前可以撤销。已绑定邀请撤销后，同一用户也不能继续提交材料。</p><button class="button button--danger button--full" data-action="prepare-revoke" type="button">撤销邀请</button>` : submitted ? `<p>联系人已提交认领材料。请在入驻审核中处理申请，邀请本身不再可撤销。</p><button class="button button--primary button--full" data-action="open-application" type="button">查看关联申请</button>` : `<p>这份邀请已终结，仅保留审计记录。</p>`}</aside></div></main>`;
 }
 
 function revokeDialog(invitation) {
@@ -86,7 +106,8 @@ function revokeDialog(invitation) {
 
 function render() {
   const invitation = selected();
-  root.innerHTML = `<div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark">PB</span><span><strong>平台运营台</strong><small>D1a 开发预览 · 模拟数据</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="nav-invitations" type="button" aria-current="page">招商邀请</button></nav><span class="fixture-pill">${state.marker}</span></header><div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Recruitment</p><h1>招商邀请</h1><p>为尚无管理人的目录场馆生成一次性邀请。</p><form data-form="create"><label for="eligible-venue">可招商场馆</label><select id="eligible-venue"><option>天津海河东体育中心足球场</option><option>天津南开云际足球公园</option></select><label for="contact-label">内部称呼</label><input id="contact-label" maxlength="40" value="海河东场馆负责人" /><button class="button button--primary button--full" data-action="create" type="submit">创建 7 天邀请</button></form></div><div class="queue__summary"><strong>${state.invitations.length}</strong> 条邀请<span>按创建时间排序</span></div><div class="queue__list">${state.invitations.map(row).join("")}</div></aside>${detail(invitation)}</div>${revokeDialog(invitation)}</div>`;
+  const options = state.eligibleVenues.map((venue) => `<option value="${escapeHtml(venue.id)}">${escapeHtml(venue.venue)}</option>`).join("");
+  root.innerHTML = `<div class="console-shell"><header class="topbar"><div class="brand"><span class="brand__mark">PB</span><span><strong>平台运营台</strong><small>D1a 开发预览 · 模拟数据</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="nav-invitations" type="button" aria-current="page">招商邀请</button></nav><span class="fixture-pill">${state.marker}</span></header><div class="workspace"><aside class="queue"><div class="queue__head"><p class="eyebrow">Recruitment</p><h1>招商邀请</h1><p>为尚无管理人的目录场馆生成一次性邀请。</p><form data-form="create"><label for="eligible-venue">可招商场馆</label><select id="eligible-venue">${options}</select><label for="contact-label">内部称呼</label><input id="contact-label" maxlength="40" value="南开场馆负责人" /><button class="button button--primary button--full" data-action="create" type="submit"${options ? "" : " disabled"}>创建 7 天邀请</button></form></div><div class="queue__summary"><strong>${state.invitations.length}</strong> 条邀请<span>按创建时间排序</span></div><div class="queue__list">${state.invitations.map(row).join("")}</div></aside>${detail(invitation)}</div>${revokeDialog(invitation)}</div>`;
 }
 
 async function copyPath() {
@@ -101,19 +122,28 @@ async function copyPath() {
 
 function createInvitation() {
   const contact = document.querySelector("#contact-label")?.value.trim() || "未命名联系人";
+  const venueId = document.querySelector("#eligible-venue")?.value;
+  const venue = state.eligibleVenues.find((item) => item.id === venueId);
+  if (!venue) {
+    state.actionFeedback = "当前没有可招商场馆，请刷新权威列表。";
+    render();
+    return;
+  }
   const item = {
     id: `invite-${state.invitations.length + 1}`,
-    venue: document.querySelector("#eligible-venue")?.value || "待选场馆",
-    district: "河东区",
-    address: "天津市河东区津塘路 156 号院内东侧",
+    venue: venue.venue,
+    district: venue.district,
+    address: venue.address,
     contact,
     status: "ACTIVE",
     expires: "2026/9/8 23:59",
     created: "2026/9/1 21:18",
   };
   state.invitations.unshift(item);
+  state.eligibleVenues = state.eligibleVenues.filter((candidate) => candidate.id !== venue.id);
   state.selectedId = item.id;
   state.tokenVisible = true;
+  state.tokenInvitationId = item.id;
   state.feedback = "";
   state.actionFeedback = "已创建邀请；原始路径仅展示一次，请立即复制。";
   render();
@@ -132,8 +162,8 @@ document.addEventListener("click", (event) => {
   const action = button.dataset.action;
   if (action === "create") return;
   if (action === "copy") void copyPath();
-  else if (action === "dismiss-token") { state.tokenVisible = false; render(); }
-  else if (action === "select-row") { state.selectedId = button.dataset.id; state.feedback = ""; state.actionFeedback = ""; render(); }
+  else if (action === "dismiss-token") { state.tokenVisible = false; state.tokenInvitationId = null; render(); }
+  else if (action === "select-row") { state.selectedId = button.dataset.id; state.tokenVisible = false; state.tokenInvitationId = null; state.feedback = ""; state.actionFeedback = ""; render(); }
   else if (action === "prepare-revoke") { state.revokeOpen = true; state.revokeError = ""; render(); queueMicrotask(() => document.querySelector("#revoke-reason")?.focus()); }
   else if (action === "cancel-revoke") { state.revokeOpen = false; state.revokeError = ""; render(); }
   else if (action === "confirm-revoke") {
@@ -142,6 +172,7 @@ document.addEventListener("click", (event) => {
     selected().status = "REVOKED";
     state.revokeOpen = false;
     state.tokenVisible = false;
+    state.tokenInvitationId = null;
     state.feedback = "";
     state.actionFeedback = "邀请已撤销，审计记录已保留。";
     render();

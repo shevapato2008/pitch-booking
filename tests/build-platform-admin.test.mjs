@@ -19,7 +19,7 @@ test("production platform console builds only approved API-backed assets", () =>
   const combined = files.map((name) => readFileSync(join(outputRoot, name), "utf8")).join("\n");
   assert.doesNotMatch(
     combined,
-    /Development-only Fixture|PLATFORM_ONBOARDING_FIXTURE|ATTENDANCE_CORRECTION_FIXTURE|platform-admin\/dev(?:-attendance-correction|\/)|C2d 开发预览 · 模拟数据|8ed324a4-56cb-4d73-9a77-0b4605ac3b17|C1b 预发布验收局|fixture\.js/,
+    /Development-only Fixture|PLATFORM_ONBOARDING_FIXTURE|ATTENDANCE_CORRECTION_FIXTURE|GAME_RECRUITMENT_INVITATION_FIXTURE|platform-admin\/dev(?:-attendance-correction|-recruitment-invitations|\/)|C2d 开发预览 · 模拟数据|D1a 开发预览 · 模拟数据|8ed324a4-56cb-4d73-9a77-0b4605ac3b17|C1b 预发布验收局|fixture\.js/,
   );
   assert.match(combined, /platform-admin\/api\/v1\/auth\/session/);
   assert.match(combined, /platform-admin\/api\/v1\/onboarding\/applications/);

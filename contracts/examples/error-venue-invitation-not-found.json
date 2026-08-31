@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VENUE_INVITATION_NOT_FOUND",
+    "message": "邀请不存在或链接格式有误。",
+    "request_id": "req_venue_invitation_not_found_001",
+    "details": {}
+  }
+}
