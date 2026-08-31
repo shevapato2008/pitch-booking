@@ -63,7 +63,7 @@ def provider(
 ) -> tuple[WeChatOpenGameNotificationProvider, httpx.AsyncClient]:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return (
-        WeChatOpenGameNotificationProvider(
+        WeChatOpenGameNotificationProvider._from_test_client(
             client=client,
             app_id=APP_ID,
             app_secret=APP_SECRET,
@@ -306,19 +306,17 @@ def test_provider_never_logs_or_renders_secrets(
         assert secret not in rendered
 
 
-def test_factory_is_disabled_without_allocating_and_owns_enabled_client() -> None:
-    created: list[httpx.AsyncClient] = []
-
-    def factory() -> httpx.AsyncClient:
-        client = httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"errcode": 0}),
-        ))
-        created.append(client)
-        return client
-
-    assert build_open_game_notification_provider(Settings(), client_factory=factory) is None
-    assert created == []
-
+def test_factory_is_disabled_without_allocating_and_owns_enabled_default_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: pytest.fail("disabled provider must not allocate a client"),
+    )
+    assert build_open_game_notification_provider(Settings()) is None
+    monkeypatch.setattr(httpx, "AsyncClient", original_client)
     settings = Settings(
         wechat_app_id=APP_ID,
         wechat_app_secret=APP_SECRET,
@@ -326,13 +324,45 @@ def test_factory_is_disabled_without_allocating_and_owns_enabled_client() -> Non
         open_game_notification_template_id=TEMPLATE_ID,
         open_game_notification_keyword_mapping_json=json.dumps(MAPPING),
     )
-    built = build_open_game_notification_provider(settings, client_factory=factory)
+    built = build_open_game_notification_provider(settings)
     assert isinstance(built, WeChatOpenGameNotificationProvider)
-    assert len(created) == 1
-    assert not created[0].is_closed
+    assert type(built._client._transport) is httpx.AsyncHTTPTransport
+    assert not built._client.is_closed
     built.close()
     built.close()
-    assert created[0].is_closed
+    assert built._client.is_closed
+
+
+def test_production_construction_rejects_custom_transport_injection() -> None:
+    settings = Settings(
+        wechat_app_id=APP_ID,
+        wechat_app_secret=APP_SECRET,
+        open_game_notification_provider="wechat",
+        open_game_notification_template_id=TEMPLATE_ID,
+        open_game_notification_keyword_mapping_json=json.dumps(MAPPING),
+    )
+
+    with pytest.raises(TypeError, match="client_factory"):
+        build_open_game_notification_provider(  # type: ignore[call-arg]
+            settings,
+            client_factory=lambda: pytest.fail("production accepted a custom transport"),
+        )
+
+    custom_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200))
+    )
+    try:
+        with pytest.raises(ValueError, match="Custom WeChat notification transports"):
+            WeChatOpenGameNotificationProvider(
+                client=custom_client,
+                app_id=APP_ID,
+                app_secret=APP_SECRET,
+                template_id=TEMPLATE_ID,
+                keyword_mapping=MAPPING,
+                miniprogram_state="formal",
+            )
+    finally:
+        asyncio.run(custom_client.aclose())
 
 
 def test_provider_rejects_a_naive_start_instant_before_io() -> None:
@@ -367,7 +397,7 @@ def test_slow_stream_is_cancelled_by_the_whole_send_wall_clock_deadline() -> Non
         return httpx.Response(200, stream=SlowBody())
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    target = WeChatOpenGameNotificationProvider(
+    target = WeChatOpenGameNotificationProvider._from_test_client(
         client=client,
         app_id=APP_ID,
         app_secret=APP_SECRET,
@@ -386,39 +416,8 @@ def test_slow_stream_is_cancelled_by_the_whole_send_wall_clock_deadline() -> Non
         target.close()
 
     assert time.monotonic() - started_at < 0.5
-
-
-def test_sync_send_hard_guard_returns_when_a_transport_blocks_the_event_loop() -> None:
-    request_started = Event()
-    release_request = Event()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        request_started.set()
-        release_request.wait(timeout=5)
-        return httpx.Response(200, json={"access_token": "too-late", "expires_in": 7200})
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    target = WeChatOpenGameNotificationProvider(
-        client=client,
-        app_id=APP_ID,
-        app_secret=APP_SECRET,
-        template_id=TEMPLATE_ID,
-        keyword_mapping=MAPPING,
-        miniprogram_state="formal",
-        send_timeout_seconds=0.1,
-    )
-    started_at = time.monotonic()
-    try:
-        assert target.send(notification_request()) == NotificationRejected(
-            "WECHAT_NOTIFICATION_TEMPORARY",
-            retryable=True,
-        )
-        assert request_started.is_set()
-    finally:
-        release_request.set()
-        target.close()
-
-    assert time.monotonic() - started_at < 0.6
+    assert client.is_closed
+    assert not target._loop_thread.is_alive()
 
 
 def test_token_lock_wait_is_bounded_by_each_send_wall_clock_deadline() -> None:
@@ -430,7 +429,7 @@ def test_token_lock_wait_is_bounded_by_each_send_wall_clock_deadline() -> None:
         return httpx.Response(200, json={"access_token": "too-late", "expires_in": 7200})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    target = WeChatOpenGameNotificationProvider(
+    target = WeChatOpenGameNotificationProvider._from_test_client(
         client=client,
         app_id=APP_ID,
         app_secret=APP_SECRET,

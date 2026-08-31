@@ -153,6 +153,10 @@ tests prove only configuration and code readiness; they do not prove that WeChat
 message. Never paste an access token or a raw provider response into an environment file, log, or
 acceptance record.
 
+The production worker always constructs the notification client with HTTPX's default cancellable
+`AsyncHTTPTransport`; deployment configuration has no client or transport injection hook. Custom
+transports are test-only and are outside the production timeout and cleanup support contract.
+
 The live generator defaults to `PAYMENT_PROVIDER=disabled` until merchant credentials are available.
 In that mode it does not prompt for or write any WeChat Pay merchant values, and it writes
 `MINIPROGRAM_PAYMENT_PROVIDER=disabled` to the generated Mini Program build inputs. The resulting

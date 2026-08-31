@@ -31,6 +31,7 @@ _STRICT_TIMEOUT = httpx.Timeout(connect=1.0, read=2.0, write=2.0, pool=1.0)
 _SEND_TIMEOUT_SECONDS = PROVIDER_MAX_REQUEST_DURATION.total_seconds() - 2.0
 _CALLER_CANCELLATION_GRACE_SECONDS = 0.25
 _RUNTIME_SHUTDOWN_TIMEOUT_SECONDS = 1.0
+_TEST_TRANSPORT_CAPABILITY = object()
 _TEMPLATE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}", re.ASCII)
 _KEYWORDS = {
     "game_name": re.compile(r"thing[1-9][0-9]*", re.ASCII),
@@ -70,8 +71,14 @@ class WeChatOpenGameNotificationProvider:
         miniprogram_state: Literal["formal", "trial", "developer"],
         now: Callable[[], float] | None = None,
         send_timeout_seconds: float = _SEND_TIMEOUT_SECONDS,
+        _test_transport_capability: object | None = None,
     ) -> None:
         configure_safe_http_logging()
+        if (
+            _test_transport_capability is not _TEST_TRANSPORT_CAPABILITY
+            and type(client._transport) is not httpx.AsyncHTTPTransport
+        ):
+            raise ValueError("Custom WeChat notification transports are unsupported")
         if not isinstance(app_id, str) or not app_id.strip():
             raise ValueError("WeChat notification app id is required")
         if not isinstance(app_secret, str) or not app_secret.strip():
@@ -122,6 +129,31 @@ class WeChatOpenGameNotificationProvider:
         self._loop_thread.start()
         if not self._loop_started.wait(timeout=_RUNTIME_SHUTDOWN_TIMEOUT_SECONDS):
             raise RuntimeError("WeChat notification runtime did not start")
+
+    @classmethod
+    def _from_test_client(
+        cls,
+        *,
+        client: httpx.AsyncClient,
+        app_id: str,
+        app_secret: str,
+        template_id: str,
+        keyword_mapping: Mapping[str, str],
+        miniprogram_state: Literal["formal", "trial", "developer"],
+        now: Callable[[], float] | None = None,
+        send_timeout_seconds: float = _SEND_TIMEOUT_SECONDS,
+    ) -> WeChatOpenGameNotificationProvider:
+        return cls(
+            client=client,
+            app_id=app_id,
+            app_secret=app_secret,
+            template_id=template_id,
+            keyword_mapping=keyword_mapping,
+            miniprogram_state=miniprogram_state,
+            now=now,
+            send_timeout_seconds=send_timeout_seconds,
+            _test_transport_capability=_TEST_TRANSPORT_CAPABILITY,
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(provider_name='wechat')"
@@ -344,8 +376,6 @@ class WeChatOpenGameNotificationProvider:
 
 def build_open_game_notification_provider(
     settings: Settings,
-    *,
-    client_factory: Callable[[], httpx.AsyncClient] | None = None,
 ) -> WeChatOpenGameNotificationProvider | None:
     if settings.open_game_notification_provider == "disabled":
         return None
@@ -357,7 +387,7 @@ def build_open_game_notification_provider(
         or mapping is None
     ):
         raise ValueError("WeChat notification configuration is incomplete")
-    client = (client_factory or httpx.AsyncClient)()
+    client = httpx.AsyncClient(transport=httpx.AsyncHTTPTransport())
     try:
         return WeChatOpenGameNotificationProvider(
             client=client,

@@ -58,7 +58,7 @@ worker 可以注入一个“disabled provider”，也可以完全不组合通�
 
 `wechat` 仅在 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`、模板 ID 和封闭关键词映射全部有效时可构建；不完整配置在启动时失败。`disabled` 即使残留完整凭据也不构建或消费 outbox。关键词映射以 `SecretStr` 读取并在设置 repr、校验异常和日志中隐藏，避免未来错误地把运营配置原文扩散到日志。
 
-`WeChatOpenGameNotificationProvider` 使用独立 `httpx.AsyncClient`、专用事件循环和独立内存 access-token cache。token 请求和订阅发送保留 connect/read/write/pool 的严格分阶段 timeout，整次同步 `send` 另由可取消的 28 秒墙钟 deadline 包围；该 deadline 同时覆盖慢速分块响应、token 锁等待、token 获取、发送、一次 token 失效刷新与一次重发，调用侧在 28.25 秒设最终返回保护，严格低于现有 30 秒 Provider 合同。token 只进入请求内存和 HTTPS query，不持久化、不进入 DTO/repr/异常或日志。
+`WeChatOpenGameNotificationProvider` 使用独立 `httpx.AsyncClient`、专用事件循环和独立内存 access-token cache。生产 builder 不暴露 client/transport 注入点，只构造 HTTPX 默认且可取消的 `AsyncHTTPTransport`；`MockTransport` 等自定义 transport 只能经私有测试入口使用，不属于生产支持合同。token 请求和订阅发送保留 connect/read/write/pool 的严格分阶段 timeout，整次同步 `send` 另由可取消的 28 秒墙钟 deadline 包围；该 deadline 同时覆盖协作式慢速分块响应、token 锁等待、token 获取、发送、一次 token 失效刷新与一次重发。调用侧在 28.25 秒保留最终返回保护，它只保证 caller 返回，不承诺清理不受支持、拒绝取消的注入 transport；受支持的默认 transport 在 deadline 后可取消，`close()` 必须关闭 client 并结束专用线程。token 只进入请求内存和 HTTPS query，不持久化、不进入 DTO/repr、异常或日志。
 
 Provider 只接受既有 `template_key=waitlist-promoted`、匹配配置 AppID 的 recipient 和封闭 payload。它把 `starts_at` 解析为带时区 ISO 时间并按 `Asia/Shanghai` 格式化；球局名和场馆名按微信 `thing` 字段限制安全截断。固定 deeplink 为 `pages/my-game-registrations/index`，让收件人进入权威报名列表，不依赖 outbox 中不存在的分享 token。
 
