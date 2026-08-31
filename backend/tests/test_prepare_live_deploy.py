@@ -37,6 +37,15 @@ WECHAT_PAY_PAYMENT_NOTIFICATION_URL = (
 WECHAT_PAY_REFUND_NOTIFICATION_URL = (
     "https://pitch-api-staging.modelstella.com/api/v1/refunds/wechat/notify"
 )
+WAITLIST_TEMPLATE_ID = "zun-LzcQyW-edafCVvzPkK4de2Rllr1fFpw2A_x0oXE"
+WAITLIST_KEYWORD_MAPPING = json.dumps(
+    {
+        "game_name": "thing1",
+        "starts_at": "time2",
+        "venue_name": "thing3",
+    },
+    separators=(",", ":"),
+)
 
 
 def _payment_pem_values(*, key_size: int = 2048) -> tuple[str, str]:
@@ -110,6 +119,10 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert deploy["PUBLIC_IMAGE_HOSTS"] == '["media.modelstella.com"]'
     assert deploy["OSS_PUBLIC_BASE_URL"] == "https://media.modelstella.com"
     assert deploy["WECHAT_PROVIDER"] == "real"
+    assert deploy["OPEN_GAME_NOTIFICATION_PROVIDER"] == "disabled"
+    assert deploy["OPEN_GAME_NOTIFICATION_TEMPLATE_ID"] == ""
+    assert deploy["OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON"] == ""
+    assert deploy["OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE"] == "formal"
     assert deploy["PAYMENT_PROVIDER"] == "wechat"
     assert deploy["ENABLE_MOCK_PAYMENT_PROVIDER"] == "false"
     assert deploy["WECHAT_PAY_MERCHANT_ID"] == WECHAT_PAY_MERCHANT_ID
@@ -140,6 +153,8 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
         "MINIPROGRAM_API_BASE_URL": "https://pitch-api-staging.modelstella.com",
         "MINIPROGRAM_TENCENT_MAP_KEY": TENCENT_KEY,
         "MINIPROGRAM_PAYMENT_PROVIDER": "wechat",
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER": "disabled",
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID": "",
     }
     assert stat.S_IMODE(paths.deploy_env.stat().st_mode) == 0o600
     assert stat.S_IMODE(paths.miniprogram_env.stat().st_mode) == 0o600
@@ -149,7 +164,85 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert paths.onboarding_upload_base_url == (
         "https://pitch-onboarding-private.oss-cn-hangzhou.aliyuncs.com"
     )
-    assert preflight(paths.deploy_env).ok is True
+    assert preflight(paths.deploy_env, miniprogram_env_file=paths.miniprogram_env).ok is True
+
+
+def test_prepare_emits_matching_enabled_notification_config_for_backend_and_client(
+    tmp_path: Path,
+) -> None:
+    paths = prepare_live_deploy(
+        inputs(
+            tmp_path,
+            open_game_notification_provider="wechat",
+            open_game_notification_template_id=WAITLIST_TEMPLATE_ID,
+            open_game_notification_keyword_mapping_json=WAITLIST_KEYWORD_MAPPING,
+            open_game_notification_miniprogram_state="trial",
+        )
+    )
+
+    deploy = read_env_file(paths.deploy_env)
+    mini = read_env_file(paths.miniprogram_env)
+    assert deploy["OPEN_GAME_NOTIFICATION_PROVIDER"] == "wechat"
+    assert deploy["OPEN_GAME_NOTIFICATION_TEMPLATE_ID"] == WAITLIST_TEMPLATE_ID
+    assert deploy["OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON"] == WAITLIST_KEYWORD_MAPPING
+    assert deploy["OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE"] == "trial"
+    assert mini["MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER"] == "wechat"
+    assert mini["MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID"] == WAITLIST_TEMPLATE_ID
+    assert preflight(paths.deploy_env, miniprogram_env_file=paths.miniprogram_env).ok is True
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        (
+            {"open_game_notification_provider": "wechat"},
+            "OPEN_GAME_NOTIFICATION_TEMPLATE_ID is required",
+        ),
+        (
+            {
+                "open_game_notification_provider": "wechat",
+                "open_game_notification_template_id": WAITLIST_TEMPLATE_ID,
+            },
+            "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is required",
+        ),
+        (
+            {
+                "open_game_notification_provider": "wechat",
+                "open_game_notification_template_id": "replace-with-template-id",
+                "open_game_notification_keyword_mapping_json": WAITLIST_KEYWORD_MAPPING,
+            },
+            "OPEN_GAME_NOTIFICATION_TEMPLATE_ID is invalid",
+        ),
+        (
+            {
+                "open_game_notification_provider": "wechat",
+                "open_game_notification_template_id": WAITLIST_TEMPLATE_ID,
+                "open_game_notification_keyword_mapping_json": (
+                    '{"game_name":"thing1","starts_at":"time2","extra":"thing3"}'
+                ),
+            },
+            "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid",
+        ),
+        (
+            {"open_game_notification_miniprogram_state": "preview"},
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE is invalid",
+        ),
+    ],
+)
+def test_prepare_rejects_partial_or_placeholder_notification_config_before_writing(
+    tmp_path: Path,
+    override: dict[str, str],
+    message: str,
+) -> None:
+    config = inputs(tmp_path, **override)
+    config.deploy_env.write_text("preserve-deploy", encoding="utf-8")
+    config.miniprogram_env.write_text("preserve-mini", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        prepare_live_deploy(config)
+
+    assert config.deploy_env.read_text(encoding="utf-8") == "preserve-deploy"
+    assert config.miniprogram_env.read_text(encoding="utf-8") == "preserve-mini"
 
 
 def test_prepare_disabled_payment_omits_merchant_credentials_and_closes_miniprogram_booking(

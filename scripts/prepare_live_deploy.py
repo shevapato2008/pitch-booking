@@ -54,6 +54,7 @@ MEDIA_HOST = "media.modelstella.com"
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
 WECHAT_PAY_KEYS = PRESERVED_KEYS[-8:]
 WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
+OPEN_GAME_NOTIFICATION_TEMPLATE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}", re.ASCII)
 SPECIAL_USE_DOMAIN_SUFFIXES = (
     "invalid",
     "localhost",
@@ -88,6 +89,10 @@ class PrepareInputs:
     payment_provider: str = "wechat"
     onboarding_oss_bucket: str = ""
     platform_reviewer_token: str = ""
+    open_game_notification_provider: str = "disabled"
+    open_game_notification_template_id: str = ""
+    open_game_notification_keyword_mapping_json: str = ""
+    open_game_notification_miniprogram_state: str = "formal"
 
 
 @dataclass(frozen=True)
@@ -137,6 +142,69 @@ def _required(value: str, name: str) -> str:
     if "\n" in normalized or "\r" in normalized:
         raise ValueError(f"{name} is invalid")
     return normalized
+
+
+def _is_placeholder(value: str) -> bool:
+    normalized = value.casefold()
+    return normalized.startswith(("replace-", "change-", "generate-", "inject-", "your-")) or (
+        ".invalid" in normalized
+    )
+
+
+def _validated_open_game_notification_config(
+    *,
+    provider: str,
+    template_id: str,
+    keyword_mapping_json: str,
+    miniprogram_state: str,
+) -> dict[str, str]:
+    normalized_provider = provider.strip().casefold()
+    if normalized_provider not in {"disabled", "wechat"}:
+        raise ValueError("OPEN_GAME_NOTIFICATION_PROVIDER must be wechat or disabled")
+    normalized_state = miniprogram_state.strip().casefold()
+    if normalized_state not in {"formal", "trial", "developer"}:
+        raise ValueError("OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE is invalid")
+    if normalized_provider == "disabled":
+        return {
+            "provider": "disabled",
+            "template_id": "",
+            "keyword_mapping_json": "",
+            "miniprogram_state": normalized_state,
+        }
+
+    normalized_template_id = _required(template_id, "OPEN_GAME_NOTIFICATION_TEMPLATE_ID")
+    if OPEN_GAME_NOTIFICATION_TEMPLATE_ID.fullmatch(
+        normalized_template_id
+    ) is None or _is_placeholder(normalized_template_id):
+        raise ValueError("OPEN_GAME_NOTIFICATION_TEMPLATE_ID is invalid")
+    normalized_mapping = _required(
+        keyword_mapping_json, "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON"
+    )
+    try:
+        mapping = json.loads(normalized_mapping)
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid") from None
+    expected = {"game_name", "starts_at", "venue_name"}
+    if (
+        not isinstance(mapping, dict)
+        or set(mapping) != expected
+        or type(mapping.get("game_name")) is not str
+        or re.fullmatch(r"thing[1-9][0-9]*", mapping["game_name"], re.ASCII) is None
+        or type(mapping.get("starts_at")) is not str
+        or re.fullmatch(r"time[1-9][0-9]*", mapping["starts_at"], re.ASCII) is None
+        or type(mapping.get("venue_name")) is not str
+        or re.fullmatch(r"thing[1-9][0-9]*", mapping["venue_name"], re.ASCII) is None
+        or len(set(mapping.values())) != 3
+    ):
+        raise ValueError("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid")
+    return {
+        "provider": "wechat",
+        "template_id": normalized_template_id,
+        "keyword_mapping_json": json.dumps(
+            mapping, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        ),
+        "miniprogram_state": normalized_state,
+    }
 
 
 def _oss_request_base_url(endpoint: str, bucket: str) -> str:
@@ -440,6 +508,12 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
     payment_provider = inputs.payment_provider.strip().casefold()
     if payment_provider not in {"wechat", "disabled"}:
         raise ValueError("PAYMENT_PROVIDER must be wechat or disabled")
+    notification_config = _validated_open_game_notification_config(
+        provider=inputs.open_game_notification_provider,
+        template_id=inputs.open_game_notification_template_id,
+        keyword_mapping_json=inputs.open_game_notification_keyword_mapping_json,
+        miniprogram_state=inputs.open_game_notification_miniprogram_state,
+    )
 
     existing: dict[str, str] = {}
     if inputs.deploy_env.exists():
@@ -507,6 +581,10 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "DASHSCOPE_MODERATION_MODEL": "qwen3-vl-flash",
         "MODERATION_REVIEWER_USER_IDS": reviewer_id,
         "WECHAT_PROVIDER": "real",
+        "OPEN_GAME_NOTIFICATION_PROVIDER": notification_config["provider"],
+        "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": notification_config["template_id"],
+        "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": notification_config["keyword_mapping_json"],
+        "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE": notification_config["miniprogram_state"],
         "PAYMENT_PROVIDER": payment_provider,
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
         **payment_config,
@@ -523,6 +601,8 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "MINIPROGRAM_API_BASE_URL": API_BASE_URL,
         "MINIPROGRAM_TENCENT_MAP_KEY": tencent_map_key,
         "MINIPROGRAM_PAYMENT_PROVIDER": payment_provider,
+        "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER": notification_config["provider"],
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID": notification_config["template_id"],
     }
     _atomic_write(
         inputs.deploy_env,
@@ -601,12 +681,21 @@ def main() -> int:
         reviewer_token = getpass.getpass("PLATFORM_REVIEWER_TOKEN: ")
 
     payment_provider = (
-        os.environ.get("PAYMENT_PROVIDER")
-        or existing_bootstrap.get("PAYMENT_PROVIDER")
-        or "disabled"
-    ).strip().casefold()
+        (
+            os.environ.get("PAYMENT_PROVIDER")
+            or existing_bootstrap.get("PAYMENT_PROVIDER")
+            or "disabled"
+        )
+        .strip()
+        .casefold()
+    )
     if payment_provider not in {"wechat", "disabled"}:
         parser.error("PAYMENT_PROVIDER must be wechat or disabled")
+    notification_provider = (
+        os.environ.get("OPEN_GAME_NOTIFICATION_PROVIDER", "disabled").strip().casefold()
+    )
+    if notification_provider not in {"wechat", "disabled"}:
+        parser.error("OPEN_GAME_NOTIFICATION_PROVIDER must be wechat or disabled")
     existing_payment = (
         {key: existing_bootstrap[key] for key in WECHAT_PAY_KEYS}
         if payment_provider == "wechat"
@@ -655,6 +744,16 @@ def main() -> int:
                 ),
                 onboarding_oss_bucket=onboarding_bucket,
                 platform_reviewer_token=reviewer_token,
+                open_game_notification_provider=notification_provider,
+                open_game_notification_template_id=os.environ.get(
+                    "OPEN_GAME_NOTIFICATION_TEMPLATE_ID", ""
+                ),
+                open_game_notification_keyword_mapping_json=os.environ.get(
+                    "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON", ""
+                ),
+                open_game_notification_miniprogram_state=os.environ.get(
+                    "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE", "formal"
+                ),
             )
         )
     except ValueError as error:

@@ -33,6 +33,8 @@ REQUIRED_KEYS = (
     "MODERATION_REVIEWER_USER_IDS",
     "PAYMENT_PROVIDER",
     "ENABLE_MOCK_PAYMENT_PROVIDER",
+    "OPEN_GAME_NOTIFICATION_PROVIDER",
+    "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE",
     "ONBOARDING_OSS_BUCKET",
     "PLATFORM_STAFF_PRINCIPALS_JSON",
     "PLATFORM_CSRF_SECRET",
@@ -52,6 +54,7 @@ OSS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 PLATFORM_ROLES = frozenset({"PLATFORM_ADMIN", "ONBOARDING_REVIEWER"})
 WECHAT_PAY_API_V3_KEY = re.compile(r"[A-Za-z0-9_-]{32}", re.ASCII)
+OPEN_GAME_NOTIFICATION_TEMPLATE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}", re.ASCII)
 SPECIAL_USE_DOMAIN_SUFFIXES = (
     "invalid",
     "localhost",
@@ -91,12 +94,20 @@ def read_env_file(path: Path) -> dict[str, str]:
 def preflight(
     env_file: str | Path,
     *,
+    miniprogram_env_file: str | Path | None = None,
     require_miniprogram_acceptance: bool = False,
 ) -> PreflightResult:
     try:
         values = read_env_file(Path(env_file))
     except (OSError, UnicodeError, ValueError) as error:
         return PreflightResult((f"environment file is invalid: {error}",))
+
+    miniprogram_values: dict[str, str] | None = None
+    if miniprogram_env_file is not None:
+        try:
+            miniprogram_values = read_env_file(Path(miniprogram_env_file))
+        except (OSError, UnicodeError, ValueError) as error:
+            return PreflightResult((f"Mini Program environment file is invalid: {error}",))
 
     payment_provider = values.get("PAYMENT_PROVIDER")
     required_keys = (
@@ -115,6 +126,11 @@ def preflight(
         failures.append("ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment")
     if payment_provider == "wechat":
         _validate_wechat_pay(values, failures)
+    _validate_open_game_notifications(
+        values,
+        miniprogram_values=miniprogram_values,
+        failures=failures,
+    )
     if (
         require_miniprogram_acceptance
         and values.get("MINIPROGRAM_ICP_FILING_CONFIRMED", "").casefold() != "true"
@@ -205,6 +221,101 @@ def preflight(
             failures.append("PLATFORM_CSRF_SECRET must be canonical Base64 for exactly 32 bytes")
 
     return PreflightResult(tuple(failures))
+
+
+def _is_placeholder(value: str) -> bool:
+    normalized = value.casefold()
+    return normalized.startswith(("replace-", "change-", "generate-", "inject-", "your-")) or (
+        ".invalid" in normalized
+    )
+
+
+def _validate_open_game_notifications(
+    values: dict[str, str],
+    *,
+    miniprogram_values: dict[str, str] | None,
+    failures: list[str],
+) -> None:
+    provider = values.get("OPEN_GAME_NOTIFICATION_PROVIDER", "")
+    template_id = values.get("OPEN_GAME_NOTIFICATION_TEMPLATE_ID", "")
+    mapping_value = values.get("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON", "")
+    miniprogram_state = values.get("OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE", "")
+
+    if provider not in {"disabled", "wechat"}:
+        failures.append("OPEN_GAME_NOTIFICATION_PROVIDER must be wechat or disabled")
+    if miniprogram_state not in {"formal", "trial", "developer"}:
+        failures.append(
+            "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE must be formal, trial, or developer"
+        )
+
+    if provider == "disabled":
+        if template_id:
+            failures.append(
+                "OPEN_GAME_NOTIFICATION_TEMPLATE_ID must be empty while notifications are disabled"
+            )
+        if mapping_value:
+            failures.append(
+                "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON must be empty while "
+                "notifications are disabled"
+            )
+        if miniprogram_values is not None:
+            if miniprogram_values.get("MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER") != "disabled":
+                failures.append("notification provider does not match the Mini Program build input")
+            if miniprogram_values.get("MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID", ""):
+                failures.append(
+                    "Mini Program notification template must be empty while notifications "
+                    "are disabled"
+                )
+        return
+
+    if provider != "wechat":
+        return
+    if not template_id:
+        failures.append("OPEN_GAME_NOTIFICATION_TEMPLATE_ID is required")
+    elif OPEN_GAME_NOTIFICATION_TEMPLATE_ID.fullmatch(template_id) is None or _is_placeholder(
+        template_id
+    ):
+        failures.append("OPEN_GAME_NOTIFICATION_TEMPLATE_ID is invalid")
+
+    if not mapping_value:
+        failures.append("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is required")
+    elif not _valid_open_game_notification_keyword_mapping(mapping_value):
+        failures.append("OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON is invalid")
+
+    for field in ("WECHAT_APP_ID", "WECHAT_APP_SECRET"):
+        value = values.get(field, "")
+        if not value:
+            failures.append(f"{field} is required for WeChat notifications")
+        elif _is_placeholder(value):
+            failures.append(f"{field} is invalid for WeChat notifications")
+
+    if miniprogram_values is None:
+        failures.append("Mini Program environment file is required for WeChat notifications")
+        return
+    if miniprogram_values.get("MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER") != "wechat":
+        failures.append("notification provider does not match the Mini Program build input")
+    client_template = miniprogram_values.get("MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID", "")
+    if client_template != template_id:
+        failures.append("notification template does not match the Mini Program build input")
+
+
+def _valid_open_game_notification_keyword_mapping(value: str) -> bool:
+    try:
+        mapping = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    expected = {"game_name", "starts_at", "venue_name"}
+    return bool(
+        isinstance(mapping, dict)
+        and set(mapping) == expected
+        and type(mapping.get("game_name")) is str
+        and re.fullmatch(r"thing[1-9][0-9]*", mapping["game_name"], re.ASCII)
+        and type(mapping.get("starts_at")) is str
+        and re.fullmatch(r"time[1-9][0-9]*", mapping["starts_at"], re.ASCII)
+        and type(mapping.get("venue_name")) is str
+        and re.fullmatch(r"thing[1-9][0-9]*", mapping["venue_name"], re.ASCII)
+        and len(set(mapping.values())) == 3
+    )
 
 
 def _validate_wechat_pay(values: dict[str, str], failures: list[str]) -> None:
@@ -355,10 +466,12 @@ def _validate_platform_principals(value: str) -> tuple[bool, bool]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate local staging deployment inputs")
     parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--miniprogram-env-file", type=Path)
     parser.add_argument("--require-miniprogram-acceptance", action="store_true")
     args = parser.parse_args()
     result = preflight(
         args.env_file,
+        miniprogram_env_file=args.miniprogram_env_file,
         require_miniprogram_acceptance=args.require_miniprogram_acceptance,
     )
     print(json.dumps({"ok": result.ok, "failures": result.failures}, ensure_ascii=False))
