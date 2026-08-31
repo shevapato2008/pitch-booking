@@ -13,7 +13,7 @@
 ## Task 2：契约与权限矩阵
 
 - 先写 RED contract tests，再冻结八个 API、闭合 schema、错误矩阵和示例。
-- 明确 token 只在创建响应返回，列表与日志不含 token/微信身份。
+- 明确 token 只在首次 `201` 创建响应返回；幂等 `200` 重放仅安全元数据，丢失后撤销重建；服务端只从脱敏 header 读取 secret，列表、URL 与日志不含 token/微信身份。
 - 为四个既有管理模块增加针对各自权限的回归测试。
 
 ## Task 3：迁移与历史门禁
@@ -25,7 +25,7 @@
 ## Task 4：邀请与成员生命周期
 
 - 固定锁顺序实现 create/read/accept/revoke/update/remove/transfer。
-- 接受邀请只给当前登录用户；并发接受仅一个用户成功，未知结果可按相同幂等 key 回读。
+- 接受邀请只给当前登录用户；inactive/active staff 均以邀请权限完整覆盖，active owner 冲突且不消费；并发接受仅一个用户成功，未知结果可按相同幂等 key 回读。
 - owner 不能自助移除/降级；staff 更新与移除写不可变审计。
 
 ## Task 5：生产 API 与页面
@@ -40,4 +40,3 @@
 - 跑 PostgreSQL/HTTP 并发旅程、contract、mini Jest/typecheck/build/audit、平台回归。
 - 未实现者 agent 做代码与真实运行时视觉审核；修复 Critical/Important。
 - 推送 feature 分支并进入统一体验版；用户集中验收前不合并 `main`。
-

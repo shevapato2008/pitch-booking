@@ -43,7 +43,7 @@
 .d1b-boundary text:first-child { font-size: 23rpx; font-weight: 720; line-height: 34rpx; }
 .d1b-boundary text:last-child { margin-top: 4rpx; color: #64748B; font-size: 20rpx; line-height: 31rpx; }
 .d1b-bottom { flex: 0 0 auto; box-sizing: border-box; padding: 18rpx 24rpx 0; border-top: 1rpx solid #DBE5EC; background: #FFFFFF; }
-.d1b-primary { display: flex; width: 100%; min-height: 92rpx; align-items: center; justify-content: center; box-sizing: border-box; margin: 0; padding: 0 24rpx; border: 0; border-radius: 22rpx; color: #FFFFFF; background: #0284C7; font-size: 29rpx; font-weight: 730; line-height: 42rpx; }
+.d1b-primary { display: flex; width: 100%; min-height: 92rpx; align-items: center; justify-content: center; box-sizing: border-box; margin: 0; padding: 0 24rpx; border: 0; border-radius: 22rpx; color: #FFFFFF; background: #0369A1; font-size: 29rpx; font-weight: 730; line-height: 42rpx; }
 .d1b-primary--success { background: #047857; }
 .d1b-primary--muted { background: #526479; }
 .d1b-safe-bottom { height: calc(18rpx + env(safe-area-inset-bottom, 0px)); }

@@ -5,9 +5,10 @@ import {
   type D1bInvitation,
   type D1bMember,
   type D1bPermission,
+  type D1bAuditSummary,
 } from "../../d1b-venue-staff-fixture";
 
-type Sheet = "none" | "create" | "created" | "edit" | "remove";
+type Sheet = "none" | "create" | "created" | "edit" | "remove" | "revoke";
 
 interface Options { state?: string }
 interface PermissionChoice { code: D1bPermission; label: string; description: string; selected: boolean }
@@ -18,7 +19,14 @@ const permissionLabel = new Map(D1B_PERMISSIONS.map((item) => [item.code, item.l
 const summarize = (permissions: readonly D1bPermission[]) => permissions.map((code) => permissionLabel.get(code) ?? code).join("、");
 const cloneMembers = (): MemberView[] => D1B_VENUE_STAFF_FIXTURE.members.map((member) => ({ ...member, permissions: [...member.permissions], permissionSummary: summarize(member.permissions) }));
 const cloneInvitations = (): InvitationView[] => D1B_VENUE_STAFF_FIXTURE.invitations.map((invitation) => ({ ...invitation, permissions: [...invitation.permissions], permissionSummary: summarize(invitation.permissions) }));
+const cloneAudits = (): D1bAuditSummary[] => D1B_VENUE_STAFF_FIXTURE.audits.map((audit) => ({ ...audit }));
 const choices = (selected: readonly D1bPermission[]): PermissionChoice[] => D1B_PERMISSIONS.map((item) => ({ ...item, selected: selected.includes(item.code) }));
+const activeInvitations = (invitations: readonly InvitationView[]) => invitations.filter((invitation) => invitation.status === "ACTIVE");
+const recentAudits = (audits: readonly D1bAuditSummary[]) => audits.slice(0, 4);
+const previewPath = (sequence: number) => {
+  const token = `D1bPreview_${sequence.toString(36)}_`.padEnd(43, "Q").slice(0, 43);
+  return `pages/venue-staff-invitation/index?token=${token}`;
+};
 
 function goBack(): void {
   if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 });
@@ -31,6 +39,8 @@ Page({
     permissions: D1B_PERMISSIONS,
     members: cloneMembers(),
     invitations: cloneInvitations(),
+    activeInvitations: activeInvitations(cloneInvitations()),
+    audits: cloneAudits(),
     selfMember: cloneMembers()[1],
     canManage: true,
     sheet: "none" as Sheet,
@@ -38,6 +48,7 @@ Page({
     draftPermissions: ["MANAGE_INVENTORY"] as D1bPermission[],
     permissionChoices: choices(["MANAGE_INVENTORY"]),
     selectedMembershipId: "",
+    selectedInvitationId: "",
     createdPath: "",
     feedback: "",
     headerTopPx: 0,
@@ -91,9 +102,18 @@ Page({
       permissionSummary: summarize(this.data.draftPermissions),
       expiresAtLabel: "9月8日 22:00 前有效",
     };
+    const invitations = [invitation, ...this.data.invitations];
+    const audit: D1bAuditSummary = {
+      id: `audit-invitation-${invitation.id}`,
+      summary: "员工邀请已创建",
+      detail: `${contactLabel} · ${invitation.permissionSummary}`,
+      createdAtLabel: "刚刚",
+    };
     this.setData({
-      invitations: [invitation, ...this.data.invitations],
-      createdPath: D1B_VENUE_STAFF_FIXTURE.invitationPath,
+      invitations,
+      activeInvitations: activeInvitations(invitations),
+      audits: recentAudits([audit, ...this.data.audits]),
+      createdPath: previewPath(invitations.length),
       sheet: "created",
       feedback: "原始邀请路径只展示这一次，请立即复制。",
     });
@@ -122,7 +142,9 @@ Page({
     const members = this.data.members.map((member) => member.id === this.data.selectedMembershipId
       ? { ...member, permissions: [...this.data.draftPermissions], permissionSummary: summarize(this.data.draftPermissions) }
       : member);
-    this.setData({ members, sheet: "none", feedback: "权限已更新（模拟结果）。" });
+    const member = members.find((item) => item.id === this.data.selectedMembershipId);
+    const audit: D1bAuditSummary = { id: `audit-permission-${Date.now()}`, summary: "员工权限已更新", detail: `${member?.displayName ?? "场馆员工"} · ${summarize(this.data.draftPermissions)}`, createdAtLabel: "刚刚" };
+    this.setData({ members, audits: recentAudits([audit, ...this.data.audits]), sheet: "none", selectedMembershipId: "", feedback: "权限已更新（模拟结果）。" });
   },
 
   onPrepareRemove(event: WechatMiniprogram.TouchEvent) {
@@ -135,8 +157,11 @@ Page({
 
   onConfirmRemove() {
     if (!this.data.canManage || this.data.sheet !== "remove") return;
+    const member = this.data.members.find((item) => item.id === this.data.selectedMembershipId);
+    const audit: D1bAuditSummary = { id: `audit-remove-${Date.now()}`, summary: "员工已停用", detail: member?.displayName ?? "场馆员工", createdAtLabel: "刚刚" };
     this.setData({
       members: this.data.members.filter((member) => member.id !== this.data.selectedMembershipId),
+      audits: recentAudits([audit, ...this.data.audits]),
       sheet: "none",
       selectedMembershipId: "",
       feedback: "员工已停用，后续操作将重新校验权限。",
@@ -146,12 +171,21 @@ Page({
   onRevokeInvitation(event: WechatMiniprogram.TouchEvent) {
     if (!this.data.canManage) return;
     const invitationId = String(event.currentTarget.dataset.invitationId ?? "");
+    if (!this.data.activeInvitations.some((invitation) => invitation.id === invitationId)) return;
+    this.setData({ selectedInvitationId: invitationId, sheet: "revoke", feedback: "" });
+  },
+
+  onConfirmRevoke() {
+    if (!this.data.canManage || this.data.sheet !== "revoke") return;
+    const invitationId = this.data.selectedInvitationId;
+    const target = this.data.invitations.find((invitation) => invitation.id === invitationId);
     const invitations = this.data.invitations.map((invitation) => invitation.id === invitationId
       ? { ...invitation, status: "REVOKED" as const }
       : invitation);
-    this.setData({ invitations, createdPath: "", feedback: "邀请已撤销，审计记录已保留。" });
+    const audit: D1bAuditSummary = { id: `audit-revoke-${Date.now()}`, summary: "员工邀请已撤销", detail: target?.contactLabel ?? "员工邀请", createdAtLabel: "刚刚" };
+    this.setData({ invitations, activeInvitations: activeInvitations(invitations), audits: recentAudits([audit, ...this.data.audits]), sheet: "none", selectedInvitationId: "", createdPath: "", feedback: "邀请已撤销，审计记录已保留。" });
   },
 
-  onCloseSheet() { this.setData({ sheet: "none", createdPath: "", feedback: "" }); },
+  onCloseSheet() { this.setData({ sheet: "none", selectedMembershipId: "", selectedInvitationId: "", createdPath: "", feedback: "" }); },
   onHeaderBack() { goBack(); },
 });

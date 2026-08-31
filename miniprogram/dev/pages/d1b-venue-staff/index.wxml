@@ -28,11 +28,17 @@
           <text wx:else class="d1b-owner-note">负责人拥有全部权限；负责人转移请联系平台处理</text>
         </view>
 
-        <view class="d1b-section-head"><view><text>待接受邀请</text><text>权限在创建后不可编辑</text></view></view>
-        <view wx:for="{{invitations}}" wx:key="id" class="d1b-invite-card d1b-invite-card--{{item.status === 'REVOKED' ? 'muted' : 'active'}}">
-          <view class="d1b-invite-row"><view><text class="d1b-member-name">{{item.contactLabel}}</text><text class="d1b-member-meta">{{item.expiresAtLabel}}</text></view><text class="d1b-small-pill">{{item.status === 'ACTIVE' ? '待接受' : '已撤销'}}</text></view>
+        <view class="d1b-section-head"><view><text>待接受邀请</text><text>{{activeInvitations.length}} 份 · 权限创建后不可编辑</text></view></view>
+        <view wx:for="{{activeInvitations}}" wx:key="id" class="d1b-invite-card d1b-invite-card--active">
+          <view class="d1b-invite-row"><view><text class="d1b-member-name">{{item.contactLabel}}</text><text class="d1b-member-meta">{{item.expiresAtLabel}}</text></view><text class="d1b-small-pill">待接受</text></view>
           <text class="d1b-permission-summary">{{item.permissionSummary}}</text>
-          <button wx:if="{{item.status === 'ACTIVE'}}" class="d1b-danger-link" data-invitation-id="{{item.id}}" bindtap="onRevokeInvitation">撤销邀请</button>
+          <button class="d1b-danger-link" data-invitation-id="{{item.id}}" bindtap="onRevokeInvitation">撤销邀请</button>
+        </view>
+        <view wx:if="{{!activeInvitations.length}}" class="d1b-empty-note">当前没有待接受邀请</view>
+
+        <view class="d1b-section-head"><view><text>审计摘要</text><text>最近 {{audits.length}} 条</text></view></view>
+        <view class="d1b-audit-card">
+          <view wx:for="{{audits}}" wx:key="id" class="d1b-audit-row"><view class="d1b-audit-dot"></view><view><text>{{item.summary}}</text><text>{{item.detail}} · {{item.createdAtLabel}}</text></view></view>
         </view>
       </block>
       <text wx:if="{{feedback && sheet === 'none'}}" class="d1b-feedback">{{feedback}}</text>
@@ -65,9 +71,13 @@
         <button class="d1b-remove-link" data-membership-id="{{selectedMembershipId}}" bindtap="onPrepareRemove">停用这名员工</button>
         <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet">取消</button><button class="d1b-modal-button d1b-modal-button--primary" bindtap="onSavePermissions">保存权限</button></view>
       </block>
-      <block wx:else>
+      <block wx:elif="{{sheet === 'remove'}}">
         <text class="d1b-sheet-title">确认停用员工？</text><text class="d1b-sheet-copy">停用后该员工不能继续管理本场馆，历史审计记录仍保留。</text>
         <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet">返回检查</button><button class="d1b-modal-button d1b-modal-button--danger" bindtap="onConfirmRemove">确认停用</button></view>
+      </block>
+      <block wx:else>
+        <text class="d1b-sheet-title">确认撤销邀请？</text><text class="d1b-sheet-copy">撤销后这份一次性链接立即失效；该操作会写入审计摘要。</text>
+        <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet">返回检查</button><button class="d1b-modal-button d1b-modal-button--danger" bindtap="onConfirmRevoke">确认撤销</button></view>
       </block>
       <view class="d1b-safe-bottom"></view>
     </view>

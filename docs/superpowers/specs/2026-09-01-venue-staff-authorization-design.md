@@ -39,11 +39,11 @@
 
 ### 安全邀请
 
-负责人创建邀请时服务端锁定场馆和自己的 membership，并再次确认 active owner。令牌使用 32 字节密码学随机值；响应只返回一次原始 token/path，数据库仅保存 SHA-256。邀请默认七天有效，状态为：
+负责人创建邀请时服务端锁定场馆和自己的 membership，并再次确认 active owner。令牌使用 32 字节密码学安全随机值；只有首次创建的 `201` 响应返回一次原始 token/path，数据库仅保存 SHA-256。相同幂等键的 `200` 重放只返回不含 secret 的邀请元数据；若首次响应丢失，负责人必须从列表确认状态、撤销并重新创建，服务端不能恢复原始 token。邀请默认七天有效，状态为：
 
 `ACTIVE | ACCEPTED | REVOKED | EXPIRED`
 
-读取邀请不产生 membership；点击接受才在同一事务中绑定当前用户、创建或重新激活唯一 `(venue_id, user_id)` membership，并写审计。接受者若已是该场馆 active member，返回现有权威 membership，不创建重复记录；已由其他用户接受、撤销或过期统一返回不可用，不披露身份。
+小程序 deep link 的 query 只用于把 secret 交给落地页；落地页不得记录、上报或持久化原文。请求服务端时 secret 不进入 URL，而是放入明确列入日志脱敏规则的 `X-Venue-Staff-Invitation-Token` header。读取邀请不产生 membership；点击接受才在同一事务中绑定当前用户、创建或重新激活唯一 `(venue_id, user_id)` membership，并写审计。inactive `STAFF` 重激活时必须用邀请的精确权限集合完整覆盖旧权限，禁止合并或保留旧权限。已有 active `STAFF` 接受时也原子消费邀请并以邀请权限完整覆盖当前权限；已有 active `OWNER` 接受员工邀请返回冲突且不消费邀请，避免隐式降级负责人。已由其他用户接受、撤销或过期统一返回不可用，不披露身份。
 
 邀请权限在创建后不可编辑；需要调整时撤销并重建。负责人可以同时邀请多人，但原始路径不能从列表或日志恢复。
 
@@ -67,10 +67,10 @@
 - `PUT /api/v1/admin/venues/{venue_id}/staff/{membership_id}`
 - `POST /api/v1/admin/venues/{venue_id}/staff/{membership_id}/remove`
 
-员工邀请端（Bearer）：
+员工邀请端（Bearer；secret 仅通过脱敏 header 传递，不进入 URL）：
 
-- `GET /api/v1/venue-staff-invitations/{token}`
-- `POST /api/v1/venue-staff-invitations/{token}/accept`
+- `GET /api/v1/venue-staff-invitations/current`
+- `POST /api/v1/venue-staff-invitations/current/accept`
 
 平台异常恢复（platform session + CSRF，仅 `PLATFORM_ADMIN`）：
 
@@ -88,6 +88,8 @@
 
 工作台增加“员工与权限”入口。普通 staff 能看到自己的权限说明，但不能进入成员管理。负责人转移不做普通端按钮，页面明确提示“请联系平台处理”。
 
+待接受邀请区只展示 `ACTIVE`；撤销必须二次确认，完成后从待接受区移除，并在同页审计摘要显示最近的邀请、权限和成员变更。
+
 ## 完成定义
 
 - PostgreSQL 约束、并发接受/撤销、权限变更与负责人转移通过；
@@ -96,4 +98,3 @@
 - 独立 agent 审核 iOS/Android 员工列表、邀请落地和三个确认 sheet；
 - 历史 owner 映射门未满足时生产能力保持关闭并给出明确运维诊断；
 - 统一体验版交给用户真机验收前不合并 `main`。
-

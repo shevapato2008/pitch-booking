@@ -27,6 +27,13 @@ export interface D1bInvitation {
   readonly expiresAtLabel: string;
 }
 
+export interface D1bAuditSummary {
+  readonly id: string;
+  readonly summary: string;
+  readonly detail: string;
+  readonly createdAtLabel: string;
+}
+
 const allPermissions = D1B_PERMISSIONS.map(({ code }) => code);
 
 export const D1B_VENUE_STAFF_FIXTURE = Object.freeze({
@@ -64,6 +71,10 @@ export const D1B_VENUE_STAFF_FIXTURE = Object.freeze({
       expiresAtLabel: "9月8日 22:00 前有效",
     }),
   ]),
+  audits: Object.freeze<D1bAuditSummary[]>([
+    Object.freeze({ id: "audit-member-joined", summary: "员工已加入", detail: "夜班运营 · 可订库存", createdAtLabel: "8月26日 18:40" }),
+    Object.freeze({ id: "audit-owner-confirmed", summary: "负责人权限已确认", detail: "陈负责人 · 全部工作权限", createdAtLabel: "8月18日 10:12" }),
+  ]),
   invitationPath: "pages/venue-staff-invitation/index?token=Qw7Er9Ty2Ui4Op6As8Df0Gh1Jk3Lz5Xc7Vb9Nm2Qw4E",
 });
 
@@ -83,4 +94,3 @@ export function readD1bInvitationView(state: string | undefined) {
     description: "接受后只获得下列工作权限，不会成为场馆负责人。", actionKind: "accept", actionLabel: "接受邀请",
   });
 }
-

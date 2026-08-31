@@ -34,11 +34,13 @@ test("D1b preview exposes truthful roles, permissions and working actions", () =
   assert.match(scenario, /owner[\s\S]*staff[\s\S]*invitation[\s\S]*unavailable/);
   for (const handler of [
     "onOpenCreate", "onCreateInvitation", "onCopyInvitation", "onOpenEdit",
-    "onSavePermissions", "onPrepareRemove", "onConfirmRemove", "onRevokeInvitation",
+    "onSavePermissions", "onPrepareRemove", "onConfirmRemove", "onRevokeInvitation", "onConfirmRevoke",
     "onAcceptInvitation", "onOpenPortfolio", "onRetry",
   ]) assert.match(staff + invitation, new RegExp(handler));
   assert.match(markup, /D1b 开发预览 · 模拟数据/);
   assert.match(markup, /负责人转移请联系平台处理/);
+  assert.match(markup, /审计摘要/);
+  assert.match(markup, /确认撤销邀请/);
   assert.doesNotMatch(staff + invitation, /wx\.request|fetch\(|WebSocket|sendBeacon/);
   for (const selector of ["d1b-header-back", "d1b-primary", "d1b-modal-button"]) {
     const rule = styles.match(new RegExp(`\\.${selector}\\s*\\{[^}]*\\}`, "s"))?.[0] ?? "";
@@ -47,10 +49,12 @@ test("D1b preview exposes truthful roles, permissions and working actions", () =
     assert.match(rule, /justify-content:\s*center/);
   }
   assert.match(styles, /env\(safe-area-inset-bottom,\s*0px\)/);
+  assert.match(styles, /\.d1b-secondary\s*\{[^}]*min-height:\s*88rpx/s);
+  assert.match(styles, /\.d1b-danger-link,\s*\.d1b-remove-link\s*\{[^}]*min-height:\s*88rpx/s);
+  assert.match(styles, /\.d1b-primary\s*\{[^}]*background:\s*#0369A1/s);
 });
 
 test("D1b fixtures are absent from the production manifest", () => {
   const production = JSON.parse(read("miniprogram/app.json"));
   for (const page of pages) assert.equal(production.pages.includes(page), false);
 });
-

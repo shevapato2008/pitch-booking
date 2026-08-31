@@ -36,8 +36,15 @@ test("owner can create a scoped invitation and copy its one-time path", () => {
   view.onCreateInvitation();
   expect(view.data.createdPath).toContain("pages/venue-staff-invitation/index?token=");
   expect(view.data.invitations[0].contactLabel).toBe("夜班主管");
+  expect(view.data.audits[0].summary).toBe("员工邀请已创建");
+  const firstPath = view.data.createdPath;
   view.onCopyInvitation();
   expect(wx.setClipboardData).toHaveBeenCalledWith(expect.objectContaining({ data: view.data.createdPath }));
+  view.onCloseSheet();
+  view.onOpenCreate();
+  view.onContactInput({ detail: { value: "周末主管" } });
+  view.onCreateInvitation();
+  expect(view.data.createdPath).not.toBe(firstPath);
 });
 
 test("owner can update staff permissions, remove staff and revoke an invitation", () => {
@@ -53,7 +60,12 @@ test("owner can update staff permissions, remove staff and revoke an invitation"
   expect(view.data.members.some((member: any) => member.id === membershipId)).toBe(false);
   const invitationId = view.data.invitations[0].id;
   view.onRevokeInvitation({ currentTarget: { dataset: { invitationId } } });
+  expect(view.data.sheet).toBe("revoke");
+  expect(view.data.invitations[0].status).toBe("ACTIVE");
+  view.onConfirmRevoke();
   expect(view.data.invitations[0].status).toBe("REVOKED");
+  expect(view.data.activeInvitations).toHaveLength(0);
+  expect(view.data.audits[0].summary).toBe("员工邀请已撤销");
 });
 
 test("staff mode is read-only and back has a production recovery", () => {
@@ -65,4 +77,3 @@ test("staff mode is read-only and back has a production recovery", () => {
   view.onHeaderBack();
   expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/venue-access/index" });
 });
-
