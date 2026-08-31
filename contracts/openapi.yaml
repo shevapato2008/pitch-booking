@@ -1856,6 +1856,187 @@ paths:
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/members:
+    get:
+      operationId: getOpenGameMemberRoster
+      description: Owner-only current joined-member roster and server-authoritative removal eligibility.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Minimal current joined-member roster.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameMemberRoster'}
+              examples:
+                Ready: {externalValue: './examples/open-game-member-roster-ready.json'}
+                Blocked: {externalValue: './examples/open-game-member-roster-blocked.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game does not exist or is not owned by this user.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: OPEN_GAME_NOT_FOUND}}}}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '422':
+          description: Game identifier is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game member service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/members/{registration_id}/remove:
+    post:
+      operationId: removeOpenGameMember
+      description: Owner-only idempotent removal of one eligible joined member before kickoff.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: registration_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameMemberRemovalRequest'}
+      responses:
+        '200':
+          description: Member removal applied or idempotently replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameMemberRemovalResult'}
+              examples:
+                Promoted: {externalValue: './examples/open-game-member-removal-promoted.json'}
+                OpenSpot: {externalValue: './examples/open-game-member-removal-open-spot.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: AUTH_REQUIRED}}}}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game or registration does not exist, or the game is not owned by this user.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [APPLICATION_NOT_FOUND, OPEN_GAME_NOT_FOUND]}
+              examples:
+                ApplicationNotFound: {externalValue: './examples/error-application-not-found.json'}
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Registration state, game authority, or idempotency authority changed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [APPLICATION_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+              examples:
+                ApplicationStateChanged: {externalValue: './examples/error-application-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path, expected version, or trimmed reason is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game member service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/games/{game_id}/attendance-roster:
     get:
       operationId: getOpenGameAttendanceRoster
@@ -4316,10 +4497,10 @@ components:
       enum: [UNMARKED, PRESENT, NO_SHOW]
     OpenGameRegistrationPersistedStatus:
       type: string
-      enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN]
+      enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN, REMOVED]
     OpenGameRegistrationEffectiveStatus:
       type: string
-      enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN, CANCELLED]
+      enum: [APPLIED, WAITLISTED, JOINED, REJECTED, WITHDRAWN, REMOVED, CANCELLED]
     OpenGameRegistrationWithdrawalKind:
       type: string
       enum: [APPLICATION_WITHDRAWAL, WAITLIST_WITHDRAWAL, GAME_EXIT]
@@ -4443,6 +4624,96 @@ components:
         recorded_count: {type: integer, minimum: 1}
         total_count: {type: integer, minimum: 1}
         attendance_complete: {type: boolean}
+    OpenGameMemberRemovalBlockedReason:
+      type: string
+      enum: [GAME_NOT_PUBLISHED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED, ORDER_AUTHORITY_UNHEALTHY, ATTENDANCE_RECORDED]
+    OpenGameMemberRemovalActions:
+      type: object
+      additionalProperties: false
+      required: [can_remove, remove_blocked_reason]
+      properties:
+        can_remove: {type: boolean}
+        remove_blocked_reason:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameMemberRemovalBlockedReason'
+            - type: 'null'
+      oneOf:
+        - properties:
+            can_remove: {const: true}
+            remove_blocked_reason: {const: null}
+        - properties:
+            can_remove: {const: false}
+            remove_blocked_reason: {$ref: '#/components/schemas/OpenGameMemberRemovalBlockedReason'}
+    OpenGameMemberGameSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, venue_name, pitch_name, starts_at, ends_at, time_zone, state]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 2, maxLength: 30}
+        venue_name: {type: string, minLength: 1}
+        pitch_name: {type: string, minLength: 1}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone: {type: string}
+        state: {type: string, enum: [DRAFT, PUBLISHED, SUSPENDED, CANCELLED, COMPLETED]}
+    OpenGameMemberRosterItem:
+      type: object
+      additionalProperties: false
+      required: [registration_id, display_name, position, joined_at, promoted_from_waitlist, version, allowed_actions]
+      properties:
+        registration_id: {type: string, format: uuid}
+        display_name: {type: string, minLength: 2, maxLength: 24}
+        position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
+        joined_at: {type: string, format: date-time}
+        promoted_from_waitlist: {type: boolean}
+        version: {type: integer, minimum: 1}
+        allowed_actions: {$ref: '#/components/schemas/OpenGameMemberRemovalActions'}
+    OpenGameMemberRoster:
+      type: object
+      additionalProperties: false
+      required: [game, joined_count, remaining_spots, waitlist_count, members]
+      properties:
+        game: {$ref: '#/components/schemas/OpenGameMemberGameSummary'}
+        joined_count: {type: integer, minimum: 0}
+        remaining_spots: {type: integer, minimum: 0}
+        waitlist_count: {type: integer, minimum: 0}
+        members:
+          type: array
+          items: {$ref: '#/components/schemas/OpenGameMemberRosterItem'}
+    OpenGameMemberRemovalRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 120}
+    OpenGamePromotedMember:
+      type: object
+      additionalProperties: false
+      required: [registration_id, display_name, position, version]
+      properties:
+        registration_id: {type: string, format: uuid}
+        display_name: {type: string, minLength: 2, maxLength: 24}
+        position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
+        version: {type: integer, minimum: 2}
+    OpenGameMemberRemovalResult:
+      type: object
+      additionalProperties: false
+      required: [removed_registration_id, removed_display_name, status, version, removed_at, joined_count, remaining_spots, waitlist_count, promoted_member]
+      properties:
+        removed_registration_id: {type: string, format: uuid}
+        removed_display_name: {type: string, minLength: 2, maxLength: 24}
+        status: {type: string, const: REMOVED}
+        version: {type: integer, minimum: 2}
+        removed_at: {type: string, format: date-time}
+        joined_count: {type: integer, minimum: 0}
+        remaining_spots: {type: integer, minimum: 0}
+        waitlist_count: {type: integer, minimum: 0}
+        promoted_member:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGamePromotedMember'
+            - type: 'null'
     OpenGameApplyBlockedReason:
       type: string
       enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
@@ -4577,7 +4848,7 @@ components:
     OpenGameViewerRegistration:
       type: object
       additionalProperties: false
-      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, attendance_corrected_at]
+      required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, attendance_corrected_at, removed_at]
       properties:
         id: {type: string, format: uuid}
         display_name: {type: string, minLength: 2, maxLength: 24}
@@ -4608,6 +4879,7 @@ components:
             - type: 'null'
         attendance_recorded_at: {type: [string, 'null'], format: date-time}
         attendance_corrected_at: {type: [string, 'null'], format: date-time}
+        removed_at: {type: [string, 'null'], format: date-time}
       oneOf:
         - properties:
             attendance_status: {const: null}
