@@ -31,6 +31,9 @@ from backend.app.modules.open_game_registrations.dto import (
     OpenGameAttendanceMarkRequest,
     OpenGameAttendanceMarkResult,
     OpenGameAttendanceRoster,
+    OpenGameMemberRemovalRequest,
+    OpenGameMemberRemovalResult,
+    OpenGameMemberRoster,
     Queue,
     RegistrationContext,
     WithdrawalRequest,
@@ -59,6 +62,9 @@ _WITHDRAWAL_PATH = re.compile(
 _ATTENDANCE_PATH = re.compile(
     r"^/api/v1/games/[^/]+/registrations/[^/]+/attendance$"
 )
+_MEMBER_REMOVAL_PATH = re.compile(
+    r"^/api/v1/games/[^/]+/members/[^/]+/remove$"
+)
 _APPLICATION_FIELDS = frozenset(
     {
         "display_name",
@@ -71,6 +77,7 @@ _APPLICATION_FIELDS = frozenset(
 _DECISION_FIELDS = frozenset({"decision", "expected_version"})
 _WITHDRAWAL_FIELDS = frozenset({"action", "expected_version"})
 _ATTENDANCE_FIELDS = frozenset({"attendance_status", "expected_version"})
+_MEMBER_REMOVAL_FIELDS = frozenset({"expected_version", "reason"})
 _INVALID_ARGUMENT_EXAMPLE = {
     "error": {
         "code": "INVALID_ARGUMENT",
@@ -102,6 +109,17 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         if not isinstance(operation, dict):
             raise RuntimeError(
                 "raw OpenAPI attendance operation is missing: "
+                f"{method.upper()} {path}"
+            )
+        return operation
+
+    def require_member_operation(path: str, method: str) -> dict[str, Any]:
+        paths = schema.get("paths")
+        path_item = paths.get(path) if isinstance(paths, dict) else None
+        operation = path_item.get(method) if isinstance(path_item, dict) else None
+        if not isinstance(operation, dict):
+            raise RuntimeError(
+                "raw OpenAPI member operation is missing: "
                 f"{method.upper()} {path}"
             )
         return operation
@@ -271,6 +289,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "JOINED",
                     "REJECTED",
                     "WITHDRAWN",
+                    "REMOVED",
                 ],
             },
             "OpenGameRegistrationEffectiveStatus": {
@@ -281,6 +300,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "JOINED",
                     "REJECTED",
                     "WITHDRAWN",
+                    "REMOVED",
                     "CANCELLED",
                 ],
             },
@@ -539,6 +559,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "attendance_status",
                     "attendance_recorded_at",
                     "attendance_corrected_at",
+                    "removed_at",
                 ],
                 "properties": {
                     "id": {"type": "string", "format": "uuid"},
@@ -631,6 +652,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "format": "date-time",
                     },
                     "attendance_corrected_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                    },
+                    "removed_at": {
                         "type": ["string", "null"],
                         "format": "date-time",
                     },
@@ -1044,6 +1069,241 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "attendance_complete": {"type": "boolean"},
                 },
             },
+            "OpenGameMemberRemovalBlockedReason": {
+                "type": "string",
+                "enum": [
+                    "GAME_NOT_PUBLISHED",
+                    "GAME_SUSPENDED",
+                    "GAME_CANCELLED",
+                    "GAME_COMPLETED",
+                    "GAME_STARTED",
+                    "ORDER_AUTHORITY_UNHEALTHY",
+                    "ATTENDANCE_RECORDED",
+                ],
+            },
+            "OpenGameMemberRemovalActions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["can_remove", "remove_blocked_reason"],
+                "properties": {
+                    "can_remove": {"type": "boolean"},
+                    "remove_blocked_reason": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameMemberRemovalBlockedReason"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "can_remove": {"const": True},
+                            "remove_blocked_reason": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "can_remove": {"const": False},
+                            "remove_blocked_reason": {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameMemberRemovalBlockedReason"
+                                )
+                            },
+                        }
+                    },
+                ],
+            },
+            "OpenGameMemberGameSummary": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "id",
+                    "name",
+                    "venue_name",
+                    "pitch_name",
+                    "starts_at",
+                    "ends_at",
+                    "time_zone",
+                    "state",
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 30,
+                    },
+                    "venue_name": {"type": "string", "minLength": 1},
+                    "pitch_name": {"type": "string", "minLength": 1},
+                    "starts_at": {"type": "string", "format": "date-time"},
+                    "ends_at": {"type": "string", "format": "date-time"},
+                    "time_zone": {"type": "string"},
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "DRAFT",
+                            "PUBLISHED",
+                            "SUSPENDED",
+                            "CANCELLED",
+                            "COMPLETED",
+                        ],
+                    },
+                },
+            },
+            "OpenGameMemberRosterItem": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "registration_id",
+                    "display_name",
+                    "position",
+                    "joined_at",
+                    "promoted_from_waitlist",
+                    "version",
+                    "allowed_actions",
+                ],
+                "properties": {
+                    "registration_id": {"type": "string", "format": "uuid"},
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "joined_at": {"type": "string", "format": "date-time"},
+                    "promoted_from_waitlist": {"type": "boolean"},
+                    "version": {"type": "integer", "minimum": 1},
+                    "allowed_actions": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameMemberRemovalActions"
+                        )
+                    },
+                },
+            },
+            "OpenGameMemberRoster": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "game",
+                    "joined_count",
+                    "remaining_spots",
+                    "waitlist_count",
+                    "members",
+                ],
+                "properties": {
+                    "game": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameMemberGameSummary"
+                        )
+                    },
+                    "joined_count": {"type": "integer", "minimum": 0},
+                    "remaining_spots": {"type": "integer", "minimum": 0},
+                    "waitlist_count": {"type": "integer", "minimum": 0},
+                    "members": {
+                        "type": "array",
+                        "items": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "OpenGameMemberRosterItem"
+                            )
+                        },
+                    },
+                },
+            },
+            "OpenGameMemberRemovalRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["expected_version", "reason"],
+                "properties": {
+                    "expected_version": {"type": "integer", "minimum": 1},
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                    },
+                },
+            },
+            "OpenGamePromotedMember": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "registration_id",
+                    "display_name",
+                    "position",
+                    "version",
+                ],
+                "properties": {
+                    "registration_id": {"type": "string", "format": "uuid"},
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "position": {
+                        "$ref": (
+                            "#/components/schemas/"
+                            "OpenGameRegistrationPosition"
+                        )
+                    },
+                    "version": {"type": "integer", "minimum": 2},
+                },
+            },
+            "OpenGameMemberRemovalResult": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "removed_registration_id",
+                    "removed_display_name",
+                    "status",
+                    "version",
+                    "removed_at",
+                    "joined_count",
+                    "remaining_spots",
+                    "waitlist_count",
+                    "promoted_member",
+                ],
+                "properties": {
+                    "removed_registration_id": {
+                        "type": "string",
+                        "format": "uuid",
+                    },
+                    "removed_display_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 24,
+                    },
+                    "status": {"type": "string", "const": "REMOVED"},
+                    "version": {"type": "integer", "minimum": 2},
+                    "removed_at": {"type": "string", "format": "date-time"},
+                    "joined_count": {"type": "integer", "minimum": 0},
+                    "remaining_spots": {"type": "integer", "minimum": 0},
+                    "waitlist_count": {"type": "integer", "minimum": 0},
+                    "promoted_member": {
+                        "oneOf": [
+                            {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGamePromotedMember"
+                                )
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                },
+            },
             "MyOpenGameApplication": {
                 "type": "object",
                 "additionalProperties": False,
@@ -1365,6 +1625,274 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 ),
             },
         }
+
+    member_roster_path = "/api/v1/games/{game_id}/members"
+    member_roster_operation = require_member_operation(member_roster_path, "get")
+    member_roster_operation.clear()
+    member_roster_operation.update(
+        {
+            "operationId": "getOpenGameMemberRoster",
+            "description": (
+                "Owner-only current joined-member roster and "
+                "server-authoritative removal eligibility."
+            ),
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "game_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Minimal current joined-member roster.",
+                    "headers": {"X-Request-Id": request_id_header},
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameMemberRoster"
+                                )
+                            },
+                            "examples": {
+                                "Ready": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-member-roster-ready.json"
+                                    )
+                                },
+                                "Blocked": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-member-roster-blocked.json"
+                                    )
+                                },
+                            },
+                        }
+                    },
+                },
+                "401": error_response(
+                    "Authentication required.",
+                    code="AUTH_REQUIRED",
+                    example_name="AuthRequired",
+                    example_file="error-auth-required.json",
+                ),
+                "404": error_response(
+                    "Game does not exist or is not owned by this user.",
+                    code="OPEN_GAME_NOT_FOUND",
+                    example_name="OpenGameNotFound",
+                    example_file="error-open-game-not-found.json",
+                ),
+                "422": error_response(
+                    "Game identifier is invalid.",
+                    code="INVALID_ARGUMENT",
+                    example_name="InvalidArgument",
+                    example_file="error-invalid-argument.json",
+                ),
+                "503": error_response(
+                    "Open game member service is unavailable.",
+                    code="SERVICE_UNAVAILABLE",
+                    example_name="ServiceUnavailable",
+                    example_file="error-service-unavailable.json",
+                ),
+            },
+        }
+    )
+
+    member_not_found = error_response(
+        (
+            "Game or registration does not exist, or the game is not owned "
+            "by this user."
+        ),
+        code="APPLICATION_NOT_FOUND",
+        example_name="ApplicationNotFound",
+        example_file="error-application-not-found.json",
+    )
+    member_not_found["content"]["application/json"]["schema"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/ErrorEnvelope"},
+            {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "enum": [
+                                    "APPLICATION_NOT_FOUND",
+                                    "OPEN_GAME_NOT_FOUND",
+                                ]
+                            }
+                        },
+                    }
+                },
+            },
+        ]
+    }
+    member_not_found["content"]["application/json"]["examples"] = {
+        "ApplicationNotFound": {
+            "externalValue": "./examples/error-application-not-found.json"
+        },
+        "OpenGameNotFound": {
+            "externalValue": "./examples/error-open-game-not-found.json"
+        },
+    }
+    member_conflict = error_response(
+        "Registration state, game authority, or idempotency authority changed.",
+        code="APPLICATION_STATE_CHANGED",
+        example_name="ApplicationStateChanged",
+        example_file="error-application-state-changed.json",
+    )
+    member_conflict["content"]["application/json"]["schema"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/ErrorEnvelope"},
+            {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "enum": [
+                                    "APPLICATION_STATE_CHANGED",
+                                    "IDEMPOTENCY_KEY_REUSED",
+                                ]
+                            }
+                        },
+                    }
+                },
+            },
+        ]
+    }
+    member_conflict["content"]["application/json"]["examples"] = {
+        "ApplicationStateChanged": {
+            "externalValue": "./examples/error-application-state-changed.json"
+        },
+        "IdempotencyKeyReused": {
+            "externalValue": "./examples/error-idempotency-key-reused.json"
+        },
+    }
+    member_remove_path = (
+        "/api/v1/games/{game_id}/members/{registration_id}/remove"
+    )
+    member_remove_operation = require_member_operation(member_remove_path, "post")
+    member_idempotency_parameters = [
+        parameter
+        for parameter in member_remove_operation.get("parameters", [])
+        if isinstance(parameter, dict)
+        and parameter.get("name") == "Idempotency-Key"
+    ]
+    if len(member_idempotency_parameters) != 1:
+        raise RuntimeError(
+            "raw OpenAPI member remove operation is missing Idempotency-Key"
+        )
+    member_idempotency = member_idempotency_parameters[0]
+    member_idempotency_schema = member_idempotency.get("schema")
+    if (
+        member_idempotency.get("in") != "header"
+        or member_idempotency.get("required") is not True
+        or not isinstance(member_idempotency_schema, dict)
+        or member_idempotency_schema.get("type") != "string"
+        or member_idempotency_schema.get("minLength") != 16
+        or member_idempotency_schema.get("maxLength") != 128
+    ):
+        raise RuntimeError(
+            "raw OpenAPI member remove Idempotency-Key contract is invalid"
+        )
+    member_remove_operation.clear()
+    member_remove_operation.update(
+        {
+            "operationId": "removeOpenGameMember",
+            "description": (
+                "Owner-only idempotent removal of one eligible joined member "
+                "before kickoff."
+            ),
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "game_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {
+                    "name": "registration_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {"$ref": "#/components/parameters/IdempotencyKey"},
+            ],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "OpenGameMemberRemovalRequest"
+                            )
+                        }
+                    }
+                },
+            },
+            "responses": {
+                "200": {
+                    "description": (
+                        "Member removal applied or idempotently replayed."
+                    ),
+                    "headers": {"X-Request-Id": request_id_header},
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": (
+                                    "#/components/schemas/"
+                                    "OpenGameMemberRemovalResult"
+                                )
+                            },
+                            "examples": {
+                                "Promoted": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-member-removal-promoted.json"
+                                    )
+                                },
+                                "OpenSpot": {
+                                    "externalValue": (
+                                        "./examples/"
+                                        "open-game-member-removal-open-spot.json"
+                                    )
+                                },
+                            },
+                        }
+                    },
+                },
+                "401": error_response(
+                    "Authentication required.",
+                    code="AUTH_REQUIRED",
+                    example_name="AuthRequired",
+                    example_file="error-auth-required.json",
+                ),
+                "404": member_not_found,
+                "409": member_conflict,
+                "422": error_response(
+                    "Path, expected version, or trimmed reason is invalid.",
+                    code="INVALID_ARGUMENT",
+                    example_name="InvalidArgument",
+                    example_file="error-invalid-argument.json",
+                ),
+                "503": error_response(
+                    "Open game member service is unavailable.",
+                    code="SERVICE_UNAVAILABLE",
+                    example_name="ServiceUnavailable",
+                    example_file="error-service-unavailable.json",
+                ),
+            },
+        }
+    )
 
     roster_path = "/api/v1/games/{game_id}/attendance-roster"
     roster_operation = require_attendance_operation(roster_path, "get")
@@ -1688,6 +2216,7 @@ def is_open_game_registration_mutation_request(request: Request) -> bool:
         or _DECISION_PATH.fullmatch(path) is not None
         or _WITHDRAWAL_PATH.fullmatch(path) is not None
         or _ATTENDANCE_PATH.fullmatch(path) is not None
+        or _MEMBER_REMOVAL_PATH.fullmatch(path) is not None
     )
 
 
@@ -1701,6 +2230,8 @@ async def open_game_registration_request_validation_handler(
         allowed_fields = _WITHDRAWAL_FIELDS
     elif _ATTENDANCE_PATH.fullmatch(request.url.path) is not None:
         allowed_fields = _ATTENDANCE_FIELDS
+    elif _MEMBER_REMOVAL_PATH.fullmatch(request.url.path) is not None:
+        allowed_fields = _MEMBER_REMOVAL_FIELDS
     else:
         allowed_fields = _APPLICATION_FIELDS
     fields: list[dict[str, str]] = []
@@ -1858,6 +2389,66 @@ def create_open_game_application(
     return _service(database, clock=clock).apply(
         share_token=share_token,
         applicant_user_id=user.id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+
+
+@router.get(
+    "/api/v1/games/{game_id}/members",
+    operation_id="getOpenGameMemberRoster",
+    response_model=OpenGameMemberRoster,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def get_open_game_member_roster(
+    game_id: uuid.UUID,
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
+) -> OpenGameMemberRoster:
+    return _service(database, clock=clock).get_member_roster(
+        game_id=game_id,
+        owner_user_id=user.id,
+    )
+
+
+@router.post(
+    "/api/v1/games/{game_id}/members/{registration_id}/remove",
+    operation_id="removeOpenGameMember",
+    response_model=OpenGameMemberRemovalResult,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def remove_open_game_member(
+    game_id: uuid.UUID,
+    registration_id: uuid.UUID,
+    body: OpenGameMemberRemovalRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[
+        Callable[[], datetime], Depends(get_open_game_registration_clock)
+    ],
+) -> OpenGameMemberRemovalResult:
+    return _service(database, clock=clock).remove_member(
+        game_id=game_id,
+        registration_id=registration_id,
+        owner_user_id=user.id,
         idempotency_key=idempotency_key,
         request=body,
     )
