@@ -144,6 +144,7 @@ def test_owner_removes_joined_member_and_promotes_fifo_over_real_http(
         waiting_id = waiting.id
         removed_user_id = removed_user.id
         promoted_user_id = promoted_user.id
+        removed_applied_at = removed.applied_at
         order_before = _column_snapshot(session.get_one(Order, booking.order_id))
         payment_before = _column_snapshot(session.get_one(Payment, booking.payment_id))
 
@@ -193,6 +194,10 @@ def test_owner_removes_joined_member_and_promotes_fifo_over_real_http(
             context_path,
             headers=_auth(removed_token),
         )
+        removed_list_readback = client.get(
+            "/api/v1/open-game-applications",
+            headers=_auth(removed_token),
+        )
         promoted_readback = client.get(
             context_path,
             headers=_auth(promoted_token),
@@ -224,9 +229,31 @@ def test_owner_removes_joined_member_and_promotes_fifo_over_real_http(
         str(promoted_id),
     }
     assert removed_readback.status_code == 200, removed_readback.text
-    assert removed_readback.json()["viewer_registration"]["persisted_status"] == (
-        "REMOVED"
+    removed_viewer = removed_readback.json()["viewer_registration"]
+    assert removed_viewer["persisted_status"] == "REMOVED"
+    assert removed_viewer["effective_status"] == "REMOVED"
+    assert removed_viewer["removed_at"] == result["removed_at"]
+    assert removed_viewer["available_withdrawal_action"] is None
+    assert removed_viewer["late_exit_will_be_recorded"] is False
+
+    assert removed_list_readback.status_code == 200, removed_list_readback.text
+    removed_item = next(
+        item
+        for item in removed_list_readback.json()["items"]
+        if item["id"] == str(removed_id)
     )
+    assert removed_item["effective_status"] == "REMOVED"
+    assert datetime.fromisoformat(
+        removed_item["applied_at"].replace("Z", "+00:00")
+    ) == removed_applied_at
+    assert removed_item["waitlist_position"] is None
+    assert removed_item["waitlisted_at"] is None
+    assert removed_item["promoted_at"] is None
+    assert removed_item["attendance_status"] is None
+    assert removed_item["attendance_recorded_at"] is None
+    assert removed_item["attendance_corrected_at"] is None
+    assert "removed_at" not in removed_item
+    assert "available_withdrawal_action" not in removed_item
     assert promoted_readback.status_code == 200, promoted_readback.text
     assert promoted_readback.json()["viewer_registration"]["persisted_status"] == (
         "JOINED"
