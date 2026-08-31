@@ -146,6 +146,8 @@ def align_error_schemas_openapi(schema: dict[str, Any]) -> None:
                             "APPLICATION_NOT_ALLOWED",
                             "APPLICATION_STATE_CHANGED",
                             "APPLICATION_CAPACITY_CHANGED",
+                            "ATTENDANCE_STATE_CHANGED",
+                            "ATTENDANCE_REGISTRATION_NOT_FOUND",
                         ],
                     },
                     "message": {"type": "string", "minLength": 1},

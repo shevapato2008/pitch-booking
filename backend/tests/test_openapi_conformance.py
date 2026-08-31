@@ -12,6 +12,9 @@ from backend.app.main import create_app
 from backend.app.modules.open_game_registrations.router import (
     align_my_open_game_applications_openapi,
 )
+from backend.app.modules.platform_attendance_corrections.router import (
+    align_platform_attendance_corrections_openapi,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPOSITORY_ROOT / "contracts" / "openapi.yaml"
@@ -56,6 +59,10 @@ ATTENDANCE_ROSTER_PATH = "/api/v1/games/{game_id}/attendance-roster"
 ATTENDANCE_MARK_PATH = (
     "/api/v1/games/{game_id}/registrations/{registration_id}/attendance"
 )
+PLATFORM_ATTENDANCE_PATH = (
+    "/platform-admin/api/v1/attendance/registrations/{registration_id}"
+)
+PLATFORM_ATTENDANCE_CORRECTION_PATH = f"{PLATFORM_ATTENDANCE_PATH}/corrections"
 
 
 def test_my_open_game_applications_contract_is_closed_paginated_and_authenticated() -> None:
@@ -4035,6 +4042,171 @@ def test_attendance_runtime_aligner_rejects_a_missing_raw_idempotency_header() -
 
     with pytest.raises(RuntimeError, match="raw OpenAPI.*Idempotency-Key"):
         align_my_open_game_applications_openapi(raw)
+
+
+def test_platform_attendance_routes_exist_before_runtime_openapi_alignment() -> None:
+    application = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    raw = get_openapi(
+        title=application.title,
+        version=application.version,
+        routes=application.routes,
+    )
+    expected = {
+        (PLATFORM_ATTENDANCE_PATH, "get"): "getPlatformAttendanceRegistration",
+        (
+            PLATFORM_ATTENDANCE_CORRECTION_PATH,
+            "post",
+        ): "correctPlatformAttendanceRegistration",
+    }
+    for (path, method), operation_id in expected.items():
+        assert set(raw["paths"][path]) == {method}
+        assert raw["paths"][path][method]["operationId"] == operation_id
+
+
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        (PLATFORM_ATTENDANCE_PATH, "get"),
+        (PLATFORM_ATTENDANCE_CORRECTION_PATH, "post"),
+    ],
+)
+def test_platform_attendance_aligner_rejects_a_missing_raw_route(
+    path: str,
+    method: str,
+) -> None:
+    application = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    raw = get_openapi(
+        title=application.title,
+        version=application.version,
+        routes=application.routes,
+    )
+    del raw["paths"][path][method]
+    with pytest.raises(RuntimeError, match="raw OpenAPI.*platform attendance"):
+        align_platform_attendance_corrections_openapi(raw)
+
+
+def test_platform_attendance_runtime_contract_matches_frozen_operations() -> None:
+    application = create_app(
+        settings=Settings(app_env="test", wechat_provider="development")
+    )
+    runtime = application.openapi()
+    static = _contract()
+    expected = {
+        (PLATFORM_ATTENDANCE_PATH, "get"): (
+            "getPlatformAttendanceRegistration",
+            {"200", "401", "403", "404", "422", "503"},
+            "PlatformAttendanceRegistrationDetail",
+        ),
+        (PLATFORM_ATTENDANCE_CORRECTION_PATH, "post"): (
+            "correctPlatformAttendanceRegistration",
+            {"200", "401", "403", "404", "409", "422", "503"},
+            "PlatformAttendanceCorrectionEvent",
+        ),
+    }
+    for (path, method), (operation_id, statuses, response_schema) in expected.items():
+        operation = runtime["paths"][path][method]
+        frozen = static["paths"][path][method]
+        assert operation["operationId"] == operation_id == frozen["operationId"]
+        assert operation["security"] == [{"platformSession": []}]
+        assert set(operation["responses"]) == statuses
+        assert _response_schema(operation, "200") == {
+            "$ref": f"#/components/schemas/{response_schema}"
+        }
+
+    correction_parameters = runtime["paths"][PLATFORM_ATTENDANCE_CORRECTION_PATH][
+        "post"
+    ]["parameters"]
+    assert [parameter.get("name") for parameter in correction_parameters] == [
+        "registration_id",
+        "Origin",
+        "X-CSRF-Token",
+        "Idempotency-Key",
+    ]
+    assert all(parameter["required"] for parameter in correction_parameters)
+    assert correction_parameters[-1]["schema"] == {
+        "type": "string",
+        "minLength": 16,
+        "maxLength": 128,
+    }
+    schemas = runtime["components"]["schemas"]
+    frozen_schemas = static["components"]["schemas"]
+    for schema_name in (
+        "PlatformAttendanceCorrectionRequest",
+        "PlatformAttendanceAllowedCorrection",
+        "PlatformAttendanceCorrectionEvent",
+        "PlatformAttendanceRegistrationDetail",
+    ):
+        assert schemas[schema_name]["additionalProperties"] is False
+        assert schemas[schema_name]["required"] == frozen_schemas[schema_name]["required"]
+    request_schema = schemas["PlatformAttendanceCorrectionRequest"]
+    assert request_schema["properties"] == frozen_schemas[
+        "PlatformAttendanceCorrectionRequest"
+    ]["properties"]
+    allowed_schema = schemas["PlatformAttendanceAllowedCorrection"]
+    assert allowed_schema["properties"] == frozen_schemas[
+        "PlatformAttendanceAllowedCorrection"
+    ]["properties"]
+    assert allowed_schema["oneOf"] == frozen_schemas[
+        "PlatformAttendanceAllowedCorrection"
+    ]["oneOf"]
+    event_schema = schemas["PlatformAttendanceCorrectionEvent"]
+    assert event_schema["properties"] == frozen_schemas[
+        "PlatformAttendanceCorrectionEvent"
+    ]["properties"]
+    assert event_schema["oneOf"] == frozen_schemas["PlatformAttendanceCorrectionEvent"][
+        "oneOf"
+    ]
+    detail_properties = schemas["PlatformAttendanceRegistrationDetail"]["properties"]
+    for property_name in (
+        "player_display_name",
+        "game_name",
+        "venue_name",
+        "pitch_name",
+        "time_zone",
+    ):
+        assert detail_properties[property_name] == frozen_schemas[
+            "PlatformAttendanceRegistrationDetail"
+        ]["properties"][property_name]
+    assert set(schemas["PlatformAttendanceRegistrationDetail"]["properties"]) == {
+        "registration_id",
+        "registration_status",
+        "player_display_name",
+        "intended_position",
+        "game_name",
+        "game_status",
+        "venue_name",
+        "pitch_name",
+        "starts_at",
+        "ends_at",
+        "time_zone",
+        "original_attendance_status",
+        "attendance_recorded_at",
+        "attendance_status",
+        "version",
+        "corrections",
+        "allowed_correction",
+    }
+    serialized = json.dumps(
+        {
+            "detail": schemas["PlatformAttendanceRegistrationDetail"],
+            "event": schemas["PlatformAttendanceCorrectionEvent"],
+        }
+    ).lower()
+    for forbidden in (
+        "phone",
+        "openid",
+        "user_id",
+        "note",
+        "adult",
+        "risk",
+        "payment",
+        "refund",
+    ):
+        assert forbidden not in serialized
 
 
 def test_open_game_attendance_operations_and_examples_are_frozen() -> None:
