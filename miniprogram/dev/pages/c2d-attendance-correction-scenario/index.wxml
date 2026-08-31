@@ -1,0 +1,41 @@
+<view class="c2d-page">
+  <view class="c2d-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2d-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2d-header-back" hover-class="c2d-pressed" bindtap="onHeaderBack" aria-label="返回">
+      <view class="c2d-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2d-header-title">C2d 开发预览</text>
+    <view class="c2d-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2d-scroll" scroll-y="true">
+    <view class="c2d-content">
+      <text class="c2d-preview-note">{{previewNotice}}</text>
+      <text class="c2d-heading">平台纠正回读</text>
+      <text class="c2d-copy">选择队长或球员视角，检查同一条权威到场结果。</text>
+
+      <view class="c2d-scenario-list">
+        <button
+          wx:for="{{screens}}"
+          wx:key="screen"
+          class="c2d-scenario-card"
+          hover-class="c2d-pressed"
+          bindtap="onOpenReadback"
+          data-screen="{{item.screen}}"
+          aria-label="打开{{item.title}}"
+        >
+          <view class="c2d-scenario-copy">
+            <text>{{item.title}}</text>
+            <text>{{item.detail}}</text>
+          </view>
+          <view class="c2d-chevron" aria-hidden="true"></view>
+        </button>
+      </view>
+
+      <view class="c2d-boundary" aria-role="note">
+        <text>预览边界</text>
+        <text>本页只读取隔离 Fixture，不会修改生产数据。</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>
