@@ -264,43 +264,13 @@ class VenueOnboardingService:
             venue = self.repository.get_public_candidate(request.venue_id, for_update=True)
             if venue is None:
                 raise _state_changed()
-            if self.repository.find_submitted_claim(
-                applicant_user_id=user.id,
-                venue_id=venue.id,
-            ) is not None:
-                raise _application_exists()
-            application_id = uuid.uuid4()
-            sealed = self._snapshot_phone(user, application_id)
-            evidence = self._validated_submission_evidence(
-                user.id,
-                request.evidence.model_dump(),
-                _CLAIM_EVIDENCE,
+            _application, response_body = self.create_claim_application(
+                user=user,
+                venue=venue,
+                contact_name=request.contact_name,
+                evidence=request.evidence,
             )
-            now = datetime.now(UTC)
-            application = VenueOnboardingApplication(
-                id=application_id,
-                applicant_user_id=user.id,
-                kind=VenueOnboardingKind.CLAIM,
-                target_venue_id=venue.id,
-                proposed_name=None,
-                proposed_address=None,
-                proposed_district_code=None,
-                proposed_district_name=None,
-                proposed_latitude=None,
-                proposed_longitude=None,
-                normalized_proposed_name=None,
-                normalized_proposed_address=None,
-                contact_phone_ciphertext=sealed.ciphertext_with_tag,
-                contact_phone_nonce=sealed.nonce,
-                contact_phone_key_version=sealed.key_version,
-                contact_name=_required_display(request.contact_name),
-                status=VenueOnboardingStatus.SUBMITTED,
-                submitted_at=now,
-            )
-            self.repository.add_application(application)
-            for item in evidence:
-                item.application_id = application.id
-            response = _application_response(application, venue)
+            response = VenueOnboardingApplicationResponse.model_validate(response_body)
             return self._complete(record, 201, response)
         except Exception:
             self.repository.rollback()
@@ -434,6 +404,61 @@ class VenueOnboardingService:
                 for application, venue in visible
             ],
             next_cursor=next_cursor,
+        )
+
+    def create_claim_application(
+        self,
+        *,
+        user: User,
+        venue: Venue,
+        contact_name: str,
+        evidence: Any,
+    ) -> tuple[VenueOnboardingApplication, dict[str, object]]:
+        """Build the existing A3 CLAIM inside the caller's transaction.
+
+        Invitation submission uses this boundary so phone snapshotting, evidence
+        ownership, duplicate rules, and application construction stay identical to
+        the ordinary claim journey. The caller owns the final commit.
+        """
+        if self.repository.find_submitted_claim(
+            applicant_user_id=user.id,
+            venue_id=venue.id,
+        ) is not None:
+            raise _application_exists()
+        application_id = uuid.uuid4()
+        sealed = self._snapshot_phone(user, application_id)
+        evidence_items = self._validated_submission_evidence(
+            user.id,
+            evidence.model_dump(),
+            _CLAIM_EVIDENCE,
+        )
+        now = datetime.now(UTC)
+        application = VenueOnboardingApplication(
+            id=application_id,
+            applicant_user_id=user.id,
+            kind=VenueOnboardingKind.CLAIM,
+            target_venue_id=venue.id,
+            proposed_name=None,
+            proposed_address=None,
+            proposed_district_code=None,
+            proposed_district_name=None,
+            proposed_latitude=None,
+            proposed_longitude=None,
+            normalized_proposed_name=None,
+            normalized_proposed_address=None,
+            contact_phone_ciphertext=sealed.ciphertext_with_tag,
+            contact_phone_nonce=sealed.nonce,
+            contact_phone_key_version=sealed.key_version,
+            contact_name=_required_display(contact_name),
+            status=VenueOnboardingStatus.SUBMITTED,
+            submitted_at=now,
+        )
+        self.repository.add_application(application)
+        for item in evidence_items:
+            item.application_id = application.id
+        response = _application_response(application, venue)
+        return application, cast(
+            dict[str, object], response.model_dump(mode="json")
         )
 
     def _validated_submission_evidence(
