@@ -1,0 +1,28 @@
+feature: C2f game report resolution
+status: PREVIEW_IMPLEMENTED_VISUAL_REVIEW_PENDING
+truth: Development-only Fixture; no production data is read or written
+screens:
+  - id: platform-pending-detail-1440x900
+    runtime: browser
+    viewport: 1440x900
+    path: platform-admin/dev-game-report-resolution/index.html?case=pending-detail
+  - id: platform-cancel-confirm-1440x900
+    runtime: browser
+    viewport: 1440x900
+    path: platform-admin/dev-game-report-resolution/index.html?case=cancel-confirm
+  - id: mini-report-form-ios-390x844
+    runtime: wechat-devtools
+    viewport: 390x844
+    path: dev/pages/c2f-game-report/index?scenario=form
+  - id: mini-report-form-android-411x731
+    runtime: wechat-devtools
+    viewport: 411x731
+    path: dev/pages/c2f-game-report/index?scenario=form
+  - id: mini-resolved-cancelled-ios-390x844
+    runtime: wechat-devtools
+    viewport: 390x844
+    path: dev/pages/c2f-game-report/index?scenario=resolved-cancelled
+  - id: mini-resolved-cancelled-android-411x731
+    runtime: wechat-devtools
+    viewport: 411x731
+    path: dev/pages/c2f-game-report/index?scenario=resolved-cancelled
