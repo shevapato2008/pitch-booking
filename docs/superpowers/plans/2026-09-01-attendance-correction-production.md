@@ -103,11 +103,15 @@
 
 - Modify: `contracts/openapi.yaml`
 - Modify: relevant C2c example JSON under `contracts/examples/`
+- Modify: `tests/contract.test.mjs`
+- Modify: `scripts/validate-contract.mjs` only if a new canonical corrected example is added
 - Modify: `miniprogram/domain/open-game-registration.ts`
 - Modify: `miniprogram/domain/open-game-registration-decoder.ts`
 - Modify: `miniprogram/domain/open-game-registration-decoder.test.ts`
 - Modify: `miniprogram/services/http-open-game-registration.ts`
 - Modify: `miniprogram/services/http-open-game-registration.test.ts`
+- Modify: `miniprogram/services/open-game-registration.test.ts`
+- Modify: `miniprogram/dev/c2b-production-registration-source.ts`
 - Modify: `miniprogram/pages/captain-game-attendance/index.ts`
 - Modify: `miniprogram/pages/captain-game-attendance/index.wxml`
 - Modify: `miniprogram/pages/captain-game-attendance/index.wxss`
