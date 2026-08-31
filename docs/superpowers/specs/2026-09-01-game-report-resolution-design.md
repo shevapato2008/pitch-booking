@@ -95,6 +95,18 @@ allowed when server_now < report_deadline
 - 不同 key 再次提交返回 `409 REPORT_ALREADY_EXISTS`，不覆盖原举报；
 - digest 覆盖 operation、game ID、锁内报名 ID、锁内组织者 ID、类别、标准化事实说明和 schema version。
 
+举报提交使用与处置兼容的固定锁序，避免和 C2d/C2e 或平台取消交叉等待：
+
+```text
+非锁定定位 game → order → reporter registration
+→ Order FOR UPDATE
+→ OpenGame FOR UPDATE
+→ Registration FOR UPDATE
+→ Report identity/uniqueness check
+```
+
+事务锁内重新验证订单与球局仍匹配、报名三元组仍存在、截止时间、文本、幂等与唯一性，并从锁内订单 owner 生成 organizer 快照；客户端不能提交或覆盖报名 ID、组织者 ID。只有全部校验通过后才插入不可变 Report。
+
 ## 4. 文本校验与隐私防泄露
 
 事实说明和平台处置说明都采用相同的确定性标准化函数：
@@ -146,7 +158,7 @@ allowed when server_now < report_deadline
 CAPTAIN | PLATFORM_REPORT
 ```
 
-迁移把历史持久 `CANCELLED` 行回填为 `CAPTAIN`，并把时间约束升级为：`DRAFT/PUBLISHED` 的 source 必须为空，`CANCELLED` 的 `cancelled_at` 与 source 必须同时存在。既有队长取消路径显式写 `CAPTAIN`；C2f 只写 `PLATFORM_REPORT`。
+迁移把历史持久 `CANCELLED` 行回填为 `CAPTAIN`，并把时间约束升级为：所有非 `CANCELLED` 状态（包括现在或未来的 `DRAFT`、`PUBLISHED`、`SUSPENDED`、`COMPLETED`）的 `cancelled_at` 与 source 必须同时为空；只有 `CANCELLED` 的 `cancelled_at` 与 source 必须同时存在。既有队长取消路径显式写 `CAPTAIN`；C2f 只写 `PLATFORM_REPORT`。
 
 存在任何举报、处置或 `PLATFORM_REPORT` 取消行时，`0024` downgrade 必须 fail-closed，不能丢失审计。空数据降级时先恢复历史 `CAPTAIN` 取消为原 schema，再删除新 enum/列/表/trigger。
 
@@ -186,6 +198,8 @@ CONFIRMED_RECORDED
 - `game.version += 1` 并把版本对写入 resolution；
 - 复用现有逻辑 supersede 该球局未发送的通知 outbox，避免发送失效到场信息；
 - 不改写报名持久状态，现有有效投影统一显示 `CANCELLED`。
+
+一旦同一真实订单下存在 `cancellation_source = PLATFORM_REPORT` 的球局，后续创建或发布该订单的任何替代球局都必须稳定拒绝 `409 ORDER_GAME_PLATFORM_CANCELLED`。该检查在 create/publish 的既有订单锁内执行，不能只依赖客户端隐藏入口；它只冻结平台举报取消的订单，`CAPTAIN` 普通取消仍保留既有重建语义。
 
 事务前后必须证明 `Order`、`Slot`、`Payment`、`RefundCase`、`RefundAttempt` 全字段不变。平台取消球局不等于取消订场订单，也不产生退款。若确认时资格已变化，返回 `409 REPORT_RESOLUTION_STATE_CHANGED`；服务端不得悄悄把“取消球局”降级为“仅记录”，客户端刷新后由管理员重新选择。
 
@@ -293,7 +307,7 @@ Fixture 必须真实覆盖：
 
 ## 11. 测试、视觉门与交付边界
 
-生产 TDD 依次覆盖：封闭 OpenAPI/示例、跨语言文本向量、`0024` 迁移/trigger/downgrade、资格与截止投影、唯一性/幂等/并发、平台 role/CSRF、三结论、取消锁序及订单全字段不变、严格 TypeScript decoder、持久 attempt、页面所有按钮和 stale guard，以及真实 Uvicorn HTTP journey。
+生产 TDD 依次覆盖：封闭 OpenAPI/示例、跨语言文本向量、`0024` 迁移/trigger/downgrade、资格与截止投影、举报提交的 Order→OpenGame→Registration 固定锁序、唯一性/幂等/并发、平台 role/CSRF、三结论、取消锁序及订单全字段不变、`PLATFORM_REPORT` 取消后的同订单替代球局拒绝与 `CAPTAIN` 取消的既有重建语义、严格 TypeScript decoder、持久 attempt、页面所有按钮和 stale guard，以及真实 Uvicorn HTTP journey。
 
 预览阶段先写失败测试，再实现最小 store/页面；每个按钮都要被行为测试证明。fresh development build 必须含 C2f 路由，fresh production build/audit 必须不含任何 C2f Fixture。
 
