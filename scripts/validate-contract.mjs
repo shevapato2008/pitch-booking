@@ -483,6 +483,22 @@ const exampleMap = [
     ],
   },
   {
+    filename: 'platform-attendance-registration-detail.json',
+    reference: './examples/platform-attendance-registration-detail.json',
+    schema: 'PlatformAttendanceRegistrationDetail',
+    attachments: [
+      attachment('/platform-admin/api/v1/attendance/registrations/{registration_id}', '200', 'Detail'),
+    ],
+  },
+  {
+    filename: 'platform-attendance-correction-event.json',
+    reference: './examples/platform-attendance-correction-event.json',
+    schema: 'PlatformAttendanceCorrectionEvent',
+    attachments: [
+      attachment('/platform-admin/api/v1/attendance/registrations/{registration_id}/corrections', '200', 'Correction', 'post'),
+    ],
+  },
+  {
     filename: 'platform-onboarding-queue.json',
     reference: './examples/platform-onboarding-queue.json',
     schema: 'PlatformOnboardingQueue',
@@ -1155,6 +1171,7 @@ const requiredErrorCodes = new Set([
   'APPLICATION_STATE_CHANGED',
   'APPLICATION_CAPACITY_CHANGED',
   'ATTENDANCE_STATE_CHANGED',
+  'ATTENDANCE_REGISTRATION_NOT_FOUND',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -1165,6 +1182,7 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'PLATFORM_AUTH_INVALID',
   'PLATFORM_CSRF_INVALID',
   'PLATFORM_ROLE_REQUIRED',
+  'ATTENDANCE_REGISTRATION_NOT_FOUND',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -1210,6 +1228,8 @@ const expectedOperations = new Map([
   ['/api/v1/venue-onboarding/venues', new Set(['post'])],
   ['/api/v1/venue-onboarding/applications', new Set(['get'])],
   ['/platform-admin/api/v1/auth/session', new Set(['post', 'get', 'delete'])],
+  ['/platform-admin/api/v1/attendance/registrations/{registration_id}', new Set(['get'])],
+  ['/platform-admin/api/v1/attendance/registrations/{registration_id}/corrections', new Set(['post'])],
   ['/platform-admin/api/v1/onboarding/applications', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/applications/{application_id}', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download', new Set(['get'])],

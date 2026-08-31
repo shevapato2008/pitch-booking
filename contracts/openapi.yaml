@@ -3726,6 +3726,78 @@ paths:
                 InventoryVersionConflict: {externalValue: './examples/error-inventory-version-conflict.json'}
                 InventorySlotReadOnly: {externalValue: './examples/error-inventory-slot-read-only.json'}
         '422': {description: Slot update invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /platform-admin/api/v1/attendance/registrations/{registration_id}:
+    get:
+      operationId: getPlatformAttendanceRegistration
+      description: Exact registration UUID lookup for platform attendance correction. No fuzzy or personal-identifier search.
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/AttendanceRegistrationId'
+      responses:
+        '200':
+          description: Minimal attendance correction detail and immutable correction history.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformAttendanceRegistrationDetail'}
+              examples:
+                Detail: {externalValue: './examples/platform-attendance-registration-detail.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformAttendanceForbidden'}
+        '404': {$ref: '#/components/responses/PlatformAttendanceNotFound'}
+        '422': {$ref: '#/components/responses/PlatformAttendanceInvalid'}
+        '503': {$ref: '#/components/responses/PlatformAttendanceUnavailable'}
+  /platform-admin/api/v1/attendance/registrations/{registration_id}/corrections:
+    post:
+      operationId: correctPlatformAttendanceRegistration
+      description: Atomically append an immutable platform correction and update the current effective terminal attendance status.
+      security:
+        - platformSession: []
+      parameters:
+        - $ref: '#/components/parameters/AttendanceRegistrationId'
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformAttendanceCorrectionRequest'}
+      responses:
+        '200':
+          description: Attendance correction applied or idempotently replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformAttendanceCorrectionEvent'}
+              examples:
+                Correction: {externalValue: './examples/platform-attendance-correction-event.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403': {$ref: '#/components/responses/PlatformAttendanceMutationForbidden'}
+        '404': {$ref: '#/components/responses/PlatformAttendanceNotFound'}
+        '409':
+          description: Attendance authority, expected version, or idempotency authority changed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [ATTENDANCE_STATE_CHANGED, IDEMPOTENCY_KEY_REUSED]}
+        '422': {$ref: '#/components/responses/PlatformAttendanceInvalid'}
+        '503': {$ref: '#/components/responses/PlatformAttendanceUnavailable'}
   /platform-admin/api/v1/auth/session:
     post:
       operationId: createPlatformSession
@@ -3958,6 +4030,11 @@ components:
       required: true
       description: Reuse the same key to recover the authoritative result after an unknown outcome.
       schema: {type: string, minLength: 16, maxLength: 128}
+    AttendanceRegistrationId:
+      name: registration_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     OnboardingApplicationId:
       name: application_id
       in: path
@@ -3974,6 +4051,56 @@ components:
               - $ref: '#/components/schemas/ErrorEnvelope'
               - type: object
                 properties: {error: {type: object, properties: {code: {const: PLATFORM_AUTH_REQUIRED}}}}
+    PlatformAttendanceForbidden:
+      description: PLATFORM_ADMIN role required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: PLATFORM_ROLE_REQUIRED}}}}
+    PlatformAttendanceMutationForbidden:
+      description: PLATFORM_ADMIN role and valid same-origin mutation protection required.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {enum: [PLATFORM_ROLE_REQUIRED, PLATFORM_CSRF_INVALID]}}}}
+    PlatformAttendanceNotFound:
+      description: Registration does not exist.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: ATTENDANCE_REGISTRATION_NOT_FOUND}}}}
+    PlatformAttendanceInvalid:
+      description: Registration identifier, headers, target attendance status, expected version, or reason is invalid.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: INVALID_ARGUMENT}}}}
+    PlatformAttendanceUnavailable:
+      description: Platform attendance correction service is unavailable.
+      headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
     PlatformReviewForbidden:
       description: Platform onboarding reviewer role or valid mutation protection required.
       headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
@@ -4880,6 +5007,98 @@ components:
                 public_view:
                   type: object
                   properties: {state: {const: COMPLETED}, state_reason: {const: BOOKING_COMPLETED}}
+    PlatformAttendanceCorrectionBlockedReason:
+      type: string
+      enum: [GAME_NOT_COMPLETED, REGISTRATION_NOT_JOINED, ATTENDANCE_UNMARKED, ATTENDANCE_AUDIT_INCOMPLETE]
+    PlatformAttendanceAllowedCorrection:
+      type: object
+      additionalProperties: false
+      required: [target_status, blocked_reason]
+      properties:
+        target_status:
+          type: [string, 'null']
+          enum: [PRESENT, NO_SHOW, null]
+        blocked_reason:
+          oneOf:
+            - {$ref: '#/components/schemas/PlatformAttendanceCorrectionBlockedReason'}
+            - {type: 'null'}
+      oneOf:
+        - properties:
+            target_status: {enum: [PRESENT, NO_SHOW]}
+            blocked_reason: {const: null}
+        - properties:
+            target_status: {const: null}
+            blocked_reason: {enum: [GAME_NOT_COMPLETED, REGISTRATION_NOT_JOINED, ATTENDANCE_UNMARKED, ATTENDANCE_AUDIT_INCOMPLETE]}
+    PlatformAttendanceCorrectionEvent:
+      type: object
+      additionalProperties: false
+      required: [id, registration_id, from_status, to_status, reason, corrected_by_principal_id, corrected_at, registration_version_before, registration_version_after]
+      properties:
+        id: {type: string, format: uuid}
+        registration_id: {type: string, format: uuid}
+        from_status: {type: string, enum: [PRESENT, NO_SHOW]}
+        to_status: {type: string, enum: [PRESENT, NO_SHOW]}
+        reason: {type: string, minLength: 1, maxLength: 1000, pattern: '.*\S.*'}
+        corrected_by_principal_id: {type: string, minLength: 1, maxLength: 128}
+        corrected_at: {type: string, format: date-time}
+        registration_version_before: {type: integer, minimum: 1}
+        registration_version_after: {type: integer, minimum: 2, description: Exactly registration_version_before + 1.}
+      oneOf:
+        - properties: {from_status: {const: PRESENT}, to_status: {const: NO_SHOW}}
+        - properties: {from_status: {const: NO_SHOW}, to_status: {const: PRESENT}}
+    PlatformAttendanceCorrectionRequest:
+      type: object
+      additionalProperties: false
+      required: [attendance_status, expected_version, reason]
+      properties:
+        attendance_status: {type: string, enum: [PRESENT, NO_SHOW]}
+        expected_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 1000, pattern: '.*\S.*'}
+    PlatformAttendanceRegistrationDetail:
+      type: object
+      additionalProperties: false
+      required: [registration_id, registration_status, player_display_name, intended_position, game_name, game_status, venue_name, pitch_name, starts_at, ends_at, time_zone, original_attendance_status, attendance_recorded_at, attendance_status, version, corrections, allowed_correction]
+      properties:
+        registration_id: {type: string, format: uuid}
+        registration_status: {$ref: '#/components/schemas/OpenGameRegistrationPersistedStatus'}
+        player_display_name: {type: string, minLength: 1, maxLength: 24}
+        intended_position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
+        game_name: {type: string, minLength: 1, maxLength: 30}
+        game_status: {$ref: '#/components/schemas/OpenGameState'}
+        venue_name: {type: string, minLength: 1}
+        pitch_name: {type: string, minLength: 1}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone: {type: string, const: Asia/Shanghai}
+        original_attendance_status: {type: [string, 'null'], enum: [PRESENT, NO_SHOW, null]}
+        attendance_recorded_at: {type: [string, 'null'], format: date-time}
+        attendance_status: {$ref: '#/components/schemas/OpenGameAttendanceStatus'}
+        version: {type: integer, minimum: 1}
+        corrections:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformAttendanceCorrectionEvent'}
+        allowed_correction: {$ref: '#/components/schemas/PlatformAttendanceAllowedCorrection'}
+      oneOf:
+        - properties:
+            game_status: {const: COMPLETED}
+            registration_status: {const: JOINED}
+            attendance_status: {const: PRESENT}
+            original_attendance_status: {enum: [PRESENT, NO_SHOW]}
+            attendance_recorded_at: {type: string, format: date-time}
+            allowed_correction: {const: {target_status: NO_SHOW, blocked_reason: null}}
+        - properties:
+            game_status: {const: COMPLETED}
+            registration_status: {const: JOINED}
+            attendance_status: {const: NO_SHOW}
+            original_attendance_status: {enum: [PRESENT, NO_SHOW]}
+            attendance_recorded_at: {type: string, format: date-time}
+            allowed_correction: {const: {target_status: PRESENT, blocked_reason: null}}
+        - properties:
+            allowed_correction:
+              type: object
+              properties:
+                target_status: {const: null}
+                blocked_reason: {$ref: '#/components/schemas/PlatformAttendanceCorrectionBlockedReason'}
     PlatformOnboardingVenueSummary:
       type: object
       additionalProperties: false
@@ -7203,6 +7422,7 @@ components:
             - APPLICATION_STATE_CHANGED
             - APPLICATION_CAPACITY_CHANGED
             - ATTENDANCE_STATE_CHANGED
+            - ATTENDANCE_REGISTRATION_NOT_FOUND
         message:
           type: string
           minLength: 1
