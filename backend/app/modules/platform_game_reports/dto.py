@@ -75,7 +75,7 @@ class PlatformGameReportDetail(_Closed):
     status: OpenGameReportStatus
     facts: Annotated[str, Field(min_length=1, max_length=500)]
     submitted_at: AwareDatetime
-    reporter_display_name: Annotated[str, Field(min_length=2, max_length=24)]
+    reporter_display_name: Annotated[str, Field(min_length=1, max_length=24)]
     reporter_registration_status: OpenGameRegistrationStatus
     target: OpenGameReportTargetSummary
     authority: PlatformGameReportAuthority

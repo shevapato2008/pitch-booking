@@ -54,7 +54,7 @@ def test_member_routes_enforce_owner_privacy_validation_and_byte_stable_replay(
             applicant_user_id=case.booking.stranger_id,
             status=OpenGameRegistrationStatus.JOINED,
             decided_by_user_id=case.booking.owner_id,
-            display_name="接口待移除队员",
+            display_name="甲",
             position=OpenGameRegistrationPosition.MIDFIELDER,
             note="不可暴露的申请说明",
         )
@@ -103,6 +103,7 @@ def test_member_routes_enforce_owner_privacy_validation_and_byte_stable_replay(
     assert hidden_roster.json()["error"]["code"] == "OPEN_GAME_NOT_FOUND"
     assert roster.status_code == 200, roster.text
     roster_body = roster.json()
+    assert roster_body["members"][0]["display_name"] == "甲"
     assert set(roster_body) == {
         "game",
         "joined_count",
@@ -124,6 +125,7 @@ def test_member_routes_enforce_owner_privacy_validation_and_byte_stable_replay(
     assert hidden_remove.json()["error"]["code"] == "OPEN_GAME_NOT_FOUND"
     assert removed.status_code == 200, removed.text
     assert removed.json()["status"] == "REMOVED"
+    assert removed.json()["removed_display_name"] == "甲"
     assert removed.json()["removed_registration_id"] == str(target_id)
     assert replay.status_code == 200
     assert replay.content == removed.content

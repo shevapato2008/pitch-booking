@@ -527,7 +527,7 @@ function decodeGameReportDetail(value: unknown): PlatformGameReportDetail {
     status,
     facts: stringAt(object.facts, "$.facts", 1, 500),
     submitted_at: instantAt(object.submitted_at, "$.submitted_at"),
-    reporter_display_name: stringAt(object.reporter_display_name, "$.reporter_display_name", 2, 24),
+    reporter_display_name: stringAt(object.reporter_display_name, "$.reporter_display_name", 1, 24),
     reporter_registration_status: enumAt(
       object.reporter_registration_status,
       REGISTRATION_STATUSES,

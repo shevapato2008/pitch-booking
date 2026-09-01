@@ -6,6 +6,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from backend.tests.postgres_test_database import (
     disposable_database,
@@ -70,6 +71,80 @@ def _publish_for_future_signup(engine: Engine, *, game_id: UUID) -> None:
             ),
             {"game_id": game_id},
         )
+
+
+def test_0028_allows_single_character_direct_signup_names_and_guards_downgrade(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0027")
+    captain_id, game_id, applicant_ids = _seed_registration_parents(migration_engine)
+    joined_id = UUID("30000000-0000-0000-0000-000000000068")
+    waitlisted_id = UUID("30000000-0000-0000-0000-000000000069")
+    applied_id = UUID("30000000-0000-0000-0000-00000000006a")
+    joined = _valid_registration(
+        registration_id=joined_id,
+        game_id=game_id,
+        applicant_user_id=applicant_ids[0],
+    ) | {
+        "display_name": "甲",
+        "status": "JOINED",
+        "decided_at": datetime(2026, 8, 24, 12, 2, tzinfo=UTC),
+        "decided_by_user_id": captain_id,
+    }
+    waitlisted = _valid_registration(
+        registration_id=waitlisted_id,
+        game_id=game_id,
+        applicant_user_id=applicant_ids[1],
+    ) | {
+        "display_name": "乙",
+        "status": "WAITLISTED",
+        "decided_at": datetime(2026, 8, 24, 12, 2, tzinfo=UTC),
+        "decided_by_user_id": captain_id,
+        "waitlist_seq": 1,
+        "waitlisted_at": datetime(2026, 8, 24, 12, 2, tzinfo=UTC),
+    }
+    legacy_applied = _valid_registration(
+        registration_id=applied_id,
+        game_id=game_id,
+        applicant_user_id=applicant_ids[2],
+    ) | {"display_name": "丙"}
+
+    with pytest.raises(IntegrityError):
+        _insert_registration(migration_engine, joined)
+
+    command.upgrade(config, "0028")
+    _insert_registration(migration_engine, joined)
+    _insert_registration(migration_engine, waitlisted)
+    with pytest.raises(IntegrityError):
+        _insert_registration(migration_engine, legacy_applied)
+    with migration_engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT display_name, status::text "
+                "FROM open_game_registrations "
+                "WHERE id IN (:joined_id, :waitlisted_id) ORDER BY id"
+            ),
+            {"joined_id": joined_id, "waitlisted_id": waitlisted_id},
+        ).all() == [("甲", "JOINED"), ("乙", "WAITLISTED")]
+
+    with pytest.raises(
+        RuntimeError,
+        match="single-character registration names exist",
+    ):
+        command.downgrade(config, "0027")
+
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM open_game_registrations "
+                "WHERE id IN (:joined_id, :waitlisted_id)"
+            ),
+            {"joined_id": joined_id, "waitlisted_id": waitlisted_id},
+        )
+    command.downgrade(config, "0027")
+    with pytest.raises(IntegrityError):
+        _insert_registration(migration_engine, joined)
 
 
 def test_shared_signup_roster_schema_persists_public_profiles_and_reapply_blocks(

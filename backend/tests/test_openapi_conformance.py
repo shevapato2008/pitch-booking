@@ -2007,7 +2007,11 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "GAME_FULL",
         ],
     }
-    for schema_name in ("OpenGameViewerRegistration", "CreateOpenGameRegistrationRequest"):
+    for schema_name in (
+        "OpenGameViewerRegistration",
+        "CreateOpenGameRegistrationRequest",
+        "CaptainOpenGameWaitlistApplication",
+    ):
         properties = schemas[schema_name]["properties"]
         assert properties["display_name"] == {
             "type": "string",
@@ -2024,7 +2028,6 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     for schema_name in (
         "CreateOpenGameApplicationRequest",
         "CaptainOpenGameApplication",
-        "CaptainOpenGameWaitlistApplication",
     ):
         properties = schemas[schema_name]["properties"]
         assert properties["display_name"] == {

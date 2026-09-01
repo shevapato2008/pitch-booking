@@ -5985,7 +5985,7 @@ components:
       required: [registration_id, display_name, position, attendance_status, attendance_recorded_at, attendance_corrected_at, version]
       properties:
         registration_id: {type: string, format: uuid}
-        display_name: {type: string, minLength: 2, maxLength: 24}
+        display_name: {type: string, minLength: 1, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         attendance_status: {$ref: '#/components/schemas/OpenGameAttendanceStatus'}
         attendance_recorded_at: {type: [string, 'null'], format: date-time}
@@ -6070,7 +6070,7 @@ components:
       required: [registration_id, display_name, position, joined_at, promoted_from_waitlist, version, allowed_actions]
       properties:
         registration_id: {type: string, format: uuid}
-        display_name: {type: string, minLength: 2, maxLength: 24}
+        display_name: {type: string, minLength: 1, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         joined_at: {type: string, format: date-time}
         promoted_from_waitlist: {type: boolean}
@@ -6116,7 +6116,7 @@ components:
       required: [registration_id, display_name, position, version]
       properties:
         registration_id: {type: string, format: uuid}
-        display_name: {type: string, minLength: 2, maxLength: 24}
+        display_name: {type: string, minLength: 1, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         version: {type: integer, minimum: 2}
     OpenGameMemberRemovalResult:
@@ -6125,7 +6125,7 @@ components:
       required: [removed_registration_id, removed_display_name, status, version, removed_at, joined_count, remaining_spots, waitlist_count, promoted_member]
       properties:
         removed_registration_id: {type: string, format: uuid}
-        removed_display_name: {type: string, minLength: 2, maxLength: 24}
+        removed_display_name: {type: string, minLength: 1, maxLength: 24}
         status: {type: string, const: REMOVED}
         version: {type: integer, minimum: 2}
         removed_at: {type: string, format: date-time}
@@ -6311,7 +6311,7 @@ components:
         status: {$ref: '#/components/schemas/OpenGameReportStatus'}
         facts: {type: string, minLength: 1, maxLength: 500, x-unicode-code-point-limit: 500}
         submitted_at: {type: string, format: date-time}
-        reporter_display_name: {type: string, minLength: 2, maxLength: 24}
+        reporter_display_name: {type: string, minLength: 1, maxLength: 24}
         reporter_registration_status: {$ref: '#/components/schemas/OpenGameRegistrationPersistedStatus'}
         target: {$ref: '#/components/schemas/OpenGameReportTargetSummary'}
         authority: {$ref: '#/components/schemas/PlatformGameReportAuthority'}
@@ -6659,7 +6659,7 @@ components:
       required: [id, display_name, position, note, applied_at, waitlisted_at, waitlist_position]
       properties:
         id: {type: string, format: uuid}
-        display_name: {type: string, minLength: 2, maxLength: 24}
+        display_name: {type: string, minLength: 1, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         note: {type: [string, 'null'], maxLength: 120}
         applied_at: {type: string, format: date-time}

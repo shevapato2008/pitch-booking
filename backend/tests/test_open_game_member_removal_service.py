@@ -337,9 +337,7 @@ def test_full_member_removal_promotes_only_fifo_head_and_notifies_only_promoted_
         assert events[0].recipient_user_id != target_user.id
 
 
-@pytest.mark.parametrize(
-    "condition", ["stale", "waitlisted", "attendance", "draft", "unhealthy", "started"]
-)
+@pytest.mark.parametrize("condition", ["stale", "attendance", "draft", "unhealthy", "started"])
 def test_member_removal_rejects_ineligible_or_changed_state_atomically(
     pg_engine: Engine,
     condition: str,
@@ -348,21 +346,12 @@ def test_member_removal_rejects_ineligible_or_changed_state_atomically(
     now = NOW
     with Session(pg_engine) as session:
         target_user = _new_user(session, f"member-blocked-{condition}")
-        status = (
-            OpenGameRegistrationStatus.WAITLISTED
-            if condition == "waitlisted"
-            else OpenGameRegistrationStatus.JOINED
-        )
         target = _add_registration(
             session,
             game_id=case.game_id,
             applicant_user_id=target_user.id,
-            status=status,
+            status=OpenGameRegistrationStatus.JOINED,
             decided_by_user_id=case.booking.owner_id,
-            waitlist_seq=1 if status is OpenGameRegistrationStatus.WAITLISTED else None,
-            waitlisted_at=NOW - timedelta(minutes=5)
-            if status is OpenGameRegistrationStatus.WAITLISTED
-            else None,
             attendance_status=(
                 OpenGameAttendanceStatus.PRESENT
                 if condition == "attendance"
@@ -385,7 +374,6 @@ def test_member_removal_rejects_ineligible_or_changed_state_atomically(
         elif condition == "started":
             now = case.booking.starts_at
         session.commit()
-        before_status = target.status
 
         with pytest.raises(AppError) as changed:
             _service(session, now=now).remove_member(
@@ -402,7 +390,7 @@ def test_member_removal_rejects_ineligible_or_changed_state_atomically(
         )
         session.expire_all()
         persisted = session.get_one(OpenGameRegistration, target.id)
-        assert persisted.status is before_status
+        assert persisted.status is OpenGameRegistrationStatus.JOINED
         assert persisted.removed_at is None
         assert session.scalar(select(func.count()).select_from(OpenGameMemberRemoval)) == 0
         assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 0

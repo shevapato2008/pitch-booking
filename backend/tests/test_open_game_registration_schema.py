@@ -501,6 +501,7 @@ def test_open_game_registration_model_matches_persistence_contract() -> None:
         "promoted_at",
         "removed_at",
         "removed_by_user_id",
+        "reapply_blocked",
         "created_at",
         "updated_at",
     ]
@@ -698,6 +699,6 @@ def test_open_game_registration_migration_matches_model_metadata(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0026"
+        ).scalar_one() == "0028"
 
     command.check(config)

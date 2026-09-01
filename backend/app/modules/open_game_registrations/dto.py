@@ -397,7 +397,7 @@ class LegacyRegistrationContext(_FrozenClosedModel):
 
 class CaptainWaitlistApplication(_FrozenClosedModel):
     id: uuid.UUID
-    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
     position: OpenGameRegistrationPosition
     note: Annotated[str, Field(strict=True, max_length=120)] | None
     applied_at: AwareDatetime
@@ -598,7 +598,7 @@ class OpenGameMemberGameSummary(_FrozenClosedModel):
 
 class OpenGameMemberRosterItem(_FrozenClosedModel):
     registration_id: uuid.UUID
-    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
     position: OpenGameRegistrationPosition
     joined_at: AwareDatetime
     promoted_from_waitlist: Annotated[bool, Field(strict=True)]
@@ -622,14 +622,14 @@ class OpenGameMemberRoster(_FrozenClosedModel):
 
 class OpenGamePromotedMember(_FrozenClosedModel):
     registration_id: uuid.UUID
-    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
     position: OpenGameRegistrationPosition
     version: Annotated[int, Field(strict=True, ge=2)]
 
 
 class OpenGameMemberRemovalResult(_FrozenClosedModel):
     removed_registration_id: uuid.UUID
-    removed_display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    removed_display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
     status: Literal["REMOVED"]
     version: Annotated[int, Field(strict=True, ge=2)]
     removed_at: AwareDatetime
@@ -673,7 +673,7 @@ class OpenGameAttendanceGameSummary(_FrozenClosedModel):
 
 class OpenGameAttendanceRosterItem(_FrozenClosedModel):
     registration_id: uuid.UUID
-    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
     position: OpenGameRegistrationPosition
     attendance_status: OpenGameAttendanceStatus
     attendance_recorded_at: AwareDatetime | None

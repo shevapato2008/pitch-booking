@@ -78,6 +78,20 @@ describe("open-game member removal response decoders", () => {
     });
   });
 
+  test("accepts single-character direct-signup names in owner and removal projections", () => {
+    const roster = clone(fixture("open-game-member-roster-ready"));
+    (roster.members as Array<Record<string, unknown>>)[0].display_name = "甲";
+    expect(decodeOpenGameMemberRoster(roster).members[0].displayName).toBe("甲");
+
+    const removal = clone(fixture("open-game-member-removal-promoted"));
+    removal.removed_display_name = "乙";
+    (removal.promoted_member as Record<string, unknown>).display_name = "丙";
+    expect(decodeOpenGameMemberRemovalResult(removal)).toMatchObject({
+      removedDisplayName: "乙",
+      promotedMember: { displayName: "丙" },
+    });
+  });
+
   test("rejects roster count, duplicate identity, action, and result pairing drift", () => {
     const count = clone(fixture("open-game-member-roster-ready"));
     count.joined_count = 3;

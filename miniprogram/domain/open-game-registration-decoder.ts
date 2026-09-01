@@ -302,7 +302,7 @@ function decodeAttendanceRosterItem(
   }
   return Object.freeze({
     registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
-    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 1, 24),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     attendanceStatus,
     attendanceRecordedAt,
@@ -578,7 +578,7 @@ function decodeMemberRosterItem(value: unknown, path: string): OpenGameMemberRos
   const object = exactObject(value, MEMBER_ROSTER_ITEM_KEYS, path);
   return Object.freeze({
     registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
-    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 1, 24),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     joinedAt: rfc3339At(object.joined_at, `${path}.joined_at`),
     promotedFromWaitlist: booleanAt(
@@ -594,7 +594,7 @@ function decodePromotedMember(value: unknown, path: string): OpenGamePromotedMem
   const object = exactObject(value, PROMOTED_MEMBER_KEYS, path);
   return Object.freeze({
     registrationId: uuidAt(object.registration_id, `${path}.registration_id`),
-    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 1, 24),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     version: safeIntegerAt(object.version, `${path}.version`, 2),
   });
@@ -623,7 +623,7 @@ function decodeCaptainWaitlistApplication(
   if (rfc3339Before(waitlistedAt, appliedAt)) invalid(`${path}.waitlisted_at`);
   return Object.freeze({
     id: uuidAt(object.id, `${path}.id`),
-    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 1, 24),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     note: nullableBoundedStringAt(object.note, `${path}.note`, 120),
     appliedAt,
@@ -800,7 +800,7 @@ export function decodeOpenGameMemberRemovalResult(
     removedDisplayName: boundedStringAt(
       object.removed_display_name,
       "$.removed_display_name",
-      2,
+      1,
       24,
     ),
     status: enumAt(object.status, ["REMOVED"] as const, "$.status"),

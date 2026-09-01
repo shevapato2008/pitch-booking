@@ -543,6 +543,11 @@ def test_direct_signup_withdrawal_promotion_and_reapply_use_live_open_spots_and_
         assert first.viewer_registration is not None
         assert first.viewer_registration.persisted_status.value == "JOINED"
         assert first.viewer_registration.display_name == "翼"
+        persisted_first = session.get_one(
+            OpenGameRegistration,
+            first.viewer_registration.id,
+        )
+        assert persisted_first.display_name == "翼"
         assert first.joined_count == 1
         assert second.viewer_registration is not None
         assert second.viewer_registration.persisted_status.value == "WAITLISTED"
@@ -576,21 +581,25 @@ def test_direct_signup_withdrawal_promotion_and_reapply_use_live_open_spots_and_
         assert new_withdrawal_record is not None
         assert new_withdrawal_record.operation == "withdraw_open_game_registration"
 
-        _set_public_profile(first_user, nickname="第一位再次报名")
+        _set_public_profile(first_user, nickname="龙")
         reapplied = service.signup(
             share_token=case.share_token,
             applicant_user_id=first_user.id,
             idempotency_key="direct-signup-reapply-key-00001",
-            request=_request(display_name="第一位再次报名"),
+            request=CreateRegistrationRequest.model_validate(
+                _request(display_name="第一位再次报名").model_dump()
+                | {"display_name": "龙"}
+            ),
         )
 
         assert reapplied.viewer_registration is not None
         assert reapplied.viewer_registration.id == first.viewer_registration.id
         assert reapplied.viewer_registration.persisted_status.value == "WAITLISTED"
+        assert reapplied.viewer_registration.display_name == "龙"
         assert reapplied.viewer_registration.waitlist_position == 1
         persisted = session.get_one(OpenGameRegistration, first.viewer_registration.id)
         assert persisted.waitlist_seq == 2
-        assert persisted.display_name == "第一位再次报名"
+        assert persisted.display_name == "龙"
 
 
 def test_direct_signup_does_not_skip_an_older_legacy_applied_registration(

@@ -927,7 +927,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "id": {"type": "string", "format": "uuid"},
                     "display_name": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": 1,
                         "maxLength": 24,
                     },
                     "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
@@ -1062,7 +1062,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "registration_id": {"type": "string", "format": "uuid"},
                     "display_name": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": 1,
                         "maxLength": 24,
                     },
                     "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
@@ -1256,7 +1256,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "registration_id": {"type": "string", "format": "uuid"},
                     "display_name": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": 1,
                         "maxLength": 24,
                     },
                     "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
@@ -1339,7 +1339,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "registration_id": {"type": "string", "format": "uuid"},
                     "display_name": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": 1,
                         "maxLength": 24,
                     },
                     "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},

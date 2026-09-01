@@ -137,7 +137,12 @@ def _seed_order_case(
         )
         pitch = add_pitch(session, parent)
         if slot_in_past:
-            starts_at = now - timedelta(hours=2)
+            local_start = datetime.combine(
+                now.astimezone(SHANGHAI).date() - timedelta(days=1),
+                datetime.min.time().replace(hour=19),
+                SHANGHAI,
+            )
+            starts_at = local_start.astimezone(UTC)
         else:
             local_start = datetime.combine(
                 now.astimezone(SHANGHAI).date() + timedelta(days=1),

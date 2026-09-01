@@ -28,7 +28,7 @@ const queueItem = {
 const pendingDetail = {
   ...queueItem,
   facts: "公开页面写有照明，现场实际没有照明。",
-  reporter_display_name: "周末小翼",
+  reporter_display_name: "甲",
   reporter_registration_status: "JOINED",
   authority: {
     persisted_status: "PUBLISHED",
@@ -355,6 +355,7 @@ describe("PlatformApi", () => {
       { ...pendingDetail, private_user_id: "private" },
       { ...pendingDetail, target: { ...target, extra: true } },
       { ...pendingDetail, authority: { ...pendingDetail.authority, extra: true } },
+      { ...pendingDetail, reporter_display_name: "" },
       { ...pendingDetail, reporter_registration_status: "CANCELLED" },
       { ...pendingDetail, authority: { ...pendingDetail.authority, persisted_status: "SUSPENDED" } },
       { ...pendingDetail, authority: { ...pendingDetail.authority, effective_status: "STARTED" } },

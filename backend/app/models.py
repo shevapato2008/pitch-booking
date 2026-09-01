@@ -2096,8 +2096,9 @@ class OpenGameRegistration(Base):
     __tablename__ = "open_game_registrations"
     __table_args__ = (
         CheckConstraint(
-            "length(display_name) BETWEEN 2 AND 24 "
-            "AND display_name = trim(display_name)",
+            "length(display_name) BETWEEN 1 AND 24 "
+            "AND display_name = trim(display_name) "
+            "AND (status != 'APPLIED' OR length(display_name) >= 2)",
             name="ck_open_game_registrations_display_name",
         ),
         CheckConstraint(

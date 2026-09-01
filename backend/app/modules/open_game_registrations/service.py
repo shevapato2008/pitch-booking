@@ -184,11 +184,6 @@ class OpenGameRegistrationService:
                 if viewer_user_id is not None
                 else None
             )
-            correction_times = self._repository.latest_attendance_correction_times(
-                registration_versions=(
-                    {registration.id: registration.version} if registration is not None else {}
-                )
-            )
             return self._build_context(
                 game=game,
                 projection=projection,
@@ -196,9 +191,6 @@ class OpenGameRegistrationService:
                 registration=registration,
                 joined_count=joined_count,
                 now=now,
-                attendance_corrected_at=(
-                    correction_times.get(registration.id) if registration is not None else None
-                ),
                 public_viewer_profile=public_viewer_profile,
             )
         except AppError:
@@ -556,9 +548,6 @@ class OpenGameRegistrationService:
             self._repository.flush()
 
             direct_join = joined_count < game.open_spots
-            internal_display_name = (
-                request.display_name if len(request.display_name) >= 2 else "球友"
-            )
             waitlist_seq = (
                 None if direct_join else next_waitlist_seq
             )
@@ -567,7 +556,7 @@ class OpenGameRegistrationService:
                     id=uuid.uuid4(),
                     game_id=game.id,
                     applicant_user_id=applicant_user_id,
-                    display_name=internal_display_name,
+                    display_name=request.display_name,
                     position=request.position,
                     note=request.note,
                     status=(
@@ -595,7 +584,7 @@ class OpenGameRegistrationService:
                 self._repository.add_registration(registration)
             else:
                 registration = existing
-                registration.display_name = internal_display_name
+                registration.display_name = request.display_name
                 registration.position = request.position
                 registration.note = request.note
                 registration.status = (
@@ -926,7 +915,7 @@ class OpenGameRegistrationService:
             joined_before = self._repository.count_joined(game_id=game.id)
             should_promote = (
                 registration.status is OpenGameRegistrationStatus.JOINED
-                and joined_before <= game.open_spots
+                and joined_before == game.open_spots
             )
             registration_version_before = registration.version
             registration.status = OpenGameRegistrationStatus.REMOVED
@@ -1754,7 +1743,6 @@ class OpenGameRegistrationService:
         registration: OpenGameRegistration | None,
         joined_count: int,
         now: datetime,
-        attendance_corrected_at: datetime | None = None,
         public_viewer_profile: bool = False,
     ) -> RegistrationContext:
         waitlist_count = self._repository.count_waitlisted(game_id=game.id)
@@ -1827,6 +1815,13 @@ class OpenGameRegistrationService:
                     )
                     for row in blocked_rows
                 )
+        correction_times = self._repository.latest_attendance_correction_times(
+            registration_versions=(
+                {registration.id: registration.version}
+                if registration is not None
+                else {}
+            )
+        )
         return _project_context(
             game=game,
             projection=projection,
@@ -1836,7 +1831,11 @@ class OpenGameRegistrationService:
             waitlist_count=waitlist_count,
             now=now,
             waitlist_position=waitlist_position,
-            attendance_corrected_at=attendance_corrected_at,
+            attendance_corrected_at=(
+                correction_times.get(registration.id)
+                if registration is not None
+                else None
+            ),
             joined_members=joined_members,
             waitlisted_members=waitlisted_members,
             blocked_members=blocked_members,

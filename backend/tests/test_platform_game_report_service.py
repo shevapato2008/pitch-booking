@@ -55,7 +55,9 @@ def _seed_report(
             session,
             game_id=case.game_id,
             applicant_user_id=case.booking.stranger_id,
-            status=OpenGameRegistrationStatus.APPLIED,
+            status=OpenGameRegistrationStatus.JOINED,
+            display_name="甲",
+            decided_by_user_id=case.booking.stranger_id,
         )
         session.commit()
     with Session(engine) as session:
@@ -110,7 +112,7 @@ def test_platform_lists_reads_and_records_non_cancelling_resolution(
             "CONFIRMED_RECORDED",
             "CONFIRMED_GAME_CANCELLED",
         )
-        assert detail.reporter_display_name == "周末小翼"
+        assert detail.reporter_display_name == "甲"
         resolved = service.resolve(
             report_id=report_id,
             principal_id="platform-admin-yangfan",

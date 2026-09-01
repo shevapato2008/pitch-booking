@@ -346,6 +346,7 @@ describe("open-game registration response decoders", () => {
       waitlisted_at: "2026-08-24T00:25:00+08:00",
       waitlist_position: 1,
     };
+    first.display_name = "甲";
     const value = {
       ...queuePending,
       waitlist_count: 2,
@@ -362,7 +363,7 @@ describe("open-game registration response decoders", () => {
     expect(decodeOpenGameApplicationQueue(value).waitlist).toEqual([
       {
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        displayName: "候补一号",
+        displayName: "甲",
         position: "DEFENDER",
         note: null,
         appliedAt: "2026-08-24T00:18:00+08:00",
@@ -687,6 +688,12 @@ describe("open-game registration response decoders", () => {
 });
 
 describe("open-game attendance response decoders", () => {
+  test("accepts a single-character direct-signup name in attendance", () => {
+    const value = clone(attendanceRosterReady);
+    (value.registrations as Array<Record<string, unknown>>)[0].display_name = "甲";
+    expect(decodeAttendanceRoster(value).registrations[0].displayName).toBe("甲");
+  });
+
   test("decodes the exact ready and empty roster examples into frozen camel-case DTOs", () => {
     const input = clone(attendanceRosterReady);
     const decoded = decodeAttendanceRoster(input);
@@ -884,7 +891,7 @@ describe("open-game attendance response decoders", () => {
       (value: Record<string, unknown>) => { (value.game as Record<string, unknown>).name = "一"; },
       (value: Record<string, unknown>) => { (value.game as Record<string, unknown>).venue_name = ""; },
       (value: Record<string, unknown>) => {
-        (value.registrations as Array<Record<string, unknown>>)[0].display_name = "一";
+        (value.registrations as Array<Record<string, unknown>>)[0].display_name = "";
       },
       (value: Record<string, unknown>) => {
         (value.game as Record<string, unknown>).ends_at = "2026-08-30T18:30:00+08:00";

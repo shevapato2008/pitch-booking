@@ -1985,10 +1985,10 @@ function validateOpenGameAttendanceContract(contract) {
   ], true);
   if (!isDeepStrictEqual(rosterItem.properties.display_name, {
     type: 'string',
-    minLength: 2,
+    minLength: 1,
     maxLength: 24,
   })) {
-    fail('legacy attendance roster display_name must remain bounded at two characters');
+    fail('attendance roster display_name must remain bounded at one character');
   }
   if (!isDeepStrictEqual(rosterItem.properties.attendance_status, {
     $ref: '#/components/schemas/OpenGameAttendanceStatus',
