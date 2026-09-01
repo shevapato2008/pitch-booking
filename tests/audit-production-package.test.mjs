@@ -139,6 +139,13 @@ for (const token of [
   "C2e 开发预览 · 模拟数据",
   "c2e-reg-left-wing",
   "c2e-remove-member-unknown-key-0001",
+  "C2F_GAME_REPORT_FIXTURE",
+  "remove C2F_GAME_REPORT_FIXTURE before production build or integration",
+  "c2f-game-report-fixture",
+  "c2f-game-report-pages.json",
+  "dev/pages/c2f-game-report-scenario/index",
+  "dev/pages/c2f-game-report/index",
+  "C2f 开发预览 · 模拟数据",
 ]) {
   test(`production audit rejects ${token}`, async (t) => {
     const packageRoot = await createProductionPackage();
@@ -484,6 +491,45 @@ test("production audit requires compiled player registration source and persiste
   await assertAuditRejects(packageRoot, "missing player game registration composition");
 });
 
+test("production audit requires compiled open game report source and persistent attempt composition", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.split("\n").filter((line) => !/OpenGameReport|open-game-report/.test(line)).join("\n"),
+  );
+
+  await assertAuditRejects(packageRoot, "missing open game report composition");
+});
+
+test("production audit rejects an open game report attempt store without production persistence", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace(
+      "createOpenGameReportAttemptStore(productionSessionStorage)",
+      "createOpenGameReportAttemptStore({})",
+    ),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid open game report registration: persistent attempt store");
+});
+
+test("production audit rejects a later non-HTTP open game report source override", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot, "registerOpenGameReportSource({});");
+
+  await assertAuditRejects(packageRoot, "invalid open game report registration: data source");
+});
+
 test("production audit rejects a player registration attempt store without production persistence", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));
@@ -760,6 +806,7 @@ async function createProductionPackage() {
     "pages/captain-game-members/index",
     "pages/captain-game-attendance/index",
     "pages/captain-game-public/index",
+    "pages/open-game-report/index",
     "pages/player-game-application/index",
     "pages/captain-game-applications/index",
     "pages/my-orders/index",
@@ -806,6 +853,9 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       'const { createHttpOpenGameRegistrationSource } = require("./services/http-open-game-registration");',
       'const { registerOpenGameRegistrationSource, registerOpenGameRegistrationAttemptStore } = require("./services/open-game-registration");',
       'const { createOpenGameRegistrationAttemptStore } = require("./services/open-game-registration-attempt-store");',
+      'const { createHttpOpenGameReportSource } = require("./services/http-open-game-report");',
+      'const { registerOpenGameReportSource, registerOpenGameReportAttemptStore } = require("./services/open-game-report");',
+      'const { createOpenGameReportAttemptStore } = require("./services/open-game-report-attempt-store");',
       'const { createHttpPublicGameDirectorySource } = require("./services/http-public-game-directory");',
       'const { registerPublicGameDirectorySource } = require("./services/public-game-directory");',
       "const runtime = productionRuntime();",
@@ -813,6 +863,7 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       "const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);",
       "const openGameMutationAttemptStore = createOpenGameMutationAttemptStore(productionSessionStorage);",
       "const openGameRegistrationAttemptStore = createOpenGameRegistrationAttemptStore(productionSessionStorage);",
+      "const openGameReportAttemptStore = createOpenGameReportAttemptStore(productionSessionStorage);",
       "registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);",
       "registerVenueFulfillmentDataSource(createHttpVenueFulfillmentDataSource({ attemptStore: venueFulfillmentAttemptStore }));",
       "registerOpenGameMutationAttemptStore(openGameMutationAttemptStore);",
@@ -823,6 +874,12 @@ async function installValidPaymentComposition(packageRoot, extraSource = "") {
       "}));",
       "registerOpenGameRegistrationAttemptStore(openGameRegistrationAttemptStore);",
       "registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({",
+      "  transport: runtime.transport,",
+      "  identity: productionIdentity,",
+      "  sessionStore,",
+      "}));",
+      "registerOpenGameReportAttemptStore(openGameReportAttemptStore);",
+      "registerOpenGameReportSource(createHttpOpenGameReportSource({",
       "  transport: runtime.transport,",
       "  identity: productionIdentity,",
       "  sessionStore,",
@@ -848,6 +905,9 @@ async function installProductionDependencies(packageRoot) {
     "services/http-open-game-registration.js",
     "services/open-game-registration.js",
     "services/open-game-registration-attempt-store.js",
+    "services/http-open-game-report.js",
+    "services/open-game-report.js",
+    "services/open-game-report-attempt-store.js",
     "services/http-public-game-directory.js",
     "services/public-game-directory.js",
     "services/session-store.js",

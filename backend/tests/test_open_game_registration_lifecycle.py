@@ -723,6 +723,7 @@ def test_queue_and_my_application_accept_future_waitlist_read_shapes() -> None:
             "attendance_corrected_at": None,
             "detail_path": (
                 "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+                "&game_id=30000000-0000-0000-0000-000000000043"
             ),
             "game_name": "周五浦东七人制",
             "starts_at": NOW + timedelta(hours=2),

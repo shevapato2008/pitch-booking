@@ -143,6 +143,13 @@ const forbiddenContentPatterns = [
   /C2e 开发预览 · 模拟数据/,
   /c2e-reg-left-wing/,
   /c2e-remove-member-unknown-key-0001/,
+  /C2F_GAME_REPORT_FIXTURE/,
+  /remove C2F_GAME_REPORT_FIXTURE before production build or integration/,
+  /c2f-game-report-fixture/,
+  /c2f-game-report-pages\.json/,
+  /dev\/pages\/c2f-game-report-scenario\/index/,
+  /dev\/pages\/c2f-game-report\/index/,
+  /C2f 开发预览 · 模拟数据/,
   /dev\/pages\/captain-game-form\/index/,
   /dev\/pages\/captain-game-manage\/index/,
   /dev\/pages\/captain-game-public\/index/,
@@ -207,6 +214,18 @@ const requiredPlayerGameRegistrationImports = [
   ["./services/http-open-game-registration", /\brequire\s*\(\s*["']\.\/services\/http-open-game-registration["']\s*\)/],
   ["./services/open-game-registration", /\brequire\s*\(\s*["']\.\/services\/open-game-registration["']\s*\)/],
   ["./services/open-game-registration-attempt-store", /\brequire\s*\(\s*["']\.\/services\/open-game-registration-attempt-store["']\s*\)/],
+  ["./services/session-store", /\brequire\s*\(\s*["']\.\/services\/session-store["']\s*\)/],
+];
+const requiredOpenGameReportComposition = [
+  "createHttpOpenGameReportSource",
+  "registerOpenGameReportSource",
+  "createOpenGameReportAttemptStore",
+  "registerOpenGameReportAttemptStore",
+];
+const requiredOpenGameReportImports = [
+  ["./services/http-open-game-report", /\brequire\s*\(\s*["']\.\/services\/http-open-game-report["']\s*\)/],
+  ["./services/open-game-report", /\brequire\s*\(\s*["']\.\/services\/open-game-report["']\s*\)/],
+  ["./services/open-game-report-attempt-store", /\brequire\s*\(\s*["']\.\/services\/open-game-report-attempt-store["']\s*\)/],
   ["./services/session-store", /\brequire\s*\(\s*["']\.\/services\/session-store["']\s*\)/],
 ];
 const requiredPublicGameDirectoryComposition = [
@@ -275,6 +294,13 @@ for (const [specifier, pattern] of requiredPlayerGameRegistrationImports) {
   if (!pattern.test(appContents)) forbidden.push(`missing player game registration import: ${specifier}`);
 }
 for (const diagnostic of inspectPlayerGameRegistration(appContents)) forbidden.push(diagnostic);
+for (const symbol of requiredOpenGameReportComposition) {
+  if (!appContents.includes(symbol)) forbidden.push(`missing open game report composition: ${symbol}`);
+}
+for (const [specifier, pattern] of requiredOpenGameReportImports) {
+  if (!pattern.test(appContents)) forbidden.push(`missing open game report import: ${specifier}`);
+}
+for (const diagnostic of inspectOpenGameReportRegistration(appContents)) forbidden.push(diagnostic);
 for (const symbol of requiredPublicGameDirectoryComposition) {
   if (!appContents.includes(symbol)) forbidden.push(`missing public game directory composition: ${symbol}`);
 }
@@ -312,6 +338,7 @@ const productionRoutes = [
   "pages/captain-game-members/index",
   "pages/captain-game-attendance/index",
   "pages/captain-game-public/index",
+  "pages/open-game-report/index",
   "pages/player-game-application/index",
   "pages/captain-game-applications/index",
   "pages/my-orders/index",
@@ -1049,6 +1076,166 @@ function inspectPlayerGameRegistration(source) {
     if ((effectiveAttempt && effectiveAttempt.position >= startup)
       || (effectiveSource && effectiveSource.position >= startup)) {
       diagnostics.push("player game registration must precede App/Page startup");
+    }
+  }
+  return diagnostics;
+
+  function importedSymbol(expression) {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value)) return importedBindings.get(value.text);
+    if (!ts.isPropertyAccessExpression(value) || !ts.isIdentifier(value.expression)) return undefined;
+    const module = moduleAliases.get(value.expression.text);
+    return module ? { module, symbol: value.name.text } : undefined;
+  }
+
+  function isProductionSessionStorage(expression) {
+    const value = unwrapExpression(expression);
+    const binding = importedSymbol(value);
+    return binding?.module === "./runtime/production" && binding.symbol === "productionSessionStorage";
+  }
+
+  function productionSourceSessionStore(call) {
+    const options = unwrapExpression(call.arguments[0]);
+    if (!ts.isObjectLiteralExpression(options)) return undefined;
+    const values = new Map();
+    for (const property of options.properties) {
+      if (ts.isSpreadAssignment(property)) return undefined;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        values.set(property.name.text, property.name);
+        continue;
+      }
+      if (!ts.isPropertyAssignment(property)) continue;
+      const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+        ? property.name.text : undefined;
+      if (name) values.set(name, property.initializer);
+    }
+    const transportValue = values.get("transport");
+    const identityValue = values.get("identity");
+    const sessionStoreValue = values.get("sessionStore");
+    if (!transportValue || !identityValue || !sessionStoreValue) return undefined;
+    const transport = unwrapExpression(transportValue);
+    const transportOwner = ts.isPropertyAccessExpression(transport)
+      ? unwrapExpression(transport.expression) : undefined;
+    const identity = importedSymbol(identityValue);
+    const sessionStore = unwrapExpression(sessionStoreValue);
+    if (!identity || !ts.isPropertyAccessExpression(transport)
+      || transport.name.text !== "transport"
+      || !ts.isIdentifier(transportOwner)
+      || !productionRuntimes.has(transportOwner.text)
+      || identity.module !== "./runtime/production"
+      || identity.symbol !== "productionIdentity"
+      || !ts.isIdentifier(sessionStore)) return undefined;
+    return sessionStore.text;
+  }
+}
+
+function inspectOpenGameReportRegistration(source) {
+  const sourceFile = ts.createSourceFile("app.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const moduleAliases = new Map();
+  const importedBindings = new Map();
+  const declaredAttemptStores = new Set();
+  const persistentAttemptStores = new Set();
+  const productionRuntimes = new Set();
+  const persistentSessionStores = new Set();
+  const httpSources = new Map();
+  const attemptRegistrations = [];
+  const sourceRegistrations = [];
+  const startupPositions = [];
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const requiredModule = requireSpecifier(declaration.initializer);
+        if (requiredModule) {
+          if (ts.isIdentifier(declaration.name)) moduleAliases.set(declaration.name.text, requiredModule);
+          if (ts.isObjectBindingPattern(declaration.name)) {
+            for (const element of declaration.name.elements) {
+              if (!ts.isIdentifier(element.name)) continue;
+              const importedName = element.propertyName && ts.isIdentifier(element.propertyName)
+                ? element.propertyName.text : element.name.text;
+              importedBindings.set(element.name.text, { module: requiredModule, symbol: importedName });
+            }
+          }
+          continue;
+        }
+        if (!ts.isIdentifier(declaration.name)
+          || !ts.isCallExpression(unwrapExpression(declaration.initializer))) continue;
+        const call = unwrapExpression(declaration.initializer);
+        const factory = importedSymbol(call.expression);
+        if (factory?.module === "./services/open-game-report-attempt-store"
+          && factory.symbol === "createOpenGameReportAttemptStore") {
+          declaredAttemptStores.add(declaration.name.text);
+          if (isProductionSessionStorage(call.arguments[0])) {
+            persistentAttemptStores.add(declaration.name.text);
+          }
+        }
+        if (factory?.module === "./runtime/production" && factory.symbol === "productionRuntime") {
+          productionRuntimes.add(declaration.name.text);
+        }
+        if (factory?.module === "./services/session-store" && factory.symbol === "createSessionStore"
+          && isProductionSessionStorage(call.arguments[0])) {
+          persistentSessionStores.add(declaration.name.text);
+        }
+        if (factory?.module === "./services/http-open-game-report"
+          && factory.symbol === "createHttpOpenGameReportSource") {
+          httpSources.set(declaration.name.text, productionSourceSessionStore(call));
+        }
+      }
+      continue;
+    }
+    if (!ts.isExpressionStatement(statement)) continue;
+    const expression = unwrapExpression(statement.expression);
+    if (!ts.isCallExpression(expression)) continue;
+    const callee = importedSymbol(expression.expression);
+    const rawCallee = unwrapExpression(expression.expression);
+    if (ts.isIdentifier(rawCallee) && (rawCallee.text === "App" || rawCallee.text === "Page")) {
+      startupPositions.push(expression.pos);
+    }
+    if (callee?.module === "./services/open-game-report"
+      && callee.symbol === "registerOpenGameReportAttemptStore") {
+      const argument = unwrapExpression(expression.arguments[0]);
+      const store = ts.isIdentifier(argument) ? argument.text : undefined;
+      attemptRegistrations.push({
+        position: expression.pos,
+        valid: Boolean(store && persistentAttemptStores.has(store)),
+      });
+    }
+    if (callee?.module === "./services/open-game-report"
+      && callee.symbol === "registerOpenGameReportSource") {
+      const argument = unwrapExpression(expression.arguments[0]);
+      let sessionStore;
+      if (ts.isIdentifier(argument)) {
+        sessionStore = httpSources.get(argument.text);
+      } else if (ts.isCallExpression(argument)) {
+        const factory = importedSymbol(argument.expression);
+        if (factory?.module === "./services/http-open-game-report"
+          && factory.symbol === "createHttpOpenGameReportSource") {
+          sessionStore = productionSourceSessionStore(argument);
+        }
+      }
+      sourceRegistrations.push({ position: expression.pos, sessionStore });
+    }
+  }
+
+  const diagnostics = [];
+  const effectiveAttempt = attemptRegistrations[attemptRegistrations.length - 1];
+  const effectiveSource = sourceRegistrations[sourceRegistrations.length - 1];
+  const sourceIsPersistent = effectiveSource?.sessionStore
+    && persistentSessionStores.has(effectiveSource.sessionStore);
+  if (declaredAttemptStores.size > 0 && persistentAttemptStores.size === 0) {
+    diagnostics.push("invalid open game report registration: persistent attempt store");
+  }
+  if (!effectiveAttempt?.valid) diagnostics.push("invalid open game report registration: attempt store");
+  if (!sourceIsPersistent) diagnostics.push("invalid open game report registration: data source");
+  if (persistentSessionStores.size !== 1
+    || sourceIsPersistent && effectiveSource.sessionStore !== [...persistentSessionStores][0]) {
+    diagnostics.push("invalid open game report registration: shared session store");
+  }
+  if (startupPositions.length > 0) {
+    const startup = Math.min(...startupPositions);
+    if ((effectiveAttempt && effectiveAttempt.position >= startup)
+      || (effectiveSource && effectiveSource.position >= startup)) {
+      diagnostics.push("open game report registration must precede App/Page startup");
     }
   }
   return diagnostics;

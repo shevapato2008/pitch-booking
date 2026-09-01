@@ -183,7 +183,8 @@ test('my open-game applications freeze authenticated opaque pagination and a clo
   ]);
   assert.deepEqual(item.properties.detail_path, {
     type: 'string',
-    pattern: '^/pages/captain-game-public/index\\?token=[A-Za-z0-9_-]{32}$',
+    pattern: '^/pages/captain-game-public/index\\?token=[A-Za-z0-9_-]{32}'
+      + '&game_id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
   });
   assert.equal(response.additionalProperties, false);
   assert.deepEqual([...response.required].sort(), ['items', 'next_cursor']);
