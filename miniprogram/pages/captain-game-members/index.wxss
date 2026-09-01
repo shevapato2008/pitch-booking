@@ -57,7 +57,7 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c2e-sheet-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; }
 .c2e-sheet-heading { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; padding-top: 6rpx; }
 .c2e-sheet-title { font-size: 34rpx; font-weight: 700; line-height: 48rpx; }
-.c2e-sheet-member { margin-top: 8rpx; overflow: hidden; color: #526479; font-size: 24rpx; line-height: 36rpx; text-overflow: ellipsis; white-space: nowrap; }
+.c2e-sheet-member { overflow-wrap: anywhere; margin-top: 8rpx; color: #526479; font-size: 24rpx; line-height: 36rpx; white-space: normal; }
 .c2e-sheet-close { min-width: 88rpx; min-height: 88rpx; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: 0 0 auto; margin: 0; padding: 0; border: 0; border-radius: 24rpx; background: #F1F5F9; color: #10243E; }
 .c2e-close-icon { position: relative; width: 32rpx; height: 32rpx; }
 .c2e-close-icon::before, .c2e-close-icon::after { position: absolute; top: 14rpx; left: 2rpx; width: 28rpx; height: 4rpx; border-radius: 4rpx; background: currentColor; content: ""; }

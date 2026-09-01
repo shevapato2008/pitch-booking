@@ -467,5 +467,9 @@ test("uses deterministic navigation and a complete accessible safe-area UI contr
   expect(styles).toMatch(/\.c2e-page\s*\{[^}]*height:\s*100vh[^}]*overflow:\s*hidden/s);
   expect(styles).toMatch(/\.c2e-scroll\s*\{[^}]*flex:\s*1 1 auto[^}]*height:\s*0[^}]*min-height:\s*0/s);
   expect(styles).toMatch(/\.c2e-(?:state-action|row-action|sheet-action)[^{]*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
+  const removalTargetRule = styles.match(/\.c2e-sheet-member\s*\{([^}]*)\}/s)?.[1] ?? "";
+  expect(removalTargetRule).toMatch(/white-space:\s*normal/);
+  expect(removalTargetRule).toMatch(/overflow-wrap:\s*anywhere/);
+  expect(removalTargetRule).not.toMatch(/text-overflow:\s*ellipsis/);
   expect(styles).toContain("env(safe-area-inset-bottom");
 });
