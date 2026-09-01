@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, exists, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,24 @@ class VenueRecruitmentInvitationRepository:
                         VenueMembership.is_active.is_(True),
                     )
                 )
+            )
+        )
+
+    def expire_due(self, now: datetime) -> None:
+        self.session.execute(
+            update(VenueRecruitmentInvitation)
+            .where(
+                VenueRecruitmentInvitation.status.in_(
+                    (
+                        VenueRecruitmentInvitationStatus.ACTIVE,
+                        VenueRecruitmentInvitationStatus.CLAIMED,
+                    )
+                ),
+                VenueRecruitmentInvitation.expires_at <= now,
+            )
+            .values(
+                status=VenueRecruitmentInvitationStatus.EXPIRED,
+                version=VenueRecruitmentInvitation.version + 1,
             )
         )
 
