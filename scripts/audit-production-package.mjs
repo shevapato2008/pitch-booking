@@ -201,6 +201,17 @@ const requiredVenueFulfillmentImports = [
   ["./services/venue-fulfillment", /\brequire\s*\(\s*["']\.\/services\/venue-fulfillment["']\s*\)/],
   ["./services/venue-fulfillment-attempt-store", /\brequire\s*\(\s*["']\.\/services\/venue-fulfillment-attempt-store["']\s*\)/],
 ];
+const requiredVenueStaffComposition = [
+  "createHttpVenueStaffDataSource",
+  "registerVenueStaffDataSource",
+  "createVenueStaffAttemptStore",
+  "registerVenueStaffAttemptStore",
+];
+const requiredVenueStaffImports = [
+  ["./services/http-venue-staff", /\brequire\s*\(\s*["']\.\/services\/http-venue-staff["']\s*\)/],
+  ["./services/venue-staff", /\brequire\s*\(\s*["']\.\/services\/venue-staff["']\s*\)/],
+  ["./services/venue-staff-attempt-store", /\brequire\s*\(\s*["']\.\/services\/venue-staff-attempt-store["']\s*\)/],
+];
 const requiredOpenGameComposition = [
   "createHttpOpenGameSource",
   "registerOpenGameSource",
@@ -277,6 +288,12 @@ for (const [specifier, pattern] of requiredVenueFulfillmentImports) {
   if (!pattern.test(appContents)) forbidden.push(`missing venue fulfillment import: ${specifier}`);
 }
 for (const diagnostic of inspectVenueFulfillmentRegistration(appContents)) forbidden.push(diagnostic);
+for (const symbol of requiredVenueStaffComposition) {
+  if (!appContents.includes(symbol)) forbidden.push(`missing venue staff composition: ${symbol}`);
+}
+for (const [specifier, pattern] of requiredVenueStaffImports) {
+  if (!pattern.test(appContents)) forbidden.push(`missing venue staff import: ${specifier}`);
+}
 for (const symbol of requiredOpenGameComposition) {
   if (!appContents.includes(symbol)) forbidden.push(`missing open game composition: ${symbol}`);
 }
@@ -336,6 +353,8 @@ const productionRoutes = [
   "pages/venue-inventory/index",
   "pages/venue-pitch-setup/index",
   "pages/venue-fulfillment/index",
+  "pages/venue-staff/index",
+  "pages/venue-staff-invitation/index",
 ];
 if (JSON.stringify(manifest.pages) !== JSON.stringify(productionRoutes)) {
   forbidden.push(`unexpected routes: ${JSON.stringify(manifest.pages)}`);

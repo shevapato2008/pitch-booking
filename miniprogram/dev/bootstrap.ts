@@ -19,6 +19,7 @@ import { createHttpVenueProfileDataSource } from "../services/http-venue-profile
 import { createHttpVenueAccessDataSource } from "../services/http-venue-access";
 import { createHttpVenueOnboardingDataSource } from "../services/http-venue-onboarding";
 import { createHttpVenueFulfillmentDataSource } from "../services/http-venue-fulfillment";
+import { createHttpVenueStaffDataSource } from "../services/http-venue-staff";
 import { createHttpOpenGameSource } from "../services/http-open-game";
 import { createHttpOpenGameRegistrationSource } from "../services/http-open-game-registration";
 import { createHttpPublicGameDirectorySource } from "../services/http-public-game-directory";
@@ -26,6 +27,8 @@ import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
 import { createVenueFulfillmentAttemptStore, registerVenueFulfillmentAttemptStore } from "../services/venue-fulfillment-attempt-store";
 import { registerVenueFulfillmentDataSource } from "../services/venue-fulfillment";
+import { createVenueStaffAttemptStore } from "../services/venue-staff-attempt-store";
+import { registerVenueStaffAttemptStore, registerVenueStaffDataSource } from "../services/venue-staff";
 import { createWeChatVenueOnboardingEvidenceCapability, registerVenueOnboardingDataSource, registerVenueOnboardingEvidenceCapability } from "../services/venue-onboarding";
 import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttemptStore } from "../services/pitch-configuration-attempt-store";
 import { createOpenGameMutationAttemptStore } from "../services/open-game-attempt-store";
@@ -68,8 +71,10 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
   registerOpenGameMutationAttemptStore(createOpenGameMutationAttemptStore(productionSessionStorage));
   const venueProfileAttemptStore = createVenueProfileAttemptStore(productionSessionStorage);
   const venueFulfillmentAttemptStore = createVenueFulfillmentAttemptStore(productionSessionStorage);
+  const venueStaffAttemptStore = createVenueStaffAttemptStore(productionSessionStorage);
   registerVenueProfileAttemptStore(venueProfileAttemptStore);
   registerVenueFulfillmentAttemptStore(venueFulfillmentAttemptStore);
+  registerVenueStaffAttemptStore(venueStaffAttemptStore);
   registerVenueProfileMediaCapability(productionVenueProfileMedia);
   registerPaymentCapability(createDevelopmentPaymentCapability("success", showDevelopmentCashier));
   if (options.source === "http") {
@@ -102,6 +107,12 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
       identity: developmentIdentity,
       sessionStore,
       attemptStore: venueFulfillmentAttemptStore,
+    }));
+    registerVenueStaffDataSource(createHttpVenueStaffDataSource({
+      transport,
+      identity: developmentIdentity,
+      sessionStore,
+      attemptStore: venueStaffAttemptStore,
     }));
     registerPaymentClock(productionClock);
     registerNeutralPhoneTapCode(sources.neutralPhoneTapDetail);

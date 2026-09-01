@@ -1,0 +1,35 @@
+<view class="d1b-page">
+  <view class="d1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="d1b-header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="d1b-header-back" hover-class="d1b-pressed" bindtap="onHeaderBack" aria-label="返回"><view class="d1b-back-icon"></view></button>
+    <text class="d1b-header-title">场馆员工邀请</text><view class="d1b-header-spacer"></view>
+  </view>
+
+  <scroll-view class="d1b-scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
+    <view class="d1b-content">
+      <view class="d1b-hero d1b-hero--{{tone}}">
+        <view class="d1b-hero-icon"><view wx:if="{{mode === 'loading'}}" class="d1b-spinner"></view><block wx:else><view class="d1b-person-head"></view><view class="d1b-person-body"></view></block></view>
+        <text class="d1b-eyebrow">{{eyebrow}}</text><text class="d1b-title">{{title}}</text><text class="d1b-description">{{description}}</text>
+      </view>
+
+      <view wx:if="{{venueName}}" class="d1b-card">
+        <text class="d1b-label">受邀场馆</text><text class="d1b-venue-name">{{venueName}}</text>
+        <view class="d1b-divider"></view><text class="d1b-section-title">{{mode === 'accepted' ? '当前工作权限' : '授予的工作权限'}}</text>
+        <view wx:for="{{permissionViews}}" wx:key="code" class="d1b-permission-row"><view class="d1b-check">✓</view><view><text>{{item.label}}</text><text>{{item.description}}</text></view></view>
+        <block wx:if="{{expiresAtLabel}}"><view class="d1b-divider"></view><view class="d1b-fact-row"><text>有效期</text><text>{{expiresAtLabel}}</text></view></block>
+      </view>
+
+      <view wx:if="{{mode === 'ready'}}" class="d1b-boundary"><view class="d1b-boundary-mark">i</view><view><text>不会成为场馆负责人</text><text>员工不能邀请或移除其他成员；每次工作操作仍由服务端检查当前权限。</text></view></view>
+      <view wx:if="{{feedback}}" class="d1b-feedback"><text>{{feedback}}</text></view>
+    </view>
+  </scroll-view>
+
+  <view class="d1b-bottom">
+    <button wx:if="{{mode === 'ready' && unknownAttempt}}" class="d1b-primary d1b-primary--ready" bindtap="onRetryUnknown" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">核对接受结果</button>
+    <button wx:elif="{{mode === 'ready'}}" class="d1b-primary d1b-primary--ready" bindtap="onAcceptInvitation" loading="{{busy}}" disabled="{{busy || foreignAttemptPending}}" hover-class="d1b-pressed">接受邀请</button>
+    <button wx:elif="{{mode === 'accepted'}}" class="d1b-primary d1b-primary--success" bindtap="onOpenPortfolio" hover-class="d1b-pressed">查看我的场馆</button>
+    <button wx:elif="{{mode === 'unavailable' || mode === 'read-error'}}" class="d1b-primary d1b-primary--muted" bindtap="onRetry" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">重新检查</button>
+    <button wx:else class="d1b-primary d1b-primary--muted" disabled="true">正在检查</button>
+    <view class="d1b-safe-bottom"></view>
+  </view>
+</view>
