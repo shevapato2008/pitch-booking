@@ -115,7 +115,11 @@ def test_my_application_dtos_are_closed_and_exact() -> None:
         ("detail_path", "/pages/captain-game-public/index?token=too-short"),
         ("detail_path", "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz01234!"),
         ("detail_path", "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345"),
-        ("detail_path", "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345&game_id=not-a-uuid"),
+        (
+            "detail_path",
+            "/pages/captain-game-public/index?token="
+            "AbCdEfGhIjKlMnOpQrStUvWxYz012345&game_id=not-a-uuid",
+        ),
         ("time_zone", "UTC+8"),
     ],
 )
