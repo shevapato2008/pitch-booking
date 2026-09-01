@@ -142,7 +142,11 @@ def test_my_open_game_applications_contract_is_closed_paginated_and_authenticate
     assert set(item["properties"]) == MY_OPEN_GAME_APPLICATION_FIELDS
     assert item["properties"]["detail_path"] == {
         "type": "string",
-        "pattern": r"^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$",
+        "pattern": (
+            r"^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}"
+            r"&game_id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}$"
+        ),
     }
     assert item["properties"]["effective_status"] == {
         "$ref": "#/components/schemas/OpenGameRegistrationEffectiveStatus"

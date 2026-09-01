@@ -76,6 +76,7 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c2d-copy-feedback { display: block; margin-top: 8rpx; color: #526479; font-size: 21rpx; line-height: 32rpx; }
 .c2d-copy-feedback--success { color: #047857; }
 .c2d-copy-feedback--error { color: #B42318; }
+.c2f-report-action { min-height: 88rpx; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; margin: 18rpx 0 0; padding: 0 20rpx; border: 1rpx solid #CBD5E1; border-radius: 20rpx; background: #FFFFFF; color: #475569; font-size: 26rpx; font-weight: 700; line-height: 38rpx; }
 .c1a-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx 24rpx; }
 .c1a-detail-grid view { display: flex; min-width: 0; flex-direction: column; }
 .c1a-detail-label { color: #526479; font-size: 20rpx; line-height: 30rpx; }

@@ -1370,7 +1370,9 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "type": "string",
                         "pattern": (
                             r"^/pages/captain-game-public/index\?token="
-                            r"[A-Za-z0-9_-]{32}$"
+                            r"[A-Za-z0-9_-]{32}&game_id="
+                            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                            r"[0-9a-f]{4}-[0-9a-f]{12}$"
                         ),
                     },
                     "game_name": {"type": "string"},

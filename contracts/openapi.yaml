@@ -5566,7 +5566,7 @@ components:
         attendance_corrected_at: {type: [string, 'null'], format: date-time}
         detail_path:
           type: string
-          pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$'
+          pattern: '^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}&game_id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         game_name: {type: string}
         starts_at: {type: string, format: date-time}
         ends_at: {type: string, format: date-time}

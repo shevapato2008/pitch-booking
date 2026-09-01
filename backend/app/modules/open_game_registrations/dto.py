@@ -346,7 +346,11 @@ class MyOpenGameApplication(_FrozenClosedModel):
         str,
         Field(
             strict=True,
-            pattern=r"^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}$",
+            pattern=(
+                r"^/pages/captain-game-public/index\?token=[A-Za-z0-9_-]{32}"
+                r"&game_id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                r"[0-9a-f]{4}-[0-9a-f]{12}$"
+            ),
         ),
     ]
     game_name: Annotated[str, Field(strict=True)]

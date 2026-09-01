@@ -22,6 +22,7 @@ import { createHttpVenueFulfillmentDataSource } from "../services/http-venue-ful
 import { createHttpVenueStaffDataSource } from "../services/http-venue-staff";
 import { createHttpOpenGameSource } from "../services/http-open-game";
 import { createHttpOpenGameRegistrationSource } from "../services/http-open-game-registration";
+import { createHttpOpenGameReportSource } from "../services/http-open-game-report";
 import { createHttpPublicGameDirectorySource } from "../services/http-public-game-directory";
 import { createSessionStore } from "../services/session-store";
 import { registerVenueAccessDataSource } from "../services/venue-access";
@@ -34,10 +35,15 @@ import { createPitchConfigurationAttemptStore, registerPitchConfigurationAttempt
 import { createOpenGameMutationAttemptStore } from "../services/open-game-attempt-store";
 import { registerOpenGameMutationAttemptStore, registerOpenGameSource } from "../services/open-game";
 import { createOpenGameRegistrationAttemptStore } from "../services/open-game-registration-attempt-store";
+import { createOpenGameReportAttemptStore } from "../services/open-game-report-attempt-store";
 import {
   registerOpenGameRegistrationAttemptStore,
   registerOpenGameRegistrationSource,
 } from "../services/open-game-registration";
+import {
+  registerOpenGameReportAttemptStore,
+  registerOpenGameReportSource,
+} from "../services/open-game-report";
 import { registerPageDataSource } from "../services/page-data";
 import { registerLocationCapability } from "../services/location";
 import { registerPoiSearchCapability } from "../services/poi-search";
@@ -91,8 +97,15 @@ export function bootstrapDevelopment(options: DevelopmentBootstrapOptions = { so
     const openGameRegistrationAttemptStore = createOpenGameRegistrationAttemptStore(
       productionSessionStorage,
     );
+    const openGameReportAttemptStore = createOpenGameReportAttemptStore(productionSessionStorage);
     registerOpenGameRegistrationAttemptStore(openGameRegistrationAttemptStore);
+    registerOpenGameReportAttemptStore(openGameReportAttemptStore);
     registerOpenGameRegistrationSource(createHttpOpenGameRegistrationSource({
+      transport,
+      identity: developmentIdentity,
+      sessionStore,
+    }));
+    registerOpenGameReportSource(createHttpOpenGameReportSource({
       transport,
       identity: developmentIdentity,
       sessionStore,

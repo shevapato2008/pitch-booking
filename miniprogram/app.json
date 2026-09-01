@@ -17,6 +17,7 @@
     "pages/captain-game-members/index",
     "pages/captain-game-attendance/index",
     "pages/captain-game-public/index",
+    "pages/open-game-report/index",
     "pages/player-game-application/index",
     "pages/captain-game-applications/index",
     "pages/my-orders/index",
