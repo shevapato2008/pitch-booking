@@ -4,13 +4,22 @@
       "id": "10d34d42-7427-5a77-a8fe-65edb343d291",
       "name": "渤海元丰足球场",
       "district_name": "西青区",
-      "address": "天津市西青区利达路"
+      "address": "天津市西青区利达路",
+      "role": "OWNER",
+      "permissions": [
+        "MANAGE_PROFILE",
+        "MANAGE_PITCHES",
+        "MANAGE_INVENTORY",
+        "FULFILL_ORDERS"
+      ]
     },
     {
       "id": "8ca67cf6-00a4-57a6-a843-d0056886c9f0",
       "name": "天津奥体足球公园",
       "district_name": "南开区",
-      "address": "天津市南开区凌宾路 1 号"
+      "address": "天津市南开区凌宾路 1 号",
+      "role": "STAFF",
+      "permissions": ["MANAGE_INVENTORY", "FULFILL_ORDERS"]
     }
   ]
 }

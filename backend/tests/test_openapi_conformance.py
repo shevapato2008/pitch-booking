@@ -488,7 +488,14 @@ def test_managed_venues_contract_and_runtime_are_closed_and_authenticated() -> N
     assert set(response_schema["required"]) == {"venues"}
     item_schema = schemas["ManagedVenue"]
     assert item_schema["additionalProperties"] is False
-    assert set(item_schema["required"]) == {"id", "name", "district_name", "address"}
+    assert set(item_schema["required"]) == {
+        "id",
+        "name",
+        "district_name",
+        "address",
+        "role",
+        "permissions",
+    }
     assert set(item_schema["properties"]) == set(item_schema["required"])
 
     example = json.loads((EXAMPLES_DIRECTORY / "managed-venues.json").read_text())

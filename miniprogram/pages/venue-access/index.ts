@@ -1,4 +1,5 @@
 import type { ManagedVenue } from "../../domain/venue-access";
+import { VENUE_STAFF_PERMISSION_OPTIONS, type VenueStaffPermission } from "../../domain/venue-staff";
 import { presentApplicationStatus, type VenueOnboardingApplication } from "../../domain/venue-onboarding";
 import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { getVenueAccessDataSource } from "../../services/venue-access";
@@ -6,14 +7,38 @@ import { getVenueOnboardingDataSourceOrUndefined } from "../../services/venue-on
 
 type VenueChooseEvent = { currentTarget?: { dataset?: { venueId?: unknown; applicationId?: unknown } } };
 type PageError = { code?: unknown };
+type ManagedVenueView = ManagedVenue & { readonly roleLabel: string; readonly permissionSummary: string };
 
-const workbenchUrl = (venueId: string) => `/pages/venue-profile/index?venue_id=${encodeURIComponent(venueId)}`;
+const permissionLabels = new Map(
+  VENUE_STAFF_PERMISSION_OPTIONS.map(({ code, label }) => [code, label]),
+);
+const workbenchRoutes: readonly [VenueStaffPermission, string][] = [
+  ["MANAGE_PROFILE", "/pages/venue-profile/index"],
+  ["MANAGE_PITCHES", "/pages/venue-pitch-setup/index"],
+  ["MANAGE_INVENTORY", "/pages/venue-inventory/index"],
+  ["FULFILL_ORDERS", "/pages/venue-fulfillment/index"],
+];
+
+function presentVenue(venue: ManagedVenue): ManagedVenueView {
+  return {
+    ...venue,
+    roleLabel: venue.role === "OWNER" ? "场馆负责人" : "场馆员工",
+    permissionSummary: venue.role === "OWNER"
+      ? "全部工作权限"
+      : venue.permissions.map((permission) => permissionLabels.get(permission)).join("、"),
+  };
+}
+
+function workbenchUrl(venue: ManagedVenue): string | undefined {
+  const route = workbenchRoutes.find(([permission]) => venue.permissions.includes(permission))?.[1];
+  return route ? `${route}?venue_id=${encodeURIComponent(venue.id)}` : undefined;
+}
 
 Page({
   data: {
     title: "我的场馆",
     mode: "loading",
-    venues: [] as ManagedVenue[],
+    venues: [] as ManagedVenueView[],
     applications: [] as readonly (VenueOnboardingApplication & { statusLabel: string; statusTone: string })[],
     applicationsError: "",
     retrying: false,
@@ -62,7 +87,7 @@ Page({
         this.setData({
           title: "我的场馆",
           mode: venues.length === 0 ? "empty" : "ready",
-          venues: [...venues],
+          venues: venues.map(presentVenue),
           applications: applications.map((application) => ({
             ...application,
             statusLabel: presentApplicationStatus(application.status).label,
@@ -95,20 +120,36 @@ Page({
 
   onChooseVenue(event: VenueChooseEvent) {
     const venueId = event.currentTarget?.dataset?.venueId;
-    if (typeof venueId !== "string" || !this.data.venues.some((venue: ManagedVenue) => venue.id === venueId)) return;
-    this.enterWorkbench(venueId);
+    const venue = typeof venueId === "string"
+      ? this.data.venues.find((item: ManagedVenueView) => item.id === venueId)
+      : undefined;
+    if (!venue) return;
+    this.enterWorkbench(venue);
   },
 
-  enterWorkbench(venueId: string) {
+  enterWorkbench(venue: ManagedVenue) {
     if (this.redirected || this.disposed) return;
+    const url = workbenchUrl(venue);
+    if (!url) return;
     this.redirected = true;
     wx.redirectTo({
-      url: workbenchUrl(venueId),
+      url,
       fail: () => {
         if (this.disposed) return;
         this.redirected = false;
         this.setData({ mode: "error", errorMessage: "进入场馆工作台失败，请重试" });
       },
+    });
+  },
+
+  onOpenStaff(event: VenueChooseEvent) {
+    const venueId = event.currentTarget?.dataset?.venueId;
+    if (
+      typeof venueId !== "string"
+      || !this.data.venues.some((venue: ManagedVenueView) => venue.id === venueId)
+    ) return;
+    wx.navigateTo({
+      url: `/pages/venue-staff/index?venue_id=${encodeURIComponent(venueId)}`,
     });
   },
 

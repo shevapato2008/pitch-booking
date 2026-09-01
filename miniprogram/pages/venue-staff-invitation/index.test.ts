@@ -53,6 +53,17 @@ test("shows unavailable without identity disclosure and lets the real retry run"
   await view.onRetry(); expect(view.data.mode).toBe("ready"); expect(api.getCurrentInvitation).toHaveBeenCalledTimes(2);
 });
 
+test("a malformed deep link offers a real return action instead of an inert retry", async () => {
+  const api = source(); registerVenueStaffDataSource(api); const view = page();
+  await view.onLoad({ token: "invalid" });
+  expect(view.data).toMatchObject({ mode: "unavailable", retryAvailable: false });
+  expect(api.login).not.toHaveBeenCalled(); expect(api.getCurrentInvitation).not.toHaveBeenCalled();
+  view.onReturnToEntry();
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
+  const markup = readFileSync("miniprogram/pages/venue-staff-invitation/index.wxml", "utf8");
+  expect(markup).toMatch(/mode === 'unavailable' && !retryAvailable[^>]*bindtap="onReturnToEntry"[^>]*>返回首页<\/button>/);
+});
+
 test("replays an unknown accept with its original key", async () => {
   stored = { kind: "acceptInvitation", originatingUserId: userId, invitationId, idempotencyKey: "persisted-accept-key-001" }; const original = structuredClone(stored);
   const api = source(); registerVenueStaffDataSource(api); const view = page(); await view.onLoad({ token }); expect(view.data.unknownAttempt).toEqual(original);
@@ -61,6 +72,6 @@ test("replays an unknown accept with its original key", async () => {
 
 test("production invitation markup has real actions and no private contact field or fixture", () => {
   const markup = readFileSync("miniprogram/pages/venue-staff-invitation/index.wxml", "utf8");
-  for (const handler of ["onHeaderBack", "onAcceptInvitation", "onRetry", "onRetryUnknown", "onOpenPortfolio"]) expect(markup).toContain(handler);
+  for (const handler of ["onHeaderBack", "onAcceptInvitation", "onRetry", "onRetryUnknown", "onOpenPortfolio", "onReturnToEntry"]) expect(markup).toContain(handler);
   expect(markup).not.toContain("邀请对象"); expect(markup).not.toContain("contactLabel"); expect(markup).not.toContain("模拟数据");
 });

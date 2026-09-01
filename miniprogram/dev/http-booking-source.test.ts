@@ -42,6 +42,8 @@ const managedVenues = {
     name: "渤海元丰足球场",
     district_name: "西青区",
     address: "天津市西青区利达路",
+    role: "OWNER",
+    permissions: ["MANAGE_PROFILE", "MANAGE_PITCHES", "MANAGE_INVENTORY", "FULFILL_ORDERS"],
   }],
 };
 

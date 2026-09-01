@@ -28,6 +28,7 @@
     <button wx:if="{{mode === 'ready' && unknownAttempt}}" class="d1b-primary d1b-primary--ready" bindtap="onRetryUnknown" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">核对接受结果</button>
     <button wx:elif="{{mode === 'ready'}}" class="d1b-primary d1b-primary--ready" bindtap="onAcceptInvitation" loading="{{busy}}" disabled="{{busy || foreignAttemptPending}}" hover-class="d1b-pressed">接受邀请</button>
     <button wx:elif="{{mode === 'accepted'}}" class="d1b-primary d1b-primary--success" bindtap="onOpenPortfolio" hover-class="d1b-pressed">查看我的场馆</button>
+    <button wx:elif="{{mode === 'unavailable' && !retryAvailable}}" class="d1b-primary d1b-primary--muted" bindtap="onReturnToEntry" hover-class="d1b-pressed">返回首页</button>
     <button wx:elif="{{mode === 'unavailable' || mode === 'read-error'}}" class="d1b-primary d1b-primary--muted" bindtap="onRetry" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">重新检查</button>
     <button wx:else class="d1b-primary d1b-primary--muted" disabled="true">正在检查</button>
     <view class="d1b-safe-bottom"></view>

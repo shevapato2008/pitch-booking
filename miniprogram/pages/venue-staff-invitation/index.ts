@@ -16,6 +16,7 @@ Page({
   data: {
     mode: "loading", tone: "ready", eyebrow: "场馆员工邀请", title: "正在检查邀请", description: "请稍候。",
     venueName: "", expiresAtLabel: "", permissionViews: [] as unknown[], busy: false, workspacePath: "",
+    retryAvailable: false,
     feedback: "", unknownAttempt: null as AcceptVenueStaffInvitationAttempt | null, foreignAttemptPending: false,
     headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0,
   },
@@ -31,7 +32,7 @@ Page({
     const layout = readInventoryHeaderLayout();
     this.setData({ headerTopPx: layout.topPx, headerRowHeightPx: layout.rowHeightPx, headerRightInsetPx: layout.rightInsetPx });
     const invitationToken = options.token ?? "";
-    if (!TOKEN.test(invitationToken)) { this.showUnavailable(); return; }
+    if (!TOKEN.test(invitationToken)) { this.showUnavailable(false); return; }
     this.invitationToken = invitationToken;
     try {
       this.boundUserId = await getVenueStaffDataSource().login();
@@ -52,7 +53,7 @@ Page({
       description: "接受后只获得下列工作权限，不会成为场馆负责人。", venueName: invitation.venueName,
       expiresAtLabel: `${dateLabel(invitation.expiresAt)} 前有效`,
       permissionViews: VENUE_STAFF_PERMISSION_OPTIONS.filter((item) => invitation.permissions.includes(item.code)),
-      feedback: "", workspacePath: "",
+      feedback: "", workspacePath: "", retryAvailable: true,
     });
   },
   handleReadError(caught: unknown) {
@@ -60,9 +61,9 @@ Page({
     if (code === "VENUE_STAFF_INVITATION_UNAVAILABLE") { this.showUnavailable(); return; }
     this.setData({ mode: "read-error", tone: "muted", eyebrow: "暂时无法检查", title: "邀请加载失败", description: code === "VENUE_STAFF_AUTHORIZATION_DISABLED" ? "员工权限功能尚未启用，请稍后再试。" : "请检查网络后重新检查这份邀请。", venueName: "", expiresAtLabel: "", permissionViews: [], feedback: "" });
   },
-  showUnavailable() {
+  showUnavailable(retryAvailable = true) {
     this.invitation = null;
-    this.setData({ mode: "unavailable", tone: "muted", eyebrow: "邀请不可用", title: "这份邀请已失效", description: "邀请可能已过期、撤销或被其他账号接受。不会显示其他账号信息。", venueName: "", expiresAtLabel: "", permissionViews: [], feedback: "", unknownAttempt: null });
+    this.setData({ mode: "unavailable", tone: "muted", eyebrow: "邀请不可用", title: "这份邀请已失效", description: "邀请可能已过期、撤销或被其他账号接受。不会显示其他账号信息。", venueName: "", expiresAtLabel: "", permissionViews: [], feedback: "", unknownAttempt: null, retryAvailable });
   },
   recoverAttempt() {
     const resolution = getVenueStaffAttemptStore().resolveForUser(this.boundUserId);
@@ -111,6 +112,7 @@ Page({
     try { await this.readInvitation(); if (this.alive) this.recoverAttempt(); } catch (caught) { if (this.alive) this.handleReadError(caught); }
   },
   onOpenPortfolio() { if (this.data.mode === "accepted" && this.data.workspacePath) wx.reLaunch({ url: this.data.workspacePath }); },
+  onReturnToEntry() { wx.reLaunch({ url: "/pages/intent-entry/index" }); },
   onHeaderBack() {
     this.invitationToken = "";
     if (getCurrentPages().length > 1) wx.navigateBack({ delta: 1 }); else wx.reLaunch({ url: "/pages/intent-entry/index" });

@@ -15,7 +15,7 @@
       <block wx:else>
         <view class="d1b-venue-card">
           <view><text class="d1b-eyebrow">{{canManage ? '负责人工作台' : '我的工作权限'}}</text><text class="d1b-venue-name">{{venueName}}</text><text class="d1b-venue-location">权限和成员状态以服务端为准</text></view>
-          <text class="d1b-role-pill">{{viewerRole}}</text>
+          <text class="d1b-role-pill">{{viewerRoleLabel}}</text>
         </view>
 
         <view wx:if="{{!canManage}}" class="d1b-boundary"><view class="d1b-boundary-mark">i</view><view><text>你只能查看自己的权限</text><text>成员邀请、权限变更和移除仅由场馆负责人操作。</text></view></view>
@@ -27,7 +27,7 @@
         <block wx:if="{{canManage}}">
           <view class="d1b-section-head"><view><text>团队成员</text><text>{{members.length}} 人 · 服务端权限为准</text></view></view>
           <view wx:for="{{members}}" wx:key="id" class="d1b-member-card">
-            <view class="d1b-member-top"><view class="d1b-avatar d1b-avatar--{{item.role === 'OWNER' ? 'owner' : 'staff'}}">{{item.initials}}</view><view class="d1b-member-copy"><view class="d1b-name-line"><text class="d1b-member-name">{{item.displayName}}</text><text class="d1b-small-pill">{{item.role}}</text></view><text class="d1b-member-meta">{{item.joinedAtLabel}}</text></view></view>
+            <view class="d1b-member-top"><view class="d1b-avatar d1b-avatar--{{item.role === 'OWNER' ? 'owner' : 'staff'}}">{{item.initials}}</view><view class="d1b-member-copy"><view class="d1b-name-line"><text class="d1b-member-name">{{item.displayName}}</text><text class="d1b-small-pill">{{item.roleLabel}}</text></view><text class="d1b-member-meta">{{item.joinedAtLabel}}</text></view></view>
             <text class="d1b-permission-summary">{{item.permissionSummary}}</text>
             <button wx:if="{{item.role === 'STAFF'}}" class="d1b-secondary" data-membership-id="{{item.id}}" bindtap="onOpenEdit" disabled="{{busy || unknownAttempt || foreignAttemptPending}}">编辑权限</button>
             <text wx:else class="d1b-owner-note">负责人拥有全部权限；负责人转移请联系平台处理</text>
