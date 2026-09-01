@@ -38,6 +38,7 @@ const OPEN_GAME_REGISTRATION_ROUTES = [
   "pages/player-game-application/index",
   "pages/captain-game-applications/index",
 ];
+const OPEN_GAME_REPORT_ROUTE = "pages/open-game-report/index";
 const GAME_DISCOVERY_ROUTE = "pages/game-discovery/index";
 const MY_GAME_REGISTRATIONS_ROUTE = "pages/my-game-registrations/index";
 const PRODUCTION_ROUTES = [
@@ -46,6 +47,7 @@ const PRODUCTION_ROUTES = [
   MY_GAME_REGISTRATIONS_ROUTE,
   ...EXISTING_PRODUCTION_ROUTES.slice(1, 9),
   ...CAPTAIN_OPEN_GAME_ROUTES,
+  OPEN_GAME_REPORT_ROUTE,
   ...OPEN_GAME_REGISTRATION_ROUTES,
   ...EXISTING_PRODUCTION_ROUTES.slice(9),
 ];
@@ -287,6 +289,15 @@ test("production app registers HTTP data, public discovery, open games, registra
     /registerOpenGameRegistrationSource\)\(\(0, http_open_game_registration_1\.createHttpOpenGameRegistrationSource\)\(\{\s*transport:\s*runtime\.transport,\s*identity:\s*production_1\.productionIdentity,\s*sessionStore,?\s*\}\)\);/,
   );
   assert.equal((app.match(/createSessionStore\)\(production_1\.productionSessionStorage\)/g) ?? []).length, 1);
+  assert.match(app, /createHttpOpenGameReportSource/);
+  assert.match(app, /registerOpenGameReportSource/);
+  assert.match(app, /createOpenGameReportAttemptStore/);
+  assert.match(app, /registerOpenGameReportAttemptStore/);
+  assert.match(app, /createOpenGameReportAttemptStore\)\(production_1\.productionSessionStorage\)/);
+  assert.match(
+    app,
+    /registerOpenGameReportSource\)\(\(0, http_open_game_report_1\.createHttpOpenGameReportSource\)\(\{\s*transport:\s*runtime\.transport,\s*identity:\s*production_1\.productionIdentity,\s*sessionStore,?\s*\}\)\);/,
+  );
   assert.match(app, /createHttpPublicGameDirectorySource/);
   assert.match(app, /registerPublicGameDirectorySource/);
   assert.match(
@@ -317,6 +328,8 @@ test("production app registers HTTP data, public discovery, open games, registra
   assert.equal(app.indexOf("registerOpenGameSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerOpenGameRegistrationAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerOpenGameRegistrationSource") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameReportAttemptStore") < app.indexOf("venueFallbackUrl"), true);
+  assert.equal(app.indexOf("registerOpenGameReportSource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerPublicGameDirectorySource") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentAttemptStore") < app.indexOf("venueFallbackUrl"), true);
   assert.equal(app.indexOf("registerVenueFulfillmentDataSource") < app.indexOf("venueFallbackUrl"), true);
@@ -509,12 +522,12 @@ test("production captain game form uses the shared mobile header and fixed stepp
   assert.match(styles, /\.scroll-space\s*\{[^}]*height:\s*calc\(136rpx \+ env\(safe-area-inset-bottom, 0px\)\)\s*;/s);
 });
 
-test("public discovery, open game registration, and attendance production routes ship in both manifests with compiled native artifacts", async (t) => {
+test("public discovery, open game registration, reports, and attendance production routes ship in both manifests with compiled native artifacts", async (t) => {
   const projectRoot = await createIsolatedRealBuildProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
-  assert.equal(sourceManifest.pages.length, 23);
+  assert.equal(sourceManifest.pages.length, 24);
 
   await build(projectRoot, "development");
   await build(projectRoot, "production");
@@ -528,6 +541,7 @@ test("public discovery, open game registration, and attendance production routes
   for (const route of [
     GAME_DISCOVERY_ROUTE,
     MY_GAME_REGISTRATIONS_ROUTE,
+    OPEN_GAME_REPORT_ROUTE,
     ...OPEN_GAME_REGISTRATION_ROUTES,
   ]) {
     for (const root of [developmentRoot, productionRoot]) {
@@ -539,7 +553,7 @@ test("public discovery, open game registration, and attendance production routes
   }
 });
 
-test("real production build preserves all fourteen existing routes and adds only the nine open-game journey routes", async (t) => {
+test("real production build preserves all fourteen existing routes and adds only the ten open-game journey routes", async (t) => {
   const projectRoot = await createIsolatedRealBuildProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await build(projectRoot, "production");
@@ -550,12 +564,13 @@ test("real production build preserves all fourteen existing routes and adds only
     manifest.pages.filter((route) => ![
       GAME_DISCOVERY_ROUTE,
       MY_GAME_REGISTRATIONS_ROUTE,
+      OPEN_GAME_REPORT_ROUTE,
       ...CAPTAIN_OPEN_GAME_ROUTES,
       ...OPEN_GAME_REGISTRATION_ROUTES,
     ].includes(route)),
     EXISTING_PRODUCTION_ROUTES,
   );
-  assert.equal(manifest.pages.length, 23);
+  assert.equal(manifest.pages.length, 24);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);
@@ -585,6 +600,9 @@ test("disabled-payment production keeps B2 owner management composed and routed"
   assert.match(app, /createHttpOpenGameRegistrationSource/);
   assert.match(app, /registerOpenGameRegistrationSource/);
   assert.match(app, /registerOpenGameRegistrationAttemptStore/);
+  assert.match(app, /createHttpOpenGameReportSource/);
+  assert.match(app, /registerOpenGameReportSource/);
+  assert.match(app, /registerOpenGameReportAttemptStore/);
   assert.match(app, /createHttpPublicGameDirectorySource/);
   assert.match(app, /registerPublicGameDirectorySource/);
 });

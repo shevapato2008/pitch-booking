@@ -74,6 +74,7 @@
             <text class="c2d-registration-id">{{viewerRegistrationId}}</text>
             <button class="c2d-copy-action" hover-class="button-hover" bindtap="onCopyRegistrationId">复制报名编号</button>
             <text wx:if="{{copyFeedbackMessage}}" class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}" role="status">{{copyFeedbackMessage}}</text>
+            <button wx:if="{{reportGameId}}" class="c2f-report-action" hover-class="button-hover" bindtap="onOpenGameReport">举报本场球局</button>
           </view>
 
           <view class="c1a-card c1a-section">

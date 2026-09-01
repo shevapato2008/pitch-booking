@@ -53,6 +53,7 @@ def _valid_item() -> dict[str, object]:
         "detail_path": (
             "/pages/captain-game-public/index?token="
             "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+            "&game_id=51000000-0000-4000-8000-000000000001"
         ),
         "game_name": "周日八人制友谊赛",
         "starts_at": "2026-09-06T18:00:00+08:00",
@@ -113,6 +114,8 @@ def test_my_application_dtos_are_closed_and_exact() -> None:
         ("ends_at", "2026-09-06T20:00:00"),
         ("detail_path", "/pages/captain-game-public/index?token=too-short"),
         ("detail_path", "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz01234!"),
+        ("detail_path", "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345"),
+        ("detail_path", "/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345&game_id=not-a-uuid"),
         ("time_zone", "UTC+8"),
     ],
 )

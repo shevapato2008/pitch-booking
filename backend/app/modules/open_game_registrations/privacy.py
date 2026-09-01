@@ -299,6 +299,7 @@ def project_captain_waitlist_application(
 def project_my_open_game_application(
     *,
     application_id: uuid.UUID,
+    game_id: uuid.UUID,
     persisted_status: OpenGameRegistrationStatus,
     applied_at: datetime,
     share_token: str,
@@ -336,7 +337,10 @@ def project_my_open_game_application(
         attendance_status=projected_attendance_status,
         attendance_recorded_at=projected_attendance_recorded_at,
         attendance_corrected_at=projected_attendance_corrected_at,
-        detail_path=f"/pages/captain-game-public/index?token={share_token}",
+        detail_path=(
+            f"/pages/captain-game-public/index?token={share_token}"
+            f"&game_id={game_id}"
+        ),
         game_name=public.name,
         starts_at=public.starts_at,
         ends_at=public.ends_at,

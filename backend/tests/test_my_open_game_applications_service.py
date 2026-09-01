@@ -261,6 +261,7 @@ def test_lists_all_authoritative_status_visibility_and_time_categories_privately
     }
     assert all(
         item.detail_path.startswith("/pages/captain-game-public/index?token=")
+        and "&game_id=" in item.detail_path
         for item in page.items
     )
     dumped = page.model_dump(mode="json")

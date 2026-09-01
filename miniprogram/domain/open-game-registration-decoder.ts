@@ -163,7 +163,7 @@ const MEMBER_REMOVAL_RESULT_KEYS = [
   "joined_count", "remaining_spots", "waitlist_count", "promoted_member",
 ] as const;
 const TERMINAL_ATTENDANCE_STATUSES = ["PRESENT", "NO_SHOW"] as const;
-const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}$/;
+const DETAIL_PATH_PATTERN = /^\/pages\/captain-game-public\/index\?token=[A-Za-z0-9_-]{32}&game_id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const MAINLAND_MOBILE_PATTERN =
   /(?:^|[^0-9])(?:\+?86[\s-]?)?1[3-9](?:[\s-]?[0-9]){9}(?:$|[^0-9])/;

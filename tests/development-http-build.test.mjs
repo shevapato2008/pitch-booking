@@ -162,6 +162,18 @@ test("development HTTP build injects an explicit localhost API URL into the type
     bootstrap,
     /registerOpenGameRegistrationSource\)\(\(0, http_open_game_registration_1\.createHttpOpenGameRegistrationSource\)\(\{\s*transport,\s*identity:\s*http_booking_source_1\.developmentIdentity,\s*sessionStore,?\s*\}\)\);/,
   );
+  assert.match(bootstrap, /createHttpOpenGameReportSource/);
+  assert.match(bootstrap, /registerOpenGameReportSource/);
+  assert.match(bootstrap, /createOpenGameReportAttemptStore/);
+  assert.match(bootstrap, /registerOpenGameReportAttemptStore/);
+  assert.match(
+    bootstrap,
+    /createOpenGameReportAttemptStore\)\(production_1\.productionSessionStorage\)/,
+  );
+  assert.match(
+    bootstrap,
+    /registerOpenGameReportSource\)\(\(0, http_open_game_report_1\.createHttpOpenGameReportSource\)\(\{\s*transport,\s*identity:\s*http_booking_source_1\.developmentIdentity,\s*sessionStore,?\s*\}\)\);/,
+  );
   assert.equal((bootstrap.match(/createSessionStore\)\(production_1\.productionSessionStorage\)/g) ?? []).length, 1);
   assert.match(bootstrap, /registerVenueDirectoryDataSource/);
   assert.match(bootstrap, /registerLocationCapability/);
@@ -182,6 +194,8 @@ test("development HTTP build injects an explicit localhost API URL into the type
   assert.equal(bootstrap.indexOf("registerOpenGameSource") < bootstrap.indexOf("return;"), true);
   assert.equal(bootstrap.indexOf("registerOpenGameRegistrationAttemptStore") < bootstrap.indexOf("return;"), true);
   assert.equal(bootstrap.indexOf("registerOpenGameRegistrationSource") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("registerOpenGameReportAttemptStore") < bootstrap.indexOf("return;"), true);
+  assert.equal(bootstrap.indexOf("registerOpenGameReportSource") < bootstrap.indexOf("return;"), true);
   assert.equal(bootstrap.lastIndexOf("createDevelopmentOpenGameSource") > bootstrap.indexOf("return;"), true);
   assert.match(
     bootstrap,

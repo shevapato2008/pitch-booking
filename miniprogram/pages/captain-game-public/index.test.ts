@@ -333,6 +333,36 @@ test("mixed, missing and malformed route combinations fail closed without source
   expect(registration.getContext).not.toHaveBeenCalled(); expect(b2.getSharedGame).not.toHaveBeenCalled(); expect(b2.getOwnedGame).not.toHaveBeenCalled();
 });
 
+test("a self-registration detail route exposes the real report entry while a public share does not", async () => {
+  const { registration } = registerSources({ getContext: jest.fn(async () => appliedContext) });
+  const self = loadPage();
+  call(self, "onLoad", { token, game_id: gameId });
+  await flush();
+  expect(registration.getContext).toHaveBeenCalledWith(token);
+  expect(self.data).toMatchObject({
+    status: "READY",
+    viewerRegistrationId: applicationId,
+    reportGameId: gameId,
+  });
+  await call(self, "onOpenGameReport");
+  expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+    url: `/pages/open-game-report/index?game_id=${gameId}`,
+  }));
+
+  const publicShare = loadPage();
+  call(publicShare, "onLoad", { token });
+  await flush();
+  expect(publicShare.data.reportGameId).toBe("");
+  (wx.navigateTo as jest.Mock).mockClear();
+  await call(publicShare, "onOpenGameReport");
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+
+  const template = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
+  expect(template).toContain('wx:if="{{reportGameId}}"');
+  expect(template).toContain('bindtap="onOpenGameReport"');
+  expect(template).toContain("举报本场球局");
+});
+
 test("anonymous login reloads the same token and apply uses the production application route", async () => {
   currentUserId = null; let reads = 0;
   const { b2, registration } = registerSources({ getContext: jest.fn(async () => { reads += 1; return reads === 1 ? anonymousContext : readyContext; }) });

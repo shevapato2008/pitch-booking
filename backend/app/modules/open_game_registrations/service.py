@@ -1391,6 +1391,7 @@ class OpenGameRegistrationService:
         )
         return project_my_open_game_application(
             application_id=registration.id,
+            game_id=game.id,
             persisted_status=registration.status,
             applied_at=registration.applied_at,
             share_token=game.share_token,

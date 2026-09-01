@@ -453,6 +453,7 @@ function blankData() {
     headerLeftInsetPx: 0,
     headerRightInsetPx: 0,
     viewerRegistrationId: "",
+    reportGameId: "",
     attendanceRecordedAtLabel: "",
     attendanceCorrectedAtLabel: "",
     copyFeedbackMessage: "",
@@ -482,14 +483,20 @@ Page({
     hideShare();
     const header = readHeaderData();
     const optionKeys = Object.keys(options);
-    const shared = optionKeys.length === 1
+    const publicShared = optionKeys.length === 1
       && typeof options.token === "string"
       && TOKEN_PATTERN.test(options.token);
+    const selfShared = optionKeys.length === 2
+      && typeof options.token === "string"
+      && TOKEN_PATTERN.test(options.token)
+      && typeof options.game_id === "string"
+      && UUID_PATTERN.test(options.game_id);
+    const shared = publicShared || selfShared;
     const owner = optionKeys.length === 2
       && typeof options.game_id === "string"
       && UUID_PATTERN.test(options.game_id)
       && options.preview === "1";
-    if (shared === owner) {
+    if (!shared && !owner) {
       this.routeToken = "";
       this.routeGameId = "";
       this.setData({
@@ -502,8 +509,13 @@ Page({
     }
     if (shared) {
       this.routeToken = options.token as string;
-      this.routeGameId = "";
-      this.setData({ ...blankData(), ...header, mode: "shared" });
+      this.routeGameId = selfShared ? options.game_id as string : "";
+      this.setData({
+        ...blankData(),
+        ...header,
+        mode: "shared",
+        reportGameId: this.routeGameId,
+      });
     } else {
       this.routeGameId = options.game_id as string;
       this.routeToken = "";
@@ -686,6 +698,9 @@ Page({
       withdrawalKind: registration?.withdrawalKind ?? null,
       lateExitWillBeRecorded: registration?.lateExitWillBeRecorded ?? false,
       viewerRegistrationId: registration?.id ?? "",
+      reportGameId: registration !== null && UUID_PATTERN.test(this.routeGameId)
+        ? this.routeGameId
+        : "",
       attendanceRecordedAtLabel: attendanceAuthorityTimeLabel(
         "原记录 ·",
         registration?.attendanceRecordedAt,
@@ -770,6 +785,21 @@ Page({
     } catch {
       settle("复制失败，请重试", "error");
     }
+  },
+
+  onOpenGameReport() {
+    const gameId = this.data.reportGameId;
+    if (this.data.mode !== "shared"
+      || typeof this.data.viewerRegistrationId !== "string"
+      || !UUID_PATTERN.test(this.data.viewerRegistrationId)
+      || typeof gameId !== "string"
+      || !UUID_PATTERN.test(gameId)) return Promise.resolve();
+    this.setData({ navigationError: "" });
+    return navigation("navigateTo", `/pages/open-game-report/index?game_id=${gameId}`)
+      .catch(() => {
+        if (!this.visible || this.data.reportGameId !== gameId) return;
+        this.setData({ navigationError: "暂时无法打开举报页，请重试。" });
+      });
   },
 
   applyPublic(game: OpenGamePublic) {
