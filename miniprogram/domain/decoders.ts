@@ -318,7 +318,7 @@ export function decodeCheckout(value: unknown): CheckoutView {
   };
 }
 
-const STAGING_NON_FUNDING_ORDER_NUMBER = /^PB-STG-C1A-[0-9a-f]{12}-0[1-3]$/;
+const STAGING_NON_FUNDING_ORDER_NUMBER = /^PB-STG-C1A-[0-9a-f]{11,12}-0[1-3]$/;
 
 function decodeOrderProjection(value: unknown, allowMarkedNonFundingOwnerOrder: boolean): OrderView {
   const baseKeys = [

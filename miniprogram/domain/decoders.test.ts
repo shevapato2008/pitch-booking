@@ -613,6 +613,20 @@ test("limits marked non-funding confirmation to owner detail reads", () => {
   })).toThrow("INVALID_API_RESPONSE");
 });
 
+test("accepts an existing 11-character staging non-funding marker in owner detail", () => {
+  expect(decodeOwnerOrder({
+    ...confirmedOrder,
+    order_number: "PB-STG-C1A-113d603d34e-03",
+    payment_state: null,
+    paid_at: null,
+  })).toMatchObject({
+    status: "CONFIRMED",
+    paymentState: null,
+    paymentConfirming: false,
+    paidAt: null,
+  });
+});
+
 test.each([
   [null, false, false],
   ["CREATING", false, false],
