@@ -6,7 +6,14 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 COPY platform-admin/index.html platform-admin/styles.css platform-admin/tsconfig.json ./platform-admin/
-COPY platform-admin/src/api.ts platform-admin/src/auth.ts platform-admin/src/review.ts platform-admin/src/main.ts ./platform-admin/src/
+COPY platform-admin/src/api.ts \
+    platform-admin/src/auth.ts \
+    platform-admin/src/review.ts \
+    platform-admin/src/attendance-correction.ts \
+    platform-admin/src/game-report-resolution.ts \
+    platform-admin/src/recruitment-invitations.ts \
+    platform-admin/src/main.ts \
+    ./platform-admin/src/
 COPY scripts/build-platform-admin.mjs ./scripts/build-platform-admin.mjs
 RUN npm run build:platform-admin
 

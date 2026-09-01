@@ -948,6 +948,21 @@ def test_runtime_image_never_syncs_development_dependencies() -> None:
     assert "UV_NO_DEV=1" in dockerfile
 
 
+def test_platform_admin_builder_copies_every_runtime_module() -> None:
+    dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
+
+    for module in (
+        "api",
+        "auth",
+        "review",
+        "attendance-correction",
+        "game-report-resolution",
+        "recruitment-invitations",
+        "main",
+    ):
+        assert f"platform-admin/src/{module}.ts" in dockerfile
+
+
 def test_runtime_image_explicitly_packages_verified_directory_inputs() -> None:
     dockerfile = Path("backend/Dockerfile").read_text(encoding="utf-8")
     expected = {
