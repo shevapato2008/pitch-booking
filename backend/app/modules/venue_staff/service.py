@@ -48,7 +48,7 @@ from backend.app.modules.venue_staff.repository import (
 
 INVITATION_TTL = timedelta(days=7)
 INVITATION_PATH_PREFIX = "/pages/venue-staff-invitation/index?token="
-WORKSPACE_PATH = "/pages/venue-workspace/index"
+WORKSPACE_PATH = "/pages/venue-access/index"
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}", re.ASCII)
 _ALL_PERMISSIONS = tuple(VenueStaffPermission)
 

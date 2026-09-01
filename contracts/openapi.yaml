@@ -4658,7 +4658,7 @@ components:
         venue_id: {type: string, format: uuid}
         venue_name: {type: string, minLength: 1, maxLength: 200}
         membership: {$ref: '#/components/schemas/VenueStaffMember'}
-        workspace_path: {type: string, const: /pages/venue-workspace/index}
+        workspace_path: {type: string, const: /pages/venue-access/index}
     VenueOwnerTransferResult:
       type: object
       additionalProperties: false
