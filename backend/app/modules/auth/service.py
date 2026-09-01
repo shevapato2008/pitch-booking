@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -7,8 +8,12 @@ from uuid import UUID
 from backend.app.errors import AppError
 from backend.app.models import User
 from backend.app.modules.auth.dto import (
+    CreateUserAvatarUploadIntentRequest,
     PhoneVerificationResponse,
     SessionUserResponse,
+    UpdateUserPublicProfileRequest,
+    UserAvatarUploadIntentResponse,
+    UserPublicProfileResponse,
     WeChatSessionResponse,
 )
 from backend.app.modules.auth.provider import (
@@ -19,8 +24,20 @@ from backend.app.modules.auth.provider import (
     PhoneProviderError,
 )
 from backend.app.modules.auth.repository import AuthRepository, IdentityConflictError
+from backend.app.modules.venue_profiles.storage import (
+    SUPPORTED_IMAGE_TYPES,
+    InvalidMediaError,
+    StorageBoundaryError,
+    StorageVerificationError,
+    VenueMediaStore,
+)
 from backend.app.security.phone_vault import PhoneVault, SealedPhone
 
+_USER_AVATAR_UPLOAD_KEY = re.compile(
+    r"^private/users/(?P<user_id>[0-9a-f-]{36})/avatars/"
+    r"(?P<avatar_id>[0-9a-f-]{36})/original\.(?:jpg|png|webp)$",
+    re.ASCII,
+)
 
 class AuthService:
     def __init__(
@@ -31,6 +48,7 @@ class AuthService:
         phone_provider: PhoneProvider,
         phone_vault: PhoneVault | None,
         session_ttl: timedelta,
+        media_store: VenueMediaStore | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -38,6 +56,7 @@ class AuthService:
         self._phone_provider = phone_provider
         self._phone_vault = phone_vault
         self._session_ttl = session_ttl
+        self._media_store = media_store
         self._now = now or (lambda: datetime.now(UTC))
 
     def create_session(self, code: str) -> WeChatSessionResponse:
@@ -120,6 +139,101 @@ class AuthService:
             verified_at=verified_at,
         )
 
+    def _require_media_store(self) -> VenueMediaStore:
+        if self._media_store is None:
+            raise AppError(503, "SERVICE_UNAVAILABLE", "服务暂时不可用，请稍后重试。")
+        return self._media_store
+
+    def _public_profile(self, user: User) -> UserPublicProfileResponse:
+        avatar_url = None
+        if user.public_avatar_object_key is not None:
+            avatar_url = self._require_media_store().user_avatar_url(
+                user.id,
+                user.public_avatar_object_key,
+            )
+        return UserPublicProfileResponse(
+            nickname=user.public_nickname,
+            avatar_url=avatar_url,
+            profile_version=user.public_profile_version,
+            confirmed_at=user.public_profile_updated_at,
+        )
+
+    def update_public_profile(
+        self,
+        *,
+        user_id: UUID,
+        request: UpdateUserPublicProfileRequest,
+    ) -> UserPublicProfileResponse:
+        storage = self._require_media_store()
+        try:
+            user = self._repository.lock_user(user_id)
+            if user is None:
+                raise _auth_required()
+            published_key = user.public_avatar_object_key
+            if request.avatar_object_key is not None:
+                avatar_id = _parse_avatar_upload_key(
+                    request.avatar_object_key,
+                    expected_user_id=user.id,
+                )
+                published = storage.promote_user_avatar(
+                    user.id,
+                    avatar_id,
+                    request.avatar_object_key,
+                )
+                published_key = published.object_key
+            if published_key is None:
+                raise _invalid_public_profile()
+            user.public_nickname = request.nickname
+            user.public_avatar_object_key = published_key
+            user.public_profile_updated_at = self._now()
+            user.public_profile_version += 1
+            self._repository.commit()
+            return self._public_profile(user)
+        except AppError:
+            self._repository.rollback()
+            raise
+        except (
+            InvalidMediaError,
+            KeyError,
+            StorageBoundaryError,
+            StorageVerificationError,
+            ValueError,
+        ):
+            self._repository.rollback()
+            raise _invalid_public_profile() from None
+
+    def create_avatar_upload_intent(
+        self,
+        *,
+        user_id: UUID,
+        request: CreateUserAvatarUploadIntentRequest,
+    ) -> UserAvatarUploadIntentResponse:
+        storage = self._require_media_store()
+        avatar_id = UUID(bytes=secrets.token_bytes(16), version=4)
+        try:
+            intent = storage.create_user_avatar_upload_intent(
+                user_id,
+                avatar_id,
+                request.mime_type,
+                request.byte_size,
+            )
+        except (InvalidMediaError, StorageBoundaryError, ValueError):
+            raise _invalid_public_profile() from None
+        return UserAvatarUploadIntentResponse(
+            avatar_id=avatar_id,
+            object_key=intent.object_key,
+            signed_put_url=intent.url,
+            required_headers=dict(intent.required_headers),
+            maximum_bytes=intent.max_bytes,
+            accepted_mime_types=SUPPORTED_IMAGE_TYPES,
+        )
+
+    def get_public_profile(self, user_id: UUID) -> UserPublicProfileResponse:
+        user = self._repository.get_user(user_id)
+        if user is None:
+            raise _auth_required()
+        return self._public_profile(user)
+
     def _session_user(self, user: User) -> SessionUserResponse:
         masked_phone = None
         if (
@@ -170,3 +284,18 @@ def _token_hash(raw_token: str) -> str:
 
 def _auth_required() -> AppError:
     return AppError(401, "AUTH_REQUIRED", "登录状态已失效，请重新登录。")
+
+
+def _parse_avatar_upload_key(object_key: str, *, expected_user_id: UUID) -> UUID:
+    matched = _USER_AVATAR_UPLOAD_KEY.fullmatch(object_key)
+    if matched is None:
+        raise ValueError("avatar object key is outside the controlled upload boundary")
+    user_id = UUID(matched.group("user_id"))
+    avatar_id = UUID(matched.group("avatar_id"))
+    if user_id != expected_user_id:
+        raise ValueError("avatar object key belongs to another user")
+    return avatar_id
+
+
+def _invalid_public_profile() -> AppError:
+    return AppError(422, "INVALID_ARGUMENT", "公开资料或头像无效，请重新选择。")

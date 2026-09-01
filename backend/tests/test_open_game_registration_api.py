@@ -90,7 +90,13 @@ PRIVATE_REGISTRATION_FIELDS = frozenset(
 def _seed_published_game(engine: Engine) -> SeededRegistrationCase:
     booking = seed_confirmed_order(
         engine,
-        starts_at=datetime.now(UTC) + timedelta(days=3),
+        starts_at=datetime.now(UTC).replace(
+            hour=4,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        + timedelta(days=3),
     )
     share_token = "R" * 32
     with Session(engine) as session:

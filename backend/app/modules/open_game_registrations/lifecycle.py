@@ -47,6 +47,7 @@ class ApplyBlockedReason(StrEnum):
     AUTH_REQUIRED = "AUTH_REQUIRED"
     OWNER_CANNOT_APPLY = "OWNER_CANNOT_APPLY"
     ALREADY_APPLIED = "ALREADY_APPLIED"
+    REMOVED_BY_CAPTAIN = "REMOVED_BY_CAPTAIN"
     GAME_NOT_PUBLISHED = "GAME_NOT_PUBLISHED"
     REGISTRATION_DEADLINE_PASSED = "REGISTRATION_DEADLINE_PASSED"
     GAME_SUSPENDED = "GAME_SUSPENDED"
@@ -181,6 +182,7 @@ class RegistrationFacts:
     starts_at: datetime
     open_spots: int
     joined_count: int
+    viewer_reapply_blocked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +210,8 @@ def project_apply_actions(facts: RegistrationFacts, now: datetime) -> ApplyActio
         blocker = ApplyBlockedReason.GAME_STARTED
     elif facts.stored_game_status != OpenGameStatus.PUBLISHED:
         blocker = ApplyBlockedReason.GAME_NOT_PUBLISHED
+    elif facts.viewer_reapply_blocked:
+        blocker = ApplyBlockedReason.REMOVED_BY_CAPTAIN
     elif facts.viewer_has_registration:
         blocker = ApplyBlockedReason.ALREADY_APPLIED
     elif facts.viewer_is_owner:

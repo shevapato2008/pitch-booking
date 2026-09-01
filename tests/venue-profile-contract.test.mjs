@@ -20,6 +20,9 @@ const operations = [
   ['post', '/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry'],
   ['get', '/api/v1/admin/moderation/venue-profiles/pending'],
   ['post', '/api/v1/admin/moderation/venue-profiles/{item_id}/decisions'],
+  ['get', '/api/v1/auth/wechat/profile'],
+  ['put', '/api/v1/auth/wechat/profile'],
+  ['post', '/api/v1/auth/wechat/profile/avatar/upload-intents'],
 ];
 const facilityCodes = [
   'PARKING', 'TOILET', 'CHANGING_ROOM', 'SHOWER', 'LOCKERS', 'DRINKING_WATER',
@@ -44,7 +47,7 @@ function walk(value, visit) {
   else if (value && typeof value === 'object') Object.values(value).forEach((item) => walk(item, visit));
 }
 
-test('contract defines the exact ten venue-profile and manual-moderation operations', async () => {
+test('contract defines the exact venue-profile, public-profile, and manual-moderation operations', async () => {
   const contract = await readContract();
   for (const [method, path] of operations) {
     const operation = contract.paths[path]?.[method];
@@ -74,7 +77,9 @@ test('profile mutations freeze optimistic versions, idempotency, and named schem
     'UPLOADING', 'REVIEWING', 'APPROVED', 'REJECTED', 'PENDING_MANUAL',
   ]);
 
-  for (const [method, path] of operations.filter(([candidate]) => !['get'].includes(candidate))) {
+  for (const [method, path] of operations.filter(
+    ([candidate, path]) => candidate !== 'get' && path.startsWith('/api/v1/admin/'),
+  )) {
     const operation = contract.paths[path][method];
     assert.equal(
       operation.parameters.some(({ $ref }) => $ref === '#/components/parameters/IdempotencyKey'),

@@ -820,6 +820,120 @@ paths:
               examples:
                 PhoneAuthUnavailable:
                   externalValue: './examples/error-phone-auth-unavailable.json'
+  /api/v1/auth/wechat/profile:
+    get:
+      operationId: getWechatPublicProfile
+      description: Reads the current user's explicitly confirmed public nickname and avatar.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current profile; unconfirmed users receive the version-zero null shape.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserPublicProfileResponse'}
+              examples:
+                Incomplete: {externalValue: './examples/user-public-profile-incomplete.json'}
+                Confirmed: {externalValue: './examples/user-public-profile-confirmed.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '503':
+          description: Profile service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    put:
+      operationId: updateWechatPublicProfile
+      description: Confirms or updates public profile data; a null avatar_object_key preserves the existing avatar.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateUserPublicProfileRequest'}
+      responses:
+        '200':
+          description: Confirmed public profile.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserPublicProfileResponse'}
+              examples:
+                Confirmed: {externalValue: './examples/user-public-profile-confirmed.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '422':
+          description: Nickname or controlled avatar object key is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '503':
+          description: Profile service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /api/v1/auth/wechat/profile/avatar/upload-intents:
+    post:
+      operationId: createWechatAvatarUploadIntent
+      description: Creates a short-lived controlled PUT target for one user avatar.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateUserAvatarUploadIntentRequest'}
+      responses:
+        '201':
+          description: Controlled avatar upload intent.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserAvatarUploadIntentResponse'}
+              examples:
+                UploadIntent: {externalValue: './examples/user-avatar-upload-intent.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '422':
+          description: MIME type or declared byte size is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '503':
+          description: Profile media service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /api/v1/slots/{slot_id}/checkout:
     get:
       operationId: getSlotCheckout
@@ -1933,7 +2047,7 @@ paths:
   /api/v1/games/{game_id}/members/{registration_id}/remove:
     post:
       operationId: removeOpenGameMember
-      description: Owner-only idempotent removal of one eligible joined member before kickoff.
+      description: Owner-only idempotent removal of one eligible joined or waitlisted member before kickoff.
       security:
         - bearerAuth: []
       parameters:
@@ -2035,6 +2149,84 @@ paths:
                   - $ref: '#/components/schemas/ErrorEnvelope'
                   - type: object
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/games/{game_id}/members/{registration_id}/unblock:
+    post:
+      operationId: unblockOpenGameMember
+      description: Owner-only idempotent removal of a captain-imposed reapply block; it does not register the player.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: registration_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameMemberUnblockRequest'}
+      responses:
+        '200':
+          description: Reapply block removed or idempotently replayed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameMemberUnblockResult'}
+              examples:
+                Unblocked: {externalValue: './examples/open-game-member-unblocked.json'}
+        '401':
+          description: Authentication required.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Game or registration does not exist, or the game is not owned by this user.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ApplicationNotFound: {externalValue: './examples/error-application-not-found.json'}
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Registration state, game authority, or idempotency authority changed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ApplicationStateChanged: {externalValue: './examples/error-application-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path, expected version, or idempotency key is invalid.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game member service is unavailable.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/games/{game_id}/attendance-roster:
@@ -2233,7 +2425,7 @@ paths:
           schema: {type: string}
       responses:
         '200':
-          description: Public game plus anonymous or authenticated viewer registration authority.
+          description: Frozen five-field legacy registration context for released clients.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OpenGameRegistrationContext'}
@@ -2299,7 +2491,7 @@ paths:
             schema: {$ref: '#/components/schemas/CreateOpenGameApplicationRequest'}
       responses:
         '201':
-          description: Application created or idempotently replayed with authoritative viewer context.
+          description: Legacy pending application created or idempotently replayed.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OpenGameRegistrationContext'}
@@ -2371,6 +2563,120 @@ paths:
                   - $ref: '#/components/schemas/ErrorEnvelope'
                   - type: object
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/shared-games/{share_token}/signup-context:
+    get:
+      operationId: getOpenGameSignupContext
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: share_token
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Public signup counts plus authenticated public rosters and viewer authority.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameSignupContext'}
+              examples:
+                Anonymous: {externalValue: './examples/open-game-signup-context-anonymous.json'}
+                SignupReady: {externalValue: './examples/open-game-signup-context-apply-ready.json'}
+                Applied: {externalValue: './examples/open-game-signup-context-applied.json'}
+                Waitlisted: {externalValue: './examples/open-game-signup-context-waitlisted.json'}
+                Joined: {externalValue: './examples/open-game-signup-context-joined.json'}
+                Rejected: {externalValue: './examples/open-game-signup-context-rejected.json'}
+                WithdrawnApplication: {externalValue: './examples/open-game-signup-context-withdrawn-application.json'}
+                WithdrawnWaitlist: {externalValue: './examples/open-game-signup-context-withdrawn-waitlist.json'}
+                WithdrawnGameExit: {externalValue: './examples/open-game-signup-context-withdrawn-game-exit.json'}
+                Cancelled: {externalValue: './examples/open-game-signup-context-cancelled.json'}
+        '401':
+          description: A supplied Authorization header is invalid or expired.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Share token is malformed, unknown, or no longer public.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '503':
+          description: Open game signup service is unavailable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/shared-games/{share_token}/registrations:
+    post:
+      operationId: createOpenGameRegistration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: share_token
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateOpenGameRegistrationRequest'}
+      responses:
+        '201':
+          description: Registration joined or entered the FIFO waitlist immediately.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameSignupContext'}
+              examples:
+                Joined: {externalValue: './examples/open-game-signup-context-joined.json'}
+                Waitlisted: {externalValue: './examples/open-game-signup-context-waitlisted.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Share token is malformed, unknown, or no longer public.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                OpenGameNotFound: {externalValue: './examples/error-open-game-not-found.json'}
+        '409':
+          description: Public profile, signup action, or idempotency authority conflicts.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ApplicationAlreadyExists: {externalValue: './examples/error-application-already-exists.json'}
+                ApplicationNotAllowed: {externalValue: './examples/error-application-not-allowed.json'}
+                ReapplyBlocked: {externalValue: './examples/error-application-reapply-blocked.json'}
+                PublicProfileRequired: {externalValue: './examples/error-public-profile-required.json'}
+                PublicProfileChanged: {externalValue: './examples/error-public-profile-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Registration input is invalid.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game signup service is unavailable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/open-game-applications:
@@ -2527,6 +2833,70 @@ paths:
                   - $ref: '#/components/schemas/ErrorEnvelope'
                   - type: object
                     properties: {error: {type: object, properties: {code: {const: SERVICE_UNAVAILABLE}}}}
+              examples:
+                ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
+  /api/v1/open-game-registrations/{application_id}/withdraw:
+    post:
+      operationId: withdrawOpenGameRegistration
+      description: Withdraw a direct registration or leave a joined game, with reapply authority returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameApplicationWithdrawalRequest'}
+      responses:
+        '200':
+          description: Direct registration withdrawn or idempotently replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameSignupContext'}
+              examples:
+                ApplicationWithdrawn: {externalValue: './examples/open-game-signup-context-withdrawn-application.json'}
+                WaitlistWithdrawn: {externalValue: './examples/open-game-signup-context-withdrawn-waitlist.json'}
+                GameExited: {externalValue: './examples/open-game-signup-context-withdrawn-game-exit.json'}
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                AuthRequired: {externalValue: './examples/error-auth-required.json'}
+        '404':
+          description: Registration is absent or does not belong to the current user.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ApplicationNotFound: {externalValue: './examples/error-application-not-found.json'}
+        '409':
+          description: Registration state, version, action, or idempotency authority changed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                ApplicationStateChanged: {externalValue: './examples/error-application-state-changed.json'}
+                IdempotencyKeyReused: {externalValue: './examples/error-idempotency-key-reused.json'}
+        '422':
+          description: Path, action, expected version, or idempotency key is invalid.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+              examples:
+                InvalidArgument: {externalValue: './examples/error-invalid-argument.json'}
+        '503':
+          description: Open game signup service is unavailable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
               examples:
                 ServiceUnavailable: {externalValue: './examples/error-service-unavailable.json'}
   /api/v1/public-games:
@@ -5725,6 +6095,21 @@ components:
       properties:
         expected_version: {type: integer, minimum: 1}
         reason: {type: string, minLength: 1, maxLength: 120}
+    OpenGameMemberUnblockRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, minimum: 1}
+    OpenGameMemberUnblockResult:
+      type: object
+      additionalProperties: false
+      required: [registration_id, status, version, reapply_blocked]
+      properties:
+        registration_id: {type: string, format: uuid}
+        status: {type: string, const: REMOVED}
+        version: {type: integer, minimum: 2}
+        reapply_blocked: {type: boolean, const: false}
     OpenGamePromotedMember:
       type: object
       additionalProperties: false
@@ -5963,6 +6348,9 @@ components:
           description: NFC-normalized and independently checked for prohibited contact details and URLs.
     OpenGameApplyBlockedReason:
       type: string
+      enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, REMOVED_BY_CAPTAIN, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
+    OpenGameLegacyApplyBlockedReason:
+      type: string
       enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
     OpenGameReviewBlockedReason:
       type: string
@@ -5987,6 +6375,23 @@ components:
         - properties:
             can_apply: {const: false}
             apply_blocked_reason: {$ref: '#/components/schemas/OpenGameApplyBlockedReason'}
+    OpenGameLegacyApplyActions:
+      type: object
+      additionalProperties: false
+      required: [can_apply, apply_blocked_reason]
+      properties:
+        can_apply: {type: boolean}
+        apply_blocked_reason:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameLegacyApplyBlockedReason'
+            - type: 'null'
+      oneOf:
+        - properties:
+            can_apply: {const: true}
+            apply_blocked_reason: {const: null}
+        - properties:
+            can_apply: {const: false}
+            apply_blocked_reason: {$ref: '#/components/schemas/OpenGameLegacyApplyBlockedReason'}
     OpenGameReviewActions:
       type: object
       additionalProperties: false
@@ -6098,7 +6503,7 @@ components:
       required: [id, display_name, position, note, persisted_status, effective_status, version, applied_at, decided_at, withdrawn_at, withdrawal_kind, late_exit_recorded, available_withdrawal_action, late_exit_will_be_recorded, waitlist_position, waitlisted_at, promoted_at, attendance_status, attendance_recorded_at, attendance_corrected_at, removed_at]
       properties:
         id: {type: string, format: uuid}
-        display_name: {type: string, minLength: 2, maxLength: 24}
+        display_name: {type: string, minLength: 1, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         note: {type: [string, 'null'], maxLength: 120}
         persisted_status: {$ref: '#/components/schemas/OpenGameRegistrationPersistedStatus'}
@@ -6140,6 +6545,38 @@ components:
             attendance_status: {enum: [PRESENT, NO_SHOW]}
             attendance_recorded_at: {type: string, format: date-time}
             attendance_corrected_at: {type: [string, 'null'], format: date-time}
+    OpenGameRosterMemberManagement:
+      type: object
+      additionalProperties: false
+      required: [registration_id, version, can_remove, can_allow_reapply]
+      properties:
+        registration_id: {type: string, format: uuid}
+        version: {type: integer, minimum: 1}
+        can_remove: {type: boolean}
+        can_allow_reapply: {type: boolean}
+    OpenGameLegacyViewerRegistration:
+      allOf:
+        - $ref: '#/components/schemas/OpenGameViewerRegistration'
+        - type: object
+          properties:
+            display_name: {type: string, minLength: 2, maxLength: 24}
+    OpenGamePublicRosterMember:
+      type: object
+      additionalProperties: false
+      required: [nickname, avatar_url]
+      properties:
+        nickname: {type: string, minLength: 1, maxLength: 24}
+        avatar_url: {type: [string, 'null'], pattern: '^https://'}
+        management: {$ref: '#/components/schemas/OpenGameRosterMemberManagement'}
+    OpenGamePublicWaitlistedMember:
+      type: object
+      additionalProperties: false
+      required: [nickname, avatar_url, waitlist_position]
+      properties:
+        nickname: {type: string, minLength: 1, maxLength: 24}
+        avatar_url: {type: [string, 'null'], pattern: '^https://'}
+        waitlist_position: {type: integer, minimum: 1}
+        management: {$ref: '#/components/schemas/OpenGameRosterMemberManagement'}
     OpenGameRegistrationContext:
       type: object
       additionalProperties: false
@@ -6150,8 +6587,39 @@ components:
         viewer_authenticated: {type: boolean}
         viewer_registration:
           oneOf:
+            - $ref: '#/components/schemas/OpenGameLegacyViewerRegistration'
+            - type: 'null'
+        allowed_actions: {$ref: '#/components/schemas/OpenGameLegacyApplyActions'}
+    OpenGameSignupContext:
+      type: object
+      additionalProperties: false
+      required: [game, remaining_spots, joined_count, waitlist_count, viewer_authenticated, viewer_registration, joined_members, waitlisted_members, blocked_members, allowed_actions]
+      properties:
+        game: {$ref: '#/components/schemas/OpenGamePublic'}
+        remaining_spots: {type: integer, minimum: 0}
+        joined_count: {type: integer, minimum: 0}
+        waitlist_count: {type: integer, minimum: 0}
+        viewer_authenticated: {type: boolean}
+        viewer_registration:
+          oneOf:
             - $ref: '#/components/schemas/OpenGameViewerRegistration'
             - type: 'null'
+        joined_members:
+          oneOf:
+            - type: array
+              items: {$ref: '#/components/schemas/OpenGamePublicRosterMember'}
+            - type: 'null'
+        waitlisted_members:
+          oneOf:
+            - type: array
+              items: {$ref: '#/components/schemas/OpenGamePublicWaitlistedMember'}
+            - type: 'null'
+        blocked_members:
+          oneOf:
+            - type: array
+              items: {$ref: '#/components/schemas/OpenGamePublicRosterMember'}
+            - type: 'null'
+        management_game_id: {type: string, format: uuid}
         allowed_actions: {$ref: '#/components/schemas/OpenGameApplyActions'}
     CreateOpenGameApplicationRequest:
       type: object
@@ -6159,6 +6627,16 @@ components:
       required: [display_name, position, note, adult_confirmed, risk_confirmed]
       properties:
         display_name: {type: string, minLength: 2, maxLength: 24}
+        position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
+        note: {type: [string, 'null'], maxLength: 120}
+        adult_confirmed: {type: boolean, const: true}
+        risk_confirmed: {type: boolean, const: true}
+    CreateOpenGameRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name, position, note, adult_confirmed, risk_confirmed]
+      properties:
+        display_name: {type: string, minLength: 1, maxLength: 24}
         position: {$ref: '#/components/schemas/OpenGameRegistrationPosition'}
         note: {type: [string, 'null'], maxLength: 120}
         adult_confirmed: {type: boolean, const: true}
@@ -8207,6 +8685,60 @@ components:
         verified_at:
           type: string
           format: date-time
+    UserPublicProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [nickname, avatar_url, profile_version, confirmed_at]
+      properties:
+        nickname: {type: [string, 'null'], minLength: 1, maxLength: 24}
+        avatar_url: {type: [string, 'null'], pattern: '^https://'}
+        profile_version: {type: integer, minimum: 0}
+        confirmed_at: {type: [string, 'null'], format: date-time}
+      oneOf:
+        - properties:
+            nickname: {const: null}
+            avatar_url: {const: null}
+            profile_version: {const: 0}
+            confirmed_at: {const: null}
+        - properties:
+            nickname: {type: string, minLength: 1, maxLength: 24}
+            avatar_url: {type: string, pattern: '^https://'}
+            profile_version: {type: integer, minimum: 1}
+            confirmed_at: {type: string, format: date-time}
+    UpdateUserPublicProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [nickname, avatar_object_key]
+      properties:
+        nickname: {type: string, minLength: 1, maxLength: 24}
+        avatar_object_key:
+          type: [string, 'null']
+          maxLength: 256
+          description: A controlled private upload object key; null preserves an existing avatar.
+    CreateUserAvatarUploadIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [mime_type, byte_size]
+      properties:
+        mime_type: {type: string, enum: [image/jpeg, image/png, image/webp]}
+        byte_size: {type: integer, minimum: 1, maximum: 10485760}
+    UserAvatarUploadIntentResponse:
+      type: object
+      additionalProperties: false
+      required: [avatar_id, object_key, signed_put_url, required_headers, maximum_bytes, accepted_mime_types]
+      properties:
+        avatar_id: {type: string, format: uuid}
+        object_key:
+          type: string
+          pattern: '^private/users/[0-9a-f-]{36}/avatars/[0-9a-f-]{36}/original\.(jpg|png|webp)$'
+        signed_put_url: {type: string, minLength: 1}
+        required_headers:
+          type: object
+          additionalProperties: {type: string}
+        maximum_bytes: {type: integer, const: 10485760}
+        accepted_mime_types:
+          type: array
+          const: [image/jpeg, image/png, image/webp]
     CheckoutVenue:
       type: object
       additionalProperties: false
@@ -9098,6 +9630,8 @@ components:
             - APPLICATION_NOT_FOUND
             - APPLICATION_ALREADY_EXISTS
             - APPLICATION_NOT_ALLOWED
+            - PUBLIC_PROFILE_REQUIRED
+            - PUBLIC_PROFILE_CHANGED
             - APPLICATION_STATE_CHANGED
             - APPLICATION_CAPACITY_CHANGED
             - ATTENDANCE_STATE_CHANGED

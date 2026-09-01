@@ -2,7 +2,9 @@ import {
   arrayAt,
   enumAt,
   exactObject,
+  httpsUrlAt,
   invalid,
+  objectAt,
   rfc3339At,
   rfc3339Before,
   stringAt,
@@ -43,6 +45,10 @@ import type {
   OpenGameMemberRemovalResult,
   OpenGameMemberRoster,
   OpenGameMemberRosterItem,
+  OpenGameBlockedRosterMember,
+  OpenGamePublicRosterManagement,
+  OpenGamePublicRosterMember,
+  OpenGamePublicWaitlistedMember,
   OpenGamePromotedMember,
   OpenGameRegistrationContext,
   OpenGameRegistrationAvailableWithdrawalAction,
@@ -57,6 +63,7 @@ const APPLY_BLOCKED_REASONS = [
   "AUTH_REQUIRED",
   "OWNER_CANNOT_APPLY",
   "ALREADY_APPLIED",
+  "REMOVED_BY_CAPTAIN",
   "GAME_NOT_PUBLISHED",
   "REGISTRATION_DEADLINE_PASSED",
   "GAME_SUSPENDED",
@@ -92,8 +99,16 @@ const WITHDRAWAL_KINDS = [
   "APPLICATION_WITHDRAWAL", "WAITLIST_WITHDRAWAL", "GAME_EXIT",
 ] as const;
 
-const CONTEXT_KEYS = [
+const CONTEXT_BASE_KEYS = [
   "game", "remaining_spots", "viewer_authenticated", "viewer_registration", "allowed_actions",
+] as const;
+const CONTEXT_ROSTER_KEYS = [
+  "joined_count", "waitlist_count", "joined_members", "waitlisted_members", "blocked_members",
+] as const;
+const PUBLIC_ROSTER_MEMBER_KEYS = ["nickname", "avatar_url"] as const;
+const PUBLIC_WAITLISTED_MEMBER_KEYS = ["nickname", "avatar_url", "waitlist_position"] as const;
+const PUBLIC_ROSTER_MANAGEMENT_KEYS = [
+  "registration_id", "version", "can_remove", "can_allow_reapply",
 ] as const;
 const VIEWER_REGISTRATION_KEYS = [
   "id", "version", "display_name", "position", "note", "persisted_status", "effective_status",
@@ -363,7 +378,11 @@ function decodeReviewActions(value: unknown, path: string): OpenGameReviewAction
   });
 }
 
-function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerRegistration {
+function decodeViewerRegistration(
+  value: unknown,
+  path: string,
+  displayNameMinimum: 1 | 2,
+): OpenGameViewerRegistration {
   const object = exactObject(value, VIEWER_REGISTRATION_KEYS, path);
   const persistedStatus = enumAt(
     object.persisted_status,
@@ -444,6 +463,9 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
   const promotedHistory = waitlistPosition === null
     && waitlistedAt !== null
     && promotedAt !== null;
+  const waitlistedHistory = waitlistPosition === null
+    && waitlistedAt !== null
+    && promotedAt === null;
   if (persistedStatus === "APPLIED") {
     if (decidedAt !== null || !noWaitlistHistory) invalid(path);
   } else if (persistedStatus === "WAITLISTED") {
@@ -455,7 +477,7 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
     if (decidedAt === null || !noWaitlistHistory) invalid(path);
   } else if (persistedStatus === "REMOVED") {
     if (decidedAt === null || removedAt === null
-      || (!noWaitlistHistory && !promotedHistory)) invalid(path);
+      || (!noWaitlistHistory && !waitlistedHistory && !promotedHistory)) invalid(path);
     if (effectiveStatus !== "REMOVED") invalid(`${path}.effective_status`);
     if (rfc3339Before(removedAt, decidedAt)
       || (promotedAt !== null && rfc3339Before(removedAt, promotedAt))) {
@@ -492,7 +514,12 @@ function decodeViewerRegistration(value: unknown, path: string): OpenGameViewerR
   return Object.freeze({
     id: uuidAt(object.id, `${path}.id`),
     version: safeIntegerAt(object.version, `${path}.version`, 1),
-    displayName: boundedStringAt(object.display_name, `${path}.display_name`, 2, 24),
+    displayName: boundedStringAt(
+      object.display_name,
+      `${path}.display_name`,
+      displayNameMinimum,
+      24,
+    ),
     position: enumAt(object.position, OPEN_GAME_POSITIONS, `${path}.position`),
     note: nullableBoundedStringAt(object.note, `${path}.note`, 120),
     persistedStatus,
@@ -786,13 +813,38 @@ export function decodeOpenGameMemberRemovalResult(
   });
 }
 
-export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegistrationContext {
-  const object = exactObject(value, CONTEXT_KEYS, "$" );
+function decodeRegistrationContext(
+  value: unknown,
+  viewerDisplayNameMinimum: 1 | 2,
+  rosterProjection: "FORBIDDEN" | "REQUIRED",
+): OpenGameRegistrationContext {
+  const object = objectAt(value, "$");
+  const allowedKeys = new Set<string>([
+    ...CONTEXT_BASE_KEYS,
+    ...(rosterProjection === "REQUIRED" ? CONTEXT_ROSTER_KEYS : []),
+    ...(rosterProjection === "REQUIRED" ? ["management_game_id"] : []),
+  ]);
+  for (const key of Object.keys(object)) if (!allowedKeys.has(key)) invalid(`$.${key}`);
+  for (const key of CONTEXT_BASE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(object, key)) invalid(`$.${key}`);
+  }
+  const hasRosterProjection = CONTEXT_ROSTER_KEYS.some((key) =>
+    Object.prototype.hasOwnProperty.call(object, key));
+  if (rosterProjection === "REQUIRED" && !hasRosterProjection) invalid("$.joined_count");
+  if (hasRosterProjection) {
+    for (const key of CONTEXT_ROSTER_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(object, key)) invalid(`$.${key}`);
+    }
+  }
   const game = decodeOpenGamePublic(object.game, "$.game");
   const viewerAuthenticated = booleanAt(object.viewer_authenticated, "$.viewer_authenticated");
   const viewerRegistration = object.viewer_registration === null
     ? null
-    : decodeViewerRegistration(object.viewer_registration, "$.viewer_registration");
+    : decodeViewerRegistration(
+      object.viewer_registration,
+      "$.viewer_registration",
+      viewerDisplayNameMinimum,
+    );
   if (!viewerAuthenticated && viewerRegistration !== null) invalid("$.viewer_registration");
   if (viewerRegistration !== null) {
     const shouldExposeAttendance = game.state === "COMPLETED"
@@ -801,13 +853,156 @@ export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegis
       invalid("$.viewer_registration.attendance_status");
     }
   }
+  const remainingSpots = safeIntegerAt(object.remaining_spots, "$.remaining_spots");
+  const managementGameId = Object.prototype.hasOwnProperty.call(object, "management_game_id")
+    ? uuidAt(object.management_game_id, "$.management_game_id")
+    : null;
+  if (!viewerAuthenticated && managementGameId !== null) invalid("$.management_game_id");
+  const decodeManagement = (raw: unknown, path: string): OpenGamePublicRosterManagement => {
+    const management = exactObject(raw, PUBLIC_ROSTER_MANAGEMENT_KEYS, path);
+    const canRemove = booleanAt(management.can_remove, `${path}.can_remove`);
+    const canAllowReapply = booleanAt(
+      management.can_allow_reapply,
+      `${path}.can_allow_reapply`,
+    );
+    if (canRemove && canAllowReapply) invalid(path);
+    return Object.freeze({
+      registrationId: uuidAt(management.registration_id, `${path}.registration_id`),
+      version: safeIntegerAt(management.version, `${path}.version`, 1),
+      canRemove,
+      canAllowReapply,
+    });
+  };
+  const avatarAt = (raw: unknown, path: string): string | null => raw === null
+    ? null
+    : httpsUrlAt(raw, path);
+  const decodePublicMember = (
+    raw: unknown,
+    path: string,
+  ): OpenGamePublicRosterMember => {
+    const member = objectAt(raw, path);
+    const hasManagement = Object.prototype.hasOwnProperty.call(member, "management");
+    const expectedKeys = new Set<string>([
+      ...PUBLIC_ROSTER_MEMBER_KEYS,
+      ...(hasManagement ? ["management"] : []),
+    ]);
+    for (const key of Object.keys(member)) if (!expectedKeys.has(key)) invalid(`${path}.${key}`);
+    for (const key of PUBLIC_ROSTER_MEMBER_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(member, key)) invalid(`${path}.${key}`);
+    }
+    return Object.freeze({
+      nickname: boundedStringAt(member.nickname, `${path}.nickname`, 1, 24),
+      avatarUrl: avatarAt(member.avatar_url, `${path}.avatar_url`),
+      management: hasManagement
+        ? decodeManagement(member.management, `${path}.management`)
+        : null,
+    });
+  };
+  const decodeWaitlistedMember = (
+    raw: unknown,
+    path: string,
+  ): OpenGamePublicWaitlistedMember => {
+    const member = objectAt(raw, path);
+    const hasManagement = Object.prototype.hasOwnProperty.call(member, "management");
+    const expectedKeys = new Set<string>([
+      ...PUBLIC_WAITLISTED_MEMBER_KEYS,
+      ...(hasManagement ? ["management"] : []),
+    ]);
+    for (const key of Object.keys(member)) if (!expectedKeys.has(key)) invalid(`${path}.${key}`);
+    for (const key of PUBLIC_WAITLISTED_MEMBER_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(member, key)) invalid(`${path}.${key}`);
+    }
+    return Object.freeze({
+      nickname: boundedStringAt(member.nickname, `${path}.nickname`, 1, 24),
+      avatarUrl: avatarAt(member.avatar_url, `${path}.avatar_url`),
+      waitlistPosition: safeIntegerAt(
+        member.waitlist_position,
+        `${path}.waitlist_position`,
+        1,
+      ),
+      management: hasManagement
+        ? decodeManagement(member.management, `${path}.management`)
+        : null,
+    });
+  };
+  let joinedCount = game.openSpots - remainingSpots;
+  let waitlistCount = 0;
+  let joinedMembers: readonly OpenGamePublicRosterMember[] | null = viewerAuthenticated ? [] : null;
+  let waitlistedMembers: readonly OpenGamePublicWaitlistedMember[] | null = viewerAuthenticated
+    ? []
+    : null;
+  let blockedMembers: readonly OpenGameBlockedRosterMember[] | null = null;
+  if (joinedCount < 0) invalid("$.remaining_spots");
+  if (hasRosterProjection) {
+    joinedCount = safeIntegerAt(object.joined_count, "$.joined_count");
+    waitlistCount = safeIntegerAt(object.waitlist_count, "$.waitlist_count");
+    if (remainingSpots !== game.openSpots - joinedCount) invalid("$.joined_count");
+    if (!viewerAuthenticated) {
+      if (object.joined_members !== null) invalid("$.joined_members");
+      if (object.waitlisted_members !== null) invalid("$.waitlisted_members");
+      if (object.blocked_members !== null) invalid("$.blocked_members");
+    } else {
+      joinedMembers = Object.freeze(arrayAt(object.joined_members, "$.joined_members").map(
+        (member, index) => decodePublicMember(member, `$.joined_members[${index}]`),
+      ));
+      waitlistedMembers = Object.freeze(arrayAt(
+        object.waitlisted_members,
+        "$.waitlisted_members",
+      ).map((member, index) => {
+        const decoded = decodeWaitlistedMember(member, `$.waitlisted_members[${index}]`);
+        if (decoded.waitlistPosition !== index + 1) {
+          invalid(`$.waitlisted_members[${index}].waitlist_position`);
+        }
+        return decoded;
+      }));
+      if (joinedMembers.length !== joinedCount) invalid("$.joined_members");
+      if (waitlistedMembers.length !== waitlistCount) invalid("$.waitlisted_members");
+      if (managementGameId === null) {
+        if (object.blocked_members !== null) invalid("$.blocked_members");
+        if (joinedMembers.some((member) => member.management !== null)) invalid("$.joined_members");
+        if (waitlistedMembers.some((member) => member.management !== null)) {
+          invalid("$.waitlisted_members");
+        }
+      } else {
+        if (joinedMembers.some((member) => member.management === null
+          || member.management.canAllowReapply)) invalid("$.joined_members");
+        if (waitlistedMembers.some((member) => member.management === null
+          || member.management.canAllowReapply)) {
+          invalid("$.waitlisted_members");
+        }
+        blockedMembers = Object.freeze(arrayAt(object.blocked_members, "$.blocked_members").map(
+          (member, index) => {
+            const decoded = decodePublicMember(member, `$.blocked_members[${index}]`);
+            if (decoded.management === null || !decoded.management.canAllowReapply) {
+              invalid(`$.blocked_members[${index}].management`);
+            }
+            return decoded as OpenGameBlockedRosterMember;
+          },
+        ));
+      }
+    }
+  }
   return Object.freeze({
     game,
-    remainingSpots: safeIntegerAt(object.remaining_spots, "$.remaining_spots"),
+    remainingSpots,
+    joinedCount,
+    waitlistCount,
+    joinedMembers,
+    waitlistedMembers,
+    blockedMembers,
+    managementGameId,
     viewerAuthenticated,
     viewerRegistration,
     allowedActions: decodeApplyActions(object.allowed_actions, "$.allowed_actions"),
   });
+}
+
+export function decodeOpenGameRegistrationContext(value: unknown): OpenGameRegistrationContext {
+  return decodeRegistrationContext(value, 2, "FORBIDDEN");
+}
+
+export function decodeOpenGameSignupContext(value: unknown): OpenGameRegistrationContext {
+  return decodeRegistrationContext(value, 1, "REQUIRED");
 }
 
 export function decodeOpenGameApplicationQueue(value: unknown): OpenGameApplicationQueue {
@@ -910,8 +1105,9 @@ export function validateOpenGameMemberRemovalReason(
     : Object.freeze({ valid: false, reason: null, error });
 }
 
-export function validateOpenGameApplicationDraft(
+function validateApplicationDraft(
   draft: OpenGameApplicationDraft,
+  displayNameMinimum: 1 | 2,
 ): OpenGameApplicationDraftValidation {
   const displayName = typeof draft.displayName === "string" ? draft.displayName.trim() : "";
   const note = typeof draft.note === "string" ? draft.note.trim() : "";
@@ -921,8 +1117,8 @@ export function validateOpenGameApplicationDraft(
     ? draft.position as OpenGamePosition
     : null;
   const errors = Object.freeze({
-    displayName: displayNameLength < 2 || displayNameLength > 24
-      ? "本场称呼需为 2–24 个字符"
+    displayName: displayNameLength < displayNameMinimum || displayNameLength > 24
+      ? `本场称呼需为 ${displayNameMinimum}–24 个字符`
       : containsPrivateText(displayName) ? "请勿在本场称呼中填写联系方式或证件号码" : null,
     position: position === null ? "请选择意向位置" : null,
     note: noteLength > 120
@@ -942,4 +1138,16 @@ export function validateOpenGameApplicationDraft(
     riskConfirmed: true,
   });
   return Object.freeze({ valid: true, errors, submission });
+}
+
+export function validateOpenGameApplicationDraft(
+  draft: OpenGameApplicationDraft,
+): OpenGameApplicationDraftValidation {
+  return validateApplicationDraft(draft, 2);
+}
+
+export function validateOpenGameDirectRegistrationDraft(
+  draft: OpenGameApplicationDraft,
+): OpenGameApplicationDraftValidation {
+  return validateApplicationDraft(draft, 1);
 }

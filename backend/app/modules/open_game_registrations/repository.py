@@ -19,6 +19,7 @@ from backend.app.models import (
     Pitch,
     RefundCase,
     Slot,
+    User,
 )
 from backend.app.modules.orders.locking import lock_order as lock_order_row
 
@@ -57,6 +58,17 @@ class OpenGameRegistrationRepository:
             )
             .execution_options(populate_existing=True)
         )
+
+    def lock_applicant(self, *, user_id: uuid.UUID) -> User | None:
+        return self.session.scalar(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def get_applicant(self, *, user_id: uuid.UUID) -> User | None:
+        return self.session.get(User, user_id)
 
     def lock_registration(
         self,
@@ -166,6 +178,27 @@ class OpenGameRegistrationRepository:
             .execution_options(populate_existing=True)
         )
 
+    def lock_fifo_applied(
+        self,
+        *,
+        game_id: uuid.UUID,
+    ) -> list[OpenGameRegistration]:
+        return list(
+            self.session.scalars(
+                select(OpenGameRegistration)
+                .where(
+                    OpenGameRegistration.game_id == game_id,
+                    OpenGameRegistration.status == OpenGameRegistrationStatus.APPLIED,
+                )
+                .order_by(
+                    OpenGameRegistration.applied_at,
+                    OpenGameRegistration.id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+
     def next_waitlist_seq(self, *, game_id: uuid.UUID) -> int:
         historical_max = self.session.scalar(
             select(func.max(OpenGameRegistration.waitlist_seq)).where(
@@ -205,6 +238,7 @@ class OpenGameRegistrationRepository:
                     OpenGameRegistration.game_id == game_id,
                     OpenGameRegistration.status == OpenGameRegistrationStatus.JOINED,
                 )
+                .options(joinedload(OpenGameRegistration.applicant))
                 .order_by(
                     OpenGameRegistration.applied_at,
                     OpenGameRegistration.id,
@@ -235,11 +269,33 @@ class OpenGameRegistrationRepository:
                 select(OpenGameRegistration)
                 .where(
                     OpenGameRegistration.game_id == game_id,
-                    OpenGameRegistration.status
-                    == OpenGameRegistrationStatus.WAITLISTED,
+                    OpenGameRegistration.status == OpenGameRegistrationStatus.WAITLISTED,
                 )
+                .options(joinedload(OpenGameRegistration.applicant))
                 .order_by(
                     OpenGameRegistration.waitlist_seq,
+                    OpenGameRegistration.id,
+                )
+                .execution_options(populate_existing=True)
+            )
+        )
+
+    def list_reapply_blocked(
+        self,
+        *,
+        game_id: uuid.UUID,
+    ) -> list[OpenGameRegistration]:
+        return list(
+            self.session.scalars(
+                select(OpenGameRegistration)
+                .where(
+                    OpenGameRegistration.game_id == game_id,
+                    OpenGameRegistration.status == OpenGameRegistrationStatus.REMOVED,
+                    OpenGameRegistration.reapply_blocked.is_(True),
+                )
+                .options(joinedload(OpenGameRegistration.applicant))
+                .order_by(
+                    OpenGameRegistration.removed_at,
                     OpenGameRegistration.id,
                 )
                 .execution_options(populate_existing=True)

@@ -62,6 +62,9 @@ const contextApplied = decodeOpenGameRegistrationContext(
 const contextWaitlisted = decodeOpenGameRegistrationContext(
   fixture("open-game-registration-context-waitlisted"),
 );
+const contextJoined = decodeOpenGameRegistrationContext(
+  fixture("open-game-registration-context-joined"),
+);
 const contextWithdrawnWaitlist = decodeOpenGameRegistrationContext(
   fixture("open-game-registration-context-withdrawn-waitlist"),
 );
@@ -92,8 +95,9 @@ const applyAttempt: OpenGameRegistrationApplyAttempt = {
     adultConfirmed: true,
     riskConfirmed: true,
   },
+  submissionMode: "DIRECT_REGISTRATION",
   idempotencyKey: "application-key-00000000000001",
-};
+} as OpenGameRegistrationApplyAttempt;
 const decisionAttempt: OpenGameRegistrationDecisionAttempt = {
   kind: "decision",
   originatingUserId: USER_ID,
@@ -270,6 +274,8 @@ describe("open-game registration recovery", () => {
     ["LOGIN_FAILED", "PRESERVE_LOGIN_COMPARE_ACCOUNT", false],
     ["APPLICATION_RESULT_UNKNOWN", "PRESERVE_APPLICATION_RESULT_UNKNOWN", false],
     ["APPLICATION_ALREADY_EXISTS", "PRESERVE_READ_CONTEXT_THEN_CLEAR", false],
+    ["PUBLIC_PROFILE_REQUIRED", "CLEAR_AND_REOPEN_PROFILE", true],
+    ["PUBLIC_PROFILE_CHANGED", "CLEAR_AND_REOPEN_PROFILE", true],
     ["APPLICATION_NOT_ALLOWED", "CLEAR_AND_REFRESH_CONTEXT", true],
     ["APPLICATION_STATE_CHANGED", "CLEAR_AND_REFRESH_QUEUE", true],
     ["APPLICATION_CAPACITY_CHANGED", "CLEAR_AND_REFRESH_QUEUE", true],
@@ -287,13 +293,67 @@ describe("open-game registration recovery", () => {
       .toEqual({ kind: "CLEAR_AND_REFRESH_ROSTER", clearAttempt: true });
   });
 
-  test("accepts authoritative apply context only when it contains the viewer registration", () => {
-    expect(classifyOpenGameRegistrationUnknownResult(applyAttempt, contextApplied)).toEqual({
+  test("accepts apply authority only for a matching joined or waitlisted result", () => {
+    for (const authority of [contextJoined, contextWaitlisted]) {
+      expect(classifyOpenGameRegistrationUnknownResult(applyAttempt, authority)).toEqual({
+        kind: "ACCEPT_AUTHORITY_AND_CLEAR",
+        authority,
+        clearAttempt: true,
+      });
+    }
+    expect(classifyOpenGameRegistrationUnknownResult(applyAttempt, contextReady)).toEqual({
+      kind: "REPLAY_SAME_ATTEMPT",
+      attempt: applyAttempt,
+      clearAttempt: false,
+    });
+  });
+
+  test("accepts matching APPLIED authority only for a restored legacy apply attempt", () => {
+    const legacyAttempt: OpenGameRegistrationApplyAttempt = {
+      kind: "apply",
+      originatingUserId: applyAttempt.originatingUserId,
+      shareToken: applyAttempt.shareToken,
+      body: applyAttempt.body,
+      idempotencyKey: applyAttempt.idempotencyKey,
+    };
+    expect(classifyOpenGameRegistrationUnknownResult(legacyAttempt, contextApplied)).toEqual({
       kind: "ACCEPT_AUTHORITY_AND_CLEAR",
       authority: contextApplied,
       clearAttempt: true,
     });
-    expect(classifyOpenGameRegistrationUnknownResult(applyAttempt, contextReady)).toEqual({
+    expect(classifyOpenGameRegistrationUnknownResult(applyAttempt, contextApplied)).toEqual({
+      kind: "REPLAY_SAME_ATTEMPT",
+      attempt: applyAttempt,
+      clearAttempt: false,
+    });
+  });
+
+  test.each([
+    ["old pending application", contextApplied],
+    ["withdrawn waitlist", contextWithdrawnWaitlist],
+    ["captain-removed registration", {
+      ...contextJoined,
+      viewerRegistration: {
+        ...contextJoined.viewerRegistration!,
+        version: contextJoined.viewerRegistration!.version + 1,
+        persistedStatus: "REMOVED" as const,
+        effectiveStatus: "REMOVED" as const,
+        removedAt: "2026-09-01T11:00:00+08:00",
+        availableWithdrawalAction: null,
+      },
+    }],
+    ["different active registration", {
+      ...contextJoined,
+      viewerRegistration: {
+        ...contextJoined.viewerRegistration!,
+        displayName: "另一位球员",
+      },
+    }],
+  ] as const)("does not clear an unknown apply for %s authority", (_label, authority) => {
+    expect(classifyOpenGameRegistrationUnknownResult(
+      applyAttempt,
+      authority as OpenGameRegistrationContext,
+    )).toEqual({
       kind: "REPLAY_SAME_ATTEMPT",
       attempt: applyAttempt,
       clearAttempt: false,

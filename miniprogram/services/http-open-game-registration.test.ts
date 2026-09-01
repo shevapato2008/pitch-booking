@@ -10,6 +10,7 @@ import {
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
 } from "../domain/open-game-registration-decoder";
+import type { OpenGameRegistrationContext } from "../domain/open-game-registration";
 import type { StatusTransport, WeChatIdentityCapability } from "../runtime/interfaces";
 import {
   createHttpOpenGameRegistrationSource,
@@ -19,6 +20,7 @@ import type {
   OpenGameRegistrationApplyAttempt,
   OpenGameAttendanceMarkAttempt,
   OpenGameRegistrationDecisionAttempt,
+  OpenGameRegistrationSource,
   OpenGameRegistrationWithdrawAttempt,
 } from "./open-game-registration";
 import type { SessionStore, StoredSession } from "./session-store";
@@ -36,6 +38,10 @@ const SESSION_TOKEN = "stored-session-token";
 const rawSession = fixture("wechat-session");
 const rawAnonymousContext = fixture("open-game-registration-context-anonymous");
 const rawAppliedContext = fixture("open-game-registration-context-applied");
+const rawJoinedContext = fixture("open-game-registration-context-joined");
+const rawWaitlistedContext = fixture("open-game-registration-context-waitlisted");
+const rawSignupAnonymousContext = fixture("open-game-signup-context-anonymous");
+const rawSignupJoinedContext = fixture("open-game-signup-context-joined");
 const rawQueue = fixture("open-game-applications-pending");
 const rawJoinedDecision = fixture("open-game-application-decision-joined");
 const rawWaitlistedDecision = fixture("open-game-application-decision-waitlisted");
@@ -125,6 +131,14 @@ const rawWithdrawnContext = contextWithWithdrawalFields({
   withdrawal_kind: "APPLICATION_WITHDRAWAL",
   available_withdrawal_action: null,
 });
+const rawSignupWithdrawnContext = {
+  ...fixture("open-game-signup-context-withdrawn-application"),
+  viewer_registration: {
+    ...(fixture("open-game-signup-context-withdrawn-application")
+      .viewer_registration as Record<string, unknown>),
+    id: APPLICATION_ID,
+  },
+};
 
 type Call = {
   readonly method: "GET" | "POST" | "PUT";
@@ -203,6 +217,243 @@ function harness(
 }
 
 describe("HTTP open-game registration requests", () => {
+  test("new signup client uses isolated context, registration, and withdrawal paths", async () => {
+    const h = harness([
+      response(200, rawSignupAnonymousContext),
+      response(201, rawSignupJoinedContext),
+      response(200, rawSignupWithdrawnContext),
+    ], null);
+    const source = h.source as OpenGameRegistrationSource & {
+      getSignupContext(shareToken: string): Promise<OpenGameRegistrationContext>;
+      createRegistration(
+        attempt: OpenGameRegistrationApplyAttempt,
+      ): Promise<OpenGameRegistrationContext>;
+      withdrawRegistration(
+        attempt: OpenGameRegistrationWithdrawAttempt,
+      ): Promise<OpenGameRegistrationContext>;
+    };
+
+    await expect(source.getSignupContext("share/token +?=")).resolves.toMatchObject({
+      viewerAuthenticated: false,
+    });
+    h.sessionStore.save({
+      token: SESSION_TOKEN,
+      expiresAt: "2099-01-01T00:00:00Z",
+      userId: USER_ID,
+    });
+    await expect(source.createRegistration({
+      ...applyAttempt,
+      shareToken: "share/token +?=",
+    })).resolves.toMatchObject({ viewerRegistration: { effectiveStatus: "JOINED" } });
+    await expect(source.withdrawRegistration(withdrawAttempt)).resolves.toMatchObject({
+      viewerRegistration: { effectiveStatus: "WITHDRAWN" },
+    });
+
+    expect(h.calls.map(({ method, path }) => ({ method, path }))).toEqual([
+      {
+        method: "GET",
+        path: "/api/v1/shared-games/share%2Ftoken%20%2B%3F%3D/signup-context",
+      },
+      {
+        method: "POST",
+        path: "/api/v1/shared-games/share%2Ftoken%20%2B%3F%3D/registrations",
+      },
+      {
+        method: "POST",
+        path: `/api/v1/open-game-registrations/${APPLICATION_ID}/withdraw`,
+      },
+    ]);
+  });
+
+  test("new signup resources accept a one-character public nickname without widening legacy context", async () => {
+    const oneCharacterJoined = structuredClone(rawSignupJoinedContext);
+    (oneCharacterJoined.viewer_registration as Record<string, unknown>).display_name = "翼";
+    const directAttempt: OpenGameRegistrationApplyAttempt = {
+      ...applyAttempt,
+      submissionMode: "DIRECT_REGISTRATION",
+      body: { ...applyAttempt.body, displayName: "翼" },
+    };
+    const direct = harness([
+      response(200, oneCharacterJoined),
+      response(201, oneCharacterJoined),
+    ]);
+
+    await expect(direct.source.getSignupContext?.(SHARE_TOKEN)).resolves.toMatchObject({
+      viewerRegistration: { displayName: "翼" },
+    });
+    await expect(direct.source.createRegistration?.(directAttempt)).resolves.toMatchObject({
+      viewerRegistration: { displayName: "翼", effectiveStatus: "JOINED" },
+    });
+
+    const legacy = harness([response(200, oneCharacterJoined)]);
+    await expect(legacy.source.getContext(SHARE_TOKEN)).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+    });
+  });
+
+  test.each(["PUBLIC_PROFILE_REQUIRED", "PUBLIC_PROFILE_CHANGED"] as const)(
+    "new direct signup maps %s as definitive but legacy apply keeps a closed matrix",
+    async (code) => {
+      const direct = harness([httpError(409, code)]);
+      await expect(registrationError(direct.source.createRegistration!(applyAttempt)))
+        .resolves.toMatchObject({ code });
+
+      const legacy = harness([httpError(409, code)]);
+      await expect(registrationError(legacy.source.apply(applyAttempt)))
+        .resolves.toMatchObject({ code: "APPLICATION_RESULT_UNKNOWN" });
+    },
+  );
+
+  test.each([
+    ["joined", rawJoinedContext, "JOINED"],
+    ["waitlisted", rawWaitlistedContext, "WAITLISTED"],
+  ] as const)("immediate signup accepts authoritative %s registration context", async (
+    _label,
+    authority,
+    status,
+  ) => {
+    const registration = authority.viewer_registration as Record<string, unknown>;
+    const attempt: OpenGameRegistrationApplyAttempt = {
+      ...applyAttempt,
+      body: {
+        displayName: registration.display_name as string,
+        position: registration.position as OpenGameRegistrationApplyAttempt["body"]["position"],
+        note: registration.note as string | null,
+        adultConfirmed: true,
+        riskConfirmed: true,
+      },
+    };
+    const h = harness([response(201, authority)]);
+
+    await expect(h.source.apply(attempt)).resolves.toMatchObject({
+      viewerRegistration: { effectiveStatus: status },
+    });
+  });
+
+  test("public signup profile uses exact auth APIs and uploads chooseAvatar bytes only to the signed PUT URL", async () => {
+    const profileMissing = {
+      nickname: null,
+      avatar_url: null,
+      profile_version: 0,
+      confirmed_at: null,
+    };
+    const uploadIntent = {
+      avatar_id: "50000000-0000-4000-8000-000000000101",
+      object_key: "private/player-profiles/avatar-101.png",
+      signed_put_url: "https://uploads.example.com/avatar-101?signature=opaque",
+      required_headers: { "Content-Type": "image/png", "Content-Length": "8" },
+      maximum_bytes: 2097152,
+      accepted_mime_types: ["image/jpeg", "image/png", "image/webp"],
+    };
+    const savedProfile = {
+      nickname: "小翼",
+      avatar_url: "https://cdn.example.com/avatars/avatar-101.png",
+      profile_version: 1,
+      confirmed_at: "2026-09-01T20:00:00+08:00",
+    };
+    const allowResult = {
+      registration_id: "40000000-0000-4000-8000-000000000104",
+      status: "REMOVED",
+      version: 5,
+      reapply_blocked: false,
+    };
+    const h = harness([
+      response(200, profileMissing),
+      response(201, uploadIntent),
+      response(200, savedProfile),
+      response(200, allowResult),
+    ]);
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).buffer;
+    const signedRequests: Array<Record<string, unknown>> = [];
+    (globalThis as unknown as { wx: unknown }).wx = {
+      getFileSystemManager: () => ({
+        readFile: ({ success }: { success(value: { data: ArrayBuffer }): void }) => success({ data: bytes }),
+      }),
+      request: (options: Record<string, unknown> & {
+        success(value: { statusCode: number; data: unknown }): void;
+      }) => {
+        signedRequests.push(options);
+        options.success({ statusCode: 200, data: "" });
+      },
+    };
+
+    const source = h.source as unknown as {
+      getPublicProfile(): Promise<unknown>;
+      uploadPublicProfileAvatar(tempFilePath: string): Promise<{ objectKey: string }>;
+      savePublicProfile(input: { nickname: string; avatarObjectKey: string | null }): Promise<unknown>;
+      allowMemberReapply(input: {
+        kind: "allow-reapply";
+        originatingUserId: string;
+        shareToken: string;
+        gameId: string;
+        registrationId: string;
+        expectedVersion: number;
+        idempotencyKey: string;
+      }): Promise<unknown>;
+    };
+    await expect(source.getPublicProfile()).resolves.toBeNull();
+    await expect(source.uploadPublicProfileAvatar("wxfile://tmp/choose-avatar-result")).resolves.toEqual({
+      objectKey: uploadIntent.object_key,
+    });
+    await expect(source.savePublicProfile({
+      nickname: "小翼",
+      avatarObjectKey: uploadIntent.object_key,
+    })).resolves.toMatchObject({ nickname: "小翼", avatarUrl: savedProfile.avatar_url });
+    await expect(source.allowMemberReapply({
+      kind: "allow-reapply",
+      originatingUserId: USER_ID,
+      shareToken: SHARE_TOKEN,
+      gameId: GAME_ID,
+      registrationId: allowResult.registration_id,
+      expectedVersion: 4,
+      idempotencyKey: "allow-reapply-key-0000000001",
+    })).resolves.toEqual({
+      registrationId: allowResult.registration_id,
+      status: "REMOVED",
+      version: 5,
+      reapplyBlocked: false,
+    });
+
+    expect(h.calls).toEqual([
+      {
+        method: "GET",
+        path: "/api/v1/auth/wechat/profile",
+        body: undefined,
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "POST",
+        path: "/api/v1/auth/wechat/profile/avatar/upload-intents",
+        body: { mime_type: "image/png", byte_size: 8 },
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "PUT",
+        path: "/api/v1/auth/wechat/profile",
+        body: { nickname: "小翼", avatar_object_key: uploadIntent.object_key },
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "POST",
+        path: `/api/v1/games/${GAME_ID}/members/${allowResult.registration_id}/unblock`,
+        body: { expected_version: 4 },
+        headers: {
+          Authorization: `Bearer ${SESSION_TOKEN}`,
+          "Idempotency-Key": "allow-reapply-key-0000000001",
+        },
+      },
+    ]);
+    expect(signedRequests).toHaveLength(1);
+    expect(signedRequests[0]).toMatchObject({
+      url: uploadIntent.signed_put_url,
+      method: "PUT",
+      data: bytes,
+      header: uploadIntent.required_headers,
+      timeout: 15000,
+    });
+    expect(signedRequests[0]).not.toHaveProperty("filePath");
+  });
+
   test("reads and marks attendance through the exact paths, body, bearer, and original key", async () => {
     const h = harness([
       response(200, rawAttendanceRoster),
@@ -578,6 +829,9 @@ describe("HTTP open-game registration closed errors", () => {
   const notAllowedDetails = (
     fixture("error-application-not-allowed").error as Record<string, unknown>
   ).details;
+  const reapplyBlockedDetails = (
+    fixture("error-application-reapply-blocked").error as Record<string, unknown>
+  ).details;
   const capacityDetails = (
     fixture("error-application-capacity-changed").error as Record<string, unknown>
   ).details;
@@ -591,6 +845,10 @@ describe("HTTP open-game registration closed errors", () => {
     ["apply", 409, "APPLICATION_NOT_ALLOWED", notAllowedDetails, {
       applyBlockedReason: "REGISTRATION_DEADLINE_PASSED",
       remainingSpots: 4,
+    }],
+    ["apply", 409, "APPLICATION_NOT_ALLOWED", reapplyBlockedDetails, {
+      applyBlockedReason: "REMOVED_BY_CAPTAIN",
+      remainingSpots: 1,
     }],
     ["apply", 409, "IDEMPOTENCY_KEY_REUSED", {}, undefined],
     ["apply", 422, "INVALID_ARGUMENT", fieldDetails.apply, fieldDetails.apply],
@@ -1077,17 +1335,6 @@ describe("HTTP open-game registration response authority", () => {
       viewer_registration: {
         ...(rawAppliedContext.viewer_registration as Record<string, unknown>),
         note: null,
-      },
-    }],
-    ["joined persisted result", {
-      ...rawAppliedContext,
-      viewer_registration: {
-        ...(rawAppliedContext.viewer_registration as Record<string, unknown>),
-        persisted_status: "JOINED",
-        effective_status: "JOINED",
-        version: 2,
-        decided_at: "2026-08-24T00:25:00+08:00",
-        available_withdrawal_action: "LEAVE_GAME",
       },
     }],
     ["rejected effective result", {

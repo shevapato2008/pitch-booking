@@ -18,7 +18,9 @@ from .storage import (
     extension_for,
     require_byte_size,
     require_content_type,
+    sanitized_user_avatar,
     validate_image,
+    validate_user_avatar,
 )
 
 
@@ -57,9 +59,30 @@ class LocalMediaStorage:
             },
         )
 
-    def accept_upload(
-        self, object_key: str, data: bytes, headers: Mapping[str, str]
-    ) -> None:
+    def create_user_avatar_upload_intent(
+        self,
+        user_id: UUID,
+        avatar_id: UUID,
+        content_type: str,
+        byte_size: int,
+    ) -> UploadIntent:
+        accepted = require_content_type(content_type)
+        accepted_size = require_byte_size(byte_size)
+        key = f"private/users/{user_id}/avatars/{avatar_id}/original.{extension_for(accepted)}"
+        return UploadIntent(
+            object_key=key,
+            url=f"memory://user-avatar-upload/{user_id}/{avatar_id}",
+            expires_in_seconds=UPLOAD_URL_TTL_SECONDS,
+            max_bytes=MAX_IMAGE_BYTES,
+            required_headers={
+                "Content-Type": accepted,
+                "Content-Length": str(accepted_size),
+                "x-oss-forbid-overwrite": "true",
+                "x-oss-object-acl": "private",
+            },
+        )
+
+    def accept_upload(self, object_key: str, data: bytes, headers: Mapping[str, str]) -> None:
         content_type = require_content_type(headers.get("Content-Type", ""))
         if headers.get("Content-Length") != str(len(data)):
             raise InvalidMediaError("uploaded body does not match signed Content-Length")
@@ -67,12 +90,18 @@ class LocalMediaStorage:
             raise ValueError("immutable upload header is required")
         if headers.get("x-oss-object-acl") != "private":
             raise ValueError("private object ACL is required")
-        if (
-            "/images/" not in object_key
-            or "/original." not in object_key
-            or not object_key.startswith("private/venues/")
-        ):
-            raise StorageBoundaryError("upload key is outside private venue storage")
+        venue_upload = (
+            object_key.startswith("private/venues/")
+            and "/images/" in object_key
+            and "/original." in object_key
+        )
+        user_avatar_upload = (
+            object_key.startswith("private/users/")
+            and "/avatars/" in object_key
+            and "/original." in object_key
+        )
+        if not (venue_upload or user_avatar_upload):
+            raise StorageBoundaryError("upload key is outside controlled media storage")
         if object_key in self._objects:
             raise FileExistsError("upload object already exists")
         self._objects[object_key] = _StoredObject(data, content_type)
@@ -121,6 +150,46 @@ class LocalMediaStorage:
             sha256=verified.sha256,
         )
 
+    def user_avatar_url(self, user_id: UUID, object_key: str) -> str:
+        self._require_user_avatar_published_key(user_id, object_key)
+        return f"{self._public_base_url}/{object_key}"
+
+    def promote_user_avatar(
+        self,
+        user_id: UUID,
+        avatar_id: UUID,
+        object_key: str,
+    ) -> PublishedImage:
+        self._require_user_avatar_original_key(user_id, avatar_id, object_key)
+        stored = self._objects[object_key]
+        try:
+            image = validate_user_avatar(
+                object_key,
+                stored.data[: MAX_IMAGE_BYTES + 1],
+                stored.content_type,
+            )
+        except ValueError:
+            self._objects.pop(object_key, None)
+            raise
+        published_key = (
+            f"published/avatars/{avatar_id}.{extension_for(image.content_type)}"
+        )
+        verified = sanitized_user_avatar(
+            published_key,
+            image,
+        )
+        self._objects[published_key] = _StoredObject(
+            verified.data,
+            verified.content_type,
+        )
+        return PublishedImage(
+            object_key=published_key,
+            url=f"{self._public_base_url}/{published_key}",
+            content_type=verified.content_type,
+            byte_size=verified.byte_size,
+            sha256=verified.sha256,
+        )
+
     def delete_objects(
         self, venue_id: UUID, image_id: UUID, object_keys: list[str]
     ) -> None:
@@ -144,6 +213,34 @@ class LocalMediaStorage:
         expected = f"private/venues/{venue_id}/images/{image_id}/review.jpg"
         if object_key != expected:
             raise StorageBoundaryError("object key is outside the venue boundary")
+
+    @staticmethod
+    def _require_user_avatar_published_key(_user_id: UUID, object_key: str) -> None:
+        prefix = "published/avatars/"
+        suffix = object_key.removeprefix(prefix)
+        stem, separator, extension = suffix.rpartition(".")
+        try:
+            parsed_avatar_id = UUID(stem)
+        except ValueError:
+            parsed_avatar_id = None
+        if (
+            object_key == suffix
+            or separator != "."
+            or parsed_avatar_id is None
+            or extension not in {"jpg", "png", "webp"}
+        ):
+            raise StorageBoundaryError("object key is outside the user avatar boundary")
+
+    @staticmethod
+    def _require_user_avatar_original_key(
+        user_id: UUID,
+        avatar_id: UUID,
+        object_key: str,
+    ) -> None:
+        prefix = f"private/users/{user_id}/avatars/{avatar_id}/original."
+        extension = object_key.removeprefix(prefix)
+        if object_key == extension or extension not in {"jpg", "png", "webp"}:
+            raise StorageBoundaryError("object key is outside the user avatar boundary")
 
     @staticmethod
     def _require_deletable_key(venue_id: UUID, image_id: UUID, object_key: str) -> None:

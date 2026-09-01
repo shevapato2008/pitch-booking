@@ -30,6 +30,11 @@ const applyAttempt = {
   body,
   idempotencyKey: "application-key-00000000000001",
 };
+const directRegistrationAttempt = {
+  ...applyAttempt,
+  submissionMode: "DIRECT_REGISTRATION" as const,
+  idempotencyKey: "direct-registration-key-000000001",
+};
 
 const decisionAttempt = {
   kind: "decision" as const,
@@ -71,6 +76,16 @@ const removeMemberAttempt = {
   idempotencyKey: "remove-member-key-000000000001",
 };
 
+const allowReapplyAttempt = {
+  kind: "allow-reapply" as const,
+  originatingUserId: USER_ID,
+  shareToken: SHARE_TOKEN,
+  gameId: GAME_ID,
+  registrationId: APPLICATION_ID,
+  expectedVersion: 3,
+  idempotencyKey: "allow-reapply-key-000000000001",
+};
+
 function memoryStorage(initial: ReadonlyArray<readonly [string, unknown]> = []) {
   const values = new Map<string, unknown>(initial);
   return {
@@ -99,6 +114,35 @@ describe("OpenGameRegistrationAttemptStore", () => {
     const restored = store.load();
     if (restored?.kind !== "apply") throw new Error("expected an apply attempt");
     expect(restored.body).not.toBe(body);
+  });
+
+  test("persists the direct-registration mode and never reuses a legacy apply key for it", () => {
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+    expect(store.begin(directRegistrationAttempt as unknown as OpenGameRegistrationAttempt))
+      .toEqual({ kind: "READY", attempt: directRegistrationAttempt });
+    expect(store.load()).toEqual(directRegistrationAttempt);
+
+    store.clear();
+    store.begin(applyAttempt);
+    expect(store.begin(directRegistrationAttempt as unknown as OpenGameRegistrationAttempt)).toEqual({
+      kind: "SAME_ACCOUNT_PENDING",
+      attempt: applyAttempt,
+    });
+  });
+
+  test("accepts a one-character public nickname only for direct registration attempts", () => {
+    const oneCharacter = {
+      ...applyAttempt,
+      body: { ...body, displayName: "翼" },
+    };
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+
+    expect(() => store.begin(oneCharacter)).toThrow("INVALID_OPEN_GAME_REGISTRATION_ATTEMPT");
+    const direct = { ...oneCharacter, submissionMode: "DIRECT_REGISTRATION" as const };
+    expect(store.begin(direct)).toEqual({ kind: "READY", attempt: direct });
+    expect(createOpenGameRegistrationAttemptStore(storage).load()).toEqual(direct);
   });
 
   test("restores every canonical attempt through a new factory instance", () => {
@@ -234,6 +278,32 @@ describe("OpenGameRegistrationAttemptStore", () => {
     });
   });
 
+  test("persists and reuses only the exact allow-reapply mutation", () => {
+    const storage = memoryStorage();
+    const store = createOpenGameRegistrationAttemptStore(storage);
+
+    expect(store.begin(allowReapplyAttempt as unknown as OpenGameRegistrationAttempt))
+      .toEqual({ kind: "READY", attempt: allowReapplyAttempt });
+    expect(store.begin({
+      ...allowReapplyAttempt,
+      idempotencyKey: "replacement-allow-reapply-key-001",
+    } as unknown as OpenGameRegistrationAttempt)).toEqual({
+      kind: "READY",
+      attempt: allowReapplyAttempt,
+    });
+    for (const changed of [
+      { ...allowReapplyAttempt, expectedVersion: 4 },
+      { ...allowReapplyAttempt, registrationId: "88888888-8888-4888-8aaa-bbbbbbbbbbbb" },
+      { ...allowReapplyAttempt, gameId: "33333333-4444-4555-8666-777777777777" },
+      { ...allowReapplyAttempt, shareToken: "1234567890_abcdefghijklmnopqrstu" },
+    ]) expect(store.begin(changed as unknown as OpenGameRegistrationAttempt)).toEqual({
+      kind: "SAME_ACCOUNT_PENDING",
+      attempt: allowReapplyAttempt,
+    });
+    expect(store.load()).toEqual(allowReapplyAttempt);
+    expect(storage.set).toHaveBeenCalledTimes(1);
+  });
+
   test("distinguishes same-account pending mutations from foreign-account pending attempts", () => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -268,6 +338,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
 
   test.each([
     ["apply", applyAttempt],
+    ["direct registration", directRegistrationAttempt],
     ["decision", decisionAttempt],
     ["withdraw application", withdrawAttempt],
     ["leave game", { ...withdrawAttempt, action: "LEAVE_GAME" }],
@@ -277,6 +348,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["mark present attendance", attendanceAttempt],
     ["mark no-show attendance", { ...attendanceAttempt, attendanceStatus: "NO_SHOW" }],
     ["remove joined member", removeMemberAttempt],
+    ["allow removed member to reapply", allowReapplyAttempt],
     ["null note", { ...applyAttempt, body: { ...body, note: null } }],
     ["goalkeeper", { ...applyAttempt, body: { ...body, position: "GOALKEEPER" } }],
     ["defender", { ...applyAttempt, body: { ...body, position: "DEFENDER" } }],
@@ -326,6 +398,10 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["removal untrimmed reason", { ...removeMemberAttempt, reason: " 原因 " }],
     ["removal private reason", { ...removeMemberAttempt, reason: "微信 wx_friend" }],
     ["removal long reason", { ...removeMemberAttempt, reason: "球".repeat(121) }],
+    ["allow-reapply missing token", { ...allowReapplyAttempt, shareToken: undefined }],
+    ["allow-reapply invalid registration", {
+      ...allowReapplyAttempt, registrationId: "not-a-uuid",
+    }],
   ])("rejects an invalid begin with zero persistence writes: %s", (_label, invalid) => {
     const storage = memoryStorage();
     const store = createOpenGameRegistrationAttemptStore(storage);
@@ -344,6 +420,7 @@ describe("OpenGameRegistrationAttemptStore", () => {
     ["invalid withdrawal", { ...withdrawAttempt, action: "AUTO" }],
     ["invalid attendance", { ...attendanceAttempt, attendanceStatus: "UNMARKED" }],
     ["invalid removal", { ...removeMemberAttempt, reason: "13800138000" }],
+    ["invalid allow-reapply", { ...allowReapplyAttempt, expectedVersion: 0 }],
   ])("self-clears corrupt persisted state: %s", (_label, invalid) => {
     const storage = memoryStorage([[KEY, invalid]]);
     const store = createOpenGameRegistrationAttemptStore(storage);

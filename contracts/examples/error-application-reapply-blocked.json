@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "APPLICATION_NOT_ALLOWED",
+    "message": "当前球局暂不允许提交申请。",
+    "request_id": "req-contract-application-reapply-blocked",
+    "details": {
+      "apply_blocked_reason": "REMOVED_BY_CAPTAIN",
+      "remaining_spots": 1
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import {
   validateOpenGameApplicationDraft,
+  validateOpenGameDirectRegistrationDraft,
   validateOpenGameMemberRemovalReason,
 } from "../domain/open-game-registration-decoder";
 import type { OpenGameApplicationSubmission } from "../domain/open-game-registration";
@@ -76,7 +77,10 @@ function isIdempotencyKey(value: unknown): value is string {
   return typeof value === "string" && IDEMPOTENCY_KEY_PATTERN.test(value);
 }
 
-function isSubmission(value: unknown): value is OpenGameApplicationSubmission {
+function isSubmission(
+  value: unknown,
+  directRegistration: boolean,
+): value is OpenGameApplicationSubmission {
   if (!isObject(value) || !exactKeys(value, [
     "displayName", "position", "note", "adultConfirmed", "riskConfirmed",
   ])) return false;
@@ -86,7 +90,10 @@ function isSubmission(value: unknown): value is OpenGameApplicationSubmission {
     || (value.note !== null && typeof value.note !== "string")
     || value.adultConfirmed !== true
     || value.riskConfirmed !== true) return false;
-  const validation = validateOpenGameApplicationDraft({
+  const validate = directRegistration
+    ? validateOpenGameDirectRegistrationDraft
+    : validateOpenGameApplicationDraft;
+  const validation = validate({
     displayName: value.displayName,
     position: value.position as OpenGamePosition,
     note: value.note ?? "",
@@ -104,10 +111,15 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
     || !isUuid(value.originatingUserId)
     || !isIdempotencyKey(value.idempotencyKey)) return false;
   if (value.kind === "apply") {
-    return exactKeys(value, ["kind", "originatingUserId", "shareToken", "body", "idempotencyKey"])
+    const hasSubmissionMode = Object.prototype.hasOwnProperty.call(value, "submissionMode");
+    return exactKeys(value, [
+      "kind", "originatingUserId", "shareToken", "body", "idempotencyKey",
+      ...(hasSubmissionMode ? ["submissionMode"] : []),
+    ])
       && typeof value.shareToken === "string"
       && SHARE_TOKEN_PATTERN.test(value.shareToken)
-      && isSubmission(value.body);
+      && (!hasSubmissionMode || value.submissionMode === "DIRECT_REGISTRATION")
+      && isSubmission(value.body, hasSubmissionMode);
   }
   if (value.kind === "decision") {
     return exactKeys(value, [
@@ -159,6 +171,18 @@ function isAttempt(value: unknown): value is OpenGameRegistrationAttempt {
     const validation = validateOpenGameMemberRemovalReason(value.reason);
     return validation.valid && validation.reason === value.reason;
   }
+  if (value.kind === "allow-reapply") {
+    return exactKeys(value, [
+      "kind", "originatingUserId", "shareToken", "gameId", "registrationId",
+      "expectedVersion", "idempotencyKey",
+    ])
+      && typeof value.shareToken === "string"
+      && SHARE_TOKEN_PATTERN.test(value.shareToken)
+      && isUuid(value.gameId)
+      && isUuid(value.registrationId)
+      && Number.isSafeInteger(value.expectedVersion)
+      && (value.expectedVersion as number) >= 1;
+  }
   return false;
 }
 
@@ -174,13 +198,16 @@ function cloneSubmission(submission: OpenGameApplicationSubmission): OpenGameApp
 
 function cloneAttempt(attempt: OpenGameRegistrationAttempt): OpenGameRegistrationAttempt {
   if (attempt.kind === "apply") {
-    return {
+    const cloned: OpenGameRegistrationAttempt = {
       kind: "apply",
       originatingUserId: attempt.originatingUserId,
       shareToken: attempt.shareToken,
       body: cloneSubmission(attempt.body),
       idempotencyKey: attempt.idempotencyKey,
     };
+    return attempt.submissionMode === "DIRECT_REGISTRATION"
+      ? { ...cloned, submissionMode: "DIRECT_REGISTRATION" }
+      : cloned;
   }
   if (attempt.kind === "decision") return {
     kind: "decision",
@@ -209,13 +236,22 @@ function cloneAttempt(attempt: OpenGameRegistrationAttempt): OpenGameRegistratio
     expectedVersion: attempt.expectedVersion,
     idempotencyKey: attempt.idempotencyKey,
   };
+  if (attempt.kind === "remove-member") return {
+      kind: "remove-member",
+      originatingUserId: attempt.originatingUserId,
+      gameId: attempt.gameId,
+      registrationId: attempt.registrationId,
+      expectedVersion: attempt.expectedVersion,
+      reason: attempt.reason,
+      idempotencyKey: attempt.idempotencyKey,
+    };
   return {
-    kind: "remove-member",
+    kind: "allow-reapply",
     originatingUserId: attempt.originatingUserId,
+    shareToken: attempt.shareToken,
     gameId: attempt.gameId,
     registrationId: attempt.registrationId,
     expectedVersion: attempt.expectedVersion,
-    reason: attempt.reason,
     idempotencyKey: attempt.idempotencyKey,
   };
 }
@@ -234,7 +270,9 @@ function sameSubmission(
 function sameMutation(left: OpenGameRegistrationAttempt, right: OpenGameRegistrationAttempt): boolean {
   if (left.kind !== right.kind || left.originatingUserId !== right.originatingUserId) return false;
   if (left.kind === "apply" && right.kind === "apply") {
-    return left.shareToken === right.shareToken && sameSubmission(left.body, right.body);
+    return left.shareToken === right.shareToken
+      && left.submissionMode === right.submissionMode
+      && sameSubmission(left.body, right.body);
   }
   if (left.kind === "decision" && right.kind === "decision") {
     return left.gameId === right.gameId
@@ -259,6 +297,12 @@ function sameMutation(left: OpenGameRegistrationAttempt, right: OpenGameRegistra
       && left.registrationId === right.registrationId
       && left.expectedVersion === right.expectedVersion
       && left.reason === right.reason;
+  }
+  if (left.kind === "allow-reapply" && right.kind === "allow-reapply") {
+    return left.shareToken === right.shareToken
+      && left.gameId === right.gameId
+      && left.registrationId === right.registrationId
+      && left.expectedVersion === right.expectedVersion;
   }
   return false;
 }

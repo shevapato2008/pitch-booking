@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 ImageContentType = Literal["image/jpeg", "image/png", "image/webp"]
 SUPPORTED_IMAGE_TYPES: tuple[ImageContentType, ...] = (
@@ -19,6 +19,12 @@ SUPPORTED_IMAGE_TYPES: tuple[ImageContentType, ...] = (
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 UPLOAD_URL_TTL_SECONDS = 300
 REVIEW_URL_TTL_SECONDS = 300
+
+MAX_AVATAR_DIMENSION = 1024
+
+MAX_AVATAR_SOURCE_DIMENSION = 8192
+
+MAX_AVATAR_SOURCE_PIXELS = 16 * 1024 * 1024
 
 _FORMAT_TO_CONTENT_TYPE: dict[str, ImageContentType] = {
     "JPEG": "image/jpeg",
@@ -76,25 +82,36 @@ class VenueMediaStore(Protocol):
         self, venue_id: UUID, image_id: UUID, content_type: str, byte_size: int
     ) -> UploadIntent: ...
 
-    def read_bounded(
-        self, venue_id: UUID, image_id: UUID, object_key: str
-    ) -> ValidatedImage: ...
+    def read_bounded(self, venue_id: UUID, image_id: UUID, object_key: str) -> ValidatedImage: ...
 
     def write_review_copy(
         self, venue_id: UUID, image_id: UUID, image: ValidatedImage
     ) -> ValidatedImage: ...
 
-    def signed_review_url(
-        self, venue_id: UUID, image_id: UUID, object_key: str
-    ) -> str: ...
+    def signed_review_url(self, venue_id: UUID, image_id: UUID, object_key: str) -> str: ...
 
     def promote_and_verify(
         self, venue_id: UUID, image_id: UUID, image: ValidatedImage
     ) -> PublishedImage: ...
 
-    def delete_objects(
-        self, venue_id: UUID, image_id: UUID, object_keys: list[str]
-    ) -> None: ...
+    def delete_objects(self, venue_id: UUID, image_id: UUID, object_keys: list[str]) -> None: ...
+
+    def create_user_avatar_upload_intent(
+        self,
+        user_id: UUID,
+        avatar_id: UUID,
+        content_type: str,
+        byte_size: int,
+    ) -> UploadIntent: ...
+
+    def promote_user_avatar(
+        self,
+        user_id: UUID,
+        avatar_id: UUID,
+        object_key: str,
+    ) -> PublishedImage: ...
+
+    def user_avatar_url(self, user_id: UUID, object_key: str) -> str: ...
 
 
 def require_content_type(value: str) -> ImageContentType:
@@ -150,3 +167,70 @@ def compressed_review_data(data: bytes) -> bytes:
         image.thumbnail((640, 640))
         image.convert("RGB").save(output, "JPEG", quality=72, optimize=True)
     return output.getvalue()
+def _require_avatar_dimensions(image: Image.Image) -> None:
+    if (
+        image.width * image.height > MAX_AVATAR_SOURCE_PIXELS
+        or max(image.size) > MAX_AVATAR_SOURCE_DIMENSION
+    ):
+        raise InvalidMediaError("avatar exceeds pixel budget")
+
+def sanitized_user_avatar(
+    published_object_key: str,
+    image: ValidatedImage,
+) -> ValidatedImage:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(image.data)) as opened:
+                _require_avatar_dimensions(opened)
+                opened.load()
+                oriented = ImageOps.exif_transpose(opened)
+                preserve_alpha = (
+                    image.content_type in {"image/png", "image/webp"}
+                    and ("A" in oriented.getbands() or "transparency" in opened.info)
+                )
+                mode = "RGBA" if preserve_alpha else "RGB"
+                clean = Image.new(mode, oriented.size)
+                clean.paste(oriented.convert(mode))
+                clean.thumbnail((MAX_AVATAR_DIMENSION, MAX_AVATAR_DIMENSION))
+                output = io.BytesIO()
+                if image.content_type == "image/jpeg":
+                    clean.save(output, "JPEG", quality=85, optimize=True)
+                elif image.content_type == "image/png":
+                    clean.save(output, "PNG", optimize=True)
+                else:
+                    clean.save(output, "WEBP", quality=85, method=6)
+    except InvalidMediaError:
+        raise
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+        raise InvalidMediaError("avatar exceeds pixel budget") from error
+    except (OSError, UnidentifiedImageError, ValueError) as error:
+        raise InvalidMediaError("avatar could not be re-encoded") from error
+    return validate_image(
+        published_object_key,
+        output.getvalue(),
+        image.content_type,
+    )
+
+def validate_user_avatar(
+    object_key: str,
+    data: bytes,
+    claimed_content_type: str,
+) -> ValidatedImage:
+    require_content_type(claimed_content_type)
+    if len(data) > MAX_IMAGE_BYTES:
+        raise InvalidMediaError("image exceeds the 10 MiB limit")
+    if not data:
+        raise InvalidMediaError("image could not be decoded")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as opened:
+                _require_avatar_dimensions(opened)
+    except InvalidMediaError:
+        raise
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+        raise InvalidMediaError("avatar exceeds pixel budget") from error
+    except (OSError, UnidentifiedImageError, ValueError) as error:
+        raise InvalidMediaError("image could not be decoded") from error
+    return validate_image(object_key, data, claimed_content_type)

@@ -103,6 +103,14 @@ class AuthRepository:
     def get_user(self, user_id: UUID) -> User | None:
         return self.session.get(User, user_id)
 
+    def lock_user(self, user_id: UUID) -> User | None:
+        return self.session.scalar(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     def set_verified_phone(
         self,
         *,

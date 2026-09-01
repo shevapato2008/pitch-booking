@@ -1366,7 +1366,7 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
   const temporaryDirectory = await createTemporaryRepository();
   try {
     const { stdout, stderr } = await runTemporaryGenerator(temporaryDirectory);
-    assert.match(stdout, /generated 19 fixtures/i);
+    assert.match(stdout, /generated 25 fixtures/i);
     assert.equal(stderr, '');
     const mappings = [
       ['venue-primary.json', 'venue-ready.json'],
@@ -1384,6 +1384,12 @@ test('fixture generator writes only normalized allow-listed success fixtures', a
       ['open-game-registration-context-joined.json', 'open-game-registration-context-joined.json'],
       ['open-game-registration-context-rejected.json', 'open-game-registration-context-rejected.json'],
       ['open-game-registration-context-cancelled.json', 'open-game-registration-context-cancelled.json'],
+      ['open-game-signup-context-anonymous.json', 'open-game-signup-context-anonymous.json'],
+      ['open-game-signup-context-apply-ready.json', 'open-game-signup-context-apply-ready.json'],
+      ['open-game-signup-context-applied.json', 'open-game-signup-context-applied.json'],
+      ['open-game-signup-context-joined.json', 'open-game-signup-context-joined.json'],
+      ['open-game-signup-context-rejected.json', 'open-game-signup-context-rejected.json'],
+      ['open-game-signup-context-cancelled.json', 'open-game-signup-context-cancelled.json'],
       ['open-game-applications-pending.json', 'open-game-applications-pending.json'],
       ['open-game-applications-empty.json', 'open-game-applications-empty.json'],
       ['open-game-application-decision-joined.json', 'open-game-application-decision-joined.json'],
@@ -1421,6 +1427,12 @@ test('checked-in fixtures already match normalized canonical examples byte-for-b
     ['open-game-registration-context-joined.json', 'open-game-registration-context-joined.json'],
     ['open-game-registration-context-rejected.json', 'open-game-registration-context-rejected.json'],
     ['open-game-registration-context-cancelled.json', 'open-game-registration-context-cancelled.json'],
+    ['open-game-signup-context-anonymous.json', 'open-game-signup-context-anonymous.json'],
+    ['open-game-signup-context-apply-ready.json', 'open-game-signup-context-apply-ready.json'],
+    ['open-game-signup-context-applied.json', 'open-game-signup-context-applied.json'],
+    ['open-game-signup-context-joined.json', 'open-game-signup-context-joined.json'],
+    ['open-game-signup-context-rejected.json', 'open-game-signup-context-rejected.json'],
+    ['open-game-signup-context-cancelled.json', 'open-game-signup-context-cancelled.json'],
     ['open-game-applications-pending.json', 'open-game-applications-pending.json'],
     ['open-game-applications-empty.json', 'open-game-applications-empty.json'],
     ['open-game-application-decision-joined.json', 'open-game-application-decision-joined.json'],
@@ -1520,6 +1532,12 @@ test('fixture publication rolls back every file after a deterministic second-pub
     'open-game-registration-context-joined.json',
     'open-game-registration-context-rejected.json',
     'open-game-registration-context-cancelled.json',
+    'open-game-signup-context-anonymous.json',
+    'open-game-signup-context-apply-ready.json',
+    'open-game-signup-context-applied.json',
+    'open-game-signup-context-joined.json',
+    'open-game-signup-context-rejected.json',
+    'open-game-signup-context-cancelled.json',
     'open-game-applications-pending.json',
     'open-game-applications-empty.json',
     'open-game-application-decision-joined.json',

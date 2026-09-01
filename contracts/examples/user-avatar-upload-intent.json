@@ -1,0 +1,13 @@
+{
+  "avatar_id": "70000000-0000-4000-8000-000000000001",
+  "object_key": "private/users/10000000-0000-4000-8000-000000000002/avatars/70000000-0000-4000-8000-000000000001/original.png",
+  "signed_put_url": "https://storage.example.test/signed-user-avatar-put",
+  "required_headers": {
+    "Content-Type": "image/png",
+    "Content-Length": "2048",
+    "x-oss-forbid-overwrite": "true",
+    "x-oss-object-acl": "private"
+  },
+  "maximum_bytes": 10485760,
+  "accepted_mime_types": ["image/jpeg", "image/png", "image/webp"]
+}

@@ -55,8 +55,15 @@
             <text class="c1a-game-subtitle">{{publicGame.pitchSpecification}} · {{intensityLabel}} · 需要 {{positionsLabel}}</text>
           </view>
 
-          <view class="c1a-metrics c1a-section" aria-label="球局摘要">
-            <view class="c1a-metric"><text class="c1a-metric-value">剩余 {{remainingSpots}} 个名额</text><text>{{capacityLabel}}</text></view>
+          <view class="c1a-card c1a-signup-progress c1a-section" aria-label="报名进度">
+            <view class="c1a-signup-progress-main">
+              <text class="c1a-signup-progress-value">公开报名 {{joinedCount}} / {{publicOpenSpots}}</text>
+              <text class="c1a-waitlist-count">候补 {{waitlistCount}} 人</text>
+            </view>
+            <text class="c1a-plan-count">计划 {{totalPlayers}} 人，其中固定队员 {{fixedPlayers}} 人</text>
+          </view>
+
+          <view class="c1a-metrics c1a-section" aria-label="费用与截止">
             <view class="c1a-metric"><text class="c1a-metric-value">{{aaSummaryLabel}}</text><text>到场线下结算</text></view>
             <view class="c1a-metric c1a-metric--deadline"><text class="c1a-metric-value">{{deadlineLabel}}</text><text>报名截止</text></view>
           </view>
@@ -64,7 +71,65 @@
           <view class="c1a-status-card c1a-status-card--{{statusTone}} c1a-section" role="status">
             <view class="c1a-status-heading"><view class="c1a-status-dot"></view><text>{{statusHeading}}</text></view>
             <text class="c1a-status-description">{{statusDescription}}</text>
+            <button wx:if="{{profileActionVisible}}" class="c1a-profile-edit" hover-class="button-hover" bindtap="onEditProfile">更新头像和昵称</button>
           </view>
+
+          <view class="c1a-card c1a-roster-card c1a-section">
+            <view class="c1a-roster-heading-row">
+              <text class="c1a-roster-title">正式名单</text>
+              <text class="c1a-roster-count">{{joinedCount}} 人</text>
+            </view>
+            <view wx:if="{{rosterPrivate}}" class="c1a-roster-private">
+              <view class="c1a-private-lock" aria-hidden="true"></view>
+              <text>登录后查看名单</text>
+            </view>
+            <text wx:elif="{{joinedMembers.length === 0}}" class="c1a-roster-empty">还没有公开报名成员</text>
+            <view wx:else class="c1a-roster-list">
+              <view wx:for="{{joinedMembers}}" wx:key="index" class="c1a-roster-row">
+                <image wx:if="{{item.avatarUrl}}" class="c1a-roster-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-group="joinedMembers" data-index="{{index}}" binderror="onRosterAvatarError" />
+                <view wx:else class="c1a-roster-avatar c1a-roster-avatar--fallback"><text>{{item.avatarFallback}}</text></view>
+                <text class="c1a-roster-nickname">{{item.nickname}}</text>
+                <button wx:if="{{item.canRemove}}" class="c1a-roster-action c1a-roster-action--danger" disabled="{{managementActionInFlight}}" hover-class="button-hover" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onRemoveRosterMember">移除</button>
+              </view>
+            </view>
+          </view>
+
+          <view class="c1a-card c1a-roster-card c1a-section">
+            <view class="c1a-roster-heading-row">
+              <text class="c1a-roster-title">候补名单</text>
+              <text class="c1a-roster-count">{{waitlistCount}} 人</text>
+            </view>
+            <view wx:if="{{rosterPrivate}}" class="c1a-roster-private">
+              <view class="c1a-private-lock" aria-hidden="true"></view>
+              <text>登录后查看名单</text>
+            </view>
+            <text wx:elif="{{waitlistedMembers.length === 0}}" class="c1a-roster-empty">当前没有候补成员</text>
+            <view wx:else class="c1a-roster-list">
+              <view wx:for="{{waitlistedMembers}}" wx:key="index" class="c1a-roster-row c1a-roster-row--waitlist">
+                <text class="c1a-waitlist-position">第 {{item.waitlistPosition}} 位</text>
+                <image wx:if="{{item.avatarUrl}}" class="c1a-roster-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-group="waitlistedMembers" data-index="{{index}}" binderror="onRosterAvatarError" />
+                <view wx:else class="c1a-roster-avatar c1a-roster-avatar--fallback"><text>{{item.avatarFallback}}</text></view>
+                <text class="c1a-roster-nickname">{{item.nickname}}</text>
+                <button wx:if="{{item.canRemove}}" class="c1a-roster-action c1a-roster-action--danger" disabled="{{managementActionInFlight}}" hover-class="button-hover" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onRemoveRosterMember">移除</button>
+              </view>
+            </view>
+          </view>
+
+          <view wx:if="{{isCaptain && blockedMembers.length}}" class="c1a-card c1a-roster-card c1a-section">
+            <view class="c1a-roster-heading-row">
+              <view class="c1a-roster-heading-copy"><text class="c1a-roster-title">已移除成员</text><text class="c1a-roster-caption">解除限制不会自动报名</text></view>
+              <text class="c1a-roster-count">{{blockedMembers.length}} 人</text>
+            </view>
+            <view class="c1a-roster-list">
+              <view wx:for="{{blockedMembers}}" wx:key="index" class="c1a-roster-row">
+                <image wx:if="{{item.avatarUrl}}" class="c1a-roster-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-group="blockedMembers" data-index="{{index}}" binderror="onRosterAvatarError" />
+                <view wx:else class="c1a-roster-avatar c1a-roster-avatar--fallback"><text>{{item.avatarFallback}}</text></view>
+                <text class="c1a-roster-nickname">{{item.nickname}}</text>
+                <button wx:if="{{item.canAllowReapply}}" class="c1a-roster-action c1a-roster-action--secondary" disabled="{{managementActionInFlight}}" hover-class="button-hover" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onAllowMemberReapply">允许重新报名</button>
+              </view>
+            </view>
+          </view>
+          <text wx:if="{{managementError}}" class="c1a-navigation-error" role="alert">{{managementError}}</text>
 
           <view wx:if="{{viewerRegistrationId}}" class="c1a-card c1a-section c2d-registration-authority">
             <text class="c2d-registration-title">报名记录</text>
@@ -93,7 +158,7 @@
 
       <view wx:if="{{primaryAction}}" class="c1a-footer">
         <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onLogin">登录并继续</button>
-        <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onApply">申请加入</button>
+        <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" disabled="{{signupSubmitting}}" hover-class="button-hover" bindtap="onApply">{{signupSubmitting ? '提交中…' : signupActionLabel}}</button>
         <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRefresh">刷新结果</button>
         <button wx:elif="{{primaryAction === 'WITHDRAW'}}" class="c1a-button c1a-button--danger" hover-class="button-hover" bindtap="onOpenWithdrawalConfirm">{{withdrawalActionLabel}}</button>
         <button wx:elif="{{primaryAction === 'CONFIRM_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmResult">确认申请结果</button>
@@ -117,6 +182,37 @@
           </view>
         </view>
       </view>
+
+      <view wx:if="{{profileSheetState !== 'CLOSED'}}" class="c2a-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-label="{{profileSheetTitle}}">
+        <view class="c1a-profile-sheet">
+          <view class="c2a-sheet-handle" aria-hidden="true"></view>
+          <text class="c2a-sheet-title">{{profileSheetTitle}}</text>
+          <text class="c2a-sheet-copy">{{profilePurpose === 'SIGNUP' ? '头像昵称仅对登录用户展示；报名结果以提交时名额为准。' : '头像和昵称会展示给已登录用户。'}}</text>
+          <button class="c1a-avatar-picker" open-type="chooseAvatar" disabled="{{profileSheetState === 'SUBMITTING'}}" bindchooseavatar="onProfileAvatarChosen" aria-label="选择公开头像">
+            <image wx:if="{{profileAvatarPreview}}" class="c1a-profile-avatar" src="{{profileAvatarPreview}}" mode="aspectFill" />
+            <view wx:else class="c1a-profile-avatar c1a-profile-avatar--empty"><text>选择头像</text></view>
+          </button>
+          <label class="c1a-profile-field" for="c1a-profile-nickname">
+            <text class="c1a-profile-label">昵称</text>
+            <input id="c1a-profile-nickname" class="c1a-profile-input" type="nickname" value="{{profileNickname}}" maxlength="24" disabled="{{profileSheetState === 'SUBMITTING'}}" bindinput="onProfileNicknameInput" cursor-spacing="160" placeholder="填写公开昵称" />
+          </label>
+          <checkbox-group wx:if="{{profilePurpose === 'SIGNUP'}}" class="c1a-profile-confirmations" bindchange="onSignupConfirmationsChange">
+            <label class="c1a-profile-confirmation">
+              <checkbox value="adult" checked="{{adultConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#2563eb" />
+              <text>我已满 18 周岁</text>
+            </label>
+            <label class="c1a-profile-confirmation">
+              <checkbox value="risk" checked="{{riskConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#2563eb" />
+              <text>我已了解运动风险并自愿参与</text>
+            </label>
+          </checkbox-group>
+          <text wx:if="{{profileError}}" class="c1a-profile-error" role="alert">{{profileError}}</text>
+          <view class="c2a-sheet-actions">
+            <button class="c2a-neutral-action" disabled="{{profileSheetState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelProfile">取消</button>
+            <button class="c1a-profile-submit" disabled="{{profileSheetState === 'SUBMITTING' || (profilePurpose === 'SIGNUP' && (!adultConfirmed || !riskConfirmed))}}" hover-class="button-hover" bindtap="onConfirmProfile">{{profileSheetState === 'SUBMITTING' ? '保存中…' : profileSubmitLabel}}</button>
+          </view>
+        </view>
+      </view>
     </view>
   </block>
 
@@ -135,7 +231,7 @@
           <view class="card"><text class="heading">{{venueName}}</text><text>{{pitchSummary}}</text><text>{{orderRange}}</text></view>
           <view class="card"><text class="heading">球局安排</text><text>{{peopleSummary}}</text><text>对抗强度：{{intensityLabel}}</text><text>最低经验：{{experienceLabel}}</text><text>位置需求：{{positionsLabel}}</text></view>
           <view class="card"><text class="heading">费用与说明</text><text>预计人均 AA：{{aaLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>装备与到场：{{notes}}</text><text class="rule">成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。</text></view>
-          <view class="readonly-note">当前仅供查看，申请加入即将开放</view>
+          <view class="readonly-note">队长预览，仅供查看；分享球局链接后队员可报名</view>
           <view wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</view>
           <button wx:if="{{showReturnManage}}" class="secondary" hover-class="button-hover" bindtap="onReturnManage">返回管理页</button>
         </block>

@@ -5,9 +5,9 @@ import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,8 +25,10 @@ from backend.app.modules.auth.repository import AuthRepository
 from backend.app.modules.auth.service import resolve_authenticated_user
 from backend.app.modules.open_game_registrations.dto import (
     CreateApplicationRequest,
+    CreateRegistrationRequest,
     DecisionRequest,
     DecisionResult,
+    LegacyRegistrationContext,
     MyOpenGameApplicationsResponse,
     OpenGameAttendanceMarkRequest,
     OpenGameAttendanceMarkResult,
@@ -34,6 +36,8 @@ from backend.app.modules.open_game_registrations.dto import (
     OpenGameMemberRemovalRequest,
     OpenGameMemberRemovalResult,
     OpenGameMemberRoster,
+    OpenGameMemberUnblockRequest,
+    OpenGameMemberUnblockResult,
     Queue,
     RegistrationContext,
     WithdrawalRequest,
@@ -47,24 +51,33 @@ from backend.app.modules.open_game_registrations.service import (
 from backend.app.modules.open_games.repository import OpenGameRepository
 from backend.app.modules.open_games.router import get_open_game_current_user
 from backend.app.modules.orders.repository import OrderRepository
+from backend.app.modules.venue_profiles.storage import VenueMediaStore
 
 router = APIRouter(tags=["open-game-registrations"])
 
 _APPLICATION_PATH = re.compile(
     r"^/api/v1/shared-games/[^/]+/applications$"
 )
+_REGISTRATION_PATH = re.compile(r"^/api/v1/shared-games/[^/]+/registrations$")
+
 _DECISION_PATH = re.compile(
     r"^/api/v1/games/[^/]+/applications/[^/]+/decision$"
 )
 _WITHDRAWAL_PATH = re.compile(
     r"^/api/v1/open-game-applications/[^/]+/withdraw$"
 )
+_REGISTRATION_WITHDRAWAL_PATH = re.compile(
+    r"^/api/v1/open-game-registrations/[^/]+/withdraw$"
+)
+
 _ATTENDANCE_PATH = re.compile(
     r"^/api/v1/games/[^/]+/registrations/[^/]+/attendance$"
 )
 _MEMBER_REMOVAL_PATH = re.compile(
     r"^/api/v1/games/[^/]+/members/[^/]+/remove$"
 )
+_MEMBER_UNBLOCK_PATH = re.compile(r"^/api/v1/games/[^/]+/members/[^/]+/unblock$")
+
 _APPLICATION_FIELDS = frozenset(
     {
         "display_name",
@@ -78,6 +91,8 @@ _DECISION_FIELDS = frozenset({"decision", "expected_version"})
 _WITHDRAWAL_FIELDS = frozenset({"action", "expected_version"})
 _ATTENDANCE_FIELDS = frozenset({"attendance_status", "expected_version"})
 _MEMBER_REMOVAL_FIELDS = frozenset({"expected_version", "reason"})
+_MEMBER_UNBLOCK_FIELDS = frozenset({"expected_version"})
+
 _INVALID_ARGUMENT_EXAMPLE = {
     "error": {
         "code": "INVALID_ARGUMENT",
@@ -108,8 +123,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         operation = path_item.get(method) if isinstance(path_item, dict) else None
         if not isinstance(operation, dict):
             raise RuntimeError(
-                "raw OpenAPI attendance operation is missing: "
-                f"{method.upper()} {path}"
+                f"raw OpenAPI attendance operation is missing: {method.upper()} {path}"
             )
         return operation
 
@@ -118,10 +132,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         path_item = paths.get(path) if isinstance(paths, dict) else None
         operation = path_item.get(method) if isinstance(path_item, dict) else None
         if not isinstance(operation, dict):
-            raise RuntimeError(
-                "raw OpenAPI member operation is missing: "
-                f"{method.upper()} {path}"
-            )
+            raise RuntimeError(f"raw OpenAPI member operation is missing: {method.upper()} {path}")
         return operation
 
     def error_response(
@@ -150,20 +161,14 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             },
                         ]
                     },
-                    "examples": {
-                        example_name: {
-                            "externalValue": f"./examples/{example_file}"
-                        }
-                    },
+                    "examples": {example_name: {"externalValue": f"./examples/{example_file}"}},
                 }
             },
         }
 
     schema["paths"]["/api/v1/open-game-applications"]["get"] = {
         "operationId": "listMyOpenGameApplications",
-        "description": (
-            "Applications owned by the current authenticated user, newest first."
-        ),
+        "description": ("Applications owned by the current authenticated user, newest first."),
         "security": [{"bearerAuth": []}],
         "parameters": [
             {
@@ -186,30 +191,17 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         ],
         "responses": {
             "200": {
-                "description": (
-                    "Current page of the authenticated user's applications."
-                ),
+                "description": ("Current page of the authenticated user's applications."),
                 "headers": {"X-Request-Id": request_id_header},
                 "content": {
                     "application/json": {
-                        "schema": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "MyOpenGameApplicationsResponse"
-                            )
-                        },
+                        "schema": {"$ref": ("#/components/schemas/MyOpenGameApplicationsResponse")},
                         "examples": {
                             "Ready": {
-                                "externalValue": (
-                                    "./examples/"
-                                    "my-open-game-applications-ready.json"
-                                )
+                                "externalValue": ("./examples/my-open-game-applications-ready.json")
                             },
                             "Empty": {
-                                "externalValue": (
-                                    "./examples/"
-                                    "my-open-game-applications-empty.json"
-                                )
+                                "externalValue": ("./examples/my-open-game-applications-empty.json")
                             },
                         },
                     }
@@ -225,9 +217,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "Limit or cursor is invalid.",
                 code="INVALID_ARGUMENT",
                 example_name="InvalidArgument",
-                example_file=(
-                    "error-my-open-game-applications-invalid-argument.json"
-                ),
+                example_file=("error-my-open-game-applications-invalid-argument.json"),
             ),
             "503": error_response(
                 "Open game application service is unavailable.",
@@ -250,15 +240,9 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "schema": {"type": "string", "minLength": 1},
     }
     error_codes = (
-        components["schemas"].get("Error", {})
-        .get("properties", {})
-        .get("code", {})
-        .get("enum")
+        components["schemas"].get("Error", {}).get("properties", {}).get("code", {}).get("enum")
     )
-    if (
-        isinstance(error_codes, list)
-        and "ATTENDANCE_STATE_CHANGED" not in error_codes
-    ):
+    if isinstance(error_codes, list) and "ATTENDANCE_STATE_CHANGED" not in error_codes:
         error_codes.append("ATTENDANCE_STATE_CHANGED")
     shared_error_schemas = {
         name: components["schemas"].get(name)
@@ -338,6 +322,21 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "AUTH_REQUIRED",
                     "OWNER_CANNOT_APPLY",
                     "ALREADY_APPLIED",
+                    "REMOVED_BY_CAPTAIN",
+                    "GAME_NOT_PUBLISHED",
+                    "REGISTRATION_DEADLINE_PASSED",
+                    "GAME_SUSPENDED",
+                    "GAME_CANCELLED",
+                    "GAME_COMPLETED",
+                    "GAME_STARTED",
+                ],
+            },
+            "OpenGameLegacyApplyBlockedReason": {
+                "type": "string",
+                "enum": [
+                    "AUTH_REQUIRED",
+                    "OWNER_CANNOT_APPLY",
+                    "ALREADY_APPLIED",
                     "GAME_NOT_PUBLISHED",
                     "REGISTRATION_DEADLINE_PASSED",
                     "GAME_SUSPENDED",
@@ -354,10 +353,39 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "can_apply": {"type": "boolean"},
                     "apply_blocked_reason": {
                         "oneOf": [
+                            {"$ref": ("#/components/schemas/OpenGameApplyBlockedReason")},
+                            {"type": "null"},
+                        ]
+                    },
+                },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "can_apply": {"const": True},
+                            "apply_blocked_reason": {"const": None},
+                        }
+                    },
+                    {
+                        "properties": {
+                            "can_apply": {"const": False},
+                            "apply_blocked_reason": {
+                                "$ref": ("#/components/schemas/OpenGameApplyBlockedReason")
+                            },
+                        }
+                    },
+                ],
+            },
+            "OpenGameLegacyApplyActions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["can_apply", "apply_blocked_reason"],
+                "properties": {
+                    "can_apply": {"type": "boolean"},
+                    "apply_blocked_reason": {
+                        "oneOf": [
                             {
                                 "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameApplyBlockedReason"
+                                    "#/components/schemas/OpenGameLegacyApplyBlockedReason"
                                 )
                             },
                             {"type": "null"},
@@ -376,8 +404,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             "can_apply": {"const": False},
                             "apply_blocked_reason": {
                                 "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameApplyBlockedReason"
+                                    "#/components/schemas/OpenGameLegacyApplyBlockedReason"
                                 )
                             },
                         }
@@ -422,36 +449,21 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "can_accept": {"type": "boolean"},
                     "accept_blocked_reason": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameReviewBlockedReason"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameReviewBlockedReason")},
                             {"type": "null"},
                         ]
                     },
                     "can_waitlist": {"type": "boolean"},
                     "waitlist_blocked_reason": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameWaitlistBlockedReason"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameWaitlistBlockedReason")},
                             {"type": "null"},
                         ]
                     },
                     "can_reject": {"type": "boolean"},
                     "reject_blocked_reason": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameReviewBlockedReason"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameReviewBlockedReason")},
                             {"type": "null"},
                         ]
                     },
@@ -469,10 +481,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                                 "properties": {
                                     "can_accept": {"const": False},
                                     "accept_blocked_reason": {
-                                        "$ref": (
-                                            "#/components/schemas/"
-                                            "OpenGameReviewBlockedReason"
-                                        )
+                                        "$ref": ("#/components/schemas/OpenGameReviewBlockedReason")
                                     },
                                 }
                             },
@@ -491,8 +500,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                                     "can_waitlist": {"const": False},
                                     "waitlist_blocked_reason": {
                                         "$ref": (
-                                            "#/components/schemas/"
-                                            "OpenGameWaitlistBlockedReason"
+                                            "#/components/schemas/OpenGameWaitlistBlockedReason"
                                         )
                                     },
                                 }
@@ -565,30 +573,19 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "id": {"type": "string", "format": "uuid"},
                     "display_name": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": 1,
                         "maxLength": 24,
                     },
-                    "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
-                    },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
                     "note": {
                         "type": ["string", "null"],
                         "maxLength": 120,
                     },
                     "persisted_status": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPersistedStatus"
-                        )
+                        "$ref": ("#/components/schemas/OpenGameRegistrationPersistedStatus")
                     },
                     "effective_status": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationEffectiveStatus"
-                        )
+                        "$ref": ("#/components/schemas/OpenGameRegistrationEffectiveStatus")
                     },
                     "version": {"type": "integer", "minimum": 1},
                     "applied_at": {"type": "string", "format": "date-time"},
@@ -602,12 +599,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     "withdrawal_kind": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameRegistrationWithdrawalKind"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameRegistrationWithdrawalKind")},
                             {"type": "null"},
                         ]
                     },
@@ -638,12 +630,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     "attendance_status": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameAttendanceStatus"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameAttendanceStatus")},
                             {"type": "null"},
                         ]
                     },
@@ -677,9 +664,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     {
                         "properties": {
-                            "attendance_status": {
-                                "enum": ["PRESENT", "NO_SHOW"]
-                            },
+                            "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
                             "attendance_recorded_at": {
                                 "type": "string",
                                 "format": "date-time",
@@ -691,6 +676,72 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         }
                     },
                 ],
+            },
+            "OpenGameRosterMemberManagement": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "registration_id",
+                    "version",
+                    "can_remove",
+                    "can_allow_reapply",
+                ],
+                "properties": {
+                    "registration_id": {"type": "string", "format": "uuid"},
+                    "version": {"type": "integer", "minimum": 1},
+                    "can_remove": {"type": "boolean"},
+                    "can_allow_reapply": {"type": "boolean"},
+                },
+            },
+            "OpenGamePublicRosterMember": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["nickname", "avatar_url"],
+                "properties": {
+                    "nickname": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 24,
+                    },
+                    "avatar_url": {
+                        "type": ["string", "null"],
+                        "pattern": "^https://",
+                    },
+                    "management": {"$ref": ("#/components/schemas/OpenGameRosterMemberManagement")},
+                },
+            },
+            "OpenGamePublicWaitlistedMember": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["nickname", "avatar_url", "waitlist_position"],
+                "properties": {
+                    "nickname": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 24,
+                    },
+                    "avatar_url": {
+                        "type": ["string", "null"],
+                        "pattern": "^https://",
+                    },
+                    "waitlist_position": {"type": "integer", "minimum": 1},
+                    "management": {"$ref": ("#/components/schemas/OpenGameRosterMemberManagement")},
+                },
+            },
+            "OpenGameLegacyViewerRegistration": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/OpenGameViewerRegistration"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {
+                                "type": "string",
+                                "minLength": 2,
+                                "maxLength": 24,
+                            }
+                        },
+                    },
+                ]
             },
             "OpenGameRegistrationContext": {
                 "type": "object",
@@ -710,16 +761,82 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "oneOf": [
                             {
                                 "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameViewerRegistration"
+                                    "#/components/schemas/OpenGameLegacyViewerRegistration"
                                 )
                             },
                             {"type": "null"},
                         ]
                     },
                     "allowed_actions": {
-                        "$ref": "#/components/schemas/OpenGameApplyActions"
+                        "$ref": "#/components/schemas/OpenGameLegacyApplyActions"
                     },
+                },
+            },
+            "OpenGameSignupContext": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "game",
+                    "remaining_spots",
+                    "joined_count",
+                    "waitlist_count",
+                    "viewer_authenticated",
+                    "viewer_registration",
+                    "joined_members",
+                    "waitlisted_members",
+                    "blocked_members",
+                    "allowed_actions",
+                ],
+                "properties": {
+                    "game": {"$ref": "#/components/schemas/OpenGamePublic"},
+                    "remaining_spots": {"type": "integer", "minimum": 0},
+                    "joined_count": {"type": "integer", "minimum": 0},
+                    "waitlist_count": {"type": "integer", "minimum": 0},
+                    "viewer_authenticated": {"type": "boolean"},
+                    "viewer_registration": {
+                        "oneOf": [
+                            {"$ref": ("#/components/schemas/OpenGameViewerRegistration")},
+                            {"type": "null"},
+                        ]
+                    },
+                    "joined_members": {
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "$ref": ("#/components/schemas/OpenGamePublicRosterMember")
+                                },
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "waitlisted_members": {
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "$ref": ("#/components/schemas/OpenGamePublicWaitlistedMember")
+                                },
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "blocked_members": {
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "$ref": ("#/components/schemas/OpenGamePublicRosterMember")
+                                },
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "management_game_id": {
+                        "type": "string",
+                        "format": "uuid",
+                    },
+                    "allowed_actions": {"$ref": "#/components/schemas/OpenGameApplyActions"},
                 },
             },
             "CreateOpenGameApplicationRequest": {
@@ -738,11 +855,30 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 2,
                         "maxLength": 24,
                     },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
+                    "note": {"type": ["string", "null"], "maxLength": 120},
+                    "adult_confirmed": {"type": "boolean", "const": True},
+                    "risk_confirmed": {"type": "boolean", "const": True},
+                },
+            },
+            "CreateOpenGameRegistrationRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "display_name",
+                    "position",
+                    "note",
+                    "adult_confirmed",
+                    "risk_confirmed",
+                ],
+                "properties": {
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 24,
+                    },
                     "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
+                        "$ref": "#/components/schemas/OpenGameRegistrationPosition"
                     },
                     "note": {"type": ["string", "null"], "maxLength": 120},
                     "adult_confirmed": {"type": "boolean", "const": True},
@@ -768,18 +904,11 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 2,
                         "maxLength": 24,
                     },
-                    "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
-                    },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
                     "note": {"type": ["string", "null"], "maxLength": 120},
                     "applied_at": {"type": "string", "format": "date-time"},
                     "version": {"type": "integer", "minimum": 1},
-                    "allowed_actions": {
-                        "$ref": "#/components/schemas/OpenGameReviewActions"
-                    },
+                    "allowed_actions": {"$ref": "#/components/schemas/OpenGameReviewActions"},
                 },
             },
             "CaptainOpenGameWaitlistApplication": {
@@ -801,12 +930,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 2,
                         "maxLength": 24,
                     },
-                    "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
-                    },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
                     "note": {"type": ["string", "null"], "maxLength": 120},
                     "applied_at": {"type": "string", "format": "date-time"},
                     "waitlisted_at": {
@@ -831,21 +955,13 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "pending_count": {"type": "integer", "minimum": 0},
                     "applications": {
                         "type": "array",
-                        "items": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "CaptainOpenGameApplication"
-                            )
-                        },
+                        "items": {"$ref": ("#/components/schemas/CaptainOpenGameApplication")},
                     },
                     "waitlist_count": {"type": "integer", "minimum": 0},
                     "waitlist": {
                         "type": "array",
                         "items": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "CaptainOpenGameWaitlistApplication"
-                            )
+                            "$ref": ("#/components/schemas/CaptainOpenGameWaitlistApplication")
                         },
                     },
                 },
@@ -885,9 +1001,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "format": "date-time",
                     },
                     "remaining_spots": {"type": "integer", "minimum": 0},
-                    "allowed_actions": {
-                        "$ref": "#/components/schemas/OpenGameReviewActions"
-                    },
+                    "allowed_actions": {"$ref": "#/components/schemas/OpenGameReviewActions"},
                 },
             },
             "OpenGameApplicationWithdrawalRequest": {
@@ -896,10 +1010,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "required": ["action", "expected_version"],
                 "properties": {
                     "action": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationWithdrawalAction"
-                        )
+                        "$ref": ("#/components/schemas/OpenGameRegistrationWithdrawalAction")
                     },
                     "expected_version": {
                         "type": "integer",
@@ -954,15 +1065,8 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 2,
                         "maxLength": 24,
                     },
-                    "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
-                    },
-                    "attendance_status": {
-                        "$ref": "#/components/schemas/OpenGameAttendanceStatus"
-                    },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
+                    "attendance_status": {"$ref": "#/components/schemas/OpenGameAttendanceStatus"},
                     "attendance_recorded_at": {
                         "type": ["string", "null"],
                         "format": "date-time",
@@ -983,9 +1087,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     {
                         "properties": {
-                            "attendance_status": {
-                                "enum": ["PRESENT", "NO_SHOW"]
-                            },
+                            "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
                             "attendance_recorded_at": {
                                 "type": "string",
                                 "format": "date-time",
@@ -1009,23 +1111,13 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "registrations",
                 ],
                 "properties": {
-                    "game": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameAttendanceGameSummary"
-                        )
-                    },
+                    "game": {"$ref": ("#/components/schemas/OpenGameAttendanceGameSummary")},
                     "recorded_count": {"type": "integer", "minimum": 0},
                     "total_count": {"type": "integer", "minimum": 0},
                     "attendance_complete": {"type": "boolean"},
                     "registrations": {
                         "type": "array",
-                        "items": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "OpenGameAttendanceRosterItem"
-                            )
-                        },
+                        "items": {"$ref": ("#/components/schemas/OpenGameAttendanceRosterItem")},
                     },
                 },
             },
@@ -1089,12 +1181,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "can_remove": {"type": "boolean"},
                     "remove_blocked_reason": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameMemberRemovalBlockedReason"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameMemberRemovalBlockedReason")},
                             {"type": "null"},
                         ]
                     },
@@ -1110,10 +1197,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "properties": {
                             "can_remove": {"const": False},
                             "remove_blocked_reason": {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameMemberRemovalBlockedReason"
-                                )
+                                "$ref": ("#/components/schemas/OpenGameMemberRemovalBlockedReason")
                             },
                         }
                     },
@@ -1175,20 +1259,12 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 2,
                         "maxLength": 24,
                     },
-                    "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
-                    },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
                     "joined_at": {"type": "string", "format": "date-time"},
                     "promoted_from_waitlist": {"type": "boolean"},
                     "version": {"type": "integer", "minimum": 1},
                     "allowed_actions": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameMemberRemovalActions"
-                        )
+                        "$ref": ("#/components/schemas/OpenGameMemberRemovalActions")
                     },
                 },
             },
@@ -1203,23 +1279,13 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "members",
                 ],
                 "properties": {
-                    "game": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameMemberGameSummary"
-                        )
-                    },
+                    "game": {"$ref": ("#/components/schemas/OpenGameMemberGameSummary")},
                     "joined_count": {"type": "integer", "minimum": 0},
                     "remaining_spots": {"type": "integer", "minimum": 0},
                     "waitlist_count": {"type": "integer", "minimum": 0},
                     "members": {
                         "type": "array",
-                        "items": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "OpenGameMemberRosterItem"
-                            )
-                        },
+                        "items": {"$ref": ("#/components/schemas/OpenGameMemberRosterItem")},
                     },
                 },
             },
@@ -1234,6 +1300,30 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 1,
                         "maxLength": 120,
                     },
+                },
+            },
+            "OpenGameMemberUnblockRequest": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["expected_version"],
+                "properties": {
+                    "expected_version": {"type": "integer", "minimum": 1},
+                },
+            },
+            "OpenGameMemberUnblockResult": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "registration_id",
+                    "status",
+                    "version",
+                    "reapply_blocked",
+                ],
+                "properties": {
+                    "registration_id": {"type": "string", "format": "uuid"},
+                    "status": {"type": "string", "const": "REMOVED"},
+                    "version": {"type": "integer", "minimum": 2},
+                    "reapply_blocked": {"type": "boolean", "const": False},
                 },
             },
             "OpenGamePromotedMember": {
@@ -1252,12 +1342,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "minLength": 2,
                         "maxLength": 24,
                     },
-                    "position": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationPosition"
-                        )
-                    },
+                    "position": {"$ref": ("#/components/schemas/OpenGameRegistrationPosition")},
                     "version": {"type": "integer", "minimum": 2},
                 },
             },
@@ -1282,7 +1367,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     "removed_display_name": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": 1,
                         "maxLength": 24,
                     },
                     "status": {"type": "string", "const": "REMOVED"},
@@ -1293,12 +1378,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "waitlist_count": {"type": "integer", "minimum": 0},
                     "promoted_member": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGamePromotedMember"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGamePromotedMember")},
                             {"type": "null"},
                         ]
                     },
@@ -1329,10 +1409,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "properties": {
                     "id": {"type": "string", "format": "uuid"},
                     "effective_status": {
-                        "$ref": (
-                            "#/components/schemas/"
-                            "OpenGameRegistrationEffectiveStatus"
-                        )
+                        "$ref": ("#/components/schemas/OpenGameRegistrationEffectiveStatus")
                     },
                     "applied_at": {"type": "string", "format": "date-time"},
                     "waitlist_position": {
@@ -1349,12 +1426,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     "attendance_status": {
                         "oneOf": [
-                            {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameAttendanceStatus"
-                                )
-                            },
+                            {"$ref": ("#/components/schemas/OpenGameAttendanceStatus")},
                             {"type": "null"},
                         ]
                     },
@@ -1400,9 +1472,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     },
                     {
                         "properties": {
-                            "attendance_status": {
-                                "enum": ["PRESENT", "NO_SHOW"]
-                            },
+                            "attendance_status": {"enum": ["PRESENT", "NO_SHOW"]},
                             "attendance_recorded_at": {
                                 "type": "string",
                                 "format": "date-time",
@@ -1422,9 +1492,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "properties": {
                     "items": {
                         "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/MyOpenGameApplication"
-                        },
+                        "items": {"$ref": "#/components/schemas/MyOpenGameApplication"},
                     },
                     "next_cursor": {
                         "type": ["string", "null"],
@@ -1439,32 +1507,49 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
             components["schemas"][name] = shared_schema
 
     context_ref = {"$ref": "#/components/schemas/OpenGameRegistrationContext"}
+    signup_context_ref = {"$ref": "#/components/schemas/OpenGameSignupContext"}
     context_operation = schema["paths"].get(
         "/api/v1/shared-games/{share_token}/registration-context"
     )
     if context_operation is not None:
-        context_operation["get"]["responses"]["200"]["content"][
-            "application/json"
-        ]["schema"] = context_ref
-    apply_operation = schema["paths"].get(
-        "/api/v1/shared-games/{share_token}/applications"
-    )
+        context_operation["get"]["responses"]["200"]["content"]["application/json"]["schema"] = (
+            context_ref
+        )
+    apply_operation = schema["paths"].get("/api/v1/shared-games/{share_token}/applications")
     if apply_operation is not None:
-        apply_operation["post"]["responses"]["201"]["content"][
-            "application/json"
-        ]["schema"] = dict(context_ref)
-        apply_operation["post"]["requestBody"]["content"]["application/json"][
-            "schema"
-        ] = {
+        apply_operation["post"]["responses"]["201"]["content"]["application/json"]["schema"] = dict(
+            context_ref
+        )
+        apply_operation["post"]["requestBody"]["content"]["application/json"]["schema"] = {
             "$ref": "#/components/schemas/CreateOpenGameApplicationRequest"
         }
-    queue_operation = schema["paths"].get(
-        "/api/v1/games/{game_id}/applications"
+    signup_context_operation = schema["paths"].get(
+        "/api/v1/shared-games/{share_token}/signup-context"
     )
-    if queue_operation is not None:
-        queue_operation["get"]["responses"]["200"]["content"][
+    if signup_context_operation is not None:
+        signup_context_operation["get"]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ] = dict(signup_context_ref)
+    registration_operation = schema["paths"].get(
+        "/api/v1/shared-games/{share_token}/registrations"
+    )
+    if registration_operation is not None:
+        registration_operation["post"]["responses"]["201"]["content"]["application/json"][
+            "schema"
+        ] = dict(signup_context_ref)
+        registration_operation["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ] = {"$ref": "#/components/schemas/CreateOpenGameRegistrationRequest"}
+    registration_withdrawal_operation = schema["paths"].get(
+        "/api/v1/open-game-registrations/{application_id}/withdraw"
+    )
+    if registration_withdrawal_operation is not None:
+        registration_withdrawal_operation["post"]["responses"]["200"]["content"][
             "application/json"
-        ]["schema"] = {
+        ]["schema"] = dict(signup_context_ref)
+    queue_operation = schema["paths"].get("/api/v1/games/{game_id}/applications")
+    if queue_operation is not None:
+        queue_operation["get"]["responses"]["200"]["content"]["application/json"]["schema"] = {
             "$ref": "#/components/schemas/OpenGameApplicationQueue"
         }
     decision_operation = schema["paths"].get(
@@ -1475,14 +1560,10 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         decision_post["requestBody"]["content"]["application/json"]["schema"] = {
             "$ref": "#/components/schemas/OpenGameApplicationDecisionRequest"
         }
-        decision_post["responses"]["200"]["content"]["application/json"][
-            "schema"
-        ] = {
+        decision_post["responses"]["200"]["content"]["application/json"]["schema"] = {
             "$ref": "#/components/schemas/OpenGameApplicationDecisionResult"
         }
-    withdrawal_path = (
-        "/api/v1/open-game-applications/{application_id}/withdraw"
-    )
+    withdrawal_path = "/api/v1/open-game-applications/{application_id}/withdraw"
     if withdrawal_path in schema["paths"]:
         conflict = error_response(
             "Registration state, version, action, or idempotency authority changed.",
@@ -1501,19 +1582,11 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                             "oneOf": [
                                 {
                                     "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "const": "APPLICATION_STATE_CHANGED"
-                                        }
-                                    },
+                                    "properties": {"code": {"const": "APPLICATION_STATE_CHANGED"}},
                                 },
                                 {
                                     "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "const": "IDEMPOTENCY_KEY_REUSED"
-                                        }
-                                    },
+                                    "properties": {"code": {"const": "IDEMPOTENCY_KEY_REUSED"}},
                                 },
                             ]
                         }
@@ -1550,10 +1623,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "content": {
                     "application/json": {
                         "schema": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "OpenGameApplicationWithdrawalRequest"
-                            )
+                            "$ref": ("#/components/schemas/OpenGameApplicationWithdrawalRequest")
                         }
                     }
                 },
@@ -1601,20 +1671,14 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     example_file="error-auth-required.json",
                 ),
                 "404": error_response(
-                    (
-                        "The application is absent or does not belong to the "
-                        "current user."
-                    ),
+                    ("The application is absent or does not belong to the current user."),
                     code="APPLICATION_NOT_FOUND",
                     example_name="ApplicationNotFound",
                     example_file="error-application-not-found.json",
                 ),
                 "409": conflict,
                 "422": error_response(
-                    (
-                        "Path, action, expected version, or idempotency key is "
-                        "invalid."
-                    ),
+                    ("Path, action, expected version, or idempotency key is invalid."),
                     code="INVALID_ARGUMENT",
                     example_name="InvalidArgument",
                     example_file="error-invalid-argument.json",
@@ -1653,23 +1717,16 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "headers": {"X-Request-Id": request_id_header},
                     "content": {
                         "application/json": {
-                            "schema": {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameMemberRoster"
-                                )
-                            },
+                            "schema": {"$ref": ("#/components/schemas/OpenGameMemberRoster")},
                             "examples": {
                                 "Ready": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-member-roster-ready.json"
+                                        "./examples/open-game-member-roster-ready.json"
                                     )
                                 },
                                 "Blocked": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-member-roster-blocked.json"
+                                        "./examples/open-game-member-roster-blocked.json"
                                     )
                                 },
                             },
@@ -1705,10 +1762,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
     )
 
     member_not_found = error_response(
-        (
-            "Game or registration does not exist, or the game is not owned "
-            "by this user."
-        ),
+        ("Game or registration does not exist, or the game is not owned by this user."),
         code="APPLICATION_NOT_FOUND",
         example_name="ApplicationNotFound",
         example_file="error-application-not-found.json",
@@ -1735,12 +1789,8 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         ]
     }
     member_not_found["content"]["application/json"]["examples"] = {
-        "ApplicationNotFound": {
-            "externalValue": "./examples/error-application-not-found.json"
-        },
-        "OpenGameNotFound": {
-            "externalValue": "./examples/error-open-game-not-found.json"
-        },
+        "ApplicationNotFound": {"externalValue": "./examples/error-application-not-found.json"},
+        "OpenGameNotFound": {"externalValue": "./examples/error-open-game-not-found.json"},
     }
     member_conflict = error_response(
         "Registration state, game authority, or idempotency authority changed.",
@@ -1773,24 +1823,17 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "ApplicationStateChanged": {
             "externalValue": "./examples/error-application-state-changed.json"
         },
-        "IdempotencyKeyReused": {
-            "externalValue": "./examples/error-idempotency-key-reused.json"
-        },
+        "IdempotencyKeyReused": {"externalValue": "./examples/error-idempotency-key-reused.json"},
     }
-    member_remove_path = (
-        "/api/v1/games/{game_id}/members/{registration_id}/remove"
-    )
+    member_remove_path = "/api/v1/games/{game_id}/members/{registration_id}/remove"
     member_remove_operation = require_member_operation(member_remove_path, "post")
     member_idempotency_parameters = [
         parameter
         for parameter in member_remove_operation.get("parameters", [])
-        if isinstance(parameter, dict)
-        and parameter.get("name") == "Idempotency-Key"
+        if isinstance(parameter, dict) and parameter.get("name") == "Idempotency-Key"
     ]
     if len(member_idempotency_parameters) != 1:
-        raise RuntimeError(
-            "raw OpenAPI member remove operation is missing Idempotency-Key"
-        )
+        raise RuntimeError("raw OpenAPI member remove operation is missing Idempotency-Key")
     member_idempotency = member_idempotency_parameters[0]
     member_idempotency_schema = member_idempotency.get("schema")
     if (
@@ -1801,15 +1844,14 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         or member_idempotency_schema.get("minLength") != 16
         or member_idempotency_schema.get("maxLength") != 128
     ):
-        raise RuntimeError(
-            "raw OpenAPI member remove Idempotency-Key contract is invalid"
-        )
+        raise RuntimeError("raw OpenAPI member remove Idempotency-Key contract is invalid")
     member_remove_operation.clear()
     member_remove_operation.update(
         {
             "operationId": "removeOpenGameMember",
             "description": (
-                "Owner-only idempotent removal of one eligible joined member "
+                "Owner-only idempotent removal of one eligible joined or "
+                "waitlisted member "
                 "before kickoff."
             ),
             "security": [{"bearerAuth": []}],
@@ -1832,40 +1874,28 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "required": True,
                 "content": {
                     "application/json": {
-                        "schema": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "OpenGameMemberRemovalRequest"
-                            )
-                        }
+                        "schema": {"$ref": ("#/components/schemas/OpenGameMemberRemovalRequest")}
                     }
                 },
             },
             "responses": {
                 "200": {
-                    "description": (
-                        "Member removal applied or idempotently replayed."
-                    ),
+                    "description": ("Member removal applied or idempotently replayed."),
                     "headers": {"X-Request-Id": request_id_header},
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameMemberRemovalResult"
-                                )
+                                "$ref": ("#/components/schemas/OpenGameMemberRemovalResult")
                             },
                             "examples": {
                                 "Promoted": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-member-removal-promoted.json"
+                                        "./examples/open-game-member-removal-promoted.json"
                                     )
                                 },
                                 "OpenSpot": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-member-removal-open-spot.json"
+                                        "./examples/open-game-member-removal-open-spot.json"
                                     )
                                 },
                             },
@@ -1896,16 +1926,109 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         }
     )
 
+    member_unblock_path = "/api/v1/games/{game_id}/members/{registration_id}/unblock"
+    member_unblock_operation = require_member_operation(
+        member_unblock_path,
+        "post",
+    )
+    unblock_idempotency_parameters = [
+        parameter
+        for parameter in member_unblock_operation.get("parameters", [])
+        if isinstance(parameter, dict) and parameter.get("name") == "Idempotency-Key"
+    ]
+    if len(unblock_idempotency_parameters) != 1:
+        raise RuntimeError("raw OpenAPI member unblock operation is missing Idempotency-Key")
+    unblock_idempotency = unblock_idempotency_parameters[0]
+    unblock_idempotency_schema = unblock_idempotency.get("schema")
+    if (
+        unblock_idempotency.get("in") != "header"
+        or unblock_idempotency.get("required") is not True
+        or not isinstance(unblock_idempotency_schema, dict)
+        or unblock_idempotency_schema.get("type") != "string"
+        or unblock_idempotency_schema.get("minLength") != 16
+        or unblock_idempotency_schema.get("maxLength") != 128
+    ):
+        raise RuntimeError("raw OpenAPI member unblock Idempotency-Key contract is invalid")
+    member_unblock_operation.clear()
+    member_unblock_operation.update(
+        {
+            "operationId": "unblockOpenGameMember",
+            "description": (
+                "Owner-only idempotent removal of a captain-imposed reapply "
+                "block; it does not register the player."
+            ),
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "game_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {
+                    "name": "registration_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                {"$ref": "#/components/parameters/IdempotencyKey"},
+            ],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": ("#/components/schemas/OpenGameMemberUnblockRequest")}
+                    }
+                },
+            },
+            "responses": {
+                "200": {
+                    "description": ("Reapply block removed or idempotently replayed."),
+                    "headers": {"X-Request-Id": request_id_header},
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": ("#/components/schemas/OpenGameMemberUnblockResult")
+                            },
+                            "examples": {
+                                "Unblocked": {
+                                    "externalValue": ("./examples/open-game-member-unblocked.json")
+                                }
+                            },
+                        }
+                    },
+                },
+                "401": error_response(
+                    "Authentication required.",
+                    code="AUTH_REQUIRED",
+                    example_name="AuthRequired",
+                    example_file="error-auth-required.json",
+                ),
+                "404": member_not_found,
+                "409": member_conflict,
+                "422": error_response(
+                    "Path, expected version, or idempotency key is invalid.",
+                    code="INVALID_ARGUMENT",
+                    example_name="InvalidArgument",
+                    example_file="error-invalid-argument.json",
+                ),
+                "503": error_response(
+                    "Open game member service is unavailable.",
+                    code="SERVICE_UNAVAILABLE",
+                    example_name="ServiceUnavailable",
+                    example_file="error-service-unavailable.json",
+                ),
+            },
+        }
+    )
+
     roster_path = "/api/v1/games/{game_id}/attendance-roster"
     roster_operation = require_attendance_operation(roster_path, "get")
     roster_operation.clear()
     roster_operation.update(
         {
             "operationId": "getOpenGameAttendanceRoster",
-            "description": (
-                "Owner-only attendance roster for an effectively completed "
-                "open game."
-            ),
+            "description": ("Owner-only attendance roster for an effectively completed open game."),
             "security": [{"bearerAuth": []}],
             "parameters": [
                 {
@@ -1921,23 +2044,16 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                     "headers": {"X-Request-Id": request_id_header},
                     "content": {
                         "application/json": {
-                            "schema": {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameAttendanceRoster"
-                                )
-                            },
+                            "schema": {"$ref": ("#/components/schemas/OpenGameAttendanceRoster")},
                             "examples": {
                                 "Ready": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-attendance-roster-ready.json"
+                                        "./examples/open-game-attendance-roster-ready.json"
                                     )
                                 },
                                 "Empty": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-attendance-roster-empty.json"
+                                        "./examples/open-game-attendance-roster-empty.json"
                                     )
                                 },
                             },
@@ -1973,10 +2089,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
     )
 
     mark_not_found = error_response(
-        (
-            "Game or registration does not exist, or the game is not owned "
-            "by this user."
-        ),
+        ("Game or registration does not exist, or the game is not owned by this user."),
         code="APPLICATION_NOT_FOUND",
         example_name="ApplicationNotFound",
         example_file="error-application-not-found.json",
@@ -2003,12 +2116,8 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         ]
     }
     mark_not_found["content"]["application/json"]["examples"] = {
-        "ApplicationNotFound": {
-            "externalValue": "./examples/error-application-not-found.json"
-        },
-        "OpenGameNotFound": {
-            "externalValue": "./examples/error-open-game-not-found.json"
-        },
+        "ApplicationNotFound": {"externalValue": "./examples/error-application-not-found.json"},
+        "OpenGameNotFound": {"externalValue": "./examples/error-open-game-not-found.json"},
     }
     mark_conflict = error_response(
         "Attendance state, version, or idempotency authority changed.",
@@ -2026,17 +2135,11 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                         "oneOf": [
                             {
                                 "type": "object",
-                                "properties": {
-                                    "code": {
-                                        "const": "ATTENDANCE_STATE_CHANGED"
-                                    }
-                                },
+                                "properties": {"code": {"const": "ATTENDANCE_STATE_CHANGED"}},
                             },
                             {
                                 "type": "object",
-                                "properties": {
-                                    "code": {"const": "IDEMPOTENCY_KEY_REUSED"}
-                                },
+                                "properties": {"code": {"const": "IDEMPOTENCY_KEY_REUSED"}},
                             },
                         ]
                     }
@@ -2048,25 +2151,17 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         "AttendanceStateChanged": {
             "externalValue": "./examples/error-attendance-state-changed.json"
         },
-        "IdempotencyKeyReused": {
-            "externalValue": "./examples/error-idempotency-key-reused.json"
-        },
+        "IdempotencyKeyReused": {"externalValue": "./examples/error-idempotency-key-reused.json"},
     }
-    mark_path = (
-        "/api/v1/games/{game_id}/registrations/"
-        "{registration_id}/attendance"
-    )
+    mark_path = "/api/v1/games/{game_id}/registrations/{registration_id}/attendance"
     mark_operation = require_attendance_operation(mark_path, "post")
     raw_idempotency_parameters = [
         parameter
         for parameter in mark_operation.get("parameters", [])
-        if isinstance(parameter, dict)
-        and parameter.get("name") == "Idempotency-Key"
+        if isinstance(parameter, dict) and parameter.get("name") == "Idempotency-Key"
     ]
     if len(raw_idempotency_parameters) != 1:
-        raise RuntimeError(
-            "raw OpenAPI attendance mark operation is missing Idempotency-Key"
-        )
+        raise RuntimeError("raw OpenAPI attendance mark operation is missing Idempotency-Key")
     raw_idempotency = raw_idempotency_parameters[0]
     raw_idempotency_schema = raw_idempotency.get("schema")
     if (
@@ -2077,16 +2172,13 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
         or raw_idempotency_schema.get("minLength") != 16
         or raw_idempotency_schema.get("maxLength") != 128
     ):
-        raise RuntimeError(
-            "raw OpenAPI attendance mark Idempotency-Key contract is invalid"
-        )
+        raise RuntimeError("raw OpenAPI attendance mark Idempotency-Key contract is invalid")
     mark_operation.clear()
     mark_operation.update(
         {
             "operationId": "markOpenGameAttendance",
             "description": (
-                "Irreversibly mark one joined player's attendance for a "
-                "completed game."
+                "Irreversibly mark one joined player's attendance for a completed game."
             ),
             "security": [{"bearerAuth": []}],
             "parameters": [
@@ -2108,40 +2200,28 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "required": True,
                 "content": {
                     "application/json": {
-                        "schema": {
-                            "$ref": (
-                                "#/components/schemas/"
-                                "OpenGameAttendanceMarkRequest"
-                            )
-                        }
+                        "schema": {"$ref": ("#/components/schemas/OpenGameAttendanceMarkRequest")}
                     }
                 },
             },
             "responses": {
                 "200": {
-                    "description": (
-                        "Attendance mark applied or idempotently replayed."
-                    ),
+                    "description": ("Attendance mark applied or idempotently replayed."),
                     "headers": {"X-Request-Id": request_id_header},
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": (
-                                    "#/components/schemas/"
-                                    "OpenGameAttendanceMarkResult"
-                                )
+                                "$ref": ("#/components/schemas/OpenGameAttendanceMarkResult")
                             },
                             "examples": {
                                 "MarkedPresent": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-attendance-mark-present.json"
+                                        "./examples/open-game-attendance-mark-present.json"
                                     )
                                 },
                                 "MarkedNoShow": {
                                     "externalValue": (
-                                        "./examples/"
-                                        "open-game-attendance-mark-no-show.json"
+                                        "./examples/open-game-attendance-mark-no-show.json"
                                     )
                                 },
                             },
@@ -2157,10 +2237,7 @@ def align_my_open_game_applications_openapi(schema: dict[str, Any]) -> None:
                 "404": mark_not_found,
                 "409": mark_conflict,
                 "422": error_response(
-                    (
-                        "Path, attendance status, expected version, or "
-                        "idempotency key is invalid."
-                    ),
+                    ("Path, attendance status, expected version, or idempotency key is invalid."),
                     code="INVALID_ARGUMENT",
                     example_name="InvalidArgument",
                     example_file="error-invalid-argument.json",
@@ -2215,10 +2292,13 @@ def is_open_game_registration_mutation_request(request: Request) -> bool:
     path = request.url.path
     return (
         _APPLICATION_PATH.fullmatch(path) is not None
+        or _REGISTRATION_PATH.fullmatch(path) is not None
         or _DECISION_PATH.fullmatch(path) is not None
         or _WITHDRAWAL_PATH.fullmatch(path) is not None
+        or _REGISTRATION_WITHDRAWAL_PATH.fullmatch(path) is not None
         or _ATTENDANCE_PATH.fullmatch(path) is not None
         or _MEMBER_REMOVAL_PATH.fullmatch(path) is not None
+        or _MEMBER_UNBLOCK_PATH.fullmatch(path) is not None
     )
 
 
@@ -2228,12 +2308,17 @@ async def open_game_registration_request_validation_handler(
 ) -> JSONResponse:
     if _DECISION_PATH.fullmatch(request.url.path) is not None:
         allowed_fields = _DECISION_FIELDS
-    elif _WITHDRAWAL_PATH.fullmatch(request.url.path) is not None:
+    elif (
+        _WITHDRAWAL_PATH.fullmatch(request.url.path) is not None
+        or _REGISTRATION_WITHDRAWAL_PATH.fullmatch(request.url.path) is not None
+    ):
         allowed_fields = _WITHDRAWAL_FIELDS
     elif _ATTENDANCE_PATH.fullmatch(request.url.path) is not None:
         allowed_fields = _ATTENDANCE_FIELDS
     elif _MEMBER_REMOVAL_PATH.fullmatch(request.url.path) is not None:
         allowed_fields = _MEMBER_REMOVAL_FIELDS
+    elif _MEMBER_UNBLOCK_PATH.fullmatch(request.url.path) is not None:
+        allowed_fields = _MEMBER_UNBLOCK_FIELDS
     else:
         allowed_fields = _APPLICATION_FIELDS
     fields: list[dict[str, str]] = []
@@ -2266,14 +2351,27 @@ def _service(
     database: Session,
     *,
     clock: Callable[[], datetime],
+    app_request: Request | None = None,
 ) -> OpenGameRegistrationService:
+    avatar_url_for_key = None
+    if app_request is not None:
+        media_store = cast(
+            VenueMediaStore,
+            app_request.app.state.venue_media_store,
+        )
+        avatar_url_for_key = media_store.user_avatar_url
     return OpenGameRegistrationService(
         repository=OpenGameRegistrationRepository(database),
         open_game_repository=OpenGameRepository(database),
         order_repository=OrderRepository(database),
+        avatar_url_for_key=avatar_url_for_key,
         now=clock,
     )
 
+
+def _mark_private_context(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization"
 
 @router.get(
     "/api/v1/open-game-applications",
@@ -2304,7 +2402,7 @@ def list_my_open_game_applications(
 @router.post(
     "/api/v1/open-game-applications/{application_id}/withdraw",
     operation_id="withdrawOpenGameApplication",
-    response_model=RegistrationContext,
+    response_model=LegacyRegistrationContext,
     responses={
         401: {"model": ErrorEnvelope},
         404: {"model": ErrorEnvelope},
@@ -2322,22 +2420,62 @@ def withdraw_open_game_application(
     ],
     user: Annotated[User, Depends(get_required_open_game_registration_user)],
     database: Annotated[Session, Depends(get_database)],
-    clock: Annotated[
-        Callable[[], datetime], Depends(get_open_game_registration_clock)
-    ],
-) -> RegistrationContext:
-    return _service(database, clock=clock).withdraw(
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+    app_request: Request,
+    response: Response,
+) -> LegacyRegistrationContext:
+    result = _service(
+        database,
+        clock=clock,
+        app_request=app_request,
+    ).withdraw_legacy(
         application_id=application_id,
         applicant_user_id=user.id,
         idempotency_key=idempotency_key,
         request=body,
     )
+    _mark_private_context(response)
+    return result
 
+
+@router.post(
+    "/api/v1/open-game-registrations/{application_id}/withdraw",
+    operation_id="withdrawOpenGameRegistration",
+    response_model=RegistrationContext,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def withdraw_open_game_registration(
+    application_id: uuid.UUID,
+    body: WithdrawalRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+    app_request: Request,
+    response: Response,
+) -> RegistrationContext:
+    result = _service(database, clock=clock, app_request=app_request).withdraw_registration(
+        application_id=application_id,
+        applicant_user_id=user.id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+    _mark_private_context(response)
+    return result
 
 @router.get(
     "/api/v1/shared-games/{share_token}/registration-context",
     operation_id="getOpenGameRegistrationContext",
-    response_model=RegistrationContext,
+    response_model=LegacyRegistrationContext,
     responses={
         401: {"model": ErrorEnvelope},
         404: {"model": ErrorEnvelope},
@@ -2352,21 +2490,60 @@ def get_open_game_registration_context(
         Depends(get_optional_open_game_registration_user),
     ],
     database: Annotated[Session, Depends(get_database)],
-    clock: Annotated[
-        Callable[[], datetime], Depends(get_open_game_registration_clock)
-    ],
-) -> RegistrationContext:
-    return _service(database, clock=clock).get_context(
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+    app_request: Request,
+    response: Response,
+) -> LegacyRegistrationContext:
+    result = _service(
+        database,
+        clock=clock,
+        app_request=app_request,
+    ).get_context(
         share_token=share_token,
         viewer_user_id=viewer.id if viewer is not None else None,
     )
+    _mark_private_context(response)
+    return result
 
+
+@router.get(
+    "/api/v1/shared-games/{share_token}/signup-context",
+    operation_id="getOpenGameSignupContext",
+    response_model=RegistrationContext,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+    openapi_extra={"security": [{}, {"bearerAuth": []}]},
+)
+def get_open_game_signup_context(
+    share_token: str,
+    viewer: Annotated[
+        User | None,
+        Depends(get_optional_open_game_registration_user),
+    ],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+    app_request: Request,
+    response: Response,
+) -> RegistrationContext:
+    result = _service(
+        database,
+        clock=clock,
+        app_request=app_request,
+    ).get_signup_context(
+        share_token=share_token,
+        viewer_user_id=viewer.id if viewer is not None else None,
+    )
+    _mark_private_context(response)
+    return result
 
 @router.post(
     "/api/v1/shared-games/{share_token}/applications",
     operation_id="createOpenGameApplication",
     status_code=201,
-    response_model=RegistrationContext,
+    response_model=LegacyRegistrationContext,
     responses={
         401: {"model": ErrorEnvelope},
         404: {"model": ErrorEnvelope},
@@ -2384,17 +2561,54 @@ def create_open_game_application(
     ],
     user: Annotated[User, Depends(get_required_open_game_registration_user)],
     database: Annotated[Session, Depends(get_database)],
-    clock: Annotated[
-        Callable[[], datetime], Depends(get_open_game_registration_clock)
-    ],
-) -> RegistrationContext:
-    return _service(database, clock=clock).apply(
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+    app_request: Request,
+    response: Response,
+) -> LegacyRegistrationContext:
+    result = _service(database, clock=clock, app_request=app_request).apply(
         share_token=share_token,
         applicant_user_id=user.id,
         idempotency_key=idempotency_key,
         request=body,
     )
+    _mark_private_context(response)
+    return result
 
+
+@router.post(
+    "/api/v1/shared-games/{share_token}/registrations",
+    operation_id="createOpenGameRegistration",
+    status_code=201,
+    response_model=RegistrationContext,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def create_open_game_registration(
+    share_token: str,
+    body: CreateRegistrationRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+    app_request: Request,
+    response: Response,
+) -> RegistrationContext:
+    result = _service(database, clock=clock, app_request=app_request).signup(
+        share_token=share_token,
+        applicant_user_id=user.id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+    _mark_private_context(response)
+    return result
 
 @router.get(
     "/api/v1/games/{game_id}/members",
@@ -2455,6 +2669,38 @@ def remove_open_game_member(
         request=body,
     )
 
+
+@router.post(
+    "/api/v1/games/{game_id}/members/{registration_id}/unblock",
+    operation_id="unblockOpenGameMember",
+    response_model=OpenGameMemberUnblockResult,
+    responses={
+        401: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+def unblock_open_game_member(
+    game_id: uuid.UUID,
+    registration_id: uuid.UUID,
+    body: OpenGameMemberUnblockRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+    user: Annotated[User, Depends(get_required_open_game_registration_user)],
+    database: Annotated[Session, Depends(get_database)],
+    clock: Annotated[Callable[[], datetime], Depends(get_open_game_registration_clock)],
+) -> OpenGameMemberUnblockResult:
+    return _service(database, clock=clock).unblock_member(
+        game_id=game_id,
+        registration_id=registration_id,
+        owner_user_id=user.id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
 
 @router.get(
     "/api/v1/games/{game_id}/attendance-roster",

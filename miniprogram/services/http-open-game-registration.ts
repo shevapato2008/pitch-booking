@@ -3,7 +3,11 @@ import {
   arrayAt,
   enumAt,
   exactObject,
+  httpsUrlAt,
+  objectAt,
+  rfc3339At,
   stringAt,
+  uuidAt,
 } from "../domain/decoder-primitives";
 import {
   decodeOpenGameApplicationDecisionResult,
@@ -14,9 +18,12 @@ import {
   decodeOpenGameMemberRoster,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
+  decodeOpenGameSignupContext,
 } from "../domain/open-game-registration-decoder";
 import type {
   OpenGameApplyBlockedReason,
+  OpenGameMemberReapplyResult,
+  OpenGamePublicProfile,
   OpenGameRegistrationContext,
   OpenGameReviewActions,
   OpenGameReviewBlockedReason,
@@ -32,6 +39,8 @@ import type {
   OpenGameRegistrationApplyAttempt,
   OpenGameAttendanceMarkAttempt,
   OpenGameMemberRemoveAttempt,
+  OpenGameAllowMemberReapplyAttempt,
+  OpenGamePublicProfileSaveInput,
   OpenGameRegistrationDecisionAttempt,
   OpenGameRegistrationSource,
   OpenGameRegistrationWithdrawAttempt,
@@ -93,6 +102,7 @@ export class OpenGameRegistrationApiError extends Error {
 type Operation =
   | "context"
   | "apply"
+  | "signup"
   | "queue"
   | "decide"
   | "withdraw"
@@ -100,7 +110,11 @@ type Operation =
   | "roster"
   | "attendance"
   | "members"
-  | "remove-member";
+  | "remove-member"
+  | "profile"
+  | "profile-write"
+  | "avatar-intent"
+  | "allow-reapply";
 
 const APPLY_FIELDS = [
   "display_name",
@@ -113,10 +127,14 @@ const DECISION_FIELDS = ["decision", "expected_version"] as const;
 const WITHDRAW_FIELDS = ["action", "expected_version"] as const;
 const ATTENDANCE_FIELDS = ["attendance_status", "expected_version"] as const;
 const MEMBER_REMOVAL_FIELDS = ["expected_version", "reason"] as const;
+const PROFILE_FIELDS = ["nickname", "avatar_object_key"] as const;
+const AVATAR_INTENT_FIELDS = ["mime_type", "byte_size"] as const;
+const ALLOW_REAPPLY_FIELDS = ["expected_version"] as const;
 const APPLY_BLOCKED_REASONS = [
   "AUTH_REQUIRED",
   "OWNER_CANNOT_APPLY",
   "ALREADY_APPLIED",
+  "REMOVED_BY_CAPTAIN",
   "GAME_NOT_PUBLISHED",
   "REGISTRATION_DEADLINE_PASSED",
   "GAME_SUSPENDED",
@@ -153,6 +171,18 @@ const DEFINITIVE_CODES: Readonly<
     401: ["AUTH_REQUIRED"],
     404: ["OPEN_GAME_NOT_FOUND"],
     409: ["APPLICATION_ALREADY_EXISTS", "APPLICATION_NOT_ALLOWED", "IDEMPOTENCY_KEY_REUSED"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  signup: {
+    401: ["AUTH_REQUIRED"],
+    404: ["OPEN_GAME_NOT_FOUND"],
+    409: [
+      "APPLICATION_ALREADY_EXISTS",
+      "PUBLIC_PROFILE_REQUIRED",
+      "PUBLIC_PROFILE_CHANGED",
+      "APPLICATION_NOT_ALLOWED",
+      "IDEMPOTENCY_KEY_REUSED",
+    ],
     422: ["INVALID_ARGUMENT"],
   },
   queue: {
@@ -198,6 +228,23 @@ const DEFINITIVE_CODES: Readonly<
     409: ["APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
     422: ["INVALID_ARGUMENT"],
   },
+  profile: {
+    401: ["AUTH_REQUIRED"],
+  },
+  "profile-write": {
+    401: ["AUTH_REQUIRED"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  "avatar-intent": {
+    401: ["AUTH_REQUIRED"],
+    422: ["INVALID_ARGUMENT"],
+  },
+  "allow-reapply": {
+    401: ["AUTH_REQUIRED"],
+    404: ["OPEN_GAME_NOT_FOUND", "APPLICATION_NOT_FOUND"],
+    409: ["APPLICATION_STATE_CHANGED", "IDEMPOTENCY_KEY_REUSED"],
+    422: ["INVALID_ARGUMENT"],
+  },
 };
 
 function booleanAt(value: unknown, path: string): boolean {
@@ -208,6 +255,106 @@ function booleanAt(value: unknown, path: string): boolean {
 function safeIntegerAt(value: unknown, path: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(path);
   return value as number;
+}
+
+function boundedStringAt(value: unknown, path: string, minimum: number, maximum: number): string {
+  const decoded = stringAt(value, path, minimum === 0);
+  const length = Array.from(decoded).length;
+  if (length < minimum || length > maximum) throw new Error(path);
+  return decoded;
+}
+
+function decodePublicProfile(value: unknown): OpenGamePublicProfile | null {
+  const object = exactObject(
+    value,
+    ["nickname", "avatar_url", "profile_version", "confirmed_at"],
+    "$",
+  );
+  const version = safeIntegerAt(object.profile_version, "$.profile_version");
+  const missing = object.nickname === null
+    && object.avatar_url === null
+    && version === 0
+    && object.confirmed_at === null;
+  if (missing) return null;
+  if (object.nickname === null || object.avatar_url === null || object.confirmed_at === null
+    || version < 1) throw new Error("INVALID_PUBLIC_PROFILE");
+  return Object.freeze({
+    nickname: boundedStringAt(object.nickname, "$.nickname", 1, 24),
+    avatarUrl: httpsUrlAt(object.avatar_url, "$.avatar_url"),
+    profileVersion: version,
+    confirmedAt: rfc3339At(object.confirmed_at, "$.confirmed_at"),
+  });
+}
+
+function decodeAllowMemberReapplyResult(value: unknown): OpenGameMemberReapplyResult {
+  const object = exactObject(
+    value,
+    ["registration_id", "status", "version", "reapply_blocked"],
+    "$",
+  );
+  if (object.status !== "REMOVED" || object.reapply_blocked !== false) {
+    throw new Error("INVALID_ALLOW_REAPPLY_RESULT");
+  }
+  return Object.freeze({
+    registrationId: uuidAt(object.registration_id, "$.registration_id"),
+    status: "REMOVED" as const,
+    version: safeIntegerAt(object.version, "$.version"),
+    reapplyBlocked: false as const,
+  });
+}
+
+type AvatarMimeType = "image/jpeg" | "image/png" | "image/webp";
+
+function avatarMimeType(bytes: ArrayBuffer): AvatarMimeType {
+  const header = new Uint8Array(bytes);
+  if (header.length >= 8
+    && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+      .every((byte, index) => header[index] === byte)) return "image/png";
+  if (header.length >= 3
+    && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) return "image/jpeg";
+  if (header.length >= 12
+    && String.fromCharCode(...header.slice(0, 4)) === "RIFF"
+    && String.fromCharCode(...header.slice(8, 12)) === "WEBP") return "image/webp";
+  throw new Error("UNSUPPORTED_AVATAR_FORMAT");
+}
+
+function readAvatarBytes(tempFilePath: string): Promise<ArrayBuffer> {
+  if (typeof tempFilePath !== "string" || tempFilePath.length === 0) {
+    return Promise.reject(new Error("INVALID_AVATAR_TEMP_PATH"));
+  }
+  return new Promise((resolve, reject) => {
+    wx.getFileSystemManager().readFile({
+      filePath: tempFilePath,
+      success: ({ data }) => {
+        if (!(data instanceof ArrayBuffer) || data.byteLength < 1 || data.byteLength > 10 * 1024 * 1024) {
+          reject(new Error("INVALID_AVATAR_BYTES"));
+          return;
+        }
+        resolve(data);
+      },
+      fail: () => reject(new Error("AVATAR_READ_FAILED")),
+    });
+  });
+}
+
+function uploadSignedAvatar(
+  url: string,
+  bytes: ArrayBuffer,
+  headers: Readonly<Record<string, string>>,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    wx.request({
+      url,
+      method: "PUT",
+      data: bytes,
+      header: { ...headers },
+      timeout: 15000,
+      success: ({ statusCode }) => statusCode >= 200 && statusCode < 300
+        ? resolve()
+        : reject(new Error("AVATAR_UPLOAD_FAILED")),
+      fail: () => reject(new Error("AVATAR_UPLOAD_FAILED")),
+    });
+  });
 }
 
 function expectedDecisionStatus(value: unknown): "WAITLISTED" | "JOINED" | "REJECTED" {
@@ -291,12 +438,15 @@ function decodeInvalidArgumentDetails(
   if (typeof details === "object" && details !== null && !Array.isArray(details)
     && Object.keys(details).length === 0) return undefined;
   const object = exactObject(value, ["fields"], "$.error.details");
-  const allowedFields: readonly string[] = operation === "apply"
+  const allowedFields: readonly string[] = operation === "apply" || operation === "signup"
     ? APPLY_FIELDS
     : operation === "decide" ? DECISION_FIELDS
       : operation === "withdraw" ? WITHDRAW_FIELDS
         : operation === "attendance" ? ATTENDANCE_FIELDS
-          : operation === "remove-member" ? MEMBER_REMOVAL_FIELDS : [];
+          : operation === "remove-member" ? MEMBER_REMOVAL_FIELDS
+            : operation === "profile-write" ? PROFILE_FIELDS
+              : operation === "avatar-intent" ? AVATAR_INTENT_FIELDS
+                : operation === "allow-reapply" ? ALLOW_REAPPLY_FIELDS : [];
   const fields = Object.freeze(arrayAt(object.fields, "$.error.details.fields", 1).map(
     (item, index): OpenGameRegistrationFieldError => {
       const path = `$.error.details.fields[${index}]`;
@@ -345,6 +495,8 @@ function noDetailsError(
     case "OPEN_GAME_NOT_FOUND": return new OpenGameRegistrationApiError("OPEN_GAME_NOT_FOUND");
     case "APPLICATION_NOT_FOUND": return new OpenGameRegistrationApiError("APPLICATION_NOT_FOUND");
     case "APPLICATION_ALREADY_EXISTS": return new OpenGameRegistrationApiError("APPLICATION_ALREADY_EXISTS");
+    case "PUBLIC_PROFILE_REQUIRED": return new OpenGameRegistrationApiError("PUBLIC_PROFILE_REQUIRED");
+    case "PUBLIC_PROFILE_CHANGED": return new OpenGameRegistrationApiError("PUBLIC_PROFILE_CHANGED");
     case "APPLICATION_STATE_CHANGED": return new OpenGameRegistrationApiError("APPLICATION_STATE_CHANGED");
     case "ATTENDANCE_STATE_CHANGED": return new OpenGameRegistrationApiError("ATTENDANCE_STATE_CHANGED");
     case "IDEMPOTENCY_KEY_REUSED": return new OpenGameRegistrationApiError("IDEMPOTENCY_KEY_REUSED");
@@ -493,7 +645,10 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     return request;
   };
 
-  const getContext = async (shareToken: string): Promise<OpenGameRegistrationContext> => {
+  const readContext = async (
+    shareToken: string,
+    resource: "registration-context" | "signup-context",
+  ): Promise<OpenGameRegistrationContext> => {
     let requestSession: StoredSession | null = null;
     try {
       requestSession = sessionStore.load();
@@ -502,16 +657,20 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
         : { Authorization: `Bearer ${requestSession.token}` };
       const response = await transport.requestWithStatus<unknown>(
         "GET",
-        `/api/v1/shared-games/${encodeURIComponent(shareToken)}/registration-context`,
+        `/api/v1/shared-games/${encodeURIComponent(shareToken)}/${resource}`,
         undefined,
         headers,
       );
       if (response.statusCode !== 200) throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
-      return decodeOpenGameRegistrationContext(response.data);
+      return resource === "signup-context"
+        ? decodeOpenGameSignupContext(response.data)
+        : decodeOpenGameRegistrationContext(response.data);
     } catch (caught) {
       throw classifyFailure(caught, "context", false, sessionStore, requestSession);
     }
   };
+  const getContext = (shareToken: string) => readContext(shareToken, "registration-context");
+  const getSignupContext = (shareToken: string) => readContext(shareToken, "signup-context");
 
   const listMine = async (cursor?: string, limit?: number) => {
     let requestSession: StoredSession | null = null;
@@ -535,8 +694,9 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
-  const apply = async (
+  const writeRegistration = async (
     attempt: OpenGameRegistrationApplyAttempt,
+    resource: "applications" | "registrations",
   ): Promise<OpenGameRegistrationContext> => {
     let requestSession: StoredSession | null = null;
     try {
@@ -548,7 +708,7 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       };
       const response = await transport.requestWithStatus<unknown>(
         "POST",
-        `/api/v1/shared-games/${encodeURIComponent(attempt.shareToken)}/applications`,
+        `/api/v1/shared-games/${encodeURIComponent(attempt.shareToken)}/${resource}`,
         {
           display_name: attempt.body.displayName,
           position: attempt.body.position,
@@ -561,22 +721,43 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       if (response.statusCode !== 201) {
         throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
       }
-      const context = decodeOpenGameRegistrationContext(response.data);
+      const direct = resource === "registrations";
+      const context = direct
+        ? decodeOpenGameSignupContext(response.data)
+        : decodeOpenGameRegistrationContext(response.data);
       const registration = context.viewerRegistration;
+      const acceptedStatus = resource === "applications" && registration?.persistedStatus === "APPLIED"
+        && registration.effectiveStatus === "APPLIED"
+        || registration?.persistedStatus === "JOINED"
+          && registration.effectiveStatus === "JOINED"
+          && registration.availableWithdrawalAction === "LEAVE_GAME"
+        || registration?.persistedStatus === "WAITLISTED"
+          && registration.effectiveStatus === "WAITLISTED"
+          && registration.waitlistPosition !== null
+          && registration.availableWithdrawalAction === "WITHDRAW_WAITLIST";
       if (!context.viewerAuthenticated
         || registration === null
         || registration.displayName !== attempt.body.displayName
         || registration.position !== attempt.body.position
         || registration.note !== attempt.body.note
-        || registration.persistedStatus !== "APPLIED"
-        || registration.effectiveStatus !== "APPLIED") {
+        || !acceptedStatus) {
         throw new Error("APPLICATION_AUTHORITY_MISMATCH");
       }
       return context;
     } catch (caught) {
-      throw classifyFailure(caught, "apply", true, sessionStore, requestSession);
+      throw classifyFailure(
+        caught,
+        resource === "registrations" ? "signup" : "apply",
+        true,
+        sessionStore,
+        requestSession,
+      );
     }
   };
+  const apply = (attempt: OpenGameRegistrationApplyAttempt) =>
+    writeRegistration(attempt, "applications");
+  const createRegistration = (attempt: OpenGameRegistrationApplyAttempt) =>
+    writeRegistration(attempt, "registrations");
 
   const getPending = async (gameId: string) => {
     let requestSession: StoredSession | null = null;
@@ -630,8 +811,9 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
-  const withdraw = async (
+  const writeWithdrawal = async (
     attempt: OpenGameRegistrationWithdrawAttempt,
+    collection: "open-game-applications" | "open-game-registrations",
   ): Promise<OpenGameRegistrationContext> => {
     let requestSession: StoredSession | null = null;
     try {
@@ -644,14 +826,16 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       };
       const response = await transport.requestWithStatus<unknown>(
         "POST",
-        `/api/v1/open-game-applications/${encodeURIComponent(attempt.applicationId)}/withdraw`,
+        `/api/v1/${collection}/${encodeURIComponent(attempt.applicationId)}/withdraw`,
         { action: attempt.action, expected_version: attempt.expectedVersion },
         headers,
       );
       if (response.statusCode !== 200) {
         throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
       }
-      const context = decodeOpenGameRegistrationContext(response.data);
+      const context = collection === "open-game-registrations"
+        ? decodeOpenGameSignupContext(response.data)
+        : decodeOpenGameRegistrationContext(response.data);
       const registration = context.viewerRegistration;
       const expectedVersion = attempt.expectedVersion + 1;
       if (!Number.isSafeInteger(expectedVersion)
@@ -675,6 +859,10 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
       throw classifyFailure(caught, "withdraw", true, sessionStore, requestSession);
     }
   };
+  const withdraw = (attempt: OpenGameRegistrationWithdrawAttempt) =>
+    writeWithdrawal(attempt, "open-game-applications");
+  const withdrawRegistration = (attempt: OpenGameRegistrationWithdrawAttempt) =>
+    writeWithdrawal(attempt, "open-game-registrations");
 
   const getAttendanceRoster = async (gameId: string) => {
     let requestSession: StoredSession | null = null;
@@ -788,18 +976,159 @@ export function createHttpOpenGameRegistrationSource({ transport, identity, sess
     }
   };
 
+  const getPublicProfile = async (): Promise<OpenGamePublicProfile | null> => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "GET",
+        "/api/v1/auth/wechat/profile",
+        undefined,
+        authorizationContext.headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("SERVICE_UNAVAILABLE");
+      }
+      return decodePublicProfile(response.data);
+    } catch (caught) {
+      throw classifyFailure(caught, "profile", false, sessionStore, requestSession);
+    }
+  };
+
+  const uploadPublicProfileAvatar = async (
+    tempFilePath: string,
+  ): Promise<{ readonly objectKey: string }> => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const bytes = await readAvatarBytes(tempFilePath);
+      const mimeType = avatarMimeType(bytes);
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "POST",
+        "/api/v1/auth/wechat/profile/avatar/upload-intents",
+        { mime_type: mimeType, byte_size: bytes.byteLength },
+        authorizationContext.headers,
+      );
+      if (response.statusCode !== 201) {
+        throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      }
+      const intent = exactObject(response.data, [
+        "avatar_id", "object_key", "signed_put_url", "required_headers", "maximum_bytes",
+        "accepted_mime_types",
+      ], "$" );
+      uuidAt(intent.avatar_id, "$.avatar_id");
+      const objectKey = boundedStringAt(intent.object_key, "$.object_key", 1, 512);
+      const signedPutUrl = httpsUrlAt(intent.signed_put_url, "$.signed_put_url");
+      const maximumBytes = safeIntegerAt(intent.maximum_bytes, "$.maximum_bytes");
+      const acceptedMimeTypes = arrayAt(
+        intent.accepted_mime_types,
+        "$.accepted_mime_types",
+        1,
+      ).map((value, index) => enumAt(
+        value,
+        ["image/jpeg", "image/png", "image/webp"] as const,
+        `$.accepted_mime_types[${index}]`,
+      ));
+      const headersObject = objectAt(intent.required_headers, "$.required_headers");
+      const requiredHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(headersObject)) {
+        requiredHeaders[key] = stringAt(value, `$.required_headers.${key}`);
+      }
+      if (maximumBytes < bytes.byteLength
+        || !acceptedMimeTypes.includes(mimeType)
+        || requiredHeaders["Content-Type"] !== mimeType
+        || requiredHeaders["Content-Length"] !== String(bytes.byteLength)) {
+        throw new Error("AVATAR_UPLOAD_INTENT_MISMATCH");
+      }
+      await uploadSignedAvatar(signedPutUrl, bytes, requiredHeaders);
+      return Object.freeze({ objectKey });
+    } catch (caught) {
+      throw classifyFailure(caught, "avatar-intent", true, sessionStore, requestSession);
+    }
+  };
+
+  const savePublicProfile = async (
+    input: OpenGamePublicProfileSaveInput,
+  ): Promise<OpenGamePublicProfile> => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const nickname = boundedStringAt(input.nickname, "$.nickname", 1, 24);
+      if (input.avatarObjectKey !== null) {
+        boundedStringAt(input.avatarObjectKey, "$.avatar_object_key", 1, 512);
+      }
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "PUT",
+        "/api/v1/auth/wechat/profile",
+        { nickname, avatar_object_key: input.avatarObjectKey },
+        authorizationContext.headers,
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      }
+      const profile = decodePublicProfile(response.data);
+      if (profile === null || profile.nickname !== nickname) {
+        throw new Error("PUBLIC_PROFILE_AUTHORITY_MISMATCH");
+      }
+      return profile;
+    } catch (caught) {
+      throw classifyFailure(caught, "profile-write", true, sessionStore, requestSession);
+    }
+  };
+
+  const allowMemberReapply = async (
+    attempt: OpenGameAllowMemberReapplyAttempt,
+  ): Promise<OpenGameMemberReapplyResult> => {
+    let requestSession: StoredSession | null = null;
+    try {
+      const authorizationContext = authorization(sessionStore);
+      requestSession = authorizationContext.session;
+      const response = await transport.requestWithStatus<unknown>(
+        "POST",
+        `/api/v1/games/${encodeURIComponent(attempt.gameId)}`
+          + `/members/${encodeURIComponent(attempt.registrationId)}/unblock`,
+        { expected_version: attempt.expectedVersion },
+        {
+          ...authorizationContext.headers,
+          "Idempotency-Key": attempt.idempotencyKey,
+        },
+      );
+      if (response.statusCode !== 200) {
+        throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      }
+      const result = decodeAllowMemberReapplyResult(response.data);
+      if (result.registrationId !== attempt.registrationId
+        || result.version !== attempt.expectedVersion + 1) {
+        throw new Error("ALLOW_REAPPLY_AUTHORITY_MISMATCH");
+      }
+      return result;
+    } catch (caught) {
+      throw classifyFailure(caught, "allow-reapply", true, sessionStore, requestSession);
+    }
+  };
+
   return {
     login,
     currentUserId: () => sessionStore.load()?.userId ?? null,
     listMine,
     getContext,
+    getSignupContext,
     apply,
+    createRegistration,
     getPending,
     decide,
     withdraw,
+    withdrawRegistration,
     getAttendanceRoster,
     markAttendance,
     getMembers,
     removeMember,
+    getPublicProfile,
+    uploadPublicProfileAvatar,
+    savePublicProfile,
+    allowMemberReapply,
   };
 }

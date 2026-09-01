@@ -11,6 +11,7 @@ import {
   decodeOpenGameApplicationQueue,
   decodeMyOpenGameApplications,
   decodeOpenGameRegistrationContext,
+  decodeOpenGameSignupContext,
   validateOpenGameApplicationDraft,
 } from "./open-game-registration-decoder";
 import type { OpenGameApplicationDraft } from "./open-game-registration";
@@ -55,6 +56,45 @@ function withdrawalContext(
 }
 
 describe("open-game registration response decoders", () => {
+  test("keeps the legacy viewer display name at two or more code points", () => {
+    const joined = clone(fixture("open-game-registration-context-joined"));
+    (joined.viewer_registration as Record<string, unknown>).display_name = "范";
+    const signupJoined = clone(fixture("open-game-signup-context-joined"));
+    (signupJoined.viewer_registration as Record<string, unknown>).display_name = "范";
+
+    rejected(() => decodeOpenGameRegistrationContext(joined));
+    expect(decodeOpenGameSignupContext(signupJoined).viewerRegistration?.displayName).toBe("范");
+  });
+
+  test("requires the roster projection on the isolated signup context only", () => {
+    expect(() => decodeOpenGameRegistrationContext(contextReady)).not.toThrow();
+    rejected(() => decodeOpenGameSignupContext(contextReady));
+    const signupReady = fixture("open-game-signup-context-apply-ready");
+    expect(() => decodeOpenGameSignupContext(signupReady)).not.toThrow();
+    rejected(() => decodeOpenGameRegistrationContext(signupReady));
+  });
+
+  test("accepts a captain-removed viewer with preserved waitlist history and no live position", () => {
+    const removed = clone(fixture("open-game-registration-context-waitlisted"));
+    Object.assign(removed.viewer_registration as Record<string, unknown>, {
+      version: 3,
+      persisted_status: "REMOVED",
+      effective_status: "REMOVED",
+      waitlist_position: null,
+      removed_at: "2026-08-24T00:30:00+08:00",
+      available_withdrawal_action: null,
+    });
+
+    expect(decodeOpenGameRegistrationContext(removed).viewerRegistration).toMatchObject({
+      persistedStatus: "REMOVED",
+      effectiveStatus: "REMOVED",
+      waitlistPosition: null,
+      waitlistedAt: "2026-08-24T00:25:00+08:00",
+      promotedAt: null,
+      removedAt: "2026-08-24T00:30:00+08:00",
+    });
+  });
+
   test("decodes withdrawal authority and enforces action, late, terminal, and cancellation invariants", () => {
     const applied = withdrawalContext(contextApplied, {
       available_withdrawal_action: "WITHDRAW_APPLICATION",
@@ -226,13 +266,19 @@ describe("open-game registration response decoders", () => {
       removedAt: wireRegistration?.removed_at,
     };
 
-    expect(decodeOpenGameRegistrationContext(value)).toEqual({
+    const decoded = decodeOpenGameRegistrationContext(value);
+    expect(decoded).toMatchObject({
       game: decodeOpenGamePublic(value.game, "$.game"),
       remainingSpots: value.remaining_spots,
       viewerAuthenticated,
       viewerRegistration,
       allowedActions: { canApply, applyBlockedReason },
     });
+    expect(Object.keys(decoded).sort()).toEqual([
+      "allowedActions", "blockedMembers", "game", "joinedCount", "joinedMembers",
+      "managementGameId", "remainingSpots", "viewerAuthenticated", "viewerRegistration",
+      "waitlistCount", "waitlistedMembers",
+    ].sort());
   });
 
   test("decodes the exact pending and empty queue examples defensively", () => {
@@ -1226,6 +1272,7 @@ describe("open-game application draft validation", () => {
       note: ` ${"球".repeat(120)} `,
     });
     expect(noteAtLimit.valid).toBe(true);
+
   });
 
   test.each([

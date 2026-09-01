@@ -54,6 +54,7 @@ export type OpenGameApplyBlockedReason =
   | "AUTH_REQUIRED"
   | "OWNER_CANNOT_APPLY"
   | "ALREADY_APPLIED"
+  | "REMOVED_BY_CAPTAIN"
   | "GAME_NOT_PUBLISHED"
   | "REGISTRATION_DEADLINE_PASSED"
   | "GAME_SUSPENDED"
@@ -263,6 +264,41 @@ export interface OpenGameMemberRemovalResult {
   readonly promotedMember: OpenGamePromotedMember | null;
 }
 
+export interface OpenGamePublicRosterManagement {
+  readonly registrationId: string;
+  readonly version: number;
+  readonly canRemove: boolean;
+  readonly canAllowReapply: boolean;
+}
+
+export interface OpenGamePublicRosterMember {
+  readonly nickname: string;
+  readonly avatarUrl: string | null;
+  readonly management: OpenGamePublicRosterManagement | null;
+}
+
+export interface OpenGamePublicWaitlistedMember extends OpenGamePublicRosterMember {
+  readonly waitlistPosition: number;
+}
+
+export interface OpenGameBlockedRosterMember extends OpenGamePublicRosterMember {
+  readonly management: OpenGamePublicRosterManagement;
+}
+
+export interface OpenGamePublicProfile {
+  readonly nickname: string;
+  readonly avatarUrl: string;
+  readonly profileVersion: number;
+  readonly confirmedAt: string;
+}
+
+export interface OpenGameMemberReapplyResult {
+  readonly registrationId: string;
+  readonly status: "REMOVED";
+  readonly version: number;
+  readonly reapplyBlocked: false;
+}
+
 export type OpenGameMemberRemovalReasonValidation =
   | { readonly valid: true; readonly reason: string; readonly error: null }
   | { readonly valid: false; readonly reason: null; readonly error: string };
@@ -270,6 +306,12 @@ export type OpenGameMemberRemovalReasonValidation =
 export interface OpenGameRegistrationContext {
   readonly game: OpenGamePublic;
   readonly remainingSpots: number;
+  readonly joinedCount?: number;
+  readonly waitlistCount?: number;
+  readonly joinedMembers?: readonly OpenGamePublicRosterMember[] | null;
+  readonly waitlistedMembers?: readonly OpenGamePublicWaitlistedMember[] | null;
+  readonly blockedMembers?: readonly OpenGameBlockedRosterMember[] | null;
+  readonly managementGameId?: string | null;
   readonly viewerAuthenticated: boolean;
   readonly viewerRegistration: OpenGameViewerRegistration | null;
   readonly allowedActions: OpenGameApplyActions;

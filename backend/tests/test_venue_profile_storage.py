@@ -8,6 +8,7 @@ from uuid import UUID
 
 import pytest
 from PIL import Image
+from PIL.TiffImagePlugin import IFDRational
 from pydantic import ValidationError
 
 from backend.app.config import Settings
@@ -24,11 +25,34 @@ VENUE_ID = UUID("0558e728-af58-4572-8680-656516cb76ad")
 OTHER_VENUE_ID = UUID("3bdde313-fbca-42dd-ae0c-9b3fd04e17e0")
 IMAGE_ID = UUID("88536891-b882-4289-93f6-8b77fa4f5dcc")
 OTHER_IMAGE_ID = UUID("d5664fb0-1d8a-4cf7-bad2-835d4644a8e8")
+USER_ID = UUID("10000000-0000-4000-8000-000000000002")
+AVATAR_ID = UUID("70000000-0000-4000-8000-000000000001")
 
 
 def image_bytes(image_format: str, *, size: tuple[int, int] = (32, 24)) -> bytes:
     output = io.BytesIO()
     Image.new("RGB", size, (32, 128, 224)).save(output, image_format)
+    return output.getvalue()
+
+
+def avatar_with_gps_exif() -> bytes:
+    image = Image.new("RGB", (2048, 1024), (32, 128, 224))
+    exif = Image.Exif()
+    exif[0x010E] = "private device note"
+    exif[0x0112] = 6
+    exif[0x8825] = {
+        1: "N",
+        2: (IFDRational(31, 1), IFDRational(12, 1), IFDRational(0, 1)),
+        3: "E",
+        4: (IFDRational(121, 1), IFDRational(28, 1), IFDRational(0, 1)),
+    }
+    output = io.BytesIO()
+    image.save(
+        output,
+        "JPEG",
+        exif=exif,
+        icc_profile=b"private-icc-profile",
+    )
     return output.getvalue()
 
 
@@ -258,6 +282,89 @@ class FakeBucket:
 
 def oss_storage(bucket: FakeBucket) -> OssMediaStorage:
     return OssMediaStorage(bucket=bucket, public_base_url="https://cdn.example.test/media")
+
+
+def _assert_sanitized_public_avatar(data: bytes) -> None:
+    with Image.open(io.BytesIO(data)) as image:
+        image.load()
+        assert not image.getexif()
+        assert "icc_profile" not in image.info
+        assert max(image.size) <= 1024
+        assert image.size[0] * image.size[1] <= 1024 * 1024
+
+
+def test_local_user_avatar_promotion_reencodes_and_strips_gps_metadata() -> None:
+    storage = LocalMediaStorage()
+    payload = avatar_with_gps_exif()
+    intent = storage.create_user_avatar_upload_intent(
+        USER_ID,
+        AVATAR_ID,
+        "image/jpeg",
+        len(payload),
+    )
+    storage.accept_upload(intent.object_key, payload, intent.required_headers)
+
+    published = storage.promote_user_avatar(
+        USER_ID,
+        AVATAR_ID,
+        intent.object_key,
+    )
+
+    public_data = storage._objects[published.object_key].data
+    assert public_data != payload
+    assert published.byte_size == len(public_data)
+    assert published.sha256 == hashlib.sha256(public_data).hexdigest()
+    _assert_sanitized_public_avatar(public_data)
+
+
+def test_user_avatar_rejects_over_budget_dimensions_before_full_decode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = LocalMediaStorage()
+    payload = image_bytes("PNG", size=(4097, 4097))
+    intent = storage.create_user_avatar_upload_intent(
+        USER_ID,
+        AVATAR_ID,
+        "image/png",
+        len(payload),
+    )
+    storage.accept_upload(intent.object_key, payload, intent.required_headers)
+
+    def fail_if_decoded(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("over-budget avatar reached full pixel decode")
+
+    monkeypatch.setattr(Image.Image, "load", fail_if_decoded)
+
+    with pytest.raises(InvalidMediaError, match="pixel budget"):
+        storage.promote_user_avatar(USER_ID, AVATAR_ID, intent.object_key)
+
+    assert not storage.contains(intent.object_key)
+
+
+def test_oss_user_avatar_promotion_reencodes_instead_of_copying_private_bytes() -> None:
+    bucket = FakeBucket()
+    storage = oss_storage(bucket)
+    payload = avatar_with_gps_exif()
+    intent = storage.create_user_avatar_upload_intent(
+        USER_ID,
+        AVATAR_ID,
+        "image/jpeg",
+        len(payload),
+    )
+    bucket.objects[intent.object_key] = FakeObject(payload, "image/jpeg")
+
+    published = storage.promote_user_avatar(
+        USER_ID,
+        AVATAR_ID,
+        intent.object_key,
+    )
+
+    public_data = bucket.objects[published.object_key].data
+    assert public_data != payload
+    assert bucket.copy_calls == []
+    assert published.byte_size == len(public_data)
+    assert published.sha256 == hashlib.sha256(public_data).hexdigest()
+    _assert_sanitized_public_avatar(public_data)
 
 
 def test_upload_intents_reject_zero_or_oversized_declared_length() -> None:

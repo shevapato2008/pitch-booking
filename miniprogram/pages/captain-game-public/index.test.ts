@@ -185,8 +185,9 @@ const withdrawnContext: OpenGameRegistrationContext = {
 const applyAttempt: Extract<OpenGameRegistrationAttempt, { kind: "apply" }> = {
   kind: "apply", originatingUserId: userId, shareToken: token,
   body: { displayName: "周末小翼", position: "FORWARD", note: "可以补边路，按时到场。", adultConfirmed: true, riskConfirmed: true },
+  submissionMode: "DIRECT_REGISTRATION",
   idempotencyKey: "application-key-00000000000001",
-};
+} as Extract<OpenGameRegistrationAttempt, { kind: "apply" }>;
 const withdrawAttempt: Extract<OpenGameRegistrationAttempt, { kind: "withdraw" }> = {
   kind: "withdraw", originatingUserId: userId, shareToken: token,
   applicationId: appliedContext.viewerRegistration!.id,
@@ -248,6 +249,41 @@ function registerSources(overrides: Partial<OpenGameRegistrationSource> = {}) {
 function blockedContext(reason: OpenGameApplyBlockedReason, viewerAuthenticated = true): OpenGameRegistrationContext {
   return { ...readyContext, viewerAuthenticated, viewerRegistration: null, allowedActions: { canApply: false, applyBlockedReason: reason } };
 }
+const managedJoinedRegistrationId = "40000000-0000-4000-8000-000000000105";
+const managedBlockedRegistrationId = "40000000-0000-4000-8000-000000000106";
+function captainManagementContext(
+  joined = true,
+  blockedIds: readonly string[] = [managedBlockedRegistrationId],
+): OpenGameRegistrationContext {
+  return {
+    ...blockedContext("OWNER_CANNOT_APPLY"),
+    remainingSpots: joined ? 3 : 4,
+    joinedCount: joined ? 1 : 0,
+    waitlistCount: 0,
+    joinedMembers: joined ? [{
+      nickname: "正式队员",
+      avatarUrl: null,
+      management: {
+        registrationId: managedJoinedRegistrationId,
+        version: 2,
+        canRemove: true,
+        canAllowReapply: false,
+      },
+    }] : [],
+    waitlistedMembers: [],
+    blockedMembers: blockedIds.map((registrationId) => ({
+      nickname: registrationId === managedJoinedRegistrationId ? "正式队员" : "已移除队员",
+      avatarUrl: null,
+      management: {
+        registrationId,
+        version: registrationId === managedJoinedRegistrationId ? 3 : 4,
+        canRemove: false,
+        canAllowReapply: true,
+      },
+    })),
+    managementGameId: gameId,
+  };
+}
 function recursiveKeys(value: unknown): readonly string[] {
   if (Array.isArray(value)) return value.flatMap(recursiveKeys);
   if (typeof value !== "object" || value === null) return [];
@@ -290,6 +326,788 @@ test("strict shared route loads registration authority only and keeps anonymous 
   expect(Object.keys(page.data.publicGame).sort()).toEqual([
     "aaCents", "endsAt", "equipmentAndArrivalNotes", "fixedPlayers", "intensity", "minimumExperience", "name", "openSpots", "pitchName", "pitchSpecification", "positions", "registrationDeadline", "startsAt", "state", "stateReason", "teamName", "timeZone", "totalPlayers", "venueName", "visibility",
   ].sort());
+});
+
+test("shared signup page prefers the isolated signup-context client over the legacy context", async () => {
+  const registration = registrationSource({
+    getContext: jest.fn(async () => { throw new Error("LEGACY_CONTEXT_USED"); }),
+  }) as OpenGameRegistrationSource & { getSignupContext: jest.Mock };
+  registration.getSignupContext = jest.fn(async () => readyContext);
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(registration.getSignupContext).toHaveBeenCalledWith(token);
+  expect(registration.getContext).not.toHaveBeenCalled();
+  expect(page.data).toMatchObject({ status: "READY", primaryAction: "APPLY" });
+});
+
+test("signup roster separates public capacity from plan totals and gates member identities behind login", async () => {
+  currentUserId = null;
+  const anonymousRoster = {
+    ...anonymousContext,
+    remainingSpots: 2,
+    joinedCount: 2,
+    waitlistCount: 1,
+    joinedMembers: null,
+    waitlistedMembers: null,
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  registerSources({ getContext: jest.fn(async () => anonymousRoster) });
+  const anonymous = loadPage();
+  call(anonymous, "onLoad", { token });
+  await flush();
+  expect(anonymous.data).toMatchObject({
+    signupProgressLabel: "公开报名 2 / 4",
+    waitlistCountLabel: "候补 1 人",
+    planCountLabel: "计划 14 人，其中固定队员 9 人",
+    rosterPrivate: true,
+    joinedMembers: [],
+    waitlistedMembers: [],
+  });
+
+  currentUserId = userId;
+  const loggedRoster = {
+    ...readyContext,
+    remainingSpots: 2,
+    joinedCount: 2,
+    waitlistCount: 1,
+    joinedMembers: [
+      { nickname: "小翼", avatarUrl: "https://cdn.example.com/avatars/a.png", management: null },
+      { nickname: "阿蓝", avatarUrl: null, management: null },
+    ],
+    waitlistedMembers: [
+      { nickname: "小满", avatarUrl: null, waitlistPosition: 1, management: null },
+    ],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  resetOpenGameRegistrationSourceForTesting();
+  registerOpenGameRegistrationSource(registrationSource({ getContext: jest.fn(async () => loggedRoster) }));
+  const logged = loadPage();
+  call(logged, "onLoad", { token });
+  await flush();
+  expect(logged.data).toMatchObject({
+    rosterPrivate: false,
+    signupActionLabel: "立即报名",
+    joinedMembers: [
+      expect.objectContaining({ nickname: "小翼", avatarUrl: "https://cdn.example.com/avatars/a.png" }),
+      expect.objectContaining({ nickname: "阿蓝", avatarUrl: "" }),
+    ],
+    waitlistedMembers: [expect.objectContaining({ nickname: "小满", waitlistPosition: 1 })],
+  });
+  expect(JSON.stringify(logged.data.joinedMembers)).not.toMatch(/position|note/i);
+});
+
+test("a complete public profile still requires fresh adult and risk confirmation before waitlisting", async () => {
+  const fullReady = {
+    ...readyContext,
+    remainingSpots: 0,
+    joinedCount: 4,
+    waitlistCount: 2,
+    joinedMembers: [],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  const fullWaitlisted = {
+    ...waitlistedContext,
+    joinedCount: 4,
+    waitlistCount: 3,
+    joinedMembers: [],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => fullReady),
+    apply: jest.fn(async () => { throw new Error("LEGACY_APPLY_USED"); }),
+  }) as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+    uploadPublicProfileAvatar: jest.Mock;
+    savePublicProfile: jest.Mock;
+    createRegistration: jest.Mock;
+  };
+  registration.createRegistration = jest.fn(async () => fullWaitlisted);
+  registration.getPublicProfile = jest.fn(async () => ({
+    nickname: "小翼",
+    avatarUrl: "https://cdn.example.com/avatars/a.png",
+    profileVersion: 1,
+    confirmedAt: "2026-09-01T20:00:00+08:00",
+  }));
+  registration.uploadPublicProfileAvatar = jest.fn(async () => ({
+    objectKey: "unused",
+  })) as any;
+  registration.savePublicProfile = jest.fn(async () => ({
+    nickname: "小翼",
+    avatarUrl: "https://cdn.example.com/avatars/a.png",
+    profileVersion: 2,
+    confirmedAt: "2026-09-01T20:05:00+08:00",
+  }));
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data).toMatchObject({ primaryAction: "APPLY", signupActionLabel: "加入候补" });
+  await call(page, "onApply");
+
+  expect(wx.navigateTo).not.toHaveBeenCalledWith(expect.objectContaining({
+    url: `/pages/player-game-application/index?token=${token}`,
+  }));
+  expect(page.data).toMatchObject({
+    profileSheetState: "EDITING",
+    profilePurpose: "SIGNUP",
+    profileNickname: "小翼",
+    profileAvatarPreview: "https://cdn.example.com/avatars/a.png",
+    adultConfirmed: false,
+    riskConfirmed: false,
+  });
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(registration.createRegistration).not.toHaveBeenCalled();
+  await call(page, "onConfirmProfile");
+  expect(page.data.profileError).toContain("确认");
+  expect(registration.savePublicProfile).not.toHaveBeenCalled();
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(registration.createRegistration).not.toHaveBeenCalled();
+
+  call(page, "onSignupConfirmationsChange", { detail: { value: ["adult"] } });
+  await call(page, "onConfirmProfile");
+  expect(page.data).toMatchObject({ adultConfirmed: true, riskConfirmed: false });
+  expect(registration.savePublicProfile).not.toHaveBeenCalled();
+  expect(registration.apply).not.toHaveBeenCalled();
+  expect(registration.createRegistration).not.toHaveBeenCalled();
+
+  call(page, "onSignupConfirmationsChange", {
+    detail: { value: ["adult", "risk"] },
+  });
+  await call(page, "onConfirmProfile");
+
+  expect(registration.uploadPublicProfileAvatar).not.toHaveBeenCalled();
+  expect(registration.createRegistration).toHaveBeenCalledWith(expect.objectContaining({
+    kind: "apply",
+    submissionMode: "DIRECT_REGISTRATION",
+    originatingUserId: userId,
+    shareToken: token,
+    body: {
+      displayName: "小翼",
+      position: "ANY",
+      note: null,
+      adultConfirmed: true,
+      riskConfirmed: true,
+    },
+  }));
+  expect(page.data).toMatchObject({
+    registrationStatus: "WAITLISTED",
+    statusHeading: "候补中 · 当前第 1 位",
+    primaryAction: "WITHDRAW",
+  });
+});
+
+test("first signup waits for chooseAvatar and nickname, then uploads, saves profile and submits once", async () => {
+  const rosterReady = {
+    ...readyContext,
+    joinedCount: 0,
+    waitlistCount: 0,
+    joinedMembers: [],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  const joined = {
+    ...joinedContext,
+    joinedCount: 1,
+    waitlistCount: 0,
+    joinedMembers: [{ nickname: "小翼", avatarUrl: "https://cdn.example.com/avatar.png", management: null }],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => rosterReady),
+    apply: jest.fn(async () => joined),
+  }) as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+    uploadPublicProfileAvatar: jest.Mock;
+    savePublicProfile: jest.Mock;
+  };
+  registration.getPublicProfile = jest.fn(async () => null);
+  registration.uploadPublicProfileAvatar = jest.fn(async () => ({ objectKey: "private/avatar.png" }));
+  registration.savePublicProfile = jest.fn(async () => ({
+    nickname: "小翼",
+    avatarUrl: "https://cdn.example.com/avatar.png",
+    profileVersion: 1,
+    confirmedAt: "2026-09-01T20:00:00+08:00",
+  }));
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onApply");
+  expect(page.data).toMatchObject({
+    profileSheetState: "EDITING",
+    profilePurpose: "SIGNUP",
+    adultConfirmed: false,
+    riskConfirmed: false,
+  });
+  expect(registration.apply).not.toHaveBeenCalled();
+  call(page, "onProfileAvatarChosen", { detail: { avatarUrl: "wxfile://tmp/avatar.png" } });
+  call(page, "onProfileNicknameInput", { detail: { value: "  小翼  " } });
+  call(page, "onSignupConfirmationsChange", {
+    detail: { value: ["adult", "risk"] },
+  });
+  const first = call(page, "onConfirmProfile") as Promise<void>;
+  const duplicate = call(page, "onConfirmProfile") as Promise<void>;
+  expect(first).toBe(duplicate);
+  await first;
+
+  expect(registration.uploadPublicProfileAvatar).toHaveBeenCalledWith("wxfile://tmp/avatar.png");
+  expect(registration.savePublicProfile).toHaveBeenCalledWith({
+    nickname: "小翼",
+    avatarObjectKey: "private/avatar.png",
+  });
+  expect(registration.apply).toHaveBeenCalledTimes(1);
+  expect(page.data).toMatchObject({
+    profileSheetState: "CLOSED",
+    registrationStatus: "JOINED",
+    statusHeading: "已加入本场球局",
+  });
+});
+
+test("each signup sheet resets both confirmations even when the profile is reusable", async () => {
+  const registration = registrationSource() as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+  };
+  registration.getPublicProfile = jest.fn(async () => ({
+    nickname: "小翼",
+    avatarUrl: "https://cdn.example.com/avatar.png",
+    profileVersion: 1,
+    confirmedAt: "2026-09-01T20:00:00+08:00",
+  }));
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onApply");
+  call(page, "onSignupConfirmationsChange", {
+    detail: { value: ["adult", "risk"] },
+  });
+  expect(page.data).toMatchObject({ adultConfirmed: true, riskConfirmed: true });
+  call(page, "onCancelProfile");
+  await call(page, "onApply");
+
+  expect(page.data).toMatchObject({
+    profileSheetState: "EDITING",
+    adultConfirmed: false,
+    riskConfirmed: false,
+  });
+  expect(registration.apply).not.toHaveBeenCalled();
+});
+
+test("direct signup keeps a disabled fixed CTA with honest progress until authority returns", async () => {
+  let resolveRegistration!: (context: OpenGameRegistrationContext) => void;
+  const pendingRegistration = new Promise<OpenGameRegistrationContext>((resolve) => {
+    resolveRegistration = resolve;
+  });
+  const profile = {
+    nickname: "小翼",
+    avatarUrl: "https://cdn.example.com/avatar.png",
+    profileVersion: 1,
+    confirmedAt: "2026-09-01T20:00:00+08:00",
+  };
+  const registration = registrationSource({
+    createRegistration: jest.fn(() => pendingRegistration),
+  }) as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+    uploadPublicProfileAvatar: jest.Mock;
+    savePublicProfile: jest.Mock;
+    createRegistration: jest.Mock;
+  };
+  registration.getPublicProfile = jest.fn(async () => profile);
+  registration.uploadPublicProfileAvatar = jest.fn(async () => ({ objectKey: "unused" })) as any;
+  registration.savePublicProfile = jest.fn(async () => profile);
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  await call(page, "onApply");
+  call(page, "onSignupConfirmationsChange", { detail: { value: ["adult", "risk"] } });
+
+  const submitting = call(page, "onConfirmProfile") as Promise<void>;
+  await flush();
+  expect(page.data).toMatchObject({ signupSubmitting: true, primaryAction: "APPLY" });
+  const template = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
+  expect(template).toContain("signupSubmitting ? '提交中…' : signupActionLabel");
+
+  resolveRegistration(joinedContext);
+  await submitting;
+  expect(page.data).toMatchObject({ signupSubmitting: false, registrationStatus: "JOINED" });
+});
+
+test.each([
+  ["PUBLIC_PROFILE_REQUIRED", null, "公开资料不完整，请重新确认后报名。"],
+  ["PUBLIC_PROFILE_CHANGED", {
+    nickname: "另一设备昵称",
+    avatarUrl: "https://cdn.example.com/other-device-avatar.png",
+    profileVersion: 2,
+    confirmedAt: "2026-09-01T20:01:00+08:00",
+  }, "公开资料已在其他设备更新，请重新确认后报名。"],
+] as const)("a definitive %s race refreshes authority and reopens with the local profile draft", async (
+  code,
+  refreshedProfile,
+  expectedError,
+) => {
+  const confirmedProfile = {
+    nickname: "翼",
+    avatarUrl: "https://cdn.example.com/avatar.png",
+    profileVersion: 1,
+    confirmedAt: "2026-09-01T20:00:00+08:00",
+  };
+  const registration = registrationSource({
+    getSignupContext: jest.fn(async () => readyContext),
+    createRegistration: jest.fn(async () => {
+      throw new OpenGameRegistrationApiError(code);
+    }),
+  }) as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+    uploadPublicProfileAvatar: jest.Mock;
+    savePublicProfile: jest.Mock;
+    getSignupContext: jest.Mock;
+    createRegistration: jest.Mock;
+  };
+  let profileReadCount = 0;
+  registration.getPublicProfile = jest.fn(async () => {
+    profileReadCount += 1;
+    return profileReadCount === 1 ? confirmedProfile : refreshedProfile;
+  }) as any;
+  registration.uploadPublicProfileAvatar = jest.fn(async () => ({
+    objectKey: "private/preserved-avatar.png",
+  })) as any;
+  registration.savePublicProfile = jest.fn(async () => ({
+    ...confirmedProfile,
+    avatarUrl: "https://cdn.example.com/preserved-avatar.png",
+  }));
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onApply");
+  call(page, "onProfileAvatarChosen", {
+    detail: { avatarUrl: "wxfile://tmp/preserved-avatar.png" },
+  });
+  call(page, "onSignupConfirmationsChange", { detail: { value: ["adult", "risk"] } });
+  await call(page, "onConfirmProfile");
+
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({
+    status: "READY",
+    primaryAction: "APPLY",
+    profileSheetState: "EDITING",
+    profilePurpose: "SIGNUP",
+    profileNickname: "翼",
+    profileAvatarPreview: "wxfile://tmp/preserved-avatar.png",
+    profileAvatarTempPath: "wxfile://tmp/preserved-avatar.png",
+    adultConfirmed: false,
+    riskConfirmed: false,
+    profileError: expectedError,
+  });
+  expect(registration.getSignupContext).toHaveBeenCalledTimes(2);
+  expect(registration.getPublicProfile).toHaveBeenCalledTimes(2);
+  expect(registration.createRegistration).toHaveBeenCalledWith(expect.objectContaining({
+    submissionMode: "DIRECT_REGISTRATION",
+    body: expect.objectContaining({ displayName: "翼" }),
+  }));
+});
+
+test("a logged-in viewer can update the reusable public nickname without re-uploading the avatar", async () => {
+  const registration = registrationSource() as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+    uploadPublicProfileAvatar: jest.Mock;
+    savePublicProfile: jest.Mock;
+  };
+  registration.getPublicProfile = jest.fn(async () => ({
+    nickname: "小翼",
+    avatarUrl: "https://cdn.example.com/avatar.png",
+    profileVersion: 1,
+    confirmedAt: "2026-09-01T20:00:00+08:00",
+  }));
+  registration.uploadPublicProfileAvatar = jest.fn(async () => ({ objectKey: "unused" }));
+  registration.savePublicProfile = jest.fn(async () => ({
+    nickname: "新小翼",
+    avatarUrl: "https://cdn.example.com/avatar.png",
+    profileVersion: 2,
+    confirmedAt: "2026-09-01T20:05:00+08:00",
+  }));
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onEditProfile");
+  expect(page.data).toMatchObject({
+    profileSheetState: "EDITING",
+    profilePurpose: "UPDATE",
+    profileNickname: "小翼",
+    profileAvatarPreview: "https://cdn.example.com/avatar.png",
+  });
+  call(page, "onProfileNicknameInput", { detail: { value: "新小翼" } });
+  await call(page, "onConfirmProfile");
+
+  expect(registration.uploadPublicProfileAvatar).not.toHaveBeenCalled();
+  expect(registration.savePublicProfile).toHaveBeenCalledWith({
+    nickname: "新小翼",
+    avatarObjectKey: null,
+  });
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(page.data.profileSheetState).toBe("CLOSED");
+});
+
+test("withdrawn viewers can register again and withdrawal copy no longer claims a permanent ban", async () => {
+  const reapply = {
+    ...withdrawnContext,
+    remainingSpots: 3,
+    allowedActions: { canApply: true, applyBlockedReason: null },
+    joinedCount: 1,
+    waitlistCount: 0,
+    joinedMembers: [],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  registerSources({ getContext: jest.fn(async () => reapply) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data).toMatchObject({
+    registrationStatus: "WITHDRAWN",
+    primaryAction: "APPLY",
+    signupActionLabel: "立即报名",
+  });
+  const source = readFileSync("miniprogram/pages/captain-game-public/index.ts", "utf8");
+  expect(source).not.toContain("本场不可再次申请");
+  expect(source).toContain("重新报名将按提交时的实时名额进入正式名单或候补队尾");
+});
+
+test("captain removes roster members and allows blocked members to reapply only after distinct confirmations", async () => {
+  const joinedRegistrationId = "40000000-0000-4000-8000-000000000105";
+  const blockedRegistrationId = "40000000-0000-4000-8000-000000000106";
+  const captainContext = {
+    ...blockedContext("OWNER_CANNOT_APPLY"),
+    joinedCount: 1,
+    waitlistCount: 0,
+    joinedMembers: [{
+      nickname: "正式队员",
+      avatarUrl: null,
+      management: { registrationId: joinedRegistrationId, version: 2, canRemove: true, canAllowReapply: false },
+    }],
+    waitlistedMembers: [],
+    blockedMembers: [{
+      nickname: "已移除队员",
+      avatarUrl: null,
+      management: { registrationId: blockedRegistrationId, version: 4, canRemove: false, canAllowReapply: true },
+    }],
+    managementGameId: gameId,
+  } as OpenGameRegistrationContext;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => captainContext),
+    removeMember: jest.fn(async (attempt) => {
+      expect(attemptStore.load()).toEqual(attempt);
+      return {
+      removedRegistrationId: joinedRegistrationId,
+      removedDisplayName: "正式队员",
+      status: "REMOVED" as const,
+      version: 3,
+      removedAt: "2026-09-01T20:00:00+08:00",
+      joinedCount: 0,
+      remainingSpots: 4,
+      waitlistCount: 0,
+      promotedMember: null,
+      };
+    }),
+  }) as OpenGameRegistrationSource & { allowMemberReapply: jest.Mock };
+  registration.allowMemberReapply = jest.fn(async (attempt: unknown) => {
+    expect(attemptStore.load()).toEqual(attempt);
+    return {
+      registrationId: blockedRegistrationId,
+      status: "REMOVED" as const,
+      version: 5,
+      reapplyBlocked: false as const,
+    };
+  });
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const modalTitles: string[] = [];
+  (wx as any).showModal = jest.fn((options: {
+    title: string;
+    success(result: { confirm: boolean }): void;
+  }) => {
+    modalTitles.push(options.title);
+    options.success({ confirm: true });
+  });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onRemoveRosterMember", {
+    currentTarget: { dataset: { registrationId: joinedRegistrationId, version: 2, nickname: "正式队员" } },
+  });
+  await call(page, "onAllowMemberReapply", {
+    currentTarget: { dataset: { registrationId: blockedRegistrationId, version: 4, nickname: "已移除队员" } },
+  });
+
+  expect(modalTitles).toEqual(["确认移除正式队员？", "允许已移除队员重新报名？"]);
+  expect(registration.removeMember).toHaveBeenCalledWith(expect.objectContaining({
+    kind: "remove-member",
+    originatingUserId: userId,
+    gameId,
+    registrationId: joinedRegistrationId,
+    expectedVersion: 2,
+  }));
+  expect(registration.allowMemberReapply).toHaveBeenCalledWith(expect.objectContaining({
+    kind: "allow-reapply",
+    originatingUserId: userId,
+    shareToken: token,
+    gameId,
+    registrationId: blockedRegistrationId,
+    expectedVersion: 4,
+  }));
+  expect(attemptStore.load()).toBeNull();
+});
+
+test("an unknown roster removal reads authority and replays the exact durable key once", async () => {
+  const before = captainManagementContext();
+  const after = captainManagementContext(false, [
+    managedBlockedRegistrationId,
+    managedJoinedRegistrationId,
+  ]);
+  let reads = 0;
+  let writes = 0;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads < 3 ? before : after;
+    }),
+    removeMember: jest.fn(async () => {
+      writes += 1;
+      if (writes === 1) throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+      return {
+        removedRegistrationId: managedJoinedRegistrationId,
+        removedDisplayName: "正式队员",
+        status: "REMOVED" as const,
+        version: 3,
+        removedAt: "2026-09-01T20:00:00+08:00",
+        joinedCount: 0,
+        remainingSpots: 4,
+        waitlistCount: 0,
+        promotedMember: null,
+      };
+    }),
+  });
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  (wx as any).showModal = jest.fn((options: {
+    success(result: { confirm: boolean }): void;
+  }) => { options.success({ confirm: true }); });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onRemoveRosterMember", {
+    currentTarget: {
+      dataset: {
+        registrationId: managedJoinedRegistrationId,
+        version: 2,
+        nickname: "正式队员",
+      },
+    },
+  });
+
+  expect(registration.getContext).toHaveBeenCalledTimes(3);
+  expect(registration.removeMember).toHaveBeenCalledTimes(2);
+  const first = jest.mocked(registration.removeMember).mock.calls[0][0];
+  const replay = jest.mocked(registration.removeMember).mock.calls[1][0];
+  expect(replay).toEqual(first);
+  expect(replay.idempotencyKey).toBe(first.idempotencyKey);
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({ managementActionInFlight: false, managementError: "" });
+});
+
+test("an unknown unblock reads authority and replays the exact durable key once", async () => {
+  const before = captainManagementContext();
+  const after = captainManagementContext(true, []);
+  let reads = 0;
+  let writes = 0;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads < 3 ? before : after;
+    }),
+  }) as OpenGameRegistrationSource & { allowMemberReapply: jest.Mock };
+  registration.allowMemberReapply = jest.fn(async () => {
+    writes += 1;
+    if (writes === 1) throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+    return {
+      registrationId: managedBlockedRegistrationId,
+      status: "REMOVED" as const,
+      version: 5,
+      reapplyBlocked: false as const,
+    };
+  });
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  (wx as any).showModal = jest.fn((options: {
+    success(result: { confirm: boolean }): void;
+  }) => { options.success({ confirm: true }); });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onAllowMemberReapply", {
+    currentTarget: {
+      dataset: {
+        registrationId: managedBlockedRegistrationId,
+        version: 4,
+        nickname: "已移除队员",
+      },
+    },
+  });
+
+  expect(registration.getContext).toHaveBeenCalledTimes(3);
+  expect(registration.allowMemberReapply).toHaveBeenCalledTimes(2);
+  const first = registration.allowMemberReapply.mock.calls[0][0];
+  const replay = registration.allowMemberReapply.mock.calls[1][0];
+  expect(replay).toEqual(first);
+  expect((replay as { idempotencyKey: string }).idempotencyKey)
+    .toBe((first as { idempotencyKey: string }).idempotencyKey);
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data).toMatchObject({ managementActionInFlight: false, managementError: "" });
+});
+
+test("a second unknown roster-removal result stays durable and is never reported as a failure", async () => {
+  const before = captainManagementContext();
+  const registration = registrationSource({
+    getContext: jest.fn(async () => before),
+    removeMember: jest.fn(async () => {
+      throw new OpenGameRegistrationApiError("APPLICATION_RESULT_UNKNOWN");
+    }),
+  });
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  (wx as any).showModal = jest.fn((options: {
+    success(result: { confirm: boolean }): void;
+  }) => { options.success({ confirm: true }); });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  await call(page, "onRemoveRosterMember", {
+    currentTarget: {
+      dataset: {
+        registrationId: managedJoinedRegistrationId,
+        version: 2,
+        nickname: "正式队员",
+      },
+    },
+  });
+
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(registration.removeMember).toHaveBeenCalledTimes(2);
+  expect(attemptStore.load()).toEqual(jest.mocked(registration.removeMember).mock.calls[0][0]);
+  expect(page.data.managementError).toContain("结果待确认");
+  expect(page.data.managementError).not.toContain("失败");
+});
+
+test("a restored roster-removal attempt refreshes authority before replaying its original key", async () => {
+  const before = captainManagementContext();
+  const after = captainManagementContext(false, [
+    managedBlockedRegistrationId,
+    managedJoinedRegistrationId,
+  ]);
+  const pending = {
+    kind: "remove-member" as const,
+    originatingUserId: userId,
+    gameId,
+    registrationId: managedJoinedRegistrationId,
+    expectedVersion: 2,
+    reason: "队长在报名接龙中移除",
+    idempotencyKey: "roster-remove-restored-000001",
+  };
+  seedAttempt(pending);
+  let reads = 0;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => {
+      reads += 1;
+      return reads === 1 ? before : after;
+    }),
+    removeMember: jest.fn(async () => ({
+      removedRegistrationId: managedJoinedRegistrationId,
+      removedDisplayName: "正式队员",
+      status: "REMOVED" as const,
+      version: 3,
+      removedAt: "2026-09-01T20:00:00+08:00",
+      joinedCount: 0,
+      remainingSpots: 4,
+      waitlistCount: 0,
+      promotedMember: null,
+    })),
+  });
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  page.routeToken = token;
+
+  await call(page, "loadPublic");
+
+  expect(registration.getContext).toHaveBeenCalledTimes(2);
+  expect(registration.removeMember).toHaveBeenCalledWith(pending);
+  expect(attemptStore.load()).toBeNull();
+  expect(page.data.status).toBe("READY");
+});
+
+test("signup roster template keeps one shared composition, native profile controls, safe footer and share card", async () => {
+  registerSources();
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+  expect(call(page, "onShareAppMessage")).toEqual({
+    title: "周五浦东七人制 · 分享报名接龙",
+    path: `/pages/captain-game-public/index?token=${token}`,
+  });
+
+  const wxml = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
+  expect(wxml).toContain("公开报名 {{joinedCount}} / {{publicOpenSpots}}");
+  expect(wxml).toContain("计划 {{totalPlayers}} 人，其中固定队员 {{fixedPlayers}} 人");
+  expect(wxml).toContain("登录后查看名单");
+  expect(wxml).toContain('open-type="chooseAvatar"');
+  expect(wxml).toContain('type="nickname"');
+  expect(wxml).toContain('bindchange="onSignupConfirmationsChange"');
+  expect(wxml).toContain('value="adult"');
+  expect(wxml).toContain('value="risk"');
+  expect(wxml).toContain("!adultConfirmed || !riskConfirmed");
+  expect(wxml).toContain('bindtap="onRemoveRosterMember"');
+  expect(wxml).toContain('bindtap="onAllowMemberReapply"');
+  expect(wxml).not.toContain("item.position");
+  expect(styles).toMatch(/\.c1a-roster-avatar\s*\{[^}]*width:\s*72rpx[^}]*height:\s*72rpx/s);
+  expect(styles).toMatch(/\.c1a-roster-action\s*\{[^}]*min-height:\s*88rpx[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
+  expect(styles).toMatch(/\.c1a-footer\s*\{[^}]*env\(safe-area-inset-bottom/s);
+  expect(styles).toMatch(/\.c1a-profile-sheet\s*\{[^}]*max-height:\s*calc\([^;]*safe-area-inset-bottom/s);
+  expect(styles).toMatch(/\.c1a-profile-confirmation\s*\{[^}]*min-height:\s*88rpx/s);
+  expect(styles).toMatch(/@media\s*\(min-width:\s*410px\)/);
 });
 
 test("strict owner preview loads only nested publicView and exposes real manager return", async () => {
@@ -363,13 +1181,15 @@ test("a self-registration detail route exposes the real report entry while a pub
   expect(template).toContain("举报本场球局");
 });
 
-test("anonymous login reloads the same token and apply uses the production application route", async () => {
+test("anonymous login reloads the same token and never returns to the legacy application form", async () => {
   currentUserId = null; let reads = 0;
   const { b2, registration } = registerSources({ getContext: jest.fn(async () => { reads += 1; return reads === 1 ? anonymousContext : readyContext; }) });
   const page = loadPage(); call(page, "onLoad", { token }); await flush(); expect(page.data.primaryAction).toBe("LOGIN");
   await call(page, "onLogin"); expect(registration.login).toHaveBeenCalledTimes(1); expect(registration.getContext).toHaveBeenNthCalledWith(2, token); expect(page.data.primaryAction).toBe("APPLY");
   expect(b2.login).not.toHaveBeenCalled();
-  await call(page, "onApply"); expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/player-game-application/index?token=${token}` }));
+  await call(page, "onApply");
+  expect(wx.navigateTo).not.toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/player-game-application/index?token=${token}` }));
+  expect(page.data.navigationError).toContain("不支持报名资料");
 });
 
 test("APPLIED and JOINED expose server withdrawal actions while terminal and cancelled results stay read-only", async () => {
@@ -384,7 +1204,13 @@ test("APPLIED and JOINED expose server withdrawal actions while terminal and can
   expect(page.data).toMatchObject({ registrationStatus: "APPLIED", statusHeading: "等待队长审核", primaryAction: "WITHDRAW", withdrawalAction: "WITHDRAW_APPLICATION" });
   await call(page, "loadPublic");
   expect(registration.getContext).toHaveBeenCalledTimes(2);
-  expect(page.data).toMatchObject({ registrationStatus: "JOINED", statusHeading: "已加入本场球局", primaryAction: "WITHDRAW", withdrawalAction: "LEAVE_GAME" });
+  expect(page.data).toMatchObject({
+    registrationStatus: "JOINED",
+    statusHeading: "已加入本场球局",
+    statusDescription: "你已进入正式名单；AA 到场线下结算。",
+    primaryAction: "WITHDRAW",
+    withdrawalAction: "LEAVE_GAME",
+  });
   for (const [context, registrationStatus, statusHeading] of [
     [rejectedContext, "REJECTED", "本次申请未被接受"],
     [removedContext, "REMOVED", "已被队长移出"],
@@ -507,7 +1333,7 @@ test("WAITLISTED projects position, warm tone and a real withdrawal sheet withou
     withdrawalAction: "WITHDRAW_WAITLIST",
     withdrawalActionLabel: "退出候补",
     withdrawalConfirmationTitle: "确认退出候补？",
-    withdrawalConfirmationCopy: "退出后将从当前候补队列移除；正式成员人数和公开名额不变。本场不可再次申请。",
+    withdrawalConfirmationCopy: "退出后将从当前候补队列移除；重新报名会排到候补队尾。",
     withdrawalConfirmationActionLabel: "确认退出",
     withdrawalCancelLabel: "继续候补",
     withdrawalOperationState: "IDLE",
@@ -569,7 +1395,7 @@ test("WAITLISTED withdrawal persists before one POST, is single-flight, and conv
   expect(page.data).toMatchObject({
     registrationStatus: "WITHDRAWN",
     statusHeading: "已退出候补",
-    statusDescription: "你已退出本场候补队列；本场不可再次申请。",
+    statusDescription: "你已退出本场候补队列，可重新报名并排到候补队尾。",
     primaryAction: null,
     withdrawalAction: null,
   });
@@ -605,7 +1431,7 @@ test("SUSPENDED waitlist remains withdrawable and promoted JOINED keeps only LEA
     primaryAction: "WITHDRAW",
     withdrawalAction: "LEAVE_GAME",
     withdrawalActionLabel: "退出球局",
-    withdrawalConfirmationCopy: "退出后会释放你的正式席位；如有候补，将按服务端顺序自动递补。本场不可再次申请。",
+    withdrawalConfirmationCopy: "退出后会释放你的正式席位；如有候补，将按 FIFO 顺序自动递补。之后仍可重新报名。",
   });
 });
 
@@ -622,7 +1448,7 @@ test("WAITLIST_WITHDRAWAL is terminal and exposes no second mutation", async () 
   expect(withdrawn.data).toMatchObject({
     registrationStatus: "WITHDRAWN",
     statusHeading: "已退出候补",
-    statusDescription: "你已退出本场候补队列；本场不可再次申请。",
+    statusDescription: "你已退出本场候补队列，可重新报名并排到候补队尾。",
     primaryAction: null,
     withdrawalAction: null,
   });
@@ -633,9 +1459,10 @@ test("WAITLIST_WITHDRAWAL is terminal and exposes no second mutation", async () 
 });
 
 test.each([
-  ["AUTH_REQUIRED", false, "登录后可提交申请", "LOGIN"], ["OWNER_CANNOT_APPLY", true, "队长不能申请自己组织的球局", null],
+  ["AUTH_REQUIRED", false, "登录后即可报名", "LOGIN"], ["OWNER_CANNOT_APPLY", true, "队长不能申请自己组织的球局", null],
   ["ALREADY_APPLIED", true, "你已经申请过这场球局", null], ["GAME_NOT_PUBLISHED", true, "球局暂未开放申请", null],
   ["REGISTRATION_DEADLINE_PASSED", true, "报名已经截止", null],
+  ["REMOVED_BY_CAPTAIN" as OpenGameApplyBlockedReason, true, "暂不能重新报名", null],
   ["GAME_SUSPENDED", true, "球局暂时停止报名", null], ["GAME_CANCELLED", true, "球局已取消", null],
   ["GAME_COMPLETED", true, "球局已结束", null], ["GAME_STARTED", true, "球局已经开始", null],
 ] as const)("renders server apply blocker %s without inventing an action", async (reason, viewerAuthenticated, statusHeading, primaryAction) => {
@@ -644,13 +1471,32 @@ test.each([
   expect(page.data).toMatchObject({ status: "READY", applyBlockedReason: reason, statusHeading, primaryAction });
 });
 
+test("a captain-removed viewer sees the authoritative reapply restriction instead of a generic terminal status", async () => {
+  const restrictedRemoved: OpenGameRegistrationContext = {
+    ...removedContext,
+    allowedActions: { canApply: false, applyBlockedReason: "REMOVED_BY_CAPTAIN" },
+  };
+  registerSources({ getSignupContext: jest.fn(async () => restrictedRemoved) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data).toMatchObject({
+    registrationStatus: "REMOVED",
+    applyBlockedReason: "REMOVED_BY_CAPTAIN",
+    statusHeading: "暂不能重新报名",
+    statusDescription: "你已被队长移出；需要队长允许后才能重新报名。",
+    primaryAction: null,
+  });
+});
+
 test("follows canApply authority even when local capacity and dates look impossible", async () => {
   const strange: OpenGameRegistrationContext = {
     ...readyContext, game: { ...readyContext.game, startsAt: "2020-08-28T20:00:00+08:00", endsAt: "2020-08-28T22:00:00+08:00", registrationDeadline: "2020-08-28T18:00:00+08:00" },
     remainingSpots: 0, allowedActions: { canApply: true, applyBlockedReason: null },
   };
   registerSources({ getContext: jest.fn(async () => strange) }); const page = loadPage(); call(page, "onLoad", { token }); await flush();
-  expect(page.data).toMatchObject({ primaryAction: "APPLY", statusHeading: "可以申请加入" });
+  expect(page.data).toMatchObject({ primaryAction: "APPLY", statusHeading: "正式名额已满，可加入候补" });
 });
 
 test("shared service errors expose not-found, auth and real retry without B2 reads", async () => {
@@ -691,14 +1537,30 @@ test("owner auth loss still uses the B2 login and returns to the original previe
 });
 
 test("same-account unknown apply accepts authority or replays only the exact stored attempt", async () => {
-  seedAttempt(); const authorityApi = registerSources({ getContext: jest.fn(async () => appliedContext) }).registration;
+  seedAttempt(); const authorityApi = registerSources({ getContext: jest.fn(async () => joinedContext) }).registration;
   const accepted = loadPage(); call(accepted, "onLoad", { token }); await flush();
-  expect(accepted.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "WITHDRAW" }); expect(authorityApi.apply).not.toHaveBeenCalled(); expect(attemptStore.load()).toBeNull();
+  expect(accepted.data).toMatchObject({ registrationStatus: "JOINED", primaryAction: "WITHDRAW" }); expect(authorityApi.apply).not.toHaveBeenCalled(); expect(attemptStore.load()).toBeNull();
   seedAttempt(); resetOpenGameRegistrationSourceForTesting();
-  const replayApi = registrationSource({ getContext: jest.fn(async () => readyContext), apply: jest.fn(async () => appliedContext) }); registerOpenGameRegistrationSource(replayApi);
+  const replayApi = registrationSource({ getContext: jest.fn(async () => readyContext), apply: jest.fn(async () => joinedContext) }); registerOpenGameRegistrationSource(replayApi);
   const replay = loadPage(); call(replay, "onLoad", { token }); await flush(); expect(replay.data).toMatchObject({ status: "RESULT_UNKNOWN", primaryAction: "CONFIRM_RESULT" });
   await call(replay, "onConfirmResult"); expect(replayApi.apply).toHaveBeenCalledWith(applyAttempt); expect(attemptStore.load()).toBeNull();
-  expect(replay.data).toMatchObject({ registrationStatus: "APPLIED", primaryAction: "WITHDRAW" });
+  expect(replay.data).toMatchObject({ registrationStatus: "JOINED", primaryAction: "WITHDRAW" });
+});
+
+test.each([
+  ["old APPLIED", appliedContext],
+  ["WITHDRAWN", withdrawnContext],
+  ["REMOVED", removedContext],
+] as const)("unknown reapply keeps its durable attempt for %s authority", async (_label, authority) => {
+  seedAttempt();
+  const { registration } = registerSources({ getContext: jest.fn(async () => authority) });
+  const page = loadPage();
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data).toMatchObject({ status: "RESULT_UNKNOWN", primaryAction: "CONFIRM_RESULT" });
+  expect(attemptStore.load()).toEqual(applyAttempt);
+  expect(registration.apply).not.toHaveBeenCalled();
 });
 
 test("confirm result is single-flight and an unknown replay keeps the exact durable attempt", async () => {
@@ -730,7 +1592,7 @@ test("confirm result is single-flight and an unknown replay keeps the exact dura
 });
 
 test.each([
-  ["accepts newly visible authority", appliedContext, "READY", "APPLIED", true],
+  ["accepts newly visible authority", joinedContext, "READY", "JOINED", true],
   ["preserves unknown when authority is still absent", readyContext, "RESULT_UNKNOWN", "NONE", false],
 ] as const)("APPLICATION_ALREADY_EXISTS %s after one follow-up context read", async (
   _label,
@@ -902,7 +1764,7 @@ test("foreign clear reclassifies the latest durable attempt and never deletes an
   expect(registration.apply).not.toHaveBeenCalled();
 });
 
-test("shared application navigation failure remains visible and never sends a mutation", async () => {
+test("missing signup profile capability remains visible and never sends a mutation", async () => {
   const failNavigation = (options: unknown) => {
     (options as { fail?: (error: Error) => void }).fail?.(new Error("NAV_FAILED"));
   };
@@ -913,7 +1775,7 @@ test("shared application navigation failure remains visible and never sends a mu
   await flush();
   await call(page, "onApply");
 
-  expect(page.data.navigationError).toContain("无法打开申请表");
+  expect(page.data.navigationError).toContain("不支持报名资料");
   expect(registration.apply).not.toHaveBeenCalled();
   expect(attemptStore.load()).toBeNull();
 });
@@ -938,10 +1800,14 @@ test("APPLIED and JOINED use server withdrawal actions, confirmation is write-fr
     { route: "pages/my-game-registrations/index", applyRegistrationAuthority: listPatch },
     { route: "pages/captain-game-public/index" },
   ]);
-  const { registration } = registerSources({
+  const { registration: baseRegistration } = registerSources({
     getContext: jest.fn(async () => appliedContext),
-    withdraw: jest.fn(() => pendingWithdraw),
+    withdraw: jest.fn(async () => { throw new Error("LEGACY_WITHDRAW_USED"); }),
   });
+  const registration = baseRegistration as OpenGameRegistrationSource & {
+    withdrawRegistration: jest.Mock;
+  };
+  registration.withdrawRegistration = jest.fn(() => pendingWithdraw);
   const page = loadPage();
   call(page, "onLoad", { token });
   await flush();
@@ -955,17 +1821,20 @@ test("APPLIED and JOINED use server withdrawal actions, confirmation is write-fr
   call(page, "onOpenWithdrawalConfirm");
   expect(page.data.withdrawalOperationState).toBe("CONFIRMING");
   expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(registration.withdrawRegistration).not.toHaveBeenCalled();
   expect(attemptStore.load()).toBeNull();
   call(page, "onCancelWithdrawal");
   expect(page.data.withdrawalOperationState).toBe("IDLE");
   expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(registration.withdrawRegistration).not.toHaveBeenCalled();
 
   call(page, "onOpenWithdrawalConfirm");
   const first = call(page, "onConfirmWithdrawal") as Promise<void>;
   const duplicate = call(page, "onConfirmWithdrawal") as Promise<void>;
   expect(first).toBe(duplicate);
-  expect(registration.withdraw).toHaveBeenCalledTimes(1);
-  const stable = jest.mocked(registration.withdraw).mock.calls[0][0];
+  expect(registration.withdraw).not.toHaveBeenCalled();
+  expect(registration.withdrawRegistration).toHaveBeenCalledTimes(1);
+  const stable = registration.withdrawRegistration.mock.calls[0][0] as OpenGameRegistrationAttempt;
   expect(stable).toMatchObject({
     kind: "withdraw",
     originatingUserId: userId,
@@ -1311,10 +2180,10 @@ test("account switching during withdrawal preserves the owning attempt and block
 test("approved shared composition is production-only and every visible button has a real handler", () => {
   const source = readFileSync("miniprogram/pages/captain-game-public/index.ts", "utf8");
   const wxml = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8"); const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
-  expect(wxml).toContain("c1a-status-card"); expect(wxml).toContain("真实订场已确认"); expect(wxml).toContain("到场线下结算"); expect(wxml).toContain("当前仅供查看，申请加入即将开放");
+  expect(wxml).toContain("c1a-status-card"); expect(wxml).toContain("真实订场已确认"); expect(wxml).toContain("到场线下结算"); expect(wxml).toContain("队长预览，仅供查看；分享球局链接后队员可报名");
   expect(wxml).toContain("mode === 'shared'"); expect(wxml).toContain("mode === 'owner'");
   expect(wxml).not.toMatch(/Fixture|开发预览|dev\/pages|c1a-scenario/); expect(wxml).not.toMatch(/phone|orderId|payment|refund|contact/i);
-  const buttons = wxml.match(/<button\b[^>]*>/g) ?? []; expect(buttons.length).toBeGreaterThan(0); for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
+  const buttons = wxml.match(/<button\b[^>]*>/g) ?? []; expect(buttons.length).toBeGreaterThan(0); for (const button of buttons) expect(button).toMatch(/bind(?:tap|chooseavatar)="[A-Za-z][A-Za-z0-9]*"/);
   for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onOpenWithdrawalConfirm", "onCancelWithdrawal", "onConfirmWithdrawal", "onConfirmWithdrawalResult", "onReturnManage"]) expect(wxml).toContain(`bindtap="${handler}"`);
   expect(wxml).toContain("lateExitWillBeRecorded");
   expect(wxml).toContain("withdrawalCancelLabel");
@@ -1337,8 +2206,9 @@ test("approved shared composition is production-only and every visible button ha
   for (const declaration of [/white-space:\s*normal/, /word-break:\s*keep-all/]) expect(deadlineValueRule).toMatch(declaration);
 });
 
-test("native share boundary, shared back and owner return keep their distinct behavior", async () => {
-  registerSources(); const shared = loadPage(); call(shared, "onLoad", { token }); await flush(); expect(wx.hideShareMenu).toHaveBeenCalled();
+test("native share card, shared back and owner return keep their distinct behavior", async () => {
+  registerSources(); const shared = loadPage(); call(shared, "onLoad", { token }); await flush(); expect(wx.hideShareMenu).not.toHaveBeenCalled();
+  expect(call(shared, "onShareAppMessage")).toEqual({ title: "周五浦东七人制 · 分享报名接龙", path: `/pages/captain-game-public/index?token=${token}` });
   call(shared, "onHeaderBack"); expect(wx.navigateBack).toHaveBeenCalledWith(expect.objectContaining({ delta: 1 }));
   (globalThis as any).getCurrentPages = jest.fn(() => [{ route: "pages/captain-game-public/index" }]);
   const firstShared = loadPage(); call(firstShared, "onLoad", { token }); await flush(); call(firstShared, "onHeaderBack");

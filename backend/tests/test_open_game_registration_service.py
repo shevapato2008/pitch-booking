@@ -43,7 +43,7 @@ from backend.app.modules.open_game_registrations.dto import (
     ApplicationDecision,
     CreateApplicationRequest,
     DecisionRequest,
-    RegistrationContext,
+    LegacyRegistrationContext,
     WithdrawalRequest,
 )
 from backend.app.modules.open_game_registrations.lifecycle import WithdrawalAction
@@ -625,7 +625,7 @@ def test_registration_context_legacy_upgrade_accepts_only_exact_trusted_shapes(
             c2b,
             application_id=None,
         )
-        replay = RegistrationContext.model_validate(upgraded)
+        replay = LegacyRegistrationContext.model_validate(upgraded)
         assert replay.viewer_registration is not None
         assert replay.viewer_registration.attendance_status is None
         assert replay.viewer_registration.attendance_recorded_at is None

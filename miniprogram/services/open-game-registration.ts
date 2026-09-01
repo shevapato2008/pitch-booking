@@ -7,7 +7,9 @@ import type {
   OpenGameAttendanceMarkStatus,
   OpenGameAttendanceRoster,
   OpenGameMemberRemovalResult,
+  OpenGameMemberReapplyResult,
   OpenGameMemberRoster,
+  OpenGamePublicProfile,
   OpenGameRegistrationContext,
   OpenGameRegistrationWithdrawalAction,
 } from "../domain/open-game-registration";
@@ -18,6 +20,7 @@ export type OpenGameRegistrationAttempt =
     readonly originatingUserId: string;
     readonly shareToken: string;
     readonly body: OpenGameApplicationSubmission;
+    readonly submissionMode?: "DIRECT_REGISTRATION";
     readonly idempotencyKey: string;
   }
   | {
@@ -55,6 +58,15 @@ export type OpenGameRegistrationAttempt =
     readonly expectedVersion: number;
     readonly reason: string;
     readonly idempotencyKey: string;
+  }
+  | {
+    readonly kind: "allow-reapply";
+    readonly originatingUserId: string;
+    readonly shareToken: string;
+    readonly gameId: string;
+    readonly registrationId: string;
+    readonly expectedVersion: number;
+    readonly idempotencyKey: string;
   };
 
 export type OpenGameRegistrationApplyAttempt = Extract<
@@ -77,6 +89,20 @@ export type OpenGameMemberRemoveAttempt = Extract<
   OpenGameRegistrationAttempt,
   { readonly kind: "remove-member" }
 >;
+export type OpenGameRosterManagementAttempt = Extract<
+  OpenGameRegistrationAttempt,
+  { readonly kind: "remove-member" | "allow-reapply" }
+>;
+
+export type OpenGameAllowMemberReapplyAttempt = Extract<
+  OpenGameRegistrationAttempt,
+  { readonly kind: "allow-reapply" }
+>;
+
+export interface OpenGamePublicProfileSaveInput {
+  readonly nickname: string;
+  readonly avatarObjectKey: string | null;
+}
 
 export type OpenGameRegistrationAttemptAvailability =
   | { readonly kind: "READY"; readonly attempt: OpenGameRegistrationAttempt }
@@ -99,14 +125,27 @@ export interface OpenGameRegistrationSource {
   currentUserId(): string | null;
   listMine(cursor?: string, limit?: number): Promise<OpenGameApplicationPage>;
   getContext(shareToken: string): Promise<OpenGameRegistrationContext>;
+  getSignupContext?(shareToken: string): Promise<OpenGameRegistrationContext>;
   apply(attempt: OpenGameRegistrationApplyAttempt): Promise<OpenGameRegistrationContext>;
+  createRegistration?(
+    attempt: OpenGameRegistrationApplyAttempt,
+  ): Promise<OpenGameRegistrationContext>;
   getPending(gameId: string): Promise<OpenGameApplicationQueue>;
   decide(attempt: OpenGameRegistrationDecisionAttempt): Promise<OpenGameApplicationDecisionResult>;
   withdraw(attempt: OpenGameRegistrationWithdrawAttempt): Promise<OpenGameRegistrationContext>;
+  withdrawRegistration?(
+    attempt: OpenGameRegistrationWithdrawAttempt,
+  ): Promise<OpenGameRegistrationContext>;
   getAttendanceRoster(gameId: string): Promise<OpenGameAttendanceRoster>;
   markAttendance(attempt: OpenGameAttendanceMarkAttempt): Promise<OpenGameAttendanceMarkResult>;
   getMembers(gameId: string): Promise<OpenGameMemberRoster>;
   removeMember(attempt: OpenGameMemberRemoveAttempt): Promise<OpenGameMemberRemovalResult>;
+  getPublicProfile?(): Promise<OpenGamePublicProfile | null>;
+  uploadPublicProfileAvatar?(tempFilePath: string): Promise<{ readonly objectKey: string }>;
+  savePublicProfile?(input: OpenGamePublicProfileSaveInput): Promise<OpenGamePublicProfile>;
+  allowMemberReapply?(
+    attempt: OpenGameAllowMemberReapplyAttempt,
+  ): Promise<OpenGameMemberReapplyResult>;
 }
 
 export type OpenGameRegistrationApiErrorCode =
@@ -115,6 +154,8 @@ export type OpenGameRegistrationApiErrorCode =
   | "OPEN_GAME_NOT_FOUND"
   | "APPLICATION_NOT_FOUND"
   | "APPLICATION_ALREADY_EXISTS"
+  | "PUBLIC_PROFILE_REQUIRED"
+  | "PUBLIC_PROFILE_CHANGED"
   | "APPLICATION_NOT_ALLOWED"
   | "APPLICATION_STATE_CHANGED"
   | "APPLICATION_CAPACITY_CHANGED"
@@ -129,6 +170,7 @@ export type OpenGameRegistrationMutationRecoveryDecision =
   | { readonly kind: "PRESERVE_LOGIN_COMPARE_ACCOUNT"; readonly clearAttempt: false }
   | { readonly kind: "PRESERVE_APPLICATION_RESULT_UNKNOWN"; readonly clearAttempt: false }
   | { readonly kind: "PRESERVE_READ_CONTEXT_THEN_CLEAR"; readonly clearAttempt: false }
+  | { readonly kind: "CLEAR_AND_REOPEN_PROFILE"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_REFRESH_CONTEXT"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_REFRESH_QUEUE"; readonly clearAttempt: true }
   | { readonly kind: "CLEAR_AND_REFRESH_ROSTER"; readonly clearAttempt: true }
@@ -149,6 +191,9 @@ export function classifyOpenGameRegistrationMutationResult(
   }
   if (result === "APPLICATION_ALREADY_EXISTS") {
     return { kind: "PRESERVE_READ_CONTEXT_THEN_CLEAR", clearAttempt: false };
+  }
+  if (result === "PUBLIC_PROFILE_REQUIRED" || result === "PUBLIC_PROFILE_CHANGED") {
+    return { kind: "CLEAR_AND_REOPEN_PROFILE", clearAttempt: true };
   }
   if (result === "APPLICATION_NOT_ALLOWED") {
     return { kind: "CLEAR_AND_REFRESH_CONTEXT", clearAttempt: true };
@@ -206,6 +251,51 @@ export type OpenGameMemberRemovalUnknownRecoveryDecision =
     readonly attempt: OpenGameMemberRemoveAttempt;
     readonly clearAttempt: false;
   };
+
+export type OpenGameRosterManagementUnknownRecoveryDecision =
+  | {
+    readonly kind: "ACCEPT_AUTHORITY_AND_CLEAR";
+    readonly authority: OpenGameRegistrationContext;
+    readonly clearAttempt: true;
+  }
+  | {
+    readonly kind: "REPLAY_SAME_ATTEMPT";
+    readonly attempt: OpenGameRosterManagementAttempt;
+    readonly clearAttempt: false;
+  }
+  | {
+    readonly kind: "PRESERVE_UNKNOWN";
+    readonly attempt: OpenGameRosterManagementAttempt;
+    readonly clearAttempt: false;
+  };
+
+export function classifyOpenGameRosterManagementUnknownResult(
+  attempt: OpenGameRosterManagementAttempt,
+  authority: OpenGameRegistrationContext,
+): OpenGameRosterManagementUnknownRecoveryDecision {
+  const joinedMembers = authority.joinedMembers;
+  const waitlistedMembers = authority.waitlistedMembers;
+  const blockedMembers = authority.blockedMembers;
+  if (authority.managementGameId !== attempt.gameId
+    || joinedMembers === null || joinedMembers === undefined
+    || waitlistedMembers === null || waitlistedMembers === undefined
+    || blockedMembers === null || blockedMembers === undefined) {
+    return { kind: "PRESERVE_UNKNOWN", attempt, clearAttempt: false };
+  }
+  const active = [...joinedMembers, ...waitlistedMembers].find(
+    (member) => member.management?.registrationId === attempt.registrationId,
+  );
+  const blocked = blockedMembers.find(
+    (member) => member.management.registrationId === attempt.registrationId,
+  );
+  const unchanged = attempt.kind === "remove-member"
+    ? active?.management?.version === attempt.expectedVersion
+      && active?.management?.canRemove === true
+    : blocked?.management.version === attempt.expectedVersion
+      && blocked.management.canAllowReapply;
+  if (unchanged) return { kind: "REPLAY_SAME_ATTEMPT", attempt, clearAttempt: false };
+  return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority, clearAttempt: true };
+}
 
 export function classifyOpenGameMemberRemovalUnknownResult(
   attempt: OpenGameMemberRemoveAttempt,
@@ -274,7 +364,17 @@ export function classifyOpenGameRegistrationUnknownResult(
 ): OpenGameRegistrationUnknownRecoveryDecision {
   if (attempt.kind === "apply") {
     if (context === undefined) throw new Error("OPEN_GAME_REGISTRATION_CONTEXT_REQUIRED");
-    if (context.viewerRegistration !== null) {
+    const registration = context.viewerRegistration;
+    const matchingActiveAuthority = registration !== null
+      && (registration.persistedStatus === "JOINED"
+        || registration.persistedStatus === "WAITLISTED"
+        || (attempt.submissionMode !== "DIRECT_REGISTRATION"
+          && registration.persistedStatus === "APPLIED"))
+      && registration.effectiveStatus === registration.persistedStatus
+      && registration.displayName === attempt.body.displayName
+      && registration.position === attempt.body.position
+      && registration.note === attempt.body.note;
+    if (matchingActiveAuthority) {
       return { kind: "ACCEPT_AUTHORITY_AND_CLEAR", authority: context, clearAttempt: true };
     }
   }
@@ -310,7 +410,8 @@ export type OpenGameRegistrationAttemptTarget =
   | { readonly kind: "decision"; readonly gameId: string }
   | { readonly kind: "withdraw"; readonly shareToken: string }
   | { readonly kind: "attendance"; readonly gameId: string }
-  | { readonly kind: "remove-member"; readonly gameId: string };
+  | { readonly kind: "remove-member"; readonly gameId: string }
+  | { readonly kind: "allow-reapply"; readonly shareToken: string; readonly gameId: string };
 
 export type OpenGameRegistrationPendingAttemptDecision =
   | {
@@ -341,7 +442,11 @@ export function classifyOpenGameRegistrationPendingAttempt(
         ? target.kind === "withdraw" && target.shareToken === attempt.shareToken
         : attempt.kind === "attendance"
           ? target.kind === "attendance" && target.gameId === attempt.gameId
-          : target.kind === "remove-member" && target.gameId === attempt.gameId;
+          : attempt.kind === "remove-member"
+            ? target.kind === "remove-member" && target.gameId === attempt.gameId
+            : target.kind === "allow-reapply"
+              && target.shareToken === attempt.shareToken
+              && target.gameId === attempt.gameId;
   if (sameResource) return { kind: "READY", attempt, clearAttempt: false };
   const route = attempt.kind === "decision"
     ? `/pages/captain-game-applications/index?game_id=${attempt.gameId}`

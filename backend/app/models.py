@@ -1252,6 +1252,23 @@ class User(Base):
             "phone_ciphertext IS NULL OR octet_length(phone_ciphertext) >= 16",
             name="ck_users_phone_ciphertext_length",
         ),
+        CheckConstraint(
+            "(public_nickname IS NULL AND public_avatar_object_key IS NULL "
+            "AND public_profile_updated_at IS NULL AND public_profile_version = 0) OR "
+            "(public_nickname IS NOT NULL AND public_avatar_object_key IS NOT NULL "
+            "AND public_profile_updated_at IS NOT NULL AND public_profile_version >= 1)",
+            name="ck_users_public_profile_pair",
+        ),
+        CheckConstraint(
+            "public_nickname IS NULL OR (length(public_nickname) BETWEEN 1 AND 24 "
+            "AND public_nickname = trim(public_nickname))",
+            name="ck_users_public_nickname",
+        ),
+        CheckConstraint(
+            "public_avatar_object_key IS NULL OR "
+            "public_avatar_object_key LIKE 'published/avatars/%'",
+            name="ck_users_public_avatar_object_key",
+        ),
         UniqueConstraint(
             "wechat_app_id", "wechat_openid", name="uq_users_wechat_app_openid"
         ),
@@ -1269,6 +1286,17 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
     last_contact_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    public_nickname: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    public_avatar_object_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    public_profile_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    public_profile_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
@@ -2122,10 +2150,13 @@ class OpenGameRegistration(Base):
             "AND promoted_at IS NULL) OR "
             "(status = 'WAITLISTED' AND waitlist_seq IS NOT NULL "
             "AND waitlisted_at IS NOT NULL AND promoted_at IS NULL) OR "
-            "(status IN ('JOINED', 'REMOVED') AND ((waitlist_seq IS NULL "
+            "(status = 'JOINED' AND ((waitlist_seq IS NULL "
             "AND waitlisted_at IS NULL AND promoted_at IS NULL) OR "
             "(waitlist_seq IS NOT NULL AND waitlisted_at IS NOT NULL "
             "AND promoted_at IS NOT NULL))) OR "
+            "(status = 'REMOVED' AND ((waitlist_seq IS NULL "
+            "AND waitlisted_at IS NULL AND promoted_at IS NULL) OR "
+            "(waitlist_seq IS NOT NULL AND waitlisted_at IS NOT NULL))) OR "
             "(status = 'WITHDRAWN' "
             "AND withdrawal_kind = 'APPLICATION_WITHDRAWAL' "
             "AND waitlist_seq IS NULL AND waitlisted_at IS NULL "
@@ -2181,6 +2212,10 @@ class OpenGameRegistration(Base):
             "removed_at IS NULL OR (removed_at >= decided_at "
             "AND (promoted_at IS NULL OR removed_at >= promoted_at))",
             name="ck_open_game_registrations_removal_time",
+        ),
+        CheckConstraint(
+            "status = 'REMOVED' OR reapply_blocked = false",
+            name="ck_open_game_registrations_reapply_blocked_status",
         ),
         UniqueConstraint(
             "game_id",
@@ -2325,6 +2360,12 @@ class OpenGameRegistration(Base):
         ),
         nullable=True,
     )
+    reapply_blocked: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -2412,7 +2453,9 @@ class OpenGameMemberRemoval(Base):
         ),
         PrimaryKeyConstraint("id", name="pk_open_game_member_removals"),
         UniqueConstraint(
-            "registration_id", name="uq_open_game_member_removals_registration"
+            "registration_id",
+            "registration_version_after",
+            name="uq_open_game_member_removals_registration_version",
         ),
         UniqueConstraint(
             "removed_by_user_id",

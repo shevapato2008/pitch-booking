@@ -151,7 +151,13 @@ def _seed_five_identities(
 ) -> tuple[SeededRegistrationCase, uuid.UUID, uuid.UUID, uuid.UUID]:
     booking = seed_confirmed_order(
         engine,
-        starts_at=datetime.now(UTC) + timedelta(days=3),
+        starts_at=datetime.now(UTC).replace(
+            hour=4,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        + timedelta(days=3),
     )
     with Session(engine) as session:
         captain = session.get_one(User, booking.owner_id)

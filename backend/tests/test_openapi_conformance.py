@@ -208,6 +208,22 @@ def test_my_applications_aligner_does_not_overwrite_shared_error_schemas() -> No
                     ]
                 }
             },
+            "/api/v1/games/{game_id}/members/{registration_id}/unblock": {
+                "post": {
+                    "parameters": [
+                        {
+                            "name": "Idempotency-Key",
+                            "in": "header",
+                            "required": True,
+                            "schema": {
+                                "type": "string",
+                                "minLength": 16,
+                                "maxLength": 128,
+                            },
+                        }
+                    ]
+                }
+            },
             ATTENDANCE_MARK_PATH: {
                 "post": {
                     "parameters": [
@@ -230,10 +246,7 @@ def test_my_applications_aligner_does_not_overwrite_shared_error_schemas() -> No
 
     align_my_open_game_applications_openapi(schema)
 
-    assert {
-        name: schema["components"]["schemas"][name]
-        for name in error_schema_names
-    } == sentinels
+    assert {name: schema["components"]["schemas"][name] for name in error_schema_names} == sentinels
 
 
 def test_my_open_game_applications_runtime_openapi_matches_frozen_operation() -> None:
@@ -1341,9 +1354,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
     contract = _contract()
     paths = contract["paths"]
 
-    assert {path: set(paths[path]) for path in REGISTRATION_OPERATIONS} == (
-        REGISTRATION_OPERATIONS
-    )
+    assert {path: set(paths[path]) for path in REGISTRATION_OPERATIONS} == (REGISTRATION_OPERATIONS)
     operation_ids = {
         (
             "/api/v1/open-game-applications",
@@ -1357,6 +1368,10 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "/api/v1/shared-games/{share_token}/registration-context",
             "get",
         ): "getOpenGameRegistrationContext",
+        (
+            "/api/v1/shared-games/{share_token}/signup-context",
+            "get",
+        ): "getOpenGameSignupContext",
         (
             "/api/v1/shared-games/{share_token}/applications",
             "post",
@@ -1460,9 +1475,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
         assert operation["requestBody"] == {
             "required": True,
             "content": {
-                "application/json": {
-                    "schema": {"$ref": f"#/components/schemas/{schema_name}"}
-                }
+                "application/json": {"schema": {"$ref": f"#/components/schemas/{schema_name}"}}
             },
         }
     for path in (
@@ -1488,15 +1501,9 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "Waitlisted": "open-game-registration-context-waitlisted.json",
             "Joined": "open-game-registration-context-joined.json",
             "Rejected": "open-game-registration-context-rejected.json",
-            "WithdrawnApplication": (
-                "open-game-registration-context-withdrawn-application.json"
-            ),
-            "WithdrawnWaitlist": (
-                "open-game-registration-context-withdrawn-waitlist.json"
-            ),
-            "WithdrawnGameExit": (
-                "open-game-registration-context-withdrawn-game-exit.json"
-            ),
+            "WithdrawnApplication": ("open-game-registration-context-withdrawn-application.json"),
+            "WithdrawnWaitlist": ("open-game-registration-context-withdrawn-waitlist.json"),
+            "WithdrawnGameExit": ("open-game-registration-context-withdrawn-game-exit.json"),
             "Cancelled": "open-game-registration-context-cancelled.json",
         },
         (
@@ -1519,12 +1526,8 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "post",
             "200",
         ): {
-            "ApplicationWithdrawn": (
-                "open-game-registration-context-withdrawn-application.json"
-            ),
-            "WaitlistWithdrawn": (
-                "open-game-registration-context-withdrawn-waitlist.json"
-            ),
+            "ApplicationWithdrawn": ("open-game-registration-context-withdrawn-application.json"),
+            "WaitlistWithdrawn": ("open-game-registration-context-withdrawn-waitlist.json"),
             "GameExited": "open-game-registration-context-withdrawn-game-exit.json",
         },
         (
@@ -1559,7 +1562,9 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
             "/api/v1/shared-games/{share_token}/applications",
             "post",
             "201",
-        ): {"Applied": "open-game-registration-context-applied.json"},
+        ): {
+            "Applied": "open-game-registration-context-applied.json",
+        },
         (
             "/api/v1/shared-games/{share_token}/applications",
             "post",
@@ -1661,17 +1666,14 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
         ): {"ServiceUnavailable": "error-service-unavailable.json"},
     }
     for (path, method, status), examples in expected_examples.items():
-        actual = paths[path][method]["responses"][status]["content"][
-            "application/json"
-        ]["examples"]
+        actual = paths[path][method]["responses"][status]["content"]["application/json"]["examples"]
         assert actual == {
-            key: {"externalValue": f"./examples/{filename}"}
-            for key, filename in examples.items()
+            key: {"externalValue": f"./examples/{filename}"} for key, filename in examples.items()
         }
 
-    joined_update = paths["/api/v1/games/{game_id}"]["put"]["responses"][
-        "422"
-    ]["content"]["application/json"]["examples"]
+    joined_update = paths["/api/v1/games/{game_id}"]["put"]["responses"]["422"]["content"][
+        "application/json"
+    ]["examples"]
     assert joined_update["JoinedUpdateInvalid"] == {
         "externalValue": "./examples/error-open-game-joined-update-invalid.json"
     }
@@ -1679,9 +1681,7 @@ def test_open_game_registration_operations_freeze_exact_boundaries() -> None:
 
 def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() -> None:
     contract = _contract()
-    runtime = create_app(
-        settings=Settings(app_env="test", wechat_provider="development")
-    ).openapi()
+    runtime = create_app(settings=Settings(app_env="test", wechat_provider="development")).openapi()
     operation_ids = {
         (
             "/api/v1/shared-games/{share_token}/registration-context",
@@ -1692,9 +1692,17 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             "post",
         ): "withdrawOpenGameApplication",
         (
+            "/api/v1/open-game-registrations/{application_id}/withdraw",
+            "post",
+        ): "withdrawOpenGameRegistration",
+        (
             "/api/v1/shared-games/{share_token}/applications",
             "post",
         ): "createOpenGameApplication",
+        (
+            "/api/v1/shared-games/{share_token}/registrations",
+            "post",
+        ): "createOpenGameRegistration",
         (
             "/api/v1/games/{game_id}/applications",
             "get",
@@ -1710,11 +1718,23 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             "get",
         ): {"200", "401", "404", "503"},
         (
+            "/api/v1/shared-games/{share_token}/signup-context",
+            "get",
+        ): {"200", "401", "404", "503"},
+        (
             "/api/v1/open-game-applications/{application_id}/withdraw",
             "post",
         ): {"200", "401", "404", "409", "422", "503"},
         (
+            "/api/v1/open-game-registrations/{application_id}/withdraw",
+            "post",
+        ): {"200", "401", "404", "409", "422", "503"},
+        (
             "/api/v1/shared-games/{share_token}/applications",
+            "post",
+        ): {"201", "401", "404", "409", "422", "503"},
+        (
+            "/api/v1/shared-games/{share_token}/registrations",
             "post",
         ): {"201", "401", "404", "409", "422", "503"},
         (
@@ -1734,23 +1754,19 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
         assert set(operation["responses"]) == statuses[key]
         assert operation["security"] == (
             [{}, {"bearerAuth": []}]
-            if path.endswith("registration-context")
+            if path.endswith(("registration-context", "signup-context"))
             else [{"bearerAuth": []}]
         )
 
     withdrawal_path = "/api/v1/open-game-applications/{application_id}/withdraw"
-    assert runtime["paths"][withdrawal_path]["post"] == (
-        contract["paths"][withdrawal_path]["post"]
-    )
+    assert runtime["paths"][withdrawal_path]["post"] == (contract["paths"][withdrawal_path]["post"])
 
-    queue_invalid = runtime["paths"][
-        "/api/v1/games/{game_id}/applications"
-    ]["get"]["responses"]["422"]["content"]["application/json"]["examples"]
+    queue_invalid = runtime["paths"]["/api/v1/games/{game_id}/applications"]["get"]["responses"][
+        "422"
+    ]["content"]["application/json"]["examples"]
     assert queue_invalid == {
         "InvalidArgument": {
-            "value": json.loads(
-                (EXAMPLES_DIRECTORY / "error-invalid-argument.json").read_text()
-            )
+            "value": json.loads((EXAMPLES_DIRECTORY / "error-invalid-argument.json").read_text())
         }
     }
 
@@ -1759,14 +1775,17 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
             "/api/v1/shared-games/{share_token}/registration-context",
             "200",
         ),
+        ("/api/v1/shared-games/{share_token}/signup-context", "200"),
         ("/api/v1/shared-games/{share_token}/applications", "201"),
+        ("/api/v1/shared-games/{share_token}/registrations", "201"),
         ("/api/v1/open-game-applications/{application_id}/withdraw", "200"),
+        ("/api/v1/open-game-registrations/{application_id}/withdraw", "200"),
     ):
         runtime_response = runtime["paths"][path][
-            "get" if path.endswith("registration-context") else "post"
+            "get" if path.endswith(("registration-context", "signup-context")) else "post"
         ]["responses"][status]["content"]["application/json"]["schema"]
         static_response = contract["paths"][path][
-            "get" if path.endswith("registration-context") else "post"
+            "get" if path.endswith(("registration-context", "signup-context")) else "post"
         ]["responses"][status]["content"]["application/json"]["schema"]
         assert runtime_response == static_response
 
@@ -1778,20 +1797,29 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
         "OpenGameRegistrationAvailableWithdrawalAction",
         "OpenGameRegistrationWithdrawalAction",
         "OpenGameApplyBlockedReason",
+        "OpenGameLegacyApplyBlockedReason",
         "OpenGameApplyActions",
+        "OpenGameLegacyApplyActions",
         "OpenGameReviewBlockedReason",
         "OpenGameWaitlistBlockedReason",
         "OpenGameReviewActions",
         "OpenGameViewerRegistration",
+        "OpenGameLegacyViewerRegistration",
         "OpenGameRegistrationContext",
+        "OpenGameSignupContext",
+        "OpenGamePublicRosterMember",
+        "OpenGamePublicWaitlistedMember",
+        "CreateOpenGameApplicationRequest",
+        "CreateOpenGameRegistrationRequest",
         "CaptainOpenGameWaitlistApplication",
         "OpenGameApplicationQueue",
         "OpenGameApplicationDecisionResult",
         "OpenGameApplicationWithdrawalRequest",
     )
     for schema_name in affected_schemas:
-        assert runtime["components"]["schemas"][schema_name] == (
-            contract["components"]["schemas"][schema_name]
+        assert (
+            runtime["components"]["schemas"][schema_name]
+            == (contract["components"]["schemas"][schema_name])
         )
 
 
@@ -1826,10 +1854,10 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "waitlist_position",
             "waitlisted_at",
             "promoted_at",
-                "attendance_status",
-                "attendance_recorded_at",
-                "attendance_corrected_at",
-                "removed_at",
+            "attendance_status",
+            "attendance_recorded_at",
+            "attendance_corrected_at",
+            "removed_at",
         },
         "OpenGameRegistrationContext": {
             "game",
@@ -1838,7 +1866,26 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "viewer_registration",
             "allowed_actions",
         },
+        "OpenGameSignupContext": {
+            "game",
+            "remaining_spots",
+            "joined_count",
+            "waitlist_count",
+            "viewer_authenticated",
+            "viewer_registration",
+            "joined_members",
+            "waitlisted_members",
+            "blocked_members",
+            "allowed_actions",
+        },
         "CreateOpenGameApplicationRequest": {
+            "display_name",
+            "position",
+            "note",
+            "adult_confirmed",
+            "risk_confirmed",
+        },
+        "CreateOpenGameRegistrationRequest": {
             "display_name",
             "position",
             "note",
@@ -1894,7 +1941,10 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
         assert schema["type"] == "object"
         assert schema["additionalProperties"] is False
         assert set(schema["required"]) == fields
-        assert set(schema["properties"]) == fields
+        expected_properties = fields | (
+            {"management_game_id"} if schema_name == "OpenGameSignupContext" else set()
+        )
+        assert set(schema["properties"]) == expected_properties
 
     assert schemas["OpenGameRegistrationPosition"] == {
         "type": "string",
@@ -1937,6 +1987,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "AUTH_REQUIRED",
             "OWNER_CANNOT_APPLY",
             "ALREADY_APPLIED",
+            "REMOVED_BY_CAPTAIN",
             "GAME_NOT_PUBLISHED",
             "REGISTRATION_DEADLINE_PASSED",
             "GAME_SUSPENDED",
@@ -1956,8 +2007,21 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "GAME_FULL",
         ],
     }
+    for schema_name in ("OpenGameViewerRegistration", "CreateOpenGameRegistrationRequest"):
+        properties = schemas[schema_name]["properties"]
+        assert properties["display_name"] == {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24,
+        }
+        assert properties["position"] == {
+            "$ref": "#/components/schemas/OpenGameRegistrationPosition"
+        }
+        assert properties["note"] == {
+            "type": ["string", "null"],
+            "maxLength": 120,
+        }
     for schema_name in (
-        "OpenGameViewerRegistration",
         "CreateOpenGameApplicationRequest",
         "CaptainOpenGameApplication",
         "CaptainOpenGameWaitlistApplication",
@@ -2006,12 +2070,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     assert viewer["late_exit_recorded"] == {"type": "boolean"}
     assert viewer["available_withdrawal_action"] == {
         "oneOf": [
-            {
-                "$ref": (
-                    "#/components/schemas/"
-                    "OpenGameRegistrationAvailableWithdrawalAction"
-                )
-            },
+            {"$ref": ("#/components/schemas/OpenGameRegistrationAvailableWithdrawalAction")},
             {"type": "null"},
         ]
     }
@@ -2026,9 +2085,21 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "format": "date-time",
         }
 
-    context = schemas["OpenGameRegistrationContext"]["properties"]
+    legacy_context = schemas["OpenGameRegistrationContext"]["properties"]
+    assert legacy_context["viewer_registration"] == {
+        "oneOf": [
+            {"$ref": "#/components/schemas/OpenGameLegacyViewerRegistration"},
+            {"type": "null"},
+        ]
+    }
+    assert legacy_context["allowed_actions"] == {
+        "$ref": "#/components/schemas/OpenGameLegacyApplyActions"
+    }
+    context = schemas["OpenGameSignupContext"]["properties"]
     assert context["game"] == {"$ref": "#/components/schemas/OpenGamePublic"}
     assert context["remaining_spots"] == {"type": "integer", "minimum": 0}
+    assert context["joined_count"] == {"type": "integer", "minimum": 0}
+    assert context["waitlist_count"] == {"type": "integer", "minimum": 0}
     assert context["viewer_authenticated"] == {"type": "boolean"}
     assert context["viewer_registration"] == {
         "oneOf": [
@@ -2036,17 +2107,41 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             {"type": "null"},
         ]
     }
-    assert context["allowed_actions"] == {
-        "$ref": "#/components/schemas/OpenGameApplyActions"
+    assert context["allowed_actions"] == {"$ref": "#/components/schemas/OpenGameApplyActions"}
+    assert context["joined_members"] == {
+        "oneOf": [
+            {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/OpenGamePublicRosterMember"},
+            },
+            {"type": "null"},
+        ]
     }
+    assert context["waitlisted_members"] == {
+        "oneOf": [
+            {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/OpenGamePublicWaitlistedMember"},
+            },
+            {"type": "null"},
+        ]
+    }
+    assert context["blocked_members"] == {
+        "oneOf": [
+            {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/OpenGamePublicRosterMember"},
+            },
+            {"type": "null"},
+        ]
+    }
+    assert context["management_game_id"] == {"type": "string", "format": "uuid"}
 
     captain = schemas["CaptainOpenGameApplication"]["properties"]
     assert captain["id"] == {"type": "string", "format": "uuid"}
     assert captain["applied_at"] == {"type": "string", "format": "date-time"}
     assert captain["version"] == {"type": "integer", "minimum": 1}
-    assert captain["allowed_actions"] == {
-        "$ref": "#/components/schemas/OpenGameReviewActions"
-    }
+    assert captain["allowed_actions"] == {"$ref": "#/components/schemas/OpenGameReviewActions"}
     queue = schemas["OpenGameApplicationQueue"]["properties"]
     assert queue["remaining_spots"] == {"type": "integer", "minimum": 0}
     assert queue["pending_count"] == {"type": "integer", "minimum": 0}
@@ -2057,9 +2152,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     assert queue["waitlist_count"] == {"type": "integer", "minimum": 0}
     assert queue["waitlist"] == {
         "type": "array",
-        "items": {
-            "$ref": "#/components/schemas/CaptainOpenGameWaitlistApplication"
-        },
+        "items": {"$ref": "#/components/schemas/CaptainOpenGameWaitlistApplication"},
     }
 
     decision_request = schemas["OpenGameApplicationDecisionRequest"]["properties"]
@@ -2118,9 +2211,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     apply_actions = Draft202012Validator(
         _dereference_local_schema(contract, schemas["OpenGameApplyActions"])
     )
-    assert apply_actions.is_valid(
-        {"can_apply": True, "apply_blocked_reason": None}
-    )
+    assert apply_actions.is_valid({"can_apply": True, "apply_blocked_reason": None})
     assert apply_actions.is_valid(
         {
             "can_apply": False,
@@ -2133,9 +2224,7 @@ def test_open_game_registration_schemas_are_closed_and_exact() -> None:
             "apply_blocked_reason": "REGISTRATION_DEADLINE_PASSED",
         }
     )
-    assert not apply_actions.is_valid(
-        {"can_apply": False, "apply_blocked_reason": None}
-    )
+    assert not apply_actions.is_valid({"can_apply": False, "apply_blocked_reason": None})
 
     review_actions = Draft202012Validator(
         _dereference_local_schema(contract, schemas["OpenGameReviewActions"])
@@ -2384,56 +2473,30 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
     contract = _contract()
     schemas = contract["components"]["schemas"]
     example_schemas = {
-        "open-game-registration-context-anonymous.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-apply-ready.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-applied.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-waitlisted.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-joined.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-rejected.json": (
-            "OpenGameRegistrationContext"
-        ),
+        "open-game-registration-context-anonymous.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-apply-ready.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-applied.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-waitlisted.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-joined.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-rejected.json": ("OpenGameRegistrationContext"),
         "open-game-registration-context-withdrawn-application.json": (
             "OpenGameRegistrationContext"
         ),
-        "open-game-registration-context-withdrawn-waitlist.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-withdrawn-game-exit.json": (
-            "OpenGameRegistrationContext"
-        ),
-        "open-game-registration-context-cancelled.json": (
-            "OpenGameRegistrationContext"
-        ),
+        "open-game-registration-context-withdrawn-waitlist.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-withdrawn-game-exit.json": ("OpenGameRegistrationContext"),
+        "open-game-registration-context-cancelled.json": ("OpenGameRegistrationContext"),
         "open-game-applications-pending.json": "OpenGameApplicationQueue",
         "open-game-applications-full-waitlist.json": "OpenGameApplicationQueue",
         "open-game-applications-empty.json": "OpenGameApplicationQueue",
-        "open-game-application-decision-joined.json": (
-            "OpenGameApplicationDecisionResult"
-        ),
-        "open-game-application-decision-waitlisted.json": (
-            "OpenGameApplicationDecisionResult"
-        ),
-        "open-game-application-decision-rejected.json": (
-            "OpenGameApplicationDecisionResult"
-        ),
+        "open-game-application-decision-joined.json": ("OpenGameApplicationDecisionResult"),
+        "open-game-application-decision-waitlisted.json": ("OpenGameApplicationDecisionResult"),
+        "open-game-application-decision-rejected.json": ("OpenGameApplicationDecisionResult"),
     }
     examples: dict[str, dict[str, Any]] = {}
     for filename, schema_name in example_schemas.items():
         example = json.loads((EXAMPLES_DIRECTORY / filename).read_text())
         examples[filename] = example
-        validator = Draft202012Validator(
-            _dereference_local_schema(contract, schemas[schema_name])
-        )
+        validator = Draft202012Validator(_dereference_local_schema(contract, schemas[schema_name]))
         assert validator.is_valid(example), filename
 
     context_states = {
@@ -2479,26 +2542,26 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
             False,
             "ALREADY_APPLIED",
         ),
-        "open-game-registration-context-withdrawn-application.json": (
-            True,
-            "WITHDRAWN",
-            "WITHDRAWN",
-            False,
-            "ALREADY_APPLIED",
+            "open-game-registration-context-withdrawn-application.json": (
+                True,
+                "WITHDRAWN",
+                "WITHDRAWN",
+                False,
+                "ALREADY_APPLIED",
         ),
         "open-game-registration-context-withdrawn-waitlist.json": (
             True,
             "WITHDRAWN",
             "WITHDRAWN",
-            False,
-            "ALREADY_APPLIED",
+                False,
+                "ALREADY_APPLIED",
         ),
         "open-game-registration-context-withdrawn-game-exit.json": (
             True,
             "WITHDRAWN",
             "WITHDRAWN",
-            False,
-            "ALREADY_APPLIED",
+                False,
+                "ALREADY_APPLIED",
         ),
         "open-game-registration-context-cancelled.json": (
             True,
@@ -2526,17 +2589,12 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
                 "APPLIED": "WITHDRAW_APPLICATION",
                 "WAITLISTED": "WITHDRAW_WAITLIST",
                 "JOINED": (
-                    None
-                    if registration["effective_status"] == "CANCELLED"
-                    else "LEAVE_GAME"
+                    None if registration["effective_status"] == "CANCELLED" else "LEAVE_GAME"
                 ),
                 "REJECTED": None,
                 "WITHDRAWN": None,
             }[registration["persisted_status"]]
-            assert (
-                registration["available_withdrawal_action"]
-                == expected_withdrawal_action
-            )
+            assert registration["available_withdrawal_action"] == expected_withdrawal_action
             assert registration["late_exit_will_be_recorded"] is False
 
     pending = examples["open-game-applications-pending.json"]
@@ -2544,15 +2602,9 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
     assert pending["pending_count"] > 0
     assert examples["open-game-applications-empty.json"]["applications"] == []
     assert examples["open-game-applications-empty.json"]["pending_count"] == 0
-    assert examples["open-game-application-decision-joined.json"]["status"] == (
-        "JOINED"
-    )
-    assert examples["open-game-application-decision-waitlisted.json"]["status"] == (
-        "WAITLISTED"
-    )
-    assert examples["open-game-application-decision-rejected.json"]["status"] == (
-        "REJECTED"
-    )
+    assert examples["open-game-application-decision-joined.json"]["status"] == ("JOINED")
+    assert examples["open-game-application-decision-waitlisted.json"]["status"] == ("WAITLISTED")
+    assert examples["open-game-application-decision-rejected.json"]["status"] == ("REJECTED")
 
     serialized = json.dumps(examples).lower()
     for forbidden in (
@@ -2560,7 +2612,7 @@ def test_open_game_registration_success_examples_match_closed_schemas() -> None:
         "user_id",
         "phone",
         "openid",
-        "avatar",
+        "avatar_object_key",
         "order_id",
         "payment",
         "fulfillment",

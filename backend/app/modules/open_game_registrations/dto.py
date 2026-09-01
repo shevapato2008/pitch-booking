@@ -122,9 +122,12 @@ class CreateApplicationRequest(_ClosedModel):
         return validate_registration_visible_text(value)
 
 
+class CreateRegistrationRequest(CreateApplicationRequest):
+    display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
+
 class ViewerRegistration(_FrozenClosedModel):
     id: uuid.UUID
-    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+    display_name: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
     position: OpenGameRegistrationPosition
     note: Annotated[str, Field(strict=True, max_length=120)] | None
     persisted_status: RegistrationPersistedStatus
@@ -205,7 +208,14 @@ class ViewerRegistration(_FrozenClosedModel):
             if self.decided_at is None or not (no_waitlist_history or promoted_history):
                 raise ValueError("JOINED lifecycle is inconsistent")
         elif status is RegistrationPersistedStatus.REMOVED:
-            if self.decided_at is None or not (no_waitlist_history or promoted_history):
+            removed_waitlist_history = (
+                self.waitlist_position is None
+                and self.waitlisted_at is not None
+                and self.promoted_at is None
+            )
+            if self.decided_at is None or not (
+                no_waitlist_history or removed_waitlist_history or promoted_history
+            ):
                 raise ValueError("REMOVED lifecycle is inconsistent")
         elif status is RegistrationPersistedStatus.REJECTED:
             if self.decided_at is None or not no_waitlist_history:
@@ -264,8 +274,8 @@ class ViewerRegistration(_FrozenClosedModel):
         ):
             raise ValueError("withdrawn registration cannot expose another withdrawal")
         if status is RegistrationPersistedStatus.REMOVED:
-            if self.removed_at is None:
-                raise ValueError("REMOVED lifecycle requires removed_at")
+            if self.removed_at is None or self.decided_at is None:
+                raise ValueError("REMOVED lifecycle requires decided_at and removed_at")
             if self.removed_at < self.decided_at:
                 raise ValueError("removed_at must not precede decided_at")
         elif self.removed_at is not None:
@@ -291,10 +301,99 @@ class CaptainApplication(_FrozenClosedModel):
 class RegistrationContext(_FrozenClosedModel):
     game: OpenGamePublic
     remaining_spots: Annotated[int, Field(strict=True, ge=0)]
+    joined_count: Annotated[int, Field(strict=True, ge=0)]
+    waitlist_count: Annotated[int, Field(strict=True, ge=0)]
     viewer_authenticated: Annotated[bool, Field(strict=True)]
     viewer_registration: ViewerRegistration | None
+    joined_members: tuple["PublicRosterMember", ...] | None
+    waitlisted_members: tuple["PublicWaitlistedMember", ...] | None
+    blocked_members: tuple["PublicRosterMember", ...] | None
+    management_game_id: uuid.UUID | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     allowed_actions: ApplyActions
 
+    @model_validator(mode="after")
+    def validate_roster_visibility(self) -> Self:
+        if not self.viewer_authenticated:
+            if any(
+                roster is not None
+                for roster in (
+                    self.joined_members,
+                    self.waitlisted_members,
+                    self.blocked_members,
+                )
+            ):
+                raise ValueError("anonymous context cannot include member rosters")
+            if self.management_game_id is not None:
+                raise ValueError("anonymous context cannot include management authority")
+            return self
+        if self.joined_members is None or self.waitlisted_members is None:
+            raise ValueError("authenticated context requires active member rosters")
+        if self.joined_count != len(self.joined_members):
+            raise ValueError("joined_count must equal joined_members length")
+        if self.waitlist_count != len(self.waitlisted_members):
+            raise ValueError("waitlist_count must equal waitlisted_members length")
+        if any(
+            member.waitlist_position != position
+            for position, member in enumerate(self.waitlisted_members, start=1)
+        ):
+            raise ValueError("waitlisted_members must use contiguous FIFO positions")
+        owner_projection = self.management_game_id is not None
+        active_members = (*self.joined_members, *self.waitlisted_members)
+        if owner_projection:
+            if self.blocked_members is None:
+                raise ValueError("owner context requires the blocked member roster")
+            if any(member.management is None for member in active_members):
+                raise ValueError("owner context requires active management authority")
+            if any(member.management is None for member in self.blocked_members):
+                raise ValueError("owner context requires unblock authority")
+        elif self.blocked_members is not None or any(
+            member.management is not None for member in active_members
+        ):
+            raise ValueError("non-owner context cannot include management authority")
+        return self
+
+
+class RosterMemberManagement(_FrozenClosedModel):
+    registration_id: uuid.UUID
+    version: Annotated[int, Field(strict=True, ge=1)]
+    can_remove: Annotated[bool, Field(strict=True)]
+    can_allow_reapply: Annotated[bool, Field(strict=True)]
+
+    @model_validator(mode="after")
+    def validate_actions(self) -> Self:
+        if self.can_remove and self.can_allow_reapply:
+            raise ValueError("roster management actions must be mutually exclusive")
+        return self
+
+
+class PublicRosterMember(_FrozenClosedModel):
+    nickname: Annotated[str, Field(strict=True, min_length=1, max_length=24)]
+    avatar_url: Annotated[str, Field(strict=True, pattern=r"^https://")] | None
+    management: RosterMemberManagement | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+
+
+class PublicWaitlistedMember(PublicRosterMember):
+    waitlist_position: Annotated[int, Field(strict=True, ge=1)]
+
+
+class LegacyViewerRegistration(ViewerRegistration):
+    display_name: Annotated[str, Field(strict=True, min_length=2, max_length=24)]
+
+
+class LegacyRegistrationContext(_FrozenClosedModel):
+    """Frozen v1 response kept byte-shape compatible with released clients."""
+
+    game: OpenGamePublic
+    remaining_spots: Annotated[int, Field(strict=True, ge=0)]
+    viewer_authenticated: Annotated[bool, Field(strict=True)]
+    viewer_registration: LegacyViewerRegistration | None
+    allowed_actions: ApplyActions
 
 class CaptainWaitlistApplication(_FrozenClosedModel):
     id: uuid.UUID
@@ -461,6 +560,15 @@ class OpenGameMemberRemovalRequest(_ClosedModel):
     def reject_private_text(cls, value: str) -> str:
         return validate_registration_visible_text(value)
 
+
+class OpenGameMemberUnblockResult(_FrozenClosedModel):
+    registration_id: uuid.UUID
+    status: Literal["REMOVED"]
+    version: Annotated[int, Field(strict=True, ge=2)]
+    reapply_blocked: Literal[False]
+
+class OpenGameMemberUnblockRequest(_ClosedModel):
+    expected_version: Annotated[int, Field(strict=True, ge=1)]
 
 class OpenGameMemberGameSummary(_FrozenClosedModel):
     id: uuid.UUID

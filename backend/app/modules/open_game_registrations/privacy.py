@@ -19,8 +19,11 @@ from backend.app.modules.open_game_registrations.dto import (
     MyOpenGameApplication,
     OpenGameAttendanceRosterItem,
     OpenGameMemberRosterItem,
+    PublicRosterMember,
+    PublicWaitlistedMember,
     RegistrationPersistedStatus,
     RegistrationWithdrawalKind,
+    RosterMemberManagement,
     ViewerRegistration,
 )
 from backend.app.modules.open_game_registrations.lifecycle import (
@@ -121,6 +124,11 @@ MEMBER_ROSTER_ITEM_FIELDS = frozenset(
     }
 )
 
+PUBLIC_ROSTER_MEMBER_FIELDS = frozenset({"nickname", "avatar_url"})
+PUBLIC_WAITLISTED_MEMBER_FIELDS = frozenset({"nickname", "avatar_url", "waitlist_position"})
+OWNER_PUBLIC_ROSTER_MEMBER_FIELDS = PUBLIC_ROSTER_MEMBER_FIELDS | {"management"}
+OWNER_PUBLIC_WAITLISTED_MEMBER_FIELDS = PUBLIC_WAITLISTED_MEMBER_FIELDS | {"management"}
+
 
 def project_viewer_registration(
     *,
@@ -190,6 +198,75 @@ def project_viewer_registration(
         attendance_recorded_at=projected_attendance_recorded_at,
         attendance_corrected_at=projected_attendance_corrected_at,
         removed_at=removed_at,
+    )
+
+
+def project_public_roster_member(
+    *,
+    nickname: str,
+    avatar_url: str | None,
+    registration_id: uuid.UUID,
+    version: int,
+    owner_can_remove: bool | None,
+) -> PublicRosterMember:
+    return PublicRosterMember(
+        nickname=nickname,
+        avatar_url=avatar_url,
+        management=(
+            RosterMemberManagement(
+                registration_id=registration_id,
+                version=version,
+                can_remove=owner_can_remove,
+                can_allow_reapply=False,
+            )
+            if owner_can_remove is not None
+            else None
+        ),
+    )
+
+
+def project_public_waitlisted_member(
+    *,
+    nickname: str,
+    avatar_url: str | None,
+    registration_id: uuid.UUID,
+    version: int,
+    waitlist_position: int,
+    owner_can_remove: bool | None,
+) -> PublicWaitlistedMember:
+    return PublicWaitlistedMember(
+        nickname=nickname,
+        avatar_url=avatar_url,
+        waitlist_position=waitlist_position,
+        management=(
+            RosterMemberManagement(
+                registration_id=registration_id,
+                version=version,
+                can_remove=owner_can_remove,
+                can_allow_reapply=False,
+            )
+            if owner_can_remove is not None
+            else None
+        ),
+    )
+
+
+def project_blocked_roster_member(
+    *,
+    nickname: str,
+    avatar_url: str | None,
+    registration_id: uuid.UUID,
+    version: int,
+) -> PublicRosterMember:
+    return PublicRosterMember(
+        nickname=nickname,
+        avatar_url=avatar_url,
+        management=RosterMemberManagement(
+            registration_id=registration_id,
+            version=version,
+            can_remove=False,
+            can_allow_reapply=True,
+        ),
     )
 
 
@@ -337,10 +414,7 @@ def project_my_open_game_application(
         attendance_status=projected_attendance_status,
         attendance_recorded_at=projected_attendance_recorded_at,
         attendance_corrected_at=projected_attendance_corrected_at,
-        detail_path=(
-            f"/pages/captain-game-public/index?token={share_token}"
-            f"&game_id={game_id}"
-        ),
+        detail_path=(f"/pages/captain-game-public/index?token={share_token}&game_id={game_id}"),
         game_name=public.name,
         starts_at=public.starts_at,
         ends_at=public.ends_at,

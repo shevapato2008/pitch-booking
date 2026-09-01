@@ -116,6 +116,7 @@ def test_registration_facts_are_the_exact_frozen_authority_boundary() -> None:
         "starts_at",
         "open_spots",
         "joined_count",
+        "viewer_reapply_blocked",
     ]
     facts = _facts()
     assert not hasattr(facts, "__dict__")
@@ -1382,6 +1383,7 @@ def test_closed_enum_values_match_the_wire_contract() -> None:
         "AUTH_REQUIRED",
         "OWNER_CANNOT_APPLY",
         "ALREADY_APPLIED",
+        "REMOVED_BY_CAPTAIN",
         "GAME_NOT_PUBLISHED",
         "REGISTRATION_DEADLINE_PASSED",
         "GAME_SUSPENDED",

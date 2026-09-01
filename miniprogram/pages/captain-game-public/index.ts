@@ -3,6 +3,9 @@ import type {
   OpenGameApplyBlockedReason,
   OpenGameRegistrationContext,
   OpenGameRegistrationEffectiveStatus,
+  OpenGamePublicProfile,
+  OpenGamePublicRosterMember,
+  OpenGamePublicWaitlistedMember,
   OpenGameRegistrationWithdrawalAction,
 } from "../../domain/open-game-registration";
 import {
@@ -23,12 +26,16 @@ import {
   classifyOpenGameRegistrationMutationResult,
   classifyOpenGameRegistrationPendingAttempt,
   classifyOpenGameRegistrationUnknownResult,
+  classifyOpenGameRosterManagementUnknownResult,
   getOpenGameRegistrationAttemptStore,
   getOpenGameRegistrationSource,
   type OpenGameRegistrationApplyAttempt,
   type OpenGameRegistrationAttempt,
   type OpenGameRegistrationAttemptTarget,
   type OpenGameRegistrationWithdrawAttempt,
+  type OpenGameAllowMemberReapplyAttempt,
+  type OpenGameMemberRemoveAttempt,
+  type OpenGameRosterManagementAttempt,
 } from "../../services/open-game-registration";
 import { getOpenGameSource } from "../../services/open-game";
 
@@ -71,6 +78,23 @@ type StatusTone =
   | "rejected"
   | "withdrawn";
 type WithdrawalOperationState = "IDLE" | "CONFIRMING" | "SUBMITTING" | "RESULT_UNKNOWN";
+type ProfileSheetState = "CLOSED" | "EDITING" | "SUBMITTING";
+type ProfilePurpose = "SIGNUP" | "UPDATE";
+type SignupConfirmations = {
+  readonly adultConfirmed: true;
+  readonly riskConfirmed: true;
+};
+
+interface RosterRow {
+  readonly nickname: string;
+  readonly avatarUrl: string;
+  readonly avatarFallback: string;
+  readonly waitlistPosition?: number;
+  readonly registrationId: string;
+  readonly version: number;
+  readonly canRemove: boolean;
+  readonly canAllowReapply: boolean;
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
@@ -94,10 +118,6 @@ function currentPages(): readonly RegistrationListPage[] {
   return getCurrentPages() as unknown as readonly RegistrationListPage[];
 }
 
-function hideShare(): void {
-  try { void wx.hideShareMenu(); } catch { /* platform unavailable during teardown */ }
-}
-
 function navigation(
   method: "navigateTo" | "redirectTo" | "reLaunch",
   url: string,
@@ -114,6 +134,43 @@ function navigation(
       then?: (yes: () => void, no: (error: unknown) => void) => void;
     };
     if (typeof thenable?.then === "function") thenable.then(done, fail);
+  });
+}
+
+function confirmAction(
+  title: string,
+  content: string,
+  confirmText: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    wx.showModal({
+      title,
+      content,
+      confirmText,
+      cancelText: "取消",
+      success: ({ confirm }) => resolve(Boolean(confirm)),
+      fail: () => resolve(false),
+    });
+  });
+}
+
+function rosterFallback(nickname: string): string {
+  return Array.from(nickname.trim())[0] ?? "球";
+}
+
+function presentRosterMember(
+  member: OpenGamePublicRosterMember | OpenGamePublicWaitlistedMember,
+): RosterRow {
+  const management = member.management;
+  return Object.freeze({
+    nickname: member.nickname,
+    avatarUrl: member.avatarUrl ?? "",
+    avatarFallback: rosterFallback(member.nickname),
+    ...("waitlistPosition" in member ? { waitlistPosition: member.waitlistPosition } : {}),
+    registrationId: management?.registrationId ?? "",
+    version: management?.version ?? 0,
+    canRemove: management?.canRemove ?? false,
+    canAllowReapply: management?.canAllowReapply ?? false,
   });
 }
 
@@ -142,6 +199,7 @@ function sameApplyAttempt(
 ): boolean {
   return left.originatingUserId === right.originatingUserId
     && left.shareToken === right.shareToken
+    && left.submissionMode === right.submissionMode
     && left.idempotencyKey === right.idempotencyKey
     && left.body.displayName === right.body.displayName
     && left.body.position === right.body.position
@@ -162,6 +220,22 @@ function sameWithdrawAttempt(
     && left.idempotencyKey === right.idempotencyKey;
 }
 
+function sameRosterManagementAttempt(
+  left: OpenGameRosterManagementAttempt,
+  right: OpenGameRosterManagementAttempt,
+): boolean {
+  return left.kind === right.kind
+    && left.originatingUserId === right.originatingUserId
+    && left.gameId === right.gameId
+    && left.registrationId === right.registrationId
+    && left.expectedVersion === right.expectedVersion
+    && left.idempotencyKey === right.idempotencyKey
+    && (left.kind !== "allow-reapply"
+      || (right.kind === "allow-reapply" && left.shareToken === right.shareToken))
+    && (left.kind !== "remove-member"
+      || (right.kind === "remove-member" && left.reason === right.reason));
+}
+
 function sameAttempt(
   left: OpenGameRegistrationAttempt,
   right: OpenGameRegistrationAttempt,
@@ -169,6 +243,10 @@ function sameAttempt(
   if (left.kind !== right.kind) return false;
   if (left.kind === "apply" && right.kind === "apply") return sameApplyAttempt(left, right);
   if (left.kind === "withdraw" && right.kind === "withdraw") return sameWithdrawAttempt(left, right);
+  if ((left.kind === "remove-member" || left.kind === "allow-reapply")
+    && (right.kind === "remove-member" || right.kind === "allow-reapply")) {
+    return sameRosterManagementAttempt(left, right);
+  }
   if (left.kind === "decision" && right.kind === "decision") {
     return left.originatingUserId === right.originatingUserId
       && left.gameId === right.gameId
@@ -184,9 +262,30 @@ function targetForAttempt(
   attempt: OpenGameRegistrationAttempt,
   shareToken: string,
 ): OpenGameRegistrationAttemptTarget {
-  return attempt.kind === "withdraw"
-    ? { kind: "withdraw", shareToken }
-    : { kind: "apply", shareToken };
+  if (attempt.kind === "withdraw") return { kind: "withdraw", shareToken };
+  if (attempt.kind === "allow-reapply") {
+    return { kind: "allow-reapply", shareToken, gameId: attempt.gameId };
+  }
+  return { kind: "apply", shareToken };
+}
+
+function readSignupContext(shareToken: string): Promise<OpenGameRegistrationContext> {
+  const source = getOpenGameRegistrationSource();
+  return source.getSignupContext?.(shareToken) ?? source.getContext(shareToken);
+}
+
+function createSignupRegistration(
+  attempt: OpenGameRegistrationApplyAttempt,
+): Promise<OpenGameRegistrationContext> {
+  const source = getOpenGameRegistrationSource();
+  return source.createRegistration?.(attempt) ?? source.apply(attempt);
+}
+
+function withdrawSignupRegistration(
+  attempt: OpenGameRegistrationWithdrawAttempt,
+): Promise<OpenGameRegistrationContext> {
+  const source = getOpenGameRegistrationSource();
+  return source.withdrawRegistration?.(attempt) ?? source.withdraw(attempt);
 }
 
 function withdrawalLabel(action: OpenGameRegistrationWithdrawalAction | null): string {
@@ -197,6 +296,8 @@ function withdrawalLabel(action: OpenGameRegistrationWithdrawalAction | null): s
 }
 
 let withdrawalAttemptSerial = 0;
+let signupAttemptSerial = 0;
+let managementAttemptSerial = 0;
 
 function blockerPresentation(reason: OpenGameApplyBlockedReason): {
   readonly heading: string;
@@ -207,8 +308,8 @@ function blockerPresentation(reason: OpenGameApplyBlockedReason): {
   switch (reason) {
     case "AUTH_REQUIRED":
       return {
-        heading: "登录后可提交申请",
-        description: "提交后由队长审核，结果回到本页查看。",
+        heading: "登录后即可报名",
+        description: "登录后可查看名单，并按实时名额进入正式名单或候补。",
         tone: "anonymous",
         action: "LOGIN",
       };
@@ -224,6 +325,13 @@ function blockerPresentation(reason: OpenGameApplyBlockedReason): {
         heading: "你已经申请过这场球局",
         description: "请以本页读取到的权威申请结果为准。",
         tone: "pending",
+        action: null,
+      };
+    case "REMOVED_BY_CAPTAIN":
+      return {
+        heading: "暂不能重新报名",
+        description: "你已被队长移出；需要队长允许后才能重新报名。",
+        tone: "rejected",
         action: null,
       };
     case "GAME_NOT_PUBLISHED":
@@ -335,11 +443,28 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
       heading: "已加入本场球局",
       description: promoted
         ? "你已按候补顺序转为正式成员，请以当前权威状态为准。"
-        : "队长已接受申请；AA 到场线下结算。",
+        : "你已进入正式名单；AA 到场线下结算。",
       tone: "joined",
       action: context.viewerRegistration?.availableWithdrawalAction === "LEAVE_GAME"
         ? "WITHDRAW"
         : null,
+    };
+  }
+  if (context.allowedActions.canApply) {
+    const reapply = effectiveStatus === "WITHDRAWN" || effectiveStatus === "REMOVED";
+    const waitlist = context.remainingSpots === 0;
+    return {
+      registrationStatus: (effectiveStatus ?? "NONE") as RegistrationStatus,
+      heading: reapply
+        ? "已撤销，可重新报名"
+        : waitlist ? "正式名额已满，可加入候补" : "可以立即报名",
+      description: reapply
+        ? "重新报名将按提交时的实时名额进入正式名单或候补队尾。"
+        : waitlist
+          ? "提交后会按 FIFO 顺序加入候补队尾。"
+          : "提交后将以服务端实时名额确认正式或候补状态。",
+      tone: "available",
+      action: "APPLY",
     };
   }
   if (effectiveStatus === "REJECTED") {
@@ -362,15 +487,21 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
         ? "申请已撤回"
         : waitlistWithdrawal ? "已退出候补" : "已退出球局",
       description: applicationWithdrawal
-        ? "本次申请已撤回；本场不可再次申请。"
+        ? "本次报名已撤销，可按实时名额重新报名。"
         : waitlistWithdrawal
-          ? "你已退出本场候补队列；本场不可再次申请。"
-          : "你已退出本场球局；本场不可再次申请。",
+          ? "你已退出本场候补队列，可重新报名并排到候补队尾。"
+          : "你已退出本场球局，可按实时名额重新报名。",
       tone: "withdrawn",
       action: null,
     };
   }
   if (effectiveStatus === "REMOVED") {
+    if (context.allowedActions.applyBlockedReason === "REMOVED_BY_CAPTAIN") {
+      return {
+        registrationStatus: "REMOVED",
+        ...blockerPresentation("REMOVED_BY_CAPTAIN"),
+      };
+    }
     return {
       registrationStatus: "REMOVED",
       heading: "已被队长移出",
@@ -386,15 +517,6 @@ function registrationPresentation(context: OpenGameRegistrationContext): {
       description: "原申请记录保留，但本场已不再进行。",
       tone: "rejected",
       action: null,
-    };
-  }
-  if (context.allowedActions.canApply) {
-    return {
-      registrationStatus: "NONE",
-      heading: "可以申请加入",
-      description: "填写本场信息后提交，队长审核结果回到本页查看。",
-      tone: "available",
-      action: "APPLY",
     };
   }
   const blocker = blockerPresentation(context.allowedActions.applyBlockedReason as OpenGameApplyBlockedReason);
@@ -413,6 +535,37 @@ function blankData() {
     primaryAction: null as PrimaryAction,
     registrationStatus: "NONE" as RegistrationStatus,
     remainingSpots: 0,
+    viewerAuthenticated: false,
+    joinedCount: 0,
+    waitlistCount: 0,
+    publicOpenSpots: 0,
+    totalPlayers: 0,
+    fixedPlayers: 0,
+    signupProgressLabel: "",
+    waitlistCountLabel: "",
+    planCountLabel: "",
+    signupActionLabel: "立即报名",
+    signupSubmitting: false,
+    rosterPrivate: true,
+    joinedMembers: [] as readonly RosterRow[],
+    waitlistedMembers: [] as readonly RosterRow[],
+    blockedMembers: [] as readonly RosterRow[],
+    managementGameId: "",
+    isCaptain: false,
+    managementActionInFlight: false,
+    managementError: "",
+    profileActionVisible: false,
+    profileSheetState: "CLOSED" as ProfileSheetState,
+    profilePurpose: "SIGNUP" as ProfilePurpose,
+    profileSheetTitle: "确认公开报名资料",
+    profileSubmitLabel: "保存并报名",
+    profileNickname: "",
+    profileAvatarPreview: "",
+    profileAvatarTempPath: "",
+    profileExistingAvatarUrl: "",
+    profileError: "",
+    adultConfirmed: false,
+    riskConfirmed: false,
     applyBlockedReason: null as OpenGameApplyBlockedReason | null,
     statusHeading: "",
     statusDescription: "",
@@ -480,7 +633,6 @@ Page({
     this.boundRegistrationUserId = null;
     this.mutationInFlight = null;
     this.copyGeneration += 1;
-    hideShare();
     const header = readHeaderData();
     const optionKeys = Object.keys(options);
     const publicShared = optionKeys.length === 1
@@ -590,9 +742,9 @@ Page({
     });
     try {
       if (this.data.mode === "shared") {
-        const context = await getOpenGameRegistrationSource().getContext(this.routeToken);
+        const context = await readSignupContext(this.routeToken);
         if (!this.activeShared(generation, registrationUserId)) return;
-        this.applySharedContext(context);
+        await this.applySharedContext(context);
       } else {
         const game = (await getOpenGameSource().getOwnedGame(this.routeGameId)).publicView;
         if (!this.active(generation)) return;
@@ -608,17 +760,21 @@ Page({
     }
   },
 
-  applySharedContext(context: OpenGameRegistrationContext) {
+  async applySharedContext(context: OpenGameRegistrationContext) {
     this.applyPublic(context.game);
     const pending = getOpenGameRegistrationAttemptStore().load();
     if (pending === null) {
       this.applySharedPresentation(context);
       return;
     }
+    const target = pending.kind === "remove-member"
+      && context.managementGameId === pending.gameId
+      ? { kind: "remove-member" as const, gameId: pending.gameId }
+      : targetForAttempt(pending, this.routeToken);
     const decision = classifyOpenGameRegistrationPendingAttempt(
       pending,
       this.currentRegistrationUserId(),
-      targetForAttempt(pending, this.routeToken),
+      target,
     );
     if (decision.kind !== "READY") {
       this.presentPendingAttempt(pending);
@@ -637,16 +793,22 @@ Page({
       }
       return;
     }
+    if (decision.attempt.kind === "remove-member"
+      || decision.attempt.kind === "allow-reapply") {
+      await this.recoverRosterManagementAttempt(decision.attempt, context, true);
+      return;
+    }
     if (decision.attempt.kind !== "apply") {
       this.presentPendingAttempt(pending);
       return;
     }
-    if (context.viewerRegistration !== null) {
+    const recovery = classifyOpenGameRegistrationUnknownResult(decision.attempt, context);
+    if (recovery.kind === "ACCEPT_AUTHORITY_AND_CLEAR") {
       if (!this.clearAttemptIfCurrent(decision.attempt)) {
         this.presentDurableAttempt(context);
         return;
       }
-      this.applySharedPresentation(context);
+      this.applySharedPresentation(recovery.authority);
       return;
     }
     this.setData({
@@ -676,12 +838,47 @@ Page({
           : null;
     const applicationWithdrawal = action === "WITHDRAW_APPLICATION";
     const waitlistWithdrawal = action === "WITHDRAW_WAITLIST";
+    const joinedCount = context.joinedCount
+      ?? Math.max(0, context.game.openSpots - context.remainingSpots);
+    const waitlistCount = context.waitlistCount ?? 0;
+    const joinedMembers = context.joinedMembers ?? [];
+    const waitlistedMembers = context.waitlistedMembers ?? [];
+    const blockedMembers = context.blockedMembers ?? [];
+    const managementGameId = context.managementGameId ?? "";
+    const rosterPrivate = !context.viewerAuthenticated
+      || context.joinedMembers === null
+      || context.waitlistedMembers === null;
     this.pendingRoute = "";
     this.setData({
       status: "READY",
       primaryAction: presentation.action,
       registrationStatus: presentation.registrationStatus,
       remainingSpots: context.remainingSpots,
+      viewerAuthenticated: context.viewerAuthenticated,
+      joinedCount,
+      waitlistCount,
+      publicOpenSpots: context.game.openSpots,
+      totalPlayers: context.game.totalPlayers,
+      fixedPlayers: context.game.fixedPlayers,
+      signupProgressLabel: `公开报名 ${joinedCount} / ${context.game.openSpots}`,
+      waitlistCountLabel: `候补 ${waitlistCount} 人`,
+      planCountLabel: `计划 ${context.game.totalPlayers} 人，其中固定队员 ${context.game.fixedPlayers} 人`,
+      signupActionLabel: context.remainingSpots === 0 ? "加入候补" : "立即报名",
+      signupSubmitting: false,
+      rosterPrivate,
+      joinedMembers: rosterPrivate ? [] : joinedMembers.map(presentRosterMember),
+      waitlistedMembers: rosterPrivate ? [] : waitlistedMembers.map(presentRosterMember),
+      blockedMembers: managementGameId
+        ? blockedMembers.map(presentRosterMember)
+        : [],
+      managementGameId,
+      isCaptain: Boolean(managementGameId),
+      managementActionInFlight: false,
+      managementError: "",
+      profileActionVisible: context.viewerAuthenticated,
+      profileSheetState: "CLOSED",
+      profileAvatarTempPath: "",
+      profileError: "",
       applyBlockedReason: context.allowedActions.applyBlockedReason,
       statusHeading: presentation.heading,
       statusDescription: presentation.description,
@@ -717,10 +914,10 @@ Page({
         ? "确认撤回申请？"
         : waitlistWithdrawal ? "确认退出候补？" : "确认退出球局？",
       withdrawalConfirmationCopy: applicationWithdrawal
-        ? "撤回后队长无需再审核，已开放名额不变；本场不可再次申请。"
+        ? "撤回后队长无需再审核；重新报名将按提交时的实时名额进入正式名单或候补队尾。"
         : waitlistWithdrawal
-          ? "退出后将从当前候补队列移除；正式成员人数和公开名额不变。本场不可再次申请。"
-          : "退出后会释放你的正式席位；如有候补，将按服务端顺序自动递补。本场不可再次申请。",
+          ? "退出后将从当前候补队列移除；重新报名会排到候补队尾。"
+          : "退出后会释放你的正式席位；如有候补，将按 FIFO 顺序自动递补。之后仍可重新报名。",
       withdrawalConfirmationActionLabel: applicationWithdrawal ? "确认撤回" : "确认退出",
       withdrawalCancelLabel: waitlistWithdrawal ? "继续候补" : "保留报名",
     });
@@ -810,6 +1007,9 @@ Page({
       stateLabel: openGameStateLabel(publicGame.state),
       stateReasonText: openGameStateReasonLabel(publicGame.stateReason),
       publicGame,
+      publicOpenSpots: publicGame.openSpots,
+      totalPlayers: publicGame.totalPlayers,
+      fixedPlayers: publicGame.fixedPlayers,
       showLogin: false,
       showReturnManage: this.data.mode === "owner",
       errorMessage: "",
@@ -957,17 +1157,440 @@ Page({
       return Promise.resolve();
     }
     return this.runSingleFlight(async () => {
+      const source = getOpenGameRegistrationSource();
+      if (typeof source.getPublicProfile !== "function") {
+        this.setData({ navigationError: "当前版本暂不支持报名资料，请稍后重试。" });
+        return;
+      }
+      try {
+        const profile = await source.getPublicProfile();
+        this.openProfileSheet("SIGNUP", profile);
+      } catch {
+        this.setData({ navigationError: "暂时无法读取公开资料，请重试。" });
+      }
+    });
+  },
+
+  openProfileSheet(purpose: ProfilePurpose, profile: OpenGamePublicProfile | null) {
+    const signupLabel = this.data.remainingSpots === 0 ? "加入候补" : "报名";
+    this.setData({
+      profileSheetState: "EDITING",
+      profilePurpose: purpose,
+      profileSheetTitle: purpose === "SIGNUP" ? "确认公开报名资料" : "更新公开资料",
+      profileSubmitLabel: purpose === "SIGNUP" ? `保存并${signupLabel}` : "保存资料",
+      profileNickname: profile?.nickname ?? "",
+      profileAvatarPreview: profile?.avatarUrl ?? "",
+      profileExistingAvatarUrl: profile?.avatarUrl ?? "",
+      profileAvatarTempPath: "",
+      profileError: "",
+      adultConfirmed: false,
+      riskConfirmed: false,
+      navigationError: "",
+    });
+  },
+
+  onEditProfile() {
+    if (this.data.mode !== "shared" || !this.data.profileActionVisible) {
+      return Promise.resolve();
+    }
+    return this.runSingleFlight(async () => {
+      const source = getOpenGameRegistrationSource();
+      if (typeof source.getPublicProfile !== "function") {
+        this.setData({ navigationError: "当前版本暂不支持更新公开资料。" });
+        return;
+      }
+      try {
+        this.openProfileSheet("UPDATE", await source.getPublicProfile());
+      } catch {
+        this.setData({ navigationError: "暂时无法读取公开资料，请重试。" });
+      }
+    });
+  },
+
+  onProfileAvatarChosen(event: { readonly detail?: { readonly avatarUrl?: unknown } }) {
+    if (this.data.profileSheetState !== "EDITING") return;
+    const tempFilePath = event?.detail?.avatarUrl;
+    if (typeof tempFilePath !== "string" || tempFilePath.length === 0) {
+      this.setData({ profileError: "没有读取到头像，请重新选择。" });
+      return;
+    }
+    this.setData({
+      profileAvatarTempPath: tempFilePath,
+      profileAvatarPreview: tempFilePath,
+      profileError: "",
+    });
+  },
+
+  onProfileNicknameInput(event: { readonly detail?: { readonly value?: unknown } }) {
+    if (this.data.profileSheetState !== "EDITING") return;
+    const value = event?.detail?.value;
+    this.setData({
+      profileNickname: typeof value === "string" ? value : "",
+      profileError: "",
+    });
+  },
+
+  onSignupConfirmationsChange(event: {
+    readonly detail?: { readonly value?: unknown };
+  }) {
+    if (this.data.profileSheetState !== "EDITING" || this.data.profilePurpose !== "SIGNUP") {
+      return;
+    }
+    const values = Array.isArray(event?.detail?.value)
+      ? event.detail.value.filter((value): value is string => typeof value === "string")
+      : [];
+    this.setData({
+      adultConfirmed: values.includes("adult"),
+      riskConfirmed: values.includes("risk"),
+      profileError: "",
+    });
+  },
+
+  onCancelProfile() {
+    if (this.data.profileSheetState !== "EDITING") return;
+    this.setData({
+      profileSheetState: "CLOSED",
+      profileError: "",
+      adultConfirmed: false,
+      riskConfirmed: false,
+    });
+  },
+
+  onConfirmProfile() {
+    if (this.mutationInFlight !== null) return this.mutationInFlight;
+    if (this.data.mode !== "shared" || this.data.profileSheetState !== "EDITING") {
+      return Promise.resolve();
+    }
+    return this.runSingleFlight(async () => {
+      const purpose = this.data.profilePurpose;
+      let signupConfirmations: SignupConfirmations | null = null;
+      if (purpose === "SIGNUP") {
+        const adultConfirmed = this.data.adultConfirmed === true;
+        const riskConfirmed = this.data.riskConfirmed === true;
+        if (!adultConfirmed || !riskConfirmed) {
+          this.setData({ profileError: "请先完成成人与运动风险确认。" });
+          return;
+        }
+        signupConfirmations = { adultConfirmed, riskConfirmed };
+      }
+      const nickname = this.data.profileNickname.trim();
+      const nicknameLength = Array.from(nickname).length;
+      if (nicknameLength < 1 || nicknameLength > 24) {
+        this.setData({ profileError: "昵称需为 1–24 个字符。" });
+        return;
+      }
+      const hasExistingAvatar = Boolean(this.data.profileExistingAvatarUrl);
+      if (!this.data.profileAvatarTempPath && !hasExistingAvatar) {
+        this.setData({ profileError: "请选择一个公开头像。" });
+        return;
+      }
+      const source = getOpenGameRegistrationSource();
+      if (typeof source.uploadPublicProfileAvatar !== "function"
+        || typeof source.savePublicProfile !== "function") {
+        this.setData({ profileError: "当前版本暂不支持保存公开资料。" });
+        return;
+      }
+      this.setData({ profileSheetState: "SUBMITTING", profileError: "" });
+      try {
+        const selectedAvatarTempPath = this.data.profileAvatarTempPath;
+        const uploaded = selectedAvatarTempPath
+          ? await source.uploadPublicProfileAvatar(selectedAvatarTempPath)
+          : null;
+        const profile = await source.savePublicProfile({
+          nickname,
+          avatarObjectKey: uploaded?.objectKey ?? null,
+        });
+        this.setData({
+          profileNickname: profile.nickname,
+          profileAvatarPreview: signupConfirmations !== null && selectedAvatarTempPath
+            ? selectedAvatarTempPath
+            : profile.avatarUrl,
+          profileExistingAvatarUrl: profile.avatarUrl,
+          profileAvatarTempPath: signupConfirmations !== null ? selectedAvatarTempPath : "",
+          profileSheetState: "CLOSED",
+        });
+        if (signupConfirmations !== null) {
+          await this.submitSignup(profile.nickname, signupConfirmations);
+        }
+        else await this.loadPublic();
+      } catch {
+        this.setData({
+          profileSheetState: "EDITING",
+          profileError: "资料保存失败，请检查网络后重试。",
+        });
+      }
+    });
+  },
+
+  async submitSignup(nickname: string, confirmations: SignupConfirmations) {
+    const userId = this.boundRegistrationUserId;
+    if (userId === null || this.currentRegistrationUserId() !== userId) {
+      await this.loadPublic();
+      return;
+    }
+    const requested: OpenGameRegistrationApplyAttempt = {
+      kind: "apply",
+      originatingUserId: userId,
+      shareToken: this.routeToken,
+      submissionMode: "DIRECT_REGISTRATION",
+      body: {
+        displayName: nickname,
+        position: "ANY",
+        note: null,
+        adultConfirmed: confirmations.adultConfirmed,
+        riskConfirmed: confirmations.riskConfirmed,
+      },
+      idempotencyKey: `signup-${Date.now()}-${String(++signupAttemptSerial).padStart(6, "0")}`,
+    };
+    let availability;
+    try {
+      availability = getOpenGameRegistrationAttemptStore().begin(requested);
+    } catch {
+      this.setData({ navigationError: "无法安全保存报名记录，本次报名尚未发送。" });
+      return;
+    }
+    if (availability.kind !== "READY" || availability.attempt.kind !== "apply") {
+      this.presentPendingAttempt(availability.attempt);
+      return;
+    }
+    const attempt = availability.attempt;
+    const generation = this.loadGeneration;
+    this.setData({ signupSubmitting: true, primaryAction: "APPLY", navigationError: "" });
+    try {
+      const context = await createSignupRegistration(attempt);
+      if (!await this.activeSharedOrResynchronize(generation, userId)) return;
+      if (!this.clearAttemptIfCurrent(attempt)) {
+        this.presentDurableAttempt(context);
+        return;
+      }
+      this.applySharedPresentation(context);
+    } catch (caught) {
+      if (!this.active(generation)) return;
+      await this.handleRecoveryError(attempt, caught, generation);
+    }
+  },
+
+  onRosterAvatarError(event: {
+    readonly currentTarget?: { readonly dataset?: { readonly group?: unknown; readonly index?: unknown } };
+  }) {
+    const group = event?.currentTarget?.dataset?.group;
+    const index = Number(event?.currentTarget?.dataset?.index);
+    if ((group !== "joinedMembers" && group !== "waitlistedMembers" && group !== "blockedMembers")
+      || !Number.isSafeInteger(index) || index < 0) return;
+    const rows = [...(this.data[group] as readonly RosterRow[])];
+    if (!rows[index]) return;
+    rows[index] = { ...rows[index], avatarUrl: "" };
+    this.setData({ [group]: rows });
+  },
+
+  onRemoveRosterMember(event: {
+    readonly currentTarget?: { readonly dataset?: Record<string, unknown> };
+  }) {
+    if (this.data.mode !== "shared" || !this.data.isCaptain) return Promise.resolve();
+    const dataset = event?.currentTarget?.dataset ?? {};
+    const registrationId = dataset.registrationId;
+    const version = Number(dataset.version);
+    const nickname = typeof dataset.nickname === "string" ? dataset.nickname : "该成员";
+    if (typeof registrationId !== "string" || !UUID_PATTERN.test(registrationId)
+      || !Number.isSafeInteger(version) || version < 1) return Promise.resolve();
+    return this.runSingleFlight(async () => {
+      const confirmed = await confirmAction(
+        `确认移除${nickname}？`,
+        "移除后该成员将不能自动重新报名；如需恢复，请在已移除名单中另行允许。",
+        "确认移除",
+      );
+      if (!confirmed) return;
+      const userId = this.boundRegistrationUserId;
+      const gameId = this.data.managementGameId;
+      if (userId === null || this.currentRegistrationUserId() !== userId
+        || typeof gameId !== "string" || !UUID_PATTERN.test(gameId)) {
+        await this.loadPublic();
+        return;
+      }
+      const attempt: OpenGameMemberRemoveAttempt = {
+        kind: "remove-member",
+        originatingUserId: userId,
+        gameId,
+        registrationId,
+        expectedVersion: version,
+        reason: "队长在报名接龙中移除",
+        idempotencyKey: `roster-remove-${Date.now()}-${++managementAttemptSerial}`,
+      };
+      let availability;
+      try {
+        availability = getOpenGameRegistrationAttemptStore().begin(attempt);
+      } catch {
+        this.setData({
+          managementActionInFlight: false,
+          managementError: "无法安全保存移除记录，本次操作尚未发送。",
+        });
+        return;
+      }
+      if (availability.kind !== "READY" || availability.attempt.kind !== "remove-member") {
+        this.presentPendingAttempt(availability.attempt);
+        return;
+      }
+      await this.executeRosterManagementAttempt(availability.attempt, true);
+    });
+  },
+
+  onAllowMemberReapply(event: {
+    readonly currentTarget?: { readonly dataset?: Record<string, unknown> };
+  }) {
+    if (this.data.mode !== "shared" || !this.data.isCaptain) return Promise.resolve();
+    const dataset = event?.currentTarget?.dataset ?? {};
+    const registrationId = dataset.registrationId;
+    const version = Number(dataset.version);
+    const nickname = typeof dataset.nickname === "string" ? dataset.nickname : "该成员";
+    if (typeof registrationId !== "string" || !UUID_PATTERN.test(registrationId)
+      || !Number.isSafeInteger(version) || version < 1) return Promise.resolve();
+    return this.runSingleFlight(async () => {
+      const confirmed = await confirmAction(
+        `允许${nickname}重新报名？`,
+        "此操作只解除报名限制，不会自动把该成员加入正式名单或候补。",
+        "允许重报",
+      );
+      if (!confirmed) return;
+      const userId = this.boundRegistrationUserId;
+      const gameId = this.data.managementGameId;
+      const source = getOpenGameRegistrationSource();
+      if (userId === null || this.currentRegistrationUserId() !== userId
+        || typeof gameId !== "string" || !UUID_PATTERN.test(gameId)
+        || typeof source.allowMemberReapply !== "function") {
+        this.setData({ managementError: "当前状态不支持解除报名限制。" });
+        return;
+      }
+      const requested: OpenGameAllowMemberReapplyAttempt = {
+        kind: "allow-reapply",
+        originatingUserId: userId,
+        shareToken: this.routeToken,
+        gameId,
+        registrationId,
+        expectedVersion: version,
+        idempotencyKey: `allow-reapply-${Date.now()}-${++managementAttemptSerial}`,
+      };
+      let availability;
+      try {
+        availability = getOpenGameRegistrationAttemptStore().begin(requested);
+      } catch {
+        this.setData({
+          managementActionInFlight: false,
+          managementError: "无法安全保存解除限制记录，本次操作尚未发送。",
+        });
+        return;
+      }
+      if (availability.kind !== "READY" || availability.attempt.kind !== "allow-reapply") {
+        this.presentPendingAttempt(availability.attempt);
+        return;
+      }
+      await this.executeRosterManagementAttempt(availability.attempt, true);
+    });
+  },
+
+  async executeRosterManagementAttempt(
+    attempt: OpenGameRosterManagementAttempt,
+    recoverUnknown: boolean,
+    authority?: OpenGameRegistrationContext,
+  ) {
+    const userId = this.boundRegistrationUserId;
+    if (userId !== attempt.originatingUserId || this.currentRegistrationUserId() !== userId) {
+      await this.loadPublic();
+      return;
+    }
+    const source = getOpenGameRegistrationSource();
+    if (attempt.kind === "allow-reapply" && typeof source.allowMemberReapply !== "function") {
+      this.presentRosterManagementUnknown(
+        authority,
+        "当前版本暂不能确认解除限制结果，原操作记录已保留。",
+      );
+      return;
+    }
+    this.setData({ managementActionInFlight: true, managementError: "" });
+    try {
+      if (attempt.kind === "remove-member") await source.removeMember(attempt);
+      else await source.allowMemberReapply!(attempt);
+      if (this.currentRegistrationUserId() !== attempt.originatingUserId) {
+        await this.loadPublic();
+        return;
+      }
+      if (!this.clearAttemptIfCurrent(attempt)) {
+        this.presentDurableAttempt();
+        return;
+      }
+      await this.loadPublic();
+    } catch (caught) {
+      const unknown = !(caught instanceof OpenGameRegistrationApiError)
+        || caught.code === "APPLICATION_RESULT_UNKNOWN"
+        || caught.code === "SERVICE_UNAVAILABLE";
+      if (unknown) {
+        if (recoverUnknown) await this.recoverRosterManagementAttempt(attempt, undefined, true);
+        else this.presentRosterManagementUnknown(
+          authority,
+          "操作结果待确认，原操作记录已保留；刷新页面会先核对名单。",
+        );
+        return;
+      }
+      if (caught.code === "AUTH_REQUIRED" || caught.code === "LOGIN_FAILED") {
+        this.presentRosterManagementUnknown(
+          authority,
+          "登录状态需要恢复，原操作记录已保留。",
+        );
+        return;
+      }
+      if (!this.clearAttemptIfCurrent(attempt)) {
+        this.presentDurableAttempt();
+        return;
+      }
+      await this.loadPublic();
+    }
+  },
+
+  async recoverRosterManagementAttempt(
+    attempt: OpenGameRosterManagementAttempt,
+    knownAuthority?: OpenGameRegistrationContext,
+    replayUnchanged = true,
+  ) {
+    let authority = knownAuthority;
+    if (authority === undefined) {
       const generation = this.loadGeneration;
       try {
-        await navigation(
-          "navigateTo",
-          "/pages/player-game-application/index?token=" + this.routeToken,
-        );
+        authority = await readSignupContext(this.routeToken);
       } catch {
-        if (this.active(generation)) {
-          this.setData({ navigationError: "暂时无法打开申请表，请重试。" });
-        }
+        this.presentRosterManagementUnknown(
+          undefined,
+          "暂时无法读取权威名单，原操作结果待确认。",
+        );
+        return;
       }
+      if (!this.activeShared(generation, attempt.originatingUserId)) return;
+    }
+    const recovery = classifyOpenGameRosterManagementUnknownResult(attempt, authority);
+    if (recovery.kind === "ACCEPT_AUTHORITY_AND_CLEAR") {
+      if (!this.clearAttemptIfCurrent(attempt)) {
+        this.presentDurableAttempt(authority);
+        return;
+      }
+      this.applySharedPresentation(recovery.authority);
+      return;
+    }
+    if (recovery.kind === "REPLAY_SAME_ATTEMPT" && replayUnchanged) {
+      await this.executeRosterManagementAttempt(recovery.attempt, false, authority);
+      return;
+    }
+    this.presentRosterManagementUnknown(
+      authority,
+      "操作结果待确认，原操作记录已保留；刷新页面会先核对名单。",
+    );
+  },
+
+  presentRosterManagementUnknown(
+    authority: OpenGameRegistrationContext | undefined,
+    message: string,
+  ) {
+    if (authority !== undefined) this.applySharedPresentation(authority);
+    this.setData({
+      managementActionInFlight: false,
+      managementError: message,
     });
   },
 
@@ -1015,7 +1638,7 @@ Page({
       errorMessage: "正在读取权威申请结果…",
     });
     try {
-      const context = await getOpenGameRegistrationSource().getContext(
+      const context = await readSignupContext(
         pending.attempt.shareToken,
       );
       if (!this.active(generation)) return;
@@ -1057,7 +1680,7 @@ Page({
         this.applySharedPresentation(recovery.authority);
         return;
       }
-      const result = await getOpenGameRegistrationSource().apply(
+      const result = await createSignupRegistration(
         recovery.attempt as OpenGameRegistrationApplyAttempt,
       );
       if (!this.active(generation)) return;
@@ -1111,6 +1734,10 @@ Page({
       this.presentDurableAttempt();
       return;
     }
+    if (decision.kind === "CLEAR_AND_REOPEN_PROFILE") {
+      await this.refreshAndReopenSignupProfile(caught.code);
+      return;
+    }
     if (decision.kind === "CLEAR_AND_RETURN") {
       this.setData({
         status: "NOT_FOUND",
@@ -1130,12 +1757,55 @@ Page({
     });
   },
 
+  async refreshAndReopenSignupProfile(
+    reason: "PUBLIC_PROFILE_REQUIRED" | "PUBLIC_PROFILE_CHANGED",
+  ) {
+    const userId = this.boundRegistrationUserId;
+    const localNickname = this.data.profileNickname;
+    const localAvatarTempPath = this.data.profileAvatarTempPath;
+    const localAvatarPreview = this.data.profileAvatarPreview;
+    await this.loadPublic();
+    if (userId === null
+      || !this.visible
+      || this.data.mode !== "shared"
+      || this.boundRegistrationUserId !== userId
+      || this.currentRegistrationUserId() !== userId
+      || this.data.status !== "READY"
+      || this.data.primaryAction !== "APPLY") return;
+    const source = getOpenGameRegistrationSource();
+    if (typeof source.getPublicProfile !== "function") {
+      this.setData({ navigationError: "当前版本暂不支持刷新公开资料。" });
+      return;
+    }
+    try {
+      const profile = await source.getPublicProfile();
+      if (!this.visible
+        || this.boundRegistrationUserId !== userId
+        || this.currentRegistrationUserId() !== userId) return;
+      this.openProfileSheet("SIGNUP", profile);
+      this.setData({
+        profileNickname: localNickname,
+        ...(localAvatarTempPath
+          ? {
+            profileAvatarTempPath: localAvatarTempPath,
+            profileAvatarPreview: localAvatarPreview,
+          }
+          : {}),
+        profileError: reason === "PUBLIC_PROFILE_CHANGED"
+          ? "公开资料已在其他设备更新，请重新确认后报名。"
+          : "公开资料不完整，请重新确认后报名。",
+      });
+    } catch {
+      this.setData({ navigationError: "暂时无法刷新公开资料，请稍后重新报名。" });
+    }
+  },
+
   async resolveAlreadyExists(
     attempt: OpenGameRegistrationApplyAttempt,
     generation: number,
   ) {
     try {
-      const context = await getOpenGameRegistrationSource().getContext(attempt.shareToken);
+      const context = await readSignupContext(attempt.shareToken);
       if (!this.active(generation)) return;
       const durable = getOpenGameRegistrationAttemptStore().load();
       if (durable === null) {
@@ -1349,7 +2019,7 @@ Page({
       const generation = this.loadGeneration;
       this.setData({ withdrawalOperationState: "SUBMITTING", primaryAction: null });
       try {
-        const context = await getOpenGameRegistrationSource().withdraw(attempt);
+        const context = await withdrawSignupRegistration(attempt);
         if (!await this.activeSharedOrResynchronize(generation, userId)) return;
         if (!this.clearAttemptIfCurrent(attempt)) {
           this.presentDurableAttempt(context);
@@ -1406,7 +2076,7 @@ Page({
     });
     let mutationSent = false;
     try {
-      const context = await getOpenGameRegistrationSource().getContext(attempt.shareToken);
+      const context = await readSignupContext(attempt.shareToken);
       if (!await this.activeSharedOrResynchronize(generation, userId)) return;
       const current = getOpenGameRegistrationAttemptStore().load();
       if (current === null) {
@@ -1427,7 +2097,7 @@ Page({
         return;
       }
       mutationSent = true;
-      const result = await getOpenGameRegistrationSource().withdraw(current);
+      const result = await withdrawSignupRegistration(current);
       if (!await this.activeSharedOrResynchronize(generation, userId)) return;
       if (!this.clearAttemptIfCurrent(current)) {
         this.presentDurableAttempt(result);
@@ -1597,6 +2267,16 @@ Page({
         });
       }
     });
+  },
+
+  onShareAppMessage() {
+    if (this.data.mode !== "shared" || !TOKEN_PATTERN.test(this.routeToken)) {
+      return { title: "逐光约场", path: "/pages/intent-entry/index" };
+    }
+    return {
+      title: `${this.data.name || "逐光约场"} · 分享报名接龙`,
+      path: `/pages/captain-game-public/index?token=${this.routeToken}`,
+    };
   },
 
   onHeaderBack() {

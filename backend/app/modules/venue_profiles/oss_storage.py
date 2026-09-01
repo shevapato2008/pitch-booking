@@ -20,7 +20,9 @@ from .storage import (
     extension_for,
     require_byte_size,
     require_content_type,
+    sanitized_user_avatar,
     validate_image,
+    validate_user_avatar,
 )
 
 
@@ -64,6 +66,37 @@ class OssMediaStorage:
             f"private/venues/{venue_id}/images/{image_id}/original."
             f"{extension_for(accepted)}"
         )
+        headers = {
+            "Content-Type": accepted,
+            "Content-Length": str(accepted_size),
+            "x-oss-forbid-overwrite": "true",
+            "x-oss-object-acl": "private",
+        }
+        url = self._bucket.sign_url(
+            "PUT",
+            key,
+            UPLOAD_URL_TTL_SECONDS,
+            headers=headers,
+            additional_headers={"content-length"},
+        )
+        return UploadIntent(
+            object_key=key,
+            url=url,
+            expires_in_seconds=UPLOAD_URL_TTL_SECONDS,
+            max_bytes=MAX_IMAGE_BYTES,
+            required_headers=headers,
+        )
+
+    def create_user_avatar_upload_intent(
+        self,
+        user_id: UUID,
+        avatar_id: UUID,
+        content_type: str,
+        byte_size: int,
+    ) -> UploadIntent:
+        accepted = require_content_type(content_type)
+        accepted_size = require_byte_size(byte_size)
+        key = f"private/users/{user_id}/avatars/{avatar_id}/original.{extension_for(accepted)}"
         headers = {
             "Content-Type": accepted,
             "Content-Length": str(accepted_size),
@@ -151,6 +184,61 @@ class OssMediaStorage:
             sha256=image.sha256,
         )
 
+    def user_avatar_url(self, user_id: UUID, object_key: str) -> str:
+        self._require_user_avatar_published_key(user_id, object_key)
+        return f"{self._public_base_url}/{object_key}"
+
+    def promote_user_avatar(
+        self,
+        user_id: UUID,
+        avatar_id: UUID,
+        object_key: str,
+    ) -> PublishedImage:
+        self._require_user_avatar_original_key(user_id, avatar_id, object_key)
+        result = self._bucket.get_object(object_key)
+        try:
+            chunks: list[bytes] = []
+            total = 0
+            while total <= MAX_IMAGE_BYTES:
+                chunk = result.read(MAX_IMAGE_BYTES + 1 - total)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+            data = b"".join(chunks)
+            content_type = getattr(result, "content_type", None)
+            if content_type is None:
+                content_type = result.headers.get("Content-Type", "")
+            image = validate_user_avatar(object_key, data, content_type)
+        except ValueError:
+            self._bucket.delete_object(object_key)
+            raise
+        finally:
+            result.close()
+        published_key = (
+            f"published/avatars/{avatar_id}.{extension_for(image.content_type)}"
+        )
+        published = sanitized_user_avatar(published_key, image)
+        self._bucket.put_object(
+            published_key,
+            published.data,
+            headers={"Content-Type": published.content_type},
+        )
+        self._bucket.put_object_acl(published_key, oss2.OBJECT_ACL_PUBLIC_READ)
+        head = self._bucket.head_object(published_key)
+        if (
+            head.content_length != published.byte_size
+            or self._normalized_content_type(head.content_type) != published.content_type
+        ):
+            raise StorageVerificationError("published avatar HEAD verification failed")
+        return PublishedImage(
+            object_key=published_key,
+            url=f"{self._public_base_url}/{published_key}",
+            content_type=published.content_type,
+            byte_size=published.byte_size,
+            sha256=published.sha256,
+        )
+
     def delete_objects(
         self, venue_id: UUID, image_id: UUID, object_keys: list[str]
     ) -> None:
@@ -175,6 +263,34 @@ class OssMediaStorage:
         expected = f"private/venues/{venue_id}/images/{image_id}/review.jpg"
         if object_key != expected:
             raise StorageBoundaryError("object key is outside the venue boundary")
+
+    @staticmethod
+    def _require_user_avatar_published_key(_user_id: UUID, object_key: str) -> None:
+        prefix = "published/avatars/"
+        suffix = object_key.removeprefix(prefix)
+        stem, separator, extension = suffix.rpartition(".")
+        try:
+            parsed_avatar_id = UUID(stem)
+        except ValueError:
+            parsed_avatar_id = None
+        if (
+            object_key == suffix
+            or separator != "."
+            or parsed_avatar_id is None
+            or extension not in {"jpg", "png", "webp"}
+        ):
+            raise StorageBoundaryError("object key is outside the user avatar boundary")
+
+    @staticmethod
+    def _require_user_avatar_original_key(
+        user_id: UUID,
+        avatar_id: UUID,
+        object_key: str,
+    ) -> None:
+        prefix = f"private/users/{user_id}/avatars/{avatar_id}/original."
+        extension = object_key.removeprefix(prefix)
+        if object_key == extension or extension not in {"jpg", "png", "webp"}:
+            raise StorageBoundaryError("object key is outside the user avatar boundary")
 
     @staticmethod
     def _require_deletable_key(venue_id: UUID, image_id: UUID, object_key: str) -> None:
