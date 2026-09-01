@@ -4,11 +4,21 @@ import {
   SessionExpiredError,
   type AttendanceRegistrationDetail,
   type AttendanceStatus,
+  type OpenGameReportCategory,
+  type OpenGameReportResolutionOutcome,
+  type PlatformGameReportDetail,
   type ReviewApplicationDetail,
   type ReviewEvidence,
 } from "./api";
 import { AttendanceCorrectionController, formatAttendanceTime } from "./attendance-correction";
-import { AuthController, attendanceCorrectionVisible, consumeAccessToken, primaryPlatformRole } from "./auth";
+import {
+  AuthController,
+  attendanceCorrectionVisible,
+  consumeAccessToken,
+  gameReportResolutionVisible,
+  primaryPlatformRole,
+} from "./auth";
+import { GameReportResolutionController } from "./game-report-resolution";
 import { ReviewController } from "./review";
 
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -18,7 +28,8 @@ const api = new PlatformApi();
 const auth = new AuthController(api);
 const review = new ReviewController(api);
 const attendance = new AttendanceCorrectionController(api);
-let activeModule: "review" | "attendance" = "review";
+const gameReports = new GameReportResolutionController(api);
+let activeModule: "review" | "attendance" | "game-reports" = "review";
 let confirmationReturnSelector = '[data-action="prepare-attendance-correction"]';
 let feedback: {
   type: "error" | "warning" | "success";
@@ -73,6 +84,28 @@ const blockedReasonLabel = (detail: AttendanceRegistrationDetail): string => {
     default: return "当前报名暂不可纠正。";
   }
 };
+const reportCategoryLabel = (category: OpenGameReportCategory): string => ({
+  FALSE_INFORMATION: "信息与现场不符",
+  EXTRA_CHARGE: "现场额外收费",
+  DANGEROUS_BEHAVIOR: "危险行为处置不当",
+  HARASSMENT: "骚扰或侮辱",
+  ORGANIZER_NO_SHOW: "组织者未到场",
+}[category]);
+const reportOutcomeLabel = (outcome: OpenGameReportResolutionOutcome): string => ({
+  DISMISSED: "驳回举报",
+  CONFIRMED_RECORDED: "成立并记录",
+  CONFIRMED_GAME_CANCELLED: "成立并取消球局",
+}[outcome]);
+const reportStatusLabel = (status: PlatformGameReportDetail["status"]): string =>
+  status === "PENDING" ? "待处理" : "已结案";
+const reportCancellationBlockerLabel = (
+  blocker: PlatformGameReportDetail["authority"]["cancellation_blocker"],
+): string => ({
+  GAME_ALREADY_STARTED: "球局已经开场，只能记录结论",
+  GAME_NOT_PUBLISHED: "球局当前并非可取消的公开状态",
+  GAME_AUTHORITY_UNHEALTHY: "订场权威状态异常，不能由举报处置取消",
+  REPORT_ALREADY_RESOLVED: "这条举报已经结案",
+}[blocker ?? "REPORT_ALREADY_RESOLVED"]);
 
 const alert = (): string => feedback
   ? `<div class="alert alert--${feedback.type}" role="status"><span class="alert__mark" aria-hidden="true">${feedback.type === "error" ? "×" : feedback.type === "success" ? "✓" : "!"}</span><span><strong>${feedback.type === "error" ? "操作未完成" : feedback.type === "success" ? "审核记录已更新" : "需要处理"}</strong>${escapeHtml(feedback.message)}</span>${feedback.recovery === "decision" ? `<span class="alert__actions"><button class="button button--quiet button--small" data-action="refresh-detail" type="button">刷新详情</button><button class="button button--quiet button--small" data-action="refresh-queue" type="button">刷新队列</button></span>` : ""}</div>`
@@ -119,7 +152,8 @@ const renderDetail = (): string => {
 const renderTopbar = (backgroundInert = ""): string => {
   const session = auth.state.status === "authenticated" ? auth.state.session : null;
   const canCorrectAttendance = session ? attendanceCorrectionVisible(session) : false;
-  return `<header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台运营台</strong><small>生产运营控制台</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="open-review" type="button"${activeModule === "review" ? ' aria-current="page"' : ""}>入驻审核</button>${canCorrectAttendance ? `<button class="product-nav__item" data-action="open-attendance-correction" type="button"${activeModule === "attendance" ? ' aria-current="page"' : ""}>到场纠错</button>` : ""}</nav><div class="reviewer">${badge(session ? primaryPlatformRole(session) : "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>`;
+  const canResolveReports = session ? gameReportResolutionVisible(session) : false;
+  return `<header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台运营台</strong><small>生产运营控制台</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="open-review" type="button"${activeModule === "review" ? ' aria-current="page"' : ""}>入驻审核</button>${canCorrectAttendance ? `<button class="product-nav__item" data-action="open-attendance-correction" type="button"${activeModule === "attendance" ? ' aria-current="page"' : ""}>到场纠错</button>` : ""}${canResolveReports ? `<button class="product-nav__item" data-action="open-game-reports" type="button"${activeModule === "game-reports" ? ' aria-current="page"' : ""}>举报处置</button>` : ""}</nav><div class="reviewer">${badge(session ? primaryPlatformRole(session) : "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>`;
 };
 
 const renderReview = (): string => {
@@ -160,14 +194,65 @@ const renderAttendance = (): string => {
   return `<div class="console-shell">${renderTopbar(backgroundInert)}<main class="workspace attendance-workspace" id="main-content"${backgroundInert}><aside class="lookup-pane"><div><p class="eyebrow">Exact lookup</p><h1>精确查询报名</h1><p class="lookup-pane__intro">输入完整报名 UUID，核对球局、球员和原始到场记录后再操作。</p></div><form class="lookup-form" data-form="attendance-lookup" novalidate><label class="field-label" for="registration-id">报名 UUID</label><input class="text-input${state.lookupError ? " has-error" : ""}" id="registration-id" data-action="attendance-query-input" value="${escapeHtml(state.query)}" autocomplete="off" spellcheck="false" aria-describedby="lookup-help lookup-error" ${lookupLocked ? "disabled" : ""}/><p class="field-help" id="lookup-help">${state.pendingAttempt ? "上一操作结果待确认；请先刷新权威状态。" : "不支持姓名、手机号或模糊搜索，避免扩大个人信息暴露。"}</p><p class="field-error${state.lookupError ? " is-visible" : ""}" id="lookup-error" role="alert">${escapeHtml(state.lookupError ?? "")}</p><div class="lookup-form__actions"><button class="button button--primary lookup-form__submit" data-action="lookup-attendance" type="submit" ${lookupLocked ? "disabled" : ""}>${state.loading ? "正在查询…" : "查询报名"}</button><button class="button button--quiet lookup-form__clear" data-action="clear-attendance-query" type="button" ${lookupLocked ? "disabled" : ""}>清除</button></div></form><div class="scope-note"><span aria-hidden="true">i</span><p><strong>权限边界</strong>仅 PLATFORM_ADMIN 可以提交纠正；入驻审核员不会看到或进入本功能。</p></div></aside><section class="detail-pane">${detailContent}</section></main></div>${renderAttendanceModal(state.detail)}`;
 };
 
+const renderGameReportFeedback = (): string => {
+  const stateFeedback = gameReports.state.feedback;
+  if (!stateFeedback) return "";
+  const mark = stateFeedback.type === "error" ? "×" : stateFeedback.type === "success" ? "✓" : stateFeedback.type === "warning" ? "!" : "i";
+  return `<div class="alert alert--${escapeHtml(stateFeedback.type)}" role="status"><span class="alert__mark" aria-hidden="true">${mark}</span><span><strong>${escapeHtml(stateFeedback.title)}</strong>${escapeHtml(stateFeedback.message)}</span>${stateFeedback.recovery ? `<button class="button button--quiet button--small" data-action="recover-game-report" type="button" ${gameReports.state.loading ? "disabled" : ""}>确认原处置结果</button>` : ""}</div>`;
+};
+
+const renderGameReportQueueRow = (item: typeof gameReports.state.items[number]): string => {
+  const selected = gameReports.state.selected?.report_id === item.report_id;
+  const locked = gameReports.state.loading || gameReports.state.resolving || gameReports.state.pendingAttempt !== null;
+  return `<button class="queue-row report-queue-row${selected ? " is-selected" : ""}" data-action="select-game-report" data-id="${escapeHtml(item.report_id)}" type="button" aria-pressed="${selected}" ${locked ? "disabled" : ""}><span class="queue-row__top"><span class="badge badge--${item.status === "PENDING" ? "submitted" : "approved"}">${reportStatusLabel(item.status)}</span><span class="report-category">${escapeHtml(reportCategoryLabel(item.category))}</span></span><strong>${escapeHtml(item.target.game_name)}</strong><span>${escapeHtml(item.target.organizer_team_name)} 组织</span><small>${escapeHtml(formatAttendanceTime(item.submitted_at, item.target.time_zone))}</small></button>`;
+};
+
+const renderGameReportResolutionPanel = (detail: PlatformGameReportDetail): string => {
+  if (detail.resolution) {
+    const resolution = detail.resolution;
+    return `<aside class="panel panel--padded report-resolution-panel panel--success"><p class="eyebrow">Immutable resolution</p><h3>处置结论</h3><div class="report-resolution-result"><span class="report-resolution-result__mark" aria-hidden="true">✓</span><div><strong>${escapeHtml(reportOutcomeLabel(resolution.outcome))}</strong><p>${escapeHtml(resolution.resolution_note)}</p></div></div><dl class="facts report-resolution-audit"><div><dt>处置人</dt><dd>${escapeHtml(resolution.resolved_by_principal_id)}</dd></div><div><dt>处置时间</dt><dd>${escapeHtml(formatAttendanceTime(resolution.resolved_at, detail.target.time_zone))}</dd></div>${resolution.game_version_before !== null ? `<div class="facts__wide"><dt>球局版本</dt><dd>v${resolution.game_version_before} → v${resolution.game_version_after}</dd></div>` : ""}</dl><p class="immutability-note"><span aria-hidden="true">i</span>结论为不可修改审计记录；不会自动处罚、封禁、退款或变更订单。</p></aside>`;
+  }
+  const locked = gameReports.state.resolving || gameReports.state.pendingAttempt !== null;
+  const cancelBlocker = detail.authority.cancellation_allowed
+    ? "符合公开球局取消条件"
+    : reportCancellationBlockerLabel(detail.authority.cancellation_blocker);
+  return `<aside class="panel panel--padded report-resolution-panel" tabindex="-1"><p class="eyebrow">Resolution</p><h3>平台处置</h3><fieldset class="outcome-options" ${locked ? "disabled" : ""}><legend class="field-label">选择处置结论 <span class="required">*</span></legend>${detail.allowed_outcomes.map((outcome) => `<button class="outcome-option${gameReports.state.selectedOutcome === outcome ? " is-selected" : ""}${outcome === "CONFIRMED_GAME_CANCELLED" ? " is-danger" : ""}" data-action="choose-game-report-outcome" data-outcome="${outcome}" type="button" aria-pressed="${gameReports.state.selectedOutcome === outcome}" ${locked ? "disabled" : ""}><span class="outcome-option__control" aria-hidden="true"></span><span><strong>${escapeHtml(reportOutcomeLabel(outcome))}</strong>${outcome === "CONFIRMED_GAME_CANCELLED" ? `<small>${escapeHtml(cancelBlocker)}</small>` : outcome === "CONFIRMED_RECORDED" ? "<small>记录成立结论，不改变球局或订单</small>" : "<small>记录驳回结论，不改变球局或订单</small>"}</span></button>`).join("")}</fieldset><label class="field-label" for="game-report-resolution-note">处置说明 <span class="required">*</span></label><textarea class="reason-input${gameReports.state.noteError ? " has-error" : ""}" id="game-report-resolution-note" data-action="game-report-note-input" aria-describedby="game-report-note-help game-report-note-error" placeholder="说明核验依据与处置结论" ${locked ? "disabled" : ""}>${escapeHtml(gameReports.state.note)}</textarea><div class="report-note-meta"><span id="game-report-note-help">不可填写手机号、微信号、邮箱或链接</span><span data-report-note-count>${Array.from(gameReports.state.note).length}/500</span></div><p class="field-error${gameReports.state.noteError ? " is-visible" : ""}" id="game-report-note-error" role="alert">${escapeHtml(gameReports.state.noteError ?? "")}</p><button class="button ${gameReports.state.selectedOutcome === "CONFIRMED_GAME_CANCELLED" ? "button--danger" : "button--primary"} report-resolution-panel__submit" data-action="prepare-game-report-resolution" type="button" ${locked ? "disabled" : ""}>${gameReports.state.resolving ? "正在确认…" : "确认处置结论"}</button></aside>`;
+};
+
+const renderGameReportDetail = (detail: PlatformGameReportDetail): string => {
+  const authority = detail.authority;
+  return `${renderGameReportFeedback()}<header class="detail-heading"><div><p class="eyebrow">举报目标 · 本场球局及组织者</p><h2>${escapeHtml(detail.target.game_name)}</h2><p>${escapeHtml(detail.target.organizer_team_name)} 组织 · ${escapeHtml(detail.target.venue_name)} · ${escapeHtml(detail.target.pitch_name)}</p></div><span class="status-badge status-badge--${detail.status === "PENDING" ? "pending" : "resolved"}">${reportStatusLabel(detail.status)}</span></header><div class="detail-grid report-detail-grid"><div class="content-stack"><article class="panel panel--padded"><div class="section-heading"><div><p class="eyebrow">Structured facts</p><h3>${escapeHtml(reportCategoryLabel(detail.category))}</h3></div><time>${escapeHtml(formatAttendanceTime(detail.submitted_at, detail.target.time_zone))}</time></div><p class="report-facts">${escapeHtml(detail.facts)}</p><dl class="facts"><div><dt>举报者本场称呼</dt><dd>${escapeHtml(detail.reporter_display_name)}</dd></div><div><dt>报名状态快照</dt><dd>${escapeHtml(detail.reporter_registration_status)}</dd></div><div class="facts__wide"><dt>举报编号</dt><dd class="mono">${escapeHtml(detail.report_id)}</dd></div></dl></article><article class="panel panel--padded"><div class="section-heading"><div><p class="eyebrow">Game authority</p><h3>${escapeHtml(formatAttendanceTime(detail.target.starts_at, detail.target.time_zone))} — ${escapeHtml(formatAttendanceTime(detail.target.ends_at, detail.target.time_zone))}</h3></div><span class="health-chip">${escapeHtml(authority.effective_status)}</span></div><dl class="facts facts--three"><div><dt>持久状态</dt><dd>${escapeHtml(authority.persisted_status)}</dd></div><div><dt>取消来源</dt><dd>${escapeHtml(authority.cancellation_source ?? "—")}</dd></div><div><dt>球局版本</dt><dd>v${authority.version}</dd></div></dl><p class="immutability-note"><span aria-hidden="true">i</span>平台取消只改变公开球局；不取消订场订单，也不触发支付或退款。</p></article></div>${renderGameReportResolutionPanel(detail)}</div>`;
+};
+
+const renderGameReportModal = (detail: PlatformGameReportDetail | null): string => {
+  const outcome = gameReports.state.selectedOutcome;
+  if (!gameReports.state.confirmationOpen || !detail || !outcome) return "";
+  const cancelling = outcome === "CONFIRMED_GAME_CANCELLED";
+  return `<div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="report-confirm-title"><button class="confirm-dialog__scrim" data-action="cancel-game-report-resolution" type="button" tabindex="-1" aria-label="取消处置"></button><section class="confirm-dialog__panel"><button class="icon-button" data-action="cancel-game-report-resolution" data-report-confirm-initial-focus type="button" aria-label="关闭确认窗口"><span aria-hidden="true">×</span></button><div class="confirm-dialog__body"><span class="confirm-dialog__warning${cancelling ? "" : " report-confirm-mark--standard"}" aria-hidden="true">${cancelling ? "!" : "✓"}</span><p class="eyebrow">结论提交后不可修改</p><h2 id="report-confirm-title">${escapeHtml(reportOutcomeLabel(outcome))}</h2><p>${cancelling ? "将取消公开球局并冻结同订单替代球局，但不修改订场订单、支付或退款。" : "将写入不可变平台结论，但不修改公开球局、订单、支付或退款。"}</p><div class="confirm-summary"><strong>${escapeHtml(detail.target.game_name)}</strong><span>${escapeHtml(detail.target.organizer_team_name)} 组织</span><small>${escapeHtml(gameReports.state.note)}</small></div></div><div class="confirm-actions"><button class="button button--quiet" data-action="cancel-game-report-resolution" type="button">返回检查</button><button class="button ${cancelling ? "button--danger" : "button--primary"}" data-action="confirm-game-report-resolution" type="button">确认并写入审计</button></div></section></div>`;
+};
+
+const renderGameReports = (): string => {
+  const state = gameReports.state;
+  const backgroundInert = state.confirmationOpen ? " inert" : "";
+  const controlsLocked = state.loading || state.loadingMore || state.resolving || state.pendingAttempt !== null;
+  const detailContent = state.selected
+    ? renderGameReportDetail(state.selected)
+    : `${renderGameReportFeedback()}<section class="empty-panel"><span class="empty-panel__mark" aria-hidden="true"></span><h2>${state.loading ? "正在加载举报" : state.error ? "举报加载失败" : "当前队列没有举报"}</h2><p>${escapeHtml(state.error ?? (state.filter === "PENDING" ? "待处理队列目前为空。" : "已结案队列目前为空。"))}</p>${state.error ? `<button class="button button--primary" data-action="refresh-game-reports" type="button">重新加载</button>` : ""}</section>`;
+  return `<div class="console-shell">${renderTopbar(backgroundInert)}<main class="workspace report-workspace" id="main-content"${backgroundInert}><aside class="queue"><div class="queue__head"><p class="eyebrow">Game reports</p><h1>举报处置</h1><p>只显示结构化事实与处置所需的最小报名上下文。</p><div class="report-filters" role="group" aria-label="举报状态"><button class="report-filter${state.filter === "PENDING" ? " is-selected" : ""}" data-action="filter-game-reports" data-filter="PENDING" type="button" aria-pressed="${state.filter === "PENDING"}" ${controlsLocked ? "disabled" : ""}>待处理</button><button class="report-filter${state.filter === "RESOLVED" ? " is-selected" : ""}" data-action="filter-game-reports" data-filter="RESOLVED" type="button" aria-pressed="${state.filter === "RESOLVED"}" ${controlsLocked ? "disabled" : ""}>已结案</button></div></div><div class="queue__summary"><strong>${state.items.length}</strong> 条已加载<button class="report-refresh" data-action="refresh-game-reports" type="button" ${controlsLocked ? "disabled" : ""}>刷新</button></div><div class="queue__list">${state.items.map(renderGameReportQueueRow).join("")}${state.nextCursor ? `<div class="queue__load-more"><button class="button button--quiet button--small" data-action="load-more-game-reports" type="button" ${controlsLocked ? "disabled" : ""}>${state.loadingMore ? "正在加载…" : "加载更多"}</button></div>` : ""}</div></aside><section class="detail-pane">${detailContent}</section></main></div>${renderGameReportModal(state.selected)}`;
+};
+
 const render = (): void => {
   if (auth.state.status !== "authenticated") {
     root.innerHTML = renderLogin();
     return;
   }
   if (activeModule === "attendance" && !attendanceCorrectionVisible(auth.state.session)) activeModule = "review";
-  root.innerHTML = activeModule === "attendance" ? renderAttendance() : renderReview();
+  if (activeModule === "game-reports" && !gameReportResolutionVisible(auth.state.session)) activeModule = "review";
+  root.innerHTML = activeModule === "attendance"
+    ? renderAttendance()
+    : activeModule === "game-reports" ? renderGameReports() : renderReview();
   if (attendance.state.confirmationOpen) document.querySelector<HTMLElement>("[data-confirm-initial-focus]")?.focus();
+  if (gameReports.state.confirmationOpen) document.querySelector<HTMLElement>("[data-report-confirm-initial-focus]")?.focus();
 };
 
 const handleSessionError = (error: unknown): void => {
@@ -186,6 +271,11 @@ root.addEventListener("input", (event) => {
   if (!(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) return;
   if (event.target.dataset.action === "attendance-query-input") attendance.setQuery(event.target.value);
   if (event.target.dataset.action === "attendance-reason-input") attendance.setReason(event.target.value);
+  if (event.target.dataset.action === "game-report-note-input") {
+    gameReports.setNote(event.target.value);
+    const counter = document.querySelector<HTMLElement>("[data-report-note-count]");
+    if (counter) counter.textContent = `${Array.from(event.target.value).length}/500`;
+  }
 });
 
 root.addEventListener("submit", async (event) => {
@@ -243,6 +333,7 @@ root.addEventListener("click", async (event) => {
       if (loggedOut) {
         review.clear();
         attendance.clearForSessionEnd();
+        gameReports.clearForSessionEnd();
         activeModule = "review";
         feedback = null;
       } else {
@@ -250,6 +341,9 @@ root.addEventListener("click", async (event) => {
         if (activeModule === "attendance") {
           feedback = null;
           attendance.reportOperationFailure("退出登录失败", logoutError);
+        } else if (activeModule === "game-reports") {
+          feedback = null;
+          gameReports.reportOperationFailure("退出登录失败", logoutError);
         } else {
           feedback = { type: "error", message: logoutError };
         }
@@ -267,6 +361,66 @@ root.addEventListener("click", async (event) => {
       feedback = null;
       render();
       document.querySelector<HTMLInputElement>("#registration-id")?.focus();
+    } else if (action === "open-game-reports") {
+      if (auth.state.status !== "authenticated" || !gameReportResolutionVisible(auth.state.session)) return;
+      activeModule = "game-reports";
+      feedback = null;
+      if (!gameReports.state.items.length && !gameReports.state.loading) {
+        const pending = gameReports.load();
+        render();
+        await pending;
+      }
+      render();
+      document.querySelector<HTMLElement>("#main-content")?.focus();
+    } else if (action === "filter-game-reports") {
+      const filter = target.dataset.filter;
+      if (filter !== "PENDING" && filter !== "RESOLVED") return;
+      const pending = gameReports.setFilter(filter);
+      render();
+      await pending;
+      render();
+    } else if (action === "select-game-report" && id) {
+      const pending = gameReports.select(id);
+      render();
+      await pending;
+      render();
+      document.querySelector<HTMLElement>(".report-resolution-panel")?.focus();
+    } else if (action === "refresh-game-reports") {
+      const pending = gameReports.refresh();
+      render();
+      await pending;
+      render();
+    } else if (action === "load-more-game-reports") {
+      const pending = gameReports.loadMore();
+      render();
+      await pending;
+      render();
+    } else if (action === "choose-game-report-outcome") {
+      const outcome = target.dataset.outcome;
+      if (outcome !== "DISMISSED" && outcome !== "CONFIRMED_RECORDED" && outcome !== "CONFIRMED_GAME_CANCELLED") return;
+      gameReports.setOutcome(outcome);
+      render();
+    } else if (action === "prepare-game-report-resolution") {
+      confirmationReturnSelector = '[data-action="prepare-game-report-resolution"]';
+      const result = gameReports.prepareResolution();
+      render();
+      if (!result.ok) document.querySelector<HTMLTextAreaElement>("#game-report-resolution-note")?.focus();
+    } else if (action === "cancel-game-report-resolution") {
+      gameReports.cancelConfirmation();
+      render();
+      document.querySelector<HTMLElement>(confirmationReturnSelector)?.focus();
+    } else if (action === "confirm-game-report-resolution") {
+      const pending = gameReports.confirmResolution();
+      render();
+      await pending;
+      render();
+      document.querySelector<HTMLElement>(".report-resolution-panel")?.focus();
+    } else if (action === "recover-game-report") {
+      const pending = gameReports.recoverAuthority();
+      render();
+      await pending;
+      render();
+      document.querySelector<HTMLElement>(".report-resolution-panel")?.focus();
     } else if (action === "clear-attendance-query") {
       attendance.clear();
       render();
@@ -342,6 +496,7 @@ root.addEventListener("click", async (event) => {
 auth.setExpiryHandler(() => {
   review.clear();
   attendance.clearForSessionEnd();
+  gameReports.clearForSessionEnd();
   activeModule = "review";
   feedback = null;
   render();
@@ -355,10 +510,11 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("focus", checkForegroundExpiry);
 
 document.addEventListener("keydown", (event) => {
-  if (!attendance.state.confirmationOpen) return;
+  if (!attendance.state.confirmationOpen && !gameReports.state.confirmationOpen) return;
   if (event.key === "Escape") {
     event.preventDefault();
-    attendance.cancelConfirmation();
+    if (attendance.state.confirmationOpen) attendance.cancelConfirmation();
+    if (gameReports.state.confirmationOpen) gameReports.cancelConfirmation();
     render();
     document.querySelector<HTMLElement>(confirmationReturnSelector)?.focus();
     return;

@@ -141,6 +141,95 @@ export interface AttendanceCorrectionRequest {
   reason: string;
 }
 
+export type OpenGameReportCategory =
+  | "FALSE_INFORMATION"
+  | "EXTRA_CHARGE"
+  | "DANGEROUS_BEHAVIOR"
+  | "HARASSMENT"
+  | "ORGANIZER_NO_SHOW";
+export type OpenGameReportStatus = "PENDING" | "RESOLVED";
+export type OpenGameReportResolutionOutcome =
+  | "DISMISSED"
+  | "CONFIRMED_RECORDED"
+  | "CONFIRMED_GAME_CANCELLED";
+export type OpenGameStatus = "DRAFT" | "PUBLISHED" | "SUSPENDED" | "CANCELLED" | "COMPLETED";
+export type EffectiveOpenGameStatus = OpenGameStatus | "FULL" | "REGISTRATION_CLOSED" | "STARTED";
+export type OpenGameCancellationSource = "CAPTAIN" | "PLATFORM_REPORT";
+export type OpenGameRegistrationStatus = "APPLIED" | "WAITLISTED" | "JOINED" | "REJECTED" | "WITHDRAWN";
+export type PlatformGameReportCancellationBlockedReason =
+  | "GAME_ALREADY_STARTED"
+  | "GAME_NOT_PUBLISHED"
+  | "GAME_AUTHORITY_UNHEALTHY"
+  | "REPORT_ALREADY_RESOLVED";
+
+export interface OpenGameReportTargetSummary {
+  game_id: string;
+  game_name: string;
+  organizer_team_name: string;
+  venue_name: string;
+  pitch_name: string;
+  starts_at: string;
+  ends_at: string;
+  time_zone: "Asia/Shanghai";
+}
+
+export interface PlatformGameReportQueueItem {
+  report_id: string;
+  category: OpenGameReportCategory;
+  status: OpenGameReportStatus;
+  target: OpenGameReportTargetSummary;
+  submitted_at: string;
+}
+
+export interface PlatformGameReportList {
+  items: PlatformGameReportQueueItem[];
+  next_cursor: string | null;
+}
+
+export interface PlatformGameReportAuthority {
+  persisted_status: OpenGameStatus;
+  effective_status: EffectiveOpenGameStatus;
+  cancellation_source: OpenGameCancellationSource | null;
+  version: number;
+  cancellation_allowed: boolean;
+  cancellation_blocker: PlatformGameReportCancellationBlockedReason | null;
+}
+
+export interface PlatformGameReportResolution {
+  resolution_id: string;
+  outcome: OpenGameReportResolutionOutcome;
+  resolution_note: string;
+  resolved_by_principal_id: string;
+  resolved_at: string;
+  game_version_before: number | null;
+  game_version_after: number | null;
+}
+
+export interface PlatformGameReportDetail {
+  report_id: string;
+  category: OpenGameReportCategory;
+  status: OpenGameReportStatus;
+  facts: string;
+  submitted_at: string;
+  reporter_display_name: string;
+  reporter_registration_status: OpenGameRegistrationStatus;
+  target: OpenGameReportTargetSummary;
+  authority: PlatformGameReportAuthority;
+  allowed_outcomes: OpenGameReportResolutionOutcome[];
+  resolution: PlatformGameReportResolution | null;
+}
+
+export interface PlatformGameReportFilters {
+  state: OpenGameReportStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PlatformGameReportResolutionRequest {
+  outcome: OpenGameReportResolutionOutcome;
+  resolution_note: string;
+}
+
 interface ErrorEnvelope {
   error?: { code?: string; message?: string };
 }
@@ -251,6 +340,41 @@ export class PlatformApi {
   ): Promise<AttendanceCorrectionEvent> {
     return this.request(
       `/platform-admin/api/v1/attendance/registrations/${encodeURIComponent(registrationId)}/corrections`,
+      {
+        method: "POST",
+        headers: {
+          ...this.mutationHeaders(),
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  listGameReports(filters: PlatformGameReportFilters): Promise<PlatformGameReportList> {
+    const params = new URLSearchParams({ state: filters.state });
+    if (filters.cursor) params.set("cursor", filters.cursor);
+    if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+    return this.request(
+      `/platform-admin/api/v1/game-reports?${params.toString()}`,
+      { method: "GET" },
+    );
+  }
+
+  getGameReport(reportId: string): Promise<PlatformGameReportDetail> {
+    return this.request(
+      `/platform-admin/api/v1/game-reports/${encodeURIComponent(reportId)}`,
+      { method: "GET" },
+    );
+  }
+
+  resolveGameReport(
+    reportId: string,
+    body: PlatformGameReportResolutionRequest,
+    idempotencyKey: string,
+  ): Promise<PlatformGameReportResolution> {
+    return this.request(
+      `/platform-admin/api/v1/game-reports/${encodeURIComponent(reportId)}/resolution`,
       {
         method: "POST",
         headers: {
