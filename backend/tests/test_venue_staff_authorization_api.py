@@ -116,7 +116,7 @@ class FakeService:
             venue_id=VENUE_ID,
             venue_name="渤海元丰足球场",
             membership=_member(),
-            workspace_path="/pages/venue-workspace/index",
+            workspace_path="/pages/venue-access/index",
         )
 
     def transfer_owner(self, **_kwargs: object) -> VenueOwnerTransferResult:
