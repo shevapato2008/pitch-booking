@@ -614,6 +614,9 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "MINIPROGRAM_PAYMENT_PROVIDER": payment_provider,
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER": notification_config["provider"],
         "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID": notification_config["template_id"],
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED": (
+            "true" if inputs.venue_staff_authorization_enabled else "false"
+        ),
     }
     _atomic_write(
         inputs.deploy_env,

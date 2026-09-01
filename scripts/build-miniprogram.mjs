@@ -40,6 +40,11 @@ async function build(selectedMode) {
   const openGameNotificationConfig = selectedMode === "production"
     ? resolveOpenGameNotificationConfig(process.env)
     : undefined;
+  const venueStaffAuthorizationEnabled = selectedMode === "production"
+    ? resolveVenueStaffAuthorizationEnabled(
+      process.env.MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED,
+    )
+    : undefined;
   const tencentMapKey = selectedMode === "production" || developmentConfig?.source === "http"
     ? resolveTencentMapKey(process.env.MINIPROGRAM_TENCENT_MAP_KEY)
     : undefined;
@@ -60,6 +65,7 @@ async function build(selectedMode) {
       tencentMapKey,
       productionPaymentProvider,
       openGameNotificationConfig,
+      venueStaffAuthorizationEnabled,
     );
   }
   if (developmentConfig) {
@@ -88,6 +94,7 @@ async function writeRuntimeConfig(
   tencentMapKey,
   paymentProvider,
   openGameNotificationConfig,
+  venueStaffAuthorizationEnabled,
 ) {
   let source;
   try {
@@ -117,6 +124,13 @@ async function writeRuntimeConfig(
       source,
       "WAITLIST_PROMOTED_TEMPLATE_ID",
       openGameNotificationConfig.templateId,
+    );
+  }
+  if (venueStaffAuthorizationEnabled !== undefined) {
+    source = replaceRuntimeExport(
+      source,
+      "VENUE_STAFF_AUTHORIZATION_ENABLED",
+      venueStaffAuthorizationEnabled,
     );
   }
   source = source.replace(
@@ -187,6 +201,14 @@ export function resolveOpenGameNotificationConfig(environment) {
     throw new Error("MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID must be a valid template ID");
   }
   return { provider, templateId };
+}
+
+export function resolveVenueStaffAuthorizationEnabled(value) {
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error(
+    "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false",
+  );
 }
 
 async function writeDevelopmentAppBootstrap(sourceRoot, outputRoot, config) {

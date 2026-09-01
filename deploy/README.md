@@ -174,8 +174,9 @@ uv run python -m scripts.backfill_venue_staff_owners \
 
 Only after both commands succeed may an operator regenerate the live inputs with
 `VENUE_STAFF_AUTHORIZATION_ENABLED=true`. If any venue is missing, duplicated, inactive, or
-ambiguous, leave the flag `false`; the rest of the candidate remains deployable while staff and
-invitation mutations stay unavailable.
+ambiguous, leave the flag `false`; the generator mirrors that value into
+`MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED`, and the client renders a non-interactive
+“员工与权限暂未开放” state while staff and invitation mutations stay unavailable.
 
 The live generator defaults to `PAYMENT_PROVIDER=disabled` until merchant credentials are available.
 In that mode it does not prompt for or write any WeChat Pay merchant values, and it writes

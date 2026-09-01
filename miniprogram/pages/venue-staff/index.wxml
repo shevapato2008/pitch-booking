@@ -68,18 +68,18 @@
         <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet">完成</button><button wx:if="{{createdPathRecoverable}}" class="d1b-modal-button d1b-modal-button--primary" bindtap="onCopyInvitation">复制路径</button></view>
       </block>
       <block wx:elif="{{sheet === 'edit'}}">
-        <text class="d1b-sheet-title">编辑员工权限</text><text class="d1b-sheet-copy">保存后，员工下一次操作会由服务端重新校验。</text>
+        <text class="d1b-sheet-title">编辑员工权限</text><text class="d1b-sheet-target">员工：{{selectedTargetLabel}}</text><text class="d1b-sheet-copy">保存后，员工下一次操作会由服务端重新校验。</text>
         <button wx:for="{{permissionChoices}}" wx:key="code" class="d1b-permission-choice d1b-permission-choice--{{item.selected ? 'selected' : 'plain'}}" data-permission="{{item.code}}" bindtap="onToggleDraftPermission" disabled="{{busy}}"><view class="d1b-check">{{item.selected ? '✓' : ''}}</view><view><text>{{item.label}}</text><text>{{item.description}}</text></view></button>
         <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><button class="d1b-remove-link" data-membership-id="{{selectedMembershipId}}" bindtap="onPrepareRemove" disabled="{{busy}}">停用这名员工</button>
         <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">取消</button><button class="d1b-modal-button d1b-modal-button--primary" bindtap="onSavePermissions" loading="{{busy}}" disabled="{{busy}}">保存权限</button></view>
       </block>
       <block wx:elif="{{sheet === 'remove'}}">
-        <text class="d1b-sheet-title">确认停用员工？</text><text class="d1b-sheet-copy">停用后该员工不能继续管理本场馆，历史审计记录仍保留。</text>
+        <text class="d1b-sheet-title">确认停用员工？</text><text class="d1b-sheet-target">员工：{{selectedTargetLabel}}</text><text class="d1b-sheet-copy">停用后该员工不能继续管理本场馆，历史审计记录仍保留。</text>
         <text class="d1b-field-label">停用原因</text><textarea class="d1b-reason-input" maxlength="200" value="{{removeReason}}" bindinput="onRemoveReasonInput" placeholder="例如：已离职" disabled="{{busy}}"></textarea>
         <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">返回检查</button><button class="d1b-modal-button d1b-modal-button--danger" bindtap="onConfirmRemove" loading="{{busy}}" disabled="{{busy}}">确认停用</button></view>
       </block>
       <block wx:else>
-        <text class="d1b-sheet-title">确认撤销邀请？</text><text class="d1b-sheet-copy">撤销后这份一次性链接立即失效；该操作会写入审计摘要。</text>
+        <text class="d1b-sheet-title">确认撤销邀请？</text><text class="d1b-sheet-target">邀请对象：{{selectedTargetLabel}}</text><text class="d1b-sheet-copy">撤销后这份一次性链接立即失效；该操作会写入审计摘要。</text>
         <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">返回检查</button><button class="d1b-modal-button d1b-modal-button--danger" bindtap="onConfirmRevoke" loading="{{busy}}" disabled="{{busy}}">确认撤销</button></view>
       </block><view class="d1b-safe-bottom"></view>
     </view>

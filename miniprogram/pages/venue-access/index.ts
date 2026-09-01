@@ -1,4 +1,5 @@
 import type { ManagedVenue } from "../../domain/venue-access";
+import { VENUE_STAFF_AUTHORIZATION_ENABLED } from "../../config/runtime";
 import { VENUE_STAFF_PERMISSION_OPTIONS, type VenueStaffPermission } from "../../domain/venue-staff";
 import { presentApplicationStatus, type VenueOnboardingApplication } from "../../domain/venue-onboarding";
 import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
@@ -62,6 +63,7 @@ Page({
     headerTopPx: 0,
     headerRowHeightPx: 44,
     headerRightInsetPx: 0,
+    staffAuthorizationEnabled: VENUE_STAFF_AUTHORIZATION_ENABLED,
   },
 
   disposed: false,
@@ -164,6 +166,7 @@ Page({
   },
 
   onOpenStaff(event: VenueChooseEvent) {
+    if (!this.data.staffAuthorizationEnabled) return;
     const venueId = event.currentTarget?.dataset?.venueId;
     if (
       typeof venueId !== "string"

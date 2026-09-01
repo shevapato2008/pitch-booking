@@ -129,6 +129,14 @@ def preflight(
         failures.append(
             "VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false for deployment"
         )
+    elif (
+        miniprogram_values is not None
+        and miniprogram_values.get("MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED")
+        != values["VENUE_STAFF_AUTHORIZATION_ENABLED"]
+    ):
+        failures.append(
+            "venue staff authorization flag does not match the Mini Program build input"
+        )
     if payment_provider == "wechat":
         _validate_wechat_pay(values, failures)
     _validate_open_game_notifications(

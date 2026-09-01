@@ -105,7 +105,7 @@ test("multiple venues expose every server-authorized workbench", async () => {
   expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-fulfillment/index?venue_id=${encodeURIComponent(second.id)}` }));
 });
 
-test("every managed venue has a real staff authority entry for owner or staff", async () => {
+test("staff authority entry follows the release capability gate", async () => {
   registerVenueAccessDataSource(source([first, second])); const target = page();
   await target.onLoad();
   target.onOpenStaff({ currentTarget: { dataset: { venueId: second.id } } });
@@ -114,10 +114,14 @@ test("every managed venue has a real staff authority entry for owner or staff", 
   });
   target.onOpenStaff({ currentTarget: { dataset: { venueId: "unknown" } } });
   expect(wx.navigateTo).toHaveBeenCalledTimes(1);
+  target.data.staffAuthorizationEnabled = false;
+  target.onOpenStaff({ currentTarget: { dataset: { venueId: second.id } } });
+  expect(wx.navigateTo).toHaveBeenCalledTimes(1);
   const markup = readFileSync("miniprogram/pages/venue-access/index.wxml", "utf8");
   expect(markup).toMatch(/wx:for="\{\{item\.workbenchActions\}\}"/);
   expect(markup).toContain("data-permission=\"{{action.permission}}\"");
-  expect(markup).toMatch(/<button[^>]*bindtap="onOpenStaff"[^>]*>\s*员工与权限\s*<\/button>/);
+  expect(markup).toMatch(/<button[^>]*wx:if="\{\{staffAuthorizationEnabled\}\}"[^>]*bindtap="onOpenStaff"[^>]*>\s*员工与权限\s*<\/button>/);
+  expect(markup).toContain("员工与权限暂未开放");
   expect(markup).toContain("{{item.roleLabel}} · {{item.permissionSummary}}");
 });
 

@@ -156,6 +156,7 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
         "MINIPROGRAM_PAYMENT_PROVIDER": "wechat",
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER": "disabled",
         "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID": "",
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED": "false",
     }
     assert stat.S_IMODE(paths.deploy_env.stat().st_mode) == 0o600
     assert stat.S_IMODE(paths.miniprogram_env.stat().st_mode) == 0o600
@@ -198,6 +199,12 @@ def test_prepare_emits_explicit_venue_staff_authorization_gate(tmp_path: Path) -
     )
 
     assert read_env_file(paths.deploy_env)["VENUE_STAFF_AUTHORIZATION_ENABLED"] == "true"
+    assert (
+        read_env_file(paths.miniprogram_env)[
+            "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED"
+        ]
+        == "true"
+    )
 
 
 @pytest.mark.parametrize("state", ["formal", "developer"])

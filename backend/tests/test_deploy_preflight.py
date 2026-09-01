@@ -105,6 +105,7 @@ def valid_miniprogram_environment(*, enabled: bool = False) -> dict[str, str]:
     return {
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER": "wechat" if enabled else "disabled",
         "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID": WAITLIST_TEMPLATE_ID if enabled else "",
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED": "false",
     }
 
 
@@ -164,6 +165,38 @@ def test_preflight_rejects_invalid_venue_staff_authorization_flag(tmp_path: Path
 
     assert result.failures == (
         "VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false for deployment",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend_enabled", "client_enabled"),
+    [("false", "true"), ("true", "false"), ("true", "missing")],
+)
+def test_preflight_rejects_mismatched_venue_staff_client_gate(
+    tmp_path: Path,
+    backend_enabled: str,
+    client_enabled: str,
+) -> None:
+    values = valid_local_environment()
+    values["VENUE_STAFF_AUTHORIZATION_ENABLED"] = backend_enabled
+    mini = valid_miniprogram_environment()
+    if client_enabled == "missing":
+        mini.pop("MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED")
+    else:
+        mini["MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED"] = client_enabled
+    mini_path = tmp_path / "miniprogram.env"
+    mini_path.write_text(
+        "".join(f"{key}={value}\n" for key, value in mini.items()),
+        encoding="utf-8",
+    )
+
+    result = preflight(
+        write_env(tmp_path, values),
+        miniprogram_env_file=mini_path,
+    )
+
+    assert result.failures == (
+        "venue staff authorization flag does not match the Mini Program build input",
     )
 
 
@@ -234,7 +267,8 @@ def test_preflight_rejects_notification_state_for_the_wrong_deploy_environment(
     miniprogram_env = tmp_path / "miniprogram.env"
     miniprogram_env.write_text(
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
-        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n",
+        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n"
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED=false\n",
         encoding="utf-8",
     )
 
@@ -256,7 +290,8 @@ def test_preflight_accepts_formal_state_for_production_notifications(tmp_path: P
     miniprogram_env = tmp_path / "miniprogram.env"
     miniprogram_env.write_text(
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
-        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n",
+        f"MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID={WAITLIST_TEMPLATE_ID}\n"
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED=false\n",
         encoding="utf-8",
     )
 
@@ -336,13 +371,15 @@ def test_preflight_rejects_enabled_notification_without_matching_client_build_in
     client_env = tmp_path / "miniprogram.env"
     client_env.write_text(
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=disabled\n"
-        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID=\n",
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID=\n"
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED=false\n",
         encoding="utf-8",
     )
     mismatched_client = preflight(deploy_env, miniprogram_env_file=client_env)
     client_env.write_text(
         "MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER=wechat\n"
-        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID=another-valid-template-id\n",
+        "MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID=another-valid-template-id\n"
+        "MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED=false\n",
         encoding="utf-8",
     )
     mismatched_template = preflight(deploy_env, miniprogram_env_file=client_env)

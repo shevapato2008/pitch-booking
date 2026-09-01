@@ -71,6 +71,10 @@ test("C2e preview keeps one flex scroll, safe-area sheet and bound centered butt
   for (const selector of [
     ".c2e-state-action", ".c2e-row-action", ".c2e-sheet-close", ".c2e-sheet-action",
   ]) assertCenteredTouchTarget(pageStyles, selector);
+  const confirmationMember = rule(pageStyles, ".c2e-sheet-member");
+  assert.match(confirmationMember, /white-space:\s*normal/);
+  assert.match(confirmationMember, /overflow-wrap:\s*anywhere/);
+  assert.doesNotMatch(confirmationMember, /text-overflow:\s*ellipsis/);
   const page = read(`miniprogram/${routes[1]}.wxml`);
   assert.match(page, /maxlength="-1"/);
   assert.match(page, /disabled="{{confirmDisabled}}"/);

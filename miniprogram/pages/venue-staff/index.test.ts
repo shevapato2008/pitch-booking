@@ -80,14 +80,18 @@ test("loads server authority and completes every owner mutation with real calls"
   view.onCopyInvitation(); expect(wx.setClipboardData).toHaveBeenCalledWith(expect.objectContaining({ data: view.data.createdPath }));
 
   await view.refreshAuthority(); view.onOpenEdit({ currentTarget: { dataset: { membershipId: staffId } } });
+  expect(view.data.selectedTargetLabel).toBe("夜班员工");
   view.onToggleDraftPermission({ currentTarget: { dataset: { permission: "MANAGE_PROFILE" } } }); await view.onSavePermissions();
   expect(api.updatePermissions).toHaveBeenCalledWith(expect.objectContaining({ membershipId: staffId, expectedVersion: 3, permissions: ["MANAGE_INVENTORY", "MANAGE_PROFILE"] }));
 
   await view.refreshAuthority(); view.onPrepareRemove({ currentTarget: { dataset: { membershipId: staffId } } });
+  expect(view.data.selectedTargetLabel).toBe("夜班员工");
   view.onRemoveReasonInput({ detail: { value: " 已离职 " } }); await view.onConfirmRemove();
   expect(api.removeMember).toHaveBeenCalledWith(expect.objectContaining({ membershipId: staffId, expectedVersion: 3, reason: "已离职" }));
 
-  await view.refreshAuthority(); view.onRevokeInvitation({ currentTarget: { dataset: { invitationId } } }); await view.onConfirmRevoke();
+  await view.refreshAuthority(); view.onRevokeInvitation({ currentTarget: { dataset: { invitationId } } });
+  expect(view.data.selectedTargetLabel).toBe("周末值班");
+  await view.onConfirmRevoke();
   expect(api.revokeInvitation).toHaveBeenCalledWith(expect.objectContaining({ invitationId }));
 });
 
@@ -112,6 +116,7 @@ test("production markup binds all business actions and excludes preview fixtures
   const markup = readFileSync("miniprogram/pages/venue-staff/index.wxml", "utf8");
   for (const handler of ["onRetry", "onOpenCreate", "onCreateInvitation", "onCopyInvitation", "onOpenEdit", "onSavePermissions", "onPrepareRemove", "onRemoveReasonInput", "onConfirmRemove", "onRevokeInvitation", "onConfirmRevoke", "onRetryUnknown"]) expect(markup).toContain(handler);
   expect(markup).toContain("{{viewerRoleLabel}}"); expect(markup).toContain("{{item.roleLabel}}");
+  expect(markup).toContain("{{selectedTargetLabel}}");
   expect(markup).not.toContain("{{viewerRole}}"); expect(markup).not.toContain("{{item.role}}</text>");
   expect(markup).not.toContain("模拟数据"); expect(markup).not.toContain("D1b 开发预览");
 });

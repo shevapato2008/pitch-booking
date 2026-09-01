@@ -25,7 +25,8 @@
         <text class="venue-access__authority">{{item.roleLabel}} · {{item.permissionSummary}}</text>
         <view class="venue-access__card-actions">
           <button wx:for="{{item.workbenchActions}}" wx:key="permission" wx:for-item="action" class="venue-access__card-action venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onChooseVenue" data-venue-id="{{item.id}}" data-permission="{{action.permission}}" aria-label="进入{{action.label}}">{{action.label}}</button>
-          <button class="venue-access__card-action venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onOpenStaff" data-venue-id="{{item.id}}">员工与权限</button>
+          <button wx:if="{{staffAuthorizationEnabled}}" class="venue-access__card-action venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onOpenStaff" data-venue-id="{{item.id}}">员工与权限</button>
+          <view wx:else class="venue-access__card-action venue-access__card-action--unavailable" aria-disabled="true">员工与权限暂未开放</view>
         </view>
       </view>
     </view>

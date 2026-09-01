@@ -67,7 +67,7 @@ Page({
     members: [] as unknown[], selfMember: null as unknown, activeInvitations: [] as unknown[], audits: [] as unknown[],
     permissions: VENUE_STAFF_PERMISSION_OPTIONS, sheet: "none" as Sheet, busy: false,
     draftContact: "", draftPermissions: [...defaultPermissions] as VenueStaffPermission[], permissionChoices: choices(defaultPermissions),
-    selectedMembershipId: "", selectedMembershipVersion: 0, selectedInvitationId: "", removeReason: "",
+    selectedMembershipId: "", selectedMembershipVersion: 0, selectedInvitationId: "", selectedTargetLabel: "", removeReason: "",
     createdPath: "", createdPathRecoverable: false, feedback: "", unknownAttempt: null as VenueStaffMutationAttempt | null, foreignAttemptPending: false,
     headerTopPx: 0, headerRowHeightPx: 44, headerRightInsetPx: 0,
   },
@@ -183,7 +183,7 @@ Page({
     const membershipId = event.currentTarget?.dataset?.membershipId;
     const member = typeof membershipId === "string" ? this.authority?.members.find((item) => item.id === membershipId) : undefined;
     if (!member || member.role !== "STAFF" || !member.isActive) return;
-    this.setData({ sheet: "edit", selectedMembershipId: member.id, selectedMembershipVersion: member.version, draftPermissions: [...member.permissions], permissionChoices: choices(member.permissions), feedback: "" });
+    this.setData({ sheet: "edit", selectedMembershipId: member.id, selectedMembershipVersion: member.version, selectedTargetLabel: member.displayName, draftPermissions: [...member.permissions], permissionChoices: choices(member.permissions), feedback: "" });
   },
   async onSavePermissions() {
     if (!this.data.canManage || this.data.sheet !== "edit" || this.data.busy || this.data.draftPermissions.length < 1) { if (this.data.draftPermissions.length < 1) this.setData({ feedback: "员工至少需要一项工作权限。" }); return; }
@@ -195,7 +195,7 @@ Page({
     const membershipId = event.currentTarget?.dataset?.membershipId ?? this.data.selectedMembershipId;
     const member = typeof membershipId === "string" ? this.authority?.members.find((item) => item.id === membershipId) : undefined;
     if (!member || member.role !== "STAFF" || !member.isActive) return;
-    this.setData({ sheet: "remove", selectedMembershipId: member.id, selectedMembershipVersion: member.version, removeReason: "", feedback: "" });
+    this.setData({ sheet: "remove", selectedMembershipId: member.id, selectedMembershipVersion: member.version, selectedTargetLabel: member.displayName, removeReason: "", feedback: "" });
   },
   onRemoveReasonInput(event: InputEvent) { this.setData({ removeReason: typeof event.detail?.value === "string" ? event.detail.value : "", feedback: "" }); },
   async onConfirmRemove() {
@@ -208,8 +208,11 @@ Page({
   onRevokeInvitation(event: DatasetEvent) {
     if (!this.data.canManage || this.mutationBlocked()) return;
     const invitationId = event.currentTarget?.dataset?.invitationId;
-    if (typeof invitationId !== "string" || !this.authority?.activeInvitations.some((item) => item.id === invitationId)) return;
-    this.setData({ sheet: "revoke", selectedInvitationId: invitationId, feedback: "" });
+    const invitation = typeof invitationId === "string"
+      ? this.authority?.activeInvitations.find((item) => item.id === invitationId)
+      : undefined;
+    if (!invitation) return;
+    this.setData({ sheet: "revoke", selectedInvitationId: invitation.id, selectedTargetLabel: invitation.contactLabel, feedback: "" });
   },
   async onConfirmRevoke() {
     if (!this.data.canManage || this.data.sheet !== "revoke" || this.data.busy) return;
@@ -223,7 +226,7 @@ Page({
       await operation();
       if (!this.alive) return;
       getVenueStaffAttemptStore().clear();
-      if (closeSheet) this.setData({ sheet: "none", selectedMembershipId: "", selectedInvitationId: "", removeReason: "" });
+      if (closeSheet) this.setData({ sheet: "none", selectedMembershipId: "", selectedInvitationId: "", selectedTargetLabel: "", removeReason: "" });
       await this.refreshAuthority();
       if (this.alive) this.setData({ unknownAttempt: null, feedback: success });
     } catch (caught) { if (this.alive) this.handleMutationError(caught, attempt); }
@@ -252,7 +255,7 @@ Page({
   },
   onCloseSheet() {
     const created = this.data.sheet === "created";
-    this.setData({ sheet: "none", selectedMembershipId: "", selectedInvitationId: "", removeReason: "", createdPath: "", createdPathRecoverable: false, feedback: "" });
+    this.setData({ sheet: "none", selectedMembershipId: "", selectedInvitationId: "", selectedTargetLabel: "", removeReason: "", createdPath: "", createdPathRecoverable: false, feedback: "" });
     if (created) void this.refreshAuthority().catch(() => { if (this.alive) this.setData({ mode: "read-error", readError: "刷新失败，请重试。" }); });
   },
   onHeaderBack() {

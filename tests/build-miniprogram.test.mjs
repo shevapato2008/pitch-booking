@@ -595,6 +595,7 @@ test("disabled-payment production keeps B2 owner management composed and routed"
   const app = await readFile(path.join(outputRoot, "app.js"), "utf8");
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "app.json"), "utf8"));
   assert.match(runtime, /ONLINE_BOOKING_ENABLED\s*=\s*false/);
+  assert.match(runtime, /VENUE_STAFF_AUTHORIZATION_ENABLED\s*=\s*false/);
   assert.deepEqual(manifest.pages, PRODUCTION_ROUTES);
   assert.match(app, /registerOpenGameSource/);
   assert.match(app, /createHttpOpenGameSource/);
@@ -607,6 +608,24 @@ test("disabled-payment production keeps B2 owner management composed and routed"
   assert.match(app, /registerOpenGameReportAttemptStore/);
   assert.match(app, /createHttpPublicGameDirectorySource/);
   assert.match(app, /registerPublicGameDirectorySource/);
+});
+
+test("production freezes the venue staff client gate and rejects ambiguous values", async (t) => {
+  const projectRoot = await createIsolatedRealBuildProject();
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  await build(projectRoot, "production", {
+    MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED: "true",
+  });
+  assert.match(
+    await readFile(path.join(projectRoot, "dist/miniprogram-production/config/runtime.js"), "utf8"),
+    /VENUE_STAFF_AUTHORIZATION_ENABLED\s*=\s*true/,
+  );
+  await assert.rejects(
+    build(projectRoot, "production", {
+      MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED: "yes",
+    }),
+    /MINIPROGRAM_VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false/,
+  );
 });
 
 test("production API URL override changes generated production config only", async (t) => {
