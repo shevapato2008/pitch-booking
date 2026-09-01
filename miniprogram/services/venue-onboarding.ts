@@ -5,6 +5,7 @@ import type {
   VenueOnboardingPage,
   VenueOnboardingUploadIntent,
 } from "../domain/venue-onboarding";
+import type { VenueRecruitmentInvitation } from "../domain/venue-recruitment-invitation";
 
 export interface VenueOnboardingIdentity {
   readonly userId: string;
@@ -14,6 +15,11 @@ export interface VenueOnboardingIdentity {
 
 export interface VenueOnboardingClaimInput {
   readonly venueId: string;
+  readonly contactName: string;
+  readonly evidence: Readonly<Record<"MANAGEMENT_AUTHORIZATION" | "VENUE_EXTERIOR", string>>;
+}
+
+export interface InvitedVenueOnboardingClaimInput {
   readonly contactName: string;
   readonly evidence: Readonly<Record<"MANAGEMENT_AUTHORIZATION" | "VENUE_EXTERIOR", string>>;
 }
@@ -38,6 +44,9 @@ export interface VenueOnboardingDataSource {
   completeEvidence(evidenceId: string, idempotencyKey: string): Promise<{ readonly evidenceId: string; readonly status: "COMPLETED" }>;
   submitClaim(input: VenueOnboardingClaimInput, idempotencyKey: string): Promise<VenueOnboardingApplication>;
   submitCreate(input: VenueOnboardingCreateInput, idempotencyKey: string): Promise<VenueOnboardingApplication>;
+  readInvitation?(token: string): Promise<VenueRecruitmentInvitation>;
+  acceptInvitation?(token: string, idempotencyKey: string): Promise<VenueRecruitmentInvitation>;
+  submitInvitedClaim?(token: string, input: InvitedVenueOnboardingClaimInput, idempotencyKey: string): Promise<VenueOnboardingApplication>;
 }
 
 export interface VenueOnboardingLocalEvidence {
@@ -91,7 +100,7 @@ export function createOnboardingIdempotencyKey(scope: string): string {
 export function createWeChatVenueOnboardingEvidenceCapability(): VenueOnboardingEvidenceCapability {
   const activeUploads = new Set<{ abort(code?: string): void }>();
   return {
-    choose(_kind) {
+    choose() {
       return choosePhoto();
     },
     upload(file, intent) {

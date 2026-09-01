@@ -488,6 +488,7 @@ test("production app keeps the booking foundation and registers no development p
   for (const route of [
     "pages/intent-entry/index",
     "pages/venue-access/index",
+    "pages/venue-invitation/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

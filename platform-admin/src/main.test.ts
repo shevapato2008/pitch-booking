@@ -26,6 +26,10 @@ test("production login disables credential persistence and wires foreground expi
   expect(source).toMatch(/data-action="cancel-attendance-correction"/);
   expect(source).toMatch(/data-action="confirm-attendance-correction"/);
   expect(source).toMatch(/data-action="refresh-attendance-authority"/);
+  expect(source).toMatch(/data-action="filter-recruitment-status"/);
+  expect(source).toMatch(/data-action="copy-invitation-path"/);
+  expect(source).toMatch(/data-action="confirm-invitation-revoke"/);
+  expect(source).toMatch(/data-action="open-invitation-application"/);
   expect(source).toMatch(/lookupLocked = state\.loading \|\| state\.submitting \|\| state\.pendingAttempt !== null/);
   expect(source).toMatch(/aria-modal="true"/);
   expect(source).toMatch(/\? " inert"/);

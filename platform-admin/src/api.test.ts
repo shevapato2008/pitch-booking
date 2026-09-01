@@ -174,4 +174,41 @@ describe("PlatformApi", () => {
     );
     expect((fetcher.mock.calls[2]?.[1]?.headers as Record<string, string>).Origin).toBeUndefined();
   });
+
+  test("creates a recruitment invitation with a one-time 201 secret and keeps 200 replay safe", async () => {
+    const invitation = {
+      id: "10000000-0000-4000-8000-000000000001",
+      venue: { venue_id: "20000000-0000-4000-8000-000000000002", name: "海河东足球场", district_name: "河东区", address: "津塘路156号" },
+      status: "ACTIVE",
+      contact_label: "场馆负责人",
+      expires_at: "2026-09-08T13:18:00Z",
+      created_at: "2026-09-01T13:18:00Z",
+      claimed_at: null,
+      application_id: null,
+      revoked_at: null,
+      revocation_reason: null,
+      version: 1,
+    };
+    const secret = { invitation, token: "Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx", invitation_path: "pages/venue-invitation/index?token=Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx" };
+    const fetcher = jest.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ principal_id: "reviewer", display_name: "审核员", roles: ["ONBOARDING_REVIEWER"], csrf_token: "a".repeat(64), expires_at: "2099-01-01T00:00:00Z" }))
+      .mockResolvedValueOnce(jsonResponse(secret, 201))
+      .mockResolvedValueOnce(jsonResponse(invitation, 200))
+      .mockResolvedValueOnce(jsonResponse(invitation, 200));
+    const api = new PlatformApi(fetcher);
+    await api.restoreSession();
+    await expect(api.createRecruitmentInvitation({ venue_id: invitation.venue.venue_id, contact_label: "场馆负责人" }, "create-invite-key-001"))
+      .resolves.toEqual({ created: true, result: secret });
+    await expect(api.createRecruitmentInvitation({ venue_id: invitation.venue.venue_id, contact_label: "场馆负责人" }, "create-invite-key-001"))
+      .resolves.toEqual({ created: false, invitation });
+    await api.revokeRecruitmentInvitation(invitation.id, "不再合作", "revoke-invite-key-01");
+    expect(fetcher).toHaveBeenNthCalledWith(2, "/platform-admin/api/v1/recruitment-invitations", expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({ "X-CSRF-Token": "a".repeat(64), "Idempotency-Key": "create-invite-key-001" }),
+    }));
+    expect(fetcher).toHaveBeenNthCalledWith(4, `/platform-admin/api/v1/recruitment-invitations/${invitation.id}/revoke`, expect.objectContaining({
+      body: JSON.stringify({ reason: "不再合作" }),
+      headers: expect.objectContaining({ "Idempotency-Key": "revoke-invite-key-01" }),
+    }));
+  });
 });

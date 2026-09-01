@@ -298,6 +298,7 @@ const productionRoutes = [
   "pages/game-discovery/index",
   "pages/my-game-registrations/index",
   "pages/venue-access/index",
+  "pages/venue-invitation/index",
   "pages/venue-claim/index",
   "pages/venue-create/index",
   "pages/venue-map/index",
