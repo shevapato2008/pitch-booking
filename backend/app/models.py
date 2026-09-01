@@ -295,6 +295,11 @@ class VenueMembershipAuditAction(StrEnum):
     OWNER_TRANSFERRED = "OWNER_TRANSFERRED"
 
 
+class VenueMembershipAuditActorKind(StrEnum):
+    USER = "USER"
+    PLATFORM = "PLATFORM"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -462,6 +467,197 @@ class VenueMembership(Base):
 
     venue: Mapped[Venue] = relationship(back_populates="memberships")
     user: Mapped["User"] = relationship(back_populates="venue_memberships")
+
+
+class VenueStaffInvitation(Base):
+    __tablename__ = "venue_staff_invitations"
+    __table_args__ = (
+        CheckConstraint(
+            "token_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_venue_staff_invitations_token_hash",
+        ),
+        CheckConstraint(
+            "length(contact_label) BETWEEN 1 AND 40 AND contact_label = trim(contact_label)",
+            name="ck_venue_staff_invitations_contact_label",
+        ),
+        CheckConstraint(
+            "can_manage_profile OR can_manage_pitches OR can_manage_inventory "
+            "OR can_fulfill_orders",
+            name="ck_venue_staff_invitations_permissions",
+        ),
+        CheckConstraint("version > 0", name="ck_venue_staff_invitations_version"),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_venue_staff_invitations_expiry",
+        ),
+        CheckConstraint(
+            "(status = 'ACTIVE' AND accepted_at IS NULL "
+            "AND accepted_by_membership_id IS NULL AND revoked_at IS NULL "
+            "AND revoked_by_membership_id IS NULL) OR "
+            "(status = 'ACCEPTED' AND accepted_at IS NOT NULL "
+            "AND accepted_by_membership_id IS NOT NULL AND revoked_at IS NULL "
+            "AND revoked_by_membership_id IS NULL) OR "
+            "(status = 'REVOKED' AND accepted_at IS NULL "
+            "AND accepted_by_membership_id IS NULL AND revoked_at IS NOT NULL "
+            "AND revoked_by_membership_id IS NOT NULL) OR "
+            "(status = 'EXPIRED' AND accepted_at IS NULL "
+            "AND accepted_by_membership_id IS NULL AND revoked_at IS NULL "
+            "AND revoked_by_membership_id IS NULL)",
+            name="ck_venue_staff_invitations_status_fields",
+        ),
+        UniqueConstraint("token_hash", name="uq_venue_staff_invitations_token_hash"),
+        Index(
+            "ix_venue_staff_invitations_active_venue",
+            "venue_id",
+            "expires_at",
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="CASCADE")
+    )
+    token_hash: Mapped[str] = mapped_column(String(64))
+    contact_label: Mapped[str] = mapped_column(String(40))
+    status: Mapped[VenueStaffInvitationStatus] = mapped_column(
+        Enum(VenueStaffInvitationStatus, name="venue_staff_invitation_status")
+    )
+    can_manage_profile: Mapped[bool] = mapped_column(Boolean)
+    can_manage_pitches: Mapped[bool] = mapped_column(Boolean)
+    can_manage_inventory: Mapped[bool] = mapped_column(Boolean)
+    can_fulfill_orders: Mapped[bool] = mapped_column(Boolean)
+    created_by_membership_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venue_memberships.id", ondelete="RESTRICT")
+    )
+    accepted_by_membership_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("venue_memberships.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    revoked_by_membership_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("venue_memberships.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class VenueMembershipAuditEvent(Base):
+    __tablename__ = "venue_membership_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "(actor_kind = 'USER' AND actor_user_id IS NOT NULL "
+            "AND actor_principal_id IS NULL) OR "
+            "(actor_kind = 'PLATFORM' AND actor_user_id IS NULL "
+            "AND actor_principal_id IS NOT NULL)",
+            name="ck_venue_membership_audit_events_actor",
+        ),
+        CheckConstraint(
+            "actor_principal_id IS NULL OR "
+            "(length(actor_principal_id) BETWEEN 1 AND 128 "
+            "AND actor_principal_id = trim(actor_principal_id))",
+            name="ck_venue_membership_audit_events_principal",
+        ),
+        CheckConstraint(
+            "length(operation) BETWEEN 1 AND 80 AND operation = trim(operation)",
+            name="ck_venue_membership_audit_events_operation",
+        ),
+        CheckConstraint(
+            "length(idempotency_key) BETWEEN 16 AND 128",
+            name="ck_venue_membership_audit_events_idempotency_key",
+        ),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_venue_membership_audit_events_request_sha256",
+        ),
+        CheckConstraint(
+            "response_status BETWEEN 200 AND 299",
+            name="ck_venue_membership_audit_events_response_status",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(permissions_before) = 'array' "
+            "AND jsonb_typeof(permissions_after) = 'array'",
+            name="ck_venue_membership_audit_events_permissions",
+        ),
+        CheckConstraint(
+            "length(target_display_name) BETWEEN 1 AND 40 "
+            "AND target_display_name = trim(target_display_name)",
+            name="ck_venue_membership_audit_events_target_display_name",
+        ),
+        Index("ix_venue_membership_audit_events_venue", "venue_id", "created_at", "id"),
+        Index(
+            "uq_venue_membership_audit_events_user_idempotency",
+            "actor_user_id",
+            "operation",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("actor_user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_venue_membership_audit_events_platform_idempotency",
+            "actor_principal_id",
+            "operation",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("actor_principal_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("venues.id", ondelete="RESTRICT")
+    )
+    actor_kind: Mapped[VenueMembershipAuditActorKind] = mapped_column(
+        Enum(VenueMembershipAuditActorKind, name="venue_membership_audit_actor_kind")
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    actor_principal_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    target_membership_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("venue_memberships.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    invitation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("venue_staff_invitations.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    action: Mapped[VenueMembershipAuditAction] = mapped_column(
+        Enum(VenueMembershipAuditAction, name="venue_membership_audit_action")
+    )
+    operation: Mapped[str] = mapped_column(String(80))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+    permissions_before: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    permissions_after: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    target_display_name: Mapped[str] = mapped_column(String(40))
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_status: Mapped[int] = mapped_column(SmallInteger)
+    response_body: Mapped[dict[str, object]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class VenueTransitStop(Base):
