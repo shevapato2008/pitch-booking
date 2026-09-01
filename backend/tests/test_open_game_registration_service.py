@@ -18,6 +18,7 @@ from backend.app.models import (
     OpenGame,
     OpenGameAttendanceCorrection,
     OpenGameAttendanceStatus,
+    OpenGameCancellationSource,
     OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
     OpenGameNotificationStatus,
@@ -381,6 +382,7 @@ def _set_review_authority(
     if condition == "cancelled":
         game.status = OpenGameStatus.CANCELLED
         game.cancelled_at = NOW
+        game.cancellation_source = OpenGameCancellationSource.CAPTAIN
     elif condition == "suspended":
         order.status = OrderStatus.PAYMENT_EXCEPTION
     elif condition == "completed":
@@ -856,6 +858,7 @@ def test_context_projects_authoritative_deadline_capacity_and_cancellation(
         else:
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = NOW
+            game.cancellation_source = OpenGameCancellationSource.CAPTAIN
             _add_registration(
                 session,
                 game_id=game.id,
@@ -926,6 +929,7 @@ def test_apply_is_idempotent_persists_server_authority_and_leaves_b1_unchanged(
         game = session.get_one(OpenGame, case.game_id)
         game.status = OpenGameStatus.CANCELLED
         game.cancelled_at = NOW
+        game.cancellation_source = OpenGameCancellationSource.CAPTAIN
         session.commit()
         replay = _service(session).apply(
             share_token=case.share_token,
@@ -1136,6 +1140,7 @@ def test_apply_blockers_return_closed_details_and_rollback_claim(
         else:
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = NOW
+            game.cancellation_source = OpenGameCancellationSource.CAPTAIN
         session.commit()
         before_b1 = _b1_snapshot(session)
         registration_ids_before = tuple(
@@ -1694,6 +1699,7 @@ def test_decision_replays_stored_result_after_terminal_capacity_and_authority_ch
         game = session.get_one(OpenGame, case.game_id)
         game.status = OpenGameStatus.CANCELLED
         game.cancelled_at = NOW
+        game.cancellation_source = OpenGameCancellationSource.CAPTAIN
         record = session.scalar(
             select(IdempotencyRecord).where(
                 IdempotencyRecord.operation
@@ -2947,6 +2953,7 @@ def test_later_game_cancellation_overrides_effective_status_but_retains_withdraw
         game = session.get_one(OpenGame, case.game_id)
         game.status = OpenGameStatus.CANCELLED
         game.cancelled_at = NOW
+        game.cancellation_source = OpenGameCancellationSource.CAPTAIN
         session.commit()
 
         context = _service(session).get_context(

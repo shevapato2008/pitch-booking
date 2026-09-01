@@ -19,6 +19,7 @@ from backend.app.config import Settings
 from backend.app.errors import AppError
 from backend.app.models import (
     OpenGame,
+    OpenGameCancellationSource,
     OpenGameNotificationEvent,
     OpenGameNotificationOutbox,
     OpenGameNotificationStatus,
@@ -741,6 +742,7 @@ def test_worker_supersedes_unhealthy_authority_before_provider_io(
         if authority_case == "game_cancelled":
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = NOW
+            game.cancellation_source = OpenGameCancellationSource.CAPTAIN
         elif authority_case == "order_cancel_requested":
             order.cancel_requested_at = NOW
         elif authority_case == "order_refunded":

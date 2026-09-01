@@ -15,6 +15,7 @@ from backend.app.models import (
     OpenGame,
     OpenGameAttendanceCorrection,
     OpenGameAttendanceStatus,
+    OpenGameCancellationSource,
     OpenGameRegistration,
     OpenGameStatus,
     Order,
@@ -125,6 +126,7 @@ def _authority_worker(
         elif authority_kind == "game":
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = ATTENDANCE_NOW
+            game.cancellation_source = OpenGameCancellationSource.CAPTAIN
             game.version += 1
         else:
             raise AssertionError(authority_kind)
