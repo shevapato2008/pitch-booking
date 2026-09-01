@@ -698,6 +698,6 @@ def test_open_game_registration_migration_matches_model_metadata(
     with migration_engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0024"
+        ).scalar_one() == "0026"
 
     command.check(config)

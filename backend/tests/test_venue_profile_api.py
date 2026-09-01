@@ -69,7 +69,7 @@ def _seed(engine: Engine) -> Venue:
         session.add_all(
             [
                 VenueMembership(
-                    venue_id=venue.id, user_id=user.id, is_active=True, can_manage_inventory=True
+                    venue_id=venue.id, user_id=user.id, is_active=True, can_manage_profile=True
                 ),
                 UserSession(
                     user_id=user.id,

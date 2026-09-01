@@ -66,7 +66,7 @@ def _seed(session: Session) -> tuple[Venue, User, User]:
     session.flush()
     session.add(
         VenueMembership(
-            venue_id=venue.id, user_id=admin.id, is_active=True, can_manage_inventory=True
+            venue_id=venue.id, user_id=admin.id, is_active=True, can_manage_profile=True
         )
     )
     session.add_all(

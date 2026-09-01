@@ -28,6 +28,8 @@ const EXISTING_PRODUCTION_ROUTES = [
   "pages/venue-inventory/index",
   "pages/venue-pitch-setup/index",
   "pages/venue-fulfillment/index",
+  "pages/venue-staff/index",
+  "pages/venue-staff-invitation/index",
 ];
 const CAPTAIN_OPEN_GAME_ROUTES = [
   "pages/captain-game-form/index",

@@ -84,7 +84,7 @@ def _seed(engine: Engine) -> tuple[Venue, Pitch, Pitch]:
                     venue_id=venue.id,
                     user_id=user.id,
                     is_active=True,
-                    can_manage_inventory=True,
+                    can_manage_pitches=True,
                 ),
                 UserSession(
                     user_id=user.id,

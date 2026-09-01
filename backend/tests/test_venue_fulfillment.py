@@ -107,7 +107,9 @@ def _managed_venue(
             venue=parent,
             user=manager,
             is_active=membership_active,
-            can_manage_inventory=can_manage,
+            can_manage_profile=not can_manage,
+            can_fulfill_orders=can_manage,
+            revoked_at=NOW if not membership_active else None,
         )
     )
     return parent
@@ -568,7 +570,9 @@ def test_check_in_uses_safe_scope_and_closed_business_conflict(pg_engine: Engine
     assert unknown.json()["error"]["code"] == "ORDER_NOT_FOUND"
 
     with Session(pg_engine) as session:
-        session.get_one(VenueMembership, membership_id).is_active = False
+        membership = session.get_one(VenueMembership, membership_id)
+        membership.is_active = False
+        membership.revoked_at = NOW
         session.commit()
     with _client(pg_engine) as client:
         revoked = client.post(
