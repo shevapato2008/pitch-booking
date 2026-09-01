@@ -17,6 +17,7 @@ from backend.app.models import (
     User,
     Venue,
     VenueMembership,
+    VenueMembershipRole,
     VenueOnboardingApplication,
     VenueOnboardingEvidence,
     VenueOnboardingEvidenceKind,
@@ -431,6 +432,7 @@ def test_claim_approval_reactivates_one_membership_without_creating_venue(
                 user_id=application.applicant_user_id,
                 is_active=False,
                 can_manage_inventory=False,
+                revoked_at=datetime.now(UTC),
             )
         )
         session.commit()
@@ -459,7 +461,13 @@ def test_claim_approval_reactivates_one_membership_without_creating_venue(
         )
         assert len(memberships) == 1
         assert memberships[0].is_active is True
+        assert memberships[0].role is VenueMembershipRole.STAFF
+        assert memberships[0].can_manage_profile is True
+        assert memberships[0].can_manage_pitches is True
         assert memberships[0].can_manage_inventory is True
+        assert memberships[0].can_fulfill_orders is True
+        assert memberships[0].revoked_at is None
+        assert memberships[0].version == 2
         assert target.timezone == "Asia/Shanghai"
 
 
@@ -502,7 +510,11 @@ def test_create_approval_is_atomic_unlisted_and_decisions_are_immutable(
         )
         assert membership is not None
         assert membership.is_active is True
+        assert membership.role is VenueMembershipRole.OWNER
+        assert membership.can_manage_profile is True
+        assert membership.can_manage_pitches is True
         assert membership.can_manage_inventory is True
+        assert membership.can_fulfill_orders is True
 
         with pytest.raises(AppError) as changed:
             _service(session).decide(

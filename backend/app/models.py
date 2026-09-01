@@ -624,7 +624,12 @@ class VenueMembershipAuditEvent(Base):
             "AND target_display_name = trim(target_display_name)",
             name="ck_venue_membership_audit_events_target_display_name",
         ),
-        Index("ix_venue_membership_audit_events_venue", "venue_id", "created_at", "id"),
+        Index(
+            "ix_venue_membership_audit_events_venue",
+            "venue_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
         Index(
             "uq_venue_membership_audit_events_user_idempotency",
             "actor_user_id",
@@ -1594,14 +1599,14 @@ class VenueRecruitmentInvitation(Base):
         ),
         Index(
             "ix_recruitment_invitations_created_page",
-            "created_at",
-            "id",
+            text("created_at DESC"),
+            text("id DESC"),
         ),
         Index(
             "ix_recruitment_invitations_status_created_page",
             "status",
-            "created_at",
-            "id",
+            text("created_at DESC"),
+            text("id DESC"),
         ),
     )
 
