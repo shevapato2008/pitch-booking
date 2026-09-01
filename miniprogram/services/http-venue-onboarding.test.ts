@@ -49,6 +49,39 @@ describe("HTTP venue onboarding source", () => {
     expect(x.post).toHaveBeenLastCalledWith("/api/v1/venue-onboarding/venues", expect.objectContaining({ district_code: "120101", contact_name: "张三" }), { ...bearer, "Idempotency-Key": "create-key-123456" });
   });
 
+  test("reads, accepts and submits a token-locked invitation without a client venue id", async () => {
+    const x = harness(session.session_token);
+    const invitation = {
+      viewer_state: "AVAILABLE",
+      venue: candidates.items[0],
+      expires_at: "2099-01-01T00:00:00Z",
+      application_id: null,
+      version: 1,
+    };
+    x.get.mockResolvedValueOnce(invitation);
+    x.post.mockResolvedValueOnce({ ...invitation, viewer_state: "CLAIMED_BY_VIEWER", version: 2 });
+    x.post.mockResolvedValueOnce({ ...submitted, kind: "CLAIM", venue: { ...submitted.venue, venue_id: candidates.items[0].venue_id } });
+    const token = "Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx";
+    await x.source.readInvitation!(token);
+    await x.source.acceptInvitation!(token, "accept-key-123456");
+    await x.source.submitInvitedClaim!(token, {
+      contactName: "张三",
+      evidence: {
+        MANAGEMENT_AUTHORIZATION: uploadIntent.evidence_id,
+        VENUE_EXTERIOR: uploadIntent.evidence_id,
+      },
+    }, "invited-claim-key-123");
+    const bearer = { Authorization: `Bearer ${session.session_token}` };
+    expect(x.get).toHaveBeenCalledWith(`/api/v1/venue-invitations/${token}`, bearer);
+    expect(x.post).toHaveBeenNthCalledWith(1, `/api/v1/venue-invitations/${token}/accept`, undefined, {
+      ...bearer, "Idempotency-Key": "accept-key-123456",
+    });
+    expect(x.post).toHaveBeenNthCalledWith(2, `/api/v1/venue-invitations/${token}/claims`, {
+      contact_name: "张三",
+      evidence: { MANAGEMENT_AUTHORIZATION: uploadIntent.evidence_id, VENUE_EXTERIOR: uploadIntent.evidence_id },
+    }, { ...bearer, "Idempotency-Key": "invited-claim-key-123" });
+  });
+
   test("relogs once after 401 and replays the exact idempotent request", async () => {
     const x = harness("old-token");
     x.post.mockRejectedValueOnce(authRequired).mockResolvedValueOnce(session).mockResolvedValueOnce(submitted);

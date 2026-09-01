@@ -17,6 +17,7 @@ PLATFORM_ADMIN_ASSETS: Final = frozenset(
         "review.js",
         "attendance-correction.js",
         "game-report-resolution.js",
+        "recruitment-invitations.js",
     }
 )
 PLATFORM_CSP: Final = (

@@ -138,6 +138,7 @@ test("source production manifest keeps the booking foundation and excludes devel
   for (const route of [
     "pages/intent-entry/index",
     "pages/venue-access/index",
+    "pages/venue-invitation/index",
     "pages/venue-map/index",
     "pages/venue/index",
     "pages/availability/index",

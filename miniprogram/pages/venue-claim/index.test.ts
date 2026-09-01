@@ -24,6 +24,13 @@ function source(): VenueOnboardingDataSource {
     completeEvidence: jest.fn(async () => ({ evidenceId, status: "COMPLETED" as const })),
     submitClaim: jest.fn(async () => application),
     submitCreate: jest.fn(async () => application),
+    readInvitation: jest.fn(async () => ({
+      viewerState: "CLAIMED_BY_VIEWER" as const,
+      venue: candidate,
+      expiresAt: "2099-01-01T00:00:00Z",
+      applicationId: null,
+      version: 2,
+    })),
   };
 }
 
@@ -54,6 +61,39 @@ test("searches, selects, uploads each required item and submits once", async () 
   expect(api.submitClaim).toHaveBeenCalledTimes(1);
   expect(api.submitClaim).toHaveBeenCalledWith(expect.objectContaining({ venueId: candidate.venueId, contactName: "张三", evidence: { MANAGEMENT_AUTHORIZATION: evidenceId, VENUE_EXTERIOR: evidenceId } }), expect.any(String));
   expect(target.data).toMatchObject({ mode: "submitted", application: expect.objectContaining({ status: "SUBMITTED" }) });
+});
+
+test("invited claim re-reads and locks the authoritative venue before submitting without a client venue id", async () => {
+  const api = source();
+  api.submitInvitedClaim = jest.fn(async () => application);
+  registerVenueOnboardingDataSource(api);
+  registerVenueOnboardingEvidenceCapability(media);
+  const target = page();
+  const invitationToken = "Wm8Lk3R6uQ2pV9sH7xTa4bNcE5fG1jK0dZyR3qP6uQx";
+  await target.onLoad({
+    invitation_token: invitationToken,
+    candidate_id: "00000000-0000-4000-8000-000000000099",
+    name: "被篡改的场馆",
+    district: "错误行政区",
+    address: "错误地址",
+  });
+  expect(api.readInvitation).toHaveBeenCalledWith(invitationToken);
+  expect(target.data).toMatchObject({
+    invitationLocked: true,
+    selectedVenueId: candidate.venueId,
+    candidates: [{ ...candidate, selected: true }],
+  });
+  await target.onSearch();
+  expect(api.searchCandidates).not.toHaveBeenCalled();
+  for (const kind of ["MANAGEMENT_AUTHORIZATION", "VENUE_EXTERIOR"]) {
+    await target.onChooseEvidence({ currentTarget: { dataset: { evidenceKind: kind } } });
+  }
+  await target.onSubmit();
+  expect(api.submitInvitedClaim).toHaveBeenCalledWith(invitationToken, {
+    contactName: "张三",
+    evidence: { MANAGEMENT_AUTHORIZATION: evidenceId, VENUE_EXTERIOR: evidenceId },
+  }, expect.any(String));
+  expect(api.submitClaim).not.toHaveBeenCalled();
 });
 
 test("one evidence failure stays in its row and retry reuses the selected file", async () => {
@@ -158,4 +198,5 @@ test("production claim markup has real search, phone, upload, retry and submit b
   for (const handler of ["onBack", "onSearchInput", "onSearch", "onSelectCandidate", "onAuthorizePhone", "onChooseEvidence", "onRetryEvidence", "onSubmit", "onReturnPortfolio"]) expect(markup).toContain(handler);
   expect(markup).not.toMatch(/视觉预览|Fixture/);
   expect(markup).toContain("item.retryMode === 'reselect' ? '重新选择'");
+  expect(markup).toContain("invitationLocked");
 });

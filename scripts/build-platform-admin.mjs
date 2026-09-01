@@ -22,10 +22,10 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-for (const filename of ["api.js", "auth.js", "review.js", "attendance-correction.js", "game-report-resolution.js", "main.js"]) {
+for (const filename of ["api.js", "auth.js", "review.js", "attendance-correction.js", "game-report-resolution.js", "recruitment-invitations.js", "main.js"]) {
   const target = join(outputRoot, filename);
   const browserModule = readFileSync(target, "utf8").replace(
-    /from\s+(["'])\.\/(api|auth|review|attendance-correction|game-report-resolution)\1/g,
+    /from\s+(["'])\.\/(api|auth|review|attendance-correction|game-report-resolution|recruitment-invitations)\1/g,
     "from $1./$2.js$1",
   );
   writeFileSync(target, browserModule, "utf8");

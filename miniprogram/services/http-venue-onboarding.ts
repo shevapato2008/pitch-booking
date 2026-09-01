@@ -7,6 +7,7 @@ import {
   decodeVenueOnboardingUploadIntent,
   type VenueOnboardingCandidate,
 } from "../domain/venue-onboarding";
+import { decodeVenueRecruitmentInvitation } from "../domain/venue-recruitment-invitation";
 import { enumAt, exactObject, objectAt, rfc3339At, stringAt, uuidAt } from "../domain/decoder-primitives";
 import type { Transport, TransportError, WeChatIdentityCapability, WeChatPhoneCapability } from "../runtime/interfaces";
 import type { SessionStore } from "./session-store";
@@ -17,6 +18,8 @@ const ONBOARDING_ERROR_CODES = [
   "PHONE_AUTH_REQUIRED", "PHONE_AUTH_UNAVAILABLE", "PHONE_AUTH_FAILED", "IDEMPOTENCY_KEY_REUSED",
   "POSSIBLE_DUPLICATE_VENUE", "ONBOARDING_EVIDENCE_REQUIRED", "ONBOARDING_EVIDENCE_INVALID",
   "ONBOARDING_APPLICATION_EXISTS", "ONBOARDING_APPLICATION_NOT_FOUND", "ONBOARDING_APPLICATION_STATE_CHANGED",
+  "VENUE_NOT_ELIGIBLE", "VENUE_INVITATION_EXISTS", "VENUE_INVITATION_STATE_CHANGED",
+  "VENUE_INVITATION_NOT_FOUND", "VENUE_INVITATION_UNAVAILABLE",
 ] as const;
 
 export type VenueOnboardingApiErrorCode = typeof ONBOARDING_ERROR_CODES[number]
@@ -168,6 +171,26 @@ export function createHttpVenueOnboardingDataSource({ transport, identity, phone
       };
       return authorized("mutation", async () => decodeVenueOnboardingApplication(
         await transport.post("/api/v1/venue-onboarding/venues", body, {
+          ...bearer(), "Idempotency-Key": idempotencyKey,
+        }),
+      ));
+    },
+    readInvitation(token) {
+      return authorized("read", async () => decodeVenueRecruitmentInvitation(
+        await transport.get(`/api/v1/venue-invitations/${encodeURIComponent(token)}`, bearer()),
+      ));
+    },
+    acceptInvitation(token, idempotencyKey) {
+      return authorized("mutation", async () => decodeVenueRecruitmentInvitation(
+        await transport.post(`/api/v1/venue-invitations/${encodeURIComponent(token)}/accept`, undefined, {
+          ...bearer(), "Idempotency-Key": idempotencyKey,
+        }),
+      ));
+    },
+    submitInvitedClaim(token, input, idempotencyKey) {
+      const body = { contact_name: input.contactName, evidence: input.evidence };
+      return authorized("mutation", async () => decodeVenueOnboardingApplication(
+        await transport.post(`/api/v1/venue-invitations/${encodeURIComponent(token)}/claims`, body, {
           ...bearer(), "Idempotency-Key": idempotencyKey,
         }),
       ));

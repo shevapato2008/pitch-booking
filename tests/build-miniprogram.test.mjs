@@ -15,6 +15,7 @@ const TEST_NOTIFICATION_TEMPLATE_ID = "zun-LzcQyW-edafCVvzPkK4de2Rllr1fFpw2A_x0o
 const EXISTING_PRODUCTION_ROUTES = [
   "pages/intent-entry/index",
   "pages/venue-access/index",
+  "pages/venue-invitation/index",
   "pages/venue-claim/index",
   "pages/venue-create/index",
   "pages/venue-map/index",
@@ -45,10 +46,10 @@ const PRODUCTION_ROUTES = [
   EXISTING_PRODUCTION_ROUTES[0],
   GAME_DISCOVERY_ROUTE,
   MY_GAME_REGISTRATIONS_ROUTE,
-  ...EXISTING_PRODUCTION_ROUTES.slice(1, 9),
+  ...EXISTING_PRODUCTION_ROUTES.slice(1, 10),
   ...CAPTAIN_OPEN_GAME_ROUTES,
   ...OPEN_GAME_REGISTRATION_ROUTES,
-  ...EXISTING_PRODUCTION_ROUTES.slice(9),
+  ...EXISTING_PRODUCTION_ROUTES.slice(10),
 ];
 const OPEN_GAME_REGISTRATION_FIXTURES = [
   "open-game-registration-context-anonymous",
@@ -515,7 +516,6 @@ test("public discovery, open game registration, and attendance production routes
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const sourceManifest = JSON.parse(await readFile("miniprogram/app.json", "utf8"));
   assert.deepEqual(sourceManifest.pages, PRODUCTION_ROUTES);
-  assert.equal(sourceManifest.pages.length, 23);
 
   await build(projectRoot, "development");
   await build(projectRoot, "production");
@@ -540,7 +540,7 @@ test("public discovery, open game registration, and attendance production routes
   }
 });
 
-test("real production build preserves all fourteen existing routes and adds only the nine open-game journey routes", async (t) => {
+test("real production build preserves existing routes and adds only the open-game journey routes", async (t) => {
   const projectRoot = await createIsolatedRealBuildProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await build(projectRoot, "production");
@@ -556,7 +556,6 @@ test("real production build preserves all fourteen existing routes and adds only
     ].includes(route)),
     EXISTING_PRODUCTION_ROUTES,
   );
-  assert.equal(manifest.pages.length, 23);
   for (const route of PRODUCTION_ROUTES) {
     for (const extension of ["js", "json", "wxml", "wxss"])
       assert.equal(existsSync(path.join(outputRoot, `${route}.${extension}`)), true);

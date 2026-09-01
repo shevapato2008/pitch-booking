@@ -40,6 +40,10 @@ test("production login disables credential persistence and wires foreground expi
   expect(source).toMatch(/data-action="recover-game-report"/);
   expect(source).toMatch(/gameReports\.clearForSessionEnd\(\)/);
   expect(source).toMatch(/activeModule === "game-reports"[\s\S]*gameReports\.reportOperationFailure\("退出登录失败"/);
+  expect(source).toMatch(/data-action="filter-recruitment-status"/);
+  expect(source).toMatch(/data-action="copy-invitation-path"/);
+  expect(source).toMatch(/data-action="confirm-invitation-revoke"/);
+  expect(source).toMatch(/data-action="open-invitation-application"/);
   expect(source).toMatch(/lookupLocked = state\.loading \|\| state\.submitting \|\| state\.pendingAttempt !== null/);
   expect(source).toMatch(/aria-modal="true"/);
   expect(source).toMatch(/\? " inert"/);

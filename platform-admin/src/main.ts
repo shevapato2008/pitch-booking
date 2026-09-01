@@ -9,6 +9,7 @@ import {
   type PlatformGameReportDetail,
   type ReviewApplicationDetail,
   type ReviewEvidence,
+  type RecruitmentInvitation,
 } from "./api";
 import { AttendanceCorrectionController, formatAttendanceTime } from "./attendance-correction";
 import {
@@ -20,6 +21,7 @@ import {
 } from "./auth";
 import { GameReportResolutionController } from "./game-report-resolution";
 import { ReviewController } from "./review";
+import { RecruitmentInvitationsController } from "./recruitment-invitations";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("platform admin root is missing");
@@ -29,8 +31,12 @@ const auth = new AuthController(api);
 const review = new ReviewController(api);
 const attendance = new AttendanceCorrectionController(api);
 const gameReports = new GameReportResolutionController(api);
-let activeModule: "review" | "attendance" | "game-reports" = "review";
+const recruitment = new RecruitmentInvitationsController(api);
+let activeModule: "review" | "attendance" | "game-reports" | "recruitment" = "review";
 let confirmationReturnSelector = '[data-action="prepare-attendance-correction"]';
+let recruitmentRevokeOpen = false;
+let recruitmentRevokeReason = "";
+let recruitmentRevokeError = "";
 let feedback: {
   type: "error" | "warning" | "success";
   message: string;
@@ -59,6 +65,13 @@ const formatBytes = (bytes: number): string => bytes >= 1024 * 1024
   ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
   : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 const badge = (text: string, tone: string): string => `<span class="badge badge--${escapeHtml(tone)}">${escapeHtml(text)}</span>`;
+const recruitmentStatus = (status: RecruitmentInvitation["status"]): [string, string] => ({
+  ACTIVE: ["等待接受", "active"],
+  CLAIMED: ["已绑定", "claimed"],
+  SUBMITTED: ["已提交申请", "approved"],
+  REVOKED: ["已撤销", "rejected"],
+  EXPIRED: ["已过期", "expired"],
+}[status] as [string, string]);
 const attendanceStatusLabel = (status: AttendanceStatus | null): string => {
   if (status === "PRESENT") return "已到场";
   if (status === "NO_SHOW") return "未到场";
@@ -153,7 +166,7 @@ const renderTopbar = (backgroundInert = ""): string => {
   const session = auth.state.status === "authenticated" ? auth.state.session : null;
   const canCorrectAttendance = session ? attendanceCorrectionVisible(session) : false;
   const canResolveReports = session ? gameReportResolutionVisible(session) : false;
-  return `<header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台运营台</strong><small>生产运营控制台</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="open-review" type="button"${activeModule === "review" ? ' aria-current="page"' : ""}>入驻审核</button>${canCorrectAttendance ? `<button class="product-nav__item" data-action="open-attendance-correction" type="button"${activeModule === "attendance" ? ' aria-current="page"' : ""}>到场纠错</button>` : ""}${canResolveReports ? `<button class="product-nav__item" data-action="open-game-reports" type="button"${activeModule === "game-reports" ? ' aria-current="page"' : ""}>举报处置</button>` : ""}</nav><div class="reviewer">${badge(session ? primaryPlatformRole(session) : "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>`;
+  return `<header class="topbar"${backgroundInert}><div class="brand"><span class="brand__mark" aria-hidden="true">PB</span><span><strong>平台运营台</strong><small>生产运营控制台</small></span></div><nav class="product-nav" aria-label="平台功能"><button class="product-nav__item" data-action="open-review" type="button"${activeModule === "review" ? ' aria-current="page"' : ""}>入驻审核</button><button class="product-nav__item" data-action="open-recruitment" type="button"${activeModule === "recruitment" ? ' aria-current="page"' : ""}>招商邀请</button>${canCorrectAttendance ? `<button class="product-nav__item" data-action="open-attendance-correction" type="button"${activeModule === "attendance" ? ' aria-current="page"' : ""}>到场纠错</button>` : ""}${canResolveReports ? `<button class="product-nav__item" data-action="open-game-reports" type="button"${activeModule === "game-reports" ? ' aria-current="page"' : ""}>举报处置</button>` : ""}</nav><div class="reviewer">${badge(session ? primaryPlatformRole(session) : "REVIEWER", "role")}<span>${escapeHtml(session?.display_name ?? "平台审核员")}</span><button class="button button--quiet button--small" data-action="logout" type="button">退出登录</button></div></header>`;
 };
 
 const renderReview = (): string => {
@@ -241,6 +254,39 @@ const renderGameReports = (): string => {
   return `<div class="console-shell">${renderTopbar(backgroundInert)}<main class="workspace report-workspace" id="main-content"${backgroundInert}><aside class="queue"><div class="queue__head"><p class="eyebrow">Game reports</p><h1>举报处置</h1><p>只显示结构化事实与处置所需的最小报名上下文。</p><div class="report-filters" role="group" aria-label="举报状态"><button class="report-filter${state.filter === "PENDING" ? " is-selected" : ""}" data-action="filter-game-reports" data-filter="PENDING" type="button" aria-pressed="${state.filter === "PENDING"}" ${controlsLocked ? "disabled" : ""}>待处理</button><button class="report-filter${state.filter === "RESOLVED" ? " is-selected" : ""}" data-action="filter-game-reports" data-filter="RESOLVED" type="button" aria-pressed="${state.filter === "RESOLVED"}" ${controlsLocked ? "disabled" : ""}>已结案</button></div></div><div class="queue__summary"><strong>${state.items.length}</strong> 条已加载<button class="report-refresh" data-action="refresh-game-reports" type="button" ${controlsLocked ? "disabled" : ""}>刷新</button></div><div class="queue__list">${state.items.map(renderGameReportQueueRow).join("")}${state.nextCursor ? `<div class="queue__load-more"><button class="button button--quiet button--small" data-action="load-more-game-reports" type="button" ${controlsLocked ? "disabled" : ""}>${state.loadingMore ? "正在加载…" : "加载更多"}</button></div>` : ""}</div></aside><section class="detail-pane">${detailContent}</section></main></div>${renderGameReportModal(state.selected)}`;
 };
 
+const renderRecruitmentRow = (item: RecruitmentInvitation): string => {
+  const [label, tone] = recruitmentStatus(item.status);
+  const selected = recruitment.state.selected?.id === item.id;
+  return `<button class="invite-row${selected ? " is-selected" : ""}" data-action="select-invitation" data-id="${escapeHtml(item.id)}" type="button" aria-pressed="${selected}" ${recruitment.state.loading || recruitment.state.mutating || recruitment.state.oneTimePath ? "disabled" : ""}><span class="invite-row__top"><span class="badge badge--${tone}">${label}</span><small>${escapeHtml(formatTime(item.expires_at))}</small></span><strong>${escapeHtml(item.venue.name)}</strong><span>${escapeHtml(item.contact_label)} · ${escapeHtml(item.venue.district_name)}</span><small>${escapeHtml(formatTime(item.created_at))}</small></button>`;
+};
+
+const renderRecruitmentToken = (): string => recruitment.state.oneTimePath
+  ? `<section class="token-panel" role="status"><div class="token-panel__head"><div><p class="eyebrow">One-time path</p><h2>邀请已创建</h2></div><button class="icon-button icon-button--inline" data-action="dismiss-invitation-path" type="button" aria-label="关闭一次性邀请提示">×</button></div><p>原始邀请路径只在本次创建结果中展示。请立即复制并通过可信渠道发送给目标联系人。</p><code id="one-time-invitation-path">${escapeHtml(recruitment.state.oneTimePath)}</code><div class="token-panel__actions"><button class="button button--quiet" data-action="copy-invitation-path" type="button">复制邀请路径</button><span class="copy-feedback" aria-live="polite">${escapeHtml(recruitment.state.copyFeedback)}</span></div></section>`
+  : "";
+
+const renderRecruitmentDetail = (): string => {
+  const invitation = recruitment.state.selected;
+  if (!invitation) return `<main class="detail" id="main-content" tabindex="-1"><div class="empty-state"><span class="empty-state__mark" aria-hidden="true"></span><h2>${recruitment.state.loading ? "正在加载邀请" : "还没有招商邀请"}</h2><p>${escapeHtml(recruitment.state.error ?? "从左侧选择一个可招商场馆并创建七天邀请。")}</p>${recruitment.state.error ? '<button class="button button--primary" data-action="retry-recruitment" type="button">重新加载</button>' : ""}</div></main>`;
+  const [label, tone] = recruitmentStatus(invitation.status);
+  const canRevoke = invitation.status === "ACTIVE" || invitation.status === "CLAIMED";
+  const submitted = invitation.status === "SUBMITTED";
+  return `<main class="detail" id="main-content" tabindex="-1"><header class="detail-heading"><div><p class="eyebrow">Invitation detail</p><h2>${escapeHtml(invitation.venue.name)}</h2><p>创建于 ${escapeHtml(formatTime(invitation.created_at))} · 邀请编号 ${escapeHtml(invitation.id)}</p></div><span class="badge badge--${tone}">${label}</span></header>${recruitment.state.feedback ? `<div class="alert alert--success" role="status"><span class="alert__mark" aria-hidden="true">✓</span><span><strong>邀请状态已更新</strong>${escapeHtml(recruitment.state.feedback)}</span></div>` : ""}${recruitment.state.error ? `<div class="alert alert--error" role="alert"><span class="alert__mark" aria-hidden="true">×</span><span><strong>操作未完成</strong>${escapeHtml(recruitment.state.error)}</span></div>` : ""}${renderRecruitmentToken()}<div class="detail-grid"><div class="content-stack"><section class="panel panel--padded"><p class="eyebrow">Venue</p><h3>目标场馆</h3><dl class="facts"><div><dt>场馆名称</dt><dd>${escapeHtml(invitation.venue.name)}</dd></div><div><dt>行政区</dt><dd>${escapeHtml(invitation.venue.district_name)}</dd></div><div class="facts__wide"><dt>详细地址</dt><dd>${escapeHtml(invitation.venue.address)}</dd></div><div><dt>内部称呼</dt><dd>${escapeHtml(invitation.contact_label)}</dd></div><div><dt>有效期</dt><dd>${escapeHtml(formatTime(invitation.expires_at))}</dd></div></dl></section><section class="boundary"><span class="boundary__mark">i</span><div><strong>邀请不会直接授予权限</strong><p>联系人接受邀请后仍需提交认领材料，并经平台人工审核。邀请只锁定目标场馆与唯一微信用户。</p></div></section></div><aside class="panel panel--padded action-panel"><p class="eyebrow">Actions</p><h3>邀请操作</h3>${canRevoke ? `<p class="section-copy">申请提交前可以撤销；已绑定用户也不能再继续提交。</p><button class="button button--danger button--full" data-action="prepare-invitation-revoke" type="button" ${recruitment.state.mutating ? "disabled" : ""}>撤销邀请</button>` : submitted && invitation.application_id ? `<p class="section-copy">联系人已提交认领材料，请在入驻审核中继续处理。</p><button class="button button--primary button--full" data-action="open-invitation-application" data-id="${escapeHtml(invitation.application_id)}" type="button">查看关联申请</button>` : `<p class="section-copy">这份邀请已终结，仅保留审计记录。</p>`}</aside></div></main>`;
+};
+
+const renderRecruitmentRevokeDialog = (): string => {
+  const invitation = recruitment.state.selected;
+  if (!recruitmentRevokeOpen || !invitation) return "";
+  return `<div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="recruitment-revoke-title"><button class="confirm-dialog__scrim" data-action="cancel-invitation-revoke" type="button" tabindex="-1" aria-label="取消撤销"></button><section class="confirm-dialog__panel"><button class="icon-button" data-action="cancel-invitation-revoke" type="button" aria-label="关闭确认窗口"><span aria-hidden="true">×</span></button><div class="confirm-dialog__body"><span class="confirm-dialog__warning" aria-hidden="true">!</span><p class="eyebrow">Irreversible action</p><h2 id="recruitment-revoke-title">确认撤销邀请？</h2><p>撤销后，<strong>${escapeHtml(invitation.venue.name)}</strong> 的联系人将不能再接受或提交这份邀请。</p><label class="field-label revoke-reason-label" for="invitation-revoke-reason">撤销原因 <span class="required">*</span></label><textarea class="reason-input" id="invitation-revoke-reason" data-action="invitation-revoke-reason" maxlength="120" placeholder="请输入 1–120 字原因">${escapeHtml(recruitmentRevokeReason)}</textarea><p class="field-error is-visible" id="invitation-revoke-error" role="alert">${escapeHtml(recruitmentRevokeError)}</p></div><div class="confirm-actions"><button class="button button--quiet" data-action="cancel-invitation-revoke" type="button">返回检查</button><button class="button button--danger" data-action="confirm-invitation-revoke" type="button" ${recruitment.state.mutating ? "disabled" : ""}>${recruitment.state.mutating ? "正在撤销…" : "确认撤销"}</button></div></section></div>`;
+};
+
+const renderRecruitment = (): string => {
+  const inert = recruitmentRevokeOpen ? " inert" : "";
+  const options = recruitment.state.eligibleVenues.map((venue) => `<option value="${escapeHtml(venue.venue_id)}"${recruitment.state.createDraftVenueId === venue.venue_id ? " selected" : ""}>${escapeHtml(venue.name)} · ${escapeHtml(venue.district_name)}</option>`).join("");
+  const status = recruitment.state.status ?? "ALL";
+  const locked = recruitment.state.loading || recruitment.state.mutating || Boolean(recruitment.state.oneTimePath);
+  return `<div class="console-shell">${renderTopbar(inert)}<div class="workspace recruitment-workspace"${inert}><aside class="queue"><div class="queue__head"><p class="eyebrow">Recruitment</p><h1>招商邀请</h1><p>为尚无管理人的目录场馆生成一次性邀请。</p><form class="recruitment-form" data-form="create-recruitment" novalidate><label for="eligible-venue">可招商场馆</label><select id="eligible-venue" data-action="recruitment-venue" ${locked || !options ? "disabled" : ""}>${options || '<option value="">暂无可招商场馆</option>'}</select><label for="contact-label">内部称呼</label><input id="contact-label" data-action="recruitment-contact-label" maxlength="40" value="${escapeHtml(recruitment.state.createDraftContactLabel)}" placeholder="例如：海河东场馆负责人" ${locked ? "disabled" : ""}/><button class="button button--primary button--full" type="submit" ${locked || !options ? "disabled" : ""}>${recruitment.state.mutating ? "正在创建…" : "创建 7 天邀请"}</button></form><label class="recruitment-filter" for="recruitment-status"><span>邀请状态</span><select id="recruitment-status" data-action="filter-recruitment-status" ${locked ? "disabled" : ""}><option value="ALL"${status === "ALL" ? " selected" : ""}>全部状态</option><option value="ACTIVE"${status === "ACTIVE" ? " selected" : ""}>等待接受</option><option value="CLAIMED"${status === "CLAIMED" ? " selected" : ""}>已绑定</option><option value="SUBMITTED"${status === "SUBMITTED" ? " selected" : ""}>已提交申请</option><option value="REVOKED"${status === "REVOKED" ? " selected" : ""}>已撤销</option><option value="EXPIRED"${status === "EXPIRED" ? " selected" : ""}>已过期</option></select></label></div><div class="queue__summary"><strong>${recruitment.state.items.length}</strong> 条邀请<span>${recruitment.state.loading ? "正在更新" : "按创建时间排序"}</span></div><div class="queue__list">${recruitment.state.items.map(renderRecruitmentRow).join("")}</div></aside>${renderRecruitmentDetail()}</div>${renderRecruitmentRevokeDialog()}</div>`;
+};
+
 const render = (): void => {
   if (auth.state.status !== "authenticated") {
     root.innerHTML = renderLogin();
@@ -250,7 +296,9 @@ const render = (): void => {
   if (activeModule === "game-reports" && !gameReportResolutionVisible(auth.state.session)) activeModule = "review";
   root.innerHTML = activeModule === "attendance"
     ? renderAttendance()
-    : activeModule === "game-reports" ? renderGameReports() : renderReview();
+    : activeModule === "game-reports"
+      ? renderGameReports()
+      : activeModule === "recruitment" ? renderRecruitment() : renderReview();
   if (attendance.state.confirmationOpen) document.querySelector<HTMLElement>("[data-confirm-initial-focus]")?.focus();
   if (gameReports.state.confirmationOpen) document.querySelector<HTMLElement>("[data-report-confirm-initial-focus]")?.focus();
 };
@@ -276,6 +324,13 @@ root.addEventListener("input", (event) => {
     const counter = document.querySelector<HTMLElement>("[data-report-note-count]");
     if (counter) counter.textContent = `${Array.from(event.target.value).length}/500`;
   }
+  if (event.target.dataset.action === "invitation-revoke-reason") {
+    recruitmentRevokeReason = event.target.value;
+    recruitmentRevokeError = "";
+  }
+  if (event.target.dataset.action === "recruitment-contact-label") {
+    recruitment.setCreateDraftContactLabel(event.target.value);
+  }
 });
 
 root.addEventListener("submit", async (event) => {
@@ -289,6 +344,18 @@ root.addEventListener("submit", async (event) => {
       const result = await pending;
       render();
       document.querySelector<HTMLElement>(result.ok ? ".correction-panel" : "#registration-id")?.focus();
+    } catch (error) { handleSessionError(error); }
+    return;
+  }
+  if (event.target.matches('[data-form="create-recruitment"]')) {
+    const venueId = document.querySelector<HTMLSelectElement>("#eligible-venue")?.value ?? "";
+    const contactLabel = document.querySelector<HTMLInputElement>("#contact-label")?.value ?? "";
+    try {
+      const pending = recruitment.create(venueId, contactLabel);
+      render();
+      await pending;
+      render();
+      document.querySelector<HTMLElement>(recruitment.state.oneTimePath ? '[data-action="copy-invitation-path"]' : "#contact-label")?.focus();
     } catch (error) { handleSessionError(error); }
     return;
   }
@@ -307,7 +374,24 @@ root.addEventListener("submit", async (event) => {
 });
 
 root.addEventListener("change", async (event) => {
-  if (activeModule !== "review" || !(event.target instanceof HTMLSelectElement)) return;
+  if (!(event.target instanceof HTMLSelectElement)) return;
+  if (activeModule === "recruitment" && event.target.dataset.action === "recruitment-venue") {
+    recruitment.setCreateDraftVenueId(event.target.value);
+    return;
+  }
+  if (activeModule === "recruitment" && event.target.dataset.action === "filter-recruitment-status") {
+    const status = event.target.value === "ALL"
+      ? undefined
+      : event.target.value as RecruitmentInvitation["status"];
+    try {
+      const pending = recruitment.load(status);
+      render();
+      await pending;
+      render();
+    } catch (error) { handleSessionError(error); }
+    return;
+  }
+  if (activeModule !== "review") return;
   const kindControl = document.querySelector<HTMLSelectElement>('[data-action="filter-kind"]');
   const statusControl = document.querySelector<HTMLSelectElement>('[data-action="filter-status"]');
   feedback = null;
@@ -334,6 +418,7 @@ root.addEventListener("click", async (event) => {
         review.clear();
         attendance.clearForSessionEnd();
         gameReports.clearForSessionEnd();
+        recruitment.clear();
         activeModule = "review";
         feedback = null;
       } else {
@@ -353,6 +438,13 @@ root.addEventListener("click", async (event) => {
       activeModule = "review";
       feedback = null;
       if (!review.state.items.length && !review.state.loading) await review.load();
+      render();
+      document.querySelector<HTMLElement>("#main-content")?.focus();
+    } else if (action === "open-recruitment") {
+      activeModule = "recruitment";
+      feedback = null;
+      recruitmentRevokeOpen = false;
+      if (!recruitment.state.items.length && !recruitment.state.loading) await recruitment.load();
       render();
       document.querySelector<HTMLElement>("#main-content")?.focus();
     } else if (action === "open-attendance-correction") {
@@ -446,6 +538,69 @@ root.addEventListener("click", async (event) => {
       await pending;
       render();
       document.querySelector<HTMLElement>(".correction-panel")?.focus();
+    } else if (action === "select-invitation" && id) {
+      recruitment.select(id);
+      render();
+      document.querySelector<HTMLElement>("#main-content")?.focus();
+    } else if (action === "retry-recruitment") {
+      await recruitment.load();
+      render();
+    } else if (action === "dismiss-invitation-path") {
+      recruitment.dismissOneTimePath();
+      render();
+    } else if (action === "copy-invitation-path") {
+      await recruitment.copyOneTimePath(async (value) => {
+        if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+        await navigator.clipboard.writeText(value);
+      });
+      render();
+      if (recruitment.state.copyFeedback.includes("手动")) {
+        const range = document.createRange();
+        const code = document.querySelector("#one-time-invitation-path");
+        if (code) { range.selectNodeContents(code); window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(range); }
+      }
+    } else if (action === "prepare-invitation-revoke") {
+      recruitmentRevokeOpen = true;
+      recruitmentRevokeReason = "";
+      recruitmentRevokeError = "";
+      render();
+      document.querySelector<HTMLTextAreaElement>("#invitation-revoke-reason")?.focus();
+    } else if (action === "cancel-invitation-revoke") {
+      recruitmentRevokeOpen = false;
+      recruitmentRevokeReason = "";
+      recruitmentRevokeError = "";
+      render();
+      document.querySelector<HTMLElement>('[data-action="prepare-invitation-revoke"]')?.focus();
+    } else if (action === "confirm-invitation-revoke") {
+      try {
+        const pending = recruitment.revoke(recruitmentRevokeReason);
+        render();
+        const result = await pending;
+        if (!result.ok) {
+          recruitmentRevokeError = result.error;
+          render();
+          document.querySelector<HTMLTextAreaElement>("#invitation-revoke-reason")?.focus();
+        } else {
+          recruitmentRevokeOpen = false;
+          recruitmentRevokeReason = "";
+          recruitmentRevokeError = "";
+          render();
+          document.querySelector<HTMLElement>("#main-content")?.focus();
+        }
+      } catch (error) {
+        if (error instanceof SessionExpiredError) throw error;
+        recruitmentRevokeError = error instanceof Error ? error.message : "撤销结果暂未确认，请重试";
+        render();
+        document.querySelector<HTMLTextAreaElement>("#invitation-revoke-reason")?.focus();
+      }
+    } else if (action === "open-invitation-application" && id) {
+      activeModule = "review";
+      feedback = null;
+      const pending = review.select(id);
+      render();
+      await pending;
+      render();
+      document.querySelector<HTMLElement>("#main-content")?.focus();
     } else if (action === "select-row" && id) {
       feedback = null;
       const pending = review.select(id);
@@ -497,6 +652,10 @@ auth.setExpiryHandler(() => {
   review.clear();
   attendance.clearForSessionEnd();
   gameReports.clearForSessionEnd();
+  recruitment.clear();
+  recruitmentRevokeOpen = false;
+  recruitmentRevokeReason = "";
+  recruitmentRevokeError = "";
   activeModule = "review";
   feedback = null;
   render();
@@ -510,6 +669,15 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("focus", checkForegroundExpiry);
 
 document.addEventListener("keydown", (event) => {
+  if (recruitmentRevokeOpen && event.key === "Escape") {
+    event.preventDefault();
+    recruitmentRevokeOpen = false;
+    recruitmentRevokeReason = "";
+    recruitmentRevokeError = "";
+    render();
+    document.querySelector<HTMLElement>('[data-action="prepare-invitation-revoke"]')?.focus();
+    return;
+  }
   if (!attendance.state.confirmationOpen && !gameReports.state.confirmationOpen) return;
   if (event.key === "Escape") {
     event.preventDefault();

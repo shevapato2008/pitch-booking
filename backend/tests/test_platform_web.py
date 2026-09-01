@@ -23,6 +23,10 @@ def _write_console(root: Path) -> None:
         "export class GameReportResolutionController {};",
         encoding="utf-8",
     )
+    (root / "recruitment-invitations.js").write_text(
+        "export class RecruitmentInvitationsController {};",
+        encoding="utf-8",
+    )
 
 
 def test_platform_console_serves_only_known_assets_with_security_headers(tmp_path: Path) -> None:
@@ -37,6 +41,7 @@ def test_platform_console_serves_only_known_assets_with_security_headers(tmp_pat
         ("/platform-admin/main.js", "text/javascript"),
         ("/platform-admin/attendance-correction.js", "text/javascript"),
         ("/platform-admin/game-report-resolution.js", "text/javascript"),
+        ("/platform-admin/recruitment-invitations.js", "text/javascript"),
     ):
         response = client.get(path)
         assert response.status_code == 200

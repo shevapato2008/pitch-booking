@@ -229,6 +229,48 @@ export interface PlatformGameReportResolutionRequest {
   outcome: OpenGameReportResolutionOutcome;
   resolution_note: string;
 }
+export type RecruitmentInvitationStatus = "ACTIVE" | "CLAIMED" | "SUBMITTED" | "REVOKED" | "EXPIRED";
+
+export interface RecruitmentInvitationVenue {
+  venue_id: string;
+  name: string;
+  district_name: string;
+  address: string;
+}
+
+export interface RecruitmentInvitation {
+  id: string;
+  venue: RecruitmentInvitationVenue;
+  status: RecruitmentInvitationStatus;
+  contact_label: string;
+  expires_at: string;
+  created_at: string;
+  claimed_at: string | null;
+  application_id: string | null;
+  revoked_at: string | null;
+  revocation_reason: string | null;
+  version: number;
+}
+
+export interface RecruitmentInvitationPage {
+  items: RecruitmentInvitation[];
+  next_cursor: string | null;
+}
+
+export interface RecruitmentInvitationEligibleVenuePage {
+  items: RecruitmentInvitationVenue[];
+  next_cursor: string | null;
+}
+
+export interface RecruitmentInvitationCreateResult {
+  invitation: RecruitmentInvitation;
+  token: string;
+  invitation_path: string;
+}
+
+export type RecruitmentInvitationCreateResponse =
+  | { created: true; result: RecruitmentInvitationCreateResult }
+  | { created: false; invitation: RecruitmentInvitation };
 
 interface ErrorEnvelope {
   error?: { code?: string; message?: string };
@@ -386,12 +428,64 @@ export class PlatformApi {
     );
   }
 
+  listRecruitmentInvitationEligibleVenues(query?: string): Promise<RecruitmentInvitationEligibleVenuePage> {
+    const params = new URLSearchParams({ limit: "50" });
+    if (query?.trim()) params.set("q", query.trim());
+    return this.request(`/platform-admin/api/v1/recruitment-invitations/eligible-venues?${params}`, { method: "GET" });
+  }
+
+  listRecruitmentInvitations(status?: RecruitmentInvitationStatus): Promise<RecruitmentInvitationPage> {
+    const params = new URLSearchParams({ limit: "50" });
+    if (status) params.set("status", status);
+    return this.request(`/platform-admin/api/v1/recruitment-invitations?${params}`, { method: "GET" });
+  }
+
+  async createRecruitmentInvitation(
+    body: { venue_id: string; contact_label: string },
+    idempotencyKey: string,
+  ): Promise<RecruitmentInvitationCreateResponse> {
+    const response = await this.requestWithStatus<RecruitmentInvitation | RecruitmentInvitationCreateResult>(
+      "/platform-admin/api/v1/recruitment-invitations",
+      {
+        method: "POST",
+        headers: { ...this.mutationHeaders(), "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(body),
+      },
+    );
+    return response.status === 201
+      ? { created: true, result: response.body as RecruitmentInvitationCreateResult }
+      : { created: false, invitation: response.body as RecruitmentInvitation };
+  }
+
+  revokeRecruitmentInvitation(
+    invitationId: string,
+    reason: string,
+    idempotencyKey: string,
+  ): Promise<RecruitmentInvitation> {
+    return this.request(
+      `/platform-admin/api/v1/recruitment-invitations/${encodeURIComponent(invitationId)}/revoke`,
+      {
+        method: "POST",
+        headers: { ...this.mutationHeaders(), "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ reason }),
+      },
+    );
+  }
+
   private mutationHeaders(): Record<string, string> {
     if (!this.csrfToken) throw new SessionExpiredError();
     return { "X-CSRF-Token": this.csrfToken };
   }
 
   private async request<T>(path: string, init: RequestInit, sessionRequest = true): Promise<T> {
+    return (await this.requestWithStatus<T>(path, init, sessionRequest)).body;
+  }
+
+  private async requestWithStatus<T>(
+    path: string,
+    init: RequestInit,
+    sessionRequest = true,
+  ): Promise<{ status: number; body: T }> {
     const response = await this.fetcher(path, {
       ...init,
       credentials: "same-origin",
@@ -413,7 +507,7 @@ export class PlatformApi {
       if (response.status === 401 && sessionRequest) throw new SessionExpiredError(message);
       throw new ApiError(response.status, code, message);
     }
-    if (response.status === 204) return undefined as T;
-    return await response.json() as T;
+    if (response.status === 204) return { status: response.status, body: undefined as T };
+    return { status: response.status, body: await response.json() as T };
   }
 }

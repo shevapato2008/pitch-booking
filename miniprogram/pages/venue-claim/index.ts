@@ -14,7 +14,7 @@ import {
   type VenueOnboardingLocalEvidence,
 } from "../../services/venue-onboarding";
 
-interface ClaimOptions { candidate_id?: unknown; name?: unknown; district?: unknown; address?: unknown; application_id?: unknown }
+interface ClaimOptions { candidate_id?: unknown; name?: unknown; district?: unknown; address?: unknown; application_id?: unknown; invitation_token?: unknown }
 interface DatasetEvent { currentTarget?: { dataset?: { candidateId?: unknown; evidenceKind?: unknown } } }
 interface TextInputEvent { detail?: { value?: unknown } }
 
@@ -26,6 +26,7 @@ Page({
     searching: false,
     candidates: [] as readonly (VenueOnboardingCandidate & { selected: boolean })[],
     selectedVenueId: null as string | null,
+    invitationLocked: false,
     contactName: "",
     maskedPhone: null as string | null,
     evidence: createEvidenceItems("CLAIM") as readonly VenueOnboardingEvidenceItem[],
@@ -43,31 +44,57 @@ Page({
   evidenceFiles: {} as Partial<Record<VenueOnboardingEvidenceKind, VenueOnboardingLocalEvidence>>,
   evidenceAttempts: {} as Partial<Record<VenueOnboardingEvidenceKind, { intentKey: string; completeKey: string }>>,
   submissionAttempt: undefined as string | undefined,
+  invitationToken: undefined as string | undefined,
 
   async onLoad(options: ClaimOptions = {}) {
     this.disposed = false;
     const layout = readIntentHeaderLayout();
-    const candidate = decodeCandidateOptions(options);
+    const invitationToken = typeof options.invitation_token === "string" && /^[A-Za-z0-9_-]{43}$/.test(options.invitation_token)
+      ? options.invitation_token
+      : undefined;
+    const candidate = invitationToken ? null : decodeCandidateOptions(options);
+    this.invitationToken = invitationToken;
     this.setData({
+      title: invitationToken ? "补充认领资料" : "认领已有场馆",
       headerTopPx: layout.topPx,
       headerRowHeightPx: layout.rowHeightPx,
       headerRightInsetPx: layout.rightInsetPx,
       candidates: candidate ? [{ ...candidate, selected: true }] : [],
       selectedVenueId: candidate?.venueId ?? null,
+      invitationLocked: Boolean(invitationToken),
+      searchQuery: candidate?.name ?? "",
     });
     try {
-      const identity = await getVenueOnboardingDataSource().login();
+      const source = getVenueOnboardingDataSource();
+      const identity = await source.login();
       if (this.disposed) return;
       this.setData({ contactName: identity.contactName ?? "", maskedPhone: identity.maskedPhone });
+      if (invitationToken) {
+        if (!source.readInvitation) throw new Error("VENUE_INVITATION_DATA_SOURCE_NOT_CONFIGURED");
+        const invitation = await source.readInvitation(invitationToken);
+        if (this.disposed) return;
+        if (invitation.viewerState !== "CLAIMED_BY_VIEWER") {
+          wx.redirectTo({ url: `/pages/venue-invitation/index?token=${encodeURIComponent(invitationToken)}` });
+          return;
+        }
+        const authoritative = invitation.venue;
+        this.setData({
+          candidates: [{ ...authoritative, selected: true }],
+          selectedVenueId: authoritative.venueId,
+          searchQuery: authoritative.name,
+        });
+      }
       if (typeof options.application_id === "string") {
         const applicationId = safeDecode(options.application_id);
-        const rejected = (await getVenueOnboardingDataSource().listApplications()).items
+        const rejected = (await source.listApplications()).items
           .find((item) => item.applicationId === applicationId && item.kind === "CLAIM" && item.status === "REJECTED");
         if (rejected) this.setData({ searchQuery: rejected.venue.name, selectedVenueId: null, candidates: [], notice: `上次申请未通过：${rejected.rejectionReason}。请重新搜索场馆并上传新材料。` });
       }
       this.refreshSubmitState();
     } catch {
-      if (!this.disposed) this.setData({ notice: "微信登录失败，请返回后重试" });
+      if (!this.disposed) this.setData({
+        notice: invitationToken ? "邀请暂不可用，请返回邀请页重新检查" : "微信登录失败，请返回后重试",
+      });
     }
   },
 
@@ -78,10 +105,12 @@ Page({
   onBack() { returnToPortfolio(); },
 
   onSearchInput(event: TextInputEvent) {
+    if (this.data.invitationLocked) return;
     this.setData({ searchQuery: textValue(event), notice: "" });
   },
 
   async onSearch() {
+    if (this.data.invitationLocked) return;
     const query = this.data.searchQuery.trim();
     if ([...query.replace(/\s/g, "")].length < 2 || this.data.searching) {
       this.setData({ notice: "请输入至少两个字再搜索" });
@@ -103,6 +132,7 @@ Page({
   },
 
   onSelectCandidate(event: DatasetEvent) {
+    if (this.data.invitationLocked) return;
     const candidateId = event.currentTarget?.dataset?.candidateId;
     if (typeof candidateId !== "string" || !this.data.candidates.some((item: VenueOnboardingCandidate) => item.venueId === candidateId)) return;
     this.setData({
@@ -212,14 +242,18 @@ Page({
       const venueId = this.data.selectedVenueId;
       if (!venueId) return;
       const evidence = evidenceRecord(this.data.evidence);
-      const application = await getVenueOnboardingDataSource().submitClaim({
-        venueId,
+      const source = getVenueOnboardingDataSource();
+      const claimInput = {
         contactName: this.data.contactName.trim(),
         evidence: {
           MANAGEMENT_AUTHORIZATION: evidence.MANAGEMENT_AUTHORIZATION,
           VENUE_EXTERIOR: evidence.VENUE_EXTERIOR,
         },
-      }, this.submissionAttempt);
+      };
+      const application = this.invitationToken
+        ? await source.submitInvitedClaim?.(this.invitationToken, claimInput, this.submissionAttempt)
+        : await source.submitClaim({ venueId, ...claimInput }, this.submissionAttempt);
+      if (!application) throw new Error("VENUE_INVITATION_DATA_SOURCE_NOT_CONFIGURED");
       if (!this.disposed) this.setData({ mode: "submitted", application, notice: "" });
     } catch (caught) {
       const unknown = (caught as { code?: unknown }).code === "SUBMISSION_RESULT_UNKNOWN";

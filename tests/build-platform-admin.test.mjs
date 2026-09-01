@@ -15,7 +15,17 @@ test("production platform console builds only approved API-backed assets", () =>
 
   const outputRoot = join(root, "platform-admin", "dist");
   const files = readdirSync(outputRoot).sort();
-  assert.deepEqual(files, ["api.js", "attendance-correction.js", "auth.js", "game-report-resolution.js", "index.html", "main.js", "review.js", "styles.css"]);
+  assert.deepEqual(files, [
+    "api.js",
+    "attendance-correction.js",
+    "auth.js",
+    "game-report-resolution.js",
+    "index.html",
+    "main.js",
+    "recruitment-invitations.js",
+    "review.js",
+    "styles.css",
+  ]);
   const combined = files.map((name) => readFileSync(join(outputRoot, name), "utf8")).join("\n");
   assert.doesNotMatch(
     combined,
@@ -27,4 +37,6 @@ test("production platform console builds only approved API-backed assets", () =>
   assert.match(combined, /platform-admin\/api\/v1\/game-reports/);
   assert.match(readFileSync(join(outputRoot, "main.js"), "utf8"), /\.\/attendance-correction\.js/);
   assert.match(readFileSync(join(outputRoot, "main.js"), "utf8"), /\.\/game-report-resolution\.js/);
+  assert.match(combined, /platform-admin\/api\/v1\/recruitment-invitations/);
+  assert.match(readFileSync(join(outputRoot, "main.js"), "utf8"), /\.\/recruitment-invitations\.js/);
 });
