@@ -20,10 +20,14 @@
       <button class="venue-access__secondary venue-access__touch" bindtap="onRetry" disabled="{{retrying}}">{{retrying ? '正在重试' : '重试'}}</button>
     </view>
     <view wx:elif="{{venues.length}}" class="venue-access__list" aria-label="可管理场馆">
-      <button wx:for="{{venues}}" wx:key="id" class="venue-access__card venue-access__touch" hover-class="venue-access__card--pressed" bindtap="onChooseVenue" data-venue-id="{{item.id}}" aria-label="{{item.name}}，{{item.districtName}}，{{item.address}}，进入场馆工作台">
+      <view wx:for="{{venues}}" wx:key="id" class="venue-access__card" aria-label="{{item.name}}，{{item.districtName}}，{{item.address}}，{{item.roleLabel}}，{{item.permissionSummary}}">
         <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.name}}</text><text class="venue-access__venue-location">{{item.districtName}} · {{item.address}}</text><text class="venue-access__permission">已获得管理权限</text></view>
-        <view class="venue-access-icon venue-access-icon--chevron" aria-hidden="true"></view>
-      </button>
+        <text class="venue-access__authority">{{item.roleLabel}} · {{item.permissionSummary}}</text>
+        <view class="venue-access__card-actions">
+          <button class="venue-access__card-action venue-access__card-action--primary venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onChooseVenue" data-venue-id="{{item.id}}">进入工作台</button>
+          <button class="venue-access__card-action venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onOpenStaff" data-venue-id="{{item.id}}">员工与权限</button>
+        </view>
+      </view>
     </view>
     <view wx:else class="venue-access__empty">
       <view class="venue-access__permission-mark" role="img" aria-label="场馆权限核验"><view class="venue-access__permission-building" aria-hidden="true"><view class="venue-access__permission-door"></view></view></view>

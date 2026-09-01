@@ -5,20 +5,30 @@ from sqlalchemy.dialects import postgresql
 
 from backend.app.database import get_database
 from backend.app.main import create_app
-from backend.app.models import User, Venue
+from backend.app.models import User, Venue, VenueMembership, VenueMembershipRole
 from backend.app.modules.auth.router import get_current_user
 
 USER_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
 
 
+class RecordingResult:
+    def __init__(self, rows: list[tuple[Venue, VenueMembership]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[Venue, VenueMembership]]:
+        return self.rows
+
+
 class RecordingSession:
-    def __init__(self, venues: list[Venue] | None = None) -> None:
-        self.venues = venues or []
+    def __init__(
+        self, rows: list[tuple[Venue, VenueMembership]] | None = None
+    ) -> None:
+        self.rows = rows or []
         self.statement: object | None = None
 
-    def scalars(self, statement: object) -> list[Venue]:
+    def execute(self, statement: object) -> RecordingResult:
         self.statement = statement
-        return self.venues
+        return RecordingResult(self.rows)
 
 
 def _venue(*, venue_id: str, name: str) -> Venue:
@@ -46,11 +56,36 @@ def _venue(*, venue_id: str, name: str) -> Venue:
     )
 
 
+def _membership(
+    venue: Venue,
+    *,
+    role: VenueMembershipRole = VenueMembershipRole.STAFF,
+    profile: bool = False,
+    pitches: bool = False,
+    inventory: bool = False,
+    orders: bool = False,
+) -> VenueMembership:
+    return VenueMembership(
+        id=uuid.uuid4(),
+        venue_id=venue.id,
+        user_id=USER_ID,
+        role=role,
+        can_manage_profile=profile,
+        can_manage_pitches=pitches,
+        can_manage_inventory=inventory,
+        can_fulfill_orders=orders,
+        is_active=True,
+        version=1,
+    )
+
+
 def _client(
-    venues: list[Venue] | None = None, *, authenticated: bool = True
+    rows: list[tuple[Venue, VenueMembership]] | None = None,
+    *,
+    authenticated: bool = True,
 ) -> tuple[TestClient, RecordingSession]:
     app = create_app()
-    database = RecordingSession(venues)
+    database = RecordingSession(rows)
     app.dependency_overrides[get_database] = lambda: database
     if authenticated:
         app.dependency_overrides[get_current_user] = lambda: User(
@@ -84,13 +119,12 @@ def test_managed_venues_returns_empty_for_user_without_memberships() -> None:
 
 
 def test_managed_venues_returns_one_closed_venue_projection() -> None:
+    venue = _venue(
+        venue_id="00000000-0000-0000-0000-000000000001",
+        name="渤海元丰足球场",
+    )
     client, _database = _client(
-        [
-            _venue(
-                venue_id="00000000-0000-0000-0000-000000000001",
-                name="渤海元丰足球场",
-            )
-        ]
+        [(venue, _membership(venue, inventory=True, orders=True))]
     )
 
     response = client.get("/api/v1/admin/venues", headers=_auth())
@@ -103,9 +137,38 @@ def test_managed_venues_returns_one_closed_venue_projection() -> None:
                 "name": "渤海元丰足球场",
                 "district_name": "南开区",
                 "address": "天津市渤海元丰足球场路 1 号",
+                "role": "STAFF",
+                "permissions": ["MANAGE_INVENTORY", "FULFILL_ORDERS"],
             }
         ]
     }
+
+
+def test_managed_venues_projects_owner_as_all_permissions() -> None:
+    venue = _venue(
+        venue_id="00000000-0000-0000-0000-000000000004",
+        name="负责人场馆",
+    )
+    membership = _membership(
+        venue,
+        role=VenueMembershipRole.OWNER,
+        profile=True,
+        pitches=True,
+        inventory=True,
+        orders=True,
+    )
+    client, _database = _client([(venue, membership)])
+
+    response = client.get("/api/v1/admin/venues", headers=_auth())
+
+    assert response.status_code == 200
+    assert response.json()["venues"][0]["role"] == "OWNER"
+    assert response.json()["venues"][0]["permissions"] == [
+        "MANAGE_PROFILE",
+        "MANAGE_PITCHES",
+        "MANAGE_INVENTORY",
+        "FULFILL_ORDERS",
+    ]
 
 
 def test_managed_venues_query_filters_authority_and_has_deterministic_order() -> None:
@@ -123,7 +186,9 @@ def test_managed_venues_query_filters_authority_and_has_deterministic_order() ->
             name=" bravo 场馆 ",
         ),
     ]
-    client, database = _client(venues)
+    client, database = _client(
+        [(venue, _membership(venue, inventory=True)) for venue in venues]
+    )
 
     response = client.get("/api/v1/admin/venues", headers=_auth())
 
@@ -134,7 +199,8 @@ def test_managed_venues_query_filters_authority_and_has_deterministic_order() ->
         "00000000-0000-0000-0000-000000000003",
     ]
     assert all(
-        set(venue) == {"id", "name", "district_name", "address"}
+        set(venue)
+        == {"id", "name", "district_name", "address", "role", "permissions"}
         for venue in response.json()["venues"]
     )
     assert database.statement is not None

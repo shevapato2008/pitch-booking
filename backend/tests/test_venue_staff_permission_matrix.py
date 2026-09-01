@@ -22,6 +22,15 @@ class RecordingSession:
         self.statement = statement
         return []
 
+    def execute(self, statement: object) -> object:
+        self.statement = statement
+
+        class EmptyResult:
+            def all(self) -> list[object]:
+                return []
+
+        return EmptyResult()
+
 
 VENUE_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
 USER_ID = uuid.UUID("20000000-0000-0000-0000-000000000001")

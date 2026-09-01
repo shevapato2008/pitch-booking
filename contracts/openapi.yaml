@@ -5952,12 +5952,19 @@ components:
     ManagedVenue:
       type: object
       additionalProperties: false
-      required: [id, name, district_name, address]
+      required: [id, name, district_name, address, role, permissions]
       properties:
         id: {type: string, format: uuid}
         name: {type: string, minLength: 1}
         district_name: {type: string, minLength: 1}
         address: {type: string, minLength: 1}
+        role: {$ref: '#/components/schemas/VenueMembershipRole'}
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/VenueStaffPermission'}
     ManagedVenuesResponse:
       type: object
       additionalProperties: false

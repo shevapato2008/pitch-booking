@@ -7,6 +7,8 @@ const venue = {
   name: "渤海元丰足球场",
   district_name: "西青区",
   address: "天津市西青区利达路",
+  role: "STAFF",
+  permissions: ["MANAGE_INVENTORY", "FULFILL_ORDERS"],
 };
 
 describe("managed venue response decoder", () => {
@@ -16,6 +18,8 @@ describe("managed venue response decoder", () => {
       name: venue.name,
       districtName: venue.district_name,
       address: venue.address,
+      role: "STAFF",
+      permissions: ["MANAGE_INVENTORY", "FULFILL_ORDERS"],
     }]);
     expect(decodeManagedVenuesResponse({ venues: [] })).toEqual([]);
   });
@@ -27,6 +31,10 @@ describe("managed venue response decoder", () => {
     ["an empty name", { venues: [{ ...venue, name: "" }] }],
     ["an empty district", { venues: [{ ...venue, district_name: "" }] }],
     ["an empty address", { venues: [{ ...venue, address: "" }] }],
+    ["an unknown role", { venues: [{ ...venue, role: "ADMIN" }] }],
+    ["an empty permission list", { venues: [{ ...venue, permissions: [] }] }],
+    ["an unknown permission", { venues: [{ ...venue, permissions: ["MANAGE_USERS"] }] }],
+    ["duplicate permissions", { venues: [{ ...venue, permissions: ["MANAGE_INVENTORY", "MANAGE_INVENTORY"] }] }],
   ])("rejects %s", (_label, value) => {
     expect(() => decodeManagedVenuesResponse(value)).toThrow(expect.objectContaining({
       code: "INVALID_API_RESPONSE",

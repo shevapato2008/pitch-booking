@@ -43,6 +43,7 @@ function dateLabel(timestamp: string): string {
 function memberView(member: VenueStaffMember) {
   return {
     ...member,
+    roleLabel: member.role === "OWNER" ? "负责人" : "员工",
     initials: initial(member.displayName),
     permissionSummary: summarizeVenueStaffPermissions(member.permissions),
     joinedAtLabel: `${member.role === "OWNER" ? "负责人" : "员工"} · 权限版本 ${member.version}`,
@@ -62,7 +63,7 @@ function authorityApplied(attempt: VenueStaffMutationAttempt, authority: VenueSt
 
 Page({
   data: {
-    venueId: "", venueName: "", viewerRole: "STAFF", canManage: false, mode: "loading", readError: "",
+    venueId: "", venueName: "", viewerRole: "STAFF", viewerRoleLabel: "员工", canManage: false, mode: "loading", readError: "",
     members: [] as unknown[], selfMember: null as unknown, activeInvitations: [] as unknown[], audits: [] as unknown[],
     permissions: VENUE_STAFF_PERMISSION_OPTIONS, sheet: "none" as Sheet, busy: false,
     draftContact: "", draftPermissions: [...defaultPermissions] as VenueStaffPermission[], permissionChoices: choices(defaultPermissions),
@@ -103,6 +104,7 @@ Page({
     this.setData({
       venueName: authority.venueName,
       viewerRole: authority.viewerRole,
+      viewerRoleLabel: authority.viewerRole === "OWNER" ? "负责人" : "员工",
       canManage: authority.canManage,
       members,
       selfMember,

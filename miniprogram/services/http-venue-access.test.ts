@@ -20,6 +20,8 @@ const response = {
     name: "渤海元丰足球场",
     district_name: "西青区",
     address: "天津市西青区利达路",
+    role: "STAFF",
+    permissions: ["MANAGE_INVENTORY", "FULFILL_ORDERS"],
   }],
 };
 
@@ -39,6 +41,8 @@ describe("HTTP venue access data source", () => {
       name: response.venues[0].name,
       districtName: response.venues[0].district_name,
       address: response.venues[0].address,
+      role: "STAFF",
+      permissions: ["MANAGE_INVENTORY", "FULFILL_ORDERS"],
     }]);
     expect(harness.get).toHaveBeenCalledWith("/api/v1/admin/venues", {
       Authorization: "Bearer old-token",

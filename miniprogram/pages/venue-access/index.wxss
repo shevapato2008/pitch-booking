@@ -16,12 +16,17 @@ button::after { border: 0; }
 .venue-access__heading { display: block; margin-top: 12rpx; font-size: 46rpx; font-weight: 750; line-height: 64rpx; }
 .venue-access__description { display: block; margin: 8rpx 0 32rpx; color: var(--muted); font-size: 28rpx; line-height: 44rpx; }
 .venue-access__list { display: flex; flex-direction: column; gap: 20rpx; }
-.venue-access__card { position: relative; display: flex; width: 100%; padding: 28rpx 88rpx 28rpx 28rpx; align-items: center; justify-content: flex-start; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; text-align: left; }
+.venue-access__card { display: flex; width: 100%; padding: 28rpx; flex-direction: column; align-items: stretch; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; text-align: left; }
 .venue-access__card--pressed { border-color: #7DD3FC; background: #F0F9FF; }
 .venue-access__card-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .venue-access__venue-name { overflow: hidden; font-size: 32rpx; font-weight: 750; line-height: 48rpx; text-overflow: ellipsis; white-space: nowrap; }
 .venue-access__venue-location, .venue-access__permission { display: block; margin-top: 4rpx; color: var(--muted); font-size: 24rpx; line-height: 36rpx; }
 .venue-access__permission { color: var(--primary-strong); }
+.venue-access__authority { display: block; margin-top: 16rpx; color: var(--text); font-size: 24rpx; font-weight: 700; line-height: 36rpx; }
+.venue-access__card-actions { display: grid; margin-top: 22rpx; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx; }
+.venue-access__card-action { display: flex; min-height: 88rpx; padding: 14rpx 20rpx; align-items: center; justify-content: center; border: 2rpx solid var(--primary-strong); border-radius: 22rpx; background: #FFFFFF; color: var(--primary-strong); font-size: 26rpx; font-weight: 750; line-height: 36rpx; text-align: center; }
+.venue-access__card-action--primary { background: var(--primary-strong); color: #FFFFFF; }
+.venue-access__card-action--pressed { opacity: .78; }
 .venue-access__empty { display: flex; padding: 36rpx 28rpx; flex-direction: column; align-items: center; justify-content: center; border: 2rpx solid var(--border); border-radius: 28rpx; background: #FFFFFF; text-align: center; }
 .venue-access__permission-mark { display: flex; width: 112rpx; height: 112rpx; margin-bottom: 24rpx; align-items: center; justify-content: center; border-radius: 56rpx; background: #E0F2FE; color: #C42525; font-size: 42rpx; font-weight: 800; }
 .venue-access__permission-mark--error { background: #FEE2E2; }

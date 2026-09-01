@@ -9,8 +9,22 @@ import { registerVenueAccessDataSource, resetVenueAccessBindingsForTesting, type
 
 type RuntimePage = Record<string, any> & { data: Record<string, any>; setData(patch: Record<string, unknown>): void };
 let definition: Record<string, any> | undefined;
-const first: ManagedVenue = { id: "00000000-0000-4000-8000-000000000010", name: "渤海元丰足球场", districtName: "西青区", address: "天津市西青区利达路" };
-const second: ManagedVenue = { id: "00000000-0000-4000-8000-000000000020", name: "天津奥体足球公园", districtName: "南开区", address: "天津市南开区凌宾路 1 号" };
+const first: ManagedVenue = {
+  id: "00000000-0000-4000-8000-000000000010",
+  name: "渤海元丰足球场",
+  districtName: "西青区",
+  address: "天津市西青区利达路",
+  role: "OWNER",
+  permissions: ["MANAGE_PROFILE", "MANAGE_PITCHES", "MANAGE_INVENTORY", "FULFILL_ORDERS"],
+};
+const second: ManagedVenue = {
+  id: "00000000-0000-4000-8000-000000000020",
+  name: "天津奥体足球公园",
+  districtName: "南开区",
+  address: "天津市南开区凌宾路 1 号",
+  role: "STAFF",
+  permissions: ["MANAGE_INVENTORY", "FULFILL_ORDERS"],
+};
 
 function source(venues: readonly ManagedVenue[] = []): VenueAccessDataSource {
   return { login: jest.fn(async () => undefined), listManagedVenues: jest.fn(async () => venues) };
@@ -50,24 +64,50 @@ test("zero venues still renders both real onboarding actions and returns to the 
 test("one venue remains in the stable portfolio and can be chosen explicitly", async () => {
   registerVenueAccessDataSource(source([first])); const target = page();
   await target.onLoad();
-  expect(target.data).toMatchObject({ title: "我的场馆", mode: "ready", venues: [first] });
+  expect(target.data).toMatchObject({
+    title: "我的场馆",
+    mode: "ready",
+    venues: [expect.objectContaining({ ...first, roleLabel: "场馆负责人", permissionSummary: "全部工作权限" })],
+  });
   expect(wx.redirectTo).not.toHaveBeenCalled();
   target.onChooseVenue({ currentTarget: { dataset: { venueId: first.id } } });
   expect(wx.redirectTo).toHaveBeenCalledTimes(1);
   expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-profile/index?venue_id=${encodeURIComponent(first.id)}` }));
 });
 
-test("multiple venues stay selectable and reject unknown ids", async () => {
+test("multiple venues use their server permissions for the initial workbench", async () => {
   registerVenueAccessDataSource(source([first, second])); const target = page();
   await target.onLoad();
-  expect(target.data).toMatchObject({ title: "我的场馆", mode: "ready", venues: [first, second] });
+  expect(target.data).toMatchObject({
+    title: "我的场馆",
+    mode: "ready",
+    venues: [
+      expect.objectContaining({ ...first }),
+      expect.objectContaining({ ...second, roleLabel: "场馆员工", permissionSummary: "可订库存、订单履约" }),
+    ],
+  });
   expect(wx.redirectTo).not.toHaveBeenCalled();
   target.onChooseVenue({ currentTarget: { dataset: { venueId: "unknown" } } });
   expect(wx.redirectTo).not.toHaveBeenCalled();
   target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id } } });
   target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id } } });
   expect(wx.redirectTo).toHaveBeenCalledTimes(1);
-  expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-profile/index?venue_id=${encodeURIComponent(second.id)}` }));
+  expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-inventory/index?venue_id=${encodeURIComponent(second.id)}` }));
+});
+
+test("every managed venue has a real staff authority entry for owner or staff", async () => {
+  registerVenueAccessDataSource(source([first, second])); const target = page();
+  await target.onLoad();
+  target.onOpenStaff({ currentTarget: { dataset: { venueId: second.id } } });
+  expect(wx.navigateTo).toHaveBeenCalledWith({
+    url: `/pages/venue-staff/index?venue_id=${encodeURIComponent(second.id)}`,
+  });
+  target.onOpenStaff({ currentTarget: { dataset: { venueId: "unknown" } } });
+  expect(wx.navigateTo).toHaveBeenCalledTimes(1);
+  const markup = readFileSync("miniprogram/pages/venue-access/index.wxml", "utf8");
+  expect(markup).toMatch(/<button[^>]*bindtap="onChooseVenue"[^>]*>\s*进入工作台\s*<\/button>/);
+  expect(markup).toMatch(/<button[^>]*bindtap="onOpenStaff"[^>]*>\s*员工与权限\s*<\/button>/);
+  expect(markup).toContain("{{item.roleLabel}} · {{item.permissionSummary}}");
 });
 
 test("claim and create CTAs open their production routes", async () => {

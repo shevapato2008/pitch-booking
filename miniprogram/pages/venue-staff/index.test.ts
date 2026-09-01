@@ -63,7 +63,16 @@ beforeEach(() => {
 
 test("loads server authority and completes every owner mutation with real calls", async () => {
   const api = source(); registerVenueStaffDataSource(api); const view = page(); await view.onLoad({ venue_id: venueId });
-  expect(view.data).toMatchObject({ mode: "ready", canManage: true, venueName: overview.venueName });
+  expect(view.data).toMatchObject({
+    mode: "ready",
+    canManage: true,
+    venueName: overview.venueName,
+    viewerRoleLabel: "负责人",
+    members: [
+      expect.objectContaining({ role: "OWNER", roleLabel: "负责人" }),
+      expect.objectContaining({ role: "STAFF", roleLabel: "员工" }),
+    ],
+  });
 
   view.onOpenCreate(); view.onContactInput({ detail: { value: " 新员工 " } }); await view.onCreateInvitation();
   expect(api.createInvitation).toHaveBeenCalledWith(expect.objectContaining({ originatingUserId: userId, venueId, contactLabel: "新员工", permissions: ["MANAGE_INVENTORY"] }));
@@ -85,7 +94,7 @@ test("loads server authority and completes every owner mutation with real calls"
 test("renders staff read-only authority and suppresses owner actions", async () => {
   const staffOverview: VenueStaffOverview = { ...overview, viewerRole: "STAFF", viewerPermissions: ["MANAGE_INVENTORY"], canManage: false, members: [{ ...overview.members[1], isSelf: true }], activeInvitations: [], recentAudits: [] };
   const api = source(staffOverview); registerVenueStaffDataSource(api); const view = page(); await view.onLoad({ venue_id: venueId });
-  expect(view.data).toMatchObject({ mode: "ready", canManage: false });
+  expect(view.data).toMatchObject({ mode: "ready", canManage: false, viewerRoleLabel: "员工" });
   view.onOpenCreate(); view.onOpenEdit({ currentTarget: { dataset: { membershipId: staffId } } });
   expect(view.data.sheet).toBe("none"); expect(api.createInvitation).not.toHaveBeenCalled();
 });
@@ -102,5 +111,7 @@ test("retains unresolved persisted work and replays its original key", async () 
 test("production markup binds all business actions and excludes preview fixtures", () => {
   const markup = readFileSync("miniprogram/pages/venue-staff/index.wxml", "utf8");
   for (const handler of ["onRetry", "onOpenCreate", "onCreateInvitation", "onCopyInvitation", "onOpenEdit", "onSavePermissions", "onPrepareRemove", "onRemoveReasonInput", "onConfirmRemove", "onRevokeInvitation", "onConfirmRevoke", "onRetryUnknown"]) expect(markup).toContain(handler);
+  expect(markup).toContain("{{viewerRoleLabel}}"); expect(markup).toContain("{{item.roleLabel}}");
+  expect(markup).not.toContain("{{viewerRole}}"); expect(markup).not.toContain("{{item.role}}</text>");
   expect(markup).not.toContain("模拟数据"); expect(markup).not.toContain("D1b 开发预览");
 });

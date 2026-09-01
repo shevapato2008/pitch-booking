@@ -11,7 +11,13 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, MetaData, Table, create_engine, insert, inspect, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.orm import Session
 
+from backend.app.modules.venue_staff.owner_mapping import (
+    OwnerMappingEntry,
+    backfill_venue_staff_owners,
+    owner_mapping_is_complete,
+)
 from backend.tests.postgres_test_database import (
     disposable_database,
     override_test_database_url,
@@ -204,6 +210,45 @@ def test_0026_preserves_real_legacy_inventory_and_round_trips(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one() == "0026"
 
+
+def test_explicit_owner_mapping_dry_run_apply_and_replay_use_real_postgres(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0025")
+    venue_id, membership_ids = _seed_legacy_memberships(migration_engine)
+    command.upgrade(config, "0026")
+    mapping = [OwnerMappingEntry(venue_id, membership_ids["inventory"])]
+
+    with Session(migration_engine) as session:
+        assert owner_mapping_is_complete(session) is False
+
+        dry_run = backfill_venue_staff_owners(session, mapping, apply=False)
+        assert dry_run.managed_venue_count == 1
+        assert dry_run.mapped_owner_count == 1
+        assert dry_run.changed_membership_count == 1
+        assert dry_run.applied is False
+        assert owner_mapping_is_complete(session) is False
+
+        applied = backfill_venue_staff_owners(session, mapping, apply=True)
+        assert applied.changed_membership_count == 1
+        assert applied.applied is True
+        assert owner_mapping_is_complete(session) is True
+
+        replay = backfill_venue_staff_owners(session, mapping, apply=True)
+        assert replay.changed_membership_count == 0
+        assert replay.applied is True
+
+    with migration_engine.connect() as connection:
+        owner = connection.execute(
+            text(
+                "SELECT role, can_manage_profile, can_manage_pitches, "
+                "can_manage_inventory, can_fulfill_orders, version "
+                "FROM venue_memberships WHERE id = :membership_id"
+            ),
+            {"membership_id": membership_ids["inventory"]},
+        ).one()
+    assert owner == ("OWNER", True, True, True, True, 2)
 
 def test_0026_enforces_owner_staff_and_append_only_audit(
     migration_engine: Engine,
