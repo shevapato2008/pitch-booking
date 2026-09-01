@@ -1,0 +1,87 @@
+<view class="d1b-page">
+  <view class="d1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="d1b-header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+    <button class="d1b-header-back" hover-class="d1b-pressed" bindtap="onHeaderBack" aria-label="返回"><view class="d1b-back-icon"></view></button>
+    <text class="d1b-header-title">员工与权限</text><view class="d1b-header-spacer"></view>
+  </view>
+
+  <scroll-view class="d1b-scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
+    <view class="d1b-content">
+      <view wx:if="{{mode === 'loading'}}" class="d1b-state"><view class="d1b-spinner"></view><text>正在读取员工权限</text></view>
+      <view wx:elif="{{mode === 'read-error' || mode === 'permission-error'}}" class="d1b-state d1b-state--error">
+        <text class="d1b-state-title">{{mode === 'permission-error' ? '无法进入该场馆' : '员工权限加载失败'}}</text><text>{{readError}}</text>
+        <button class="d1b-secondary" bindtap="onRetry">重新加载</button>
+      </view>
+      <block wx:else>
+        <view class="d1b-venue-card">
+          <view><text class="d1b-eyebrow">{{canManage ? '负责人工作台' : '我的工作权限'}}</text><text class="d1b-venue-name">{{venueName}}</text><text class="d1b-venue-location">权限和成员状态以服务端为准</text></view>
+          <text class="d1b-role-pill">{{viewerRole}}</text>
+        </view>
+
+        <view wx:if="{{!canManage}}" class="d1b-boundary"><view class="d1b-boundary-mark">i</view><view><text>你只能查看自己的权限</text><text>成员邀请、权限变更和移除仅由场馆负责人操作。</text></view></view>
+        <view wx:if="{{!canManage && selfMember}}" class="d1b-member-card">
+          <view class="d1b-member-top"><view class="d1b-avatar">{{selfMember.initials}}</view><view><text class="d1b-member-name">{{selfMember.displayName}}</text><text class="d1b-member-meta">{{selfMember.joinedAtLabel}}</text></view></view>
+          <text class="d1b-permission-summary">{{selfMember.permissionSummary}}</text>
+        </view>
+
+        <block wx:if="{{canManage}}">
+          <view class="d1b-section-head"><view><text>团队成员</text><text>{{members.length}} 人 · 服务端权限为准</text></view></view>
+          <view wx:for="{{members}}" wx:key="id" class="d1b-member-card">
+            <view class="d1b-member-top"><view class="d1b-avatar d1b-avatar--{{item.role === 'OWNER' ? 'owner' : 'staff'}}">{{item.initials}}</view><view class="d1b-member-copy"><view class="d1b-name-line"><text class="d1b-member-name">{{item.displayName}}</text><text class="d1b-small-pill">{{item.role}}</text></view><text class="d1b-member-meta">{{item.joinedAtLabel}}</text></view></view>
+            <text class="d1b-permission-summary">{{item.permissionSummary}}</text>
+            <button wx:if="{{item.role === 'STAFF'}}" class="d1b-secondary" data-membership-id="{{item.id}}" bindtap="onOpenEdit" disabled="{{busy || unknownAttempt || foreignAttemptPending}}">编辑权限</button>
+            <text wx:else class="d1b-owner-note">负责人拥有全部权限；负责人转移请联系平台处理</text>
+          </view>
+
+          <view class="d1b-section-head"><view><text>待接受邀请</text><text>{{activeInvitations.length}} 份 · 权限创建后不可编辑</text></view></view>
+          <view wx:for="{{activeInvitations}}" wx:key="id" class="d1b-invite-card d1b-invite-card--active">
+            <view class="d1b-invite-row"><view><text class="d1b-member-name">{{item.contactLabel}}</text><text class="d1b-member-meta">{{item.expiresAtLabel}}</text></view><text class="d1b-small-pill">待接受</text></view>
+            <text class="d1b-permission-summary">{{item.permissionSummary}}</text>
+            <button class="d1b-danger-link" data-invitation-id="{{item.id}}" bindtap="onRevokeInvitation" disabled="{{busy || unknownAttempt || foreignAttemptPending}}">撤销邀请</button>
+          </view>
+          <view wx:if="{{!activeInvitations.length}}" class="d1b-empty-note">当前没有待接受邀请</view>
+
+          <view class="d1b-section-head"><view><text>审计摘要</text><text>最近 {{audits.length}} 条</text></view></view>
+          <view class="d1b-audit-card"><view wx:for="{{audits}}" wx:key="id" class="d1b-audit-row"><view class="d1b-audit-dot"></view><view><text>{{item.summary}}</text><text>{{item.detail}}</text></view></view><text wx:if="{{!audits.length}}" class="d1b-empty-note">暂无审计记录</text></view>
+        </block>
+
+        <view wx:if="{{unknownAttempt || foreignAttemptPending}}" class="d1b-recovery"><text>{{feedback}}</text><button wx:if="{{unknownAttempt}}" class="d1b-secondary" bindtap="onRetryUnknown" disabled="{{busy}}">核对上次操作</button></view>
+        <text wx:elif="{{feedback && sheet === 'none'}}" class="d1b-feedback">{{feedback}}</text>
+        <view class="d1b-content-tail"></view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{mode === 'ready' && canManage}}" class="d1b-bottom"><button class="d1b-primary" bindtap="onOpenCreate" disabled="{{busy || unknownAttempt || foreignAttemptPending}}" hover-class="d1b-pressed">邀请员工</button><view class="d1b-safe-bottom"></view></view>
+
+  <view wx:if="{{sheet !== 'none'}}" class="d1b-modal" aria-role="dialog">
+    <view class="d1b-scrim" bindtap="onCloseSheet"></view><view class="d1b-sheet"><view class="d1b-sheet-handle"></view>
+      <block wx:if="{{sheet === 'create'}}">
+        <text class="d1b-sheet-title">创建员工邀请</text><text class="d1b-sheet-copy">邀请有效 7 天，原始路径只展示一次。</text>
+        <text class="d1b-field-label">内部称呼</text><input class="d1b-input" maxlength="40" value="{{draftContact}}" bindinput="onContactInput" placeholder="例如：夜班主管" />
+        <text class="d1b-field-label">工作权限（至少一项）</text>
+        <button wx:for="{{permissionChoices}}" wx:key="code" class="d1b-permission-choice d1b-permission-choice--{{item.selected ? 'selected' : 'plain'}}" data-permission="{{item.code}}" bindtap="onToggleDraftPermission" disabled="{{busy}}"><view class="d1b-check">{{item.selected ? '✓' : ''}}</view><view><text>{{item.label}}</text><text>{{item.description}}</text></view></button>
+        <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">取消</button><button class="d1b-modal-button d1b-modal-button--primary" bindtap="onCreateInvitation" loading="{{busy}}" disabled="{{busy}}">创建邀请</button></view>
+      </block>
+      <block wx:elif="{{sheet === 'created'}}">
+        <text class="d1b-sheet-title">邀请已创建</text><text class="d1b-sheet-copy">{{feedback}}</text><text wx:if="{{createdPathRecoverable}}" class="d1b-token-path">{{createdPath}}</text>
+        <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet">完成</button><button wx:if="{{createdPathRecoverable}}" class="d1b-modal-button d1b-modal-button--primary" bindtap="onCopyInvitation">复制路径</button></view>
+      </block>
+      <block wx:elif="{{sheet === 'edit'}}">
+        <text class="d1b-sheet-title">编辑员工权限</text><text class="d1b-sheet-copy">保存后，员工下一次操作会由服务端重新校验。</text>
+        <button wx:for="{{permissionChoices}}" wx:key="code" class="d1b-permission-choice d1b-permission-choice--{{item.selected ? 'selected' : 'plain'}}" data-permission="{{item.code}}" bindtap="onToggleDraftPermission" disabled="{{busy}}"><view class="d1b-check">{{item.selected ? '✓' : ''}}</view><view><text>{{item.label}}</text><text>{{item.description}}</text></view></button>
+        <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><button class="d1b-remove-link" data-membership-id="{{selectedMembershipId}}" bindtap="onPrepareRemove" disabled="{{busy}}">停用这名员工</button>
+        <view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">取消</button><button class="d1b-modal-button d1b-modal-button--primary" bindtap="onSavePermissions" loading="{{busy}}" disabled="{{busy}}">保存权限</button></view>
+      </block>
+      <block wx:elif="{{sheet === 'remove'}}">
+        <text class="d1b-sheet-title">确认停用员工？</text><text class="d1b-sheet-copy">停用后该员工不能继续管理本场馆，历史审计记录仍保留。</text>
+        <text class="d1b-field-label">停用原因</text><textarea class="d1b-reason-input" maxlength="200" value="{{removeReason}}" bindinput="onRemoveReasonInput" placeholder="例如：已离职" disabled="{{busy}}"></textarea>
+        <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">返回检查</button><button class="d1b-modal-button d1b-modal-button--danger" bindtap="onConfirmRemove" loading="{{busy}}" disabled="{{busy}}">确认停用</button></view>
+      </block>
+      <block wx:else>
+        <text class="d1b-sheet-title">确认撤销邀请？</text><text class="d1b-sheet-copy">撤销后这份一次性链接立即失效；该操作会写入审计摘要。</text>
+        <text wx:if="{{feedback}}" class="d1b-field-error">{{feedback}}</text><view class="d1b-sheet-actions"><button class="d1b-modal-button d1b-modal-button--quiet" bindtap="onCloseSheet" disabled="{{busy}}">返回检查</button><button class="d1b-modal-button d1b-modal-button--danger" bindtap="onConfirmRevoke" loading="{{busy}}" disabled="{{busy}}">确认撤销</button></view>
+      </block><view class="d1b-safe-bottom"></view>
+    </view>
+  </view>
+</view>
