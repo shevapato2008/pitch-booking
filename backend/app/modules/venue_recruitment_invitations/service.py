@@ -69,25 +69,33 @@ class PlatformRecruitmentInvitationService:
         cursor: str | None,
         limit: int,
     ) -> RecruitmentInvitationEligibleVenues:
-        normalized = " ".join(query.split()) if query else None
-        if normalized is not None and len(normalized) < 2:
-            raise _invalid_argument()
-        after = _decode_venue_cursor(cursor) if cursor else None
-        venues = self.repository.list_eligible(
-            query=normalized,
-            after=after,
-            limit=limit + 1,
-            now=self.now(),
-        )
-        visible = venues[:limit]
-        next_cursor = None
-        if len(venues) > limit:
-            last = visible[-1]
-            next_cursor = _encode_cursor([last.name, str(last.id)])
-        return RecruitmentInvitationEligibleVenues(
-            items=[_venue_projection(item) for item in visible],
-            next_cursor=next_cursor,
-        )
+        try:
+            normalized = " ".join(query.split()) if query else None
+            if normalized is not None and len(normalized) < 2:
+                raise _invalid_argument()
+            after = _decode_venue_cursor(cursor) if cursor else None
+            now = self.now()
+            self.repository.expire_due(now)
+            venues = self.repository.list_eligible(
+                query=normalized,
+                after=after,
+                limit=limit + 1,
+                now=now,
+            )
+            visible = venues[:limit]
+            next_cursor = None
+            if len(venues) > limit:
+                last = visible[-1]
+                next_cursor = _encode_cursor([last.name, str(last.id)])
+            result = RecruitmentInvitationEligibleVenues(
+                items=[_venue_projection(item) for item in visible],
+                next_cursor=next_cursor,
+            )
+            self.repository.commit()
+            return result
+        except Exception:
+            self.repository.rollback()
+            raise
 
     def list(
         self,
@@ -96,21 +104,28 @@ class PlatformRecruitmentInvitationService:
         cursor: str | None,
         limit: int,
     ) -> RecruitmentInvitations:
-        after = _decode_invitation_cursor(cursor) if cursor else None
-        rows = self.repository.list_invitations(
-            status=status,
-            after=after,
-            limit=limit + 1,
-        )
-        visible = rows[:limit]
-        next_cursor = None
-        if len(rows) > limit:
-            last = visible[-1][0]
-            next_cursor = _encode_cursor([last.created_at.isoformat(), str(last.id)])
-        return RecruitmentInvitations(
-            items=[_platform_projection(item, venue) for item, venue in visible],
-            next_cursor=next_cursor,
-        )
+        try:
+            after = _decode_invitation_cursor(cursor) if cursor else None
+            self.repository.expire_due(self.now())
+            rows = self.repository.list_invitations(
+                status=status,
+                after=after,
+                limit=limit + 1,
+            )
+            visible = rows[:limit]
+            next_cursor = None
+            if len(rows) > limit:
+                last = visible[-1][0]
+                next_cursor = _encode_cursor([last.created_at.isoformat(), str(last.id)])
+            result = RecruitmentInvitations(
+                items=[_platform_projection(item, venue) for item, venue in visible],
+                next_cursor=next_cursor,
+            )
+            self.repository.commit()
+            return result
+        except Exception:
+            self.repository.rollback()
+            raise
 
     def create(
         self,
@@ -122,10 +137,21 @@ class PlatformRecruitmentInvitationService:
         request_hash = _request_hash(request.model_dump(mode="json"))
         principal = principal_id.strip()
         try:
+            now = self.now()
             replay = self.repository.find_create_by_key(principal, idempotency_key)
             if replay is not None:
                 if replay.create_request_sha256 != request_hash:
                     raise _idempotency_reused()
+                if (
+                    replay.status
+                    in {
+                        VenueRecruitmentInvitationStatus.ACTIVE,
+                        VenueRecruitmentInvitationStatus.CLAIMED,
+                    }
+                    and replay.expires_at <= now
+                ):
+                    _expire(replay)
+                    self.repository.flush()
                 venue = self.repository.venue_for_invitation(replay)
                 self.repository.commit()
                 return MutationResult(
@@ -139,7 +165,6 @@ class PlatformRecruitmentInvitationService:
             venue = self.repository.lock_venue(request.venue_id)
             if venue is None:
                 raise _venue_not_eligible()
-            now = self.now()
             live = self.repository.find_live_for_venue(venue.id)
             if live is not None and live.expires_at <= now:
                 _expire(live)

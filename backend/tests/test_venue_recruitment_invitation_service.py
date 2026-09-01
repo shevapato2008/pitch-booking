@@ -98,6 +98,40 @@ class FakeRepository:
     def has_active_membership(self, venue_id: uuid.UUID) -> bool:
         return venue_id == self.venue.id and self.active_membership
 
+    def expire_due(self, now: datetime) -> None:
+        if (
+            self.invitation is not None
+            and self.invitation.status
+            in {
+                VenueRecruitmentInvitationStatus.ACTIVE,
+                VenueRecruitmentInvitationStatus.CLAIMED,
+            }
+            and self.invitation.expires_at <= now
+        ):
+            self.invitation.status = VenueRecruitmentInvitationStatus.EXPIRED
+            self.invitation.version += 1
+
+    def list_eligible(self, *, query, after, limit, now):
+        del after, now
+        if self.active_membership or (
+            self.invitation is not None
+            and self.invitation.status
+            in {
+                VenueRecruitmentInvitationStatus.ACTIVE,
+                VenueRecruitmentInvitationStatus.CLAIMED,
+            }
+        ):
+            return []
+        if query and query not in self.venue.name and query not in self.venue.address:
+            return []
+        return [self.venue][:limit]
+
+    def list_invitations(self, *, status, after, limit):
+        del after
+        if self.invitation is None or (status is not None and self.invitation.status is not status):
+            return []
+        return [(self.invitation, self.venue)][:limit]
+
     def find_create_by_key(self, principal_id: str, key: str) -> VenueRecruitmentInvitation | None:
         item = self.invitation
         return (
@@ -257,6 +291,44 @@ def test_platform_create_returns_secret_only_on_first_201_and_hashes_storage(
     assert repository.invitation is not None
     assert repository.invitation.token_sha256 == hashlib.sha256(TOKEN.encode("ascii")).hexdigest()
     assert TOKEN not in repr(repository.invitation.__dict__)
+
+
+def test_platform_reads_converge_due_invitations_before_filtering() -> None:
+    from backend.app.modules.venue_recruitment_invitations.service import (
+        PlatformRecruitmentInvitationService,
+    )
+
+    repository = FakeRepository()
+    repository.invitation = _invitation()
+    repository.invitation.expires_at = NOW
+    service = PlatformRecruitmentInvitationService(repository=repository, now=lambda: NOW)
+
+    page = service.list(
+        status=VenueRecruitmentInvitationStatus.ACTIVE,
+        cursor=None,
+        limit=20,
+    )
+
+    assert page.items == []
+    assert repository.invitation.status is VenueRecruitmentInvitationStatus.EXPIRED
+    assert repository.commits == 1
+
+
+def test_eligible_read_converges_expiry_and_returns_the_venue_again() -> None:
+    from backend.app.modules.venue_recruitment_invitations.service import (
+        PlatformRecruitmentInvitationService,
+    )
+
+    repository = FakeRepository()
+    repository.invitation = _invitation()
+    repository.invitation.expires_at = NOW
+    service = PlatformRecruitmentInvitationService(repository=repository, now=lambda: NOW)
+
+    page = service.eligible_venues(query=None, cursor=None, limit=20)
+
+    assert [item.venue_id for item in page.items] == [VENUE_ID]
+    assert repository.invitation.status is VenueRecruitmentInvitationStatus.EXPIRED
+    assert repository.commits == 1
 
 
 def test_platform_create_rejects_changed_payload_and_ineligible_venue() -> None:
