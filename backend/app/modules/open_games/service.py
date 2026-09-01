@@ -18,6 +18,7 @@ from backend.app.models import (
     IdempotencyRecord,
     IdempotencyState,
     OpenGame,
+    OpenGameCancellationSource,
     OpenGameStatus,
     Order,
     PaymentState,
@@ -246,6 +247,8 @@ class OpenGameService:
                 return replay
             if active is not None:
                 raise _active_game_exists()
+            if self._repository.has_platform_cancelled_game(order_id=order.id):
+                raise _order_game_platform_cancelled()
 
             now = self._now()
             order_row = self._require_order_row(order.id)
@@ -330,10 +333,7 @@ class OpenGameService:
                 replay = _replay_owner(record, digest=digest, status_code=200)
                 self._order_repository.commit()
                 return replay
-            if (
-                game.status is OpenGameStatus.CANCELLED
-                or game.version != request.expected_version
-            ):
+            if game.status is OpenGameStatus.CANCELLED or game.version != request.expected_version:
                 raise _state_changed()
 
             now = self._now()
@@ -355,14 +355,10 @@ class OpenGameService:
             else:
                 raise _state_changed()
 
-            joined_count = self._registration_repository.count_joined(
-                game_id=game.id
-            )
+            joined_count = self._registration_repository.count_joined(game_id=game.id)
             has_active_waitlist = (
                 request.open_spots != game.open_spots
-                and self._registration_repository.has_active_waitlist(
-                    game_id=game.id
-                )
+                and self._registration_repository.has_active_waitlist(game_id=game.id)
             )
             _validate_update_roster(
                 game=game,
@@ -442,11 +438,10 @@ class OpenGameService:
                 replay = _replay_owner(record, digest=digest, status_code=200)
                 self._order_repository.commit()
                 return replay
-            if (
-                game.status is not OpenGameStatus.DRAFT
-                or game.version != request.expected_version
-            ):
+            if game.status is not OpenGameStatus.DRAFT or game.version != request.expected_version:
                 raise _state_changed()
+            if self._repository.has_platform_cancelled_game(order_id=order.id):
+                raise _order_game_platform_cancelled()
 
             now = self._now()
             order_row = self._require_order_row(order.id)
@@ -539,6 +534,7 @@ class OpenGameService:
                 raise _state_changed()
             game.status = OpenGameStatus.CANCELLED
             game.cancelled_at = now
+            game.cancellation_source = OpenGameCancellationSource.CAPTAIN
             game.version += 1
             self._repository.flush()
             self._notification_repository.supersede_unsent_for_game(
@@ -697,10 +693,7 @@ class OpenGameService:
         time_zone = _require_time_zone(order_row)
         local_start = order_row.starts_at.astimezone(ZoneInfo(time_zone))
         return OpenGameShare(
-            title=(
-                f"{game.name} · {local_start.month}月{local_start.day}日 "
-                f"{local_start:%H:%M}"
-            ),
+            title=(f"{game.name} · {local_start.month}月{local_start.day}日 {local_start:%H:%M}"),
             path=f"/pages/captain-game-public/index?token={game.share_token}",
             image_url=select_share_cover_url(
                 self._repository.get_cover_images(order_id=game.order_id)
@@ -751,9 +744,7 @@ def _validate_update_roster(
             )
         )
     elif request.open_spots < joined_count:
-        errors.append(
-            OpenGameFieldError("open_spots", "不能小于已加入人数。")
-        )
+        errors.append(OpenGameFieldError("open_spots", "不能小于已加入人数。"))
     if (
         request.fixed_players + request.open_spots > request.total_players
         or request.total_players < request.fixed_players + joined_count
@@ -915,9 +906,7 @@ def _replay_owner(
     try:
         return OpenGameOwner.model_validate(record.response_body)
     except ValidationError:
-        return OpenGameOwner.model_validate(
-            _upgrade_legacy_owner(record.response_body)
-        )
+        return OpenGameOwner.model_validate(_upgrade_legacy_owner(record.response_body))
 
 
 def _upgrade_legacy_owner(response_body: dict[str, object]) -> dict[str, object]:
@@ -943,9 +932,7 @@ def _upgrade_legacy_owner(response_body: dict[str, object]) -> dict[str, object]
 
 def _validation_error(error: OpenGameValidationError) -> AppError:
     if error.fields:
-        deadline_only = all(
-            item.field == "registration_deadline" for item in error.fields
-        )
+        deadline_only = all(item.field == "registration_deadline" for item in error.fields)
         return AppError(
             422,
             "INVALID_ARGUMENT",
@@ -977,6 +964,14 @@ def _game_not_found() -> AppError:
 
 def _active_game_exists() -> AppError:
     return AppError(409, "OPEN_GAME_ALREADY_EXISTS", "该订单已有未取消球局。")
+
+
+def _order_game_platform_cancelled() -> AppError:
+    return AppError(
+        409,
+        "ORDER_GAME_PLATFORM_CANCELLED",
+        "该订单的公开球局已由平台取消，不能创建或发布替代球局。",
+    )
 
 
 def _state_changed() -> AppError:

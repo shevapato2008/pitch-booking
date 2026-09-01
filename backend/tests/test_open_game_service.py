@@ -14,6 +14,7 @@ from backend.app.errors import AppError
 from backend.app.models import (
     IdempotencyRecord,
     OpenGame,
+    OpenGameCancellationSource,
     OpenGameIntensity,
     OpenGameRegistration,
     OpenGameRegistrationPosition,
@@ -145,9 +146,7 @@ def seed_confirmed_order(
                 ),
                 reason_note=None,
                 requested_by_user_id=(
-                    owner.id
-                    if refund_purpose is RefundCasePurpose.ORDER_CANCELLATION
-                    else None
+                    owner.id if refund_purpose is RefundCasePurpose.ORDER_CANCELLATION else None
                 ),
                 amount_cents=36000,
                 currency="CNY",
@@ -251,6 +250,9 @@ def add_stored_game(
         share_token=share_token or uuid.uuid4().hex,
         published_at=NOW if status is OpenGameStatus.PUBLISHED else None,
         cancelled_at=NOW if status is OpenGameStatus.CANCELLED else None,
+        cancellation_source=(
+            OpenGameCancellationSource.CAPTAIN if status is OpenGameStatus.CANCELLED else None
+        ),
     )
     session.add(game)
     session.flush()
@@ -452,10 +454,14 @@ def test_owner_and_nonowner_not_found_are_symmetric(pg_engine: Engine) -> None:
                 idempotency_key="missing-create-key-00000001",
                 request=draft_request(seeded),
             )
-        assert (foreign_create.value.status_code, foreign_create.value.code) == (
-            missing_create.value.status_code,
-            missing_create.value.code,
-        ) == (404, "ORDER_NOT_FOUND")
+        assert (
+            (foreign_create.value.status_code, foreign_create.value.code)
+            == (
+                missing_create.value.status_code,
+                missing_create.value.code,
+            )
+            == (404, "ORDER_NOT_FOUND")
+        )
 
         owner = service(session).create_draft(
             user_id=seeded.owner_id,
@@ -493,14 +499,22 @@ def test_owner_and_nonowner_not_found_are_symmetric(pg_engine: Engine) -> None:
                     expected_version=owner.version,
                 ),
             )
-    assert (foreign_read.value.status_code, foreign_read.value.code) == (
-        missing_read.value.status_code,
-        missing_read.value.code,
-    ) == (404, "OPEN_GAME_NOT_FOUND")
-    assert (foreign_update.value.status_code, foreign_update.value.code) == (
-        missing_update.value.status_code,
-        missing_update.value.code,
-    ) == (404, "OPEN_GAME_NOT_FOUND")
+    assert (
+        (foreign_read.value.status_code, foreign_read.value.code)
+        == (
+            missing_read.value.status_code,
+            missing_read.value.code,
+        )
+        == (404, "OPEN_GAME_NOT_FOUND")
+    )
+    assert (
+        (foreign_update.value.status_code, foreign_update.value.code)
+        == (
+            missing_update.value.status_code,
+            missing_update.value.code,
+        )
+        == (404, "OPEN_GAME_NOT_FOUND")
+    )
 
 
 def test_create_is_canonical_idempotent_and_does_not_mutate_b1_rows(
@@ -520,9 +534,7 @@ def test_create_is_canonical_idempotent_and_does_not_mutate_b1_rows(
         )
         assert refund_case_before is not None
         refund_attempt_before = session.scalar(
-            select(RefundAttempt).where(
-                RefundAttempt.refund_case_id == refund_case_before.id
-            )
+            select(RefundAttempt).where(RefundAttempt.refund_case_id == refund_case_before.id)
         )
         assert refund_attempt_before is not None
         b1_snapshot = (
@@ -1000,10 +1012,7 @@ def test_update_rejects_open_spots_change_while_active_waitlist_exists(
         )
         session.commit()
         request = UpdateOpenGameRequest(
-            **(
-                draft_request(seeded).model_dump()
-                | {"total_players": 11, "open_spots": 5}
-            ),
+            **(draft_request(seeded).model_dump() | {"total_players": 11, "open_spots": 5}),
             expected_version=1,
         )
 
@@ -1092,10 +1101,7 @@ def test_update_total_floor_is_reachable_when_open_spots_equals_joined(
             )
         session.commit()
         request = UpdateOpenGameRequest(
-            **(
-                draft_request(seeded).model_dump()
-                | {"total_players": 8, "open_spots": 3}
-            ),
+            **(draft_request(seeded).model_dump() | {"total_players": 8, "open_spots": 3}),
             expected_version=1,
         )
 
@@ -1166,9 +1172,7 @@ def test_create_request_keeps_roster_capacity_validation() -> None:
         ends_at=NOW + timedelta(days=3, hours=2),
     )
     with pytest.raises(ValidationError):
-        CreateOpenGameRequest(
-            **(draft_request(seeded).model_dump() | {"open_spots": 5})
-        )
+        CreateOpenGameRequest(**(draft_request(seeded).model_dump() | {"open_spots": 5}))
 
 
 class FailingCompletionOrderRepository(OrderRepository):
@@ -1233,13 +1237,19 @@ def test_share_token_collision_retries_once_then_returns_503(pg_engine: Engine) 
         "SERVICE_UNAVAILABLE",
     )
     with Session(pg_engine) as session:
-        assert session.scalar(
-            select(func.count()).select_from(OpenGame).where(
-                OpenGame.order_id == failed.order_id
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(OpenGame)
+                .where(OpenGame.order_id == failed.order_id)
             )
-        ) == 0
-        assert session.scalar(
-            select(func.count()).select_from(IdempotencyRecord).where(
-                IdempotencyRecord.user_id == failed.owner_id
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(IdempotencyRecord)
+                .where(IdempotencyRecord.user_id == failed.owner_id)
             )
-        ) == 0
+            == 0
+        )

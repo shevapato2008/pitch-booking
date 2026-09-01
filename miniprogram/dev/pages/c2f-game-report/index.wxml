@@ -1,0 +1,113 @@
+<view class="c2f-page">
+  <view class="c2f-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="c2f-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="c2f-header-back" hover-class="c2f-pressed" bindtap="onHeaderBack" aria-label="返回 C2f 场景入口">
+      <view class="c2f-back-icon" aria-hidden="true"></view>
+    </button>
+    <text class="c2f-header-title">举报本场球局</text>
+    <view class="c2f-header-spacer" aria-hidden="true"></view>
+  </view>
+
+  <scroll-view class="c2f-scroll" scroll-y="true">
+    <view class="c2f-content {{submissionAllowed && !report && !resultUnknown ? 'c2f-content--with-footer' : ''}}">
+      <text class="c2f-preview-note">{{fixtureNotice}}</text>
+
+      <view class="c2f-game-card">
+        <text class="c2f-eyebrow">举报对象 · {{targetLabel}}</text>
+        <text class="c2f-game-name">{{gameName}}</text>
+        <text class="c2f-team">{{teamName}} 组织</text>
+        <text class="c2f-game-meta">{{venueName}} · {{pitchName}}</text>
+        <text class="c2f-game-time">{{startsAtLabel}}</text>
+        <view class="c2f-deadline"><text>提交截止</text><text>{{reportDeadlineLabel}}</text></view>
+      </view>
+
+      <view wx:if="{{feedback}}" class="c2f-feedback c2f-feedback--{{feedbackKind}}" aria-role="status">
+        <text>{{feedback}}</text>
+      </view>
+
+      <view wx:if="{{resultUnknown}}" class="c2f-unknown-card">
+        <view><text>提交结果未知</text><text>暂时不能修改或再次提交，请先读取权威结果。</text></view>
+        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onRecoverUnknownResult">确认原提交结果</button>
+      </view>
+
+      <view wx:if="{{submissionAllowed && !report}}" class="c2f-form-card">
+        <text class="c2f-section-title">发生了什么？</text>
+        <text class="c2f-section-help">请选择最接近的一项。举报对象为本场球局及组织者，不是单个成员。</text>
+        <view class="c2f-category-list" aria-role="radiogroup">
+          <button
+            wx:for="{{categories}}"
+            wx:key="value"
+            class="c2f-category {{selectedCategory == item.value ? 'is-selected' : ''}}"
+            hover-class="c2f-pressed"
+            bindtap="onSelectCategory"
+            data-category="{{item.value}}"
+            aria-role="radio"
+            aria-checked="{{selectedCategory == item.value}}"
+          >
+            <view class="c2f-radio" aria-hidden="true"></view>
+            <text>{{item.label}}</text>
+          </button>
+        </view>
+        <text wx:if="{{categoryError}}" class="c2f-field-error" aria-role="alert">{{categoryError}}</text>
+
+        <view class="c2f-facts-heading"><text>事实说明</text><text>{{factsCount}}/500</text></view>
+        <textarea
+          class="c2f-facts-input {{factsError ? 'has-error' : ''}}"
+          value="{{facts}}"
+          maxlength="-1"
+          auto-height="false"
+          placeholder="请描述你亲历的时间、地点与情况"
+          bindinput="onFactsInput"
+          disabled="{{resultUnknown}}"
+          aria-label="事实说明"
+        ></textarea>
+        <text wx:if="{{factsError}}" class="c2f-field-error" aria-role="alert">{{factsError}}</text>
+        <view class="c2f-privacy-note" aria-role="note">
+          <view class="c2f-info-mark" aria-hidden="true">i</view>
+          <text>不要填写手机号、微信号、邮箱、链接或其他可识别个人的信息。</text>
+        </view>
+      </view>
+
+      <view wx:elif="{{report}}" class="c2f-report-card">
+        <view class="c2f-report-mark c2f-report-mark--{{report.status == 'RESOLVED' ? 'resolved' : 'pending'}}" aria-hidden="true">
+          <view></view>
+        </view>
+        <text class="c2f-report-kicker">{{report.status == 'RESOLVED' ? '平台处置结果' : '已提交 · 等待平台处理'}}</text>
+        <text class="c2f-report-title">{{report.status == 'RESOLVED' ? report.resultTitle : '举报已进入处理队列'}}</text>
+        <text class="c2f-report-message">{{report.status == 'RESOLVED' ? report.resultMessage : '平台会核对本场情况；结果将在本页更新。'}}</text>
+        <view class="c2f-report-facts">
+          <text>{{report.categoryLabel}}</text>
+          <text>{{report.facts}}</text>
+          <text>提交于 {{report.submittedAtLabel}}</text>
+        </view>
+        <text class="c2f-truth-note">平台结论不会自动产生处罚、封禁或退款；费用仍按线下实际情况处理。</text>
+        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onReload">重新读取结果</button>
+      </view>
+
+      <view wx:else class="c2f-expired-card">
+        <view class="c2f-expired-mark" aria-hidden="true">!</view>
+        <text>举报提交期限已过</text>
+        <text>你仍可查看已经提交的举报；当前没有可提交的记录。</text>
+        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onReload">重新读取状态</button>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{submissionAllowed && !report && !resultUnknown}}" class="c2f-footer">
+    <button class="c2f-submit" hover-class="c2f-pressed" bindtap="onPrepareSubmit">提交举报</button>
+  </view>
+
+  <view wx:if="{{confirmationOpen}}" class="c2f-dialog" aria-role="dialog" aria-modal="true" aria-label="确认提交举报">
+    <button class="c2f-dialog-scrim" bindtap="onCancelSubmit" aria-label="关闭确认层"></button>
+    <view class="c2f-dialog-panel">
+      <view class="c2f-dialog-mark" aria-hidden="true">!</view>
+      <text class="c2f-dialog-title">确认提交举报？</text>
+      <text class="c2f-dialog-copy">{{selectedCategoryLabel}}</text>
+      <text class="c2f-dialog-warning">提交后不可修改。平台会核对事实，但不会自动产生处罚、封禁或退款。</text>
+      <view class="c2f-dialog-actions">
+        <button class="c2f-dialog-button c2f-dialog-button--quiet" hover-class="c2f-pressed" bindtap="onCancelSubmit">返回检查</button>
+        <button class="c2f-dialog-button c2f-dialog-button--primary" hover-class="c2f-pressed" bindtap="onConfirmSubmit">确认提交</button>
+      </view>
+    </view>
+  </view>
+</view>

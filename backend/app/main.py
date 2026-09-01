@@ -32,6 +32,12 @@ from backend.app.modules.open_game_registrations.router import (
 from backend.app.modules.open_game_registrations.router import (
     router as open_game_registrations_router,
 )
+from backend.app.modules.open_game_reports.router import (
+    align_open_game_reports_openapi,
+    is_open_game_report_mutation_request,
+    open_game_report_request_validation_handler,
+)
+from backend.app.modules.open_game_reports.router import router as open_game_reports_router
 from backend.app.modules.open_games.router import (
     is_open_game_mutation_request,
     open_game_request_validation_handler,
@@ -52,6 +58,12 @@ from backend.app.modules.platform_attendance_corrections.router import (
     router as platform_attendance_corrections_router,
 )
 from backend.app.modules.platform_auth.router import router as platform_auth_router
+from backend.app.modules.platform_game_reports.router import (
+    align_platform_game_reports_openapi,
+)
+from backend.app.modules.platform_game_reports.router import (
+    router as platform_game_reports_router,
+)
 from backend.app.modules.platform_onboarding.router import router as platform_onboarding_router
 from backend.app.modules.platform_web import (
     PlatformAdminSecurityHeadersMiddleware,
@@ -222,11 +234,12 @@ def create_app(
         application.add_exception_handler(AppError, app_error_handler)
 
         async def validation_handler(request: Request, error: Exception) -> JSONResponse:
+            if is_open_game_report_mutation_request(request):
+                assert isinstance(error, RequestValidationError)
+                return await open_game_report_request_validation_handler(request, error)
             if is_open_game_registration_mutation_request(request):
                 assert isinstance(error, RequestValidationError)
-                return await open_game_registration_request_validation_handler(
-                    request, error
-                )
+                return await open_game_registration_request_validation_handler(request, error)
             if is_open_game_mutation_request(request):
                 assert isinstance(error, RequestValidationError)
                 return await open_game_request_validation_handler(request, error)
@@ -257,20 +270,19 @@ def create_app(
         application.include_router(inventory_router)
         application.include_router(orders_router)
         application.include_router(open_game_registrations_router)
+        application.include_router(open_game_reports_router)
         application.include_router(open_games_router)
         application.include_router(public_games_router)
         application.include_router(payments_router)
         application.include_router(wechat_pay_router)
         application.include_router(platform_auth_router)
         application.include_router(platform_attendance_corrections_router)
+        application.include_router(platform_game_reports_router)
         application.include_router(platform_onboarding_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_fulfillment_router)
-        if (
-            resolved_settings.payment_provider == "wechat"
-            and payment_provider is not None
-        ):
+        if resolved_settings.payment_provider == "wechat" and payment_provider is not None:
             refund_provider_name = payment_provider.name
 
             def refund_actions_enabled() -> bool:
@@ -279,9 +291,7 @@ def create_app(
             def refund_provider_name_resolver() -> Callable[[], str | None]:
                 return lambda: refund_provider_name
 
-            application.dependency_overrides[get_refund_actions_enabled] = (
-                refund_actions_enabled
-            )
+            application.dependency_overrides[get_refund_actions_enabled] = refund_actions_enabled
             application.dependency_overrides[get_refund_provider_name_resolver] = (
                 refund_provider_name_resolver
             )
@@ -346,11 +356,11 @@ def create_app(
             align_order_list_openapi(schema)
             align_public_game_directory_openapi(schema)
             align_my_open_game_applications_openapi(schema)
+            align_open_game_reports_openapi(schema)
             align_platform_attendance_corrections_openapi(schema)
+            align_platform_game_reports_openapi(schema)
             shared_game_get = (
-                schema.get("paths", {})
-                .get("/api/v1/shared-games/{share_token}", {})
-                .get("get", {})
+                schema.get("paths", {}).get("/api/v1/shared-games/{share_token}", {}).get("get", {})
             )
             shared_game_get.get("responses", {}).pop("422", None)
             registration_context_get = (

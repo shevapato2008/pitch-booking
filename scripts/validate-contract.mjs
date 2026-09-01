@@ -506,6 +506,47 @@ const exampleMap = [
     ],
   },
   {
+    filename: 'open-game-report-context.json',
+    reference: './examples/open-game-report-context.json',
+    schema: 'OpenGameReportContext',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/my-report', '200', 'Context'),
+    ],
+  },
+  {
+    filename: 'open-game-report-submitted.json',
+    reference: './examples/open-game-report-submitted.json',
+    schema: 'OpenGameReportForReporter',
+    attachments: [
+      attachment('/api/v1/games/{game_id}/reports', '200', 'Submitted', 'post'),
+      attachment('/api/v1/games/{game_id}/reports', '201', 'Submitted', 'post'),
+    ],
+  },
+  {
+    filename: 'platform-game-report-list.json',
+    reference: './examples/platform-game-report-list.json',
+    schema: 'PlatformGameReportList',
+    attachments: [
+      attachment('/platform-admin/api/v1/game-reports', '200', 'Queue'),
+    ],
+  },
+  {
+    filename: 'platform-game-report-detail.json',
+    reference: './examples/platform-game-report-detail.json',
+    schema: 'PlatformGameReportDetail',
+    attachments: [
+      attachment('/platform-admin/api/v1/game-reports/{report_id}', '200', 'Detail'),
+    ],
+  },
+  {
+    filename: 'platform-game-report-resolved.json',
+    reference: './examples/platform-game-report-resolved.json',
+    schema: 'PlatformGameReportResolution',
+    attachments: [
+      attachment('/platform-admin/api/v1/game-reports/{report_id}/resolution', '200', 'Resolved', 'post'),
+    ],
+  },
+  {
     filename: 'platform-onboarding-queue.json',
     reference: './examples/platform-onboarding-queue.json',
     schema: 'PlatformOnboardingQueue',
@@ -1207,6 +1248,14 @@ const requiredErrorCodes = new Set([
   'APPLICATION_CAPACITY_CHANGED',
   'ATTENDANCE_STATE_CHANGED',
   'ATTENDANCE_REGISTRATION_NOT_FOUND',
+  'REPORT_CONTEXT_NOT_FOUND',
+  'REPORTING_WINDOW_CLOSED',
+  'REPORT_ALREADY_EXISTS',
+  'SENSITIVE_CONTENT_NOT_ALLOWED',
+  'REPORT_NOT_FOUND',
+  'REPORT_RESOLUTION_STATE_CHANGED',
+  'REPORT_ALREADY_RESOLVED',
+  'ORDER_GAME_PLATFORM_CANCELLED',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -1218,6 +1267,14 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'PLATFORM_CSRF_INVALID',
   'PLATFORM_ROLE_REQUIRED',
   'ATTENDANCE_REGISTRATION_NOT_FOUND',
+  'REPORT_CONTEXT_NOT_FOUND',
+  'REPORTING_WINDOW_CLOSED',
+  'REPORT_ALREADY_EXISTS',
+  'SENSITIVE_CONTENT_NOT_ALLOWED',
+  'REPORT_NOT_FOUND',
+  'REPORT_RESOLUTION_STATE_CHANGED',
+  'REPORT_ALREADY_RESOLVED',
+  'ORDER_GAME_PLATFORM_CANCELLED',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -1246,6 +1303,8 @@ const expectedOperations = new Map([
   ['/api/v1/games/{game_id}/members/{registration_id}/remove', new Set(['post'])],
   ['/api/v1/games/{game_id}/attendance-roster', new Set(['get'])],
   ['/api/v1/games/{game_id}/registrations/{registration_id}/attendance', new Set(['post'])],
+  ['/api/v1/games/{game_id}/my-report', new Set(['get'])],
+  ['/api/v1/games/{game_id}/reports', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}/registration-context', new Set(['get'])],
   ['/api/v1/shared-games/{share_token}/applications', new Set(['post'])],
   ['/api/v1/shared-games/{share_token}', new Set(['get'])],
@@ -1267,6 +1326,9 @@ const expectedOperations = new Map([
   ['/platform-admin/api/v1/auth/session', new Set(['post', 'get', 'delete'])],
   ['/platform-admin/api/v1/attendance/registrations/{registration_id}', new Set(['get'])],
   ['/platform-admin/api/v1/attendance/registrations/{registration_id}/corrections', new Set(['post'])],
+  ['/platform-admin/api/v1/game-reports', new Set(['get'])],
+  ['/platform-admin/api/v1/game-reports/{report_id}', new Set(['get'])],
+  ['/platform-admin/api/v1/game-reports/{report_id}/resolution', new Set(['post'])],
   ['/platform-admin/api/v1/onboarding/applications', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/applications/{application_id}', new Set(['get'])],
   ['/platform-admin/api/v1/onboarding/evidence/{evidence_id}/download', new Set(['get'])],

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.models import (
     ImageRole,
     OpenGame,
+    OpenGameCancellationSource,
     OpenGameStatus,
     Order,
     Payment,
@@ -81,9 +82,7 @@ class OpenGameRepository:
         )
 
     def locate_order_id(self, *, game_id: uuid.UUID) -> uuid.UUID | None:
-        return self.session.scalar(
-            select(OpenGame.order_id).where(OpenGame.id == game_id)
-        )
+        return self.session.scalar(select(OpenGame.order_id).where(OpenGame.id == game_id))
 
     def get_owned_game(
         self,
@@ -121,6 +120,19 @@ class OpenGameRepository:
             .limit(1)
             .with_for_update()
             .execution_options(populate_existing=True)
+        )
+
+    def has_platform_cancelled_game(self, *, order_id: uuid.UUID) -> bool:
+        return (
+            self.session.scalar(
+                select(OpenGame.id)
+                .where(
+                    OpenGame.order_id == order_id,
+                    OpenGame.cancellation_source == OpenGameCancellationSource.PLATFORM_REPORT,
+                )
+                .limit(1)
+            )
+            is not None
         )
 
     def lock_target_game(
@@ -173,12 +185,8 @@ class OpenGameRepository:
         if lock:
             payment_statement = payment_statement.with_for_update()
             refund_case_statement = refund_case_statement.with_for_update()
-        payments = tuple(
-            self.session.scalars(payment_statement)
-        )
-        refund_cases = tuple(
-            self.session.scalars(refund_case_statement)
-        )
+        payments = tuple(self.session.scalars(payment_statement))
+        refund_cases = tuple(self.session.scalars(refund_case_statement))
         case_ids = [row.id for row in refund_cases]
         refund_attempt_statement = (
             select(RefundAttempt)
@@ -192,11 +200,7 @@ class OpenGameRepository:
         )
         if lock:
             refund_attempt_statement = refund_attempt_statement.with_for_update()
-        refund_attempts = (
-            tuple(self.session.scalars(refund_attempt_statement))
-            if case_ids
-            else ()
-        )
+        refund_attempts = tuple(self.session.scalars(refund_attempt_statement)) if case_ids else ()
         return OrderAuthorityRows(
             payments=payments,
             refund_cases=refund_cases,

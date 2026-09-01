@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "max_code_points": 500,
+  "vectors": [
+    {
+      "id": "nfc-normalization",
+      "input": "Café说明",
+      "normalized": "Café说明",
+      "code_points": 6,
+      "valid": true,
+      "error": null
+    },
+    {
+      "id": "emoji-code-point",
+      "input": "一起踢球😀",
+      "normalized": "一起踢球😀",
+      "code_points": 5,
+      "valid": true,
+      "error": null
+    },
+    {
+      "id": "exactly-500",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "normalized": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "code_points": 500,
+      "valid": true,
+      "error": null
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "normalized": "",
+      "code_points": 0,
+      "valid": false,
+      "error": "REQUIRED"
+    },
+    {
+      "id": "whitespace",
+      "input": " \n\t",
+      "normalized": " \n\t",
+      "code_points": 3,
+      "valid": false,
+      "error": "REQUIRED"
+    },
+    {
+      "id": "over-500",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "normalized": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "code_points": 501,
+      "valid": false,
+      "error": "TOO_LONG"
+    },
+    {
+      "id": "mobile-phone",
+      "input": "请联系 13812345678",
+      "normalized": "请联系 13812345678",
+      "code_points": 15,
+      "valid": false,
+      "error": "SENSITIVE_CONTENT_NOT_ALLOWED"
+    },
+    {
+      "id": "landline",
+      "input": "请拨打 010-12345678",
+      "normalized": "请拨打 010-12345678",
+      "code_points": 16,
+      "valid": false,
+      "error": "SENSITIVE_CONTENT_NOT_ALLOWED"
+    },
+    {
+      "id": "email",
+      "input": "发送到 player@example.com",
+      "normalized": "发送到 player@example.com",
+      "code_points": 22,
+      "valid": false,
+      "error": "SENSITIVE_CONTENT_NOT_ALLOWED"
+    },
+    {
+      "id": "wechat-account",
+      "input": "微信号：pitch_helper",
+      "normalized": "微信号：pitch_helper",
+      "code_points": 16,
+      "valid": false,
+      "error": "SENSITIVE_CONTENT_NOT_ALLOWED"
+    },
+    {
+      "id": "http-url",
+      "input": "详情见 https://example.com/report",
+      "normalized": "详情见 https://example.com/report",
+      "code_points": 30,
+      "valid": false,
+      "error": "SENSITIVE_CONTENT_NOT_ALLOWED"
+    },
+    {
+      "id": "www-url",
+      "input": "详情见 www.example.com/report",
+      "normalized": "详情见 www.example.com/report",
+      "code_points": 26,
+      "valid": false,
+      "error": "SENSITIVE_CONTENT_NOT_ALLOWED"
+    }
+  ]
+}

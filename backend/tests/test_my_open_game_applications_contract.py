@@ -24,6 +24,7 @@ ITEM_FIELDS = {
     "promoted_at",
     "attendance_status",
     "attendance_recorded_at",
+    "attendance_corrected_at",
     "detail_path",
     "game_name",
     "starts_at",
@@ -48,6 +49,7 @@ def _valid_item() -> dict[str, object]:
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
+        "attendance_corrected_at": None,
         "detail_path": (
             "/pages/captain-game-public/index?token="
             "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
@@ -92,7 +94,11 @@ def test_my_application_dtos_are_closed_and_exact() -> None:
             {"items": [], "next_cursor": ""}
         )
 
-    for required_nullable in ("attendance_status", "attendance_recorded_at"):
+    for required_nullable in (
+        "attendance_status",
+        "attendance_recorded_at",
+        "attendance_corrected_at",
+    ):
         missing = _valid_item()
         missing.pop(required_nullable)
         with pytest.raises(ValidationError):

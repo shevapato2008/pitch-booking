@@ -1,0 +1,7 @@
+{
+  "token": "C2F_GAME_REPORT_FIXTURE",
+  "pages": [
+    "dev/pages/c2f-game-report-scenario/index",
+    "dev/pages/c2f-game-report/index"
+  ]
+}

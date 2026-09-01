@@ -871,6 +871,7 @@ def test_application_withdrawal_cannot_carry_a_late_game_exit_marker() -> None:
                 "promoted_at": None,
                 "attendance_status": None,
                 "attendance_recorded_at": None,
+                "attendance_corrected_at": None,
             }
         )
 
@@ -956,7 +957,11 @@ def test_my_waitlisted_item_requires_position_and_waitlisted_time() -> None:
         "promoted_at": None,
         "attendance_status": None,
         "attendance_recorded_at": None,
-        "detail_path": ("/pages/captain-game-public/index?token=AbCdEfGhIjKlMnOpQrStUvWxYz012345"),
+        "attendance_corrected_at": None,
+        "detail_path": (
+            "/pages/captain-game-public/index?token="
+            "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+        ),
         "game_name": "周五浦东七人制",
         "starts_at": NOW + timedelta(hours=2),
         "ends_at": NOW + timedelta(hours=4),

@@ -122,7 +122,7 @@ def test_district_upgrade_backfills_only_the_five_reviewed_venue_ids(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
     assert {row[0]: (row[1], row[2]) for row in rows} == EXPECTED_DISTRICTS
-    assert version == "0022"
+    assert version == "0024"
     columns = {column["name"]: column for column in inspect(migration_engine).get_columns("venues")}
     assert columns["district_code"]["nullable"] is False
     assert columns["district_name"]["nullable"] is False
@@ -370,7 +370,7 @@ def test_directory_rows_guard_downgrade_before_schema_mutation(
         version = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert version == "0022"
+        assert version == "0024"
 
     with migration_engine.begin() as connection:
         connection.execute(
@@ -382,4 +382,4 @@ def test_directory_rows_guard_downgrade_before_schema_mutation(
         version = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert version == "0022"
+        assert version == "0024"

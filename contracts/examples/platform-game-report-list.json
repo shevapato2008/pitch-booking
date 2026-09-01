@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "report_id": "52000000-0000-4000-8000-000000000001",
+      "category": "FALSE_INFORMATION",
+      "status": "PENDING",
+      "target": {
+        "game_id": "51000000-0000-4000-8000-000000000001",
+        "game_name": "海河周日轻松局",
+        "organizer_team_name": "津门晨风队",
+        "venue_name": "天津奥体足球场",
+        "pitch_name": "七人制 A 场",
+        "starts_at": "2026-09-06T10:00:00+08:00",
+        "ends_at": "2026-09-06T12:00:00+08:00",
+        "time_zone": "Asia/Shanghai"
+      },
+      "submitted_at": "2026-09-01T12:18:00+08:00"
+    }
+  ],
+  "next_cursor": null
+}

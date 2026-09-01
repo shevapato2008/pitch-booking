@@ -1,0 +1,9 @@
+{
+  "resolution_id": "53000000-0000-4000-8000-000000000001",
+  "outcome": "CONFIRMED_GAME_CANCELLED",
+  "resolution_note": "已核对公开页面与场馆记录，确认关键信息不实并取消公开球局。",
+  "resolved_by_principal_id": "platform-admin-yangfan",
+  "resolved_at": "2026-09-02T16:24:00+08:00",
+  "game_version_before": 7,
+  "game_version_after": 8
+}

@@ -103,6 +103,25 @@ class OpenGameStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class OpenGameCancellationSource(StrEnum):
+    CAPTAIN = "CAPTAIN"
+    PLATFORM_REPORT = "PLATFORM_REPORT"
+
+
+class OpenGameReportCategory(StrEnum):
+    FALSE_INFORMATION = "FALSE_INFORMATION"
+    EXTRA_CHARGE = "EXTRA_CHARGE"
+    DANGEROUS_BEHAVIOR = "DANGEROUS_BEHAVIOR"
+    HARASSMENT = "HARASSMENT"
+    ORGANIZER_NO_SHOW = "ORGANIZER_NO_SHOW"
+
+
+class OpenGameReportResolutionOutcome(StrEnum):
+    DISMISSED = "DISMISSED"
+    CONFIRMED_RECORDED = "CONFIRMED_RECORDED"
+    CONFIRMED_GAME_CANCELLED = "CONFIRMED_GAME_CANCELLED"
+
+
 class OpenGameVisibility(StrEnum):
     PUBLIC = "PUBLIC"
     LINK_ONLY = "LINK_ONLY"
@@ -1500,12 +1519,21 @@ class OpenGame(Base):
             name="ck_open_games_share_token",
         ),
         CheckConstraint(
-            "(status = 'DRAFT' AND published_at IS NULL AND cancelled_at IS NULL) OR "
+            "(status = 'DRAFT' AND published_at IS NULL "
+            "AND cancelled_at IS NULL AND cancellation_source IS NULL) OR "
             "(status = 'PUBLISHED' AND published_at IS NOT NULL "
-            "AND cancelled_at IS NULL) OR "
+            "AND cancelled_at IS NULL AND cancellation_source IS NULL) OR "
             "(status = 'CANCELLED' AND cancelled_at IS NOT NULL AND "
+            "cancellation_source IS NOT NULL AND "
             "(published_at IS NULL OR cancelled_at >= published_at))",
             name="ck_open_games_status_timestamps",
+        ),
+        CheckConstraint(
+            "(status = 'CANCELLED' AND cancelled_at IS NOT NULL "
+            "AND cancellation_source IS NOT NULL) OR "
+            "(status <> 'CANCELLED' AND cancelled_at IS NULL "
+            "AND cancellation_source IS NULL)",
+            name="ck_open_games_cancellation_source_status",
         ),
         UniqueConstraint("share_token", name="uq_open_games_share_token"),
         UniqueConstraint("id", "order_id", name="uq_open_games_id_order_id"),
@@ -1567,6 +1595,10 @@ class OpenGame(Base):
     )
     cancelled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    cancellation_source: Mapped[OpenGameCancellationSource | None] = mapped_column(
+        Enum(OpenGameCancellationSource, name="open_game_cancellation_source"),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1988,6 +2020,147 @@ class OpenGameMemberRemoval(Base):
     promoted_registration_version_after: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+
+
+class OpenGameReport(Base):
+    __tablename__ = "open_game_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "length(facts) BETWEEN 1 AND 500 AND facts = btrim(facts)",
+            name="ck_open_game_reports_facts",
+        ),
+        CheckConstraint(
+            "length(idempotency_key) BETWEEN 16 AND 128",
+            name="ck_open_game_reports_idempotency_key",
+        ),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_open_game_reports_request_sha256",
+        ),
+        ForeignKeyConstraint(
+            ["reporter_registration_id", "game_id", "reporter_user_id"],
+            [
+                "open_game_registrations.id",
+                "open_game_registrations.game_id",
+                "open_game_registrations.applicant_user_id",
+            ],
+            name="fk_open_game_reports_reporter_registration_identity",
+            ondelete="RESTRICT",
+        ),
+        PrimaryKeyConstraint("id", name="pk_open_game_reports"),
+        UniqueConstraint(
+            "game_id",
+            "reporter_user_id",
+            name="uq_open_game_reports_game_reporter",
+        ),
+        UniqueConstraint(
+            "reporter_user_id",
+            "idempotency_key",
+            name="uq_open_game_reports_reporter_idempotency_key",
+        ),
+        Index(
+            "ix_open_game_reports_submitted",
+            text("submitted_at DESC"),
+            text("id DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid.uuid4
+    )
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_games.id",
+            name="fk_open_game_reports_game",
+            ondelete="RESTRICT",
+        ),
+    )
+    reporter_registration_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    reporter_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    organizer_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            name="fk_open_game_reports_organizer_user",
+            ondelete="RESTRICT",
+        ),
+    )
+    category: Mapped[OpenGameReportCategory] = mapped_column(
+        Enum(OpenGameReportCategory, name="open_game_report_category")
+    )
+    facts: Mapped[str] = mapped_column(String(500))
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_sha256: Mapped[str] = mapped_column(String(64))
+
+
+class OpenGameReportResolution(Base):
+    __tablename__ = "open_game_report_resolutions"
+    __table_args__ = (
+        CheckConstraint(
+            "length(resolution_note) BETWEEN 1 AND 500 "
+            "AND resolution_note = btrim(resolution_note)",
+            name="ck_open_game_report_resolutions_note",
+        ),
+        CheckConstraint(
+            "length(resolved_by_principal_id) BETWEEN 1 AND 128 "
+            "AND resolved_by_principal_id = trim(resolved_by_principal_id)",
+            name="ck_open_game_report_resolutions_principal",
+        ),
+        CheckConstraint(
+            "(outcome = 'CONFIRMED_GAME_CANCELLED' "
+            "AND game_version_before IS NOT NULL "
+            "AND game_version_after IS NOT NULL "
+            "AND game_version_before >= 1 "
+            "AND game_version_after = game_version_before + 1) OR "
+            "(outcome IN ('DISMISSED', 'CONFIRMED_RECORDED') "
+            "AND game_version_before IS NULL AND game_version_after IS NULL)",
+            name="ck_open_game_report_resolutions_version_pair",
+        ),
+        CheckConstraint(
+            "length(idempotency_key) BETWEEN 16 AND 128",
+            name="ck_open_game_report_resolutions_idempotency_key",
+        ),
+        CheckConstraint(
+            "request_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_open_game_report_resolutions_request_sha256",
+        ),
+        PrimaryKeyConstraint("id", name="pk_open_game_report_resolutions"),
+        UniqueConstraint(
+            "report_id", name="uq_open_game_report_resolutions_report"
+        ),
+        UniqueConstraint(
+            "resolved_by_principal_id",
+            "idempotency_key",
+            name="uq_open_game_report_resolutions_principal_idempotency_key",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid.uuid4
+    )
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "open_game_reports.id",
+            name="fk_open_game_report_resolutions_report",
+            ondelete="RESTRICT",
+        ),
+    )
+    outcome: Mapped[OpenGameReportResolutionOutcome] = mapped_column(
+        Enum(
+            OpenGameReportResolutionOutcome,
+            name="open_game_report_resolution_outcome",
+        )
+    )
+    resolution_note: Mapped[str] = mapped_column(String(500))
+    resolved_by_principal_id: Mapped[str] = mapped_column(String(128))
+    resolved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    game_version_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    game_version_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(128))
     request_sha256: Mapped[str] = mapped_column(String(64))
 

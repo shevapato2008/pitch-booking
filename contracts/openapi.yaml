@@ -3907,6 +3907,260 @@ paths:
                 InventoryVersionConflict: {externalValue: './examples/error-inventory-version-conflict.json'}
                 InventorySlotReadOnly: {externalValue: './examples/error-inventory-slot-read-only.json'}
         '422': {description: Slot update invalid, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /api/v1/games/{game_id}/my-report:
+    get:
+      operationId: getMyOpenGameReport
+      description: Return only the authenticated registrant's report context and result for this game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authoritative report eligibility and the caller's own report, if any.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameReportContext'}
+              examples:
+                Context: {externalValue: './examples/open-game-report-context.json'}
+        '401':
+          description: Authentication required.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '404':
+          description: Game or persisted registration is unavailable to this caller.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: REPORT_CONTEXT_NOT_FOUND}}}}
+        '422':
+          description: Game identifier is invalid.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '503':
+          description: Game report service is unavailable.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+  /api/v1/games/{game_id}/reports:
+    post:
+      operationId: submitOpenGameReport
+      description: Submit one immutable report for this authenticated registrant and game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenGameReportSubmissionRequest'}
+      responses:
+        '200':
+          description: Existing report returned by an exact idempotent replay.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameReportForReporter'}
+              examples:
+                Submitted: {externalValue: './examples/open-game-report-submitted.json'}
+        '201':
+          description: Immutable report created.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenGameReportForReporter'}
+              examples:
+                Submitted: {externalValue: './examples/open-game-report-submitted.json'}
+        '401':
+          description: Authentication required.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '404':
+          description: Game or persisted registration is unavailable to this caller.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: REPORT_CONTEXT_NOT_FOUND}}}}
+        '409':
+          description: The reporting window closed, a different report already exists, or the idempotency key was reused.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [REPORTING_WINDOW_CLOSED, REPORT_ALREADY_EXISTS, IDEMPOTENCY_KEY_REUSED]}}}}
+        '422':
+          description: Category, facts, or headers are invalid or contain prohibited sensitive content.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [INVALID_ARGUMENT, SENSITIVE_CONTENT_NOT_ALLOWED]}}}}
+        '503':
+          description: Game report service is unavailable.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+  /platform-admin/api/v1/game-reports:
+    get:
+      operationId: listPlatformGameReports
+      description: PLATFORM_ADMIN-only stable report queue ordered by submitted_at and id descending.
+      security:
+        - platformSession: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema: {type: string, enum: [PENDING, RESOLVED], default: PENDING}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1, maxLength: 1024}
+      responses:
+        '200':
+          description: Minimal report queue page.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformGameReportList'}
+              examples:
+                Queue: {externalValue: './examples/platform-game-report-list.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403':
+          description: PLATFORM_ADMIN role required.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '422':
+          description: Queue filter, cursor, or limit is invalid.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '503':
+          description: Platform game report service is unavailable.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+  /platform-admin/api/v1/game-reports/{report_id}:
+    get:
+      operationId: getPlatformGameReport
+      description: PLATFORM_ADMIN-only report detail without contact, order, payment, or refund data.
+      security:
+        - platformSession: []
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Minimal report detail and current server-authoritative allowed outcomes.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformGameReportDetail'}
+              examples:
+                Detail: {externalValue: './examples/platform-game-report-detail.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403':
+          description: PLATFORM_ADMIN role required.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '404':
+          description: Report not found.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: REPORT_NOT_FOUND}}}}
+        '422':
+          description: Report identifier is invalid.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '503':
+          description: Platform game report service is unavailable.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+  /platform-admin/api/v1/game-reports/{report_id}/resolution:
+    post:
+      operationId: resolvePlatformGameReport
+      description: Append one immutable platform conclusion and optionally cancel only the public game.
+      security:
+        - platformSession: []
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: Origin
+          in: header
+          required: true
+          schema: {type: string, format: uri}
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformGameReportResolutionRequest'}
+      responses:
+        '200':
+          description: Immutable resolution applied or idempotently replayed.
+          headers: {X-Request-Id: {$ref: '#/components/headers/RequestId'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformGameReportResolution'}
+              examples:
+                Resolved: {externalValue: './examples/platform-game-report-resolved.json'}
+        '401': {$ref: '#/components/responses/PlatformAuthRequired'}
+        '403':
+          description: PLATFORM_ADMIN role and valid same-origin mutation protection required.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+        '404':
+          description: Report not found.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {const: REPORT_NOT_FOUND}}}}
+        '409':
+          description: Report, game, cancellation eligibility, or idempotency authority changed.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          code: {enum: [REPORT_RESOLUTION_STATE_CHANGED, REPORT_ALREADY_RESOLVED, IDEMPOTENCY_KEY_REUSED]}
+        '422':
+          description: Outcome, resolution note, or headers are invalid or contain prohibited sensitive content.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - type: object
+                    properties: {error: {type: object, properties: {code: {enum: [INVALID_ARGUMENT, SENSITIVE_CONTENT_NOT_ALLOWED]}}}}
+        '503':
+          description: Platform game report service is unavailable.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
   /platform-admin/api/v1/attendance/registrations/{registration_id}:
     get:
       operationId: getPlatformAttendanceRegistration
@@ -4714,6 +4968,216 @@ components:
           oneOf:
             - $ref: '#/components/schemas/OpenGamePromotedMember'
             - type: 'null'
+    OpenGameReportCategory:
+      type: string
+      enum: [FALSE_INFORMATION, EXTRA_CHARGE, DANGEROUS_BEHAVIOR, HARASSMENT, ORGANIZER_NO_SHOW]
+    OpenGameReportStatus:
+      type: string
+      enum: [PENDING, RESOLVED]
+    OpenGameReportResolutionOutcome:
+      type: string
+      enum: [DISMISSED, CONFIRMED_RECORDED, CONFIRMED_GAME_CANCELLED]
+    OpenGameReportSubmissionBlocker:
+      type: string
+      enum: [REPORTING_WINDOW_CLOSED, REPORT_ALREADY_EXISTS]
+    OpenGameCancellationSource:
+      type: string
+      enum: [CAPTAIN, PLATFORM_REPORT]
+    PlatformGameReportCancellationBlockedReason:
+      type: string
+      enum: [GAME_ALREADY_STARTED, GAME_NOT_PUBLISHED, GAME_AUTHORITY_UNHEALTHY, REPORT_ALREADY_RESOLVED]
+    OpenGameReportTargetSummary:
+      type: object
+      additionalProperties: false
+      required: [game_id, game_name, organizer_team_name, venue_name, pitch_name, starts_at, ends_at, time_zone]
+      properties:
+        game_id: {type: string, format: uuid}
+        game_name: {type: string, minLength: 1, maxLength: 30}
+        organizer_team_name: {type: string, minLength: 1, maxLength: 30}
+        venue_name: {type: string, minLength: 1}
+        pitch_name: {type: string, minLength: 1}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        time_zone: {type: string, const: Asia/Shanghai}
+    OpenGameReportForReporter:
+      type: object
+      additionalProperties: false
+      required: [report_id, category, facts, submitted_at, status, outcome, resolved_at, result_title, result_message]
+      properties:
+        report_id: {type: string, format: uuid}
+        category: {$ref: '#/components/schemas/OpenGameReportCategory'}
+        facts: {type: string, minLength: 1, maxLength: 500, x-unicode-code-point-limit: 500}
+        submitted_at: {type: string, format: date-time}
+        status: {$ref: '#/components/schemas/OpenGameReportStatus'}
+        outcome:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameReportResolutionOutcome'
+            - type: 'null'
+        resolved_at: {type: [string, 'null'], format: date-time}
+        result_title: {type: [string, 'null'], minLength: 1}
+        result_message: {type: [string, 'null'], minLength: 1}
+      oneOf:
+        - properties:
+            status: {const: PENDING}
+            outcome: {const: null}
+            resolved_at: {const: null}
+            result_title: {const: null}
+            result_message: {const: null}
+        - properties:
+            status: {const: RESOLVED}
+            outcome: {$ref: '#/components/schemas/OpenGameReportResolutionOutcome'}
+            resolved_at: {type: string, format: date-time}
+            result_title: {type: string, minLength: 1}
+            result_message: {type: string, minLength: 1}
+    OpenGameReportContext:
+      type: object
+      additionalProperties: false
+      required: [target, report_deadline, submission_allowed, submission_blocker, report]
+      properties:
+        target: {$ref: '#/components/schemas/OpenGameReportTargetSummary'}
+        report_deadline: {type: string, format: date-time}
+        submission_allowed: {type: boolean}
+        submission_blocker:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameReportSubmissionBlocker'
+            - type: 'null'
+        report:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameReportForReporter'
+            - type: 'null'
+      oneOf:
+        - properties:
+            submission_allowed: {const: true}
+            submission_blocker: {const: null}
+            report: {const: null}
+        - properties:
+            submission_allowed: {const: false}
+            submission_blocker: {$ref: '#/components/schemas/OpenGameReportSubmissionBlocker'}
+    OpenGameReportSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [category, facts]
+      properties:
+        category: {$ref: '#/components/schemas/OpenGameReportCategory'}
+        facts:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: '.*\S.*'
+          x-unicode-code-point-limit: 500
+          description: NFC-normalized and independently checked for prohibited contact details and URLs.
+    PlatformGameReportQueueItem:
+      type: object
+      additionalProperties: false
+      required: [report_id, category, status, target, submitted_at]
+      properties:
+        report_id: {type: string, format: uuid}
+        category: {$ref: '#/components/schemas/OpenGameReportCategory'}
+        status: {$ref: '#/components/schemas/OpenGameReportStatus'}
+        target: {$ref: '#/components/schemas/OpenGameReportTargetSummary'}
+        submitted_at: {type: string, format: date-time}
+    PlatformGameReportList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformGameReportQueueItem'}
+        next_cursor: {type: [string, 'null'], minLength: 1, maxLength: 1024}
+    PlatformGameReportAuthority:
+      type: object
+      additionalProperties: false
+      required: [persisted_status, effective_status, cancellation_source, version, cancellation_allowed, cancellation_blocker]
+      properties:
+        persisted_status: {$ref: '#/components/schemas/OpenGamePersistedStatus'}
+        effective_status: {$ref: '#/components/schemas/OpenGameState'}
+        cancellation_source:
+          oneOf:
+            - $ref: '#/components/schemas/OpenGameCancellationSource'
+            - type: 'null'
+        version: {type: integer, minimum: 1}
+        cancellation_allowed: {type: boolean}
+        cancellation_blocker:
+          oneOf:
+            - $ref: '#/components/schemas/PlatformGameReportCancellationBlockedReason'
+            - type: 'null'
+      oneOf:
+        - properties:
+            cancellation_allowed: {const: true}
+            cancellation_blocker: {const: null}
+        - properties:
+            cancellation_allowed: {const: false}
+            cancellation_blocker: {$ref: '#/components/schemas/PlatformGameReportCancellationBlockedReason'}
+    PlatformGameReportResolution:
+      type: object
+      additionalProperties: false
+      required: [resolution_id, outcome, resolution_note, resolved_by_principal_id, resolved_at, game_version_before, game_version_after]
+      properties:
+        resolution_id: {type: string, format: uuid}
+        outcome: {$ref: '#/components/schemas/OpenGameReportResolutionOutcome'}
+        resolution_note: {type: string, minLength: 1, maxLength: 500, x-unicode-code-point-limit: 500}
+        resolved_by_principal_id: {type: string, minLength: 1, maxLength: 128}
+        resolved_at: {type: string, format: date-time}
+        game_version_before: {type: [integer, 'null'], minimum: 1}
+        game_version_after:
+          type: [integer, 'null']
+          minimum: 2
+          description: For CONFIRMED_GAME_CANCELLED, exactly game_version_before + 1.
+      oneOf:
+        - properties:
+            outcome: {const: CONFIRMED_GAME_CANCELLED}
+            game_version_before: {type: integer, minimum: 1}
+            game_version_after: {type: integer, minimum: 2}
+        - properties:
+            outcome: {enum: [DISMISSED, CONFIRMED_RECORDED]}
+            game_version_before: {const: null}
+            game_version_after: {const: null}
+    PlatformGameReportDetail:
+      type: object
+      additionalProperties: false
+      required: [report_id, category, status, facts, submitted_at, reporter_display_name, reporter_registration_status, target, authority, allowed_outcomes, resolution]
+      properties:
+        report_id: {type: string, format: uuid}
+        category: {$ref: '#/components/schemas/OpenGameReportCategory'}
+        status: {$ref: '#/components/schemas/OpenGameReportStatus'}
+        facts: {type: string, minLength: 1, maxLength: 500, x-unicode-code-point-limit: 500}
+        submitted_at: {type: string, format: date-time}
+        reporter_display_name: {type: string, minLength: 2, maxLength: 24}
+        reporter_registration_status: {$ref: '#/components/schemas/OpenGameRegistrationPersistedStatus'}
+        target: {$ref: '#/components/schemas/OpenGameReportTargetSummary'}
+        authority: {$ref: '#/components/schemas/PlatformGameReportAuthority'}
+        allowed_outcomes:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/OpenGameReportResolutionOutcome'}
+        resolution:
+          oneOf:
+            - $ref: '#/components/schemas/PlatformGameReportResolution'
+            - type: 'null'
+      oneOf:
+        - properties:
+            status: {const: PENDING}
+            allowed_outcomes: {type: array, minItems: 2, maxItems: 3}
+            resolution: {const: null}
+        - properties:
+            status: {const: RESOLVED}
+            allowed_outcomes: {type: array, maxItems: 0}
+            resolution: {$ref: '#/components/schemas/PlatformGameReportResolution'}
+    PlatformGameReportResolutionRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, resolution_note]
+      properties:
+        outcome: {$ref: '#/components/schemas/OpenGameReportResolutionOutcome'}
+        resolution_note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: '.*\S.*'
+          x-unicode-code-point-limit: 500
+          description: NFC-normalized and independently checked for prohibited contact details and URLs.
     OpenGameApplyBlockedReason:
       type: string
       enum: [AUTH_REQUIRED, OWNER_CANNOT_APPLY, ALREADY_APPLIED, GAME_NOT_PUBLISHED, REGISTRATION_DEADLINE_PASSED, GAME_SUSPENDED, GAME_CANCELLED, GAME_COMPLETED, GAME_STARTED]
@@ -7721,6 +8185,14 @@ components:
             - APPLICATION_CAPACITY_CHANGED
             - ATTENDANCE_STATE_CHANGED
             - ATTENDANCE_REGISTRATION_NOT_FOUND
+            - REPORT_CONTEXT_NOT_FOUND
+            - REPORTING_WINDOW_CLOSED
+            - REPORT_ALREADY_EXISTS
+            - SENSITIVE_CONTENT_NOT_ALLOWED
+            - REPORT_NOT_FOUND
+            - REPORT_RESOLUTION_STATE_CHANGED
+            - REPORT_ALREADY_RESOLVED
+            - ORDER_GAME_PLATFORM_CANCELLED
         message:
           type: string
           minLength: 1
