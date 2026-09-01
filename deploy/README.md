@@ -157,6 +157,26 @@ The production worker always constructs the notification client with HTTPX's def
 `AsyncHTTPTransport`; deployment configuration has no client or transport injection hook. Custom
 transports are test-only and are outside the production timeout and cleanup support contract.
 
+### D1b venue-staff authorization gate
+
+The live generator defaults to `VENUE_STAFF_AUTHORIZATION_ENABLED=false`. Keep it disabled until
+the database is on migration `0026` and every active managed venue has exactly one explicitly
+confirmed active `OWNER` membership. Validate the complete mapping before applying it; never infer
+an owner from invitation order, permissions, or account age.
+
+```bash
+uv run python -m scripts.backfill_venue_staff_owners \
+  --mapping /path/to/explicit-owner-mapping.json
+uv run python -m scripts.backfill_venue_staff_owners \
+  --mapping /path/to/explicit-owner-mapping.json \
+  --apply
+```
+
+Only after both commands succeed may an operator regenerate the live inputs with
+`VENUE_STAFF_AUTHORIZATION_ENABLED=true`. If any venue is missing, duplicated, inactive, or
+ambiguous, leave the flag `false`; the rest of the candidate remains deployable while staff and
+invitation mutations stay unavailable.
+
 The live generator defaults to `PAYMENT_PROVIDER=disabled` until merchant credentials are available.
 In that mode it does not prompt for or write any WeChat Pay merchant values, and it writes
 `MINIPROGRAM_PAYMENT_PROVIDER=disabled` to the generated Mini Program build inputs. The resulting

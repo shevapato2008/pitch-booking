@@ -22,7 +22,8 @@ function setup(initial?: unknown) {
 }
 
 const accept: VenueStaffMutationAttempt = {
-  kind: "acceptInvitation", originatingUserId: userId, invitationId, idempotencyKey: key,
+  kind: "acceptInvitation", originatingUserId: userId, invitationId, venueId,
+  permissions: ["MANAGE_INVENTORY"], idempotencyKey: key,
 };
 
 describe("venue staff persistent attempt store", () => {

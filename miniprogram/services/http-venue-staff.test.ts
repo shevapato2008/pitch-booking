@@ -65,12 +65,12 @@ test("logs in and reads the closed authority overview", async () => {
 test("maps all owner mutations and distinguishes first 201 from safe 200 replay", async () => {
   const x = setup();
   const create = { kind: "createInvitation" as const, originatingUserId: userId, venueId, contactLabel: "夜班员工", permissions: ["MANAGE_INVENTORY" as const], idempotencyKey: key };
-  x.enqueue(201, { ...staffInvitationWire(), invitation_path: `/pages/venue-staff-invitation/index?token=${invitationToken}` });
+  x.enqueue(201, { ...staffInvitationWire({ contact_label: "夜班员工", permissions: ["MANAGE_INVENTORY"] }), invitation_path: `/pages/venue-staff-invitation/index?token=${invitationToken}` });
   await expect(x.source.createInvitation(create)).resolves.toMatchObject({ kind: "CREATED", invitation: { invitationPath: expect.stringContaining(invitationToken) } });
-  x.enqueue(200, staffInvitationWire());
+  x.enqueue(200, staffInvitationWire({ contact_label: "夜班员工", permissions: ["MANAGE_INVENTORY"] }));
   await expect(x.source.createInvitation(create)).resolves.toMatchObject({ kind: "REPLAYED", invitation: { id: invitationId } });
 
-  x.enqueue(200, staffMemberWire({ permissions: ["MANAGE_PROFILE"] }));
+  x.enqueue(200, staffMemberWire({ permissions: ["MANAGE_PROFILE"], version: 4 }));
   await x.source.updatePermissions({ kind: "updatePermissions", originatingUserId: userId, venueId, membershipId, expectedVersion: 3, permissions: ["MANAGE_PROFILE"], idempotencyKey: key });
   x.enqueue(200, staffMemberWire({ is_active: false, version: 4 }));
   await x.source.removeMember({ kind: "removeMember", originatingUserId: userId, venueId, membershipId, expectedVersion: 3, reason: "已离职", idempotencyKey: key });
@@ -92,7 +92,10 @@ test("sends invitation secret only in its redacted header and never persists it"
   x.enqueue(200, { id: invitationId, venue_id: venueId, venue_name: "渤海元丰足球场", status: "ACTIVE", permissions: ["MANAGE_INVENTORY"], expires_at: "2026-09-08T08:00:00Z" });
   await x.source.getCurrentInvitation(invitationToken);
   x.enqueue(200, { venue_id: venueId, venue_name: "渤海元丰足球场", membership: staffMemberWire({ is_self: true }), workspace_path: "/pages/venue-access/index" });
-  await x.source.acceptInvitation(invitationToken, { kind: "acceptInvitation", originatingUserId: userId, invitationId, idempotencyKey: key });
+  await x.source.acceptInvitation(invitationToken, {
+    kind: "acceptInvitation", originatingUserId: userId, invitationId, venueId,
+    permissions: ["MANAGE_INVENTORY"], idempotencyKey: key,
+  });
   for (const call of x.calls) {
     expect(call.path).not.toContain(invitationToken);
     expect(JSON.stringify(call.body ?? null)).not.toContain(invitationToken);
@@ -116,9 +119,68 @@ test("keeps unknown writes for same-key recovery and clears definitive conflicts
 test("re-authenticates once but refuses to send a persisted mutation as another account", async () => {
   const x = setup(false);
   x.enqueue(200, { session_token: "T".repeat(43), expires_at: "2099-01-01T00:00:00Z", user: { id: otherUserId, masked_phone: null, last_contact_name: null } });
-  const attempt = { kind: "acceptInvitation" as const, originatingUserId: userId, invitationId, idempotencyKey: key };
+  const attempt = {
+    kind: "acceptInvitation" as const, originatingUserId: userId, invitationId, venueId,
+    permissions: ["MANAGE_INVENTORY" as const], idempotencyKey: key,
+  };
   await expect(x.source.acceptInvitation(invitationToken, attempt)).rejects.toBeInstanceOf(VenueStaffApiError);
   await expect(x.source.acceptInvitation(invitationToken, attempt)).rejects.toMatchObject({ code: "VENUE_STAFF_ACCOUNT_CHANGED" });
   expect(x.calls).toHaveLength(1);
   expect(x.attemptStore.load()).toEqual(attempt);
+});
+
+test("rejects an overview for a different venue", async () => {
+  const x = setup();
+  x.enqueue(200, staffOverviewWire({ venue_id: "20000000-0000-4000-8000-000000000099" }));
+  await expect(x.source.getOverview(venueId)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+});
+
+test.each([
+  ["contact", staffInvitationWire({ contact_label: "其他员工", permissions: ["MANAGE_INVENTORY"] })],
+  ["permissions", staffInvitationWire({ contact_label: "夜班员工", permissions: ["MANAGE_PROFILE"] })],
+  ["status", staffInvitationWire({ contact_label: "夜班员工", permissions: ["MANAGE_INVENTORY"], status: "REVOKED" })],
+])("rejects a create replay with mismatched %s", async (_label, response) => {
+  const x = setup();
+  const attempt = { kind: "createInvitation" as const, originatingUserId: userId, venueId, contactLabel: "夜班员工", permissions: ["MANAGE_INVENTORY" as const], idempotencyKey: key };
+  x.enqueue(200, response);
+  await expect(x.source.createInvitation(attempt)).rejects.toMatchObject({ code: "VENUE_STAFF_RESULT_UNKNOWN" });
+  expect(x.attemptStore.load()).toEqual(attempt);
+});
+
+test.each([
+  ["membership", staffMemberWire({ id: "10000000-0000-4000-8000-000000000099", permissions: ["MANAGE_PROFILE"], version: 4 })],
+  ["version", staffMemberWire({ permissions: ["MANAGE_PROFILE"], version: 3 })],
+  ["permissions", staffMemberWire({ permissions: ["MANAGE_INVENTORY"], version: 4 })],
+  ["active state", staffMemberWire({ permissions: ["MANAGE_PROFILE"], is_active: false, version: 4 })],
+])("rejects an update response with mismatched %s", async (_label, response) => {
+  const x = setup();
+  const attempt = { kind: "updatePermissions" as const, originatingUserId: userId, venueId, membershipId, expectedVersion: 3, permissions: ["MANAGE_PROFILE" as const], idempotencyKey: key };
+  x.enqueue(200, response);
+  await expect(x.source.updatePermissions(attempt)).rejects.toMatchObject({ code: "VENUE_STAFF_RESULT_UNKNOWN" });
+  expect(x.attemptStore.load()).toEqual(attempt);
+});
+
+test("rejects remove, revoke, and accept responses unrelated to their attempts", async () => {
+  const remove = setup();
+  const removeAttempt = { kind: "removeMember" as const, originatingUserId: userId, venueId, membershipId, expectedVersion: 3, reason: "已离职", idempotencyKey: key };
+  remove.enqueue(200, staffMemberWire({ is_active: true, version: 4 }));
+  await expect(remove.source.removeMember(removeAttempt)).rejects.toMatchObject({ code: "VENUE_STAFF_RESULT_UNKNOWN" });
+
+  const revoke = setup();
+  const revokeAttempt = { kind: "revokeInvitation" as const, originatingUserId: userId, venueId, invitationId, idempotencyKey: key };
+  revoke.enqueue(200, staffInvitationWire({ status: "ACTIVE" }));
+  await expect(revoke.source.revokeInvitation(revokeAttempt)).rejects.toMatchObject({ code: "VENUE_STAFF_RESULT_UNKNOWN" });
+
+  const accept = setup();
+  const acceptAttempt = {
+    kind: "acceptInvitation" as const, originatingUserId: userId, invitationId, venueId,
+    permissions: ["MANAGE_INVENTORY" as const], idempotencyKey: key,
+  };
+  accept.enqueue(200, {
+    venue_id: "20000000-0000-4000-8000-000000000099",
+    venue_name: "其他场馆",
+    membership: staffMemberWire({ is_self: true }),
+    workspace_path: "/pages/venue-access/index",
+  });
+  await expect(accept.source.acceptInvitation(invitationToken, acceptAttempt)).rejects.toMatchObject({ code: "VENUE_STAFF_RESULT_UNKNOWN" });
 });

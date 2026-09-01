@@ -113,6 +113,21 @@ test("submitted viewer opens the existing application portfolio", async () => {
   expect(wx.navigateTo).toHaveBeenCalledWith({ url: "/pages/venue-access/index" });
 });
 
+test.each([
+  ["wrong state", { ...invitation, viewerState: "SUBMITTED_BY_VIEWER" as const, applicationId: "30000000-0000-4000-8000-000000000003", version: 2 }],
+  ["wrong venue", { ...invitation, viewerState: "CLAIMED_BY_VIEWER" as const, venue: { ...invitation.venue, venueId: "20000000-0000-4000-8000-000000000099" }, version: 2 }],
+  ["wrong version", { ...invitation, viewerState: "CLAIMED_BY_VIEWER" as const, version: 4 }],
+])("does not enter the claim form after an accept response with %s", async (_label, response) => {
+  const api = source();
+  (api.acceptInvitation as any).mockResolvedValueOnce(response);
+  registerVenueOnboardingDataSource(api);
+  const target = page();
+  await target.onLoad({ token });
+  await target.onPrimaryAction();
+  expect(wx.navigateTo).not.toHaveBeenCalled();
+  expect(target.data).toMatchObject({ mode: "error", actionKind: "retry" });
+});
+
 test("production invitation markup has no Fixture and every visible action is bound", () => {
   const markup = readFileSync("miniprogram/pages/venue-invitation/index.wxml", "utf8");
   expect(markup).toContain("bindtap=\"onPrimaryAction\"");

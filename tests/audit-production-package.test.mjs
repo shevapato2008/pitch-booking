@@ -535,6 +535,48 @@ test("production audit requires compiled venue staff source and persistent attem
   await assertAuditRejects(packageRoot, "missing venue staff composition");
 });
 
+test("production audit rejects a venue staff attempt store without production persistence", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace(
+      "createVenueStaffAttemptStore(productionSessionStorage)",
+      "createVenueStaffAttemptStore({})",
+    ),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid venue staff registration: persistent attempt store");
+});
+
+test("production audit rejects venue staff source wired to a different attempt store", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot);
+  const appPath = path.join(packageRoot, "app.js");
+  const source = await readFile(appPath, "utf8");
+  await writeFile(
+    appPath,
+    source.replace(
+      "  attemptStore: venueStaffAttemptStore,",
+      "  attemptStore: venueFulfillmentAttemptStore,",
+    ),
+  );
+
+  await assertAuditRejects(packageRoot, "invalid venue staff registration: shared attempt store");
+});
+
+test("production audit rejects a later non-HTTP venue staff source override", async (t) => {
+  const packageRoot = await createProductionPackage();
+  t.after(() => rm(packageRoot, { recursive: true, force: true }));
+  await installValidPaymentComposition(packageRoot, "registerVenueStaffDataSource({});");
+
+  await assertAuditRejects(packageRoot, "invalid venue staff registration: data source");
+});
+
 test("production audit rejects an open game report attempt store without production persistence", async (t) => {
   const packageRoot = await createProductionPackage();
   t.after(() => rm(packageRoot, { recursive: true, force: true }));

@@ -38,6 +38,7 @@ REQUIRED_KEYS = (
     "ONBOARDING_OSS_BUCKET",
     "PLATFORM_STAFF_PRINCIPALS_JSON",
     "PLATFORM_CSRF_SECRET",
+    "VENUE_STAFF_AUTHORIZATION_ENABLED",
 )
 WECHAT_PAY_REQUIRED_KEYS = (
     "WECHAT_PAY_MERCHANT_ID",
@@ -124,6 +125,10 @@ def preflight(
         failures.append("PAYMENT_PROVIDER must be wechat or disabled for deployment")
     if values.get("ENABLE_MOCK_PAYMENT_PROVIDER", "").casefold() != "false":
         failures.append("ENABLE_MOCK_PAYMENT_PROVIDER must be false for deployment")
+    if values.get("VENUE_STAFF_AUTHORIZATION_ENABLED") not in {"true", "false"}:
+        failures.append(
+            "VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false for deployment"
+        )
     if payment_provider == "wechat":
         _validate_wechat_pay(values, failures)
     _validate_open_game_notifications(

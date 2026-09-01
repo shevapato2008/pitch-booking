@@ -78,7 +78,14 @@ Page({
 
   async onAcceptInvitation() {
     if (this.data.mode !== "ready" || !this.invitation || !this.invitationToken || this.data.busy || this.data.unknownAttempt || this.data.foreignAttemptPending) return;
-    const attempt: AcceptVenueStaffInvitationAttempt = { kind: "acceptInvitation", originatingUserId: this.boundUserId, invitationId: this.invitation.id, idempotencyKey: attemptKey() };
+    const attempt: AcceptVenueStaffInvitationAttempt = {
+      kind: "acceptInvitation",
+      originatingUserId: this.boundUserId,
+      invitationId: this.invitation.id,
+      venueId: this.invitation.venueId,
+      permissions: [...this.invitation.permissions],
+      idempotencyKey: attemptKey(),
+    };
     await this.accept(attempt);
   },
   async accept(attempt: AcceptVenueStaffInvitationAttempt) {

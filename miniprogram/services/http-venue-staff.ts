@@ -77,6 +77,17 @@ function shouldPreserveAttempt(caught: unknown): boolean {
   ].includes(caught.code);
 }
 
+function samePermissions(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length && left.every((permission) => right.includes(permission));
+}
+
+function unknownResult(): never {
+  throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN");
+}
+
 export function createHttpVenueStaffDataSource({ transport, identity, sessionStore, attemptStore }: {
   readonly transport: StatusTransport;
   readonly identity: WeChatIdentityCapability;
@@ -184,7 +195,9 @@ export function createHttpVenueStaffDataSource({ transport, identity, sessionSto
     getOverview: (venueId) => authorized(false, async () => {
       const response = await transport.requestWithStatus<unknown>("GET", `${base(venueId)}/staff`, undefined, bearer());
       if (response.statusCode !== 200) throw new VenueStaffApiError("SERVICE_UNAVAILABLE");
-      return decodeVenueStaffOverview(response.data);
+      const overview = decodeVenueStaffOverview(response.data);
+      if (overview.venueId !== venueId) throw new VenueStaffApiError("SERVICE_UNAVAILABLE");
+      return overview;
     }),
     createInvitation: (attempt: CreateVenueStaffInvitationAttempt) => write(attempt, async (stable) => {
       const request = stable as CreateVenueStaffInvitationAttempt;
@@ -193,8 +206,19 @@ export function createHttpVenueStaffDataSource({ transport, identity, sessionSto
         { contact_label: request.contactLabel, permissions: request.permissions }, mutationHeaders(request),
       );
       try {
-        if (response.statusCode === 201) return { kind: "CREATED" as const, invitation: decodeVenueStaffInvitationCreated(response.data) };
-        if (response.statusCode === 200) return { kind: "REPLAYED" as const, invitation: decodeVenueStaffInvitation(response.data) };
+        if (response.statusCode === 201) {
+          const invitation = decodeVenueStaffInvitationCreated(response.data);
+          if (invitation.contactLabel !== request.contactLabel
+            || !samePermissions(invitation.permissions, request.permissions)) unknownResult();
+          return { kind: "CREATED" as const, invitation };
+        }
+        if (response.statusCode === 200) {
+          const invitation = decodeVenueStaffInvitation(response.data);
+          if (invitation.status !== "ACTIVE"
+            || invitation.contactLabel !== request.contactLabel
+            || !samePermissions(invitation.permissions, request.permissions)) unknownResult();
+          return { kind: "REPLAYED" as const, invitation };
+        }
       } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
       throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN");
     }),
@@ -205,7 +229,13 @@ export function createHttpVenueStaffDataSource({ transport, identity, sessionSto
         { expected_version: request.expectedVersion, permissions: request.permissions }, mutationHeaders(request),
       );
       expectStatus(response.statusCode, 200);
-      try { return decodeVenueStaffMember(response.data); } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
+      try {
+        const member = decodeVenueStaffMember(response.data);
+        if (member.id !== request.membershipId || member.role !== "STAFF" || !member.isActive
+          || member.version !== request.expectedVersion + 1
+          || !samePermissions(member.permissions, request.permissions)) unknownResult();
+        return member;
+      } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
     }),
     removeMember: (attempt: RemoveVenueStaffMemberAttempt) => write(attempt, async (stable) => {
       const request = stable as RemoveVenueStaffMemberAttempt;
@@ -214,7 +244,12 @@ export function createHttpVenueStaffDataSource({ transport, identity, sessionSto
         { expected_version: request.expectedVersion, reason: request.reason }, mutationHeaders(request),
       );
       expectStatus(response.statusCode, 200);
-      try { return decodeVenueStaffMember(response.data); } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
+      try {
+        const member = decodeVenueStaffMember(response.data);
+        if (member.id !== request.membershipId || member.role !== "STAFF" || member.isActive
+          || member.version !== request.expectedVersion + 1) unknownResult();
+        return member;
+      } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
     }),
     revokeInvitation: (attempt: RevokeVenueStaffInvitationAttempt) => write(attempt, async (stable) => {
       const request = stable as RevokeVenueStaffInvitationAttempt;
@@ -222,7 +257,11 @@ export function createHttpVenueStaffDataSource({ transport, identity, sessionSto
         "POST", `${base(request.venueId)}/staff-invitations/${encodeURIComponent(request.invitationId)}/revoke`, {}, mutationHeaders(request),
       );
       expectStatus(response.statusCode, 200);
-      try { return decodeVenueStaffInvitation(response.data); } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
+      try {
+        const invitation = decodeVenueStaffInvitation(response.data);
+        if (invitation.id !== request.invitationId || invitation.status !== "REVOKED") unknownResult();
+        return invitation;
+      } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
     }),
     getCurrentInvitation: (invitationToken) => {
       if (!TOKEN.test(invitationToken)) return Promise.reject(new VenueStaffApiError("VENUE_STAFF_INVITATION_UNAVAILABLE"));
@@ -242,7 +281,12 @@ export function createHttpVenueStaffDataSource({ transport, identity, sessionSto
           "POST", "/api/v1/venue-staff-invitations/current/accept", {}, mutationHeaders(request, invitationToken),
         );
         expectStatus(response.statusCode, 200);
-        try { return decodeVenueStaffMembershipAccepted(response.data); } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
+        try {
+          const accepted = decodeVenueStaffMembershipAccepted(response.data);
+          if (accepted.venueId !== request.venueId
+            || !samePermissions(accepted.membership.permissions, request.permissions)) unknownResult();
+          return accepted;
+        } catch { throw new VenueStaffApiError("VENUE_STAFF_RESULT_UNKNOWN"); }
       });
     },
   };

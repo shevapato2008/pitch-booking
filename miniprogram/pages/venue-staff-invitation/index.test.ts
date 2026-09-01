@@ -42,7 +42,10 @@ test("loads the secret through the private header path without exposing it in re
 
 test("accepts with a token-free persisted attempt and opens the real returned workspace", async () => {
   const api = source(); registerVenueStaffDataSource(api); const view = page(); await view.onLoad({ token }); await view.onAcceptInvitation();
-  expect(api.acceptInvitation).toHaveBeenCalledWith(token, expect.objectContaining({ kind: "acceptInvitation", originatingUserId: userId, invitationId }));
+  expect(api.acceptInvitation).toHaveBeenCalledWith(token, expect.objectContaining({
+    kind: "acceptInvitation", originatingUserId: userId, invitationId, venueId,
+    permissions: invitation.permissions,
+  }));
   expect(JSON.stringify(api.acceptInvitation.mock.calls[0][1])).not.toContain(token); expect(view.data).toMatchObject({ mode: "accepted", workspacePath: "/pages/venue-access/index" }); expect(view.invitationToken).toBe("");
   view.onOpenPortfolio(); expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/venue-access/index" });
 });
@@ -65,7 +68,7 @@ test("a malformed deep link offers a real return action instead of an inert retr
 });
 
 test("replays an unknown accept with its original key", async () => {
-  stored = { kind: "acceptInvitation", originatingUserId: userId, invitationId, idempotencyKey: "persisted-accept-key-001" }; const original = structuredClone(stored);
+  stored = { kind: "acceptInvitation", originatingUserId: userId, invitationId, venueId, permissions: invitation.permissions, idempotencyKey: "persisted-accept-key-001" }; const original = structuredClone(stored);
   const api = source(); registerVenueStaffDataSource(api); const view = page(); await view.onLoad({ token }); expect(view.data.unknownAttempt).toEqual(original);
   await view.onRetryUnknown(); expect(api.acceptInvitation).toHaveBeenCalledWith(token, original); expect(view.data.mode).toBe("accepted");
 });

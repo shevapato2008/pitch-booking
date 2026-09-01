@@ -10,6 +10,7 @@ from backend.app.models import (
     User,
     Venue,
     VenueMembership,
+    VenueMembershipRole,
     VenueOnboardingApplication,
     VenueOnboardingEvidence,
     VenueOnboardingEvidenceState,
@@ -138,6 +139,17 @@ class PlatformOnboardingRepository:
             .where(
                 VenueMembership.venue_id == venue_id,
                 VenueMembership.user_id == user_id,
+            )
+            .with_for_update()
+        )
+
+    def get_active_owner_for_update(self, venue_id: uuid.UUID) -> VenueMembership | None:
+        return self.session.scalar(
+            select(VenueMembership)
+            .where(
+                VenueMembership.venue_id == venue_id,
+                VenueMembership.is_active.is_(True),
+                VenueMembership.role == VenueMembershipRole.OWNER,
             )
             .with_for_update()
         )

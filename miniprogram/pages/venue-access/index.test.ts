@@ -70,12 +70,12 @@ test("one venue remains in the stable portfolio and can be chosen explicitly", a
     venues: [expect.objectContaining({ ...first, roleLabel: "场馆负责人", permissionSummary: "全部工作权限" })],
   });
   expect(wx.redirectTo).not.toHaveBeenCalled();
-  target.onChooseVenue({ currentTarget: { dataset: { venueId: first.id } } });
+  target.onChooseVenue({ currentTarget: { dataset: { venueId: first.id, permission: "MANAGE_PROFILE" } } });
   expect(wx.redirectTo).toHaveBeenCalledTimes(1);
   expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-profile/index?venue_id=${encodeURIComponent(first.id)}` }));
 });
 
-test("multiple venues use their server permissions for the initial workbench", async () => {
+test("multiple venues expose every server-authorized workbench", async () => {
   registerVenueAccessDataSource(source([first, second])); const target = page();
   await target.onLoad();
   expect(target.data).toMatchObject({
@@ -83,16 +83,26 @@ test("multiple venues use their server permissions for the initial workbench", a
     mode: "ready",
     venues: [
       expect.objectContaining({ ...first }),
-      expect.objectContaining({ ...second, roleLabel: "场馆员工", permissionSummary: "可订库存、订单履约" }),
+      expect.objectContaining({
+        ...second,
+        roleLabel: "场馆员工",
+        permissionSummary: "可订库存、订单履约",
+        workbenchActions: [
+          expect.objectContaining({ permission: "MANAGE_INVENTORY", label: "库存时段" }),
+          expect.objectContaining({ permission: "FULFILL_ORDERS", label: "今日订单" }),
+        ],
+      }),
     ],
   });
   expect(wx.redirectTo).not.toHaveBeenCalled();
   target.onChooseVenue({ currentTarget: { dataset: { venueId: "unknown" } } });
   expect(wx.redirectTo).not.toHaveBeenCalled();
-  target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id } } });
-  target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id } } });
+  target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id, permission: "MANAGE_PROFILE" } } });
+  expect(wx.redirectTo).not.toHaveBeenCalled();
+  target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id, permission: "FULFILL_ORDERS" } } });
+  target.onChooseVenue({ currentTarget: { dataset: { venueId: second.id, permission: "MANAGE_INVENTORY" } } });
   expect(wx.redirectTo).toHaveBeenCalledTimes(1);
-  expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-inventory/index?venue_id=${encodeURIComponent(second.id)}` }));
+  expect(wx.redirectTo).toHaveBeenCalledWith(expect.objectContaining({ url: `/pages/venue-fulfillment/index?venue_id=${encodeURIComponent(second.id)}` }));
 });
 
 test("every managed venue has a real staff authority entry for owner or staff", async () => {
@@ -105,7 +115,8 @@ test("every managed venue has a real staff authority entry for owner or staff", 
   target.onOpenStaff({ currentTarget: { dataset: { venueId: "unknown" } } });
   expect(wx.navigateTo).toHaveBeenCalledTimes(1);
   const markup = readFileSync("miniprogram/pages/venue-access/index.wxml", "utf8");
-  expect(markup).toMatch(/<button[^>]*bindtap="onChooseVenue"[^>]*>\s*进入工作台\s*<\/button>/);
+  expect(markup).toMatch(/wx:for="\{\{item\.workbenchActions\}\}"/);
+  expect(markup).toContain("data-permission=\"{{action.permission}}\"");
   expect(markup).toMatch(/<button[^>]*bindtap="onOpenStaff"[^>]*>\s*员工与权限\s*<\/button>/);
   expect(markup).toContain("{{item.roleLabel}} · {{item.permissionSummary}}");
 });

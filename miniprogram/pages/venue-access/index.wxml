@@ -24,7 +24,7 @@
         <view class="venue-access__card-copy"><text class="venue-access__venue-name">{{item.name}}</text><text class="venue-access__venue-location">{{item.districtName}} · {{item.address}}</text><text class="venue-access__permission">已获得管理权限</text></view>
         <text class="venue-access__authority">{{item.roleLabel}} · {{item.permissionSummary}}</text>
         <view class="venue-access__card-actions">
-          <button class="venue-access__card-action venue-access__card-action--primary venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onChooseVenue" data-venue-id="{{item.id}}">进入工作台</button>
+          <button wx:for="{{item.workbenchActions}}" wx:key="permission" wx:for-item="action" class="venue-access__card-action venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onChooseVenue" data-venue-id="{{item.id}}" data-permission="{{action.permission}}" aria-label="进入{{action.label}}">{{action.label}}</button>
           <button class="venue-access__card-action venue-access__touch" hover-class="venue-access__card-action--pressed" bindtap="onOpenStaff" data-venue-id="{{item.id}}">员工与权限</button>
         </view>
       </view>

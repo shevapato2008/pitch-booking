@@ -93,6 +93,7 @@ class PrepareInputs:
     open_game_notification_template_id: str = ""
     open_game_notification_keyword_mapping_json: str = ""
     open_game_notification_miniprogram_state: str = "formal"
+    venue_staff_authorization_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -603,6 +604,9 @@ def prepare_live_deploy(inputs: PrepareInputs) -> PreparedPaths:
         "SESSION_TTL_DAYS": "30",
         "PLATFORM_STAFF_PRINCIPALS_JSON": platform_principals,
         "PLATFORM_CSRF_SECRET": platform_csrf_secret,
+        "VENUE_STAFF_AUTHORIZATION_ENABLED": (
+            "true" if inputs.venue_staff_authorization_enabled else "false"
+        ),
     }
     miniprogram_values = {
         "MINIPROGRAM_API_BASE_URL": API_BASE_URL,
@@ -703,6 +707,11 @@ def main() -> int:
     )
     if notification_provider not in {"wechat", "disabled"}:
         parser.error("OPEN_GAME_NOTIFICATION_PROVIDER must be wechat or disabled")
+    venue_staff_authorization = os.environ.get(
+        "VENUE_STAFF_AUTHORIZATION_ENABLED", "false"
+    ).strip().casefold()
+    if venue_staff_authorization not in {"true", "false"}:
+        parser.error("VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false")
     existing_payment = (
         {key: existing_bootstrap[key] for key in WECHAT_PAY_KEYS}
         if payment_provider == "wechat"
@@ -761,6 +770,7 @@ def main() -> int:
                 open_game_notification_miniprogram_state=os.environ.get(
                     "OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE", "formal"
                 ),
+                venue_staff_authorization_enabled=(venue_staff_authorization == "true"),
             )
         )
     except ValueError as error:

@@ -5,18 +5,27 @@ import { readIntentHeaderLayout } from "../../presentation/intent-header-layout"
 import { getVenueAccessDataSource } from "../../services/venue-access";
 import { getVenueOnboardingDataSourceOrUndefined } from "../../services/venue-onboarding";
 
-type VenueChooseEvent = { currentTarget?: { dataset?: { venueId?: unknown; applicationId?: unknown } } };
+type VenueChooseEvent = { currentTarget?: { dataset?: { venueId?: unknown; applicationId?: unknown; permission?: unknown } } };
 type PageError = { code?: unknown };
-type ManagedVenueView = ManagedVenue & { readonly roleLabel: string; readonly permissionSummary: string };
+type WorkbenchAction = {
+  readonly permission: VenueStaffPermission;
+  readonly label: string;
+  readonly route: string;
+};
+type ManagedVenueView = ManagedVenue & {
+  readonly roleLabel: string;
+  readonly permissionSummary: string;
+  readonly workbenchActions: readonly WorkbenchAction[];
+};
 
 const permissionLabels = new Map(
   VENUE_STAFF_PERMISSION_OPTIONS.map(({ code, label }) => [code, label]),
 );
-const workbenchRoutes: readonly [VenueStaffPermission, string][] = [
-  ["MANAGE_PROFILE", "/pages/venue-profile/index"],
-  ["MANAGE_PITCHES", "/pages/venue-pitch-setup/index"],
-  ["MANAGE_INVENTORY", "/pages/venue-inventory/index"],
-  ["FULFILL_ORDERS", "/pages/venue-fulfillment/index"],
+const workbenchActions: readonly WorkbenchAction[] = [
+  { permission: "MANAGE_PROFILE", label: "场馆资料", route: "/pages/venue-profile/index" },
+  { permission: "MANAGE_PITCHES", label: "配置场地", route: "/pages/venue-pitch-setup/index" },
+  { permission: "MANAGE_INVENTORY", label: "库存时段", route: "/pages/venue-inventory/index" },
+  { permission: "FULFILL_ORDERS", label: "今日订单", route: "/pages/venue-fulfillment/index" },
 ];
 
 function presentVenue(venue: ManagedVenue): ManagedVenueView {
@@ -26,11 +35,18 @@ function presentVenue(venue: ManagedVenue): ManagedVenueView {
     permissionSummary: venue.role === "OWNER"
       ? "全部工作权限"
       : venue.permissions.map((permission) => permissionLabels.get(permission)).join("、"),
+    workbenchActions: workbenchActions.filter(({ permission }) =>
+      venue.permissions.includes(permission)
+    ),
   };
 }
 
-function workbenchUrl(venue: ManagedVenue): string | undefined {
-  const route = workbenchRoutes.find(([permission]) => venue.permissions.includes(permission))?.[1];
+function workbenchUrl(
+  venue: ManagedVenue,
+  permission: VenueStaffPermission,
+): string | undefined {
+  if (!venue.permissions.includes(permission)) return undefined;
+  const route = workbenchActions.find((item) => item.permission === permission)?.route;
   return route ? `${route}?venue_id=${encodeURIComponent(venue.id)}` : undefined;
 }
 
@@ -120,16 +136,21 @@ Page({
 
   onChooseVenue(event: VenueChooseEvent) {
     const venueId = event.currentTarget?.dataset?.venueId;
+    const permission = event.currentTarget?.dataset?.permission;
     const venue = typeof venueId === "string"
       ? this.data.venues.find((item: ManagedVenueView) => item.id === venueId)
       : undefined;
-    if (!venue) return;
-    this.enterWorkbench(venue);
+    if (
+      !venue
+      || typeof permission !== "string"
+      || !workbenchActions.some((item) => item.permission === permission)
+    ) return;
+    this.enterWorkbench(venue, permission as VenueStaffPermission);
   },
 
-  enterWorkbench(venue: ManagedVenue) {
+  enterWorkbench(venue: ManagedVenue, permission: VenueStaffPermission) {
     if (this.redirected || this.disposed) return;
-    const url = workbenchUrl(venue);
+    const url = workbenchUrl(venue, permission);
     if (!url) return;
     this.redirected = true;
     wx.redirectTo({

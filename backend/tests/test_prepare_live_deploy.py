@@ -125,6 +125,7 @@ def test_prepare_creates_complete_preflight_compatible_files_with_mode_0600(
     assert deploy["OPEN_GAME_NOTIFICATION_MINIPROGRAM_STATE"] == "formal"
     assert deploy["PAYMENT_PROVIDER"] == "wechat"
     assert deploy["ENABLE_MOCK_PAYMENT_PROVIDER"] == "false"
+    assert deploy["VENUE_STAFF_AUTHORIZATION_ENABLED"] == "false"
     assert deploy["WECHAT_PAY_MERCHANT_ID"] == WECHAT_PAY_MERCHANT_ID
     assert deploy["WECHAT_PAY_MERCHANT_CERT_SERIAL"] == WECHAT_PAY_MERCHANT_CERT_SERIAL
     assert deploy["WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64"] == WECHAT_PAY_PRIVATE_KEY_BASE64
@@ -189,6 +190,14 @@ def test_prepare_emits_matching_enabled_notification_config_for_backend_and_clie
     assert mini["MINIPROGRAM_OPEN_GAME_NOTIFICATION_PROVIDER"] == "wechat"
     assert mini["MINIPROGRAM_WAITLIST_PROMOTED_TEMPLATE_ID"] == WAITLIST_TEMPLATE_ID
     assert preflight(paths.deploy_env, miniprogram_env_file=paths.miniprogram_env).ok is True
+
+
+def test_prepare_emits_explicit_venue_staff_authorization_gate(tmp_path: Path) -> None:
+    paths = prepare_live_deploy(
+        inputs(tmp_path, venue_staff_authorization_enabled=True)
+    )
+
+    assert read_env_file(paths.deploy_env)["VENUE_STAFF_AUTHORIZATION_ENABLED"] == "true"
 
 
 @pytest.mark.parametrize("state", ["formal", "developer"])

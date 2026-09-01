@@ -34,6 +34,7 @@ from backend.app.modules.venue_onboarding.storage import (
     PrivateObjectStateError,
     PrivateStorageUnavailableError,
 )
+from backend.app.modules.venue_staff.owner_mapping import owner_mapping_is_complete
 from backend.app.security.phone_vault import PhoneVault
 
 pytestmark = pytest.mark.integration
@@ -461,7 +462,7 @@ def test_claim_approval_reactivates_one_membership_without_creating_venue(
         )
         assert len(memberships) == 1
         assert memberships[0].is_active is True
-        assert memberships[0].role is VenueMembershipRole.STAFF
+        assert memberships[0].role is VenueMembershipRole.OWNER
         assert memberships[0].can_manage_profile is True
         assert memberships[0].can_manage_pitches is True
         assert memberships[0].can_manage_inventory is True
@@ -469,6 +470,58 @@ def test_claim_approval_reactivates_one_membership_without_creating_venue(
         assert memberships[0].revoked_at is None
         assert memberships[0].version == 2
         assert target.timezone == "Asia/Shanghai"
+        assert owner_mapping_is_complete(session) is True
+
+
+def test_claim_approval_keeps_new_manager_as_staff_when_venue_has_an_owner(
+    pg_engine: Engine,
+) -> None:
+    with Session(pg_engine) as session:
+        target = _venue(name="已有负责人球场", address="天津市和平区负责人路 1 号")
+        owner = User(
+            wechat_app_id="wx-platform-review",
+            wechat_openid=f"owner-{uuid.uuid4()}",
+        )
+        session.add_all([target, owner])
+        session.flush()
+        session.add(
+            VenueMembership(
+                venue_id=target.id,
+                user_id=owner.id,
+                is_active=True,
+                role=VenueMembershipRole.OWNER,
+                can_manage_profile=True,
+                can_manage_pitches=True,
+                can_manage_inventory=True,
+                can_fulfill_orders=True,
+            )
+        )
+        session.commit()
+        application = _application(session, kind=VenueOnboardingKind.CLAIM, target=target)
+        session.commit()
+
+        _service(session).decide(
+            application_id=application.id,
+            principal_id="ops-1",
+            request=PlatformOnboardingDecisionRequest(
+                outcome=VenueOnboardingStatus.APPROVED,
+                reason="授权材料一致",
+            ),
+        )
+
+        membership = session.scalar(
+            select(VenueMembership).where(
+                VenueMembership.venue_id == target.id,
+                VenueMembership.user_id == application.applicant_user_id,
+            )
+        )
+        assert membership is not None
+        assert membership.role is VenueMembershipRole.STAFF
+        assert membership.can_manage_profile is True
+        assert membership.can_manage_pitches is True
+        assert membership.can_manage_inventory is True
+        assert membership.can_fulfill_orders is True
+        assert owner_mapping_is_complete(session) is True
 
 
 def test_create_approval_is_atomic_unlisted_and_decisions_are_immutable(

@@ -42,6 +42,8 @@ export type VenueStaffMutationAttempt =
   | (AttemptBase & {
     readonly kind: "acceptInvitation";
     readonly invitationId: string;
+    readonly venueId: string;
+    readonly permissions: readonly VenueStaffPermission[];
   });
 
 export type CreateVenueStaffInvitationAttempt = Extract<VenueStaffMutationAttempt, { readonly kind: "createInvitation" }>;

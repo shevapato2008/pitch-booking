@@ -30,6 +30,7 @@ Page({
   token: "",
   disposed: false,
   acceptAttempt: undefined as string | undefined,
+  invitation: null as VenueRecruitmentInvitation | null,
 
   async onLoad(options: InvitationOptions = {}) {
     this.disposed = false;
@@ -44,7 +45,7 @@ Page({
     await this.loadInvitation();
   },
 
-  onUnload() { this.disposed = true; },
+  onUnload() { this.disposed = true; this.invitation = null; },
 
   async loadInvitation() {
     if (this.data.busy) return;
@@ -83,11 +84,19 @@ Page({
     }
     this.setData({ busy: true });
     this.acceptAttempt ??= createOnboardingIdempotencyKey("venue-invitation-accept");
+    const before = this.invitation;
     try {
       const source = getVenueOnboardingDataSource();
       if (!source.acceptInvitation) throw new Error("VENUE_INVITATION_DATA_SOURCE_NOT_CONFIGURED");
       const invitation = await source.acceptInvitation(this.token, this.acceptAttempt);
       if (this.disposed) return;
+      if (!before || before.viewerState !== "AVAILABLE"
+        || invitation.viewerState !== "CLAIMED_BY_VIEWER"
+        || invitation.venue.venueId !== before.venue.venueId
+        || invitation.version !== before.version + 1) {
+        this.setView("error");
+        return;
+      }
       this.applyInvitation(invitation);
       this.openLockedClaim();
     } catch (caught) {
@@ -104,6 +113,7 @@ Page({
   },
 
   applyInvitation(invitation: VenueRecruitmentInvitation) {
+    this.invitation = invitation;
     this.setData({
       venue: invitation.venue,
       expiresAtLabel: formatExpiry(invitation.expiresAt),
@@ -117,7 +127,7 @@ Page({
     this.setData({ mode, ...VIEWS[mode] });
   },
 
-  showUnavailable() { this.setView("unavailable"); },
+  showUnavailable() { this.invitation = null; this.setView("unavailable"); },
 
   openLockedClaim() {
     const venue = this.data.venue;

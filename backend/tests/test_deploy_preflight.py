@@ -64,6 +64,7 @@ def valid_local_environment() -> dict[str, str]:
         "MODERATION_REVIEWER_USER_IDS": "01a329c4-36b0-401a-a577-48ee1c475a37",
         "PAYMENT_PROVIDER": "wechat",
         "ENABLE_MOCK_PAYMENT_PROVIDER": "false",
+        "VENUE_STAFF_AUTHORIZATION_ENABLED": "false",
         "OPEN_GAME_NOTIFICATION_PROVIDER": "disabled",
         "OPEN_GAME_NOTIFICATION_TEMPLATE_ID": "",
         "OPEN_GAME_NOTIFICATION_KEYWORD_MAPPING_JSON": "",
@@ -153,6 +154,17 @@ def test_preflight_accepts_valid_local_staging_environment(tmp_path: Path) -> No
 
     assert result.ok is True
     assert result.failures == ()
+
+
+def test_preflight_rejects_invalid_venue_staff_authorization_flag(tmp_path: Path) -> None:
+    values = valid_local_environment()
+    values["VENUE_STAFF_AUTHORIZATION_ENABLED"] = "yes"
+
+    result = preflight(write_env(tmp_path, values))
+
+    assert result.failures == (
+        "VENUE_STAFF_AUTHORIZATION_ENABLED must be true or false for deployment",
+    )
 
 
 def test_preflight_accepts_complete_matching_wechat_notification_configuration(
@@ -880,6 +892,17 @@ def test_deploy_configuration_declares_fail_closed_open_game_notification_inputs
         compose
     )
     assert "OPEN_GAME_NOTIFICATION_PROVIDER=disabled" in template
+
+
+def test_deploy_configuration_declares_fail_closed_venue_staff_authorization_input() -> None:
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    template = Path("deploy/.env.example").read_text(encoding="utf-8")
+
+    assert (
+        "VENUE_STAFF_AUTHORIZATION_ENABLED: "
+        "${VENUE_STAFF_AUTHORIZATION_ENABLED:-false}"
+    ) in compose
+    assert "VENUE_STAFF_AUTHORIZATION_ENABLED=false" in template
 
 
 def test_runtime_image_never_syncs_development_dependencies() -> None:

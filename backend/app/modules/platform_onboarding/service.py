@@ -275,16 +275,23 @@ class PlatformOnboardingService:
         if venue is None or not venue.is_active:
             raise _state_changed()
         venue.timezone = _MANAGEMENT_TIMEZONE
+        active_owner = self.repository.get_active_owner_for_update(venue.id)
         membership = self.repository.get_membership_for_update(
             venue_id=venue.id,
             user_id=application.applicant_user_id,
+        )
+        role = (
+            VenueMembershipRole.OWNER
+            if active_owner is None
+            or (membership is not None and active_owner.id == membership.id)
+            else VenueMembershipRole.STAFF
         )
         if membership is None:
             membership = VenueMembership(
                 venue_id=venue.id,
                 user_id=application.applicant_user_id,
                 is_active=True,
-                role=VenueMembershipRole.STAFF,
+                role=role,
                 can_manage_profile=True,
                 can_manage_pitches=True,
                 can_manage_inventory=True,
@@ -294,8 +301,7 @@ class PlatformOnboardingService:
         else:
             membership.is_active = True
             membership.revoked_at = None
-            if membership.role is not VenueMembershipRole.OWNER:
-                membership.role = VenueMembershipRole.STAFF
+            membership.role = role
             membership.can_manage_profile = True
             membership.can_manage_pitches = True
             membership.can_manage_inventory = True

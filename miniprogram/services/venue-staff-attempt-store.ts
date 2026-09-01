@@ -46,8 +46,8 @@ function isAttempt(value: unknown): value is VenueStaffMutationAttempt {
       && uuid(value.venueId) && uuid(value.invitationId);
   }
   return value.kind === "acceptInvitation"
-    && exact(value, ["kind", "originatingUserId", "invitationId", "idempotencyKey"])
-    && uuid(value.invitationId);
+    && exact(value, ["kind", "originatingUserId", "invitationId", "venueId", "permissions", "idempotencyKey"])
+    && uuid(value.invitationId) && uuid(value.venueId) && permissions(value.permissions);
 }
 
 function clone(attempt: VenueStaffMutationAttempt): VenueStaffMutationAttempt {

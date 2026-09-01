@@ -10,6 +10,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, cast
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.app.errors import AppError
 from backend.app.models import (
     BookingMode,
@@ -140,31 +142,14 @@ class PlatformRecruitmentInvitationService:
             now = self.now()
             replay = self.repository.find_create_by_key(principal, idempotency_key)
             if replay is not None:
-                if replay.create_request_sha256 != request_hash:
-                    raise _idempotency_reused()
-                if (
-                    replay.status
-                    in {
-                        VenueRecruitmentInvitationStatus.ACTIVE,
-                        VenueRecruitmentInvitationStatus.CLAIMED,
-                    }
-                    and replay.expires_at <= now
-                ):
-                    _expire(replay)
-                    self.repository.flush()
-                venue = self.repository.venue_for_invitation(replay)
-                self.repository.commit()
-                return MutationResult(
-                    status_code=200,
-                    body=cast(
-                        dict[str, object],
-                        _platform_projection(replay, venue).model_dump(mode="json"),
-                    ),
-                )
+                return self._create_replay(replay, request_hash=request_hash, now=now)
 
             venue = self.repository.lock_venue(request.venue_id)
             if venue is None:
                 raise _venue_not_eligible()
+            replay = self.repository.find_create_by_key(principal, idempotency_key)
+            if replay is not None:
+                return self._create_replay(replay, request_hash=request_hash, now=now)
             live = self.repository.find_live_for_venue(venue.id)
             if live is not None and live.expires_at <= now:
                 _expire(live)
@@ -199,7 +184,16 @@ class PlatformRecruitmentInvitationService:
                 revoke_request_sha256=None,
                 version=1,
             )
-            self.repository.add(invitation)
+            try:
+                self.repository.add(invitation)
+            except IntegrityError as error:
+                if _constraint_name(error) != "uq_recruitment_invitations_creator_create_key":
+                    raise
+                self.repository.rollback()
+                replay = self.repository.find_create_by_key(principal, idempotency_key)
+                if replay is None:
+                    raise RuntimeError("create idempotency conflict did not resolve") from None
+                return self._create_replay(replay, request_hash=request_hash, now=now)
             projection = _platform_projection(invitation, venue)
             response = RecruitmentInvitationCreateResult(
                 invitation=projection,
@@ -238,6 +232,13 @@ class PlatformRecruitmentInvitationService:
             if record is None:
                 raise _not_found()
             invitation, venue = record
+            prior = self.repository.find_revoke_by_key(principal, idempotency_key)
+            if prior is not None:
+                return self._revoke_replay(
+                    prior,
+                    invitation_id=invitation_id,
+                    request_hash=request_hash,
+                )
             now = self.now()
             if (
                 invitation.status
@@ -263,7 +264,20 @@ class PlatformRecruitmentInvitationService:
             invitation.revoke_idempotency_key = idempotency_key
             invitation.revoke_request_sha256 = request_hash
             invitation.version += 1
-            self.repository.flush()
+            try:
+                self.repository.flush()
+            except IntegrityError as error:
+                if _constraint_name(error) != "uq_recruitment_invitations_revoker_revoke_key":
+                    raise
+                self.repository.rollback()
+                prior = self.repository.find_revoke_by_key(principal, idempotency_key)
+                if prior is None:
+                    raise RuntimeError("revoke idempotency conflict did not resolve") from None
+                return self._revoke_replay(
+                    prior,
+                    invitation_id=invitation_id,
+                    request_hash=request_hash,
+                )
             result = _platform_projection(invitation, venue)
             self.repository.commit()
             return result
@@ -274,6 +288,48 @@ class PlatformRecruitmentInvitationService:
         except Exception:
             self.repository.rollback()
             raise
+
+    def _create_replay(
+        self,
+        replay: VenueRecruitmentInvitation,
+        *,
+        request_hash: str,
+        now: datetime,
+    ) -> MutationResult:
+        if replay.create_request_sha256 != request_hash:
+            raise _idempotency_reused()
+        if (
+            replay.status
+            in {
+                VenueRecruitmentInvitationStatus.ACTIVE,
+                VenueRecruitmentInvitationStatus.CLAIMED,
+            }
+            and replay.expires_at <= now
+        ):
+            _expire(replay)
+            self.repository.flush()
+        venue = self.repository.venue_for_invitation(replay)
+        self.repository.commit()
+        return MutationResult(
+            status_code=200,
+            body=cast(
+                dict[str, object],
+                _platform_projection(replay, venue).model_dump(mode="json"),
+            ),
+        )
+
+    def _revoke_replay(
+        self,
+        prior: VenueRecruitmentInvitation,
+        *,
+        invitation_id: uuid.UUID,
+        request_hash: str,
+    ) -> RecruitmentInvitation:
+        if prior.id != invitation_id or prior.revoke_request_sha256 != request_hash:
+            raise _idempotency_reused()
+        venue = self.repository.venue_for_invitation(prior)
+        self.repository.commit()
+        return _platform_projection(prior, venue)
 
 
 class VenueRecruitmentInvitationService:
@@ -524,6 +580,12 @@ def _request_hash(value: object) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _constraint_name(error: IntegrityError) -> str | None:
+    original = getattr(error, "orig", None)
+    diagnostic = getattr(original, "diag", None)
+    return getattr(diagnostic, "constraint_name", None)
 
 
 def _encode_cursor(parts: list[str]) -> str:
