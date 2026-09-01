@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     session_ttl_days: int = 30
     platform_staff_principals_json: SecretStr | None = Field(default=None, repr=False)
     platform_csrf_secret: SecretStr | None = Field(default=None, repr=False)
+    venue_staff_authorization_enabled: bool = False
 
     def __init__(self, **values: object) -> None:
         known_fields = {name.casefold(): name for name in type(self).model_fields}

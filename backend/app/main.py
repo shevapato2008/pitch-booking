@@ -98,6 +98,16 @@ from backend.app.modules.venue_recruitment_invitations.router import (
 from backend.app.modules.venue_recruitment_invitations.router import (
     viewer_router as venue_recruitment_invitations_router,
 )
+from backend.app.modules.venue_staff.router import (
+    align_venue_staff_authorization_openapi,
+)
+from backend.app.modules.venue_staff.router import (
+    invitation_router as venue_staff_invitation_router,
+)
+from backend.app.modules.venue_staff.router import owner_router as venue_staff_owner_router
+from backend.app.modules.venue_staff.router import (
+    platform_router as platform_venue_staff_router,
+)
 from backend.app.modules.venues.router import router as venues_router
 from backend.app.modules.wechat_pay.notifications import (
     WeChatPayPaymentNotificationService,
@@ -271,6 +281,7 @@ def create_app(
         application.include_router(platform_attendance_corrections_router)
         application.include_router(platform_onboarding_router)
         application.include_router(platform_recruitment_invitations_router)
+        application.include_router(platform_venue_staff_router)
         application.include_router(pitch_configuration_router)
         application.include_router(venue_access_router)
         application.include_router(venue_fulfillment_router)
@@ -295,6 +306,8 @@ def create_app(
             application.include_router(venue_fulfillment_refund_router)
         application.include_router(venue_onboarding_router)
         application.include_router(venue_recruitment_invitations_router)
+        application.include_router(venue_staff_invitation_router)
+        application.include_router(venue_staff_owner_router)
         application.include_router(venue_profiles_router)
         application.include_router(venue_profile_manual_router)
         if resolved_settings.mock_payment_provider_enabled:
@@ -355,6 +368,7 @@ def create_app(
             align_public_game_directory_openapi(schema)
             align_my_open_game_applications_openapi(schema)
             align_platform_attendance_corrections_openapi(schema)
+            align_venue_staff_authorization_openapi(schema)
             shared_game_get = (
                 schema.get("paths", {})
                 .get("/api/v1/shared-games/{share_token}", {})
