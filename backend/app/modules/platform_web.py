@@ -9,7 +9,15 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 PLATFORM_ADMIN_ASSETS: Final = frozenset(
-    {"styles.css", "main.js", "api.js", "auth.js", "review.js", "attendance-correction.js"}
+    {
+        "styles.css",
+        "main.js",
+        "api.js",
+        "auth.js",
+        "review.js",
+        "attendance-correction.js",
+        "game-report-resolution.js",
+    }
 )
 PLATFORM_CSP: Final = (
     "default-src 'self'; base-uri 'none'; object-src 'none'; "

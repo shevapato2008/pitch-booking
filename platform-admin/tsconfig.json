@@ -10,5 +10,5 @@
     "lib": ["ES2022", "DOM"],
     "noEmitOnError": true
   },
-  "include": ["src/api.ts", "src/auth.ts", "src/review.ts", "src/attendance-correction.ts", "src/main.ts"]
+  "include": ["src/api.ts", "src/auth.ts", "src/review.ts", "src/attendance-correction.ts", "src/game-report-resolution.ts", "src/main.ts"]
 }

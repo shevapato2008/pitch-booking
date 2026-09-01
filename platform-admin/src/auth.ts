@@ -21,6 +21,10 @@ export function attendanceCorrectionVisible(session: PlatformSession): boolean {
   return session.roles.includes("PLATFORM_ADMIN");
 }
 
+export function gameReportResolutionVisible(session: PlatformSession): boolean {
+  return session.roles.includes("PLATFORM_ADMIN");
+}
+
 export function primaryPlatformRole(session: PlatformSession): PlatformSession["roles"][number] {
   return session.roles.includes("PLATFORM_ADMIN")
     ? "PLATFORM_ADMIN"

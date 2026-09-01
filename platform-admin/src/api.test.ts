@@ -174,4 +174,56 @@ describe("PlatformApi", () => {
     );
     expect((fetcher.mock.calls[2]?.[1]?.headers as Record<string, string>).Origin).toBeUndefined();
   });
+
+  test("loads the report queue and detail then posts a resolution with CSRF and one idempotency key", async () => {
+    const reportId = "66000000-0000-4000-8000-000000000001";
+    const fetcher = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        principal_id: "platform-admin-1",
+        display_name: "平台管理员",
+        roles: ["PLATFORM_ADMIN"],
+        csrf_token: "b".repeat(64),
+        expires_at: "2026-09-02T02:00:00Z",
+      }))
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }))
+      .mockResolvedValueOnce(jsonResponse({ report_id: reportId }))
+      .mockResolvedValueOnce(jsonResponse({
+        resolution_id: "77000000-0000-4000-8000-000000000001",
+        outcome: "CONFIRMED_RECORDED",
+      }));
+    const api = new PlatformApi(fetcher);
+
+    await api.restoreSession();
+    await api.listGameReports({ state: "PENDING", cursor: "opaque next", limit: 20 });
+    await api.getGameReport(reportId);
+    await api.resolveGameReport(
+      reportId,
+      { outcome: "CONFIRMED_RECORDED", resolution_note: "已核实并记录。" },
+      "game-report-resolution-key-000001",
+    );
+
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/platform-admin/api/v1/game-reports?state=PENDING&cursor=opaque+next&limit=20",
+    );
+    expect(fetcher.mock.calls[2]?.[0]).toBe(
+      `/platform-admin/api/v1/game-reports/${reportId}`,
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      4,
+      `/platform-admin/api/v1/game-reports/${reportId}/resolution`,
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          "X-CSRF-Token": "b".repeat(64),
+          "Idempotency-Key": "game-report-resolution-key-000001",
+        }),
+        body: JSON.stringify({
+          outcome: "CONFIRMED_RECORDED",
+          resolution_note: "已核实并记录。",
+        }),
+      }),
+    );
+  });
 });
