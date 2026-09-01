@@ -21,6 +21,7 @@ from backend.app.models import (
     VenueFacility,
     VenueImage,
     VenueMembership,
+    VenueMembershipRole,
     VenuePitchSequenceCounter,
 )
 
@@ -137,7 +138,11 @@ def run_seed(
                 "venue_id": VENUE_ID,
                 "user_id": development_user_id,
                 "is_active": True,
+                "role": VenueMembershipRole.OWNER,
+                "can_manage_profile": True,
+                "can_manage_pitches": True,
                 "can_manage_inventory": True,
+                "can_fulfill_orders": True,
             },
         )
         for key, url, alt, role, sort_order in (

@@ -1256,6 +1256,11 @@ const requiredErrorCodes = new Set([
   'REPORT_RESOLUTION_STATE_CHANGED',
   'REPORT_ALREADY_RESOLVED',
   'ORDER_GAME_PLATFORM_CANCELLED',
+  'VENUE_STAFF_NOT_FOUND',
+  'VENUE_STAFF_STATE_CHANGED',
+  'VENUE_STAFF_INVITATION_UNAVAILABLE',
+  'VENUE_STAFF_AUTHORIZATION_DISABLED',
+  'OWNER_TRANSFER_REQUIRED',
 ]);
 const errorCodesWithoutCanonicalExamples = new Set([
   'ONBOARDING_EVIDENCE_INVALID',
@@ -1275,6 +1280,11 @@ const errorCodesWithoutCanonicalExamples = new Set([
   'REPORT_RESOLUTION_STATE_CHANGED',
   'REPORT_ALREADY_RESOLVED',
   'ORDER_GAME_PLATFORM_CANCELLED',
+  'VENUE_STAFF_NOT_FOUND',
+  'VENUE_STAFF_STATE_CHANGED',
+  'VENUE_STAFF_INVITATION_UNAVAILABLE',
+  'VENUE_STAFF_AUTHORIZATION_DISABLED',
+  'OWNER_TRANSFER_REQUIRED',
 ]);
 const requiredCanonicalErrorCodes = new Set(
   [...requiredErrorCodes].filter((code) => !errorCodesWithoutCanonicalExamples.has(code)),
@@ -1345,6 +1355,14 @@ const expectedOperations = new Map([
   ['/api/v1/admin/venues/{venue_id}/profile/images/order', new Set(['put'])],
   ['/api/v1/admin/venues/{venue_id}/profile/images/{image_id}/cover', new Set(['put'])],
   ['/api/v1/admin/venues/{venue_id}/profile/moderation/{item_id}/retry', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/staff', new Set(['get'])],
+  ['/api/v1/admin/venues/{venue_id}/staff-invitations', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/staff-invitations/{invitation_id}/revoke', new Set(['post'])],
+  ['/api/v1/admin/venues/{venue_id}/staff/{membership_id}', new Set(['put'])],
+  ['/api/v1/admin/venues/{venue_id}/staff/{membership_id}/remove', new Set(['post'])],
+  ['/api/v1/venue-staff-invitations/current', new Set(['get'])],
+  ['/api/v1/venue-staff-invitations/current/accept', new Set(['post'])],
+  ['/platform-admin/api/v1/venues/{venue_id}/owner-transfers', new Set(['post'])],
   ['/api/v1/admin/moderation/venue-profiles/pending', new Set(['get'])],
   ['/api/v1/admin/moderation/venue-profiles/{item_id}/decisions', new Set(['post'])],
 ]);

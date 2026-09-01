@@ -37,7 +37,7 @@ class VenueFulfillmentRepository:
                 Venue.is_active.is_(True),
                 VenueMembership.user_id == user_id,
                 VenueMembership.is_active.is_(True),
-                VenueMembership.can_manage_inventory.is_(True),
+                VenueMembership.can_fulfill_orders.is_(True),
             )
         )
 
@@ -99,7 +99,7 @@ class VenueFulfillmentRepository:
                 Venue.is_active.is_(True),
                 VenueMembership.user_id == user_id,
                 VenueMembership.is_active.is_(True),
-                VenueMembership.can_manage_inventory.is_(True),
+                VenueMembership.can_fulfill_orders.is_(True),
             )
             .options(contains_eager(Order.slot).contains_eager(Slot.pitch))
             .execution_options(populate_existing=True)

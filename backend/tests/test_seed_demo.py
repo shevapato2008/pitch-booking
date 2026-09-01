@@ -141,7 +141,11 @@ def test_seed_writes_all_directory_era_venue_fields_explicitly(
     assert membership_values["venue_id"] == seed_demo.VENUE_ID
     assert membership_values["user_id"] == user_values["id"]
     assert membership_values["is_active"] is True
+    assert membership_values["role"].value == "OWNER"
+    assert membership_values["can_manage_profile"] is True
+    assert membership_values["can_manage_pitches"] is True
     assert membership_values["can_manage_inventory"] is True
+    assert membership_values["can_fulfill_orders"] is True
     pitch_values = [values for model, values in captured if model is seed_demo.Pitch]
     assert pitch_values == [
         {

@@ -48,7 +48,7 @@ class VenueProfileRepository:
                     VenueMembership.venue_id == venue_id,
                     VenueMembership.user_id == user_id,
                     VenueMembership.is_active.is_(True),
-                    VenueMembership.can_manage_inventory.is_(True),
+                    VenueMembership.can_manage_profile.is_(True),
                 )
             )
         )

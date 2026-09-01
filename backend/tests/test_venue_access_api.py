@@ -146,6 +146,6 @@ def test_managed_venues_query_filters_authority_and_has_deterministic_order() ->
     assert "JOIN venue_memberships" in sql
     assert f"venue_memberships.user_id = '{USER_ID}'" in sql
     assert "venue_memberships.is_active IS true" in sql
-    assert "venue_memberships.can_manage_inventory IS true" in sql
+    assert "venue_memberships.can_manage_inventory IS true" not in sql
     assert "venues.is_active IS true" in sql
     assert "ORDER BY lower(trim(venues.name)), venues.id" in sql

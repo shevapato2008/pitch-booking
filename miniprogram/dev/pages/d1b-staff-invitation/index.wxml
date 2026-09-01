@@ -1,0 +1,33 @@
+<view class="d1b-page">
+  <view class="d1b-system" style="height: {{headerTopPx}}px;"></view>
+  <view class="d1b-header" style="height: {{headerRowHeightPx}}px;">
+    <button class="d1b-header-back" hover-class="d1b-pressed" bindtap="onHeaderBack" aria-label="返回"><view class="d1b-back-icon"></view></button>
+    <text class="d1b-header-title">场馆员工邀请</text><view class="d1b-header-spacer"></view>
+  </view>
+
+  <scroll-view class="d1b-scroll" scroll-y="true">
+    <view class="d1b-content">
+      <text class="d1b-kicker">D1b 开发预览 · 模拟数据</text>
+      <view class="d1b-hero d1b-hero--{{view.tone}}">
+        <view class="d1b-hero-icon"><view class="d1b-person-head"></view><view class="d1b-person-body"></view></view>
+        <text class="d1b-eyebrow">{{view.eyebrow}}</text>
+        <text class="d1b-title">{{view.title}}</text>
+        <text class="d1b-description">{{view.description}}</text>
+      </view>
+
+      <view class="d1b-card">
+        <text class="d1b-label">受邀场馆</text><text class="d1b-venue-name">{{fixture.venue.name}}</text><text class="d1b-venue-location">{{fixture.venue.location}}</text>
+        <view class="d1b-divider"></view>
+        <text class="d1b-section-title">授予的工作权限</text>
+        <view wx:for="{{permissionViews}}" wx:key="code" class="d1b-permission-row"><view class="d1b-check">✓</view><view><text>{{item.label}}</text><text>{{item.description}}</text></view></view>
+        <view class="d1b-divider"></view>
+        <view class="d1b-fact-row"><text>邀请对象</text><text>{{fixture.invitations[0].contactLabel}}</text></view>
+        <view class="d1b-fact-row"><text>有效期</text><text>{{fixture.invitations[0].expiresAtLabel}}</text></view>
+      </view>
+
+      <view class="d1b-boundary"><view class="d1b-boundary-mark">i</view><view><text>不会成为场馆负责人</text><text>员工不能邀请或移除其他成员；每次工作操作仍由服务端检查当前权限。</text></view></view>
+    </view>
+  </scroll-view>
+
+  <view class="d1b-bottom"><button class="d1b-primary d1b-primary--{{view.tone}}" bindtap="onPrimaryAction" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">{{view.actionLabel}}</button><view class="d1b-safe-bottom"></view></view>
+</view>

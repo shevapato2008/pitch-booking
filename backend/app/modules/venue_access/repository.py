@@ -17,7 +17,6 @@ class VenueAccessRepository:
             .where(
                 VenueMembership.user_id == user_id,
                 VenueMembership.is_active.is_(True),
-                VenueMembership.can_manage_inventory.is_(True),
                 Venue.is_active.is_(True),
             )
             .order_by(func.lower(func.trim(Venue.name)), Venue.id)

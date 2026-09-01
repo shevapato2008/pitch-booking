@@ -16,6 +16,7 @@ from backend.app.models import (
     BookingMode,
     Venue,
     VenueMembership,
+    VenueMembershipRole,
     VenueOnboardingApplication,
     VenueOnboardingEvidence,
     VenueOnboardingKind,
@@ -283,12 +284,23 @@ class PlatformOnboardingService:
                 venue_id=venue.id,
                 user_id=application.applicant_user_id,
                 is_active=True,
+                role=VenueMembershipRole.STAFF,
+                can_manage_profile=True,
+                can_manage_pitches=True,
                 can_manage_inventory=True,
+                can_fulfill_orders=True,
             )
             self.repository.add(membership)
         else:
             membership.is_active = True
+            membership.revoked_at = None
+            if membership.role is not VenueMembershipRole.OWNER:
+                membership.role = VenueMembershipRole.STAFF
+            membership.can_manage_profile = True
+            membership.can_manage_pitches = True
             membership.can_manage_inventory = True
+            membership.can_fulfill_orders = True
+            membership.version += 1
             self.repository.flush()
         return venue.id
 
@@ -342,7 +354,11 @@ class PlatformOnboardingService:
                 venue_id=venue.id,
                 user_id=application.applicant_user_id,
                 is_active=True,
+                role=VenueMembershipRole.OWNER,
+                can_manage_profile=True,
+                can_manage_pitches=True,
                 can_manage_inventory=True,
+                can_fulfill_orders=True,
             )
         )
         return venue.id
