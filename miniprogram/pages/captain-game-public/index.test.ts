@@ -1177,6 +1177,7 @@ test("signup roster template keeps one shared composition, native profile contro
   expect(wxml).toContain("登录后查看名单");
   expect(wxml).toContain('open-type="chooseAvatar"');
   expect(wxml).toContain('type="nickname"');
+  expect(wxml).toContain("点击使用微信昵称");
   expect(wxml).toContain('bindchange="onSignupConfirmationsChange"');
   expect(wxml).toContain('value="adult"');
   expect(wxml).toContain('value="risk"');

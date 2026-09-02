@@ -195,8 +195,11 @@
               <text class="c1a-avatar-picker-label">{{profileAvatarPreview ? '更换头像' : '头像可选'}}</text>
             </button>
             <label class="c1a-profile-field" for="c1a-profile-nickname">
-              <text class="c1a-profile-label">昵称</text>
-              <input id="c1a-profile-nickname" class="c1a-profile-input" type="nickname" value="{{profileNickname}}" maxlength="24" disabled="{{profileSheetState === 'SUBMITTING'}}" bindinput="onProfileNicknameInput" cursor-spacing="160" placeholder="填写公开昵称" />
+              <view class="c1a-profile-label-row">
+                <text class="c1a-profile-label">昵称</text>
+                <text class="c1a-profile-hint">点击使用微信昵称</text>
+              </view>
+              <input id="c1a-profile-nickname" class="c1a-profile-input" type="nickname" value="{{profileNickname}}" maxlength="24" disabled="{{profileSheetState === 'SUBMITTING'}}" bindinput="onProfileNicknameInput" cursor-spacing="160" placeholder="点击使用微信昵称" />
             </label>
           </view>
           <checkbox-group wx:if="{{profilePurpose === 'SIGNUP'}}" class="c1a-profile-confirmations" bindchange="onSignupConfirmationsChange">

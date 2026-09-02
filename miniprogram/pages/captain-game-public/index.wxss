@@ -141,7 +141,9 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c1a-profile-avatar--empty { display: flex; align-items: center; justify-content: center; box-sizing: border-box; color: #0369A1; font-size: 27rpx; font-weight: 800; line-height: 38rpx; text-align: center; }
 .c1a-avatar-picker-label { font-size: 20rpx; font-weight: 700; line-height: 28rpx; }
 .c1a-profile-field { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; }
+.c1a-profile-label-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12rpx; }
 .c1a-profile-label { color: #10243E; font-size: 25rpx; font-weight: 700; line-height: 38rpx; }
+.c1a-profile-hint { flex: 0 0 auto; color: #0369A1; font-size: 24rpx; font-weight: 600; line-height: 38rpx; }
 .c1a-profile-input { box-sizing: border-box; width: 100%; min-height: 88rpx; margin-top: 10rpx; padding: 0 22rpx; border: 1rpx solid #CBD5E1; border-radius: 20rpx; background: #FFFFFF; color: #10243E; font-size: 26rpx; }
 .c1a-profile-confirmations { display: flex; flex-direction: column; margin-top: 14rpx; }
 .c1a-profile-confirmation { display: flex; min-height: 88rpx; align-items: center; gap: 16rpx; color: #334155; font-size: 24rpx; line-height: 36rpx; }
