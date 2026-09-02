@@ -776,6 +776,8 @@ def _validate_attendance_pair(
 def validate_registration_visible_text(value: str) -> str:
     """Reject the approved C1a contact, URL, and mainland-ID patterns."""
     detection_value = unicodedata.normalize("NFKC", value)
+    if detection_value == "微信用户":
+        return value
     if _MAINLAND_MOBILE_RE.search(detection_value):
         raise ValueError("must not include a mainland mobile number")
     if _WECHAT_RE.search(detection_value):

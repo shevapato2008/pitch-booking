@@ -1823,6 +1823,37 @@ def test_open_game_registration_runtime_openapi_matches_the_frozen_operations() 
         )
 
 
+def test_confirmed_public_profile_contract_allows_a_null_avatar() -> None:
+    contract = _contract()
+    profile_schema = contract["components"]["schemas"]["UserPublicProfileResponse"]
+    validator = Draft202012Validator(
+        _dereference_local_schema(contract, profile_schema)
+    )
+    avatarless = {
+        "nickname": "微信用户",
+        "avatar_url": None,
+        "profile_version": 1,
+        "confirmed_at": "2026-09-02T12:00:00+08:00",
+    }
+
+    assert validator.is_valid(avatarless)
+    confirmed_example = json.loads(
+        (EXAMPLES_DIRECTORY / "user-public-profile-confirmed.json").read_text()
+    )
+    assert confirmed_example["avatar_url"] is None
+    assert validator.is_valid(confirmed_example)
+    assert "optional avatar" in contract["paths"]["/api/v1/auth/wechat/profile"]["get"][
+        "description"
+    ].lower()
+    assert "without one" in contract["paths"]["/api/v1/auth/wechat/profile"]["put"][
+        "description"
+    ].lower()
+    profile_required = json.loads(
+        (EXAMPLES_DIRECTORY / "error-public-profile-required.json").read_text()
+    )
+    assert profile_required["error"]["message"] == "请先确认公开昵称，再报名。"
+
+
 def test_open_game_registration_schemas_are_closed_and_exact() -> None:
     contract = _contract()
     schemas = contract["components"]["schemas"]

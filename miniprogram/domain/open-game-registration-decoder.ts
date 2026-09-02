@@ -1082,6 +1082,7 @@ export function decodeOpenGameApplicationDecisionResult(
 
 function containsPrivateText(value: string): boolean {
   const detectionValue = value.normalize("NFKC");
+  if (detectionValue === "微信用户") return false;
   return MAINLAND_MOBILE_PATTERN.test(detectionValue)
     || WECHAT_PATTERN.test(detectionValue)
     || URL_PATTERN.test(detectionValue)

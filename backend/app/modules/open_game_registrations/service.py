@@ -478,7 +478,6 @@ class OpenGameRegistrationService:
             if (
                 applicant is None
                 or applicant.public_nickname is None
-                or applicant.public_avatar_object_key is None
                 or applicant.public_profile_updated_at is None
                 or applicant.public_profile_version < 1
             ):
@@ -2630,7 +2629,7 @@ def _public_profile_required() -> AppError:
     return AppError(
         409,
         "PUBLIC_PROFILE_REQUIRED",
-        "请先确认公开昵称和头像，再报名。",
+        "请先确认公开昵称，再报名。",
     )
 
 def _application_state_changed() -> AppError:

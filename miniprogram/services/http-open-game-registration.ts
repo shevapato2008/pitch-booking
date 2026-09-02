@@ -276,11 +276,14 @@ function decodePublicProfile(value: unknown): OpenGamePublicProfile | null {
     && version === 0
     && object.confirmed_at === null;
   if (missing) return null;
-  if (object.nickname === null || object.avatar_url === null || object.confirmed_at === null
-    || version < 1) throw new Error("INVALID_PUBLIC_PROFILE");
+  if (object.nickname === null || object.confirmed_at === null || version < 1) {
+    throw new Error("INVALID_PUBLIC_PROFILE");
+  }
   return Object.freeze({
     nickname: boundedStringAt(object.nickname, "$.nickname", 1, 24),
-    avatarUrl: httpsUrlAt(object.avatar_url, "$.avatar_url"),
+    avatarUrl: object.avatar_url === null
+      ? null
+      : httpsUrlAt(object.avatar_url, "$.avatar_url"),
     profileVersion: version,
     confirmedAt: rfc3339At(object.confirmed_at, "$.confirmed_at"),
   });

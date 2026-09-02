@@ -287,7 +287,7 @@ export interface OpenGameBlockedRosterMember extends OpenGamePublicRosterMember 
 
 export interface OpenGamePublicProfile {
   readonly nickname: string;
-  readonly avatarUrl: string;
+  readonly avatarUrl: string | null;
   readonly profileVersion: number;
   readonly confirmedAt: string;
 }

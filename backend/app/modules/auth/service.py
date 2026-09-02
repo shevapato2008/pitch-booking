@@ -164,13 +164,13 @@ class AuthService:
         user_id: UUID,
         request: UpdateUserPublicProfileRequest,
     ) -> UserPublicProfileResponse:
-        storage = self._require_media_store()
         try:
             user = self._repository.lock_user(user_id)
             if user is None:
                 raise _auth_required()
             published_key = user.public_avatar_object_key
             if request.avatar_object_key is not None:
+                storage = self._require_media_store()
                 avatar_id = _parse_avatar_upload_key(
                     request.avatar_object_key,
                     expected_user_id=user.id,
@@ -181,8 +181,6 @@ class AuthService:
                     request.avatar_object_key,
                 )
                 published_key = published.object_key
-            if published_key is None:
-                raise _invalid_public_profile()
             user.public_nickname = request.nickname
             user.public_avatar_object_key = published_key
             user.public_profile_updated_at = self._now()

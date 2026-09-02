@@ -1,7 +1,7 @@
 {
   "error": {
     "code": "PUBLIC_PROFILE_REQUIRED",
-    "message": "请先确认公开昵称和头像，再报名。",
+    "message": "请先确认公开昵称，再报名。",
     "request_id": "req-contract-public-profile-required",
     "details": {}
   }

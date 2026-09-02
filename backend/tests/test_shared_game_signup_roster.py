@@ -755,6 +755,7 @@ def test_public_profile_uses_a_controlled_user_avatar_upload_and_supports_nickna
         )
         assert incomplete_signup.status_code == 409, incomplete_signup.text
         assert incomplete_signup.json()["error"]["code"] == "PUBLIC_PROFILE_REQUIRED"
+        assert incomplete_signup.json()["error"]["message"] == "请先确认公开昵称，再报名。"
 
         payload = _png_bytes()
         intent = client.post(
@@ -853,4 +854,50 @@ def test_public_profile_uses_a_controlled_user_avatar_upload_and_supports_nickna
         assert user.public_avatar_object_key.startswith("published/avatars/")
         assert str(user.id) not in user.public_avatar_object_key
         assert user.public_profile_version == 2
+        assert user.public_profile_updated_at is not None
+
+
+def test_first_public_profile_confirmation_and_direct_signup_allow_no_avatar(
+    pg_engine: Engine,
+) -> None:
+    case = _seed_published_game(pg_engine)
+    with Session(pg_engine) as session:
+        applicant = session.get_one(User, case.booking.stranger_id)
+        _attach_session(session, user=applicant, token=APPLICANT_TOKEN)
+        session.commit()
+
+    with _client(pg_engine, LocalMediaStorage()) as client:
+        confirmed = client.put(
+            "/api/v1/auth/wechat/profile",
+            headers=_auth(APPLICANT_TOKEN),
+            json={"nickname": "微信用户", "avatar_object_key": None},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["nickname"] == "微信用户"
+        assert confirmed.json()["avatar_url"] is None
+        assert confirmed.json()["profile_version"] == 1
+        assert confirmed.json()["confirmed_at"] is not None
+
+        joined = client.post(
+            f"/api/v1/shared-games/{case.share_token}/registrations",
+            headers=_idempotent(APPLICANT_TOKEN, "avatarless-signup-key-00000001"),
+            json={
+                "display_name": "微信用户",
+                "position": "ANY",
+                "note": None,
+                "adult_confirmed": True,
+                "risk_confirmed": True,
+            },
+        )
+        assert joined.status_code == 201, joined.text
+        assert joined.json()["viewer_registration"]["persisted_status"] == "JOINED"
+        assert joined.json()["joined_members"] == [
+            {"nickname": "微信用户", "avatar_url": None}
+        ]
+
+    with Session(pg_engine) as session:
+        user = session.get_one(User, case.booking.stranger_id)
+        assert user.public_nickname == "微信用户"
+        assert user.public_avatar_object_key is None
+        assert user.public_profile_version == 1
         assert user.public_profile_updated_at is not None

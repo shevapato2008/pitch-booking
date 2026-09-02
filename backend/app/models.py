@@ -1255,8 +1255,8 @@ class User(Base):
         CheckConstraint(
             "(public_nickname IS NULL AND public_avatar_object_key IS NULL "
             "AND public_profile_updated_at IS NULL AND public_profile_version = 0) OR "
-            "(public_nickname IS NOT NULL AND public_avatar_object_key IS NOT NULL "
-            "AND public_profile_updated_at IS NOT NULL AND public_profile_version >= 1)",
+            "(public_nickname IS NOT NULL AND public_profile_updated_at IS NOT NULL "
+            "AND public_profile_version >= 1)",
             name="ck_users_public_profile_pair",
         ),
         CheckConstraint(

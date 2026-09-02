@@ -147,6 +147,62 @@ def test_0028_allows_single_character_direct_signup_names_and_guards_downgrade(
         _insert_registration(migration_engine, joined)
 
 
+def test_0029_allows_confirmed_avatarless_profiles_and_guards_downgrade(
+    migration_engine: Engine,
+) -> None:
+    config = _config(migration_engine)
+    command.upgrade(config, "0028")
+    user_id = UUID("30000000-0000-0000-0000-00000000006b")
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO users (id, wechat_app_id, wechat_openid, created_at) "
+                "VALUES (:id, 'wx-registration', 'avatarless-profile', now())"
+            ),
+            {"id": user_id},
+        )
+
+    confirmation = text(
+        "UPDATE users SET public_nickname = '微信用户', "
+        "public_avatar_object_key = NULL, "
+        "public_profile_updated_at = CURRENT_TIMESTAMP, "
+        "public_profile_version = 1 WHERE id = :id"
+    )
+    with pytest.raises(IntegrityError):
+        with migration_engine.begin() as connection:
+            connection.execute(confirmation, {"id": user_id})
+
+    command.upgrade(config, "0029")
+    with migration_engine.begin() as connection:
+        connection.execute(confirmation, {"id": user_id})
+    with migration_engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT public_nickname, public_avatar_object_key, "
+                "public_profile_version, public_profile_updated_at IS NOT NULL "
+                "FROM users WHERE id = :id"
+            ),
+            {"id": user_id},
+        ).one() == ("微信用户", None, 1, True)
+
+    with pytest.raises(RuntimeError, match="avatarless confirmed public profiles exist"):
+        command.downgrade(config, "0028")
+
+    with migration_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE users SET public_nickname = NULL, "
+                "public_profile_updated_at = NULL, public_profile_version = 0 "
+                "WHERE id = :id"
+            ),
+            {"id": user_id},
+        )
+    command.downgrade(config, "0028")
+    with pytest.raises(IntegrityError):
+        with migration_engine.begin() as connection:
+            connection.execute(confirmation, {"id": user_id})
+
+
 def test_shared_signup_roster_schema_persists_public_profiles_and_reapply_blocks(
     pg_engine: Engine,
 ) -> None:

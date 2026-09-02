@@ -544,7 +544,7 @@ function blankData() {
     signupProgressLabel: "",
     waitlistCountLabel: "",
     planCountLabel: "",
-    signupActionLabel: "立即报名",
+    signupActionLabel: "确认报名",
     signupSubmitting: false,
     rosterPrivate: true,
     joinedMembers: [] as readonly RosterRow[],
@@ -557,10 +557,11 @@ function blankData() {
     profileActionVisible: false,
     profileSheetState: "CLOSED" as ProfileSheetState,
     profilePurpose: "SIGNUP" as ProfilePurpose,
-    profileSheetTitle: "确认公开报名资料",
-    profileSubmitLabel: "保存并报名",
+    profileSheetTitle: "确认报名",
+    profileSubmitLabel: "确认报名",
     profileNickname: "",
     profileAvatarPreview: "",
+    profileAvatarFallback: "微",
     profileAvatarTempPath: "",
     profileExistingAvatarUrl: "",
     profileError: "",
@@ -863,7 +864,7 @@ Page({
       signupProgressLabel: `公开报名 ${joinedCount} / ${context.game.openSpots}`,
       waitlistCountLabel: `候补 ${waitlistCount} 人`,
       planCountLabel: `计划 ${context.game.totalPlayers} 人，其中固定队员 ${context.game.fixedPlayers} 人`,
-      signupActionLabel: context.remainingSpots === 0 ? "加入候补" : "立即报名",
+      signupActionLabel: context.remainingSpots === 0 ? "加入候补" : "确认报名",
       signupSubmitting: false,
       rosterPrivate,
       joinedMembers: rosterPrivate ? [] : joinedMembers.map(presentRosterMember),
@@ -1172,14 +1173,16 @@ Page({
   },
 
   openProfileSheet(purpose: ProfilePurpose, profile: OpenGamePublicProfile | null) {
-    const signupLabel = this.data.remainingSpots === 0 ? "加入候补" : "报名";
+    const signupLabel = this.data.remainingSpots === 0 ? "加入候补" : "确认报名";
+    const nickname = profile?.nickname ?? "微信用户";
     this.setData({
       profileSheetState: "EDITING",
       profilePurpose: purpose,
-      profileSheetTitle: purpose === "SIGNUP" ? "确认公开报名资料" : "更新公开资料",
-      profileSubmitLabel: purpose === "SIGNUP" ? `保存并${signupLabel}` : "保存资料",
-      profileNickname: profile?.nickname ?? "",
+      profileSheetTitle: purpose === "SIGNUP" ? "确认报名" : "更新公开资料",
+      profileSubmitLabel: purpose === "SIGNUP" ? signupLabel : "保存资料",
+      profileNickname: nickname,
       profileAvatarPreview: profile?.avatarUrl ?? "",
+      profileAvatarFallback: rosterFallback(nickname),
       profileExistingAvatarUrl: profile?.avatarUrl ?? "",
       profileAvatarTempPath: "",
       profileError: "",
@@ -1224,8 +1227,10 @@ Page({
   onProfileNicknameInput(event: { readonly detail?: { readonly value?: unknown } }) {
     if (this.data.profileSheetState !== "EDITING") return;
     const value = event?.detail?.value;
+    const nickname = typeof value === "string" ? value : "";
     this.setData({
-      profileNickname: typeof value === "string" ? value : "",
+      profileNickname: nickname,
+      profileAvatarFallback: rosterFallback(nickname),
       profileError: "",
     });
   },
@@ -1279,22 +1284,18 @@ Page({
         this.setData({ profileError: "昵称需为 1–24 个字符。" });
         return;
       }
-      const hasExistingAvatar = Boolean(this.data.profileExistingAvatarUrl);
-      if (!this.data.profileAvatarTempPath && !hasExistingAvatar) {
-        this.setData({ profileError: "请选择一个公开头像。" });
-        return;
-      }
       const source = getOpenGameRegistrationSource();
-      if (typeof source.uploadPublicProfileAvatar !== "function"
-        || typeof source.savePublicProfile !== "function") {
+      const selectedAvatarTempPath = this.data.profileAvatarTempPath;
+      const uploadAvatar = source.uploadPublicProfileAvatar;
+      if (typeof source.savePublicProfile !== "function"
+        || (selectedAvatarTempPath && typeof uploadAvatar !== "function")) {
         this.setData({ profileError: "当前版本暂不支持保存公开资料。" });
         return;
       }
       this.setData({ profileSheetState: "SUBMITTING", profileError: "" });
       try {
-        const selectedAvatarTempPath = this.data.profileAvatarTempPath;
         const uploaded = selectedAvatarTempPath
-          ? await source.uploadPublicProfileAvatar(selectedAvatarTempPath)
+          ? await uploadAvatar!(selectedAvatarTempPath)
           : null;
         const profile = await source.savePublicProfile({
           nickname,
@@ -1304,8 +1305,9 @@ Page({
           profileNickname: profile.nickname,
           profileAvatarPreview: signupConfirmations !== null && selectedAvatarTempPath
             ? selectedAvatarTempPath
-            : profile.avatarUrl,
-          profileExistingAvatarUrl: profile.avatarUrl,
+            : profile.avatarUrl ?? "",
+          profileAvatarFallback: rosterFallback(profile.nickname),
+          profileExistingAvatarUrl: profile.avatarUrl ?? "",
           profileAvatarTempPath: signupConfirmations !== null ? selectedAvatarTempPath : "",
           profileSheetState: "CLOSED",
         });
@@ -1785,6 +1787,7 @@ Page({
       this.openProfileSheet("SIGNUP", profile);
       this.setData({
         profileNickname: localNickname,
+        profileAvatarFallback: rosterFallback(localNickname),
         ...(localAvatarTempPath
           ? {
             profileAvatarTempPath: localAvatarTempPath,

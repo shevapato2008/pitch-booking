@@ -393,7 +393,7 @@ test("signup roster separates public capacity from plan totals and gates member 
   await flush();
   expect(logged.data).toMatchObject({
     rosterPrivate: false,
-    signupActionLabel: "立即报名",
+    signupActionLabel: "确认报名",
     joinedMembers: [
       expect.objectContaining({ nickname: "小翼", avatarUrl: "https://cdn.example.com/avatars/a.png" }),
       expect.objectContaining({ nickname: "阿蓝", avatarUrl: "" }),
@@ -579,6 +579,88 @@ test("first signup waits for chooseAvatar and nickname, then uploads, saves prof
     registrationStatus: "JOINED",
     statusHeading: "已加入本场球局",
   });
+});
+
+test("first signup uses the default nickname and optional avatar without uploading", async () => {
+  const rosterReady = {
+    ...readyContext,
+    joinedCount: 0,
+    waitlistCount: 0,
+    joinedMembers: [],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  const joined = {
+    ...joinedContext,
+    joinedCount: 1,
+    waitlistCount: 0,
+    joinedMembers: [{ nickname: "微信用户", avatarUrl: null, management: null }],
+    waitlistedMembers: [],
+    blockedMembers: null,
+    managementGameId: null,
+  } as OpenGameRegistrationContext;
+  const registration = registrationSource({
+    getContext: jest.fn(async () => rosterReady),
+    apply: jest.fn(async () => joined),
+  }) as OpenGameRegistrationSource & {
+    getPublicProfile: jest.Mock;
+    savePublicProfile: jest.Mock;
+  };
+  registration.getPublicProfile = jest.fn(async () => null);
+  registration.savePublicProfile = jest.fn(async () => ({
+    nickname: "微信用户",
+    avatarUrl: null,
+    profileVersion: 1,
+    confirmedAt: "2026-09-02T12:00:00+08:00",
+  })) as any;
+  registerOpenGameSource(ownerSource());
+  registerOpenGameRegistrationSource(registration);
+  const page = loadPage();
+  const submitSignup = jest.spyOn(page, "submitSignup");
+  call(page, "onLoad", { token });
+  await flush();
+
+  expect(page.data.signupActionLabel).toBe("确认报名");
+  await call(page, "onApply");
+  expect(page.data).toMatchObject({
+    profileSheetState: "EDITING",
+    profilePurpose: "SIGNUP",
+    profileSheetTitle: "确认报名",
+    profileSubmitLabel: "确认报名",
+    profileNickname: "微信用户",
+    profileAvatarPreview: "",
+    profileAvatarFallback: "微",
+    adultConfirmed: false,
+    riskConfirmed: false,
+  });
+  const template = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
+  expect(template).toContain("c1a-profile-identity");
+  expect(template).toContain("头像可选");
+  expect(template).toContain("c1a-profile-label\">昵称");
+  expect(template).toContain("我已满 18 周岁");
+  expect(template).toContain("我已了解运动风险并自愿参与");
+
+  call(page, "onSignupConfirmationsChange", {
+    detail: { value: ["adult", "risk"] },
+  });
+  await call(page, "onConfirmProfile");
+
+  expect(registration).not.toHaveProperty("uploadPublicProfileAvatar");
+  expect(registration.savePublicProfile).toHaveBeenCalledWith({
+    nickname: "微信用户",
+    avatarObjectKey: null,
+  });
+  expect(submitSignup).toHaveBeenCalledWith("微信用户", {
+    adultConfirmed: true,
+    riskConfirmed: true,
+  });
+  expect(page.data).toMatchObject({
+    profileSheetState: "CLOSED",
+    registrationStatus: "JOINED",
+    statusHeading: "已加入本场球局",
+  });
+  expect(registration.apply).toHaveBeenCalledTimes(1);
 });
 
 test("each signup sheet resets both confirmations even when the profile is reusable", async () => {
@@ -795,7 +877,7 @@ test("withdrawn viewers can register again and withdrawal copy no longer claims 
   expect(page.data).toMatchObject({
     registrationStatus: "WITHDRAWN",
     primaryAction: "APPLY",
-    signupActionLabel: "立即报名",
+    signupActionLabel: "确认报名",
   });
   const source = readFileSync("miniprogram/pages/captain-game-public/index.ts", "utf8");
   expect(source).not.toContain("本场不可再次申请");

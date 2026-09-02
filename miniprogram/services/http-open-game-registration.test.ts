@@ -454,6 +454,51 @@ describe("HTTP open-game registration requests", () => {
     expect(signedRequests[0]).not.toHaveProperty("filePath");
   });
 
+  test("confirmed public profiles decode and save with a null avatar", async () => {
+    const avatarlessProfile = {
+      nickname: "微信用户",
+      avatar_url: null,
+      profile_version: 1,
+      confirmed_at: "2026-09-02T12:00:00+08:00",
+    };
+    const h = harness([
+      response(200, avatarlessProfile),
+      response(200, avatarlessProfile),
+    ]);
+    const source = h.source as unknown as {
+      getPublicProfile(): Promise<unknown>;
+      savePublicProfile(input: {
+        nickname: string;
+        avatarObjectKey: string | null;
+      }): Promise<unknown>;
+    };
+
+    await expect(source.getPublicProfile()).resolves.toEqual({
+      nickname: "微信用户",
+      avatarUrl: null,
+      profileVersion: 1,
+      confirmedAt: "2026-09-02T12:00:00+08:00",
+    });
+    await expect(source.savePublicProfile({
+      nickname: "微信用户",
+      avatarObjectKey: null,
+    })).resolves.toMatchObject({ nickname: "微信用户", avatarUrl: null });
+    expect(h.calls).toEqual([
+      {
+        method: "GET",
+        path: "/api/v1/auth/wechat/profile",
+        body: undefined,
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+      {
+        method: "PUT",
+        path: "/api/v1/auth/wechat/profile",
+        body: { nickname: "微信用户", avatar_object_key: null },
+        headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+      },
+    ]);
+  });
+
   test("reads and marks attendance through the exact paths, body, bearer, and original key", async () => {
     const h = harness([
       response(200, rawAttendanceRoster),

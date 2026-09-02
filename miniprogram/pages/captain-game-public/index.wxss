@@ -135,10 +135,12 @@ page { background: #F8FAFC; color: #10243E; font-family: -apple-system, BlinkMac
 .c2a-danger-action { border: 1rpx solid #F4C7C3; background: #FFF7F6; color: #B42318; }
 .c2a-neutral-action[disabled], .c2a-danger-action[disabled] { opacity: .54; }
 .c1a-profile-sheet { box-sizing: border-box; width: 100%; max-height: calc(100vh - 96rpx - env(safe-area-inset-bottom, 0px)); overflow-y: auto; padding: 20rpx 28rpx 28rpx; border-radius: 36rpx; background: #FFFFFF; box-shadow: 0 28rpx 64rpx rgba(16, 36, 62, .22); }
-.c1a-avatar-picker { display: flex; align-items: center; justify-content: center; width: 128rpx; height: 128rpx; min-height: 88rpx; margin: 28rpx auto 0; padding: 0; border: 0; border-radius: 50%; background: transparent; }
-.c1a-profile-avatar { width: 128rpx; height: 128rpx; overflow: hidden; border: 2rpx solid #BAE6FD; border-radius: 50%; background: #E2E8F0; }
-.c1a-profile-avatar--empty { display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 14rpx; color: #0369A1; font-size: 20rpx; font-weight: 700; line-height: 28rpx; text-align: center; }
-.c1a-profile-field { display: flex; flex-direction: column; margin-top: 26rpx; }
+.c1a-profile-identity { display: flex; align-items: flex-end; gap: 20rpx; margin-top: 22rpx; }
+.c1a-avatar-picker { display: flex; width: 144rpx; min-width: 144rpx; min-height: 128rpx; flex-direction: column; align-items: center; justify-content: center; gap: 6rpx; box-sizing: border-box; margin: 0; padding: 10rpx 8rpx; border: 1rpx solid #BAE6FD; border-radius: 20rpx; background: #F0F9FF; color: #0369A1; }
+.c1a-profile-avatar { width: 72rpx; height: 72rpx; overflow: hidden; border: 2rpx solid #BAE6FD; border-radius: 50%; background: #E2E8F0; }
+.c1a-profile-avatar--empty { display: flex; align-items: center; justify-content: center; box-sizing: border-box; color: #0369A1; font-size: 27rpx; font-weight: 800; line-height: 38rpx; text-align: center; }
+.c1a-avatar-picker-label { font-size: 20rpx; font-weight: 700; line-height: 28rpx; }
+.c1a-profile-field { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; }
 .c1a-profile-label { color: #10243E; font-size: 25rpx; font-weight: 700; line-height: 38rpx; }
 .c1a-profile-input { box-sizing: border-box; width: 100%; min-height: 88rpx; margin-top: 10rpx; padding: 0 22rpx; border: 1rpx solid #CBD5E1; border-radius: 20rpx; background: #FFFFFF; color: #10243E; font-size: 26rpx; }
 .c1a-profile-confirmations { display: flex; flex-direction: column; margin-top: 14rpx; }

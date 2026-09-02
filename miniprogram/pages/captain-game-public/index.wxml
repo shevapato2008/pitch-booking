@@ -187,15 +187,18 @@
         <view class="c1a-profile-sheet">
           <view class="c2a-sheet-handle" aria-hidden="true"></view>
           <text class="c2a-sheet-title">{{profileSheetTitle}}</text>
-          <text class="c2a-sheet-copy">{{profilePurpose === 'SIGNUP' ? '头像昵称仅对登录用户展示；报名结果以提交时名额为准。' : '头像和昵称会展示给已登录用户。'}}</text>
-          <button class="c1a-avatar-picker" open-type="chooseAvatar" disabled="{{profileSheetState === 'SUBMITTING'}}" bindchooseavatar="onProfileAvatarChosen" aria-label="选择公开头像">
-            <image wx:if="{{profileAvatarPreview}}" class="c1a-profile-avatar" src="{{profileAvatarPreview}}" mode="aspectFill" />
-            <view wx:else class="c1a-profile-avatar c1a-profile-avatar--empty"><text>选择头像</text></view>
-          </button>
-          <label class="c1a-profile-field" for="c1a-profile-nickname">
-            <text class="c1a-profile-label">昵称</text>
-            <input id="c1a-profile-nickname" class="c1a-profile-input" type="nickname" value="{{profileNickname}}" maxlength="24" disabled="{{profileSheetState === 'SUBMITTING'}}" bindinput="onProfileNicknameInput" cursor-spacing="160" placeholder="填写公开昵称" />
-          </label>
+          <text class="c2a-sheet-copy">{{profilePurpose === 'SIGNUP' ? '昵称会展示在报名名单中，头像可选；报名结果以提交时名额为准。' : '头像可选，昵称会展示给已登录用户。'}}</text>
+          <view class="c1a-profile-identity">
+            <button class="c1a-avatar-picker" open-type="chooseAvatar" disabled="{{profileSheetState === 'SUBMITTING'}}" bindchooseavatar="onProfileAvatarChosen" aria-label="选择公开头像（可选）">
+              <image wx:if="{{profileAvatarPreview}}" class="c1a-profile-avatar" src="{{profileAvatarPreview}}" mode="aspectFill" />
+              <view wx:else class="c1a-profile-avatar c1a-profile-avatar--empty"><text>{{profileAvatarFallback}}</text></view>
+              <text class="c1a-avatar-picker-label">{{profileAvatarPreview ? '更换头像' : '头像可选'}}</text>
+            </button>
+            <label class="c1a-profile-field" for="c1a-profile-nickname">
+              <text class="c1a-profile-label">昵称</text>
+              <input id="c1a-profile-nickname" class="c1a-profile-input" type="nickname" value="{{profileNickname}}" maxlength="24" disabled="{{profileSheetState === 'SUBMITTING'}}" bindinput="onProfileNicknameInput" cursor-spacing="160" placeholder="填写公开昵称" />
+            </label>
+          </view>
           <checkbox-group wx:if="{{profilePurpose === 'SIGNUP'}}" class="c1a-profile-confirmations" bindchange="onSignupConfirmationsChange">
             <label class="c1a-profile-confirmation">
               <checkbox value="adult" checked="{{adultConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#2563eb" />
