@@ -14,7 +14,7 @@
 - 上一轮全量 Node 测试 653 通过/183 失败，随后系统明确报 `Too many open files in system (os error 23)`，失败原因尚未逐项定位。CUA 启动失败，9432 自动化连接超时。恢复时改为聚焦串行检查，不再并发全量构建。
 - 当前终端已恢复；`/private/tmp/pitch-night-preview.cjs` 临时脚本已不存在，不能假设旧自动化会话仍在。
 - 恢复后聚焦测试已完成：前端 30 套件/524 项通过；typecheck、变更文件 lint、`git diff --check` 通过。6 个旧主题断言已同步；未删行为测试。全仓 lint 因范围过大主动终止，改为变更文件 lint，不宣称全仓 lint 通过。
-- 新 production build + package audit 通过（0 forbidden paths/tokens），已生成 `dist/miniprogram-live-preview`；新包含夜场模板，支付/通知/员工授权仍关闭。没有上传。
+- 新 production build + package audit 通过（0 forbidden paths/tokens），已生成 `dist/miniprogram-live-preview`；新包含夜场模板，支付/通知/员工授权仍关闭。0.2.0 开发版本已于 9 月 10 日上传成功，体验版选择尚未确认。
 - 手动指南已完成：`docs/acceptance/night-glow-manual-test.md`。内容标明未验收/未发布，覆盖三个目的、地图、报名、队长、场馆工作台及真实数据操作边界。
 - 旧的权限阻塞已解除。2026-09-10 两轮累计约 19 分 50 秒监测未出现新增 ENFILE/EMFILE；仅打开 `dist/miniprogram-live-preview`，不再打开仓库根目录。
 - 当前交付顺序按用户最新要求调整为：聚焦验证 → 合并本轮前端改造至 main → 上传手机测试候选。后续仍需补足有真实数据或隔离 Fixture 的球局卡片、共享详情/报名层，以及其他队长/场馆表单代表状态和 A 参考的同尺寸对比；不得在线创建假数据来填满页面。
@@ -72,3 +72,5 @@
 - 合并前重新运行：9 套件 225 项聚焦 Jest、2 项既有原生结构检查、typecheck、变更测试文件 lint 及 diff 检查全部通过。不声称全仓回归通过。
 - 独立有界代码审核未发现 Critical/Important 问题；4 个改动 WXML 的业务绑定保持一致，无生产 TS/JS 或后端改动。审核通过仅代表可合并为手机测试候选，不代表逐页视觉验收完成。
 - 计划微信版本 `0.2.0`，从合并后的 main 构建并审计，再通过官方 CLI 上传独立 production 工程。不提交审核、不公开发布。上传与体验版选择须分别记录实际结果。
+- 实际结果：`e1b21f0` 已快进合入 main 并推送 origin/main；合并后 225 项聚焦测试及 production build/audit 再次通过。iPhone 390×844 原生首页再次人工复核。14:10:52 +08:00 官方 CLI 确认 `0.2.0` 上传成功，包大小 1,244,227 bytes；体验版切换仍需用户在平台确认，未提交审核/公开发布。
+- 上传期间另监测约 2 分 58 秒，90 次采样，新 ENFILE/EMFILE 为 0，峰值 10,332 / 491,520；监测已停止。详细交付与手机打开步骤：`output/experience-release/2026-09-10/release-result.md`。
