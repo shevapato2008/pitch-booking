@@ -1,0 +1,9 @@
+{
+  "appid": "wxc6b988ca75ad753c",
+  "projectname": "逐光约场-三款设计样板-仅预览",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "libVersion": "3.17.0",
+  "setting": { "es6": true, "postcss": true, "minified": true, "urlCheck": true },
+  "packOptions": { "ignore": [{ "type": "file", "value": "project.private.config.json" }] }
+}

@@ -1,8 +1,9 @@
 @import "./styles/tokens.wxss";
+@import "./styles/night-glow.wxss";
 
 page {
-  background: #F8FAFC;
-  color: #10243E;
+  background: #0B1727;
+  color: #F3F8FF;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 28rpx;
 }

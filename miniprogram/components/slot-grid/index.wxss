@@ -12,11 +12,11 @@
   justify-content: center;
   margin: 0;
   padding: 20rpx;
-  color: #10243E;
+  color: #F3F8FF;
   line-height: 1.3;
   text-align: left;
-  background: #FFFFFF;
-  border: 2rpx solid #DBE5EC;
+  background: #152539;
+  border: 2rpx solid #314157;
 }
 .slot::after { border: 0; }
 .slot-time { display: block; font-weight: 700; }
@@ -24,11 +24,17 @@
 .slot-price,
 .slot-status { white-space: nowrap; }
 .slot-status { font-weight: 600; }
-.slot--available { color: #059669; background: #EFFBF6; border-color: #BFEBD8; }
+.slot--disabled { opacity: 1; }
+.slot--available,
+.slot.slot--available.slot--disabled { color: #A6EDB9; background: #17392F; border-color: #3C6555; }
 .slot--expired,
 .slot--booked,
-.slot--closed { color: #94A3B8; background: #F8FAFC; }
-.slot--temporarily-locked { color: #B45309; background: #FFFBEB; border-color: #FDE68A; }
-.slot--selected { color: #FFFFFF; background: #0284C7; border-color: #0284C7; }
+.slot--closed,
+.slot.slot--expired.slot--disabled,
+.slot.slot--booked.slot--disabled,
+.slot.slot--closed.slot--disabled { color: #8B9DB3; background: #0B1727; }
+.slot--temporarily-locked,
+.slot.slot--temporarily-locked.slot--disabled { color: #FFD094; background: #392E23; border-color: #6B5335; }
+.slot--selected,
+.slot.slot--selected.slot--disabled { color: #173421; background: #CEFF80; border-color: #CEFF80; }
 .slot--pressed { opacity: 0.76; transform: scale(0.99); }
-.slot--disabled { opacity: 1; }

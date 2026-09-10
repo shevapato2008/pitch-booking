@@ -4,8 +4,8 @@
   box-sizing: border-box;
   padding: 28rpx;
   border-style: dashed;
-  border-color: #7DD3FC;
-  background: #F0F9FF;
+  border-color: #425E68;
+  background: #122C3B;
 }
 .section-title {
   margin-bottom: 20rpx;
@@ -14,14 +14,17 @@
 }
 .phone-button {
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   margin: 0;
   padding: 20rpx 24rpx;
-  color: #FFFFFF;
+  color: #173421;
   font-size: 26rpx;
   line-height: 1.4;
   font-weight: 700;
-  background: #0369A1;
+  background: #CEFF80;
   border: 0;
 }
 .phone-button::after,
@@ -38,12 +41,15 @@
 }
 .masked-phone { font-weight: 700; }
 .text-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
   margin: 0;
   padding: 0 16rpx;
-  color: #0369A1;
+  color: #CEFF80;
   font-size: 26rpx;
-  line-height: 88rpx;
+  line-height: 1.4;
   background: transparent;
   border: 0;
 }
@@ -56,18 +62,18 @@
   box-sizing: border-box;
   width: 100%;
   padding: 20rpx 22rpx;
-  color: #10243E;
+  color: #F3F8FF;
   font-size: 26rpx;
   line-height: 1.4;
-  background: #FFFFFF;
-  border: 2rpx solid #DBE5EC;
+  background: #152539;
+  border: 2rpx solid #314157;
 }
 .contact-input--without-label { margin-top: 16rpx; }
-.contact-input--error { border-color: #B91C1C; }
+.contact-input--error { border-color: #FFB4AA; }
 .field-error {
   display: block;
   margin-top: 8rpx;
-  color: #B91C1C;
+  color: #FFB4AA;
   line-height: 1.5;
 }
 .privacy-note {

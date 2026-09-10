@@ -13,7 +13,7 @@
   text-align: center;
 }
 
-.state-message--error { color: #10243E; }
+.state-message--error { color: #F3F8FF; }
 
 .action-bar {
   position: fixed;
@@ -22,12 +22,12 @@
   bottom: 0;
   left: 0;
   padding: 16rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.96);
-  border-top: 2rpx solid #DBE5EC;
+  background: rgba(21, 37, 57, 0.96);
+  border-top: 2rpx solid #314157;
 }
 .action-bar--split { display: flex; gap: 16rpx; }
 .action-bar--split button { flex: 1; }
-.map-action { margin: 0; color: #0369A1; background: #FFFFFF; border: 2rpx solid #0284C7; font-weight: 700; }
+.map-action { display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 24rpx; line-height: 1.4; color: #CEFF80; background: #152539; border: 2rpx solid #CEFF80; font-weight: 700; }
 .map-action::after { border: 0; }
 
 .primary-action {
@@ -36,17 +36,17 @@
   justify-content: center;
   margin: 0;
   padding: 0 32rpx;
-  color: #FFFFFF;
+  color: #173421;
   line-height: 1.2;
   font-weight: 700;
-  background: #0284C7;
+  background: #CEFF80;
   border: 0;
-  box-shadow: 0 10rpx 24rpx rgba(2, 132, 199, 0.22);
+  box-shadow: 0 10rpx 24rpx rgba(206, 255, 128, 0.12);
 }
 
 .primary-action::after { border: 0; }
 
 .primary-action--pressed {
-  background: #036B9F;
+  background: #CEFF80;
   transform: scale(0.99);
 }

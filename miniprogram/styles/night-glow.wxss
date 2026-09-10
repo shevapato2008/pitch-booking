@@ -1,0 +1,25 @@
+/* Presentation only: no timers, remote assets, or transforms on map ancestors. */
+.ng-hero { position: relative; box-sizing: border-box; overflow: hidden; min-height: 336rpx; padding: 30rpx 28rpx 70rpx; border: 1rpx solid #2B4A58; border-radius: 30rpx; background: linear-gradient(125deg,#152C46 0%,#103B45 62%,#176255 100%); color: #F3F8FF; }
+.ng-hero-copy { position: relative; z-index: 1; }
+.ng-eyebrow { display: block; font-size: 18rpx; line-height: 28rpx; font-weight: 600; letter-spacing: 3rpx; color: #B6D9D2; }
+.ng-hero-title { display: block; margin-top: 18rpx; font-size: 58rpx; line-height: 1.17; letter-spacing: -2rpx; font-weight: 800; }
+.ng-hero-title > text { display: block; }.ng-accent { color: #CEFF80; }
+.ng-hero-sub { display: block; margin-top: 16rpx; color: #C0D1D9; font-size: 24rpx; line-height: 36rpx; }
+.ng-hero-foot { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; min-height: 50rpx; padding: 8rpx 28rpx; border-top: 1rpx solid rgba(255,255,255,.12); color: #D4E5DF; font-size: 20rpx; line-height: 30rpx; }
+.ng-hero-foot::before { display: block; flex: none; width: 9rpx; height: 9rpx; margin-right: 12rpx; border-radius: 50%; background: #CEFF80; content: ""; }
+.ng-field-art { position: absolute; right: -72rpx; top: 72rpx; width: 380rpx; height: 260rpx; transform: rotate(-18deg); }
+.ng-pitch { position: absolute; top: 64rpx; left: 30rpx; width: 278rpx; height: 160rpx; border: 2rpx solid #B3FFD2A6; border-radius: 7rpx; background: repeating-linear-gradient(90deg,#71FFB41A 0,#71FFB41A 35rpx,#0F573C30 35rpx,#0F573C30 70rpx); transform: skewY(12deg); box-shadow: 0 12rpx 0 #072C2D80,0 22rpx 38rpx #031C27; }
+.ng-pitch-half { position: absolute; left: 50%; top: 0; height: 100%; border-left: 2rpx solid #B3FFD285; }
+.ng-pitch-circle { position: absolute; width: 60rpx; height: 60rpx; border: 2rpx solid #B3FFD285; border-radius: 50%; top: 48rpx; left: 107rpx; }
+.ng-goal { position: absolute; top: 46rpx; width: 38rpx; height: 64rpx; border: 2rpx solid #B3FFD285; }.ng-goal--left { left: -2rpx; }.ng-goal--right { right: -2rpx; }
+.ng-orbit { position: absolute; top: 27rpx; left: 0; width: 340rpx; height: 230rpx; border: 1rpx solid #A0FFD32E; border-radius: 50%; transform: rotate(12deg); }.ng-orbit--outer { top: -2rpx; left: -30rpx; width: 400rpx; height: 290rpx; }
+.ng-ball { position: absolute; top: 30rpx; right: 106rpx; width: 74rpx; height: 74rpx; overflow: hidden; border-radius: 50%; background: radial-gradient(circle at 30% 24%,#FFFFFF 0%,#EAF8FA 52%,#83AAA5 100%); box-shadow: 12rpx 20rpx 22rpx #031A2270,inset -5rpx -7rpx 10rpx #07333450; transform: rotate(16deg); }
+.ng-ball-core { position: absolute; top: 24rpx; left: 24rpx; width: 26rpx; height: 26rpx; background: #143A41; border-radius: 6rpx; transform: rotate(45deg); }
+.ng-ball-seam { position: absolute; top: 35rpx; left: 0; width: 74rpx; border-top: 2rpx solid #466970; }.ng-ball-seam--two { transform: rotate(60deg); }.ng-ball-seam--three { transform: rotate(-60deg); }
+.ng-streak { position: absolute; left: 12rpx; top: 50rpx; width: 44rpx; height: 3rpx; border-radius: 50%; background: #D5FF9C; box-shadow: 0 0 16rpx #D5FF9C; }.ng-streak--second { left: auto; right: 36rpx; top: 205rpx; width: 72rpx; }
+.ng-brand-mark { display: flex; align-items: center; flex: none; width: 44rpx; height: 40rpx; transform: skewX(-18deg); }.ng-brand-mark view { width: 7rpx; height: 26rpx; margin-right: 5rpx; border-radius: 2rpx; background: #CEFF80; }.ng-brand-mark view:nth-child(2) { height: 38rpx; }.ng-brand-mark view:nth-child(3) { height: 31rpx; }
+/* Release opacity/transform after entry so hover-class feedback can take over. */
+.ng-enter { animation: ng-enter 280ms cubic-bezier(.2,.8,.2,1) backwards; }
+@keyframes ng-enter { from { opacity: 0; transform: translateY(12rpx); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ng-sheet-in { from { opacity: 0; transform: translateY(40rpx); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .ng-enter { animation: none; } }

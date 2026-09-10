@@ -31,7 +31,7 @@ test("protects longest content with one-line ellipsis slots", () => {
     expect(styles).toMatch(new RegExp(`\\.${name}\\s*\\{[^}]*white-space:\\s*nowrap[^}]*overflow:\\s*hidden[^}]*text-overflow:\\s*ellipsis`, "s"));
   }
   expect(styles).toMatch(/\.venue-row-status\s*\{[^}]*white-space:\s*nowrap[^}]*flex-shrink:\s*0/s);
-  expect(styles).toMatch(/\.venue-row-status--VIEW_AVAILABILITY\s*\{[^}]*color:\s*#0369a1/s);
+  expect(styles).toMatch(/\.venue-row-status--VIEW_AVAILABILITY\s*\{[^}]*color:\s*#CEFF80/s);
 });
 
 test("renders name, address, and combined metadata as exactly three ordered rows", () => {

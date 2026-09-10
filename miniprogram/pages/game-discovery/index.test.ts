@@ -428,7 +428,7 @@ test("production markup preserves nested scroll, touch geometry, safe area, and 
   const wxml = readFileSync("miniprogram/pages/game-discovery/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/game-discovery/index.wxss", "utf8");
   const buttons = wxml.match(/<button\b[^>]*>/g) ?? [];
-  const card = wxml.match(/<button[^>]*class="c1b-game-card"[\s\S]*?<\/button>/)?.[0] ?? "";
+  const card = wxml.match(/<button[^>]*class="c1b-game-card(?:\s[^"]*)?"[\s\S]*?<\/button>/)?.[0] ?? "";
 
   expect(wxml.match(/<scroll-view\b/g)).toHaveLength(2);
   expect(wxml).toMatch(/class="c1b-scroll"\s+scroll-y="true"[^>]+scroll-top="{{entryScrollTop}}"[^>]+bindscroll="onScroll"/);

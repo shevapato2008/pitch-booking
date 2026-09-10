@@ -29,10 +29,11 @@
     "pages/venue-staff-invitation/index"
   ],
   "window": {
-    "navigationBarTitleText": "球场预订",
-    "navigationBarBackgroundColor": "#F8FAFC",
-    "navigationBarTextStyle": "black",
-    "backgroundColor": "#F8FAFC"
+    "navigationBarTitleText": "逐光约场",
+    "navigationBarBackgroundColor": "#0B1727",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0B1727",
+    "backgroundTextStyle": "light"
   },
   "sitemapLocation": "sitemap.json",
   "permission": {"scope.userLocation":{"desc":"在地图中显示你的位置并估算你与球场的距离"}},

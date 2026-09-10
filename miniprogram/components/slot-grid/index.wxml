@@ -15,10 +15,10 @@
         aria-label="{{slot.timeText}} {{slot.priceText}} {{slot.statusLabel}}"
       >
         <text class="slot-time u-type-body">{{slot.timeText}}</text>
-        <text class="slot-meta">
+        <view class="slot-meta">
           <text class="slot-price u-type-caption">{{slot.priceText}}</text>
           <text class="slot-status u-type-caption">{{slot.statusLabel}}</text>
-        </text>
+        </view>
       </button>
     </view>
   </view>

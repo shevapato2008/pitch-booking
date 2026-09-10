@@ -96,3 +96,20 @@ test("retains the confirmed capsule-safe city interaction", () => {
   target.onSelectCurrentCity();
   expect(target.data.isCityPickerOpen).toBe(false);
 });
+
+test("shared entrance animation releases properties needed by pressed card feedback", () => {
+  const styles = readFileSync("miniprogram/styles/night-glow.wxss", "utf8");
+  const entrance = styles.match(/\.ng-enter\s*\{([^}]*)\}/)?.[1] ?? "";
+  expect(entrance).toMatch(/animation:\s*ng-enter/);
+  expect(entrance).not.toMatch(/\b(?:forwards|both)\b/);
+  expect(styles).toMatch(/prefers-reduced-motion:\s*reduce[^}]*\.ng-enter\s*\{\s*animation:\s*none/s);
+});
+
+test("disabled city rows override the native light button background without dimming readable text", () => {
+  const styles = readFileSync("miniprogram/pages/intent-entry/index.wxss", "utf8");
+  const disabled = styles.match(/button\.intent-entry__city-row\[disabled\]\s*\{([^}]*)\}/)?.[1] ?? "";
+  expect(disabled).toMatch(/background-color:\s*#102033/i);
+  expect(disabled).toMatch(/opacity:\s*1\s*;/);
+  const markup = readFileSync("miniprogram/pages/intent-entry/index.wxml", "utf8");
+  expect(markup).toMatch(/intent-entry__city-row--disabled"\s+disabled/);
+});

@@ -1,0 +1,103 @@
+<view class="stage {{theme.id}} {{motion ? '' : 'still'}}">
+  <view class="nav" style="padding-top: {{top}}px;">
+    <view class="nav-row" style="height: {{navHeight}}px; padding-right: {{rightInset}}px;">
+      <button wx:if="{{scene === 'detail'}}" class="back" bindtap="onBack" hover-class="pressed" aria-label="返回球局列表"><view class="chevron left"></view></button>
+      <view wx:else class="brand-mark" aria-hidden="true"><view></view><view></view><view></view></view>
+      <text class="brand">{{scene === 'list' ? '逐光约场' : '球局详情'}}</text>
+      <text wx:if="{{scene === 'list'}}" class="city">天津</text>
+    </view>
+  </view>
+
+  <scroll-view class="viewport" scroll-y scroll-top="{{scrollTop}}" enhanced show-scrollbar="false">
+    <block wx:if="{{scene === 'list'}}">
+      <view class="hero enter">
+        <view class="hero-glow" aria-hidden="true"></view>
+        <view class="stadium" aria-hidden="true">
+          <view class="orbit orbit-one"></view><view class="orbit orbit-two"></view>
+          <view class="pitch"><view class="pitch-line"></view><view class="pitch-center"></view><view class="goal goal-left"></view><view class="goal goal-right"></view></view>
+          <view class="spark spark-one"></view><view class="spark spark-two"></view><view class="spark spark-three"></view>
+          <view class="ball"><view class="ball-core"></view><view class="ball-seam seam-one"></view><view class="ball-seam seam-two"></view><view class="ball-seam seam-three"></view></view>
+          <text class="field-code">ZG / 01</text>
+        </view>
+        <view class="hero-copy">
+          <text class="eyebrow">{{theme.strap}}</text>
+          <view class="hero-title"><text>好球局，</text><text class="hero-accent">等你上场。</text></view>
+          <text class="hero-sub">和同样热爱足球的人，踢一场。</text>
+        </view>
+        <view class="hero-bottom"><view class="tiny-dot"></view><text>找球局 · 从这里开始</text><text class="hero-edition">{{theme.letter}} / {{theme.name}}</text></view>
+      </view>
+
+      <view class="list-content">
+        <view class="section-heading"><text class="section-title">发现球局</text><text class="demo-tag">设计预览 · 示例数据</text></view>
+        <view class="filters">
+          <view class="date-tabs">
+            <button wx:for="{{days}}" wx:key="id" class="date-tab {{activeDay === item.id ? 'date-active' : ''}}" data-day="{{item.id}}" bindtap="onDay" hover-class="pressed" aria-label="{{item.label}} {{item.date}}">
+              <text class="date-label">{{item.label}}</text><text class="date-number">{{item.date}}</text>
+            </button>
+          </view>
+          <button class="available {{availableOnly ? 'available-active' : ''}}" bindtap="onAvailable" hover-class="pressed" aria-label="仅看有名额，{{availableOnly ? '已开启' : '未开启'}}"><view class="check-box"><view wx:if="{{availableOnly}}" class="check-mark"></view></view><text>有名额</text></button>
+        </view>
+
+        <view class="games">
+          <button wx:for="{{games}}" wx:key="id" class="game-card enter" data-id="{{item.id}}" bindtap="onGame" hover-class="card-pressed" style="animation-delay: {{index * 45}}ms;" aria-label="{{item.title}}，{{item.start}}，{{item.venue}}，查看样板详情">
+            <view class="ticket-side"><text class="ticket-date">{{item.date}}</text><text class="ticket-format">{{item.format}}</text><view class="ticket-line"></view><text class="ticket-letter">ZG</text></view>
+            <view class="ticket-main">
+              <view class="game-top"><view class="game-time"><text class="start-time">{{item.start}}</text><text class="end-time">— {{item.end}}</text></view><text class="seat-tag {{item.remaining === 0 ? 'seat-full' : ''}}">{{item.remaining > 0 ? '余 ' + item.remaining + ' 位' : '已满员'}}</text></view>
+              <text class="game-title">{{item.title}}</text>
+              <view class="venue-line"><view class="pin" aria-hidden="true"></view><text>{{item.venue}}</text></view>
+              <view class="game-tags"><text>{{item.format}}</text><text>{{item.tag}}</text><text>场地已确认</text></view>
+              <view class="game-divider"></view>
+              <view class="game-bottom"><view class="members"><view class="avatars"><view wx:for="{{item.avatars}}" wx:for-item="avatar" wx:for-index="avatarIndex" wx:key="*this" class="avatar avatar-{{avatarIndex}}">{{avatar}}</view></view><text class="member-count">{{item.joined}}<text class="muted"> / {{item.capacity}} 人</text></text></view><view class="fee"><text class="currency">¥</text><text class="fee-value">{{item.fee}}</text><text class="fee-unit">/人</text></view></view>
+              <view class="capacity"><view style="transform: scaleX({{item.fill / 100}});"></view></view>
+            </view>
+            <view class="ticket-cut cut-top"></view><view class="ticket-cut cut-bottom"></view>
+          </button>
+          <view wx:if="{{games.length === 0}}" class="empty enter"><text class="section-title">这一天，暂时没有空位</text><text>试试其他日期，或关闭“有名额”筛选。</text><button bindtap="onAvailable" class="primary" hover-class="pressed">查看全部球局</button></view>
+        </view>
+        <text class="list-footnote">每一次上场，都值得期待。</text>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="detail-hero enter">
+        <text class="eyebrow">MATCHDAY / {{selected.date}} · {{selected.weekday}}</text>
+        <view class="detail-tags"><text class="seat-tag">{{selected.format}}</text><text class="detail-confirmed">场地已确认 · 示例</text></view>
+        <text class="detail-title">{{selected.title}}</text>
+        <view class="scoreboard"><view><text class="score-time">{{selected.start}}</text><text class="score-label">开场时间</text></view><view class="score-dash"><view></view><text>开踢</text></view><view><text class="score-time">{{selected.end}}</text><text class="score-label">结束时间</text></view></view>
+        <view class="detail-location"><view class="pin" aria-hidden="true"></view><text>{{selected.venue}}</text></view>
+        <view class="detail-light" aria-hidden="true"></view>
+      </view>
+      <view class="detail-content">
+        <view class="detail-panel squad-panel enter">
+          <view class="panel-heading"><text class="section-title">一起上场的人</text><text class="seat-tag">{{selected.remaining > 0 ? '还差 ' + selected.remaining + ' 位' : '已满员'}}</text></view>
+          <view class="squad-row"><view class="squad-avatars"><view wx:for="{{selected.avatars}}" wx:key="*this" class="squad-member"><view class="avatar avatar-{{index}}">{{item}}</view><text>{{index === 0 ? '组织者' : '已加入'}}</text></view><view wx:if="{{selected.remaining > 0}}" class="squad-member"><view class="avatar open-seat">＋</view><text>等你来</text></view></view></view>
+          <view class="squad-progress"><view class="capacity"><view style="transform: scaleX({{selected.fill / 100}});"></view></view><text>{{selected.joined}} / {{selected.capacity}} 人</text></view>
+        </view>
+        <view class="detail-panel rules-panel enter">
+          <view class="panel-heading"><text class="section-title">这场怎么踢</text><text class="small-note">友好交流</text></view>
+          <view wx:for="{{rules}}" wx:key="*this" class="rule"><text class="rule-number">0{{index + 1}}</text><text>{{item}}</text></view>
+        </view>
+        <view class="detail-panel fee-panel"><view><text class="section-title">费用说明</text><text class="fee-copy">示例费用由参与者分摊</text></view><view class="fee"><text class="currency">¥</text><text class="fee-value">{{selected.fee}}</text><text class="fee-unit">/人</text></view></view>
+        <text class="list-footnote">设计预览 · 场馆、球局、成员均为示例</text>
+      </view>
+    </block>
+  </scroll-view>
+
+  <view wx:if="{{scene === 'detail'}}" class="detail-cta"><button class="primary" hover-class="pressed" bindtap="onSheet" data-sheet="join">查看报名面板样式 <view class="chevron"></view></button></view>
+
+  <view class="sample-dock">
+    <view class="sample-switcher"><button wx:for="{{themes}}" wx:key="id" class="sample-button {{theme.id === item.id ? 'sample-active' : ''}}" data-theme="{{item.id}}" bindtap="onTheme" hover-class="pressed" aria-label="切换样板{{item.letter}} {{item.name}}"><text>{{item.letter}}</text><text>{{item.name}}</text></button></view>
+    <button class="motion-toggle" bindtap="onMotion" hover-class="pressed" aria-label="{{motion ? '关闭动效' : '开启动效'}}"><view class="motion-icon {{motion ? 'motion-on' : ''}}"><view></view><view></view><view></view></view><text>{{motion ? '动效开' : '动效关'}}</text></button>
+  </view>
+
+  <view wx:if="{{sheet}}" class="scrim" bindtap="onClose">
+    <view class="sheet" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="报名面板设计预览">
+      <view class="sheet-grip"></view>
+      <view class="panel-heading"><text class="section-title">准备好上场了吗？</text><button class="close" bindtap="onClose" hover-class="pressed" aria-label="关闭报名面板"><view></view></button></view>
+      <text class="sheet-intro">{{selected.title}}</text>
+      <view class="summary-ticket"><text>{{selected.date}} {{selected.weekday}}</text><text class="summary-time">{{selected.start}} — {{selected.end}}</text><text>{{selected.venue}}</text></view>
+      <view class="preview-notice"><text>这是交互样板</text><text>这里展示报名确认面板的布局与动效。不会登录、提交报名或产生费用。</text></view>
+      <button class="primary" bindtap="onClose" hover-class="pressed">看好了，返回球局</button>
+    </view>
+  </view>
+</view>

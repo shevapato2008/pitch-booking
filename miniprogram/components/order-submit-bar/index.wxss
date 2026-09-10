@@ -11,7 +11,7 @@
   align-items: center;
   gap: 20rpx;
   padding: 24rpx 28rpx calc(32rpx + env(safe-area-inset-bottom));
-  border-top: 2rpx solid #DBE5EC;
+  border-top: 2rpx solid #314157;
 }
 .total {
   display: flex;
@@ -29,20 +29,23 @@
 .action-area { min-width: 0; flex: 1; }
 .submit-button {
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   margin: 0;
   padding: 20rpx 16rpx;
-  color: #FFFFFF;
+  color: #173421;
   font-size: 28rpx;
   line-height: 1.4;
   font-weight: 800;
-  background: #0369A1;
+  background: #CEFF80;
   border: 0;
 }
 .submit-button::after { border: 0; }
 .submit-button--disabled {
-  color: #FFFFFF;
-  background: #94A3B8;
+  color: #C9D7E7;
+  background: #314157;
   opacity: 1;
 }
 .submit-button--pressed { opacity: 0.76; }

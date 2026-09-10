@@ -1,3 +1,4 @@
+<import src="../../templates/night-glow.wxml" />
 <view class="c1b-page">
   <view class="c1b-system" style="height: {{headerTopPx}}px;"></view>
   <view class="c1b-header" style="height: {{headerRowHeightPx}}px;">
@@ -10,11 +11,16 @@
 
   <scroll-view class="c1b-scroll" scroll-y="true" scroll-top="{{entryScrollTop}}" bindscroll="onScroll">
     <view class="c1b-content">
-      <text class="c1b-context">天津 · 仅展示真实订场已确认的公开球局</text>
-
+      <view class="ng-hero ng-enter">
+        <template is="night-glow-field" />
+        <view class="ng-hero-copy"><text class="ng-eyebrow">AFTER DARK. ALL HEART.</text><view class="ng-hero-title"><text>好球局，</text><text class="ng-accent">等你上场。</text></view></view>
+        <text class="ng-hero-foot">天津 · 仅展示真实订场已确认的公开球局</text>
+      </view>
+      <view class="c1b-section-heading"><text class="c1b-section-title">发现球局</text>
       <button class="c1b-mine-entry" hover-class="c1b-pressed" bindtap="onOpenMyRegistrations" aria-label="打开我的报名">
         <text>我的报名</text><view class="c1b-mine-chevron" aria-hidden="true"></view>
       </button>
+      </view>
 
       <view class="c1b-filters">
         <scroll-view class="c1b-date-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
@@ -83,18 +89,18 @@
           <button
             wx:for="{{games}}"
             wx:key="detailPath"
-            class="c1b-game-card"
+            class="c1b-game-card ng-enter"
             hover-class="c1b-game-card--pressed"
             bindtap="onOpenGame"
             data-detail-path="{{item.detailPath}}"
             aria-label="查看{{item.name}}详情"
           >
             <view class="c1b-card-status">
-              <text class="c1b-confirmed">{{item.confirmedLabel}}</text>
+              <text class="c1b-game-time">{{item.timeLabel}}</text>
               <text class="c1b-spots {{item.remainingSpots === 0 ? 'c1b-spots--full' : ''}}">{{item.spotsLabel}}</text>
             </view>
             <text class="c1b-game-name">{{item.name}}</text>
-            <text class="c1b-game-time">{{item.dateLabel}} · {{item.timeLabel}}</text>
+            <view class="c1b-date-line"><text>{{item.dateLabel}}</text><text class="c1b-confirmed">{{item.confirmedLabel}}</text></view>
             <text class="c1b-game-venue">{{item.venueName}} · {{item.pitchName}}</text>
             <view class="c1b-game-tags"><text>{{item.formatLabel}}</text><text>{{item.intensityLabel}}</text><text>{{item.positionsLabel}}</text></view>
             <view class="c1b-metrics">

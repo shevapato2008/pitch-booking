@@ -92,6 +92,16 @@ test("the selected date remains visible after availability reload remounts the d
   expect(template).toContain('id="date-{{item.date}}"');
 });
 
+test("disabled native slot buttons retain semantic dark colors and separated price/status labels", () => {
+  const template = readFileSync("miniprogram/components/slot-grid/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/components/slot-grid/index.wxss", "utf8");
+  expect(template).toContain('<view class="slot-meta">');
+  for (const state of ["available", "expired", "booked", "closed", "temporarily-locked", "selected"]) {
+    expect(styles).toContain(`.slot.slot--${state}.slot--disabled`);
+  }
+  expect(template).toContain('disabled="{{disabled || !slot.isSelectable}}"');
+});
+
 test("the selected-slot CTA uses a safe-area fixed action bar without covering content", () => {
   const template = readFileSync("miniprogram/pages/availability/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/availability/index.wxss", "utf8");

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>逐光约场 · 三款交互设计样板</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#eaece9;color:#222b2b;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}main{max-width:1390px;margin:auto;padding:40px 38px 60px}.intro{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:28px}.kicker{font-size:11px;letter-spacing:3px;color:#66716c}h1{font-size:30px;letter-spacing:-1px;margin:12px 0}p{font-size:14px;line-height:1.8;color:#64706a;margin:0}.tabs{display:flex;gap:6px;padding:5px;background:#dce0db;border-radius:12px;flex:none}button{min-height:44px;padding:0 19px;display:flex;align-items:center;justify-content:center;border:0;border-radius:9px;font:inherit;font-size:13px;cursor:pointer;background:transparent;color:#58655e;transition:background .18s,color .18s}button[aria-pressed=true]{background:#fff;color:#1d3429;box-shadow:0 2px 6px #172a1910}button:hover{background:#f5f7f2}button:focus-visible{outline:3px solid #278456;outline-offset:3px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px}.label{display:flex;align-items:center;gap:12px;margin-bottom:14px}.letter{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700}.a .letter{background:#102334;color:#cbff78}.b .letter{background:#2463eb;color:#fff}.c .letter{background:#b9472b;color:#fff5df}h2{font-size:20px;letter-spacing:-.5px;margin:0}.sub{font-size:12px;color:#6d766d;margin-top:4px}.phone{display:block;width:100%;border-radius:32px;background:#dae0d8;box-shadow:0 12px 30px #172d2010}.caption{padding:18px 4px 0;line-height:1.8;font-size:13px;color:#5f6b61}.caption strong{color:#2a372e;font-weight:600}footer{margin-top:32px;border-top:1px solid #cdd4ca;padding-top:20px;font-size:12px;line-height:1.8;color:#6c766c}a{color:#276847} @media(min-width:1500px){main{max-width:1450px}}@media(max-width:900px){main{padding:24px 18px}.intro{display:block}.tabs{margin-top:20px;width:max-content}.grid{gap:14px}h2{font-size:16px}.sub{font-size:10px}.label{gap:7px}.letter{width:28px;height:28px}.phone{border-radius:20px}}@media(max-width:620px){.grid{grid-template-columns:1fr;gap:32px}.phone{max-width:390px;margin:auto}.label,.caption{max-width:390px;margin-left:auto;margin-right:auto}h1{font-size:26px}h2{font-size:20px}.sub{font-size:12px}.tabs{width:100%}.tabs button{flex:1;padding:0 10px}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="intro">
+      <div><span class="kicker">ZHUGUANG · DESIGN EXPLORATION / 01</span><h1>同一场热爱，三种上场方式。</h1><p>找球局 → 球局详情 → 报名面板。先选气质，再展开整个产品。</p></div>
+      <div class="tabs" aria-label="切换样板场景"><button aria-pressed="true" data-scene="list">找球局</button><button aria-pressed="false" data-scene="detail">球局详情</button><button aria-pressed="false" data-scene="sheet">报名面板</button></div>
+    </div>
+    <div class="grid">
+      <article class="a"><div class="label"><span class="letter">A</span><div><h2>夜场追光</h2><div class="sub">深海蓝 / 荧光青柠 / 聚光灯</div></div></div><img class="phone" data-theme="night" src="night-list.png" alt="A 夜场追光：找球局，微信开发者工具截图"><p class="caption"><strong>更沉浸，更有上场仪式感。</strong><br>深色球场、发光边缘和大号时间。适合突出夜场、运动和年轻感。</p></article>
+      <article class="b"><div class="label"><span class="letter">B</span><div><h2>晴空竞技</h2><div class="sub">冰川白 / 电光蓝 / 轻盈浮层</div></div></div><img class="phone" data-theme="sky" src="sky-list.png" alt="B 晴空竞技：找球局，微信开发者工具截图"><p class="caption"><strong>清透利落，日常使用很舒服。</strong><br>明亮底色、浮起的白卡片和蓝色节奏。延续现有界面，增加运动气质。</p></article>
+      <article class="c"><div class="label"><span class="letter">C</span><div><h2>复古球票</h2><div class="sub">奶油纸 / 朱砂橙 / 俱乐部</div></div></div><img class="phone" data-theme="club" src="club-list.png" alt="C 复古球票：找球局，微信开发者工具截图"><p class="caption"><strong>更有个性，也更有足球文化感。</strong><br>球票齿孔、虚线和复古数字。像一张值得收藏的比赛门票。</p></article>
+    </div>
+    <footer>三套均为微信开发者工具原生运行截图，目标设备 iPhone 12/13 (Pro)，逻辑尺寸 390 × 844，基础库 3.17.0。此页用于并排看静态设计；在已打开的微信开发者工具样板项目中，可体验筛选、详情、弹层和动效开关。<br>全部为隔离示例，不连接后端、不提交报名、不产生费用。<a href="README.md">样板说明</a></footer>
+  </main>
+  <script>
+    const names={list:'找球局',detail:'球局详情',sheet:'报名面板'};
+    document.querySelectorAll('button[data-scene]').forEach(button=>button.addEventListener('click',()=>{
+      document.querySelectorAll('button[data-scene]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+      document.querySelectorAll('img[data-theme]').forEach(img=>{img.src=img.dataset.theme+'-'+button.dataset.scene+'.png';img.alt=img.alt.split('：')[0]+'：'+names[button.dataset.scene]+'，微信开发者工具截图';});
+    }));
+  </script>
+</body>
+</html>

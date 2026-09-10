@@ -238,7 +238,7 @@ test("migrates the approved native review layout and backs every production butt
   expect(styles).toMatch(/\.c1a-icon-button\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
   expect(styles).toMatch(/\.c1a-footer\s*\{[^}]*position:\s*fixed[^}]*env\(safe-area-inset-bottom/s);
   expect(styles).toMatch(/\.c1a-scrim\s*\{[^}]*position:\s*fixed[^}]*env\(safe-area-inset-bottom/s);
-  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*#0369A1/s);
+  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*background:\s*#CEFF80[^}]*color:\s*#173421/s);
   expect(styles).toMatch(/\.c1a-button--primary:active|\.c1a-button--primary\.button-hover/);
   expect(styles).toMatch(/\.c1a-button--secondary:active|\.c1a-button--secondary\.button-hover/);
   expect(styles).toMatch(/\.c1a-button--neutral:active|\.c1a-button--neutral\.button-hover/);

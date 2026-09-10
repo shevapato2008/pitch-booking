@@ -207,7 +207,7 @@ test("uses the approved native form and backs every button with a real handler",
   expect(styles).toMatch(/\.c1a-button\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
   expect(styles).toMatch(/\.c1a-option\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
   expect(styles).toMatch(/\.c1a-footer\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*0[^}]*env\(safe-area-inset-bottom/s);
-  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*#0369A1/s);
+  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*background:\s*#CEFF80[^}]*color:\s*#173421/s);
   expect(styles).toMatch(/\.c1a-button--primary:active|\.c1a-button--primary\.button-hover/);
   expect(styles).toMatch(/\.c1a-button--primary\[disabled\]/);
   expect(template).toContain('hover-class="c1a-consent--pressed"');

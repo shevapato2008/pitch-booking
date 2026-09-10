@@ -1,0 +1,8 @@
+<template name="night-glow-field">
+  <view class="ng-field-art" aria-hidden="true">
+    <view class="ng-orbit ng-orbit--outer"></view><view class="ng-orbit"></view>
+    <view class="ng-pitch"><view class="ng-pitch-half"></view><view class="ng-pitch-circle"></view><view class="ng-goal ng-goal--left"></view><view class="ng-goal ng-goal--right"></view></view>
+    <view class="ng-ball"><view class="ng-ball-core"></view><view class="ng-ball-seam"></view><view class="ng-ball-seam ng-ball-seam--two"></view><view class="ng-ball-seam ng-ball-seam--three"></view></view>
+    <view class="ng-streak"></view><view class="ng-streak ng-streak--second"></view>
+  </view>
+</template>

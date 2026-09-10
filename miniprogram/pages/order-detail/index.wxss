@@ -4,8 +4,8 @@
   box-sizing: border-box;
   min-height: 100vh;
   padding: 32rpx;
-  background: #F8FAFC;
-  color: #10243E;
+  background: #0B1727;
+  color: #F3F8FF;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -18,7 +18,7 @@
 }
 
 .eyebrow {
-  color: #0369A1;
+  color: #CEFF80;
   font-size: 26rpx;
   font-weight: 700;
 }
@@ -32,7 +32,7 @@
 
 .countdown {
   margin-top: 16rpx;
-  color: #0369A1;
+  color: #CEFF80;
   font-size: 72rpx;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
@@ -42,7 +42,7 @@
 .hero-copy {
   max-width: 600rpx;
   margin-top: 16rpx;
-  color: #64748B;
+  color: #A4B5C8;
   font-size: 26rpx;
   line-height: 1.55;
 }
@@ -53,7 +53,7 @@
   width: 64rpx;
   height: 64rpx;
   margin-bottom: 16rpx;
-  border: 6rpx solid #BAE6FD;
+  border: 6rpx solid #425E68;
   border-radius: 50%;
 }
 
@@ -63,8 +63,8 @@
   right: -6rpx;
   width: 28rpx;
   height: 28rpx;
-  border-top: 6rpx solid #0369A1;
-  border-right: 6rpx solid #0369A1;
+  border-top: 6rpx solid #CEFF80;
+  border-right: 6rpx solid #CEFF80;
   border-radius: 0 32rpx 0 0;
 }
 
@@ -74,9 +74,9 @@
   width: 104rpx;
   height: 104rpx;
   margin-bottom: 16rpx;
-  border: 4rpx solid #059669;
+  border: 4rpx solid #A6EDB9;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: #152539;
 }
 
 .success-check__stroke {
@@ -85,8 +85,8 @@
   left: 25rpx;
   width: 50rpx;
   height: 26rpx;
-  border-bottom: 6rpx solid #059669;
-  border-left: 6rpx solid #059669;
+  border-bottom: 6rpx solid #A6EDB9;
+  border-left: 6rpx solid #A6EDB9;
   transform: rotate(-45deg);
 }
 
@@ -96,10 +96,10 @@
   gap: 8rpx;
   margin-top: 24rpx;
   padding: 16rpx 24rpx;
-  border: 2rpx solid #7DD3FC;
+  border: 2rpx solid #425E68;
   border-radius: 24rpx;
-  background: #F0F9FF;
-  color: #075985;
+  background: #122C3B;
+  color: #CEFF80;
   font-size: 24rpx;
   line-height: 1.5;
 }
@@ -124,9 +124,9 @@
   box-sizing: border-box;
   flex-direction: column;
   padding: 32rpx;
-  border: 2rpx solid #DBE5EC;
+  border: 2rpx solid #314157;
   border-radius: 32rpx;
-  background: #FFFFFF;
+  background: #152539;
 }
 
 .state-card {
@@ -136,12 +136,12 @@
 
 .state-card--error,
 .inline-error {
-  color: #B91C1C;
+  color: #FFB4AA;
 }
 
 .card-kicker {
   margin-bottom: 16rpx;
-  color: #64748B;
+  color: #A4B5C8;
   font-size: 24rpx;
 }
 
@@ -154,7 +154,7 @@
 .pitch-name {
   margin-top: 8rpx;
   margin-bottom: 24rpx;
-  color: #64748B;
+  color: #A4B5C8;
   font-size: 26rpx;
 }
 
@@ -173,7 +173,7 @@
 
 .muted,
 .rules {
-  color: #64748B;
+  color: #A4B5C8;
 }
 
 .amount,
@@ -189,7 +189,7 @@
   gap: 16rpx;
   margin-top: 24rpx;
   padding: 16rpx 24rpx;
-  border: 2rpx solid #DBE5EC;
+  border: 2rpx solid #314157;
   border-radius: 24rpx;
   font-size: 26rpx;
   font-weight: 700;
@@ -225,8 +225,8 @@
   gap: 24rpx;
   padding: 24rpx 32rpx;
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom, 0px));
-  border-top: 2rpx solid #DBE5EC;
-  background: #FFFFFF;
+  border-top: 2rpx solid #314157;
+  background: #152539;
 }
 
 .footer-total {
@@ -236,7 +236,7 @@
 }
 
 .footer-total__label {
-  color: #64748B;
+  color: #A4B5C8;
   font-size: 24rpx;
 }
 
@@ -258,22 +258,22 @@
   margin: 0;
   padding: 24rpx;
   border: 0;
-  background: #0369A1;
-  color: #FFFFFF;
+  background: #CEFF80;
+  color: #173421;
 }
 
 .primary-button[disabled] {
-  background: #DBE5EC;
-  color: #475569;
+  background: #314157;
+  color: #C9D7E7;
   opacity: 1;
 }
 
 .secondary-button {
   margin: 0;
   padding: 20rpx 24rpx;
-  border: 2rpx solid #7DD3FC;
-  background: #FFFFFF;
-  color: #0369A1;
+  border: 2rpx solid #425E68;
+  background: #152539;
+  color: #CEFF80;
 }
 
 .footer-action {

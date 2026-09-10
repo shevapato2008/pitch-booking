@@ -40,7 +40,11 @@
         </view>
 
         <block wx:elif="{{status === 'READY'}}">
-          <view class="c1a-card c1a-section c1a-confirmed-row">
+          <view class="c1a-card c1a-section c1a-game-hero ng-enter">
+            <text class="c1a-eyebrow">{{teamName}} 组织</text>
+            <text class="c1a-game-title">{{name}}</text>
+            <text class="c1a-game-subtitle">{{publicGame.pitchSpecification}} · {{intensityLabel}} · 需要 {{positionsLabel}}</text>
+          <view class="c1a-confirmed-row">
             <view class="c1a-confirmed-mark"></view>
             <view class="c1a-confirmed-copy">
               <text class="c1a-confirmed-title">真实订场已确认</text>
@@ -48,11 +52,6 @@
               <text class="c1a-help">{{orderRange}}</text>
             </view>
           </view>
-
-          <view class="c1a-card c1a-section c1a-game-hero">
-            <text class="c1a-eyebrow">{{teamName}} 组织</text>
-            <text class="c1a-game-title">{{name}}</text>
-            <text class="c1a-game-subtitle">{{publicGame.pitchSpecification}} · {{intensityLabel}} · 需要 {{positionsLabel}}</text>
           </view>
 
           <view class="c1a-card c1a-signup-progress c1a-section" aria-label="报名进度">
@@ -204,11 +203,11 @@
           </view>
           <checkbox-group wx:if="{{profilePurpose === 'SIGNUP'}}" class="c1a-profile-confirmations" bindchange="onSignupConfirmationsChange">
             <label class="c1a-profile-confirmation">
-              <checkbox value="adult" checked="{{adultConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#2563eb" />
+              <checkbox value="adult" checked="{{adultConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#173421" />
               <text>我已满 18 周岁</text>
             </label>
             <label class="c1a-profile-confirmation">
-              <checkbox value="risk" checked="{{riskConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#2563eb" />
+              <checkbox value="risk" checked="{{riskConfirmed}}" disabled="{{profileSheetState === 'SUBMITTING'}}" color="#173421" />
               <text>我已了解运动风险并自愿参与</text>
             </label>
           </checkbox-group>

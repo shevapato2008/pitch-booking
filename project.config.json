@@ -2,6 +2,12 @@
   "appid": "wxc6b988ca75ad753c",
   "compileType": "miniprogram",
   "miniprogramRoot": "dist/miniprogram-development/",
+  "watchOptions": {
+    "ignore": [
+      ".worktrees/**",
+      ".venv/**"
+    ]
+  },
   "libVersion": "3.17.0",
   "setting": {
     "es6": true,

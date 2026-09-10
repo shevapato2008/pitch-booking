@@ -4,11 +4,11 @@
 .filter-section { margin-top: 16rpx; }
 .slot-section { margin-top: 40rpx; }
 .state-message { padding: 96rpx 32rpx; line-height: 1.5; text-align: center; }
-.state-message--error { color: #10243E; }
+.state-message--error { color: #F3F8FF; }
 .empty-state { margin: 40rpx 24rpx 0; padding: 64rpx 24rpx; line-height: 1.5; text-align: center; }
 .booking-unavailable { display: flex; flex-direction: column; gap: 8rpx; margin: 32rpx 24rpx 0; padding: 24rpx; text-align: center; }
-.booking-unavailable__title { color: #10243E; font-weight: 700; }
-.booking-unavailable__copy { color: #64748B; font-size: 24rpx; }
+.booking-unavailable__title { color: #F3F8FF; font-weight: 700; }
+.booking-unavailable__copy { color: #A4B5C8; font-size: 24rpx; }
 .availability-action-bar {
   box-sizing: border-box;
   position: fixed;
@@ -17,9 +17,9 @@
   left: 0;
   z-index: 20;
   padding: 24rpx 28rpx calc(32rpx + env(safe-area-inset-bottom));
-  border-top: 2rpx solid #DBE5EC;
-  background: #FFFFFF;
-  box-shadow: 0 -12rpx 36rpx rgba(16, 36, 62, .08);
+  border-top: 2rpx solid #314157;
+  background: #152539;
+  box-shadow: 0 -12rpx 36rpx rgba(2, 10, 20, .08);
 }
 .availability-confirm {
   box-sizing: border-box;
@@ -31,11 +31,11 @@
   margin: 0;
   padding: 16rpx 24rpx;
   border: 0;
-  color: #FFFFFF;
+  color: #173421;
   font-size: 30rpx;
   line-height: 1.4;
   font-weight: 800;
-  background: #0369A1;
+  background: #CEFF80;
 }
 .availability-confirm::after { border: 0; }
 .availability-confirm--pressed { opacity: .76; }

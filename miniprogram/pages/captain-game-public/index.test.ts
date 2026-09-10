@@ -2273,13 +2273,13 @@ test("approved shared composition is production-only and every visible button ha
   expect(source).toContain("继续候补");
   expect(source).toContain("退出后将从当前候补队列移除");
   expect(styles).toMatch(/\.c2a-scrim\s*\{[^}]*position:\s*fixed[^}]*align-items:\s*flex-end/s);
-  expect(styles).toMatch(/\.c1a-status-card--waitlisted\s*\{[^}]*#FED7AA[^}]*#FFF7ED/s);
-  expect(styles).toMatch(/\.c1a-status-card--waitlisted \.c1a-status-dot\s*\{[^}]*#9A3412/s);
+  expect(styles).toMatch(/\.c1a-status-card--waitlisted\s*\{[^}]*#6B5335[^}]*#392E23/s);
+  expect(styles).toMatch(/\.c1a-status-card--waitlisted \.c1a-status-dot\s*\{[^}]*#FFD094/s);
   const buttonRule = styles.match(/\.c1a-button\s*\{([^}]*)\}/s)?.[1] ?? "";
   for (const declaration of [/min-height:\s*88rpx/, /display:\s*flex/, /align-items:\s*center/, /justify-content:\s*center/]) expect(buttonRule).toMatch(declaration);
   const footerRule = styles.match(/\.c1a-footer\s*\{([^}]*)\}/s)?.[1] ?? "";
   for (const declaration of [/position:\s*fixed/, /bottom:\s*0/, /env\(safe-area-inset-bottom/]) expect(footerRule).toMatch(declaration);
-  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*#0369A1/s); expect(styles).toMatch(/button-hover|:active/);
+  expect(styles).toMatch(/\.c1a-button--primary\s*\{[^}]*background:\s*#CEFF80[^}]*color:\s*#173421/s); expect(styles).toMatch(/button-hover|:active/);
   expect(wxml).toMatch(/class="c1a-metric c1a-metric--deadline"[^>]*>[\s\S]*?\{\{deadlineLabel\}\}/);
   const metricValueRule = styles.match(/\.c1a-metric-value\s*\{([^}]*)\}/s)?.[1] ?? "";
   for (const declaration of [

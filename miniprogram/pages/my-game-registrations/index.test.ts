@@ -151,8 +151,8 @@ test("production page and route use the approved native layout without preview c
   expect(wxml).toContain("{{item.attendanceRecordedAtLabel}}");
   expect(wxml).toContain("{{item.attendanceCorrectedAtLabel}}");
   expect(wxml).toContain("平台已纠正");
-  expect(styles).toMatch(/\.c1c-registration-card--waitlisted\s*\{[^}]*#FED7AA/s);
-  expect(styles).toMatch(/\.c1c-status--waitlisted\s*\{[^}]*#FFF7ED[^}]*#9A3412/s);
+  expect(styles).toMatch(/\.c1c-registration-card--waitlisted\s*\{[^}]*#6B5335/s);
+  expect(styles).toMatch(/\.c1c-status--waitlisted\s*\{[^}]*#392E23[^}]*#FFD094/s);
 });
 
 test("initial read renders approved cards and a real empty response renders no invented cards", async () => {

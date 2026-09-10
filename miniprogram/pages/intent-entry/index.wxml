@@ -1,6 +1,8 @@
+<import src="../../templates/night-glow.wxml" />
 <view class="intent-entry u-page">
   <view class="intent-entry__header" style="padding-top: {{headerTopPx}}px;" aria-hidden="{{isCityPickerOpen}}">
     <view class="intent-entry__header-row" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
+      <view class="ng-brand-mark" aria-hidden="true"><view></view><view></view><view></view></view><text class="intent-entry__brand">逐光约场</text>
       <button class="intent-city-button" hover-class="intent-city-button--pressed" bindtap="onOpenCityPicker" aria-label="当前城市天津，点击切换">
         <text>{{currentCityName}}</text><view class="intent-city-chevron" aria-hidden="true"></view>
       </button>
@@ -8,6 +10,11 @@
   </view>
 
   <view class="intent-entry__content" aria-hidden="{{isCityPickerOpen}}">
+    <view class="ng-hero ng-enter">
+      <template is="night-glow-field" />
+      <view class="ng-hero-copy"><text class="ng-eyebrow">AFTER DARK. ALL HEART.</text><view class="ng-hero-title"><text>今天，</text><text class="ng-accent">为热爱上场。</text></view></view>
+      <text class="ng-hero-foot">你的下一场热爱，从这里开始。</text>
+    </view>
     <view class="intent-entry__intro">
       <text class="intent-entry__title">你今天想做什么？</text>
       <text class="intent-entry__subtitle">选择一个目的开始，之后可以随时切换。</text>
@@ -17,7 +24,7 @@
       <button
         wx:for="{{intents}}"
         wx:key="id"
-        class="intent-entry__card intent-entry__card--{{item.disabled ? 'disabled' : 'enabled'}}"
+        class="intent-entry__card intent-entry__card--{{item.disabled ? 'disabled' : 'enabled'}} ng-enter"
         hover-class="intent-entry__card--pressed"
         bindtap="onChooseIntent"
         data-intent-id="{{item.id}}"
