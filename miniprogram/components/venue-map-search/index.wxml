@@ -1,13 +1,13 @@
 <view class="venue-search">
   <view class="venue-search-bar">
     <view class="venue-search-icon" aria-hidden="true"></view>
-    <input value="{{draftQuery}}" placeholder="搜索球场或地图地点" confirm-type="search" bindfocus="onFocus" bindinput="onInput" bindconfirm="onConfirm" aria-label="搜索球场或地图地点" />
-    <button wx:if="{{draftQuery}}" class="venue-search-clear" bindtap="onClear" aria-label="清除搜索">×</button>
-    <button wx:if="{{draftQuery !== committedQuery}}" class="venue-search-cancel" bindtap="onCancel">取消</button>
+    <input class="venue-search-input" value="{{draftQuery}}" placeholder="搜索球场或地图地点" confirm-type="search" bindfocus="onFocus" bindinput="onInput" bindconfirm="onConfirm" aria-label="搜索球场或地图地点" />
+    <button wx:if="{{draftQuery}}" class="venue-search-clear ng-icon-button" bindtap="onClear" aria-label="清除搜索" hover-class="ng-pressed"><view class="ng-close-icon" aria-hidden="true"></view></button>
+    <button wx:if="{{draftQuery !== committedQuery}}" class="venue-search-cancel ng-button ng-button--text" bindtap="onCancel" hover-class="ng-pressed">取消</button>
   </view>
   <view wx:if="{{draftQuery !== committedQuery}}" class="venue-search-panel">
     <view class="venue-search-heading">平台球场</view>
-    <button wx:for="{{localMatches}}" wx:key="id" class="venue-search-result" data-venue-id="{{item.id}}" bindtap="onVenueSelect">
+    <button wx:for="{{localMatches}}" wx:key="id" class="venue-search-result" data-venue-id="{{item.id}}" bindtap="onVenueSelect" hover-class="ng-pressed">
       <text class="venue-search-name">{{item.name}}</text><text class="venue-search-address">{{item.address}}</text>
     </button>
     <view wx:if="{{localMatches.length === 0}}" class="venue-search-message">没有匹配的平台球场</view>
@@ -16,7 +16,7 @@
     <view wx:elif="{{poiState === 'empty'}}" class="venue-search-message">没有匹配的地图地点</view>
     <view wx:elif="{{poiState === 'error'}}" class="venue-search-message venue-search-message--error">地图地点暂时无法搜索</view>
     <block wx:else>
-      <button wx:for="{{poiResults}}" wx:key="id" class="venue-search-result" data-index="{{index}}" bindtap="onPoiSelect">
+      <button wx:for="{{poiResults}}" wx:key="id" class="venue-search-result" data-index="{{index}}" bindtap="onPoiSelect" hover-class="ng-pressed">
         <text class="venue-search-name">{{item.name}}</text><text class="venue-search-address">{{item.city}} · {{item.district}} · {{item.address}}</text>
       </button>
     </block>

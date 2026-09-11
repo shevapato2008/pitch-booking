@@ -2,6 +2,8 @@
   min-height: 100vh;
 }
 
+@import "../../styles/controls.wxss";
+
 .content {
   padding-top: 32rpx;
   padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
@@ -50,3 +52,5 @@
   background: #CEFF80;
   transform: scale(0.99);
 }
+
+.venue-page { min-height: 0; }

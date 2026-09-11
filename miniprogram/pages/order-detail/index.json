@@ -1,1 +1,9 @@
-{"navigationBarTitleText":"订单详情","usingComponents":{"slot-summary-card":"/components/slot-summary-card/index","booking-rules-card":"/components/booking-rules-card/index"}}
+{
+  "navigationBarTitleText": "订单详情",
+  "usingComponents": {
+    "slot-summary-card": "/components/slot-summary-card/index",
+    "booking-rules-card": "/components/booking-rules-card/index",
+    "module-navigation": "/components/module-navigation/index"
+  },
+  "navigationStyle": "custom"
+}

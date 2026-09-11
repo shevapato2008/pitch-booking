@@ -88,3 +88,5 @@ button::after { border:0; }
 .venue-profile-icon--plus::before,.venue-profile-icon--plus::after { content:""; position:absolute; width:28rpx; height:4rpx; border-radius:4rpx; background:currentColor; }
 .venue-profile-icon--plus::after { transform:rotate(90deg); }
 .venue-profile-icon--warning { width:80rpx; height:80rpx; border:5rpx solid var(--error); border-radius:50%; color:var(--error); font-size:42rpx; font-weight:800; }
+
+@import "../../styles/controls.wxss";

@@ -4,6 +4,7 @@
   "enablePullDownRefresh": true,
   "disableScroll": true,
   "usingComponents": {
-    "date-strip": "/components/date-strip/index"
+    "date-strip": "/components/date-strip/index",
+    "module-navigation": "/components/module-navigation/index"
   }
 }

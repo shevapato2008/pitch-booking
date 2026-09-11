@@ -5,12 +5,7 @@ view, text, button, scroll-view { box-sizing: border-box; }
 button { min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; }
 button::after { border: 0; }
 .venue-access { display: flex; height: 100vh; flex-direction: column; overflow: hidden; background: #0B1727; }
-.venue-access__system { flex: 0 0 auto; background: #152539; }
-.venue-access__header { position: relative; display: flex; flex: 0 0 auto; min-height: 88rpx; align-items: center; justify-content: center; border-bottom: 2rpx solid var(--border); background: #152539; }
 .venue-access__touch { min-width: 88rpx; min-height: 88rpx; }
-.venue-access__back { position: absolute; top: 0; left: 16rpx; display: flex; align-items: center; justify-content: center; border-radius: 24rpx; }
-.venue-access__back--pressed { background: #1C2C40; }
-.venue-access__title { overflow: hidden; font-size: 36rpx; font-weight: 750; line-height: 52rpx; text-overflow: ellipsis; white-space: nowrap; }
 .venue-access__content { flex: 1 1 auto; min-height: 0; padding: 40rpx 40rpx calc(48rpx + env(safe-area-inset-bottom, 0px)); }
 .venue-access__eyebrow { display: block; color: var(--primary-strong); font-size: 22rpx; font-weight: 750; line-height: 32rpx; letter-spacing: 3rpx; }
 .venue-access__heading { display: block; margin-top: 12rpx; font-size: 46rpx; font-weight: 750; line-height: 64rpx; }
@@ -59,7 +54,8 @@ button::after { border: 0; }
 .venue-access__primary--pressed { background: #CEFF80; }
 .venue-access__secondary--pressed { background: #122C3B; }
 .venue-access-icon { position: relative; display: inline-flex; width: 40rpx; height: 40rpx; flex: 0 0 auto; align-items: center; justify-content: center; color: currentColor; }
-.venue-access-icon--back::before { width: 16rpx; height: 16rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; content: ""; transform: rotate(45deg); }
 .venue-access-icon--chevron { position: absolute; top: 50%; right: 24rpx; width: 64rpx; height: 64rpx; transform: translateY(-50%); }
 .venue-access-icon--chevron::before { width: 16rpx; height: 16rpx; border-top: 4rpx solid var(--primary); border-right: 4rpx solid var(--primary); content: ""; transform: rotate(45deg); }
 @keyframes venue-access-spin { to { transform: rotate(360deg); } }
+
+@import "../../styles/controls.wxss";

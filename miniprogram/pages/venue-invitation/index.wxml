@@ -1,12 +1,5 @@
 <view class="d1a-page">
-  <view class="d1a-system" style="height: {{headerTopPx}}px;"></view>
-  <view class="d1a-header" style="height: {{headerRowHeightPx}}px;">
-    <button class="d1a-header-back" hover-class="d1a-pressed" bindtap="onHeaderBack" aria-label="返回">
-      <view class="d1a-back-icon" aria-hidden="true"></view>
-    </button>
-    <text class="d1a-header-title">场馆招商邀请</text>
-    <view class="d1a-header-spacer" aria-hidden="true"></view>
-  </view>
+<module-navigation title="场馆招商邀请" action="back" bind:navigate="onHeaderBack" />
 
   <scroll-view class="d1a-scroll" scroll-y enhanced show-scrollbar="{{false}}">
     <view class="d1a-content">
@@ -35,7 +28,7 @@
   </scroll-view>
 
   <view class="d1a-bottom">
-    <button class="d1a-primary-button d1a-primary-button--{{tone}}" hover-class="d1a-pressed" bindtap="onPrimaryAction" loading="{{busy}}" disabled="{{busy}}">{{actionLabel}}</button>
+    <button class="d1a-primary-button d1a-primary-button--{{tone}} ng-button ng-button--primary {{(busy) ? 'ng-disabled' : ''}}" hover-class="ng-pressed" bindtap="onPrimaryAction" loading="{{busy}}" disabled="{{busy}}">{{actionLabel}}</button>
     <view class="d1a-safe-bottom"></view>
   </view>
 </view>

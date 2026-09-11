@@ -9,7 +9,7 @@ const styles = readFileSync("miniprogram/components/venue-map-card/index.wxss", 
 test("renders a permanently reserved action for both booking modes", () => {
   expect(template).not.toContain('wx:if="{{card.selected}}"');
   expect(template).toContain('class="venue-row-action"');
-  expect(template).toContain("查看可订时段");
+  expect(template).toContain("查看场地时段");
   expect(template).toContain("查看场馆详情");
   expect(template).toContain('catchtap="onAction"');
 });

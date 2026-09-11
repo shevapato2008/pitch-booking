@@ -512,17 +512,22 @@ test("production captain game scroll views keep a bounded flex viewport on WeCha
 test("production captain game form uses the shared mobile header and fixed stepper columns", async () => {
   for (const page of ["captain-game-form", "captain-game-manage", "captain-game-public"]) {
     const wxml = await readFile(`miniprogram/pages/${page}/index.wxml`, "utf8");
-    const styles = await readFile(`miniprogram/pages/${page}/index.wxss`, "utf8");
-    assert.match(wxml, /class="header__system"[^>]*height: \{\{headerTopPx\}\}px/);
-    assert.match(wxml, /class="header__back"[^>]*hover-class="button-hover"[^>]*>[\s\S]*?class="header__back-glyph"/);
+    const config = JSON.parse(await readFile(`miniprogram/pages/${page}/index.json`, "utf8"));
+    assert.equal(config.usingComponents["module-navigation"], "/components/module-navigation/index");
+    assert.match(wxml, /<module-navigation\b[^>]*action="back"[^>]*bind:navigate="onHeaderBack"/);
+    assert.doesNotMatch(wxml, /class="header__(?:system|back)"/);
     assert.doesNotMatch(wxml, /‹/);
     assert.doesNotMatch(wxml, /headerLeftInsetPx/);
-    const back = [...styles.matchAll(/([^{}]+)\{([^}]*)\}/g)]
-      .find((match) => match[1].split(",").some((selector) => selector.trim() === ".header__back"))?.[2] ?? "";
-    assert.match(back, /min-width:\s*88rpx\s*;/);
-    assert.match(back, /min-height:\s*88rpx\s*;/);
-    assert.match(styles, /\.header__back-glyph\s*\{[^}]*border-bottom:\s*4rpx solid currentColor[^}]*border-left:\s*4rpx solid currentColor[^}]*transform:\s*rotate\(45deg\)/s);
   }
+
+  const navigation = await readFile("miniprogram/components/module-navigation/index.wxml", "utf8");
+  const navigationStyles = await readFile("miniprogram/components/module-navigation/index.wxss", "utf8");
+  assert.match(navigation, /padding-top: \{\{topPx\}\}px/);
+  assert.match(navigation, /hover-class="module-navigation__action--pressed"[^>]*bindtap="onNavigate"/);
+  const back = navigationStyles.match(/\.module-navigation__action\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(back, /min-width:\s*44px\s*;/);
+  assert.match(back, /min-height:\s*44px\s*;/);
+  assert.match(navigationStyles, /\.module-navigation__icon--back::before\s*\{[^}]*border-bottom:\s*2px solid currentColor[^}]*border-left:\s*2px solid currentColor[^}]*transform:\s*rotate\(45deg\)/s);
 
   const form = await readFile("miniprogram/pages/captain-game-form/index.wxml", "utf8");
   const styles = await readFile("miniprogram/pages/captain-game-form/index.wxss", "utf8");

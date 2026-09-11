@@ -1,5 +1,5 @@
 <view wx:if="{{card}}" class="venue-row {{card.selected?'venue-row--selected':''}}">
-  <button class="venue-row-body" bindtap="onSelect" aria-label="选择{{card.name}}">
+  <button class="venue-row-body" bindtap="onSelect" aria-label="选择{{card.name}}" hover-class="ng-pressed">
     <text class="venue-row-name">{{card.name}}</text>
     <text class="venue-row-address">{{card.address}}</text>
     <view class="venue-row-meta">
@@ -8,7 +8,7 @@
       <text class="venue-row-status venue-row-status--{{card.action}}">{{card.statusText}}</text>
     </view>
   </button>
-  <button class="venue-row-action" catchtap="onAction" aria-label="{{card.action === 'VIEW_AVAILABILITY' ? '查看可订时段' : '查看场馆详情'}}">
-    <text class="venue-row-chevron">›</text>
+  <button class="venue-row-action" catchtap="onAction" aria-label="{{card.action === 'VIEW_AVAILABILITY' ? '查看场地时段' : '查看场馆详情'}}" hover-class="ng-pressed">
+    <view class="ng-chevron-right" aria-hidden="true"></view>
   </button>
 </view>

@@ -1,5 +1,6 @@
+<module-navigation title="场地时段" action="back" bind:navigate="onHeaderBack" />
 <view class="availability-page u-page u-text">
-  <view wx:if="{{loading}}" class="state-message u-muted u-type-body">正在加载可订时段…</view>
+  <view wx:if="{{loading}}" class="state-message u-muted u-type-body">正在加载场地时段…</view>
   <view wx:elif="{{errorText}}" class="state-message state-message--error u-type-body">{{errorText}}</view>
   <view wx:else class="availability-content {{onlineBookingEnabled && selectedSlotId ? 'availability-content--with-action' : ''}}">
     <view class="date-section">
@@ -20,11 +21,11 @@
 
     <view wx:if="{{!onlineBookingEnabled}}" class="booking-unavailable u-surface u-border u-radius-md" role="status">
       <text class="booking-unavailable__title">在线预订暂未开放</text>
-      <text class="booking-unavailable__copy">你仍可查看场地和时段信息。</text>
+      <text class="booking-unavailable__copy">仅展示场地库存，暂不能选择或下单。</text>
     </view>
 
     <view wx:if="{{viewModel.isEmpty}}" class="empty-state u-surface u-border u-radius-md u-muted u-type-body">
-      当天暂无可订时段
+      当天暂无场地时段
     </view>
     <view wx:else class="slot-section u-pad-page">
       <slot-grid pitchGroups="{{viewModel.pitchGroups}}" disabled="{{!onlineBookingEnabled}}" bind:select="onSlotSelect" />
@@ -32,9 +33,9 @@
     <text wx:if="{{navigationError}}" class="state-message state-message--error u-type-body">{{navigationError}}</text>
     <view wx:if="{{onlineBookingEnabled && selectedSlotId}}" class="availability-action-bar u-surface">
       <button
-        class="availability-confirm u-control u-radius-md"
+        class="availability-confirm u-control u-radius-md ng-button ng-button--primary"
         bindtap="onConfirmSlot"
-        hover-class="availability-confirm--pressed"
+        hover-class="ng-pressed"
         aria-label="确认已选择的场次"
       >确认场次</button>
     </view>

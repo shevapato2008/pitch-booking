@@ -48,3 +48,5 @@
 .d1a-primary-button--muted { background: #B1BFD0; }
 .d1a-safe-bottom { height: calc(18rpx + env(safe-area-inset-bottom, 0px)); }
 .d1a-pressed { opacity: .68; }
+
+@import "../../styles/controls.wxss";

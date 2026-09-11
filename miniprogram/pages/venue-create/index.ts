@@ -8,6 +8,7 @@ import {
   type VenueOnboardingEvidenceKind,
 } from "../../domain/venue-onboarding";
 import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
+import { formatOpenGameDateTime } from "../../presentation/open-game";
 import { getPoiSearchCapability, type PoiSearchResult } from "../../services/poi-search";
 import {
   createOnboardingIdempotencyKey,
@@ -36,6 +37,7 @@ Page({
     submitDisabledReason: "请填写场馆名称",
     notice: "",
     application: null as VenueOnboardingApplication | null,
+    applicationUpdatedAtLabel: "",
     duplicateCandidate: null as VenueOnboardingCandidate | null,
     headerTopPx: 0,
     headerRowHeightPx: 44,
@@ -61,7 +63,11 @@ Page({
         const applicationId = decodeURIComponent(options.application_id);
         const application = (await source.listApplications()).items.find((item) => item.applicationId === applicationId);
         if (application?.kind === "CREATE" && application.status === "REJECTED") {
-          this.setData({ mode: "rejected", application, venueName: application.venue.name, address: application.venue.address });
+          this.setData({
+            mode: "rejected", application,
+            applicationUpdatedAtLabel: formatOpenGameDateTime(application.updatedAt, "Asia/Shanghai"),
+            venueName: application.venue.name, address: application.venue.address,
+          });
         }
       }
       this.refreshSubmitState();

@@ -244,7 +244,7 @@ test("binds every visible action and enables native pull refresh", () => {
     expect(handler).toBeDefined();
     expect(typeof target[handler!]).toBe("function");
   }
-  expect(config).toContain('"enablePullDownRefresh":true');
+  expect(JSON.parse(config).enablePullDownRefresh).toBe(true);
 });
 
 function deferred<T>() {

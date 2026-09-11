@@ -55,9 +55,46 @@ beforeEach(() => {
   });
   registerPoiSearchCapability({ async suggest(query) { return query.includes("天津站") ? [station] : []; } });
   (globalThis as any).wx = {
-    navigateTo: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn(),
+    navigateTo: jest.fn(), reLaunch: jest.fn(), showToast: jest.fn(), createMapContext: jest.fn(),
     getDeviceInfo: jest.fn(() => ({ platform: "devtools" })),
   };
+});
+
+test("map module home remains visible above content and returns to the intent entry", () => {
+  const markup = readFileSync("miniprogram/pages/venue-map/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
+  const config = JSON.parse(readFileSync("miniprogram/pages/venue-map/index.json", "utf8"));
+  expect(config.navigationStyle).toBe("custom");
+  expect(config.usingComponents["module-navigation"]).toBe("/components/module-navigation/index");
+  expect(markup).toContain('<module-navigation title="天津球场" bind:navigate="onReturnIntent" />');
+  expect(markup.indexOf("<module-navigation")).toBeLessThan(markup.indexOf('class="map-content"'));
+  expect(styles).toMatch(/\.map-page\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column/s);
+  expect(styles).toMatch(/\.map-content\s*\{[^}]*position:\s*relative;[^}]*flex:\s*1[^}]*min-height:\s*0/s);
+  expect(styles).not.toMatch(/\.map-(?:page|content)\s*\{[^}]*transform:/s);
+  call(page(), "onReturnIntent");
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
+});
+
+test("disabled booking changes map promises but preserves availability browsing and inventory modes", async () => {
+  const target = page();
+  target.data.onlineBookingEnabled = false;
+  await call(target, "onLoad", {});
+  const onlineCards = target.data.cards.filter((card: any) => card.action === "VIEW_AVAILABILITY");
+  expect(onlineCards.length).toBeGreaterThan(0);
+  expect(onlineCards.every((card: any) => card.statusText === "时段仅展示")).toBe(true);
+  expect(target.data.cards.find((card: any) => card.action === "VIEW_DETAIL").statusText).toBe("仅提供场馆信息");
+  expect(target.data.venues).toEqual(venues);
+
+  target.data.onlineBookingEnabled = true;
+  call(target, "applySearchPresentation", { kind: "CITY" }, { onlineOnly: false, districtCode: null }, null);
+  expect(target.data.cards.filter((card: any) => card.action === "VIEW_AVAILABILITY")
+    .every((card: any) => card.statusText === "可在线预订")).toBe(true);
+});
+
+test("availability browsing entries do not promise that orders can currently be placed", () => {
+  expect(readFileSync("miniprogram/components/venue-map-sheet/index.wxml", "utf8")).toMatch(/bindtap="onOnlineTap"[^>]*>可查看时段<\/button>/);
+  expect(readFileSync("miniprogram/components/venue-map-card/index.wxml", "utf8")).toContain("'查看场地时段' : '查看场馆详情'");
+  expect(readFileSync("miniprogram/pages/venue/index.wxml", "utf8")).toMatch(/bindtap="onViewAvailability"[^>]*>\s*查看场地时段\s*<\/button>/);
 });
 
 test("uses bound WXML venue markers on iOS instead of the unreliable custom cluster layer", async () => {
@@ -76,9 +113,9 @@ test("centers a focused venue marker inside the map area left visible above the 
   const wxss = readFileSync("miniprogram/pages/venue-map/index.wxss", "utf8");
 
   expect(wxml).toContain('class="map map--focused-{{sheetSnap}}"');
-  expect(wxss).toContain(".map--focused-collapsed{height:76vh}");
-  expect(wxss).toContain(".map--focused-half{height:48vh}");
-  expect(wxss).toContain(".map--focused-expanded{height:22vh}");
+  expect(wxss).toContain(".map--focused-collapsed{height:76%}");
+  expect(wxss).toContain(".map--focused-half{height:48%}");
+  expect(wxss).toContain(".map--focused-expanded{height:22%}");
 });
 
 test("onReady does not initialize clustering while the map is absent during loading", () => {

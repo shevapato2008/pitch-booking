@@ -46,3 +46,5 @@ button::after { border: 0; }
 .c1a-back-glyph { box-sizing: border-box; width: 22rpx; height: 22rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; transform: rotate(45deg); }
 .c1a-footer { position: fixed; z-index: 8; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx; padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom, 0px)); border-top: 1rpx solid #314157; background: rgba(21, 37, 57, .96); }
 .c1a-footer--stacked { grid-template-columns: 1fr; }
+
+@import "../../styles/controls.wxss";

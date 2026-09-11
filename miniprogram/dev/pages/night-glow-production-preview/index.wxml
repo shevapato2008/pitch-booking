@@ -1,0 +1,5 @@
+<view class="preview-menu">
+  <text class="preview-title">{{title}}</text>
+  <text class="preview-note">仅在开发包内打开真实生产页面。所有数据为本地模拟，部分写入与媒体能力明确不可用；不能作为线上业务验收结果。重新选择入口会重置内存数据。</text>
+  <button wx:for="{{targets}}" wx:key="id" class="preview-target" data-target="{{item.id}}" bindtap="onOpen">{{item.label}}</button>
+</view>

@@ -1,3 +1,4 @@
+<module-navigation title="我的订单" action="back" bind:navigate="onHeaderBack" />
 <view class="orders-page">
   <view class="orders-intro">
     <text class="orders-intro__title">最近的预订</text>
@@ -16,7 +17,7 @@
       <view class="state-icon state-icon--error" role="img" aria-label="加载失败"><view class="error-mark"><view></view></view></view>
       <text class="state-title">{{errorText}}</text>
       <text class="state-copy">请检查网络后重新加载，现有订单不会被改为空列表。</text>
-      <button class="primary-action state-action" hover-class="primary-action--pressed" bindtap="onRetry">重新加载</button>
+      <button class="primary-action state-action ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onRetry">重新加载</button>
     </view>
   </view>
 
@@ -25,7 +26,7 @@
       <view class="state-icon" role="img" aria-label="暂无订单"><view class="empty-box"><view></view></view></view>
       <text class="state-title">还没有订单</text>
       <text class="state-copy">选择合适的场地并完成预订后，订单会显示在这里。</text>
-      <button class="primary-action state-action" hover-class="primary-action--pressed" bindtap="onGoSelectVenue">去选场地</button>
+      <button class="primary-action state-action ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onGoSelectVenue">去选场地</button>
     </view>
   </view>
 
@@ -33,20 +34,20 @@
     <view wx:if="{{refreshing}}" class="refresh-note" role="status">正在同步服务端状态…</view>
     <view wx:if="{{refreshErrorText}}" class="refresh-error" role="alert">{{refreshErrorText}}</view>
     <view class="order-list" aria-label="订单列表">
-      <button wx:for="{{orders}}" wx:key="orderId" class="order-card" hover-class="order-card--pressed" data-order-id="{{item.orderId}}" bindtap="onOpenOrder" aria-label="{{item.venue}}，{{item.pitch}}，{{item.statusLabel}}，{{item.amount}}，查看订单详情">
+      <button wx:for="{{orders}}" wx:key="orderId" class="order-card" hover-class="ng-pressed" data-order-id="{{item.orderId}}" bindtap="onOpenOrder" aria-label="{{item.venue}}，{{item.pitch}}，{{item.statusLabel}}，{{item.amount}}，查看订单详情">
         <view class="order-main"><text class="order-venue">{{item.venue}}</text><text class="order-pitch">{{item.pitch}}</text></view>
         <text class="order-amount">{{item.amount}}</text>
         <view class="order-chevron" aria-hidden="true"></view>
         <text class="order-schedule">{{item.schedule}}</text>
-        <view class="order-status"><text class="status-badge status-{{item.status}}">{{item.statusLabel}}</text><text class="status-description">{{item.statusDescription}}</text></view>
+        <view class="order-status"><text class="status-badge status-{{item.status}} ng-badge">{{item.statusLabel}}</text><text class="status-description">{{item.statusDescription}}</text></view>
       </button>
     </view>
 
     <view wx:if="{{loadMoreError}}" class="load-more-error" role="alert">
       <text>更多订单暂时无法加载</text>
-      <button class="secondary-action load-more-action" hover-class="secondary-action--pressed" bindtap="onRetryLoadMore">重试加载更多</button>
+      <button class="secondary-action load-more-action ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onRetryLoadMore">重试加载更多</button>
     </view>
-    <button wx:elif="{{nextCursor}}" class="secondary-action load-more-action" hover-class="secondary-action--pressed" disabled="{{loadingMore}}" bindtap="onLoadMore">{{loadingMore ? '正在加载…' : '加载更多'}}</button>
+    <button wx:elif="{{nextCursor}}" class="secondary-action load-more-action ng-button ng-button--secondary {{(loadingMore) ? 'ng-disabled' : ''}}" hover-class="ng-pressed" disabled="{{loadingMore}}" bindtap="onLoadMore">{{loadingMore ? '正在加载…' : '加载更多'}}</button>
     <text wx:if="{{end}}" class="end-note">已经到底了</text>
   </block>
 </view>

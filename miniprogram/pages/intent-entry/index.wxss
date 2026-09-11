@@ -4,6 +4,8 @@
   min-height: 100vh;
 }
 
+@import "../../styles/controls.wxss";
+
 .intent-entry__header {
   background: #0B1727;
   border-bottom: 1rpx solid #273A51;

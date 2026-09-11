@@ -1,3 +1,4 @@
+<module-navigation title="球场预订" action="back" bind:navigate="onHeaderBack" />
 <view class="venue-page u-page u-text">
   <view wx:if="{{loading}}" class="state-message u-muted u-type-body">正在加载场馆信息…</view>
   <view wx:elif="{{errorText}}" class="state-message state-message--error u-type-body">{{errorText}}</view>
@@ -6,9 +7,9 @@
       <venue-card venue="{{venue}}" />
     </view>
     <view class="action-bar action-bar--split">
-      <button class="map-action u-control u-type-cta u-radius-md" bindtap="onViewOnMap">在地图中查看</button>
-      <button wx:if="{{canBook}}" class="primary-action u-control u-type-cta u-radius-md" bindtap="onViewAvailability" hover-class="primary-action--pressed">
-        {{venue.availabilityLabel}}
+      <button class="map-action u-control u-type-cta u-radius-md ng-button ng-button--secondary" bindtap="onViewOnMap" hover-class="ng-pressed">在地图中查看</button>
+      <button wx:if="{{canBook}}" class="primary-action u-control u-type-cta u-radius-md ng-button ng-button--primary" bindtap="onViewAvailability" hover-class="ng-pressed">
+        查看场地时段
       </button>
     </view>
   </block>

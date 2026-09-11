@@ -205,7 +205,7 @@ test("migrates the approved native review layout and backs every production butt
   const template = readFileSync("miniprogram/pages/captain-game-applications/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/captain-game-applications/index.wxss", "utf8");
 
-  expect(JSON.parse(json)).toEqual({ navigationStyle: "custom" });
+  expect(JSON.parse(json)).toEqual({ navigationStyle: "custom", usingComponents: { "module-navigation": "/components/module-navigation/index" } });
   expect(template).toContain("报名审核");
   expect(template).toContain("条待审核申请");
   expect(template).toContain("{{pendingCount}}");
@@ -230,7 +230,7 @@ test("migrates the approved native review layout and backs every production butt
     "onClearPending", "onRefreshApplications", "onReturnManage", "onAccept", "onWaitlist",
     "onReject",
     "onClosePanel", "onConfirmDecision", "onConfirmDecisionResult", "onCloseUnknown",
-  ]) expect(template).toContain(`bindtap="${handler}"`);
+  ]) expect(template).toContain(`${handler === "onHeaderBack" ? "bind:navigate" : "bindtap"}="${handler}"`);
 
   expect(source).not.toMatch(/from\s+["']\.\.\/\.\.\/services\/open-game["']/);
   expect(source).not.toMatch(/\.sort\s*\(|\.shift\s*\(/);

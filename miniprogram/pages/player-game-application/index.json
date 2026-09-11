@@ -1,1 +1,6 @@
-{ "navigationStyle": "custom" }
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "module-navigation": "/components/module-navigation/index"
+  }
+}

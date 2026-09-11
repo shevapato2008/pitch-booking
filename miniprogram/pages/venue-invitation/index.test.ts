@@ -131,6 +131,6 @@ test.each([
 test("production invitation markup has no Fixture and every visible action is bound", () => {
   const markup = readFileSync("miniprogram/pages/venue-invitation/index.wxml", "utf8");
   expect(markup).toContain("bindtap=\"onPrimaryAction\"");
-  expect(markup).toContain("bindtap=\"onHeaderBack\"");
+  expect(markup).toContain("bind:navigate=\"onHeaderBack\"");
   expect(markup).not.toMatch(/Fixture|模拟数据|D1a 开发预览/);
 });

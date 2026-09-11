@@ -52,3 +52,5 @@
 .c1c-skeleton { min-height: 308rpx; border: 1rpx solid #314157; border-radius: 28rpx; background: #152539; }
 .c1c-skeleton::before { display: block; width: 68%; height: 28rpx; margin: 44rpx 28rpx 0; border-radius: 14rpx; background: #273A51; box-shadow: 0 62rpx 0 #273A51, 0 124rpx 0 #273A51, 0 186rpx 0 #273A51; content: ""; }
 .c1c-pressed { opacity: .68; }
+
+@import "../../styles/controls.wxss";

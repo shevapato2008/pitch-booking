@@ -82,3 +82,5 @@ page { background: #0B1727; color: #F3F8FF; font-family: -apple-system, BlinkMac
   .c2e-content { padding-right: 28rpx; padding-left: 28rpx; }
   .c2e-sheet { padding: 34rpx; }
 }
+
+@import "../../styles/controls.wxss";

@@ -128,7 +128,7 @@ test("only a READY PUBLISHED owner can open the real application review route", 
   expect(page.data).toMatchObject({ status: "READY", canReviewApplications: true });
   const template = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
   expect(template).toContain('wx:if="{{canReviewApplications}}"');
-  expect(template).toContain('bindtap="onReviewApplications">报名审核');
+  expect(template).toMatch(/bindtap="onReviewApplications"[^>]*>报名审核/);
 
   await call(page, "onReviewApplications");
 
@@ -156,7 +156,7 @@ test("only a READY PUBLISHED owner can open the real member-management route", a
   expect(page.data).toMatchObject({ status: "READY", canManageMembers: true });
   const template = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
   expect(template).toContain('wx:if="{{canManageMembers}}"');
-  expect(template).toContain('bindtap="onManageMembers">成员管理');
+  expect(template).toMatch(/bindtap="onManageMembers"[^>]*>成员管理/);
   expect((JSON.parse(readFileSync("miniprogram/app.json", "utf8")) as { pages: string[] }).pages)
     .toContain("pages/captain-game-members/index");
 
@@ -192,7 +192,7 @@ test("attendance entry follows only the authoritative canManageAttendance flag",
   expect(page.data).toMatchObject({ status: "READY", canManageAttendance: true });
   const template = readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8");
   expect(template).toContain('wx:if="{{canManageAttendance}}"');
-  expect(template).toContain('bindtap="onManageAttendance">散客到场记录');
+  expect(template).toMatch(/bindtap="onManageAttendance"[^>]*>散客到场记录/);
 
   await call(page, "onManageAttendance");
   expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
@@ -244,7 +244,7 @@ test("a new manager restores and resolves its persisted same-game terminal publi
   const page = loadPage(); call(page, "onLoad", { game_id: gameId }); await flush();
 
   expect(page.data).toMatchObject({ status: "MUTATION_UNKNOWN", state: "PUBLISHED", pendingKind: "publish", canCancel: true });
-  expect(readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8")).toContain('bindtap="onConfirmUnknown">确认操作结果');
+  expect(readFileSync("miniprogram/pages/captain-game-manage/index.wxml", "utf8")).toMatch(/bindtap="onConfirmUnknown"[^>]*>确认操作结果/);
   call(page, "onOpenCancel");
   expect(page.data.panel).toBe("");
   await call(page, "onEdit");

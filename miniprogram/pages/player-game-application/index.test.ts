@@ -187,7 +187,7 @@ test("uses the approved native form and backs every button with a real handler",
   const template = readFileSync("miniprogram/pages/player-game-application/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/player-game-application/index.wxss", "utf8");
 
-  expect(JSON.parse(json)).toEqual({ navigationStyle: "custom" });
+  expect(JSON.parse(json)).toEqual({ navigationStyle: "custom", usingComponents: { "module-navigation": "/components/module-navigation/index" } });
   expect(template).toContain("c1a-form-intro");
   expect(template).toContain("本场称呼");
   expect(template).toContain("意向位置");
@@ -202,7 +202,7 @@ test("uses the approved native form and backs every button with a real handler",
   for (const handler of [
     "onHeaderBack", "onReload", "onLogin", "onPositionTap", "onCancel", "onSubmit",
     "onConfirmResult", "onReturnGame", "onGoPending", "onClearPending",
-  ]) expect(template).toContain(`bindtap="${handler}"`);
+  ]) expect(template).toContain(`${handler === "onHeaderBack" ? "bind:navigate" : "bindtap"}="${handler}"`);
 
   expect(styles).toMatch(/\.c1a-button\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
   expect(styles).toMatch(/\.c1a-option\s*\{[^}]*min-height:\s*88rpx[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);

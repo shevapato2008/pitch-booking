@@ -1,0 +1,21 @@
+{
+  "appid": "wxc6b988ca75ad753c",
+  "projectname": "night-glow-native-fixture-DO-NOT-UPLOAD",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "libVersion": "3.17.0",
+  "setting": { "es6": true, "postcss": true, "minified": true, "urlCheck": true },
+  "condition": {
+    "miniprogram": {
+      "list": [
+        { "name": "A1 找球局-模拟数据", "pathName": "pages/game-discovery/index", "query": "" },
+        { "name": "A2 我的报名-候补与正式", "pathName": "dev/pages/c2b-production-composition/index", "query": "scenario=WAITLISTED_FIRST&target=LIST" },
+        { "name": "A3 公开详情-候补", "pathName": "dev/pages/c2b-production-composition/index", "query": "scenario=WAITLISTED_FIRST&target=DETAIL" },
+        { "name": "A4 报名审核-满员", "pathName": "dev/pages/c2b-production-composition/index", "query": "scenario=FULL_REVIEW&target=CAPTAIN" },
+        { "name": "A5 新报名-加入候补", "pathName": "dev/pages/c2b-production-composition/index", "query": "scenario=SIGNUP_FULL&target=DETAIL" },
+        { "name": "A6 预订确认-禁用按钮", "pathName": "pages/booking-confirmation/index", "query": "slot_id=00000000-0000-4000-8000-000000000030" },
+        { "name": "B 队长与场馆-开发预览", "pathName": "dev/pages/night-glow-production-preview/index", "query": "" }
+      ]
+    }
+  }
+}

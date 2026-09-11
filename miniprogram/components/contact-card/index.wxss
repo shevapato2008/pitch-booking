@@ -7,6 +7,8 @@
   border-color: #425E68;
   background: #122C3B;
 }
+
+@import "../../styles/controls.wxss";
 .section-title {
   margin-bottom: 20rpx;
   line-height: 1.4;

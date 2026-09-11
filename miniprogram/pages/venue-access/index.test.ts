@@ -47,6 +47,16 @@ beforeEach(() => {
   };
 });
 
+test("module home uses the shared navigation and returns directly to the intent entry", () => {
+  const markup = readFileSync("miniprogram/pages/venue-access/index.wxml", "utf8");
+  const config = JSON.parse(readFileSync("miniprogram/pages/venue-access/index.json", "utf8"));
+  expect(markup).toContain('<module-navigation title="我的场馆" bind:navigate="onBackToEntry" />');
+  expect(config.usingComponents["module-navigation"]).toBe("/components/module-navigation/index");
+  expect(markup).not.toContain("venue-access__back");
+  page().onBackToEntry();
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
+});
+
 test("zero venues still renders both real onboarding actions and returns to the entry", async () => {
   const api = source(); registerVenueAccessDataSource(api); const target = page();
   await target.onLoad();

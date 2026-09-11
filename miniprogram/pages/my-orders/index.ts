@@ -1,3 +1,4 @@
+import { returnToPreviousPage } from "../../presentation/page-back";
 import { presentMyOrder, type MyOrderCardViewModel } from "../../presentation/my-orders";
 import { getBookingDataSource } from "../../services/booking";
 
@@ -6,6 +7,7 @@ interface OrderTapEvent {
 }
 
 Page({
+  onHeaderBack: returnToPreviousPage,
   data: {
     orders: [] as readonly MyOrderCardViewModel[],
     nextCursor: null as string | null,

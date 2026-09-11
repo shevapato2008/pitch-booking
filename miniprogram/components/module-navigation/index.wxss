@@ -1,0 +1,15 @@
+:host { position: sticky; top: 0; z-index: 8; display: block; flex-shrink: 0; }
+.module-navigation { box-sizing: border-box; background: #152539; color: #F3F8FF; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.module-navigation__row { position: relative; box-sizing: border-box; min-height: 44px; border-bottom: 1rpx solid #314157; }
+.module-navigation__action { position: absolute; top: 0; bottom: 0; left: 8px; display: flex; box-sizing: border-box; width: 44px; height: 44px; min-width: 44px; min-height: 44px; margin: auto 0; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: #F3F8FF; line-height: 1; }
+.module-navigation__action::after { border: 0; }
+.module-navigation__action--pressed { background: #233449; }
+.module-navigation__action.module-navigation__action--disabled { opacity: 1; background: transparent; color: #8B9DB3; }
+.module-navigation__icon { position: relative; display: block; box-sizing: border-box; width: 24px; height: 24px; flex: 0 0 auto; }
+.module-navigation__icon--home::before { position: absolute; top: 5px; left: 5px; box-sizing: border-box; width: 14px; height: 14px; border-top: 2px solid currentColor; border-left: 2px solid currentColor; border-radius: 1px; content: ""; transform: rotate(45deg); }
+.module-navigation__icon--home::after { position: absolute; top: 10px; left: 5px; box-sizing: border-box; width: 14px; height: 12px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; border-left: 2px solid currentColor; border-radius: 0 0 2px 2px; content: ""; }
+.module-navigation__door { position: absolute; bottom: 2px; left: 8px; box-sizing: border-box; width: 8px; height: 7px; border: 2px solid currentColor; border-bottom: 0; border-radius: 1px 1px 0 0; }
+.module-navigation__icon--back::before { position: absolute; top: 6px; left: 8px; box-sizing: border-box; width: 12px; height: 12px; border-bottom: 2px solid currentColor; border-left: 2px solid currentColor; content: ""; transform: rotate(45deg); }
+.module-navigation__copy { position: absolute; top: 0; bottom: 0; display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.module-navigation__title { display: block; width: 100%; overflow: hidden; color: #F3F8FF; font-size: 17px; font-weight: 700; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; }
+.module-navigation__subtitle { display: block; width: 100%; overflow: hidden; color: #A4B5C8; font-size: 10px; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }

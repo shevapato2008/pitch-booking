@@ -13,7 +13,7 @@
       class="date-item u-control u-radius-md {{item.date === selectedDate ? 'date-item--selected' : ''}}"
       data-date="{{item.date}}"
       bindtap="onSelect"
-      hover-class="date-item--pressed"
+      hover-class="ng-pressed"
       aria-label="{{item.monthDayLabel}} {{item.weekdayLabel}}"
     >
       <text class="date-weekday u-type-caption">{{item.weekdayLabel}}</text>

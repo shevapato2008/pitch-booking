@@ -37,4 +37,7 @@
 .slot.slot--temporarily-locked.slot--disabled { color: #FFD094; background: #392E23; border-color: #6B5335; }
 .slot--selected,
 .slot.slot--selected.slot--disabled { color: #173421; background: #CEFF80; border-color: #CEFF80; }
+.slot.slot--disabled.slot--readonly { color: #A4B5C8; background: #152539; border-color: #314157; }
 .slot--pressed { opacity: 0.76; transform: scale(0.99); }
+
+@import "../../styles/controls.wxss";

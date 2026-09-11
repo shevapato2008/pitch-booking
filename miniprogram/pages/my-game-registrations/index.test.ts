@@ -124,7 +124,7 @@ test("production page and route use the approved native layout without preview c
   const styles = readFileSync("miniprogram/pages/my-game-registrations/index.wxss", "utf8");
   const app = JSON.parse(readFileSync("miniprogram/app.json", "utf8")) as { pages: string[] };
 
-  expect(JSON.parse(json)).toEqual({ navigationStyle: "custom" });
+  expect(JSON.parse(json)).toEqual({ navigationStyle: "custom", usingComponents: { "module-navigation": "/components/module-navigation/index" } });
   expect(app.pages).toContain("pages/my-game-registrations/index");
   expect(wxml).not.toMatch(/Fixture|开发预览|模拟数据|dev\/pages/i);
   expect(wxml).toMatch(/<scroll-view[^>]+scroll-y="true"[^>]+scroll-top="{{listScrollTop}}"[^>]+bindscroll="onScroll"/);
@@ -140,7 +140,7 @@ test("production page and route use the approved native layout without preview c
   for (const handler of [
     "onHeaderBack", "onLogin", "onRetry", "onRefresh", "onLoadMore",
     "onOpenRegistration", "onOpenDiscovery",
-  ]) expect(wxml).toContain(`bindtap="${handler}"`);
+  ]) expect(wxml).toContain(`${handler === "onHeaderBack" ? "bind:navigate" : "bindtap"}="${handler}"`);
   expect(styles).toMatch(/\.c1c-refresh-action, \.c1c-secondary-action, \.c1c-inline-error button\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
   expect(styles).toMatch(/\.c1c-content\s*\{[^}]*env\(safe-area-inset-bottom,\s*0px\)/s);
   expect(styles).toMatch(/\.c1c-chevron\s*\{[^}]*border-top:[^}]*border-right:/s);

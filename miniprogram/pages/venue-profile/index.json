@@ -1,1 +1,8 @@
-{"navigationStyle":"custom","enablePullDownRefresh":true,"backgroundTextStyle":"dark"}
+{
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "module-navigation": "/components/module-navigation/index"
+  }
+}

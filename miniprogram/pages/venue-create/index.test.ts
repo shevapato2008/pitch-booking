@@ -43,6 +43,29 @@ test("uses a structured Tencent POI, uploads all evidence and submits real creat
   expect(target.data.mode).toBe("submitted");
 });
 
+test("shows the rejected application update time as a readable Shanghai label", async () => {
+  const rejected = {
+    ...submitted,
+    status: "REJECTED" as const,
+    updatedAt: "2026-09-10T14:30:00+08:00",
+    rejectionReason: "场馆地址不清晰，请补充后重新申请",
+  };
+  const api = source();
+  (api.listApplications as jest.MockedFunction<VenueOnboardingDataSource["listApplications"]>)
+    .mockResolvedValueOnce({ items: [rejected], nextCursor: null });
+  registerVenueOnboardingDataSource(api);
+  const target = page();
+  await target.onLoad({ application_id: rejected.applicationId });
+  expect(target.data).toMatchObject({
+    mode: "rejected",
+    application: rejected,
+    applicationUpdatedAtLabel: "9月10日 周四 14:30",
+  });
+  const markup = readFileSync("miniprogram/pages/venue-create/index.wxml", "utf8");
+  expect(markup).toContain("{{applicationUpdatedAtLabel}}");
+  expect(markup).not.toContain("{{application.updatedAt}}");
+});
+
 test("a safe duplicate offers conversion to a preselected claim route", async () => {
   const api = source(); (api.submitCreate as jest.MockedFunction<VenueOnboardingDataSource["submitCreate"]>).mockRejectedValueOnce(Object.assign(new Error("duplicate"), { code: "POSSIBLE_DUPLICATE_VENUE", duplicateCandidate: duplicate })); registerVenueOnboardingDataSource(api); registerVenueOnboardingEvidenceCapability(media); const target = page(); target.setData({ submitDisabled: false, venueName: "海河足球场", address: "海河东路", location: { districtCode: "120102", districtName: "河东区", latitude: 39.1, longitude: 117.2 }, contactName: "张三", maskedPhone: "138****0000", evidence: createEvidenceItems("CREATE").map((item) => ({ ...item, status: "completed", evidenceId })) });
   await target.onSubmit(); expect(target.data).toMatchObject({ mode: "duplicate", duplicateCandidate: duplicate }); target.onConvertToClaim();

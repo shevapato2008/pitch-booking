@@ -319,3 +319,5 @@ button::after { border: 0; }
 .venue-pitch-setup__spinner { width: 48rpx; height: 48rpx; border: 6rpx solid var(--border); border-top-color: var(--primary-strong); border-radius: 50%; animation: venue-pitch-setup-spin .8s linear infinite; }
 .venue-pitch-setup__spinner--small { width: 32rpx; height: 32rpx; border-width: 4rpx; border-color: rgba(23, 52, 33, .25); border-top-color: #173421; }
 @keyframes venue-pitch-setup-spin { to { transform: rotate(360deg); } }
+
+@import "../../styles/controls.wxss";

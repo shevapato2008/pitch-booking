@@ -1,3 +1,4 @@
+import { returnToPreviousPage } from "../../presentation/page-back";
 import type { Availability, PitchType, SlotStatus } from "../../domain/contracts";
 import {
   toAvailabilityViewModel,
@@ -13,6 +14,7 @@ interface SelectionEvent<T> {
 }
 
 Page({
+  onHeaderBack: returnToPreviousPage,
   data: {
     venueId: "",
     pitchOptions: [] as PitchFilterOption[],

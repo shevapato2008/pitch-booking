@@ -52,3 +52,5 @@ button::after { border: 0; }
 .venue-claim__result-copy { display: block; margin-top: 12rpx; color: var(--muted); font-size: 26rpx; line-height: 42rpx; }
 .venue-claim-icon { position: relative; display: inline-flex; width: 40rpx; height: 40rpx; align-items: center; justify-content: center; }
 .venue-claim-icon--back::before { width: 16rpx; height: 16rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; content: ""; transform: rotate(45deg); }
+
+@import "../../styles/controls.wxss";

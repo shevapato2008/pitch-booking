@@ -44,6 +44,29 @@ const applicationId = "77777777-8888-4999-8aaa-bbbbbbbbbbbb";
 const userId = "11111111-2222-4333-8444-555555555555";
 const otherUserId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
+
+test("night-glow disabled profile submit retains a readable dark surface", () => {
+  const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
+  const rule = styles.match(/button\.c1a-profile-submit\[disabled\]\s*\{([^}]+)\}/)?.[1] ?? "";
+  expect(rule).toMatch(/background:\s*#233449/);
+  expect(rule).toMatch(/color:\s*#A4B5C8/);
+  expect(rule).toMatch(/opacity:\s*1/);
+});
+
+test("night-glow shared hero presents authoritative time numerals above the signup progress", () => {
+  const markup = readFileSync("miniprogram/pages/captain-game-public/index.wxml", "utf8");
+  const styles = readFileSync("miniprogram/pages/captain-game-public/index.wxss", "utf8");
+  const hero = markup.slice(markup.indexOf('class="c1a-card c1a-section c1a-game-hero'), markup.indexOf('class="c1a-card c1a-signup-progress'));
+  for (const field of ["heroDateLabel", "heroStartTime", "heroEndTime", "teamName", "name", "intensityLabel", "positionsLabel", "venueName", "pitchSummary"]) {
+    expect(hero).toContain(`{{${field}}}`);
+  }
+  expect(hero).toContain('wx:if="{{heroStartTime}}"');
+  expect(hero).toContain("真实订场已确认");
+  expect(styles).toMatch(/\.c1a-game-hero\s*\{[^}]*linear-gradient\(140deg,\s*#152C46,\s*#134D48\)/);
+  expect(styles).toMatch(/\.c1a-hero-time\s*\{[^}]*font-size:\s*66rpx/);
+  expect(styles).toMatch(/\.c1a-game-hero::before,\s*\.c1a-game-hero::after\s*\{[^}]*pointer-events:\s*none/);
+});
+
 const otherToken = "1234567890_abcdefghijklmnopqrstu";
 const fixture = (name: string): Record<string, unknown> => {
   const raw = JSON.parse(readFileSync(`contracts/examples/${name}.json`, "utf8")) as Record<string, unknown>;
@@ -326,6 +349,33 @@ test("strict shared route loads registration authority only and keeps anonymous 
   expect(Object.keys(page.data.publicGame).sort()).toEqual([
     "aaCents", "endsAt", "equipmentAndArrivalNotes", "fixedPlayers", "intensity", "minimumExperience", "name", "openSpots", "pitchName", "pitchSpecification", "positions", "registrationDeadline", "startsAt", "state", "stateReason", "teamName", "timeZone", "totalPlayers", "venueName", "visibility",
   ].sort());
+});
+
+test("night-glow hero time labels follow shared authority and keep the original range", async () => {
+  const context = {
+    ...readyContext,
+    game: { ...readyContext.game, startsAt: "2026-09-11T11:30:00Z", endsAt: "2026-09-11T13:00:00Z" },
+  };
+  registerSources({ getContext: jest.fn(async () => context) });
+  const page = loadPage(); call(page, "onLoad", { token }); await flush();
+  expect(page.data).toMatchObject({
+    mode: "shared", status: "READY", primaryAction: "APPLY",
+    heroDateLabel: "9月11日 周五", heroStartTime: "19:30", heroEndTime: "21:00",
+    orderRange: "9月11日 周五 · 19:30–21:00",
+    name: context.game.name, teamName: context.game.teamName, venueName: context.game.venueName,
+  });
+  call(page, "applySharedPresentation", {
+    ...context,
+    game: { ...context.game, startsAt: "2026-09-12T10:00:00Z", endsAt: "2026-09-12T12:00:00Z" },
+  });
+  expect(page.data).toMatchObject({ heroDateLabel: "9月12日 周六", heroStartTime: "18:00", heroEndTime: "20:00" });
+});
+
+test("night-glow hero retains the honest time fallback without stale numerals", () => {
+  const page = loadPage();
+  call(page, "applyPublic", publicGame());
+  call(page, "applyPublic", { ...publicGame(), timeZone: "Unsupported/Zone" });
+  expect(page.data).toMatchObject({ orderRange: "时间待确认", heroDateLabel: "时间待确认", heroStartTime: "", heroEndTime: "" });
 });
 
 test("shared signup page prefers the isolated signup-context client over the legacy context", async () => {
@@ -2267,7 +2317,7 @@ test("approved shared composition is production-only and every visible button ha
   expect(wxml).toContain("mode === 'shared'"); expect(wxml).toContain("mode === 'owner'");
   expect(wxml).not.toMatch(/Fixture|开发预览|dev\/pages|c1a-scenario/); expect(wxml).not.toMatch(/phone|orderId|payment|refund|contact/i);
   const buttons = wxml.match(/<button\b[^>]*>/g) ?? []; expect(buttons.length).toBeGreaterThan(0); for (const button of buttons) expect(button).toMatch(/bind(?:tap|chooseavatar)="[A-Za-z][A-Za-z0-9]*"/);
-  for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onOpenWithdrawalConfirm", "onCancelWithdrawal", "onConfirmWithdrawal", "onConfirmWithdrawalResult", "onReturnManage"]) expect(wxml).toContain(`bindtap="${handler}"`);
+  for (const handler of ["onHeaderBack", "onRetry", "onLogin", "onApply", "onRefresh", "onConfirmResult", "onGoPending", "onClearPending", "onOpenWithdrawalConfirm", "onCancelWithdrawal", "onConfirmWithdrawal", "onConfirmWithdrawalResult", "onReturnManage"]) expect(wxml).toContain(`${handler === "onHeaderBack" ? "bind:navigate" : "bindtap"}="${handler}"`);
   expect(wxml).toContain("lateExitWillBeRecorded");
   expect(wxml).toContain("withdrawalCancelLabel");
   expect(source).toContain("继续候补");

@@ -56,3 +56,5 @@ button::after { border: 0; }
 .venue-create__status-content > .venue-create__primary { margin-top: 28rpx; }
 .venue-create-icon { position: relative; display: inline-flex; width: 40rpx; height: 40rpx; align-items: center; justify-content: center; }
 .venue-create-icon--back::before { width: 16rpx; height: 16rpx; border-bottom: 4rpx solid currentColor; border-left: 4rpx solid currentColor; content: ""; transform: rotate(45deg); }
+
+@import "../../styles/controls.wxss";

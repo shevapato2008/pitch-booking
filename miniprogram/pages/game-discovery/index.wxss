@@ -1,13 +1,5 @@
 .c1b-page { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #0B1727; color: #F3F8FF; font-size: 28rpx; }
-.c1b-system { flex: 0 0 auto; background: #152539; }
-.c1b-header { display: grid; grid-template-columns: 88rpx minmax(0, 1fr) 88rpx; align-items: center; flex: 0 0 auto; box-sizing: border-box; border-bottom: 1rpx solid #314157; background: #152539; }
-.c1b-header-back, .c1b-header-spacer { box-sizing: border-box; width: 88rpx; min-width: 88rpx; min-height: 88rpx; }
-.c1b-header-back { display: flex; align-items: center; justify-content: center; margin: 0; padding: 0; border: 0; background: transparent; }
-.c1b-header-back::after, .c1b-mine-entry::after, .c1b-date-chip::after, .c1b-filter-chip::after, .c1b-game-card::after, .c1b-secondary-action::after { border: 0; }
-.c1b-header-title { overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 34rpx; font-weight: 700; line-height: 48rpx; }
-.c1b-back-icon { position: relative; width: 40rpx; height: 40rpx; }
-.c1b-back-icon::before { position: absolute; top: 9rpx; left: 7rpx; box-sizing: border-box; width: 22rpx; height: 22rpx; border-left: 4rpx solid #F3F8FF; border-bottom: 4rpx solid #F3F8FF; transform: rotate(45deg); content: ""; }
-.c1b-back-icon::after { position: absolute; top: 18rpx; left: 8rpx; width: 27rpx; height: 4rpx; border-radius: 2rpx; background: #F3F8FF; content: ""; }
+.c1b-mine-entry::after, .c1b-date-chip::after, .c1b-filter-chip::after, .c1b-game-card::after, .c1b-secondary-action::after { border: 0; }
 .c1b-scroll { box-sizing: border-box; flex: 1 1 auto; height: 0; min-height: 0; }
 .c1b-content { box-sizing: border-box; min-height: 100%; padding: 24rpx 24rpx calc(64rpx + env(safe-area-inset-bottom, 0px)); }
 .c1b-context { display: block; color: #B1BFD0; font-size: 26rpx; line-height: 40rpx; }
@@ -62,3 +54,7 @@
 .c1b-secondary-action { width: 100%; margin-top: 30rpx; padding: 0 24rpx; border-color: #425E68; border-radius: 22rpx; background: #122C3B; color: #CEFF80; font-weight: 700; }
 .c1b-skeleton { min-height: 444rpx; border: 1rpx solid #314157; border-radius: 28rpx; background: #152539; }
 .c1b-skeleton::before { display: block; width: 70%; height: 28rpx; margin: 40rpx 28rpx 0; border-radius: 14rpx; background: #273A51; box-shadow: 0 62rpx 0 #273A51, 0 124rpx 0 #273A51, 0 202rpx 0 #273A51, 0 274rpx 0 #273A51; content: ""; }
+
+@import "../../styles/controls.wxss";
+
+button.c1b-mine-entry.ng-button { padding-right: 38rpx; }

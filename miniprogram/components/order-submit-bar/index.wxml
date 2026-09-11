@@ -5,11 +5,11 @@
   </view>
   <view class="action-area">
     <button
-      class="submit-button u-control u-radius-md {{disabled || loading || reconciling ? 'submit-button--disabled' : ''}}"
+      class="submit-button u-control u-radius-md {{disabled || loading || reconciling ? 'submit-button--disabled' : ''}} ng-button ng-button--primary {{(disabled || loading || reconciling) ? 'ng-disabled' : ''}}"
       disabled="{{disabled || loading || reconciling}}"
       loading="{{loading}}"
       bindtap="onSubmit"
-      hover-class="submit-button--pressed"
+      hover-class="ng-pressed"
       aria-label="{{reconciling ? '正在确认下单结果' : (loading ? '正在提交订单' : (disabledReason && disabled ? disabledReason : cta))}}"
     >{{reconciling ? '正在确认结果' : (loading ? '正在提交' : (disabledReason && disabled ? disabledReason : cta))}}</button>
   </view>

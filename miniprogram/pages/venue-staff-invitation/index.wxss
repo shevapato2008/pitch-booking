@@ -52,3 +52,5 @@
 .d1b-feedback { box-sizing: border-box; margin-top: 20rpx; padding: 20rpx 22rpx; border: 1rpx solid #6B5335; border-radius: 18rpx; background: #392E23; color: #FFD094; font-size: 22rpx; line-height: 34rpx; }
 button[disabled] { opacity: .52; }
 @keyframes d1b-spin { to { transform: rotate(360deg); } }
+
+@import "../../styles/controls.wxss";

@@ -1,3 +1,4 @@
+import { returnToPreviousPage } from "../../presentation/page-back";
 import type { LifecycleTerminalOrderStatus, OrderView } from "../../domain/booking";
 import type { OpenGameEntry } from "../../domain/open-game";
 import type { PaymentOrderView } from "../../domain/payment";
@@ -119,6 +120,7 @@ const scheduler: PollScheduler = {
 };
 
 Page({
+  onHeaderBack: returnToPreviousPage,
   data: {
     orderId: "",
     order: null as OrderView | PaymentOrderView | null,

@@ -1,31 +1,34 @@
 <view class="map-page">
-  <view wx:if="{{loading}}" class="state">正在加载场馆…</view>
-  <view wx:elif="{{errorText}}" class="state">{{errorText}}</view>
-  <block wx:else>
-    <map wx:if="{{viewport.mode === 'ALL'}}" id="venue-map" class="map" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
-    <map wx:else id="venue-map" class="map map--focused-{{sheetSnap}}" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
-    <view class="map-tools">
-      <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" committed-query="{{committedQuery}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
-      <button class="locate {{locationActive ? 'locate--active' : ''}} {{locationErrorText ? 'locate--error' : ''}}" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我"><view wx:if="{{!locating}}" class="crosshair"><view class="crosshair-dot"></view></view></button>
+  <module-navigation title="天津球场" bind:navigate="onReturnIntent" />
+  <view class="map-content">
+    <view wx:if="{{loading}}" class="state">正在加载场馆…</view>
+    <view wx:elif="{{errorText}}" class="state">{{errorText}}</view>
+    <block wx:else>
+      <map wx:if="{{viewport.mode === 'ALL'}}" id="venue-map" class="map" markers="{{markers}}" include-points="{{viewport.includePoints}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
+      <map wx:else id="venue-map" class="map map--focused-{{sheetSnap}}" longitude="{{viewport.longitude}}" latitude="{{viewport.latitude}}" scale="{{viewport.scale}}" markers="{{markers}}" show-location="{{showLocation}}" bindmarkertap="onMarkerTap" />
+      <view class="map-tools">
+        <venue-map-search id="venue-map-search" venues="{{venues}}" poi-results="{{poiResults}}" poi-state="{{poiState}}" committed-query="{{committedQuery}}" reset-token="{{searchResetToken}}" bindeditstart="onSearchEditStart" bindquerychange="onSearchQueryChange" bindclear="onSearchClear" bindcancel="onSearchCancel" bindselectvenue="onSearchVenueSelect" bindselectpoi="onSearchPoiSelect" />
+        <button class="locate {{locationActive ? 'locate--active' : ''}} {{locationErrorText ? 'locate--error' : ''}}" bindtap="onLocateTap" loading="{{locating}}" aria-label="定位到我" hover-class="ng-pressed"><view wx:if="{{!locating}}" class="crosshair"><view class="crosshair-dot"></view></view></button>
+      </view>
+      <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
+      <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" online-only="{{filters.onlineOnly}}" district-code="{{districtCode}}" district-label="{{districtLabel}}" district-options="{{districtOptions}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" bindresetfilters="onResetFilters" bindonlinechange="onOnlineOnlyChange" binddistrictchange="onDistrictFilter" />
+      <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">
+        <view class="permission-handle"></view><view class="permission-icon"><view class="crosshair"><view class="crosshair-dot"></view></view></view>
+        <view class="permission-title">无法使用你的位置</view>
+        <view class="permission-copy">你仍可浏览全部 {{venues.length}} 个天津球场。仅在你主动点按定位按钮时，我们才会申请位置权限。</view>
+        <button class="permission-primary ng-button ng-button--primary" bindtap="onOpenLocationSetting" hover-class="ng-pressed">打开系统设置</button>
+        <button class="permission-secondary ng-button ng-button--secondary" bindtap="onDismissLocationDenied" hover-class="ng-pressed">继续浏览球场</button>
+      </view>
+    </block>
+    <view class="map-shortcuts">
+      <view class="map-shortcuts__center">
+        <text class="map-shortcuts__prefix">搜索中心</text>
+        <text class="map-shortcuts__label">{{centerNote}}</text>
+      </view>
+      <button class="map-shortcuts__orders ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onOpenMyOrders" aria-label="打开我的订单">
+        <view class="map-shortcuts__order-icon" aria-hidden="true"><view></view><view></view><view></view></view>
+        <text>我的订单</text>
+      </button>
     </view>
-    <view wx:if="{{locationErrorText}}" class="location-error">{{locationErrorText}}</view>
-    <venue-map-sheet wx:if="{{!locationPermissionDenied}}" cards="{{cards}}" selected-venue-id="{{selectedVenueId}}" snap="{{sheetSnap}}" title="{{title}}" subtitle="{{subtitle}}" sort-label="{{sortLabel}}" online-only="{{filters.onlineOnly}}" district-code="{{districtCode}}" district-label="{{districtLabel}}" district-options="{{districtOptions}}" bindselect="onCardSelect" bindaction="onVenueAction" bindsnap="onSheetSnap" bindresetfilters="onResetFilters" bindonlinechange="onOnlineOnlyChange" binddistrictchange="onDistrictFilter" />
-    <view wx:if="{{locationPermissionDenied}}" class="permission-sheet">
-      <view class="permission-handle"></view><view class="permission-icon"><view class="crosshair"><view class="crosshair-dot"></view></view></view>
-      <view class="permission-title">无法使用你的位置</view>
-      <view class="permission-copy">你仍可浏览全部 {{venues.length}} 个天津球场。仅在你主动点按定位按钮时，我们才会申请位置权限。</view>
-      <button class="permission-primary" bindtap="onOpenLocationSetting">打开系统设置</button>
-      <button class="permission-secondary" bindtap="onDismissLocationDenied">继续浏览球场</button>
-    </view>
-  </block>
-  <view class="map-shortcuts">
-    <view class="map-shortcuts__center">
-      <text class="map-shortcuts__prefix">搜索中心</text>
-      <text class="map-shortcuts__label">{{centerNote}}</text>
-    </view>
-    <button class="map-shortcuts__orders" hover-class="map-shortcuts__orders--pressed" bindtap="onOpenMyOrders" aria-label="打开我的订单">
-      <view class="map-shortcuts__order-icon" aria-hidden="true"><view></view><view></view><view></view></view>
-      <text>我的订单</text>
-    </button>
   </view>
 </view>

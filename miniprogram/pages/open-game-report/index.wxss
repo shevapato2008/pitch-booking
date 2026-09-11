@@ -89,3 +89,5 @@
 .c2f-dialog-button--primary { background: #CEFF80; color: #173421; }
 .c2f-pressed { opacity: .68; }
 button[disabled] { opacity: .58; }
+
+@import "../../styles/controls.wxss";

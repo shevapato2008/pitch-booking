@@ -3,22 +3,22 @@
 
   <button
     wx:if="{{!maskedPhone}}"
-    class="phone-button u-control u-radius-md"
+    class="phone-button u-control u-radius-md ng-button ng-button--primary"
     open-type="{{phoneOpenType}}"
     bindtap="onAuthorizeTap"
     bindgetphonenumber="onPhoneEvent"
-    hover-class="phone-button--pressed"
+    hover-class="ng-pressed"
     aria-label="{{phoneButtonText}}"
   >{{phoneButtonText}}</button>
 
   <view wx:else class="phone-row">
     <text class="masked-phone u-text u-type-body">{{maskedPhone}}</text>
     <button
-      class="text-button u-control"
+      class="text-button u-control ng-button ng-button--text"
       open-type="{{phoneOpenType}}"
       bindtap="onReauthorize"
       bindgetphonenumber="onPhoneEvent"
-      hover-class="text-button--pressed"
+      hover-class="ng-pressed"
       aria-label="重新授权微信手机号"
     >重新授权</button>
   </view>

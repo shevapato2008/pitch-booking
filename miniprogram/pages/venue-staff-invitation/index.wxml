@@ -1,9 +1,5 @@
 <view class="d1b-page">
-  <view class="d1b-system" style="height: {{headerTopPx}}px;"></view>
-  <view class="d1b-header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px;">
-    <button class="d1b-header-back" hover-class="d1b-pressed" bindtap="onHeaderBack" aria-label="返回"><view class="d1b-back-icon"></view></button>
-    <text class="d1b-header-title">场馆员工邀请</text><view class="d1b-header-spacer"></view>
-  </view>
+<module-navigation title="场馆员工邀请" action="back" bind:navigate="onHeaderBack" />
 
   <scroll-view class="d1b-scroll" scroll-y="true" enhanced="true" show-scrollbar="false">
     <view class="d1b-content">
@@ -25,12 +21,12 @@
   </scroll-view>
 
   <view class="d1b-bottom">
-    <button wx:if="{{mode === 'ready' && unknownAttempt}}" class="d1b-primary d1b-primary--ready" bindtap="onRetryUnknown" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">核对接受结果</button>
-    <button wx:elif="{{mode === 'ready'}}" class="d1b-primary d1b-primary--ready" bindtap="onAcceptInvitation" loading="{{busy}}" disabled="{{busy || foreignAttemptPending}}" hover-class="d1b-pressed">接受邀请</button>
-    <button wx:elif="{{mode === 'accepted'}}" class="d1b-primary d1b-primary--success" bindtap="onOpenPortfolio" hover-class="d1b-pressed">查看我的场馆</button>
-    <button wx:elif="{{mode === 'unavailable' && !retryAvailable}}" class="d1b-primary d1b-primary--muted" bindtap="onReturnToEntry" hover-class="d1b-pressed">返回首页</button>
-    <button wx:elif="{{mode === 'unavailable' || mode === 'read-error'}}" class="d1b-primary d1b-primary--muted" bindtap="onRetry" loading="{{busy}}" disabled="{{busy}}" hover-class="d1b-pressed">重新检查</button>
-    <button wx:else class="d1b-primary d1b-primary--muted" disabled="true">正在检查</button>
+    <button wx:if="{{mode === 'ready' && unknownAttempt}}" class="d1b-primary d1b-primary--ready ng-button ng-button--primary {{(busy) ? 'ng-disabled' : ''}}" bindtap="onRetryUnknown" loading="{{busy}}" disabled="{{busy}}" hover-class="ng-pressed">核对接受结果</button>
+    <button wx:elif="{{mode === 'ready'}}" class="d1b-primary d1b-primary--ready ng-button ng-button--primary {{(busy || foreignAttemptPending) ? 'ng-disabled' : ''}}" bindtap="onAcceptInvitation" loading="{{busy}}" disabled="{{busy || foreignAttemptPending}}" hover-class="ng-pressed">接受邀请</button>
+    <button wx:elif="{{mode === 'accepted'}}" class="d1b-primary d1b-primary--success ng-button ng-button--primary" bindtap="onOpenPortfolio" hover-class="ng-pressed">查看我的场馆</button>
+    <button wx:elif="{{mode === 'unavailable' && !retryAvailable}}" class="d1b-primary d1b-primary--muted ng-button ng-button--primary" bindtap="onReturnToEntry" hover-class="ng-pressed">返回首页</button>
+    <button wx:elif="{{mode === 'unavailable' || mode === 'read-error'}}" class="d1b-primary d1b-primary--muted ng-button ng-button--primary {{(busy) ? 'ng-disabled' : ''}}" bindtap="onRetry" loading="{{busy}}" disabled="{{busy}}" hover-class="ng-pressed">重新检查</button>
+    <button wx:else class="d1b-primary d1b-primary--muted ng-button ng-button--primary" disabled="true" hover-class="ng-pressed">正在检查</button>
     <view class="d1b-safe-bottom"></view>
   </view>
 </view>

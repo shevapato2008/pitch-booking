@@ -6,18 +6,18 @@
         wx:for="{{item.slots}}"
         wx:for-item="slot"
         wx:key="id"
-        class="slot u-control u-radius-md {{slot.className}} {{disabled || !slot.isSelectable ? 'slot--disabled' : ''}}"
+        class="slot u-control u-radius-md {{slot.className}} {{disabled || !slot.isSelectable ? 'slot--disabled' : ''}} {{disabled && slot.isSelectable ? 'slot--readonly' : ''}}"
         disabled="{{disabled || !slot.isSelectable}}"
         data-slot-id="{{slot.id}}"
         data-selectable="{{!disabled && slot.isSelectable}}"
         bindtap="onSelect"
-        hover-class="slot--pressed"
-        aria-label="{{slot.timeText}} {{slot.priceText}} {{slot.statusLabel}}"
+        hover-class="ng-pressed"
+        aria-label="{{slot.timeText}} {{slot.priceText}} {{disabled && slot.isSelectable ? '空闲 · 只读' : slot.statusLabel}}"
       >
         <text class="slot-time u-type-body">{{slot.timeText}}</text>
         <view class="slot-meta">
           <text class="slot-price u-type-caption">{{slot.priceText}}</text>
-          <text class="slot-status u-type-caption">{{slot.statusLabel}}</text>
+          <text class="slot-status u-type-caption">{{disabled && slot.isSelectable ? '空闲 · 只读' : slot.statusLabel}}</text>
         </view>
       </button>
     </view>

@@ -78,7 +78,7 @@ test("production markup binds regional actions and facilities-only footer", () =
   const markup = readFileSync("miniprogram/pages/venue-profile/index.wxml", "utf8"); const json = readFileSync("miniprogram/pages/venue-profile/index.json", "utf8");
   for (const handler of ["onRefreshImageStatus", "onRefreshDescriptionStatus", "onSubmitDescription", "onRetryDescription", "onSaveFacilities", "onRetryUnknown"]) expect(markup).toContain(handler);
   expect(markup).toContain("imageRefreshError"); expect(markup).toContain("descriptionRefreshError"); expect(markup).toContain("descriptionActionLabel");
-  expect(markup).toContain("保存场馆设施"); expect(markup).not.toContain("保存场馆资料"); expect(markup).not.toContain("onRefreshReviewStatus"); expect(markup).not.toContain("onRetryUpload"); expect(json).toContain('"enablePullDownRefresh":true');
+  expect(markup).toContain("保存场馆设施"); expect(markup).not.toContain("保存场馆资料"); expect(markup).not.toContain("onRefreshReviewStatus"); expect(markup).not.toContain("onRetryUpload"); expect(JSON.parse(json).enablePullDownRefresh).toBe(true);
 });
 
 test("facility buttons retain their centered 88rpx touch target", () => {

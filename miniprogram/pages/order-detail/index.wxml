@@ -1,3 +1,4 @@
+<module-navigation title="订单详情" action="back" bind:navigate="onHeaderBack" />
 <view class="order-page u-page u-text">
   <view class="hero">
     <view wx:if="{{showSuccessIcon}}" class="success-check" role="img" aria-label="{{paidLabel ? '支付成功' : '预订成功'}}">
@@ -26,11 +27,11 @@
   <view wx:elif="{{status === 'route-error'}}" class="state-card state-card--error"><text>{{errorText}}</text></view>
   <view wx:elif="{{status === 'load-error'}}" class="state-card state-card--error">
     <text>{{errorText}}</text>
-    <button class="secondary-button" bindtap="onRetryLoad">重新加载</button>
+    <button class="secondary-button ng-button ng-button--secondary" bindtap="onRetryLoad" hover-class="ng-pressed">重新加载</button>
   </view>
   <view wx:elif="{{status === 'closing-error'}}" class="state-card state-card--error">
     <text>{{errorText}}</text>
-    <button wx:if="{{showClosingRetry}}" class="secondary-button" bindtap="onRetryClosing">重试确认</button>
+    <button wx:if="{{showClosingRetry}}" class="secondary-button ng-button ng-button--secondary" bindtap="onRetryClosing" hover-class="ng-pressed">重试确认</button>
   </view>
 
   <view wx:if="{{order}}" class="content {{showActionFooter ? 'content--with-footer' : ''}}">
@@ -69,7 +70,7 @@
     <view wx:if="{{showOpenGameEntry}}" class="detail-card open-game-card">
       <text class="card-kicker">约球</text>
       <text class="rules">邀请球友加入本场预订，球局信息以服务端最新状态为准。</text>
-      <button wx:if="{{showOpenGameEntry}}" class="primary-button open-game-action" bindtap="onOpenGameEntry">
+      <button wx:if="{{showOpenGameEntry}}" class="primary-button open-game-action ng-button ng-button--primary" bindtap="onOpenGameEntry" hover-class="ng-pressed">
         <text wx:if="{{openGameActionLabel === '创建球局'}}">创建球局</text>
         <text wx:else>管理球局</text>
       </button>
@@ -80,10 +81,10 @@
     <text wx:if="{{openGameEntryError}}" class="inline-error" role="alert">{{openGameEntryError}}</text>
     <text wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</text>
     <text wx:if="{{showClosingMessage}}" class="closing-copy">正在确认服务端关闭状态…</text>
-    <button wx:if="{{showOpenGameEntryRetry}}" class="secondary-button" bindtap="onRetryOpenGameEntry">重试加载球局入口</button>
-    <button wx:if="{{showPaymentRetry && status === 'payment-confirming'}}" class="secondary-button" bindtap="onReconcilePayment">重新查询</button>
-    <button wx:if="{{showReselect}}" class="secondary-button" bindtap="onReselectSlot">重新选择时段</button>
-    <button wx:if="{{showLifecycleRefresh}}" class="secondary-button" bindtap="onRefreshLifecycle">确认最新结果</button>
+    <button wx:if="{{showOpenGameEntryRetry}}" class="secondary-button ng-button ng-button--secondary" bindtap="onRetryOpenGameEntry" hover-class="ng-pressed">重试加载球局入口</button>
+    <button wx:if="{{showPaymentRetry && status === 'payment-confirming'}}" class="secondary-button ng-button ng-button--secondary" bindtap="onReconcilePayment" hover-class="ng-pressed">重新查询</button>
+    <button wx:if="{{showReselect}}" class="secondary-button ng-button ng-button--secondary" bindtap="onReselectSlot" hover-class="ng-pressed">重新选择时段</button>
+    <button wx:if="{{showLifecycleRefresh}}" class="secondary-button ng-button ng-button--secondary" bindtap="onRefreshLifecycle" hover-class="ng-pressed">确认最新结果</button>
   </view>
 
   <view wx:if="{{showActionFooter}}" class="payment-footer">
@@ -91,14 +92,14 @@
       <text class="footer-total__label">合计</text>
       <text class="footer-total__amount">{{priceText}}</text>
     </view>
-    <button wx:if="{{cancellationUnknown}}" class="secondary-button footer-action" disabled="{{cancellationBusy}}" bindtap="onConfirmCancellationResult">确认取消结果</button>
-    <button wx:elif="{{showCancelAction}}" class="secondary-button footer-action" disabled="{{cancellationBusy}}" bindtap="onCancelOrder">
+    <button wx:if="{{cancellationUnknown}}" class="secondary-button footer-action ng-button ng-button--secondary {{(cancellationBusy) ? 'ng-disabled' : ''}}" disabled="{{cancellationBusy}}" bindtap="onConfirmCancellationResult" hover-class="ng-pressed">确认取消结果</button>
+    <button wx:elif="{{showCancelAction}}" class="secondary-button footer-action ng-button ng-button--secondary {{(cancellationBusy) ? 'ng-disabled' : ''}}" disabled="{{cancellationBusy}}" bindtap="onCancelOrder" hover-class="ng-pressed">
       <text wx:if="{{cancelActionLabel === '取消订单'}}">取消订单</text>
       <text wx:elif="{{cancelActionLabel === '取消并发起全额退款'}}">取消并发起全额退款</text>
       <text wx:else>重试退款</text>
     </button>
-    <button wx:if="{{showPaymentFooter && onlineBookingEnabled && status === 'payment-exception'}}" class="primary-button" bindtap="onReconcilePayment">重新查询</button>
-    <button wx:elif="{{showPaymentFooter && onlineBookingEnabled}}" class="primary-button" disabled="{{primaryDisabled}}" bindtap="onPay">
+    <button wx:if="{{showPaymentFooter && onlineBookingEnabled && status === 'payment-exception'}}" class="primary-button ng-button ng-button--primary" bindtap="onReconcilePayment" hover-class="ng-pressed">重新查询</button>
+    <button wx:elif="{{showPaymentFooter && onlineBookingEnabled}}" class="primary-button ng-button ng-button--primary {{(primaryDisabled) ? 'ng-disabled' : ''}}" disabled="{{primaryDisabled}}" bindtap="onPay" hover-class="ng-pressed">
       <text wx:if="{{status === 'creating-prepay'}}">正在发起支付…</text>
       <text wx:elif="{{status === 'cashier-open'}}">收银台处理中…</text>
       <text wx:elif="{{status === 'payment-confirming'}}">支付确认中…</text>

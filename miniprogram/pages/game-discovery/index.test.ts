@@ -215,7 +215,7 @@ test("a filtered empty response keeps source truth and clear resets every filter
   expect(page.data).toMatchObject({ status: "READY", resultCount: 3, filterNoMatch: false });
 });
 
-test("a source-empty response exposes real intent recovery and deep-link back uses the same reLaunch", async () => {
+test("a source-empty response exposes real intent recovery and deep-link home uses the same reLaunch", async () => {
   registerSource(async () => sourceEmptyDirectory);
   const page = loadPage();
   await call(page, "onShow");
@@ -228,7 +228,7 @@ test("a source-empty response exposes real intent recovery and deep-link back us
   expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
 
   (getCurrentPages as unknown as jest.Mock).mockReturnValue([{ route: "pages/game-discovery/index" }]);
-  call(page, "onHeaderBack");
+  call(page, "onReturnIntent");
   expect(wx.reLaunch).toHaveBeenLastCalledWith({ url: "/pages/intent-entry/index" });
 });
 
@@ -409,19 +409,16 @@ test("filter, retry, clear, and card interactions stay inert throughout loading"
   await loading;
 });
 
-test("native header geometry has a safe fallback and history back stays predictable", () => {
-  registerSource();
+test("module home always returns to the intent entry regardless of navigation history", () => {
+  const markup = readFileSync("miniprogram/pages/game-discovery/index.wxml", "utf8");
+  const config = JSON.parse(readFileSync("miniprogram/pages/game-discovery/index.json", "utf8"));
+  expect(markup).toContain('<module-navigation title="找球局" bind:navigate="onReturnIntent" />');
+  expect(config.usingComponents["module-navigation"]).toBe("/components/module-navigation/index");
+  expect(markup).not.toContain("c1b-header-back");
   const page = loadPage();
-  call(page, "onLoad");
-  expect(page.data).toMatchObject({ headerTopPx: 44, headerRowHeightPx: 44 });
-
-  call(page, "onHeaderBack");
-  expect(wx.navigateBack).toHaveBeenCalledWith({ delta: 1 });
-
-  (wx.getWindowInfo as unknown as jest.Mock).mockImplementation(() => { throw new Error("platform unavailable"); });
-  const fallback = loadPage();
-  expect(() => call(fallback, "onLoad")).not.toThrow();
-  expect(fallback.data).toMatchObject({ headerTopPx: 0, headerRowHeightPx: 44 });
+  call(page, "onReturnIntent");
+  expect(wx.reLaunch).toHaveBeenCalledWith({ url: "/pages/intent-entry/index" });
+  expect(wx.navigateBack).not.toHaveBeenCalled();
 });
 
 test("production markup preserves nested scroll, touch geometry, safe area, and real handlers", () => {
@@ -440,7 +437,7 @@ test("production markup preserves nested scroll, touch geometry, safe area, and 
   expect(buttons.length).toBeGreaterThan(0);
   for (const button of buttons) expect(button).toMatch(/bindtap="[A-Za-z][A-Za-z0-9]*"/);
   for (const handler of [
-    "onHeaderBack", "onSelectDate", "onToggleAvailable", "onRetry",
+    "onSelectDate", "onToggleAvailable", "onRetry",
     "onReturnIntent", "onClearFilters", "onOpenGame", "onOpenMyRegistrations",
   ]) expect(wxml).toContain(`bindtap="${handler}"`);
   expect(wxml.indexOf('bindtap="onOpenMyRegistrations"')).toBeLessThan(wxml.indexOf('class="c1b-filters"'));

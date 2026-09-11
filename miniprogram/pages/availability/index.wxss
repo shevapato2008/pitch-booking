@@ -39,3 +39,7 @@
 }
 .availability-confirm::after { border: 0; }
 .availability-confirm--pressed { opacity: .76; }
+
+@import "../../styles/controls.wxss";
+
+.availability-page { min-height: 0; }

@@ -1,3 +1,7 @@
 @import "../../styles/tokens.wxss";
 .booking-page{box-sizing:border-box;min-height:100vh;padding:28rpx 28rpx 188rpx}.content{display:flex;flex-direction:column;gap:24rpx}.state-card{margin-bottom:24rpx;padding:24rpx;border:2rpx solid #314157;border-radius:24rpx;background:#152539}.state-card--error,.inline-message{color:#FFB4AA}.retry{display:flex;align-items:center;justify-content:center;line-height:1.4;padding:16rpx 24rpx;box-sizing:border-box;min-height:88rpx;margin-top:16rpx;color:#CEFF80;background:#152539;border:2rpx solid #425E68}.inline-message{display:block;margin:-8rpx 8rpx 0;font-size:24rpx}
 .booking-unavailable{display:flex;flex-direction:column;gap:8rpx;color:#A4B5C8;text-align:center}.booking-unavailable__title{color:#F3F8FF;font-weight:700}
+
+@import "../../styles/controls.wxss";
+
+.booking-page { min-height: 0; }

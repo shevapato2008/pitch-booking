@@ -182,3 +182,7 @@
 .skeleton-line--short { width: 46%; }
 .skeleton-amount { align-self: start; width: 124rpx; height: 40rpx; border-radius: 16rpx; background: #273A51; }
 button::after { border: 0; }
+
+@import "../../styles/controls.wxss";
+
+.orders-page { min-height: 0; }

@@ -1,4 +1,7 @@
 {
   "navigationStyle": "custom",
-  "backgroundColor": "#0B1727"
+  "backgroundColor": "#0B1727",
+  "usingComponents": {
+    "module-navigation": "/components/module-navigation/index"
+  }
 }

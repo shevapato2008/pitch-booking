@@ -2,6 +2,8 @@ import type {
   CaptainOpenGameWaitlistApplication,
   OpenGameApplicationItem,
   OpenGameApplicationPage,
+  OpenGamePublicProfile,
+  OpenGamePublicRosterMember,
   OpenGameRegistrationContext,
   OpenGameViewerRegistration,
 } from "../domain/open-game-registration";
@@ -23,6 +25,7 @@ export const C2B_PRODUCTION_PREVIEW_GAME_ID = "c2b00000-0000-4000-8000-000000000
 export const C2B_PRODUCTION_PREVIEW_APPLICATION_ID = "c2b00000-0000-4000-8000-000000000002";
 export const C2B_PRODUCTION_PREVIEW_USER_ID = "c2b00000-0000-4000-8000-000000000003";
 export const C2B_PRODUCTION_PREVIEW_SHARE_TOKEN = "abcdefghijklmnopqrstuvwxyzABCDEF";
+export type C2bProductionPreviewScenario = C2bWaitlistScenario | "SIGNUP_FULL";
 
 const OTHER_WAITLIST_ID = "c2b00000-0000-4000-8000-000000000004";
 const SECONDARY_REGISTRATION_ID = "c2b00000-0000-4000-8000-000000000005";
@@ -34,7 +37,7 @@ const WITHDRAWN_AT = "2026-08-30T20:10:00+08:00";
 function publicGame(snapshot: C2bWaitlistSnapshot): OpenGamePublic {
   return {
     name: snapshot.game.gameName,
-    teamName: snapshot.game.organizerName,
+    teamName: "开发预览 · 模拟数据",
     state: snapshot.game.state,
     stateReason: snapshot.game.state === "SUSPENDED" ? "BOOKING_UNAVAILABLE" : null,
     venueName: snapshot.game.venue,
@@ -44,21 +47,21 @@ function publicGame(snapshot: C2bWaitlistSnapshot): OpenGamePublic {
     endsAt: "2026-09-06T20:00:00+08:00",
     timeZone: "Asia/Shanghai",
     totalPlayers: snapshot.game.plannedPlayers,
-    fixedPlayers: 1,
+    fixedPlayers: snapshot.game.plannedPlayers - 4,
     openSpots: 4,
     intensity: "CASUAL",
     minimumExperience: null,
     positions: ["ANY"],
     aaCents: 2572,
     registrationDeadline: "2026-09-06T16:00:00+08:00",
-    equipmentAndArrivalNotes: null,
+    equipmentAndArrivalNotes: "隔离预览，日期与成员均为模拟数据，不代表当前真实球局。",
     visibility: "PUBLIC",
   };
 }
 function secondaryGame(): OpenGamePublic {
   return {
     name: "海河周六轻松局",
-    teamName: "海河朋友队",
+    teamName: "开发预览 · 模拟数据",
     state: "PUBLISHED",
     stateReason: null,
     venueName: "天津河东体育中心",
@@ -68,7 +71,7 @@ function secondaryGame(): OpenGamePublic {
     endsAt: "2026-09-05T10:30:00+08:00",
     timeZone: "Asia/Shanghai",
     totalPlayers: 10,
-    fixedPlayers: 4,
+    fixedPlayers: 6,
     openSpots: 4,
     intensity: "CASUAL",
     minimumExperience: "会传接球即可",
@@ -159,26 +162,60 @@ function viewerRegistration(
 function primaryContext(
   store: C2bWaitlistStore,
   primaryTerminal: "APPLICATION_WITHDRAWAL" | "GAME_EXIT" | null,
+  profile: OpenGamePublicProfile,
 ): OpenGameRegistrationContext {
   const snapshot = store.current();
+  const registration = { ...viewerRegistration(snapshot, primaryTerminal), displayName: profile.nickname };
+  const joinedMembers = ["周岚", "许卓", "何雨"].map((name) => rosterMember(name));
+  if (snapshot.exitingMember.persistedStatus === "JOINED") {
+    joinedMembers.push(rosterMember(snapshot.exitingMember.applicantName));
+  }
+  if (registration.persistedStatus === "JOINED") {
+    joinedMembers.push(rosterMember(profile.nickname, profile.avatarUrl));
+  }
+  const waitlistedMembers = snapshot.activeWaitlist.map((member) => ({
+    ...rosterMember(
+      member.registrationId === snapshot.applicant.registrationId ? profile.nickname : member.applicantName,
+      member.registrationId === snapshot.applicant.registrationId ? profile.avatarUrl : null,
+    ),
+    waitlistPosition: member.waitlistPosition!,
+  }));
   return {
     game: publicGame(snapshot),
-    remainingSpots: snapshot.game.remainingSpots,
+    remainingSpots: 4 - joinedMembers.length,
+    joinedCount: joinedMembers.length,
+    waitlistCount: waitlistedMembers.length,
+    joinedMembers,
+    waitlistedMembers,
+    blockedMembers: [],
+    managementGameId: null,
     viewerAuthenticated: true,
-    viewerRegistration: viewerRegistration(snapshot, primaryTerminal),
+    viewerRegistration: registration,
     allowedActions: { canApply: false, applyBlockedReason: "ALREADY_APPLIED" },
   };
 }
 
-function secondaryContext(secondaryExited: boolean): OpenGameRegistrationContext {
+function rosterMember(nickname: string, avatarUrl: string | null = null): OpenGamePublicRosterMember {
+  return { nickname, avatarUrl, management: null };
+}
+
+function secondaryContext(secondaryExited: boolean, profile: OpenGamePublicProfile): OpenGameRegistrationContext {
+  const joinedMembers = ["周岚", "许卓", "何雨"].map((name) => rosterMember(name));
+  if (!secondaryExited) joinedMembers.push(rosterMember(profile.nickname, profile.avatarUrl));
   return {
     game: secondaryGame(),
-    remainingSpots: 0,
+    remainingSpots: 4 - joinedMembers.length,
+    joinedCount: joinedMembers.length,
+    waitlistCount: 0,
+    joinedMembers,
+    waitlistedMembers: [],
+    blockedMembers: [],
+    managementGameId: null,
     viewerAuthenticated: true,
     viewerRegistration: {
       id: SECONDARY_REGISTRATION_ID,
       version: secondaryExited ? 3 : 2,
-      displayName: "林晓雨",
+      displayName: profile.nickname,
       position: "ANY",
       note: null,
       persistedStatus: secondaryExited ? "WITHDRAWN" : "JOINED",
@@ -255,7 +292,7 @@ function sameDecisionTarget(attempt: OpenGameRegistrationDecisionAttempt): boole
 
 export interface C2bProductionPreviewSource {
   readonly source: OpenGameRegistrationSource;
-  reset(scenario: C2bWaitlistScenario): void;
+  reset(scenario: C2bProductionPreviewScenario): void;
 }
 
 export function createC2bProductionPreviewSource(
@@ -263,6 +300,21 @@ export function createC2bProductionPreviewSource(
 ): C2bProductionPreviewSource {
   let primaryTerminal: "APPLICATION_WITHDRAWAL" | "GAME_EXIT" | null = null;
   let secondaryExited = false;
+  let signupOpen = false;
+  const initialProfile: OpenGamePublicProfile = {
+    nickname: "林晓雨", avatarUrl: null, profileVersion: 1, confirmedAt: WAITLISTED_AT,
+  };
+  let profile = { ...initialProfile };
+  // Development-only: local temporary paths are never uploaded or persisted.
+  const avatars = new Map<string, string>();
+  const readPrimary = (): OpenGameRegistrationContext => {
+    const context = primaryContext(store, primaryTerminal, profile);
+    return signupOpen ? {
+      ...context,
+      viewerRegistration: null,
+      allowedActions: { canApply: true, applyBlockedReason: null },
+    } : context;
+  };
 
   const source: OpenGameRegistrationSource = {
     async login() { return C2B_PRODUCTION_PREVIEW_USER_ID; },
@@ -271,12 +323,12 @@ export function createC2bProductionPreviewSource(
       if (cursor !== undefined) return { items: [], nextCursor: null };
       return {
         items: [
-          applicationItem(
-            primaryContext(store, primaryTerminal),
+          ...(!signupOpen ? [applicationItem(
+            readPrimary(),
             `/pages/captain-game-public/index?token=${C2B_PRODUCTION_PREVIEW_SHARE_TOKEN}`,
-          ),
+          )] : []),
           applicationItem(
-            secondaryContext(secondaryExited),
+            secondaryContext(secondaryExited, profile),
             `/pages/captain-game-public/index?token=${SECONDARY_SHARE_TOKEN}`,
           ),
         ],
@@ -285,24 +337,59 @@ export function createC2bProductionPreviewSource(
     },
     async getContext(shareToken) {
       if (shareToken === C2B_PRODUCTION_PREVIEW_SHARE_TOKEN) {
-        return primaryContext(store, primaryTerminal);
+        return readPrimary();
       }
-      if (shareToken === SECONDARY_SHARE_TOKEN) return secondaryContext(secondaryExited);
+      if (shareToken === SECONDARY_SHARE_TOKEN) return secondaryContext(secondaryExited, profile);
       throw new Error("C2B_PRODUCTION_PREVIEW_NOT_FOUND");
     },
     async apply() { throw new Error("C2B_PRODUCTION_PREVIEW_APPLY_NOT_AVAILABLE"); },
+    async getSignupContext(shareToken) { return source.getContext(shareToken); },
+    async getPublicProfile() { return { ...profile }; },
+    async uploadPublicProfileAvatar(tempFilePath) {
+      if (!tempFilePath) throw new Error("C2B_PRODUCTION_PREVIEW_AVATAR_REQUIRED");
+      const objectKey = `c2b-preview-avatar-${avatars.size + 1}`;
+      avatars.set(objectKey, tempFilePath);
+      return { objectKey };
+    },
+    async savePublicProfile(input) {
+      const nickname = input.nickname.trim();
+      if (!nickname || Array.from(nickname).length > 24
+        || (input.avatarObjectKey !== null && !avatars.has(input.avatarObjectKey))) {
+        throw new Error("C2B_PRODUCTION_PREVIEW_PROFILE_INVALID");
+      }
+      profile = {
+        nickname,
+        avatarUrl: input.avatarObjectKey === null ? profile.avatarUrl : avatars.get(input.avatarObjectKey)!,
+        profileVersion: profile.profileVersion + 1,
+        confirmedAt: WAITLISTED_AT,
+      };
+      return { ...profile };
+    },
+    async createRegistration(attempt) {
+      if (!signupOpen || attempt.originatingUserId !== C2B_PRODUCTION_PREVIEW_USER_ID
+        || attempt.shareToken !== C2B_PRODUCTION_PREVIEW_SHARE_TOKEN
+        || attempt.submissionMode !== "DIRECT_REGISTRATION"
+        || !attempt.body.adultConfirmed || !attempt.body.riskConfirmed
+        || attempt.body.displayName !== profile.nickname) {
+        throw new Error("C2B_PRODUCTION_PREVIEW_SIGNUP_NOT_AVAILABLE");
+      }
+      store.openCaptainDecision("WAITLIST");
+      store.confirmCaptainDecision();
+      signupOpen = false;
+      return readPrimary();
+    },
     async getPending(gameId) {
       if (gameId !== C2B_PRODUCTION_PREVIEW_GAME_ID) {
         throw new Error("C2B_PRODUCTION_PREVIEW_NOT_FOUND");
       }
       const snapshot = store.current();
-      const pending = snapshot.applicant.persistedStatus === "APPLIED";
+      const pending = !signupOpen && snapshot.applicant.persistedStatus === "APPLIED";
       return {
         remainingSpots: snapshot.game.remainingSpots,
         pendingCount: pending ? 1 : 0,
         applications: pending ? [{
           id: C2B_PRODUCTION_PREVIEW_APPLICATION_ID,
-          displayName: snapshot.applicant.applicantName,
+          displayName: profile.nickname,
           position: "ANY",
           note: null,
           appliedAt: snapshot.applicant.appliedAt,
@@ -317,7 +404,11 @@ export function createC2bProductionPreviewSource(
           },
         }] : [],
         waitlistCount: snapshot.activeWaitlist.length,
-        waitlist: snapshot.activeWaitlist.map((registration) => waitlistItem(snapshot, registration)),
+        waitlist: snapshot.activeWaitlist.map((registration) => ({
+          ...waitlistItem(snapshot, registration),
+          displayName: registration.registrationId === snapshot.applicant.registrationId
+            ? profile.nickname : registration.applicantName,
+        })),
       };
     },
     async decide(attempt) {
@@ -351,13 +442,13 @@ export function createC2bProductionPreviewSource(
         && attempt.action === "LEAVE_GAME"
         && attempt.expectedVersion === 2) {
         secondaryExited = true;
-        return secondaryContext(true);
+        return secondaryContext(true, profile);
       }
       if (attempt.shareToken !== C2B_PRODUCTION_PREVIEW_SHARE_TOKEN
         || attempt.applicationId !== C2B_PRODUCTION_PREVIEW_APPLICATION_ID) {
         throw new Error("C2B_PRODUCTION_PREVIEW_WITHDRAW_NOT_AVAILABLE");
       }
-      const current = primaryContext(store, primaryTerminal).viewerRegistration;
+      const current = readPrimary().viewerRegistration;
       if (current === null || current.version !== attempt.expectedVersion
         || current.availableWithdrawalAction !== attempt.action) {
         throw new Error("C2B_PRODUCTION_PREVIEW_WITHDRAW_NOT_AVAILABLE");
@@ -370,7 +461,7 @@ export function createC2bProductionPreviewSource(
       } else {
         primaryTerminal = "GAME_EXIT";
       }
-      return primaryContext(store, primaryTerminal);
+      return readPrimary();
     },
     async getAttendanceRoster() {
       throw new Error("C2B_PRODUCTION_PREVIEW_ATTENDANCE_NOT_AVAILABLE");
@@ -389,9 +480,12 @@ export function createC2bProductionPreviewSource(
   return {
     source,
     reset(scenario) {
-      store.reset(scenario);
+      store.reset(scenario === "SIGNUP_FULL" ? "FULL_REVIEW" : scenario);
       primaryTerminal = null;
       secondaryExited = false;
+      signupOpen = scenario === "SIGNUP_FULL";
+      profile = { ...initialProfile };
+      avatars.clear();
     },
   };
 }

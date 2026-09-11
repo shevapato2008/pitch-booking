@@ -161,6 +161,14 @@ test("production markup has real handlers and no preview-only controls", () => {
   expect(styles).toMatch(/\.calendar-day\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
 });
 
+test("read-only inventory controls explain their state instead of showing actionable chevrons", () => {
+  const markup = readFileSync("miniprogram/pages/venue-inventory/index.wxml", "utf8");
+  expect(markup).toContain("editor.timeReadOnly ? '已建时段的时间不可修改' : '时间按 30 分钟递增'");
+  expect(markup.match(/wx:if="{{!editor.timeReadOnly && !editor.closeDisabled}}" class="icon-chevron"/g)).toHaveLength(2);
+  expect(markup).toContain('aria-role="button" aria-label="{{item.start}}至{{item.end}}，{{item.price}}元，{{item.statusLabel}}，{{writeControlsDisabled && item.editable ? \'当前只读，暂不可编辑\' : item.detail}}"');
+  expect(markup).toContain("writeControlsDisabled && item.editable ? '当前只读，暂不可编辑' : item.detail");
+});
+
 test("covers back, pitch picker, calendar, close, and initial retry controls", async () => {
   const source = sourceHarness();
   source.getDay.mockRejectedValueOnce(Object.assign(new Error(), { code: "SERVICE_UNAVAILABLE" })).mockImplementation(async (_venueId, pitchId, localDate) => day(pitchId === pitchB.id ? pitchB : pitchA, localDate));

@@ -97,3 +97,5 @@ page { background: #0B1727; color: #F3F8FF; font-family: -apple-system, BlinkMac
 .c2c-sheet-action--primary { border: 1rpx solid #CEFF80; background: #CEFF80; color: #173421; }
 .c2c-sheet-action--danger { border: 1rpx solid #6A424B; background: #39242D; color: #FFB4AA; }
 .c2c-pressed { opacity: .68; }
+
+@import "../../styles/controls.wxss";

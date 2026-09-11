@@ -1,12 +1,5 @@
 <view class="c2f-page">
-  <view class="c2f-system" style="height: {{headerTopPx}}px;"></view>
-  <view class="c2f-header" style="height: {{headerRowHeightPx}}px;">
-    <button class="c2f-header-back" hover-class="c2f-pressed" bindtap="onHeaderBack" aria-label="返回">
-      <view class="c2f-back-icon" aria-hidden="true"></view>
-    </button>
-    <text class="c2f-header-title">举报本场球局</text>
-    <view class="c2f-header-spacer" aria-hidden="true"></view>
-  </view>
+<module-navigation title="举报本场球局" action="back" bind:navigate="onHeaderBack" />
 
   <scroll-view class="c2f-scroll" scroll-y="true">
     <view class="c2f-content {{submissionAllowed && !report && status == 'READY' ? 'c2f-content--with-footer' : ''}}">
@@ -18,7 +11,7 @@
       <view wx:elif="{{status == 'AUTH_LOSS'}}" class="c2f-state-card" aria-role="alert">
         <text class="c2f-state-title">登录状态需要恢复</text>
         <text class="c2f-state-copy">{{errorMessage}}</text>
-        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onLogin">登录并继续</button>
+        <button class="c2f-inline-button ng-button ng-button--text" hover-class="ng-pressed" bindtap="onLogin">登录并继续</button>
       </view>
 
       <view wx:elif="{{status == 'NOT_FOUND'}}" class="c2f-state-card" aria-role="status">
@@ -29,19 +22,19 @@
       <view wx:elif="{{status == 'LOAD_ERROR'}}" class="c2f-state-card c2f-state-card--error" aria-role="alert">
         <text class="c2f-state-title">举报信息加载失败</text>
         <text class="c2f-state-copy">{{errorMessage}}</text>
-        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onReload">重新加载</button>
+        <button class="c2f-inline-button ng-button ng-button--text" hover-class="ng-pressed" bindtap="onReload">重新加载</button>
       </view>
 
       <view wx:elif="{{status == 'OTHER_PENDING'}}" class="c2f-state-card" aria-role="alert">
         <text class="c2f-state-title">另一场举报待确认</text>
         <text class="c2f-state-copy">{{errorMessage}}</text>
-        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onGoPending">前往确认原举报</button>
+        <button class="c2f-inline-button ng-button ng-button--text" hover-class="ng-pressed" bindtap="onGoPending">前往确认原举报</button>
       </view>
 
       <view wx:elif="{{status == 'FOREIGN_PENDING'}}" class="c2f-state-card" aria-role="alert">
         <text class="c2f-state-title">另一账号有举报待确认</text>
         <text class="c2f-state-copy">{{errorMessage}}</text>
-        <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onClearPending">清除本机待确认记录</button>
+        <button class="c2f-inline-button ng-button ng-button--text" hover-class="ng-pressed" bindtap="onClearPending">清除本机待确认记录</button>
       </view>
 
       <block wx:else>
@@ -60,7 +53,7 @@
 
         <view wx:if="{{resultUnknown}}" class="c2f-unknown-card">
           <view><text>提交结果未知</text><text>{{errorMessage}}</text></view>
-          <button class="c2f-inline-button" disabled="{{submitting}}" hover-class="c2f-pressed" bindtap="onRecoverUnknownResult">确认原提交结果</button>
+          <button class="c2f-inline-button ng-button ng-button--text {{(submitting) ? 'ng-disabled' : ''}}" disabled="{{submitting}}" hover-class="ng-pressed" bindtap="onRecoverUnknownResult">确认原提交结果</button>
         </view>
 
         <view wx:elif="{{submissionAllowed && !report}}" class="c2f-form-card">
@@ -71,7 +64,7 @@
               wx:for="{{categories}}"
               wx:key="value"
               class="c2f-category {{selectedCategory == item.value ? 'is-selected' : ''}}"
-              hover-class="c2f-pressed"
+              hover-class="ng-pressed"
               bindtap="onSelectCategory"
               data-category="{{item.value}}"
               aria-role="radio"
@@ -113,21 +106,21 @@
             <text>提交于 {{report.submittedAtLabel}}</text>
           </view>
           <text class="c2f-truth-note">平台结论不会自动产生处罚、封禁或退款；费用仍按线下实际情况处理。</text>
-          <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onReload">重新读取结果</button>
+          <button class="c2f-inline-button ng-button ng-button--text" hover-class="ng-pressed" bindtap="onReload">重新读取结果</button>
         </view>
 
         <view wx:else class="c2f-expired-card">
           <view class="c2f-expired-mark" aria-hidden="true">!</view>
           <text>举报提交期限已过</text>
           <text>你仍可查看已经提交的举报；当前没有可提交的记录。</text>
-          <button class="c2f-inline-button" hover-class="c2f-pressed" bindtap="onReload">重新读取状态</button>
+          <button class="c2f-inline-button ng-button ng-button--text" hover-class="ng-pressed" bindtap="onReload">重新读取状态</button>
         </view>
       </block>
     </view>
   </scroll-view>
 
   <view wx:if="{{status == 'READY' && submissionAllowed && !report}}" class="c2f-footer">
-    <button class="c2f-submit" disabled="{{submitting}}" hover-class="c2f-pressed" bindtap="onPrepareSubmit">提交举报</button>
+    <button class="c2f-submit ng-button ng-button--primary {{(submitting) ? 'ng-disabled' : ''}}" disabled="{{submitting}}" hover-class="ng-pressed" bindtap="onPrepareSubmit">提交举报</button>
   </view>
 
   <view wx:if="{{confirmationOpen}}" class="c2f-dialog" aria-role="dialog" aria-modal="true" aria-label="确认提交举报">
@@ -138,8 +131,8 @@
       <text class="c2f-dialog-copy">{{selectedCategoryLabel}}</text>
       <text class="c2f-dialog-warning">提交后不可修改。平台会核对事实，但不会自动产生处罚、封禁或退款。</text>
       <view class="c2f-dialog-actions">
-        <button class="c2f-dialog-button c2f-dialog-button--quiet" hover-class="c2f-pressed" bindtap="onCancelSubmit">返回检查</button>
-        <button class="c2f-dialog-button c2f-dialog-button--primary" hover-class="c2f-pressed" bindtap="onConfirmSubmit">确认提交</button>
+        <button class="c2f-dialog-button c2f-dialog-button--quiet ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onCancelSubmit">返回检查</button>
+        <button class="c2f-dialog-button c2f-dialog-button--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onConfirmSubmit">确认提交</button>
       </view>
     </view>
   </view>

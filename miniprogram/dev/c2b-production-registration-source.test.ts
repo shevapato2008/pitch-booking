@@ -141,4 +141,70 @@ test("WITHDRAW_WAITLIST returns terminal authority and listMine exposes a mixed 
   expect(page.items[0]?.detailPath).toBe(
     `/pages/captain-game-public/index?token=${C2B_PRODUCTION_PREVIEW_SHARE_TOKEN}`,
   );
+  expect(terminal.waitlistCount).toBe(1);
+  expect(terminal.waitlistedMembers?.map((member) => member.nickname)).toEqual(["赵一凡"]);
+});
+
+test.each(["WAITLISTED_FIRST", "PROMOTED", "FULL_REVIEW"] as const)(
+  "%s supplies consistent public capacity, rosters and viewer position",
+  async (scenario) => {
+    preview.reset(scenario);
+    const context = await preview.source.getContext(C2B_PRODUCTION_PREVIEW_SHARE_TOKEN);
+    expect(context.joinedMembers).toHaveLength(4);
+    expect(context.joinedCount).toBe(context.joinedMembers?.length);
+    expect(context.waitlistCount).toBe(context.waitlistedMembers?.length);
+    expect(context.remainingSpots).toBe(context.game.openSpots - context.joinedCount!);
+    expect(context.game.fixedPlayers + context.game.openSpots).toBe(context.game.totalPlayers);
+    if (scenario === "WAITLISTED_FIRST") {
+      expect(context.waitlistedMembers?.[0]).toMatchObject({
+        nickname: context.viewerRegistration?.displayName, waitlistPosition: 1,
+      });
+      expect(context.waitlistCount).toBe(2);
+    }
+    if (scenario === "PROMOTED") {
+      expect(context.joinedMembers?.some((member) => member.nickname === "林晓雨")).toBe(true);
+      expect(context.joinedMembers?.some((member) => member.nickname === "陈浩")).toBe(false);
+    }
+  },
+);
+
+test("profile edits stay in the preview session and appear on both game rosters", async () => {
+  preview.reset("WAITLISTED_FIRST");
+  expect(await preview.source.getPublicProfile?.()).toMatchObject({ nickname: "林晓雨" });
+  const uploaded = await preview.source.uploadPublicProfileAvatar?.("wxfile://preview-avatar.png");
+  expect(uploaded?.objectKey).toBeTruthy();
+  const saved = await preview.source.savePublicProfile?.({
+    nickname: "夜场小林", avatarObjectKey: uploaded!.objectKey,
+  });
+  expect(saved).toMatchObject({ nickname: "夜场小林", avatarUrl: "wxfile://preview-avatar.png", profileVersion: 2 });
+  const primary = await preview.source.getContext(C2B_PRODUCTION_PREVIEW_SHARE_TOKEN);
+  expect(primary.waitlistedMembers?.[0]).toMatchObject({ nickname: "夜场小林", avatarUrl: saved?.avatarUrl });
+  const secondaryToken = (await preview.source.listMine()).items[1]!.detailPath.split("token=")[1]!;
+  const secondary = await preview.source.getContext(secondaryToken);
+  expect(secondary.joinedCount).toBe(secondary.joinedMembers?.length);
+  expect(secondary.joinedMembers?.some((member) => member.nickname === "夜场小林")).toBe(true);
+  preview.reset("WAITLISTED_FIRST");
+  expect(await preview.source.getPublicProfile?.()).toMatchObject({ nickname: "林晓雨", avatarUrl: null, profileVersion: 1 });
+});
+
+test("new signup preview joins the actual fixture waitlist and can withdraw again", async () => {
+  preview.reset("SIGNUP_FULL");
+  const before = await preview.source.getSignupContext?.(C2B_PRODUCTION_PREVIEW_SHARE_TOKEN);
+  expect(before).toMatchObject({ viewerRegistration: null, remainingSpots: 0, waitlistCount: 1, allowedActions: { canApply: true } });
+  expect((await preview.source.listMine()).items).toHaveLength(1);
+  const result = await preview.source.createRegistration?.({
+    kind: "apply", originatingUserId: C2B_PRODUCTION_PREVIEW_USER_ID,
+    shareToken: C2B_PRODUCTION_PREVIEW_SHARE_TOKEN, submissionMode: "DIRECT_REGISTRATION",
+    idempotencyKey: "night-glow-signup-preview-0001",
+    body: { displayName: "林晓雨", position: "ANY", note: null, adultConfirmed: true, riskConfirmed: true },
+  });
+  expect(result).toMatchObject({ waitlistCount: 2, viewerRegistration: { effectiveStatus: "WAITLISTED", waitlistPosition: 2 } });
+  expect(result?.waitlistedMembers?.[1]?.nickname).toBe("林晓雨");
+  const terminal = await preview.source.withdraw({
+    kind: "withdraw", originatingUserId: C2B_PRODUCTION_PREVIEW_USER_ID,
+    shareToken: C2B_PRODUCTION_PREVIEW_SHARE_TOKEN,
+    applicationId: result!.viewerRegistration!.id, expectedVersion: result!.viewerRegistration!.version,
+    action: "WITHDRAW_WAITLIST", idempotencyKey: "night-glow-signup-exit-0001",
+  });
+  expect(terminal.waitlistCount).toBe(1);
 });

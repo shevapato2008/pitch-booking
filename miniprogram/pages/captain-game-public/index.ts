@@ -591,6 +591,9 @@ function blankData() {
     venueName: "",
     pitchSummary: "",
     orderRange: "",
+    heroDateLabel: "",
+    heroStartTime: "",
+    heroEndTime: "",
     peopleSummary: "",
     capacityLabel: "",
     intensityLabel: "",
@@ -1002,6 +1005,8 @@ Page({
 
   applyPublic(game: OpenGamePublic) {
     const publicGame = presentOpenGamePublic(game);
+    const orderRange = formatOpenGameRange(publicGame.startsAt, publicGame.endsAt, publicGame.timeZone);
+    const heroTime = orderRange.match(/^(.*) · (\d{2}:\d{2})–(\d{2}:\d{2})$/);
     this.setData({
       status: "READY",
       state: publicGame.state,
@@ -1018,11 +1023,10 @@ Page({
       teamName: publicGame.teamName,
       venueName: publicGame.venueName,
       pitchSummary: publicGame.pitchName + " · " + publicGame.pitchSpecification,
-      orderRange: formatOpenGameRange(
-        publicGame.startsAt,
-        publicGame.endsAt,
-        publicGame.timeZone,
-      ),
+      orderRange,
+      heroDateLabel: heroTime?.[1] ?? orderRange,
+      heroStartTime: heroTime?.[2] ?? "",
+      heroEndTime: heroTime?.[3] ?? "",
       peopleSummary: "计划 " + publicGame.totalPlayers + " 人 · 固定 "
         + publicGame.fixedPlayers + " 人 · 开放 " + publicGame.openSpots + " 人",
       capacityLabel: "计划 " + publicGame.totalPlayers + " 人",

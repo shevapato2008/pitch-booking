@@ -653,7 +653,7 @@ test("template is the reviewed scroll-safe skeleton with real handlers and no de
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const page = loadPage();
 
-  expect(config).toEqual({ navigationStyle: "custom" });
+  expect(config).toEqual({ navigationStyle: "custom", usingComponents: { "module-navigation": "/components/module-navigation/index" } });
   expect(`${sourceText}\n${template}`).not.toMatch(/c2c-attendance-fixture|C2C_ATTENDANCE_FIXTURE|模拟数据|fixtureNotice/);
   expect(sourceText).toContain("getOpenGameRegistrationSource");
   expect(sourceText).toContain("getOpenGameRegistrationAttemptStore");
@@ -667,7 +667,7 @@ test("template is the reviewed scroll-safe skeleton with real handlers and no de
     const handler = button.match(/bindtap="([^"]+)"/)?.[1] ?? "";
     expect(handler).toMatch(/^on[A-Za-z]+$/);
     expect(typeof page[handler]).toBe("function");
-    expect(button).toContain('hover-class="c2c-pressed"');
+    expect(button).toContain('hover-class="ng-pressed"');
   }
   expect(styles).toMatch(/\.c2c-page\s*\{[^}]*height:\s*100vh[^}]*overflow:\s*hidden/s);
   expect(styles).toMatch(/\.c2c-scroll\s*\{[^}]*flex:\s*1 1 auto[^}]*height:\s*0[^}]*min-height:\s*0/s);

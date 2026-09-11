@@ -1,3 +1,4 @@
+import { returnToPreviousPage } from "../../presentation/page-back";
 import type { PitchType } from "../../domain/contracts";
 import { toDirectoryVenueViewModel, toOnlineDirectoryVenueViewModel, toVenueViewModel, type AnyVenueViewModel } from "../../presentation/venue";
 import { getPageDataSource } from "../../services/page-data";
@@ -9,6 +10,7 @@ const bookablePitchType = (codes: readonly { code: string }[]): PitchType | null
 };
 
 Page({
+  onHeaderBack: returnToPreviousPage,
   data: {
     venue: null as AnyVenueViewModel | null,
     canBook: false,

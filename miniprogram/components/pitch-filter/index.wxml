@@ -5,6 +5,6 @@
     class="pitch-option u-control u-type-body u-radius-sm {{item.code === selectedPitchType ? 'pitch-option--selected' : ''}}"
     data-pitch-type="{{item.code}}"
     bindtap="onSelect"
-    hover-class="pitch-option--pressed"
+    hover-class="ng-pressed"
   >{{item.label}}</button>
 </view>

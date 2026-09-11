@@ -75,3 +75,13 @@ test("invalid options fail closed to the existing isolated C2b launcher", () => 
   expect(wx.redirectTo).not.toHaveBeenCalled();
   expect(() => getOpenGameRegistrationSource()).toThrow("OPEN_GAME_REGISTRATION_SOURCE_NOT_CONFIGURED");
 });
+
+test("SIGNUP_FULL opens the production detail with no existing application", async () => {
+  loadPage().onLoad({ scenario: "SIGNUP_FULL", target: "DETAIL" });
+  expect(wx.redirectTo).toHaveBeenCalledWith({
+    url: `/pages/captain-game-public/index?token=${C2B_PRODUCTION_PREVIEW_SHARE_TOKEN}`,
+  });
+  const context = await getOpenGameRegistrationSource().getSignupContext?.(C2B_PRODUCTION_PREVIEW_SHARE_TOKEN);
+  expect(context?.viewerRegistration).toBeNull();
+  expect(context?.allowedActions.canApply).toBe(true);
+});

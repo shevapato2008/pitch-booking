@@ -89,3 +89,5 @@ button.calendar-day[disabled] { color: #8B9DB3; background: #152539; }
 .editor-error, .editor-warning { display: flex; margin-top: 18rpx; padding: 18rpx; flex-direction: column; gap: 6rpx; border-radius: 16rpx; background: #39242D; color: #FFB4AA; font-size: 22rpx; }
 .editor-warning { background: #392E23; color: #FFD094; }
 .sheet-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 12rpx; margin-top: 20rpx; }
+
+@import "../../styles/controls.wxss";

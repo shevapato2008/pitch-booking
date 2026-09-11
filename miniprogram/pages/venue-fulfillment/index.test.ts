@@ -204,7 +204,7 @@ test("production markup exposes only allowed action buttons and every visible en
   const markup = readFileSync("miniprogram/pages/venue-fulfillment/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/venue-fulfillment/index.wxss", "utf8");
   const config = JSON.parse(readFileSync("miniprogram/pages/venue-fulfillment/index.json", "utf8"));
-  expect(config.usingComponents).toEqual({ "date-strip": "/components/date-strip/index" });
+  expect(config.usingComponents).toEqual({ "date-strip": "/components/date-strip/index", "module-navigation": "/components/module-navigation/index" });
   expect(markup).toMatch(/<date-strip\s+dates="\{\{dates\}\}"\s+selectedDate="\{\{serviceDate\}\}"\s+bind:select="onSelectDate"\s*\/>/);
   expect(markup).not.toMatch(/date-tabs|data-service-date/);
   expect(styles).not.toMatch(/\.date-tabs|\.date-tab/);

@@ -1,4 +1,7 @@
 {
   "navigationStyle": "custom",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "module-navigation": "/components/module-navigation/index"
+  }
 }

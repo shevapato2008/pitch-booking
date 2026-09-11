@@ -35,6 +35,11 @@ const templatePath = sourcePath.replace(/\.ts$/, ".wxml");
 const stylesPath = sourcePath.replace(/\.ts$/, ".wxss");
 const configPath = sourcePath.replace(/\.ts$/, ".json");
 
+test("shared night-glow disabled buttons override the native light surface", () => {
+  const styles = readFileSync("miniprogram/styles/night-glow.wxss", "utf8");
+  expect(styles).toMatch(/button\[disabled\]:not\(\[type\]\),\s*button\[type\]\[disabled\]\s*\{[^}]*background:\s*#233449;[^}]*color:\s*#A4B5C8;[^}]*opacity:\s*1;/);
+});
+
 let captured: PageDefinition | undefined;
 let currentUserId: string | null;
 let values: Map<string, unknown>;
@@ -454,7 +459,7 @@ test("uses deterministic navigation and a complete accessible safe-area UI contr
     "onResolveConflict", "onConfirmUnknownResult", "onOpenRemoval", "onCloseRemoval",
     "onConfirmRemoval",
   ]) {
-    expect(template).toContain(`bindtap="${handler}"`);
+    expect(template).toContain(`${handler === "onHeaderBack" ? "bind:navigate" : "bindtap"}="${handler}"`);
     expect(typeof page[handler]).toBe("function");
   }
   expect(template).toContain('bindinput="onReasonInput"');

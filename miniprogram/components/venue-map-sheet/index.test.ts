@@ -44,6 +44,14 @@ test("uses exactly collapsed, half, and expanded snap states", () => {
   for (const snap of ["collapsed", "half", "expanded"]) expect(`${source}\n${template}`).toContain(snap);
 });
 
+test("sheet snaps use the content remaining below the shared navigation", () => {
+  const styles = readFileSync("miniprogram/components/venue-map-sheet/index.wxss", "utf8");
+  expect(styles).toContain(".sheet--collapsed{height:24%}");
+  expect(styles).toContain(".sheet--half{height:52%}");
+  expect(styles).toContain(".sheet--expanded{height:78%}");
+  expect(styles).not.toMatch(/height:\s*\d+vh/);
+});
+
 test("snap controls do not control the native list scroll position", () => {
   const target = component();
   target.methods.onToggle.call(target);
@@ -55,7 +63,7 @@ test("snap controls do not control the native list scroll position", () => {
 test("only the handle and title controls request a snap change", () => {
   const template = readFileSync("miniprogram/components/venue-map-sheet/index.wxml", "utf8");
   expect(template).toContain('class="handle" bindtap="onToggle"');
-  expect(template).toContain('class="sheet-toggle" bindtap="onToggle"');
+  expect(template).toMatch(/class="sheet-toggle[^\"]*" bindtap="onToggle"/);
   expect(template).not.toMatch(/<scroll-view[^>]*bindtap="onToggle"/);
 });
 
@@ -76,6 +84,6 @@ test("renders real filter controls with stateful active styles", () => {
   expect(template).toContain('bindtap="onResetFilters"');
   expect(template).toContain('bindtap="onOnlineTap"');
   expect(template).toContain('bindchange="onDistrictChange"');
-  expect(template).toContain("onlineOnly ? 'filter--active' : ''");
-  expect(template).toContain("districtCode ? 'filter--active' : ''");
+  expect(template).toContain("onlineOnly ? 'filter--active ng-choice--selected' : ''");
+  expect(template).toContain("districtCode ? 'filter--active ng-choice--selected' : ''");
 });

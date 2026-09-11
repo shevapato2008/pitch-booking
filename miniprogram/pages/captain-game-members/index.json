@@ -1,5 +1,7 @@
 {
   "navigationStyle": "custom",
   "disableScroll": true,
-  "usingComponents": {}
+  "usingComponents": {
+    "module-navigation": "/components/module-navigation/index"
+  }
 }

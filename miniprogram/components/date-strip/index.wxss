@@ -24,3 +24,5 @@
 .date-label { margin-top: 4rpx; font-weight: 700; }
 .date-item--selected { color: #173421; background: #CEFF80; border-color: #CEFF80; }
 .date-item--pressed { opacity: 0.76; transform: scale(0.98); }
+
+@import "../../styles/controls.wxss";

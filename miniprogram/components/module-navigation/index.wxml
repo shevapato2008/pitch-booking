@@ -1,0 +1,13 @@
+<view class="module-navigation" style="padding-top: {{topPx}}px;">
+  <view class="module-navigation__row" style="height: {{rowHeightPx}}px;">
+    <button class="module-navigation__action {{disabled ? 'module-navigation__action--disabled' : ''}}" hover-class="module-navigation__action--pressed" disabled="{{disabled}}" bindtap="onNavigate" aria-label="{{action === 'back' ? '返回上一页' : '返回目的选择入口'}}">
+      <view class="module-navigation__icon module-navigation__icon--{{action === 'back' ? 'back' : 'home'}}" aria-hidden="true">
+        <view wx:if="{{action !== 'back'}}" class="module-navigation__door"></view>
+      </view>
+    </button>
+    <view class="module-navigation__copy" style="left: {{titleInsetPx}}px; right: {{titleInsetPx}}px;">
+      <text class="module-navigation__title">{{title}}</text>
+      <text wx:if="{{subtitle}}" class="module-navigation__subtitle">{{subtitle}}</text>
+    </view>
+  </view>
+</view>

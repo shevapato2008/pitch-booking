@@ -1,12 +1,7 @@
 <view class="page">
   <block wx:if="{{mode === 'shared'}}">
     <view class="c1a-shell">
-      <view class="c1a-system" style="height: {{headerTopPx}}px;"></view>
-      <view class="c1a-nav" style="height: {{headerRowHeightPx}}px;">
-        <button class="c1a-icon-button" hover-class="button-hover" bindtap="onHeaderBack" aria-label="返回"><view class="c1a-back-glyph"></view></button>
-        <view class="c1a-nav-copy"><text class="c1a-nav-title">球局详情</text></view>
-        <view class="c1a-nav-spacer"></view>
-      </view>
+<module-navigation title="球局详情" action="back" bind:navigate="onHeaderBack" />
 
       <scroll-view scroll-y="true" class="c1a-scroll {{primaryAction ? 'c1a-scroll--footer' : ''}}">
         <view wx:if="{{status === 'LOADING'}}" class="c1a-card c1a-state-card" role="status" aria-busy="true">
@@ -16,7 +11,7 @@
         <view wx:elif="{{status === 'LOAD_ERROR'}}" class="c1a-card c1a-state-card c1a-state-card--error" role="alert">
           <text class="c1a-heading">球局暂时没有加载出来</text>
           <text class="c1a-help">{{errorMessage}}</text>
-          <button class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRetry">重新加载</button>
+          <button class="c1a-button c1a-button--secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onRetry">重新加载</button>
         </view>
         <view wx:elif="{{status === 'AUTH_LOSS'}}" class="c1a-card c1a-state-card" role="alert">
           <text class="c1a-heading">登录状态需要恢复</text>
@@ -41,17 +36,24 @@
 
         <block wx:elif="{{status === 'READY'}}">
           <view class="c1a-card c1a-section c1a-game-hero ng-enter">
-            <text class="c1a-eyebrow">{{teamName}} 组织</text>
+            <view class="c1a-hero-meta">
+              <text class="c1a-hero-date">{{heroDateLabel}}</text>
+              <text class="c1a-eyebrow">{{teamName}} 组织</text>
+            </view>
             <text class="c1a-game-title">{{name}}</text>
             <text class="c1a-game-subtitle">{{publicGame.pitchSpecification}} · {{intensityLabel}} · 需要 {{positionsLabel}}</text>
-          <view class="c1a-confirmed-row">
-            <view class="c1a-confirmed-mark"></view>
-            <view class="c1a-confirmed-copy">
-              <text class="c1a-confirmed-title">真实订场已确认</text>
-              <text class="c1a-help">{{venueName}} · {{pitchSummary}}</text>
-              <text class="c1a-help">{{orderRange}}</text>
+            <view wx:if="{{heroStartTime}}" class="c1a-hero-scoreboard">
+              <view class="c1a-hero-time-column"><text class="c1a-hero-time">{{heroStartTime}}</text><text class="c1a-hero-time-label">开场时间</text></view>
+              <view class="c1a-hero-time-divider" aria-hidden="true"></view>
+              <view class="c1a-hero-time-column c1a-hero-time-column--end"><text class="c1a-hero-time">{{heroEndTime}}</text><text class="c1a-hero-time-label">结束时间</text></view>
             </view>
-          </view>
+            <view class="c1a-confirmed-row">
+              <view class="c1a-confirmed-mark"></view>
+              <view class="c1a-confirmed-copy">
+                <text class="c1a-confirmed-title">真实订场已确认</text>
+                <text class="c1a-help">{{venueName}} · {{pitchSummary}}</text>
+              </view>
+            </view>
           </view>
 
           <view class="c1a-card c1a-signup-progress c1a-section" aria-label="报名进度">
@@ -70,7 +72,7 @@
           <view class="c1a-status-card c1a-status-card--{{statusTone}} c1a-section" role="status">
             <view class="c1a-status-heading"><view class="c1a-status-dot"></view><text>{{statusHeading}}</text></view>
             <text class="c1a-status-description">{{statusDescription}}</text>
-            <button wx:if="{{profileActionVisible}}" class="c1a-profile-edit" hover-class="button-hover" bindtap="onEditProfile">更新头像和昵称</button>
+            <button wx:if="{{profileActionVisible}}" class="c1a-profile-edit ng-button ng-button--text" hover-class="ng-pressed" bindtap="onEditProfile">更新头像和昵称</button>
           </view>
 
           <view class="c1a-card c1a-roster-card c1a-section">
@@ -88,7 +90,7 @@
                 <image wx:if="{{item.avatarUrl}}" class="c1a-roster-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-group="joinedMembers" data-index="{{index}}" binderror="onRosterAvatarError" />
                 <view wx:else class="c1a-roster-avatar c1a-roster-avatar--fallback"><text>{{item.avatarFallback}}</text></view>
                 <text class="c1a-roster-nickname">{{item.nickname}}</text>
-                <button wx:if="{{item.canRemove}}" class="c1a-roster-action c1a-roster-action--danger" disabled="{{managementActionInFlight}}" hover-class="button-hover" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onRemoveRosterMember">移除</button>
+                <button wx:if="{{item.canRemove}}" class="c1a-roster-action c1a-roster-action--danger ng-button ng-button--danger ng-button--compact {{(managementActionInFlight) ? 'ng-disabled' : ''}}" disabled="{{managementActionInFlight}}" hover-class="ng-pressed" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onRemoveRosterMember">移除</button>
               </view>
             </view>
           </view>
@@ -109,7 +111,7 @@
                 <image wx:if="{{item.avatarUrl}}" class="c1a-roster-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-group="waitlistedMembers" data-index="{{index}}" binderror="onRosterAvatarError" />
                 <view wx:else class="c1a-roster-avatar c1a-roster-avatar--fallback"><text>{{item.avatarFallback}}</text></view>
                 <text class="c1a-roster-nickname">{{item.nickname}}</text>
-                <button wx:if="{{item.canRemove}}" class="c1a-roster-action c1a-roster-action--danger" disabled="{{managementActionInFlight}}" hover-class="button-hover" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onRemoveRosterMember">移除</button>
+                <button wx:if="{{item.canRemove}}" class="c1a-roster-action c1a-roster-action--danger ng-button ng-button--danger ng-button--compact {{(managementActionInFlight) ? 'ng-disabled' : ''}}" disabled="{{managementActionInFlight}}" hover-class="ng-pressed" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onRemoveRosterMember">移除</button>
               </view>
             </view>
           </view>
@@ -124,7 +126,7 @@
                 <image wx:if="{{item.avatarUrl}}" class="c1a-roster-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-group="blockedMembers" data-index="{{index}}" binderror="onRosterAvatarError" />
                 <view wx:else class="c1a-roster-avatar c1a-roster-avatar--fallback"><text>{{item.avatarFallback}}</text></view>
                 <text class="c1a-roster-nickname">{{item.nickname}}</text>
-                <button wx:if="{{item.canAllowReapply}}" class="c1a-roster-action c1a-roster-action--secondary" disabled="{{managementActionInFlight}}" hover-class="button-hover" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onAllowMemberReapply">允许重新报名</button>
+                <button wx:if="{{item.canAllowReapply}}" class="c1a-roster-action c1a-roster-action--secondary ng-button ng-button--secondary ng-button--compact {{(managementActionInFlight) ? 'ng-disabled' : ''}}" disabled="{{managementActionInFlight}}" hover-class="ng-pressed" data-registration-id="{{item.registrationId}}" data-version="{{item.version}}" data-nickname="{{item.nickname}}" bindtap="onAllowMemberReapply">允许重新报名</button>
               </view>
             </view>
           </view>
@@ -136,9 +138,9 @@
             <text wx:if="{{attendanceCorrectedAtLabel}}" class="c2d-attendance-time c2d-attendance-time--corrected">{{attendanceCorrectedAtLabel}}</text>
             <text class="c2d-registration-label">报名编号</text>
             <text class="c2d-registration-id">{{viewerRegistrationId}}</text>
-            <button class="c2d-copy-action" hover-class="button-hover" bindtap="onCopyRegistrationId">复制报名编号</button>
+            <button class="c2d-copy-action ng-button ng-button--text" hover-class="ng-pressed" bindtap="onCopyRegistrationId">复制报名编号</button>
             <text wx:if="{{copyFeedbackMessage}}" class="c2d-copy-feedback c2d-copy-feedback--{{copyFeedbackKind}}" role="status">{{copyFeedbackMessage}}</text>
-            <button wx:if="{{reportGameId}}" class="c2f-report-action" hover-class="button-hover" bindtap="onOpenGameReport">举报本场球局</button>
+            <button wx:if="{{reportGameId}}" class="c2f-report-action ng-button ng-button--text" hover-class="ng-pressed" bindtap="onOpenGameReport">举报本场球局</button>
           </view>
 
           <view class="c1a-card c1a-section">
@@ -156,14 +158,14 @@
       </scroll-view>
 
       <view wx:if="{{primaryAction}}" class="c1a-footer">
-        <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onLogin">登录并继续</button>
-        <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary" disabled="{{signupSubmitting}}" hover-class="button-hover" bindtap="onApply">{{signupSubmitting ? '提交中…' : signupActionLabel}}</button>
-        <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onRefresh">刷新结果</button>
-        <button wx:elif="{{primaryAction === 'WITHDRAW'}}" class="c1a-button c1a-button--danger" hover-class="button-hover" bindtap="onOpenWithdrawalConfirm">{{withdrawalActionLabel}}</button>
-        <button wx:elif="{{primaryAction === 'CONFIRM_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmResult">确认申请结果</button>
-        <button wx:elif="{{primaryAction === 'CONFIRM_WITHDRAW_RESULT'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onConfirmWithdrawalResult">确认退出结果</button>
-        <button wx:elif="{{primaryAction === 'GO_PENDING'}}" class="c1a-button c1a-button--primary" hover-class="button-hover" bindtap="onGoPending">前往确认</button>
-        <button wx:elif="{{primaryAction === 'CLEAR_PENDING'}}" class="c1a-button c1a-button--secondary" hover-class="button-hover" bindtap="onClearPending">清除本机待确认记录</button>
+        <button wx:if="{{primaryAction === 'LOGIN'}}" class="c1a-button c1a-button--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onLogin">登录并继续</button>
+        <button wx:elif="{{primaryAction === 'APPLY'}}" class="c1a-button c1a-button--primary ng-button ng-button--primary {{(signupSubmitting) ? 'ng-disabled' : ''}}" disabled="{{signupSubmitting}}" hover-class="ng-pressed" bindtap="onApply">{{signupSubmitting ? '提交中…' : signupActionLabel}}</button>
+        <button wx:elif="{{primaryAction === 'REFRESH'}}" class="c1a-button c1a-button--secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onRefresh">刷新结果</button>
+        <button wx:elif="{{primaryAction === 'WITHDRAW'}}" class="c1a-button c1a-button--danger ng-button ng-button--danger" hover-class="ng-pressed" bindtap="onOpenWithdrawalConfirm">{{withdrawalActionLabel}}</button>
+        <button wx:elif="{{primaryAction === 'CONFIRM_RESULT'}}" class="c1a-button c1a-button--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onConfirmResult">确认申请结果</button>
+        <button wx:elif="{{primaryAction === 'CONFIRM_WITHDRAW_RESULT'}}" class="c1a-button c1a-button--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onConfirmWithdrawalResult">确认退出结果</button>
+        <button wx:elif="{{primaryAction === 'GO_PENDING'}}" class="c1a-button c1a-button--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onGoPending">前往确认</button>
+        <button wx:elif="{{primaryAction === 'CLEAR_PENDING'}}" class="c1a-button c1a-button--secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onClearPending">清除本机待确认记录</button>
       </view>
 
       <view wx:if="{{withdrawalOperationState === 'CONFIRMING' || withdrawalOperationState === 'SUBMITTING'}}" class="c2a-scrim" catchtouchmove="onBlockTouchMove" role="dialog" aria-label="{{withdrawalConfirmationTitle}}">
@@ -176,8 +178,8 @@
             <text>会记录临时退出；首期不自动封禁或扣款。</text>
           </view>
           <view class="c2a-sheet-actions">
-            <button class="c2a-neutral-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelWithdrawal">{{withdrawalCancelLabel}}</button>
-            <button class="c2a-danger-action" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onConfirmWithdrawal">{{withdrawalOperationState === 'SUBMITTING' ? '提交中…' : withdrawalConfirmationActionLabel}}</button>
+            <button class="c2a-neutral-action ng-button ng-button--neutral {{(withdrawalOperationState === 'SUBMITTING') ? 'ng-disabled' : ''}}" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="ng-pressed" bindtap="onCancelWithdrawal">{{withdrawalCancelLabel}}</button>
+            <button class="c2a-danger-action ng-button ng-button--danger {{(withdrawalOperationState === 'SUBMITTING') ? 'ng-disabled' : ''}}" disabled="{{withdrawalOperationState === 'SUBMITTING'}}" hover-class="ng-pressed" bindtap="onConfirmWithdrawal">{{withdrawalOperationState === 'SUBMITTING' ? '提交中…' : withdrawalConfirmationActionLabel}}</button>
           </view>
         </view>
       </view>
@@ -213,8 +215,8 @@
           </checkbox-group>
           <text wx:if="{{profileError}}" class="c1a-profile-error" role="alert">{{profileError}}</text>
           <view class="c2a-sheet-actions">
-            <button class="c2a-neutral-action" disabled="{{profileSheetState === 'SUBMITTING'}}" hover-class="button-hover" bindtap="onCancelProfile">取消</button>
-            <button class="c1a-profile-submit" disabled="{{profileSheetState === 'SUBMITTING' || (profilePurpose === 'SIGNUP' && (!adultConfirmed || !riskConfirmed))}}" hover-class="button-hover" bindtap="onConfirmProfile">{{profileSheetState === 'SUBMITTING' ? '保存中…' : profileSubmitLabel}}</button>
+            <button class="c2a-neutral-action ng-button ng-button--neutral {{(profileSheetState === 'SUBMITTING') ? 'ng-disabled' : ''}}" disabled="{{profileSheetState === 'SUBMITTING'}}" hover-class="ng-pressed" bindtap="onCancelProfile">取消</button>
+            <button class="c1a-profile-submit ng-button ng-button--primary {{(profileSheetState === 'SUBMITTING' || (profilePurpose === 'SIGNUP' && (!adultConfirmed || !riskConfirmed))) ? 'ng-disabled' : ''}}" disabled="{{profileSheetState === 'SUBMITTING' || (profilePurpose === 'SIGNUP' && (!adultConfirmed || !riskConfirmed))}}" hover-class="ng-pressed" bindtap="onConfirmProfile">{{profileSheetState === 'SUBMITTING' ? '保存中…' : profileSubmitLabel}}</button>
           </view>
         </view>
       </view>
@@ -223,22 +225,21 @@
 
   <block wx:elif="{{mode === 'owner'}}">
     <view class="owner-shell">
-      <view class="header__system" style="height: {{headerTopPx}}px;"></view>
-      <view class="header" style="height: {{headerRowHeightPx}}px;"><button class="header__back" hover-class="button-hover" bindtap="onHeaderBack" aria-label="返回"><view class="header__back-glyph"></view></button><text class="header__title">公开球局</text><view class="header__spacer"></view></view>
+<module-navigation title="公开球局" action="back" bind:navigate="onHeaderBack" />
       <scroll-view scroll-y="true" class="content">
         <view wx:if="{{status === 'LOADING'}}" class="state-card" role="status" aria-busy="true"><text class="heading">正在加载球局</text><text>正在读取最新公开信息…</text></view>
-        <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="heading">加载失败</text><text>{{errorMessage}}</text><button class="secondary" hover-class="button-hover" bindtap="onRetry">重新加载</button></view>
-        <view wx:elif="{{status === 'AUTH_LOSS' && showLogin}}" class="state-card state-card--error" role="alert"><text class="heading">需要重新登录</text><text>{{errorMessage}}</text><button class="primary" hover-class="button-hover" bindtap="onLogin">重新登录并查看预览</button></view>
+        <view wx:elif="{{status === 'LOAD_ERROR'}}" class="state-card state-card--error" role="alert"><text class="heading">加载失败</text><text>{{errorMessage}}</text><button class="secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onRetry">重新加载</button></view>
+        <view wx:elif="{{status === 'AUTH_LOSS' && showLogin}}" class="state-card state-card--error" role="alert"><text class="heading">需要重新登录</text><text>{{errorMessage}}</text><button class="primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onLogin">重新登录并查看预览</button></view>
         <view wx:elif="{{status === 'NOT_FOUND'}}" class="state-card" role="status"><text class="heading">球局不可用</text><text>{{errorMessage}}</text></view>
 
         <block wx:if="{{status === 'READY'}}">
-          <view class="card hero"><view class="hero__top"><text class="eyebrow">真实订场已确认</text><text class="badge badge--{{state}}">{{stateLabel}}</text></view><text class="hero__title">{{name}}</text><text>{{teamName}} · {{visibilityLabel}}</text><text wx:if="{{stateReasonText}}" class="reason">{{stateReasonText}}</text></view>
+          <view class="card hero"><view class="hero__top"><text class="eyebrow">真实订场已确认</text><text class="badge badge--{{state}} ng-badge">{{stateLabel}}</text></view><text class="hero__title">{{name}}</text><text>{{teamName}} · {{visibilityLabel}}</text><text wx:if="{{stateReasonText}}" class="reason">{{stateReasonText}}</text></view>
           <view class="card"><text class="heading">{{venueName}}</text><text>{{pitchSummary}}</text><text>{{orderRange}}</text></view>
           <view class="card"><text class="heading">球局安排</text><text>{{peopleSummary}}</text><text>对抗强度：{{intensityLabel}}</text><text>最低经验：{{experienceLabel}}</text><text>位置需求：{{positionsLabel}}</text></view>
           <view class="card"><text class="heading">费用与说明</text><text>预计人均 AA：{{aaLabel}}</text><text>报名截止：{{deadlineLabel}}</text><text>装备与到场：{{notes}}</text><text class="rule">成人参与，请自行评估运动风险；到场线下结算，平台不代收或担保。</text></view>
           <view class="readonly-note">队长预览，仅供查看；分享球局链接后队员可报名</view>
           <view wx:if="{{navigationError}}" class="inline-error" role="alert">{{navigationError}}</view>
-          <button wx:if="{{showReturnManage}}" class="secondary" hover-class="button-hover" bindtap="onReturnManage">返回管理页</button>
+          <button wx:if="{{showReturnManage}}" class="secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onReturnManage">返回管理页</button>
         </block>
       </scroll-view>
     </view>

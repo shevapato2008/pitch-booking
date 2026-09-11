@@ -1,6 +1,8 @@
 {
   "navigationBarTitleText": "球场预订",
   "usingComponents": {
-    "venue-card": "/components/venue-card/index"
-  }
+    "venue-card": "/components/venue-card/index",
+    "module-navigation": "/components/module-navigation/index"
+  },
+  "navigationStyle": "custom"
 }

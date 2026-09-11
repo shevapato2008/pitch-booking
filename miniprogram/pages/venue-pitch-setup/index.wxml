@@ -1,13 +1,5 @@
 <view class="venue-pitch-setup" data-state="{{mode}}" aria-busy="{{duplicateSaveDisabled}}">
-  <view class="venue-pitch-setup__system" style="height: {{headerTopPx}}px"></view>
-  <view class="venue-pitch-setup__header" style="height: {{headerRowHeightPx}}px; padding-right: {{headerRightInsetPx}}px" aria-hidden="{{isSheetOpen}}">
-    <button class="venue-pitch-setup__back venue-pitch-setup__touch" aria-label="返回" bindtap="onBack" disabled="{{duplicateSaveDisabled}}">
-      <view class="venue-pitch-setup-icon venue-pitch-setup-icon--back" aria-hidden="true"></view>
-    </button>
-    <view class="venue-pitch-setup__identity">
-      <text class="venue-pitch-setup__title">配置场地</text>
-    </view>
-  </view>
+<module-navigation title="配置场地" action="back" disabled="{{duplicateSaveDisabled}}" aria-hidden="{{isSheetOpen}}" bind:navigate="onBack" />
 
   <view class="venue-pitch-setup__content" aria-hidden="{{isSheetOpen}}">
     <text class="venue-pitch-setup__venue-heading">{{venueName}}</text>
@@ -36,7 +28,7 @@
       </view>
       <view wx:elif="{{mode === 'error'}}" class="venue-pitch-setup__state">
         <text>{{statusMessage}}</text>
-        <button class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onRecovery">重新加载</button>
+        <button class="venue-pitch-setup__secondary venue-pitch-setup__touch ng-button ng-button--secondary" bindtap="onRecovery" hover-class="ng-pressed">重新加载</button>
       </view>
       <view wx:elif="{{mode === 'empty'}}" class="venue-pitch-setup__state">
         <text>还没有已配置场地，请先添加第一块物理场地</text>
@@ -50,7 +42,7 @@
           bindtap="onPitchTap"
           disabled="{{duplicateSaveDisabled}}"
           aria-label="{{item.displayName}}，{{item.playersPerSide}}人制，{{item.status === 'ACTIVE' ? '使用中' : '已停用'}}"
-        >
+         hover-class="ng-pressed">
           <view class="venue-pitch-setup__pitch-copy">
             <text class="venue-pitch-setup__pitch-title">{{item.displayName}}</text>
             <text class="venue-pitch-setup__pitch-meta">{{item.nameSource || (item.customName ? '自定义名称' : '系统生成名称')}} · {{item.playersPerSide}}人制</text>
@@ -71,17 +63,17 @@
         </view>
       </block>
 
-      <button wx:if="{{mode !== 'loading' && mode !== 'error'}}" class="venue-pitch-setup__add venue-pitch-setup__touch" bindtap="onOpenAdd" disabled="{{duplicateSaveDisabled}}">
+      <button wx:if="{{mode !== 'loading' && mode !== 'error'}}" class="venue-pitch-setup__add venue-pitch-setup__touch ng-button ng-button--secondary {{(duplicateSaveDisabled) ? 'ng-disabled' : ''}}" bindtap="onOpenAdd" disabled="{{duplicateSaveDisabled}}" hover-class="ng-pressed">
         <view class="venue-pitch-setup-icon venue-pitch-setup-icon--plus" aria-hidden="true"></view>
         <text>添加一块场地</text>
       </button>
-      <button wx:if="{{mode === 'inactive-only'}}" class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onReactivatePitch">恢复使用</button>
+      <button wx:if="{{mode === 'inactive-only'}}" class="venue-pitch-setup__secondary venue-pitch-setup__touch ng-button ng-button--secondary" bindtap="onReactivatePitch" hover-class="ng-pressed">恢复使用</button>
     </scroll-view>
   </view>
 
   <view class="venue-pitch-setup__footer" aria-hidden="{{isSheetOpen}}">
     <text class="venue-pitch-setup__footer-notice">{{footerNotice}}</text>
-    <button class="venue-pitch-setup__primary venue-pitch-setup__touch" disabled="{{pageAction.disabled}}" bindtap="onPageAction">
+    <button class="venue-pitch-setup__primary venue-pitch-setup__touch ng-button ng-button--primary {{(pageAction.disabled) ? 'ng-disabled' : ''}}" disabled="{{pageAction.disabled}}" bindtap="onPageAction" hover-class="ng-pressed">
       <view wx:if="{{duplicateSaveDisabled}}" class="venue-pitch-setup__spinner venue-pitch-setup__spinner--small" aria-hidden="true"></view>
       <text>{{pageAction.label}}</text>
     </button>
@@ -96,16 +88,14 @@
           <text class="venue-pitch-setup__sheet-title">{{dialog ? dialog.title : editor.title}}</text>
           <text class="venue-pitch-setup__sheet-note">完成只会写入当前页面草稿</text>
         </view>
-        <button class="venue-pitch-setup__close venue-pitch-setup__touch" aria-label="关闭编辑面板" bindtap="onCloseSheet">
-          <view class="venue-pitch-setup-icon venue-pitch-setup-icon--close" aria-hidden="true"></view>
-        </button>
+        <button class="ng-icon-button" aria-label="关闭编辑面板" bindtap="onCloseSheet" hover-class="ng-pressed"><view class="ng-close-icon" aria-hidden="true"></view></button>
       </view>
 
       <view wx:if="{{dialog}}" class="venue-pitch-setup__dialog">
         <text>{{dialog.message}}</text>
         <view class="venue-pitch-setup__actions">
-          <button class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onCancelSheet">{{dialog.cancelLabel}}</button>
-          <button class="venue-pitch-setup__primary venue-pitch-setup__touch" bindtap="onConfirmLeave">{{dialog.confirmLabel}}</button>
+          <button class="venue-pitch-setup__secondary venue-pitch-setup__touch ng-button ng-button--secondary" bindtap="onCancelSheet" hover-class="ng-pressed">{{dialog.cancelLabel}}</button>
+          <button class="venue-pitch-setup__primary venue-pitch-setup__touch ng-button ng-button--primary" bindtap="onConfirmLeave" hover-class="ng-pressed">{{dialog.confirmLabel}}</button>
         </view>
       </view>
 
@@ -116,7 +106,7 @@
 
         <text class="venue-pitch-setup__label">可选制式</text>
         <view class="venue-pitch-setup__formats">
-          <button wx:for="{{editor.formatOptions}}" wx:key="value" class="venue-pitch-setup__format venue-pitch-setup__touch {{item.selected ? 'venue-pitch-setup__format--selected' : ''}}" disabled="{{item.disabled}}" data-format="{{item.value === '其他' ? 'other' : item.value}}" bindtap="onSelectFormat" aria-pressed="{{item.selected}}">{{item.label}}</button>
+          <button wx:for="{{editor.formatOptions}}" wx:key="value" class="venue-pitch-setup__format venue-pitch-setup__touch {{item.selected ? 'venue-pitch-setup__format--selected ng-choice--selected' : ''}} ng-choice {{(item.disabled) ? 'ng-disabled' : ''}}" disabled="{{item.disabled}}" data-format="{{item.value === '其他' ? 'other' : item.value}}" bindtap="onSelectFormat" aria-pressed="{{item.selected}}" hover-class="ng-pressed">{{item.label}}</button>
         </view>
         <text wx:if="{{editor.formatReason}}" class="venue-pitch-setup__helper">场地名称仍可修改；已有业务记录后，场地制式不可修改</text>
 
@@ -140,17 +130,17 @@
           <text class="venue-pitch-setup__sheet-title">确认删除这块场地？</text>
           <text>{{editor.confirmation.message}}</text>
           <view class="venue-pitch-setup__actions">
-            <button class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onCancelSheet">取消</button>
-            <button class="venue-pitch-setup__primary venue-pitch-setup__touch" bindtap="onConfirmDelete">确认删除</button>
+            <button class="venue-pitch-setup__secondary venue-pitch-setup__touch ng-button ng-button--secondary" bindtap="onCancelSheet" hover-class="ng-pressed">取消</button>
+            <button class="venue-pitch-setup__primary venue-pitch-setup__touch ng-button ng-button--primary" bindtap="onConfirmDelete" hover-class="ng-pressed">确认删除</button>
           </view>
         </view>
 
         <view wx:else class="venue-pitch-setup__sheet-actions-shell">
-          <button wx:if="{{editor.deleteLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch" disabled="{{editor.deleteDisabled}}" bindtap="onDeletePitch">{{editor.deleteLabel}}</button>
-          <button wx:if="{{editor.lifecycleLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch" disabled="{{editor.lifecycleDisabled}}" bindtap="onLifecycleAction">{{editor.lifecycleLabel}}</button>
+          <button wx:if="{{editor.deleteLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch ng-button ng-button--danger {{(editor.deleteDisabled) ? 'ng-disabled' : ''}}" disabled="{{editor.deleteDisabled}}" bindtap="onDeletePitch" hover-class="ng-pressed">{{editor.deleteLabel}}</button>
+          <button wx:if="{{editor.lifecycleLabel}}" class="venue-pitch-setup__danger venue-pitch-setup__touch ng-button ng-button--danger {{(editor.lifecycleDisabled) ? 'ng-disabled' : ''}}" disabled="{{editor.lifecycleDisabled}}" bindtap="onLifecycleAction" hover-class="ng-pressed">{{editor.lifecycleLabel}}</button>
           <view class="venue-pitch-setup__sheet-actions">
-            <button class="venue-pitch-setup__secondary venue-pitch-setup__touch" bindtap="onCancelSheet">取消</button>
-            <button class="venue-pitch-setup__primary venue-pitch-setup__touch" disabled="{{editor.completeDisabled || !isDraftPlayersValid}}" bindtap="onCompleteEditor">{{editor.completeLabel}}</button>
+            <button class="venue-pitch-setup__secondary venue-pitch-setup__touch ng-button ng-button--secondary" bindtap="onCancelSheet" hover-class="ng-pressed">取消</button>
+            <button class="venue-pitch-setup__primary venue-pitch-setup__touch ng-button ng-button--primary {{(editor.completeDisabled || !isDraftPlayersValid) ? 'ng-disabled' : ''}}" disabled="{{editor.completeDisabled || !isDraftPlayersValid}}" bindtap="onCompleteEditor" hover-class="ng-pressed">{{editor.completeLabel}}</button>
           </view>
         </view>
       </view>

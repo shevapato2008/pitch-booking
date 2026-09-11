@@ -9,6 +9,8 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+@import "../../styles/controls.wxss";
+
 .hero {
   display: flex;
   flex-direction: column;
@@ -283,3 +285,5 @@
 button::after {
   border: 0;
 }
+
+.order-page { min-height: 0; }

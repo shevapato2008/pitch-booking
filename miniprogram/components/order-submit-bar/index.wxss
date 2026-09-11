@@ -43,9 +43,11 @@
   border: 0;
 }
 .submit-button::after { border: 0; }
-.submit-button--disabled {
+.submit-button.u-control.submit-button--disabled {
   color: #C9D7E7;
   background: #314157;
   opacity: 1;
 }
 .submit-button--pressed { opacity: 0.76; }
+
+@import "../../styles/controls.wxss";

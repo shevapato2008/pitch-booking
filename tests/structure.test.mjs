@@ -704,6 +704,10 @@ test("booking confirmation ready state preserves the frozen visual contract", ()
   assert.match(submitStyles, /position:\s*fixed/);
   assert.match(submitStyles, /bottom:\s*0/);
   assert.match(submitStyles, /env\(safe-area-inset-bottom\)/);
+  assert.match(
+    submitStyles,
+    /\.submit-button\.u-control\.submit-button--disabled\s*\{[^}]*color:\s*#C9D7E7;[^}]*background:\s*#314157;/,
+  );
 });
 
 test("map venue experience pins its native runtime and component boundaries", () => {

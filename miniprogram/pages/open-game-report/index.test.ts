@@ -128,7 +128,7 @@ test("loads the authoritative form, exact categories, and approved production st
   const json = JSON.parse(readFileSync("miniprogram/pages/open-game-report/index.json", "utf8"));
   const wxml = readFileSync("miniprogram/pages/open-game-report/index.wxml", "utf8");
   const styles = readFileSync("miniprogram/pages/open-game-report/index.wxss", "utf8");
-  expect(json).toEqual({ navigationStyle: "custom" });
+  expect(json).toEqual({ navigationStyle: "custom", usingComponents: { "module-navigation": "/components/module-navigation/index" } });
   expect(wxml).not.toMatch(/Fixture|开发预览|模拟数据|dev\/pages/i);
   for (const handler of [
     "onHeaderBack", "onSelectCategory", "onFactsInput", "onPrepareSubmit",

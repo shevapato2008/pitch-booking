@@ -3,7 +3,6 @@ import {
   presentPublicGameDirectoryItem,
   type PublicGameDirectoryCard,
 } from "../../presentation/public-game-directory";
-import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { getPublicGameDirectorySource } from "../../services/public-game-directory";
 
 type DirectoryStatus = "LOADING" | "READY" | "LOAD_ERROR";
@@ -76,15 +75,6 @@ function selectedFormat(filters: DirectoryFilters) {
   };
 }
 
-function headerData() {
-  try {
-    const header = readIntentHeaderLayout();
-    return { headerTopPx: header.topPx, headerRowHeightPx: header.rowHeightPx };
-  } catch {
-    return { headerTopPx: 0, headerRowHeightPx: 44 };
-  }
-}
-
 Page({
   data: {
     status: "LOADING" as DirectoryStatus,
@@ -96,8 +86,6 @@ Page({
     resultCount: 0,
     sourceEmpty: false,
     filterNoMatch: false,
-    headerTopPx: 0,
-    headerRowHeightPx: 44,
     entryScrollTop: 0,
   },
   requestRevision: 0,
@@ -106,7 +94,6 @@ Page({
 
   onLoad() {
     this.active = true;
-    this.setData(headerData());
   },
 
   onShow() {
@@ -230,15 +217,4 @@ Page({
     wx.reLaunch({ url: "/pages/intent-entry/index" });
   },
 
-  onHeaderBack() {
-    try {
-      if (getCurrentPages().length > 1) {
-        wx.navigateBack({ delta: 1 });
-        return;
-      }
-    } catch {
-      // A deep link without a readable history uses the same safe destination.
-    }
-    wx.reLaunch({ url: "/pages/intent-entry/index" });
-  },
 });

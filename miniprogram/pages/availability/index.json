@@ -1,8 +1,10 @@
 {
-  "navigationBarTitleText": "选择可订时段",
+  "navigationBarTitleText": "场地时段",
   "usingComponents": {
     "date-strip": "/components/date-strip/index",
     "pitch-filter": "/components/pitch-filter/index",
-    "slot-grid": "/components/slot-grid/index"
-  }
+    "slot-grid": "/components/slot-grid/index",
+    "module-navigation": "/components/module-navigation/index"
+  },
+  "navigationStyle": "custom"
 }

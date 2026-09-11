@@ -68,3 +68,5 @@ button::after { border:0; }
 .secondary-button { border:2rpx solid #425E68; background:var(--surface); color:var(--primary-strong); }
 .danger-button { border:2rpx solid #6A424B; background:#39242D; color:var(--danger); }
 .secondary-button[disabled],.danger-button[disabled] { opacity:.46; }
+
+@import "../../styles/controls.wxss";

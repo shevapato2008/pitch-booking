@@ -1,4 +1,5 @@
 import type { Gcj02Coordinate, VenueMapEntry } from "../../domain/venue-directory";
+import { ONLINE_BOOKING_ENABLED } from "../../config/runtime";
 import {
   calculateSearchCenterViewport,
   presentVenueSearch,
@@ -63,6 +64,7 @@ function centerNoteFor(center: SearchCenter): string {
 
 Page({
   data: {
+    onlineBookingEnabled: ONLINE_BOOKING_ENABLED,
     loading: true,
     errorText: "",
     locating: false,
@@ -161,6 +163,10 @@ Page({
     this.ensureMarkerClusteringInitialized();
   },
 
+  onReturnIntent() {
+    wx.reLaunch({ url: "/pages/intent-entry/index" });
+  },
+
   async onLoad(query: Record<string, string | undefined>) {
     const token = this.requestGuard.begin();
     try {
@@ -201,6 +207,7 @@ Page({
       search.selectedVenueId,
       search.distanceMetersByVenueId,
       search.distanceLabelBasis,
+      this.data.onlineBookingEnabled,
     );
     const previousViewportMode = this.data.viewport?.mode;
     const viewport = calculateSearchCenterViewport(center, this.data.sheetSnap) ?? map.viewport;

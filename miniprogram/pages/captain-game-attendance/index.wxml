@@ -1,12 +1,5 @@
 <view class="c2c-page">
-  <view class="c2c-system" style="height: {{headerTopPx}}px;"></view>
-  <view class="c2c-header" style="height: {{headerRowHeightPx}}px;" aria-hidden="{{decisionPanel ? true : false}}">
-    <button class="c2c-header-back" hover-class="c2c-pressed" bindtap="onHeaderBack" aria-label="返回球局管理">
-      <view class="c2c-back-icon" aria-hidden="true"></view>
-    </button>
-    <text class="c2c-header-title">到场记录</text>
-    <view class="c2c-header-spacer" aria-hidden="true"></view>
-  </view>
+<module-navigation title="到场记录" action="back" aria-hidden="{{decisionPanel ? true : false}}" bind:navigate="onHeaderBack" />
 
   <scroll-view class="c2c-scroll" scroll-y="true" aria-hidden="{{decisionPanel ? true : false}}">
     <view class="c2c-content">
@@ -20,37 +13,37 @@
         <view class="c2c-state-mark c2c-state-mark--error" aria-hidden="true"></view>
         <text class="c2c-state-title">名单加载失败</text>
         <text class="c2c-state-copy">{{errorMessage}}</text>
-        <button class="c2c-state-action c2c-state-action--primary" hover-class="c2c-pressed" bindtap="onRetryLoad">重新加载</button>
-        <button class="c2c-state-action c2c-state-action--neutral" hover-class="c2c-pressed" bindtap="onReturnManage">返回球局管理</button>
+        <button class="c2c-state-action c2c-state-action--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onRetryLoad">重新加载</button>
+        <button class="c2c-state-action c2c-state-action--neutral ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onReturnManage">返回球局管理</button>
       </view>
 
       <view wx:elif="{{status === 'AUTH_LOSS'}}" class="c2c-state-card c2c-state-card--error" aria-role="alert">
         <view class="c2c-state-mark c2c-state-mark--error" aria-hidden="true"></view>
         <text class="c2c-state-title">登录状态需要恢复</text>
         <text class="c2c-state-copy">{{errorMessage}}</text>
-        <button class="c2c-state-action c2c-state-action--primary" hover-class="c2c-pressed" bindtap="onLogin">重新登录并继续</button>
-        <button class="c2c-state-action c2c-state-action--neutral" hover-class="c2c-pressed" bindtap="onReturnManage">关闭并稍后确认</button>
+        <button class="c2c-state-action c2c-state-action--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onLogin">重新登录并继续</button>
+        <button class="c2c-state-action c2c-state-action--neutral ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onReturnManage">关闭并稍后确认</button>
       </view>
 
       <view wx:elif="{{status === 'NOT_FOUND'}}" class="c2c-state-card" aria-role="alert">
         <view class="c2c-empty-mark" aria-hidden="true"><view></view><view></view><view></view></view>
         <text class="c2c-state-title">无法打开到场记录</text>
         <text class="c2c-state-copy">{{errorMessage}}</text>
-        <button class="c2c-state-action c2c-state-action--secondary" hover-class="c2c-pressed" bindtap="onReturnManage">返回</button>
+        <button class="c2c-state-action c2c-state-action--secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onReturnManage">返回</button>
       </view>
 
       <view wx:elif="{{status === 'OTHER_PENDING'}}" class="c2c-state-card c2c-state-card--warning" aria-role="alert">
         <text class="c2c-state-title">还有一项操作待确认</text>
         <text class="c2c-state-copy">{{errorMessage}}</text>
-        <button class="c2c-state-action c2c-state-action--primary" hover-class="c2c-pressed" bindtap="onGoPending">前往确认</button>
-        <button class="c2c-state-action c2c-state-action--neutral" hover-class="c2c-pressed" bindtap="onReturnManage">返回球局管理</button>
+        <button class="c2c-state-action c2c-state-action--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onGoPending">前往确认</button>
+        <button class="c2c-state-action c2c-state-action--neutral ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onReturnManage">返回球局管理</button>
       </view>
 
       <view wx:elif="{{status === 'FOREIGN_PENDING'}}" class="c2c-state-card c2c-state-card--warning" aria-role="alert">
         <text class="c2c-state-title">另一账号有记录待确认</text>
         <text class="c2c-state-copy">{{errorMessage}}</text>
-        <button class="c2c-state-action c2c-state-action--primary" hover-class="c2c-pressed" bindtap="onLogin">重新登录原账号</button>
-        <button class="c2c-state-action c2c-state-action--neutral" hover-class="c2c-pressed" bindtap="onReturnManage">返回球局管理</button>
+        <button class="c2c-state-action c2c-state-action--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onLogin">重新登录原账号</button>
+        <button class="c2c-state-action c2c-state-action--neutral ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onReturnManage">返回球局管理</button>
       </view>
 
       <block wx:else>
@@ -69,7 +62,7 @@
             <text>名单状态已变化</text>
             <text>{{errorMessage}}</text>
           </view>
-          <button class="c2c-state-action c2c-state-action--secondary" hover-class="c2c-pressed" bindtap="onResolveConflict">确认最新名单</button>
+          <button class="c2c-state-action c2c-state-action--secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onResolveConflict">确认最新名单</button>
         </view>
 
         <view wx:elif="{{status === 'RESULT_UNKNOWN'}}" class="c2c-recovery-card" aria-role="status">
@@ -77,8 +70,8 @@
             <text>记录结果待确认</text>
             <text>{{errorMessage}}</text>
           </view>
-          <button class="c2c-state-action c2c-state-action--primary" hover-class="c2c-pressed" bindtap="onConfirmUnknownResult">确认记录结果</button>
-          <button class="c2c-state-action c2c-state-action--neutral" hover-class="c2c-pressed" bindtap="onReturnManage">关闭并稍后确认</button>
+          <button class="c2c-state-action c2c-state-action--primary ng-button ng-button--primary" hover-class="ng-pressed" bindtap="onConfirmUnknownResult">确认记录结果</button>
+          <button class="c2c-state-action c2c-state-action--neutral ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onReturnManage">关闭并稍后确认</button>
         </view>
 
         <view wx:elif="{{status === 'MARKING'}}" class="c2c-recovery-card" aria-role="status" aria-busy="true">
@@ -99,7 +92,7 @@
           <view class="c2c-empty-mark" aria-hidden="true"><view></view><view></view><view></view></view>
           <text class="c2c-state-title">本场没有需要记录的散客</text>
           <text class="c2c-state-copy">返回球局管理，可以继续处理其他事项。</text>
-          <button class="c2c-state-action c2c-state-action--secondary" hover-class="c2c-pressed" bindtap="onReturnManage">返回球局管理</button>
+          <button class="c2c-state-action c2c-state-action--secondary ng-button ng-button--secondary" hover-class="ng-pressed" bindtap="onReturnManage">返回球局管理</button>
         </view>
 
         <view wx:else class="c2c-roster">
@@ -111,7 +104,7 @@
               </view>
               <text wx:if="{{item.isUnmarked}}" class="c2c-pending-label">{{item.resultLabel}}</text>
               <view wx:else class="c2c-status-column">
-                <text class="c2c-status-badge {{item.attendanceStatus === 'PRESENT' ? 'c2c-status-badge--present' : 'c2c-status-badge--no-show'}}">{{item.resultLabel}}</text>
+                <text class="c2c-status-badge {{item.attendanceStatus === 'PRESENT' ? 'c2c-status-badge--present' : 'c2c-status-badge--no-show'}} ng-badge">{{item.resultLabel}}</text>
                 <text class="c2c-recorded-time">{{item.recordedTimeLabel}}</text>
                 <text wx:if="{{item.correctedTimeLabel}}" class="c2d-corrected-time" aria-label="平台已纠正">{{item.correctedTimeLabel}}</text>
               </view>
@@ -122,7 +115,7 @@
                 <text>报名编号</text>
                 <text>{{item.registrationId}}</text>
               </view>
-              <button class="c2d-copy-action" hover-class="c2c-pressed" bindtap="onCopyRegistrationId" data-registration-id="{{item.registrationId}}" aria-label="复制{{item.displayName}}的报名编号">复制编号</button>
+              <button class="c2d-copy-action ng-button ng-button--text" hover-class="ng-pressed" bindtap="onCopyRegistrationId" data-registration-id="{{item.registrationId}}" aria-label="复制{{item.displayName}}的报名编号">复制编号</button>
             </view>
             <text
               wx:if="{{copyFeedbackRegistrationId === item.registrationId}}"
@@ -131,8 +124,8 @@
             >{{copyFeedbackMessage}}</text>
 
             <view wx:if="{{item.canMark}}" class="c2c-row-actions">
-              <button class="c2c-row-action c2c-row-action--present" hover-class="c2c-pressed" bindtap="onMarkPresent" data-registration-id="{{item.registrationId}}" aria-label="记录{{item.displayName}}到场">到场</button>
-              <button class="c2c-row-action c2c-row-action--no-show" hover-class="c2c-pressed" bindtap="onMarkNoShow" data-registration-id="{{item.registrationId}}" aria-label="记录{{item.displayName}}未到场">未到场</button>
+              <button class="c2c-row-action c2c-row-action--present ng-button ng-button--secondary ng-button--compact" hover-class="ng-pressed" bindtap="onMarkPresent" data-registration-id="{{item.registrationId}}" aria-label="记录{{item.displayName}}到场">到场</button>
+              <button class="c2c-row-action c2c-row-action--no-show ng-button ng-button--neutral ng-button--compact" hover-class="ng-pressed" bindtap="onMarkNoShow" data-registration-id="{{item.registrationId}}" aria-label="记录{{item.displayName}}未到场">未到场</button>
             </view>
           </view>
         </view>
@@ -153,14 +146,12 @@
           <text class="c2c-sheet-title">{{decisionTitle}}</text>
           <text class="c2c-sheet-player">本场称呼：{{decisionPlayerName}}</text>
         </view>
-        <button class="c2c-sheet-close" hover-class="c2c-pressed" bindtap="onCloseDecision" aria-label="关闭确认层">
-          <view class="c2c-close-icon" aria-hidden="true"></view>
-        </button>
+        <button class="ng-icon-button" hover-class="ng-pressed" bindtap="onCloseDecision" aria-label="关闭确认层"><view class="ng-close-icon" aria-hidden="true"></view></button>
       </view>
       <text class="c2c-sheet-warning">{{decisionWarning}}</text>
       <view class="c2c-sheet-actions">
-        <button class="c2c-sheet-action c2c-sheet-action--neutral" hover-class="c2c-pressed" bindtap="onCloseDecision">返回名单</button>
-        <button class="c2c-sheet-action {{decisionPanel.attendanceStatus === 'NO_SHOW' ? 'c2c-sheet-action--danger' : 'c2c-sheet-action--primary'}}" hover-class="c2c-pressed" bindtap="onConfirmDecision">{{confirmButtonLabel}}</button>
+        <button class="c2c-sheet-action c2c-sheet-action--neutral ng-button ng-button--neutral" hover-class="ng-pressed" bindtap="onCloseDecision">返回名单</button>
+        <button class="c2c-sheet-action {{decisionPanel.attendanceStatus === 'NO_SHOW' ? 'c2c-sheet-action--danger ng-button--danger' : 'c2c-sheet-action--primary ng-button--primary'}} ng-button" hover-class="ng-pressed" bindtap="onConfirmDecision">{{confirmButtonLabel}}</button>
       </view>
     </view>
   </view>

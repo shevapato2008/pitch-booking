@@ -1,4 +1,11 @@
 /* Presentation only: no timers, remote assets, or transforms on map ancestors. */
+/* Match native disabled specificity, including buttons without a type prop. */
+button[disabled]:not([type]), button[type][disabled] {
+  background: #233449;
+  color: #A4B5C8;
+  border-color: #314157;
+  opacity: 1;
+}
 .ng-hero { position: relative; box-sizing: border-box; overflow: hidden; min-height: 336rpx; padding: 30rpx 28rpx 70rpx; border: 1rpx solid #2B4A58; border-radius: 30rpx; background: linear-gradient(125deg,#152C46 0%,#103B45 62%,#176255 100%); color: #F3F8FF; }
 .ng-hero-copy { position: relative; z-index: 1; }
 .ng-eyebrow { display: block; font-size: 18rpx; line-height: 28rpx; font-weight: 600; letter-spacing: 3rpx; color: #B6D9D2; }

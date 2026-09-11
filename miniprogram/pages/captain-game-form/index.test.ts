@@ -120,8 +120,8 @@ test("create authority loads immutable order facts and every planned native cont
     expect(wxml).toContain(control);
   }
   expect(wxml).toContain("不可修改");
-  expect(wxml).toContain('class="header__system" style="height: {{headerTopPx}}px;"');
-  expect(wxml).toContain('class="header" style="height: {{headerRowHeightPx}}px;"');
+  expect(wxml).toContain('<module-navigation title="{{pageTitle}}" action="back" bind:navigate="onHeaderBack"');
+  expect(wxml).not.toContain('class="header__system"');
   expect(wxml).not.toContain("padding-left: {{headerLeftInsetPx}}px");
   expect(wxml).toContain("到场线下结算，平台不代收或担保");
   expect(wxml).not.toContain(".indexOf(");
@@ -147,7 +147,7 @@ test("a new form restores a persisted foreign terminal attempt before exposing s
   const initialName = page.data.form.name;
   call(page, "onTextInput", { currentTarget: { dataset: { field: "name" } }, detail: { value: "不应写入" } });
   expect(page.data.form.name).toBe(initialName);
-  expect(readFileSync("miniprogram/pages/captain-game-form/index.wxml", "utf8")).toContain('bindtap="onConfirmPreviousOperation">确认上次操作');
+  expect(readFileSync("miniprogram/pages/captain-game-form/index.wxml", "utf8")).toMatch(/bindtap="onConfirmPreviousOperation"[^>]*>确认上次操作/);
 
   await call(page, "onConfirmPreviousOperation");
 

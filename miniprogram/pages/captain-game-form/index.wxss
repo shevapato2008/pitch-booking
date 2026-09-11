@@ -21,3 +21,5 @@ page { background: #0B1727; color: #F3F8FF; font-family: -apple-system, BlinkMac
 .primary, .secondary { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; min-height: 88rpx; margin: 14rpx 0 0; padding: 0 24rpx; border-radius: 14rpx; font-size: 30rpx; font-weight: 600; }.primary { border: 0; background: #CEFF80; color: #173421; }.secondary { border: 1rpx solid #CEFF80; background: #152539; color: #CEFF80; }
 button::after { border: 0; }
 .button-hover { opacity: .82; }
+
+@import "../../styles/controls.wxss";

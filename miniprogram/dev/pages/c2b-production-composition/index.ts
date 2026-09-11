@@ -8,10 +8,10 @@ import {
   C2B_PRODUCTION_PREVIEW_GAME_ID,
   C2B_PRODUCTION_PREVIEW_SHARE_TOKEN,
   createC2bProductionPreviewSource,
+  type C2bProductionPreviewScenario,
 } from "../../c2b-production-registration-source";
 import {
   C2B_WAITLIST_SCENARIOS,
-  type C2bWaitlistScenario,
 } from "../../c2b-waitlist-fixture";
 
 type CompositionTarget = "CAPTAIN" | "DETAIL" | "LIST";
@@ -21,9 +21,9 @@ interface PageOptions {
   readonly target?: unknown;
 }
 
-function isScenario(value: unknown): value is C2bWaitlistScenario {
+function isScenario(value: unknown): value is C2bProductionPreviewScenario {
   return typeof value === "string"
-    && (C2B_WAITLIST_SCENARIOS as readonly string[]).includes(value);
+    && (value === "SIGNUP_FULL" || (C2B_WAITLIST_SCENARIOS as readonly string[]).includes(value));
 }
 
 function isTarget(value: unknown): value is CompositionTarget {

@@ -2,7 +2,6 @@ import type { ManagedVenue } from "../../domain/venue-access";
 import { VENUE_STAFF_AUTHORIZATION_ENABLED } from "../../config/runtime";
 import { VENUE_STAFF_PERMISSION_OPTIONS, type VenueStaffPermission } from "../../domain/venue-staff";
 import { presentApplicationStatus, type VenueOnboardingApplication } from "../../domain/venue-onboarding";
-import { readIntentHeaderLayout } from "../../presentation/intent-header-layout";
 import { getVenueAccessDataSource } from "../../services/venue-access";
 import { getVenueOnboardingDataSourceOrUndefined } from "../../services/venue-onboarding";
 
@@ -60,9 +59,6 @@ Page({
     applicationsError: "",
     retrying: false,
     errorMessage: "",
-    headerTopPx: 0,
-    headerRowHeightPx: 44,
-    headerRightInsetPx: 0,
     staffAuthorizationEnabled: VENUE_STAFF_AUTHORIZATION_ENABLED,
   },
 
@@ -72,12 +68,6 @@ Page({
 
   async onLoad() {
     this.disposed = false;
-    const layout = readIntentHeaderLayout();
-    this.setData({
-      headerTopPx: layout.topPx,
-      headerRowHeightPx: layout.rowHeightPx,
-      headerRightInsetPx: layout.rightInsetPx,
-    });
     await this.loadManagedVenues();
   },
 

@@ -17,3 +17,5 @@
 .pitch-option::after { border: 0; }
 .pitch-option--selected { color: #CEFF80; background: #152539; box-shadow: 0 4rpx 12rpx rgba(2, 10, 20, 0.08); }
 .pitch-option--pressed { opacity: 0.72; }
+
+@import "../../styles/controls.wxss";

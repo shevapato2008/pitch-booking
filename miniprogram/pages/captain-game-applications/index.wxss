@@ -64,3 +64,5 @@ button::after { border: 0; }
 .c1a-close-glyph::before { transform: rotate(45deg); }
 .c1a-close-glyph::after { transform: rotate(-45deg); }
 .c1a-sheet-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx; margin-top: 28rpx; }
+
+@import "../../styles/controls.wxss";

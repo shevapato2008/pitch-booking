@@ -1,3 +1,4 @@
+import { returnToPreviousPage } from "../../presentation/page-back";
 import type { CheckoutView, CreateOrderInput, PendingOrderView } from "../../domain/booking";
 import { canSubmit, reduceBooking, validateContactName, type BookingPageState } from "../../presentation/booking";
 import { formatPriceCents } from "../../presentation/availability";
@@ -35,6 +36,7 @@ function checkoutLabels(checkout: CheckoutView | null) {
 const initialState: BookingPageState = { session: { status: "loading" }, checkout: { status: "loading" }, contactName: "", submission: { status: "idle" } };
 
 Page({
+  onHeaderBack: returnToPreviousPage,
   data: {
     state: initialState, slotId: "", checkout: null as CheckoutView | null, maskedPhone: "", contactError: "",
     loadError: "", actionError: "", navigationError: "", phoneMessage: "", dateLabel: "", timeLabel: "", durationLabel: "", price: "",
