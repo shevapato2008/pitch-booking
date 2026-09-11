@@ -22,11 +22,13 @@ function assertDeclaration(stylesheet, selector, expected) {
   }
 }
 
-test("venue page uses the system navigation title", async () => {
+test("venue page uses the shared navigation title and back action", async () => {
   const pageConfig = JSON.parse(await read("miniprogram/pages/venue/index.json"));
 
   assert.equal(pageConfig.navigationBarTitleText, "球场预订");
-  assert.equal(pageConfig.navigationStyle, undefined);
+  assert.equal(pageConfig.navigationStyle, "custom");
+  assert.equal(pageConfig.usingComponents["module-navigation"], "/components/module-navigation/index");
+  assert.match(await read("miniprogram/pages/venue/index.wxml"), /<module-navigation title="球场预订" action="back" bind:navigate="onHeaderBack"/);
 });
 
 test("venue page registers the shared venue card", async () => {
@@ -35,13 +37,14 @@ test("venue page registers the shared venue card", async () => {
   assert.equal(pageConfig.usingComponents?.["venue-card"], "/components/venue-card/index");
 });
 
-test("venue journey renders the server-authored primary action", async () => {
+test("venue journey guards the availability action without promising online booking", async () => {
   const pageMarkup = await read("miniprogram/pages/venue/index.wxml");
   const primaryAction = pageMarkup.match(
     /<button[^>]*bindtap="onViewAvailability"[^>]*>([\s\S]*?)<\/button>/,
   )?.[1] ?? "";
 
-  assert.match(primaryAction, /\{\{venue\.availabilityLabel\}\}/);
+  assert.match(pageMarkup, /<button[^>]*wx:if="\{\{canBook\}\}"[^>]*bindtap="onViewAvailability"/);
+  assert.equal(primaryAction.trim(), "查看场地时段");
 });
 
 test("production venue page has no development import", async () => {
@@ -76,14 +79,14 @@ test("global and isolated styles import the shared tokens", async () => {
   assert.match(componentStyles, /^@import\s+["']\.\.\/\.\.\/styles\/tokens\.wxss["'];/m);
 });
 
-test("shared tokens contain the approved native design values", async () => {
+test("shared tokens contain the approved Night Glow native design values", async () => {
   const tokens = await read("miniprogram/styles/tokens.wxss");
 
-  assertDeclaration(tokens, ".u-page", { background: "#F8FAFC" });
-  assertDeclaration(tokens, ".u-surface", { background: "#FFFFFF" });
-  assertDeclaration(tokens, ".u-text", { color: "#10243E" });
-  assertDeclaration(tokens, ".u-muted", { color: "#64748B" });
-  assertDeclaration(tokens, ".u-border", { border: "2rpx solid #DBE5EC" });
+  assertDeclaration(tokens, ".u-page", { background: "#0B1727" });
+  assertDeclaration(tokens, ".u-surface", { background: "#152539" });
+  assertDeclaration(tokens, ".u-text", { color: "#F3F8FF" });
+  assertDeclaration(tokens, ".u-muted", { color: "#A4B5C8" });
+  assertDeclaration(tokens, ".u-border", { border: "2rpx solid #314157" });
   assertDeclaration(tokens, ".u-radius-sm", { "border-radius": "16rpx" });
   assertDeclaration(tokens, ".u-radius-md", { "border-radius": "24rpx" });
   assertDeclaration(tokens, ".u-radius-lg", { "border-radius": "32rpx" });
@@ -94,11 +97,11 @@ test("shared tokens contain the approved native design values", async () => {
   assertDeclaration(tokens, ".u-type-cta", { "font-size": "30rpx" });
   assertDeclaration(tokens, ".u-pad-page", { "padding-right": "24rpx", "padding-left": "24rpx" });
   assertDeclaration(tokens, ".u-control", { "min-height": "88rpx" });
-  assertDeclaration(tokens, ".u-status-available", { color: "#059669", background: "#EFFBF6" });
-  assertDeclaration(tokens, ".u-trust-primary", { color: "#0284C7" });
-  assertDeclaration(tokens, ".u-trust-secondary", { color: "#0EA5E9" });
-  assertDeclaration(tokens, ".u-status-unavailable", { color: "#94A3B8" });
-  assertDeclaration(tokens, ".u-status-held", { color: "#B45309" });
+  assertDeclaration(tokens, ".u-status-available", { color: "#A6EDB9", background: "#17392F" });
+  assertDeclaration(tokens, ".u-trust-primary", { color: "#CEFF80" });
+  assertDeclaration(tokens, ".u-trust-secondary", { color: "#92DDC3" });
+  assertDeclaration(tokens, ".u-status-unavailable", { color: "#8B9DB3" });
+  assertDeclaration(tokens, ".u-status-held", { color: "#FFD094" });
   assert.doesNotMatch(tokens, /--[a-z][a-z0-9-]*\s*:/i);
 });
 
@@ -133,12 +136,14 @@ test("venue consumers use shared token utilities", async () => {
   assert.match(componentMarkup, /class="[^"]*\bu-trust-primary\b/);
 });
 
-test("availability page registers native controls with the system title", async () => {
+test("availability page registers native controls with the shared neutral title", async () => {
   const pageConfig = JSON.parse(await read("miniprogram/pages/availability/index.json"));
 
-  assert.equal(pageConfig.navigationBarTitleText, "选择可订时段");
-  assert.equal(pageConfig.navigationStyle, undefined);
+  assert.equal(pageConfig.navigationBarTitleText, "场地时段");
+  assert.equal(pageConfig.navigationStyle, "custom");
+  assert.match(await read("miniprogram/pages/availability/index.wxml"), /<module-navigation title="场地时段" action="back" bind:navigate="onHeaderBack"/);
   assert.deepEqual(pageConfig.usingComponents, {
+    "module-navigation": "/components/module-navigation/index",
     "date-strip": "/components/date-strip/index",
     "pitch-filter": "/components/pitch-filter/index",
     "slot-grid": "/components/slot-grid/index",
@@ -156,7 +161,9 @@ test("availability boundary exposes all slot states and an explicit empty state"
   for (const label of ["可订", "已结束", "暂时锁定", "已预订", "未开放"]) {
     assert.match(availabilityBoundary, new RegExp(label));
   }
-  assert.match(pageMarkup, />\s*当天暂无可订时段\s*</);
+  assert.match(pageMarkup, />\s*当天暂无场地时段\s*</);
+  assert.match(pageMarkup, /disabled="\{\{!onlineBookingEnabled\}\}"/);
+  assert.match(pageMarkup, /仅展示场地库存，暂不能选择或下单。/);
 });
 
 test("slot grid avoids unsupported component attribute selectors", async () => {

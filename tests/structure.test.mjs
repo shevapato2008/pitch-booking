@@ -721,6 +721,7 @@ test("map venue experience pins its native runtime and component boundaries", ()
   }
   const page = JSON.parse(readFileSync("miniprogram/pages/venue-map/index.json", "utf8"));
   assert.deepEqual(page.usingComponents, {
+    "module-navigation": "/components/module-navigation/index",
     "venue-map-search": "/components/venue-map-search/index",
     "venue-map-sheet": "/components/venue-map-sheet/index",
   });
