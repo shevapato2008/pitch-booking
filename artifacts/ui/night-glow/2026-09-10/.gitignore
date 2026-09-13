@@ -1,0 +1,3 @@
+# Native screenshots and monitoring logs stay local; see README.md.
+/*.png
+/*.jsonl
