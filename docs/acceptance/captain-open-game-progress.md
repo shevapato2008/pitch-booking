@@ -1,8 +1,10 @@
 # 队长开放球局验收进度
 
-更新时间：2026-08-23（Asia/Shanghai）
+更新时间：2026-08-24（Asia/Shanghai）
 
-状态：`LOCAL_BACKEND_HTTP_AND_MINIPROGRAM_AUTOMATION_PASS / STAGING_PENDING`
+状态：`STAGING_DEPLOYED / EXPERIENCE_0.1.5_UPLOADED / IPHONE_PENDING`
+
+本文件保留 2026-08-24 的历史验收记录，不代表当前部署或体验版状态；后续进展见 [夜场追光改造进度](../night-glow-progress.md)。
 
 ## 当前范围
 
@@ -23,7 +25,9 @@
 - [x] `PRODUCTION_PAGE_FIXTURE_ADAPTER_VISUAL_PASS`：root 已在 WeChat DevTools iPhone X `375×812` 完成人工视觉自审
 - [x] production live disabled-payment build/audit：使用已忽略的 live input 构建，17 条生产路由、`ONLINE_BOOKING_ENABLED=false`、真实 staging API、真实 HTTP open-game source 与持久化 attempt store 均已确认；audit 0 forbidden paths/tokens
 - [x] 真实本地 HTTP/PostgreSQL 旅程（Task 9）：单旅程 1/1、后端聚焦集 194/194 passed
-- [ ] shared staging 与真实 iPhone 验收（Task 10，需另行授权）
+- [x] shared staging 部署：candidate `3de95bc299aa689d0f7505c7f62cded1f852e0f2`，Alembic `0015`
+- [x] 隔离体验版上传：`0.1.5`，支付与在线预订关闭
+- [ ] 真实 iPhone 完整旅程、B1 基线复核与 B2 精确清理
 
 ## Task 9 本地自动化证据
 
@@ -33,7 +37,15 @@
 - published 与 post-cancel 两次公开读取均匹配 `PUBLIC_OPEN_GAME_FIELDS`，并递归拒绝 order/contact/payment/refund 等私有键及该订单、联系人和支付基线的敏感值；non-owner 两个私有读取均为 404。
 - 数据基线是内部一致的 synthetic applied-success Payment + CONFIRMED Order/BOOKED Slot，没有调用 Provider，也不能称为真实支付订单。旅程前后 Order、Slot、唯一 Payment 的全字段 mapping 完全相同；Payment 保持恰好 1 条，RefundCase/RefundAttempt 始终为 0。cancel 后仅 B2 open-game domain authority 变化，B1 domain rows 未变；取消幂等记录允许按设计新增。
 - Mini Program 结果仅为指定的 unit/composition 自动化：8 suites、206/206 tests passed；这不是 Mini Program 到本地后端的完整 HTTP 旅程。契约校验 101 examples passed，TypeScript typecheck PASS。
-- 剩余门禁仍是 shared staging 与真实 iPhone/device 验收；未 deploy、未上传小程序、未开始 Task 10，也未删除现有 Fixture。
+- 截至 Task 9，剩余门禁仍是 shared staging 与真实 iPhone/device 验收；当时未 deploy、未上传小程序、未开始 Task 10，也未删除现有 Fixture。下节记录后续 Task 10 进展。
+
+## Task 10 shared staging 与体验版上传证据
+
+- staging 当前 revision 与 source candidate 均为 `3de95bc299aa689d0f7505c7f62cded1f852e0f2`；上传前再次核对远端 current symlink 无漂移。
+- 使用 Git 忽略、权限 `0600` 的 live input，强制 `MINIPROGRAM_PAYMENT_PROVIDER=disabled` 构建；生成结果为 `ONLINE_BOOKING_ENABLED=false`、17 条生产路由、真实 HTTP open-game source 与持久化 attempt store。production audit 为 0 forbidden paths/tokens。
+- 只从已审计 production package 生成并导入 `dist/miniprogram-live-preview`；隔离工程与已审计包逐文件一致，package SHA-256 为 `9c4a22593d7e641431e45313124d641fc3525f4e5064c59a917780e2be56d44a`。
+- 用户在上传前另行明确确认。微信开发者工具于 2026-08-24 01:45（Asia/Shanghai）返回“代码上传成功”；版本号 `0.1.5`，项目备注 `Task10队长约球真机验收；支付关闭；3de95bc`。上传前工具明确提示本次提交会覆盖既有体验版，因此本次成功上传已将 `0.1.5` 设为当前体验版。
+- 本次没有提交正式审核、没有公开发布，也没有向非授权体验成员暴露二维码。真实 iPhone 旅程尚未执行，不能据此宣称 Task 10 或 B2 切片完成；现有 Fixture 继续保留。
 
 ## 代表性运行时视觉自审
 
